@@ -2218,6 +2218,18 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
     if let Some(schema) = scan.streams.iter().find_map(|s| s.schema.as_deref()) {
         notes.push(format!("Parasolid schema: {schema}"));
     }
+    let framed_om_sections = c.om_sections();
+    if !framed_om_sections.is_empty() {
+        let declarations = framed_om_sections
+            .iter()
+            .map(|(_, section)| section.types.len())
+            .sum::<usize>();
+        notes.push(format!(
+            "NX object model: {} size-framed section(s), {} class declaration(s)",
+            framed_om_sections.len(),
+            declarations
+        ));
+    }
     let om_sections = c.indexed_om_sections();
     if !om_sections.is_empty() {
         let entities = om_sections

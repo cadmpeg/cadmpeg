@@ -360,7 +360,7 @@ B(t,s) = C(t) + r · Rot_about_T(t)( s·α(t) ) · E0(t)
 
 ### 7.1 NX object model (OM)
 
-UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM sections and Parasolid wrapper headers. An OM section (signature `ff ff ff ff`, optionally prefixed `c0 d1 f1 ed`; BE-u32 size at `+8`) decomposes into preamble, type registry, field registry, object-id table, and entity records.
+UG_PART begins with a 12-byte row table of LE u32 triples pointing at OM sections and Parasolid wrapper headers. An OM section starts at signature `ff ff ff ff`, optionally preceded by `c0 d1 f1 ed`, and stores `payload_size:u32 BE` at `+8` with `section_end = signature_offset + 16 + payload_size`. Bytes `+12..+14` are `OM`. The section decomposes into preamble, type registry, field registry, object-id table, and entity records.
 
 **Externalized record boundaries.** Every OM section with an id-table carries, immediately before its `object_id_table`, a `(count+1)`-entry monotone `u32 LE` **entity_index** with `index[0] == 0`. OM entity records have no inline length prefix; lengths live in the entity_index:
 

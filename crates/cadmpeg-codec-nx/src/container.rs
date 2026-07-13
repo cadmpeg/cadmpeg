@@ -43,6 +43,28 @@ impl Region {
 }
 
 impl Container {
+    /// Locate independently size-framed NX object-model sections.
+    pub fn om_sections(&self) -> Vec<(&DirEntry, crate::om::Section<'_>)> {
+        let mut out = Vec::new();
+        for entry in &self.entries {
+            let Some((offset, size)) = entry.file_span else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
+                continue;
+            };
+            out.extend(
+                crate::om::sections(payload)
+                    .into_iter()
+                    .map(|section| (entry, section)),
+            );
+        }
+        out
+    }
+
     /// Locate indexed NX object-model sections in catalogued file entries.
     pub fn indexed_om_sections(&self) -> Vec<(&DirEntry, crate::om::IndexedSection<'_>)> {
         let mut out = Vec::new();

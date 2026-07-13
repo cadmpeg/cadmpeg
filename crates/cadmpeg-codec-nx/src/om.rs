@@ -67,6 +67,17 @@ pub struct IndexedSection<'a> {
     pub records: Vec<EntityRecord<'a>>,
 }
 
+/// One size-framed NX object-model section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Section<'a> {
+    /// Offset of the `ff ff ff ff` section signature.
+    pub offset: usize,
+    /// Complete section length including its 16-byte header.
+    pub byte_len: usize,
+    /// Class declarations in the section's contiguous type registry.
+    pub types: Vec<TypeDefinition<'a>>,
+}
+
 impl<'a> IndexedSection<'a> {
     /// Decode explicit numeric-expression text within bounded entity records.
     pub fn numeric_expressions(&self) -> Vec<NumericExpression<'a>> {
@@ -112,6 +123,47 @@ pub fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
             )
         })
         .collect()
+}
+
+/// Locate independently size-framed OM sections and their type registries.
+pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while at + 16 <= bytes.len() {
+        let Some(relative) = bytes[at..]
+            .windows(4)
+            .position(|window| window == [0xff; 4])
+        else {
+            break;
+        };
+        let offset = at + relative;
+        let Some(payload_len) = bytes
+            .get(offset + 8..offset + 12)
+            .and_then(|raw| raw.try_into().ok())
+            .map(u32::from_be_bytes)
+            .map(|value| value as usize)
+        else {
+            break;
+        };
+        let Some(end) = offset
+            .checked_add(16)
+            .and_then(|header_end| header_end.checked_add(payload_len))
+        else {
+            at = offset + 4;
+            continue;
+        };
+        if bytes.get(offset + 12..offset + 14) != Some(b"OM") || end > bytes.len() {
+            at = offset + 4;
+            continue;
+        }
+        out.push(Section {
+            offset,
+            byte_len: end - offset,
+            types: type_definitions(bytes, offset + 16, end),
+        });
+        at = end;
+    }
+    out
 }
 
 /// Locate validated NX OM entity-index/object-id-table pairs.
@@ -299,7 +351,8 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
         let name_start = at + 1;
         let name_end = name_start.saturating_add(length);
         let Some(raw) = bytes.get(name_start..name_end) else {
-            break;
+            at += 1;
+            continue;
         };
         let valid = raw.starts_with(b"UGS::")
             && raw.iter().all(|byte| (0x20..0x7f).contains(byte))

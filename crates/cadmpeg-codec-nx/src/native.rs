@@ -122,28 +122,51 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
         .collect()
 }
 
-/// Decode class definitions from all indexed OM sections.
+/// Decode class definitions from every framed OM section.
 pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_index, (entry, section))| {
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .types
-                .into_iter()
-                .enumerate()
-                .map(move |(type_index, definition)| ClassDefinition {
-                    id: format!("nx:om-section-{section_index}:class#{type_index}"),
+    let mut definitions = BTreeMap::new();
+    for (entry, section) in container.om_sections() {
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("OM entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (ordinal, definition) in section.types.into_iter().enumerate() {
+            definitions.insert(
+                (entry_index, definition.offset),
+                ClassDefinition {
+                    id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
                     name: definition.name.to_string(),
-                    ordinal: type_index as u32,
+                    ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
-                })
-        })
-        .collect()
+                },
+            );
+        }
+    }
+    for (entry, section) in container.indexed_om_sections() {
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("indexed entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (ordinal, definition) in section.types.into_iter().enumerate() {
+            definitions
+                .entry((entry_index, definition.offset))
+                .or_insert_with(|| ClassDefinition {
+                    id: format!("nx:om-entry-{entry_index}:class#{}", definition.offset),
+                    name: definition.name.to_string(),
+                    ordinal: ordinal as u32,
+                    trailing_code: definition.trailing_code,
+                    source_entry: entry.name.clone(),
+                    source_offset: entry_offset + definition.offset as u64,
+                });
+        }
+    }
+    definitions.into_values().collect()
 }
 
 /// Decode explicit numeric expressions from all indexed OM sections.

@@ -109,6 +109,25 @@ fn offset_only_indexed_om_section() -> Vec<u8> {
     bytes
 }
 
+fn size_framed_om_section() -> Vec<u8> {
+    let mut bytes = vec![0xff; 16];
+    bytes[4..8].fill(0);
+    bytes[12..14].copy_from_slice(b"OM");
+    bytes.extend_from_slice(&[0, 1, 2]);
+    for (name, code) in [
+        (b"UGS::FEATURE_RECORD".as_slice(), 0xa0),
+        (b"UGS::ModlUtils::BooleanComponent".as_slice(), 0x65),
+    ] {
+        bytes.push((name.len() + 1) as u8);
+        bytes.extend_from_slice(name);
+        bytes.push(code);
+    }
+    bytes.extend_from_slice(b"unframed UGS::PayloadText");
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
@@ -126,6 +145,22 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
         sections[0].records[1].bytes,
         b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00"
     );
+}
+
+#[test]
+fn om_size_frame_bounds_its_type_declarations() {
+    let bytes = size_framed_om_section();
+    let sections = crate::om::sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].offset, 0);
+    assert_eq!(sections[0].byte_len, bytes.len());
+    assert_eq!(sections[0].types.len(), 2);
+    assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
+    assert_eq!(sections[0].types[1].trailing_code, 0x65);
+
+    let mut truncated = bytes;
+    truncated.pop();
+    assert!(crate::om::sections(&truncated).is_empty());
 }
 
 #[test]
