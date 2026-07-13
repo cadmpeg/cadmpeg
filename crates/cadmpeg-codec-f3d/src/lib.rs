@@ -152,12 +152,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .map(|header| header.entity_suffix as u32)
         .collect::<HashSet<_>>();
     for relation in &native.sketch_relations {
-        const CONSTRAINT_MASK: u32 = 0x3000_3ff7;
+        let (constraint_kinds, unknown_constraint_bits) =
+            design::decode_constraint_kinds(relation.state);
         let valid = sketch_owners.contains(&relation.owner_reference)
             && relation.raw_bytes.len() == 101
-            && relation.unknown_constraint_bits == relation.state & !CONSTRAINT_MASK
-            && relation.constraint_kinds.len()
-                == (relation.state & CONSTRAINT_MASK).count_ones() as usize;
+            && relation.unknown_constraint_bits == unknown_constraint_bits
+            && relation.constraint_kinds == constraint_kinds;
         if !valid {
             findings.push(Finding {
                 check: Check::ReferentialIntegrity,

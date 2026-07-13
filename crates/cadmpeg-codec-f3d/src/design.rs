@@ -611,6 +611,8 @@ pub fn decode_sketch_relations(
     Ok(out)
 }
 
+pub(crate) const SKETCH_CONSTRAINT_MASK: u32 = 0x3000_3ff7;
+
 pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>, u32) {
     let definitions = [
         (0x0000_0001, SketchConstraintKind::Coincident),
@@ -637,7 +639,8 @@ pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>,
             recognized |= bit;
         }
     }
-    (kinds, state & !recognized)
+    debug_assert_eq!(recognized, state & SKETCH_CONSTRAINT_MASK);
+    (kinds, state & !SKETCH_CONSTRAINT_MASK)
 }
 
 /// Decode every sketch-point record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata), `pt_tag`) from each design

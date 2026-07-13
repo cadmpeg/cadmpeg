@@ -7058,6 +7058,27 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
 }
 
 #[test]
+fn validation_rejects_wrong_sketch_constraint_kind_with_equal_cardinality() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut ir = decoded.ir;
+    let relation_id = {
+        let relation = &mut f3d_native_mut(&mut ir).sketch_relations[0];
+        assert_eq!(relation.constraint_kinds.len(), 1);
+        relation.constraint_kinds = vec![crate::records::SketchConstraintKind::Horizontal];
+        relation.id.clone()
+    };
+
+    let findings = crate::validate_native(&ir);
+    assert!(findings.iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::ReferentialIntegrity
+            && finding.entity.as_deref() == Some(relation_id.as_str())
+    }));
+}
+
+#[test]
 fn generated_f3d_rewrites_native_sketch_nurbs_values() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
