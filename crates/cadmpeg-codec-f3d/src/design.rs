@@ -301,6 +301,7 @@ pub fn decode_objects(
             while bytes.get(tail) == Some(&0) {
                 tail += 1;
             }
+            let zero_run_length = u32::try_from(tail - after_self).unwrap_or(u32::MAX);
             let (parent_guid, parent_guid_offset, revision_offset) = lp_ascii(bytes, tail)
                 .filter(|(guid, _)| is_guid(guid))
                 .map_or((None, None, tail), |(guid, end)| {
@@ -325,6 +326,7 @@ pub fn decode_objects(
                 entity_id_offsets,
                 self_guid,
                 self_guid_offset: (ids_end + 4) as u64,
+                zero_run_length,
                 parent_guid,
                 parent_guid_offset,
                 revision,

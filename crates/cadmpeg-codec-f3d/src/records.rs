@@ -244,6 +244,10 @@ pub struct DesignObject {
     pub self_guid: String,
     /// Byte offset of the self-GUID bytes in the Design `MetaStream`.
     pub self_guid_offset: u64,
+    /// Number of zero delimiter bytes between the self GUID and the optional
+    /// parent GUID.
+    #[serde(default)]
+    pub zero_run_length: u32,
     /// GUID of the owning object, when the source record carried a secondary GUID
     /// after the zero-run delimiter; `None` for root-level objects.
     #[serde(default, skip_serializing_if = "Option::is_none")]

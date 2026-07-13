@@ -5385,6 +5385,7 @@ fn generated_source_less_writes_design_object_metastream() {
             entity_id_offsets: Vec::new(),
             self_guid: "11111111-2222-3333-4444-555555555555".into(),
             self_guid_offset: 0,
+            zero_run_length: 16,
             parent_guid: None,
             parent_guid_offset: None,
             revision: 7,
@@ -5398,6 +5399,7 @@ fn generated_source_less_writes_design_object_metastream() {
             entity_id_offsets: Vec::new(),
             self_guid: "22222222-3333-4444-5555-666666666666".into(),
             self_guid_offset: 0,
+            zero_run_length: 4,
             parent_guid: Some("11111111-2222-3333-4444-555555555555".into()),
             parent_guid_offset: None,
             revision: 9,
@@ -5418,6 +5420,7 @@ fn generated_source_less_writes_design_object_metastream() {
     assert_eq!(objects[0].kind, DesignObjectKind::Fusion);
     assert_eq!(objects[0].entity_ids, [1, 2]);
     assert_eq!(objects[0].revision, 7);
+    assert_eq!(objects[0].zero_run_length, 16);
     assert_eq!(objects[1].kind, DesignObjectKind::Sketch);
     assert_eq!(objects[1].entity_ids, [277]);
     assert_eq!(
@@ -5425,6 +5428,7 @@ fn generated_source_less_writes_design_object_metastream() {
         Some("11111111-2222-3333-4444-555555555555")
     );
     assert_eq!(objects[1].revision, 9);
+    assert_eq!(objects[1].zero_run_length, 4);
 }
 
 #[test]
@@ -5605,6 +5609,7 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         entity_id_offsets: Vec::new(),
         self_guid: "22222222-3333-4444-5555-666666666666".into(),
         self_guid_offset: 0,
+        zero_run_length: 0,
         parent_guid: None,
         parent_guid_offset: None,
         revision: 4,
@@ -5692,6 +5697,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         entity_id_offsets: Vec::new(),
         self_guid: "22222222-3333-4444-5555-666666666666".into(),
         self_guid_offset: 0,
+        zero_run_length: 0,
         parent_guid: None,
         parent_guid_offset: None,
         revision: 1,
@@ -5997,6 +6003,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         entity_id_offsets: Vec::new(),
         self_guid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee".into(),
         self_guid_offset: 0,
+        zero_run_length: 0,
         parent_guid: None,
         parent_guid_offset: None,
         revision: 1,

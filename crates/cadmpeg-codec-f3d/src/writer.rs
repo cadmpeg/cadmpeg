@@ -751,6 +751,15 @@ fn encode_design_metastream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         }
         validate_guid(&object.self_guid, "Design object self GUID")?;
         native_lp_ascii(&mut out, &object.self_guid)?;
+        let zero_run_length = usize::try_from(object.zero_run_length).map_err(|_| {
+            CodecError::Malformed("Design object zero-run length exceeds address space".into())
+        })?;
+        out.resize(
+            out.len().checked_add(zero_run_length).ok_or_else(|| {
+                CodecError::Malformed("Design MetaStream zero run exceeds address space".into())
+            })?,
+            0,
+        );
         if let Some(parent_guid) = &object.parent_guid {
             validate_guid(parent_guid, "Design object parent GUID")?;
             native_lp_ascii(&mut out, parent_guid)?;
