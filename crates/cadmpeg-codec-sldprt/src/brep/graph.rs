@@ -191,8 +191,6 @@ pub struct Stats {
     pub unknown_surface_faces: usize,
     /// Edges whose support curve is an untyped carrier (emitted with no curve).
     pub unknown_curve_edges: usize,
-    /// Cone/torus carriers decoded from a single observed field layout.
-    pub single_sample_carriers: usize,
     /// No explicit body record was available, so one body hierarchy was derived.
     pub synthetic_body_grouping: bool,
 }
@@ -620,9 +618,6 @@ fn decode_graph(
         let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
         match carriers.get(&f.surface_attr).map(|c| (c, &c.geometry)) {
             Some((c, CarrierGeometry::Surface(geo))) => {
-                if c.single_sample {
-                    out.stats.single_sample_carriers += 1;
-                }
                 annotations
                     .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
                     .tag("compact_surface");

@@ -240,7 +240,6 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.face_colors.append(&mut source.face_colors);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
-    target.stats.single_sample_carriers += source.stats.single_sample_carriers;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
 }
 
@@ -706,20 +705,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
                 "{} edge(s) reference an untyped support curve; topology references an opaque \
                  curve carrier linked to the retained partition.",
                 s.unknown_curve_edges
-            ),
-            provenance: None,
-        });
-    }
-    if s.single_sample_carriers > 0 {
-        losses.push(LossNote {
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} cone/torus carrier(s) were decoded from a single observed field layout; the \
-                 field order satisfies the analytic relations (sin^2+cos^2=1, major>minor>0) but \
-                 has not been cross-checked against a second sample, so treat these carriers as \
-                 lower-confidence than the plane/cylinder/sphere set.",
-                s.single_sample_carriers
             ),
             provenance: None,
         });

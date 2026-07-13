@@ -358,7 +358,6 @@ pub fn scan_curve_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
                 weights,
                 periodic: false,
             })),
-            single_sample: false,
             frame: None,
         });
     }
@@ -519,7 +518,6 @@ pub fn scan_surface_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
                 u_periodic: false,
                 v_periodic: false,
             })),
-            single_sample: false,
             frame: None,
         });
     }

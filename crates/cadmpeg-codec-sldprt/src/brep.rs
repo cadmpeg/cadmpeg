@@ -110,9 +110,6 @@ pub(crate) struct Carrier {
     pub offset: usize,
     pub end: usize,
     pub geometry: CarrierGeometry,
-    /// True for the cone/torus layouts confirmed from a single field-order
-    /// sample ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records) confidence caveat).
-    pub single_sample: bool,
     pub frame: Option<(Point3, Vector3, Vector3)>,
 }
 
@@ -163,14 +160,13 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
     }
     let end = values_at + n * 8;
 
-    let (geometry, single_sample) = decode_carrier_values(tt, &vals)?;
+    let geometry = decode_carrier_values(tt, &vals)?;
     let frame = surface_frame(tt, &vals);
     Some(Carrier {
         attr,
         offset: off,
         end,
         geometry,
-        single_sample,
         frame,
     })
 }
@@ -204,8 +200,8 @@ fn surface_frame(tag: u8, v: &[f64]) -> Option<(Point3, Vector3, Vector3)> {
 }
 
 /// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
-/// coordinates and radii only. Returns the geometry and the single-sample flag.
-fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
+/// coordinates and radii only.
+fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<CarrierGeometry> {
     let g = match tt {
         tag::LINE => CarrierGeometry::Curve(CurveGeometry::Line {
             origin: scale_point(&v[0..3]),
@@ -239,16 +235,13 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
             // origin(3) axis(3) radius sin cos refdir(3): half-angle from the
             // stored sine, which satisfies sin^2+cos^2=1 in the observed sample.
             let sin = v[7];
-            return Some((
-                CarrierGeometry::Surface(SurfaceGeometry::Cone {
-                    origin: scale_point(&v[0..3]),
-                    axis: unit(&v[3..6]),
-                    ref_direction: unit(&v[9..12]),
-                    radius: v[6] * LEN_TO_MM,
-                    half_angle: sin.abs().clamp(0.0, 1.0).asin(),
-                }),
-                true,
-            ));
+            return Some(CarrierGeometry::Surface(SurfaceGeometry::Cone {
+                origin: scale_point(&v[0..3]),
+                axis: unit(&v[3..6]),
+                ref_direction: unit(&v[9..12]),
+                radius: v[6] * LEN_TO_MM,
+                half_angle: sin.abs().clamp(0.0, 1.0).asin(),
+            }));
         }
         tag::SPHERE => CarrierGeometry::Surface(SurfaceGeometry::Sphere {
             center: scale_point(&v[0..3]),
@@ -257,20 +250,17 @@ fn decode_carrier_values(tt: u8, v: &[f64]) -> Option<(CarrierGeometry, bool)> {
             radius: v[3] * LEN_TO_MM,
         }),
         tag::TORUS => {
-            return Some((
-                CarrierGeometry::Surface(SurfaceGeometry::Torus {
-                    center: scale_point(&v[0..3]),
-                    axis: unit(&v[3..6]),
-                    ref_direction: unit(&v[8..11]),
-                    major_radius: v[6] * LEN_TO_MM,
-                    minor_radius: v[7] * LEN_TO_MM,
-                }),
-                true,
-            ));
+            return Some(CarrierGeometry::Surface(SurfaceGeometry::Torus {
+                center: scale_point(&v[0..3]),
+                axis: unit(&v[3..6]),
+                ref_direction: unit(&v[8..11]),
+                major_radius: v[6] * LEN_TO_MM,
+                minor_radius: v[7] * LEN_TO_MM,
+            }));
         }
         _ => return None,
     };
-    Some((g, false))
+    Some(g)
 }
 
 /// Scan the whole stream body for compact analytic carriers, keyed by attribute
@@ -337,4 +327,75 @@ pub(crate) fn patch_nurbs_by_attr(
         return false;
     };
     patch_nurbs_curve(body, carrier.offset, &old, new, 0.001).is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn compact_carrier(tag: u8, attr: u16, values: &[f64]) -> Vec<u8> {
+        let mut bytes = vec![0, tag];
+        bytes.extend_from_slice(&attr.to_be_bytes());
+        bytes.extend_from_slice(&[0; 14]);
+        bytes.push(0x2b);
+        for value in values {
+            bytes.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn parses_verified_cone_layout() {
+        let root_half = std::f64::consts::FRAC_1_SQRT_2;
+        let bytes = compact_carrier(
+            tag::CONE,
+            7,
+            &[
+                0.0, 0.0, 0.0067, 0.0, 0.0, -1.0, 0.0015, root_half, root_half, -1.0, 0.0, 0.0,
+            ],
+        );
+        let carrier = parse_carrier(&bytes, 0).unwrap();
+        let CarrierGeometry::Surface(SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            half_angle,
+        }) = carrier.geometry
+        else {
+            panic!("expected cone");
+        };
+        assert_eq!(origin, Point3::new(0.0, 0.0, 6.7));
+        assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+        assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
+        assert!((radius - 1.5).abs() < 1e-12);
+        assert!((half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
+    }
+
+    #[test]
+    fn parses_verified_torus_layout() {
+        let bytes = compact_carrier(
+            tag::TORUS,
+            8,
+            &[
+                0.0, 0.0, 0.0002, 0.0, 0.0, -1.0, 0.0022, 0.0002, -1.0, 0.0, 0.0,
+            ],
+        );
+        let carrier = parse_carrier(&bytes, 0).unwrap();
+        let CarrierGeometry::Surface(SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        }) = carrier.geometry
+        else {
+            panic!("expected torus");
+        };
+        assert_eq!(center, Point3::new(0.0, 0.0, 0.2));
+        assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+        assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
+        assert!((major_radius - 2.2).abs() < 1e-12);
+        assert!((minor_radius - 0.2).abs() < 1e-12);
+    }
 }
