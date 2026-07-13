@@ -85,6 +85,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                     SketchInputEntity {
                         id,
                         parent: parent.clone(),
+                        feature_ref: None,
                         ordinal: ordinal as u32,
                         offset: offset as u64,
                         local_id: marker_local_id(&block.payload, offset),
@@ -359,6 +360,9 @@ pub(crate) fn bind_scalar_operands(
     lanes: &mut [FeatureInputLane],
 ) {
     for lane in lanes {
+        for entity in &mut lane.sketch_entities {
+            entity.feature_ref = None;
+        }
         let mut starts = histories
             .iter()
             .flat_map(|history| &history.features)
@@ -372,6 +376,13 @@ pub(crate) fn bind_scalar_operands(
         starts.sort_unstable_by_key(|start| start.0);
         for (index, &(start, feature_id)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            for entity in lane
+                .sketch_entities
+                .iter_mut()
+                .filter(|entity| entity.offset > start && entity.offset < end)
+            {
+                entity.feature_ref = Some(feature_id.to_string());
+            }
             for reference in lane
                 .references
                 .iter_mut()

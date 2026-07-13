@@ -815,14 +815,16 @@ fn resolved_feature_payload(
             lane.sketch_entities.len()
         )));
     }
-    for (ordinal, (entity, expected_offset)) in lane
+    for (ordinal, ((entity, expected_entity), expected_offset)) in lane
         .sketch_entities
         .iter()
+        .zip(&expected_lane.sketch_entities)
         .zip(&expected_offsets)
         .enumerate()
     {
         if entity.ordinal != ordinal as u32
             || usize::try_from(entity.offset) != Ok(*expected_offset)
+            || entity.feature_ref != expected_entity.feature_ref
             || entity.local_id
                 != crate::resolved_features::marker_local_id(&lane.native_payload, *expected_offset)
         {

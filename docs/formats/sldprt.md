@@ -85,6 +85,8 @@ PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, h
 
 `ResolvedFeatures` sketch entities begin with `ff ff 1f 00 03`. A little-endian u32 at marker +17 is the entity type: `0` point, `1` curve, `2` arc, `3` constrained point. Marker +48 stores a finite little-endian f64 state value.
 
+A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. Marker local identifiers are scoped to that feature object.
+
 A feature-input class declaration is `ff ff 01 00`, a little-endian u16 byte length, and an ASCII class name. When the following record begins at declaration offset `+ 6 + length`, that record is an instance of the declared class. A feature-name record begins with `04 80 ff fe ff`, a u8 UTF-16 code-unit count, and the UTF-16LE name. The little-endian u32 at eight bytes after the name is the feature object ID. It equals the corresponding Keywords feature `id` and binds the records independently of the display name.
 
 Keywords `Feature` elements use the `Type` attribute as their operation-family token. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.

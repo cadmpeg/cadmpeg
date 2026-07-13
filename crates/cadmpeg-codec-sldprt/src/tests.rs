@@ -12636,6 +12636,11 @@ fn decode_projects_owned_native_sketch_relation() {
     else {
         panic!("bound sketch feature");
     };
+    let native = sldprt_native(&decoded.ir);
+    assert!(native.feature_input_lanes[0]
+        .sketch_entities
+        .iter()
+        .all(|entity| entity.feature_ref.as_deref() == feature.native_ref.as_deref()));
     let parameter = decoded
         .ir
         .model
@@ -12680,6 +12685,28 @@ fn decode_projects_owned_native_sketch_relation() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap();
+}
+
+#[test]
+fn native_store_rejects_missing_sketch_marker_feature_owner() {
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    native.feature_input_lanes[0].sketch_entities[0].feature_ref =
+        Some("sldprt:history:feature#missing".into());
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("inconsistent lane or feature ownership"));
 }
 
 #[test]

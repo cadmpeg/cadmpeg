@@ -527,14 +527,16 @@ impl SldprtNative {
                     }
                 }
             }
-            if let Some(record) = lane
-                .sketch_entities
-                .iter()
-                .find(|record| record.parent != lane.id)
-            {
+            if let Some(record) = lane.sketch_entities.iter().find(|record| {
+                record.parent != lane.id
+                    || record
+                        .feature_ref
+                        .as_deref()
+                        .is_some_and(|feature| !feature_ids.contains(feature))
+            }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                    "sketch input entity {} references {} instead of {}",
-                    record.id, record.parent, lane.id
+                    "sketch input entity {} has inconsistent lane or feature ownership",
+                    record.id
                 )));
             }
         }

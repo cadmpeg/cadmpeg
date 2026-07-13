@@ -439,6 +439,9 @@ pub struct SketchInputEntity {
     pub id: String,
     /// Owning feature-input lane record id.
     pub parent: String,
+    /// Native history feature whose serialized object interval contains this marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_ref: Option<String>,
     /// Position of this marker within the owning `FeatureInputLane`, in stream order.
     pub ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
