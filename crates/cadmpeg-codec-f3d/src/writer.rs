@@ -15662,59 +15662,40 @@ fn patch_surface_curve_definition(
             "surface-curve context values must be finite".into(),
         ));
     }
-    let subtype = match family {
-        cadmpeg_ir::geometry::SurfaceCurveFamily::Blend => "blend_int_cur",
-        cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained => "surf_int_cur",
-        cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric => "par_int_cur",
-        cadmpeg_ir::geometry::SurfaceCurveFamily::Skin => "skin_int_cur",
-    };
     let end = record.offset.checked_add(record.len).ok_or_else(|| {
         CodecError::Malformed("surface-curve record extent overflows address space".into())
     })?;
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("surface-curve record is truncated".into()))?;
-    if !record_bytes
-        .windows(subtype.len())
-        .any(|window| window == subtype.as_bytes())
+    let layout =
+        crate::nurbs::surface_curve_patch_layout(record_bytes, active_ref_width(bytes), family)
+            .ok_or_else(|| {
+                CodecError::Malformed("surface-curve construction is malformed".into())
+            })?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
     {
-        return Err(CodecError::Malformed(format!(
-            "record does not contain {subtype}"
-        )));
-    }
-    let solved = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
-        .into_iter()
-        .filter_map(|marker| {
-            record_bytes
-                .windows(marker.len())
-                .rposition(|window| window == marker)
-        })
-        .max()
-        .ok_or_else(|| CodecError::Malformed("surface-curve solved cache is missing".into()))?;
-    let boundary = record.offset + solved;
-    let context_count = 2usize
-        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
-        .ok_or_else(|| CodecError::Malformed("surface-curve context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .filter(|offset| *offset < boundary)
-        .collect::<Vec<_>>();
-    let context_offsets = context_offsets
-        .get(context_offsets.len().saturating_sub(context_count)..)
-        .ok_or_else(|| CodecError::Malformed("surface-curve context is incomplete".into()))?;
-    if context_offsets.len() != context_count {
         return Err(CodecError::Malformed(
             "surface-curve context is incomplete".into(),
         ));
     }
-    for (offset, value) in context_offsets.iter().zip(
-        context
-            .parameter_range
-            .into_iter()
-            .chain(context.discontinuities.iter().flatten().copied()),
-    ) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
 }

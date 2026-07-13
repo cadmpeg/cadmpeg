@@ -4981,6 +4981,56 @@ fn decode_embedded_surface_curve(
     ))
 }
 
+/// Writable shared-context fields in a surface-related `intcurve` subtype.
+pub(crate) struct SurfaceCurvePatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) discontinuities: [Vec<usize>; 3],
+}
+
+/// Locate a surface-curve context by walking its two ordered support pairs.
+pub(crate) fn surface_curve_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+    family: &cadmpeg_ir::geometry::SurfaceCurveFamily,
+) -> Option<SurfaceCurvePatchLayout> {
+    use cadmpeg_ir::geometry::SurfaceCurveFamily;
+    let names: &[&[u8]] = match family {
+        SurfaceCurveFamily::Blend => &[b"blend_int_cur", b"bldcur"],
+        SurfaceCurveFamily::SurfaceConstrained => &[b"surf_int_cur", b"surfcur"],
+        SurfaceCurveFamily::Parametric => &[b"par_int_cur", b"parcur"],
+        SurfaceCurveFamily::Skin => &[b"skin_int_cur", b"d5c2_cur"],
+    };
+    let (marker, name) = names.iter().find_map(|name| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == *name
+            })
+            .map(|marker| (marker, *name))
+    })?;
+    let mut position = marker + name.len() + 3;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+    ];
+    Some(SurfaceCurvePatchLayout {
+        parameter_range,
+        discontinuities,
+    })
+}
+
 fn decode_embedded_three_surface_intersection(
     bytes: &[u8],
     int_width: usize,
@@ -6249,6 +6299,44 @@ mod width_tests {
                 layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
                 3
             );
+        }
+    }
+
+    #[test]
+    fn surface_curve_layout_walks_each_family_at_both_widths() {
+        use cadmpeg_ir::geometry::SurfaceCurveFamily;
+        for int_width in [4usize, 8] {
+            for (name, family) in [
+                ("blend_int_cur", SurfaceCurveFamily::Blend),
+                ("surf_int_cur", SurfaceCurveFamily::SurfaceConstrained),
+                ("par_int_cur", SurfaceCurveFamily::Parametric),
+                ("skin_int_cur", SurfaceCurveFamily::Skin),
+            ] {
+                let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+                bytes.extend_from_slice(name.as_bytes());
+                for _ in 0..2 {
+                    bytes.extend_from_slice(&[0x0d, 0x06]);
+                    bytes.extend_from_slice(b"spline");
+                    bytes.extend_from_slice(&surface_block(int_width));
+                }
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                push_f64(&mut bytes, -2.0);
+                push_f64(&mut bytes, 3.0);
+                for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+                    push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                    for value in values {
+                        push_f64(&mut bytes, *value);
+                    }
+                }
+
+                let layout = surface_curve_patch_layout(&bytes, int_width, &family)
+                    .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+                assert_eq!(
+                    layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
+                    3
+                );
+            }
         }
     }
 }
