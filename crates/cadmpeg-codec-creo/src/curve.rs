@@ -933,6 +933,13 @@ fn fc05_scalar(body: &[u8], offset: usize) -> Option<(f64, usize)> {
     if prefix == 0x18 {
         return Some((0.0, offset + 1));
     }
+    if prefix == 0x8b {
+        let tail = body.get(offset + 1..offset + 7)?;
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&[0x40, 0x00]);
+        raw[2..].copy_from_slice(tail);
+        return Some((f64::from_be_bytes(raw), offset + 7));
+    }
     if let Some(decoded) = scalar::decode(body, offset) {
         return Some(decoded);
     }
@@ -1503,6 +1510,18 @@ mod tests {
                 cap_ordinates_row_frame: vec![-5.0, 7.0],
                 offset: 100,
             }]
+        );
+    }
+
+    #[test]
+    fn decodes_fc05_two_near_lane() {
+        let bytes = [0x8b, 0x13, 0x11, 0x71, 0x7e, 0xcd, 0xf4];
+        assert_eq!(
+            fc05_scalar(&bytes, 0),
+            Some((
+                f64::from_be_bytes([0x40, 0x00, 0x13, 0x11, 0x71, 0x7e, 0xcd, 0xf4]),
+                7
+            ))
         );
     }
 
