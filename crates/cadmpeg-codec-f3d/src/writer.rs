@@ -3752,13 +3752,17 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "rule_sur")?;
+            let profile_range = [
+                solved_cache.u_knots.first().copied().ok_or_else(|| {
+                    CodecError::Malformed("ruled solved surface has no U knot domain".into())
+                })?,
+                solved_cache.u_knots.last().copied().ok_or_else(|| {
+                    CodecError::Malformed("ruled solved surface has no U knot domain".into())
+                })?,
+            ];
             for profile in profiles {
-                let CurveGeometry::Nurbs(profile) = &profile.geometry else {
-                    return Err(CodecError::NotImplemented(
-                        "source-less F3D rule_sur requires NURBS profiles".into(),
-                    ));
-                };
-                native_nurbs_curve(bytes, profile)?;
+                let profile = native_interval_curve(&profile.geometry, profile_range)?;
+                native_nurbs_curve(bytes, &profile)?;
             }
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
@@ -3788,13 +3792,26 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "sum_spl_sur")?;
-            for curve in curves {
-                let CurveGeometry::Nurbs(curve) = &curve.geometry else {
-                    return Err(CodecError::NotImplemented(
-                        "source-less F3D sum_spl_sur requires NURBS curves".into(),
-                    ));
-                };
-                native_nurbs_curve(bytes, curve)?;
+            let ranges = [&solved_cache.u_knots, &solved_cache.v_knots]
+                .into_iter()
+                .map(|knots| {
+                    Ok::<_, CodecError>([
+                        knots.first().copied().ok_or_else(|| {
+                            CodecError::Malformed(
+                                "sum solved surface has an empty knot domain".into(),
+                            )
+                        })?,
+                        knots.last().copied().ok_or_else(|| {
+                            CodecError::Malformed(
+                                "sum solved surface has an empty knot domain".into(),
+                            )
+                        })?,
+                    ])
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            for (curve, range) in curves.into_iter().zip(ranges) {
+                let curve = native_interval_curve(&curve.geometry, range)?;
+                native_nurbs_curve(bytes, &curve)?;
             }
             native_point(
                 bytes,

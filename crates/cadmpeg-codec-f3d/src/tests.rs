@@ -8589,10 +8589,23 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
             .curves
             .iter()
             .any(|curve| curve.id == *second));
+        let profiles = [first.clone(), second.clone()];
 
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        for (ordinal, profile) in profiles.into_iter().enumerate() {
+            source_less
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == profile)
+                .expect("ruled profile")
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, 3.0),
+                direction: cadmpeg_ir::math::Vector3::new(4.0, 1.0, -2.0),
+            };
+        }
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -8600,10 +8613,24 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less ruled surface round trip");
-        assert!(matches!(
-            round_trip.ir.model.procedural_surfaces[0].definition,
-            ProceduralSurfaceDefinition::Ruled { .. }
-        ));
+        let ProceduralSurfaceDefinition::Ruled { first, second } =
+            &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip ruled surface")
+        };
+        for profile in [first, second] {
+            assert!(matches!(
+                round_trip
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == *profile)
+                    .map(|curve| &curve.geometry),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            ));
+        }
     }
 }
 
@@ -8631,6 +8658,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             *basepoint,
             cadmpeg_ir::math::Vector3::new(10.0, -20.0, 30.0)
         );
+        let source_curves = [first.clone(), second.clone()];
         assert!(result
             .ir
             .model
@@ -8647,6 +8675,18 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        for (ordinal, source) in source_curves.into_iter().enumerate() {
+            source_less
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == source)
+                .expect("sum source curve")
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(1.0, ordinal as f64, -1.0),
+                direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, 4.0),
+            };
+        }
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
