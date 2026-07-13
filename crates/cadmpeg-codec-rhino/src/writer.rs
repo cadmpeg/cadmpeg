@@ -93,9 +93,9 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
                 payload.extend(position.x.to_le_bytes());
                 payload.extend(position.y.to_le_bytes());
                 payload.extend(position.z.to_le_bytes());
-                object_record(1, POINT_CLASS, &payload)
+                attributed_object_record(1, POINT_CLASS, &payload, &point.id.0, None, None, None)
             })
-            .collect::<Vec<_>>(),
+            .collect::<Result<Vec<_>, _>>()?,
     );
     for group in point_groups {
         if group.points.len() == 1 {
@@ -142,7 +142,15 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             CurveGeometry::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
-        objects.push(object_record(4, class, &payload));
+        objects.push(attributed_object_record(
+            4,
+            class,
+            &payload,
+            &curve.id.0,
+            None,
+            None,
+            None,
+        )?);
     }
     for surface in &ir.model.surfaces {
         if breps
@@ -163,14 +171,26 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
             SurfaceGeometry::Nurbs(nurbs) => (NURBS_SURFACE_CLASS, nurbs_surface_payload(nurbs)),
             _ => unreachable!("representability checked before serialization"),
         };
-        objects.push(object_record(8, class, &payload));
+        objects.push(attributed_object_record(
+            8,
+            class,
+            &payload,
+            &surface.id.0,
+            None,
+            None,
+            None,
+        )?);
     }
     for mesh in &ir.model.tessellations {
-        objects.push(object_record(
+        objects.push(attributed_object_record(
             0x20,
             MESH_CLASS,
             &mesh_payload(mesh, version),
-        ));
+            &mesh.id,
+            None,
+            None,
+            None,
+        )?);
     }
 
     write_archive(ir, version, &objects, output)
@@ -2913,10 +2933,6 @@ fn mesh_buffer(data: &[u8]) -> Vec<u8> {
     result
 }
 
-fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
-    framed_object_record(object_type, class_uuid, payload, None)
-}
-
 fn attributed_object_record(
     object_type: i64,
     class_uuid: [u8; 16],
@@ -3034,6 +3050,7 @@ mod tests {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::topology::Point;
     use cadmpeg_ir::units::Units;
+    use sha2::{Digest, Sha256};
 
     use super::{
         vertex_point, CHANNEL_COLOR, CHANNEL_CURVATURE, CHANNEL_SURFACE_PARAMETERS, CHANNEL_UV,
@@ -3109,6 +3126,16 @@ mod tests {
         assert_eq!(
             decoded.ir.model.curves[0].geometry,
             ir.model.curves[0].geometry
+        );
+        let digest = Sha256::digest(b"curve:circle");
+        let expected = crate::wire::Uuid::from_wire(digest[..16].try_into().unwrap()).to_string();
+        assert_eq!(
+            decoded.ir.model.curves[0]
+                .source_object
+                .as_ref()
+                .expect("generated object identity")
+                .object_id,
+            expected
         );
     }
 
