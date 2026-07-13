@@ -21,6 +21,7 @@ path = "src/main.rs"
 [dependencies]
 cadmpeg-ir.workspace = true
 cadmpeg-codec-f3d.workspace = true
+cadmpeg-codec-freecad.workspace = true
 cadmpeg-codec-sldprt.workspace = true
 cadmpeg-codec-catia.workspace = true
 cadmpeg-codec-creo.workspace = true

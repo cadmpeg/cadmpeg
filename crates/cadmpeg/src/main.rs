@@ -76,6 +76,8 @@ impl Format {
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum InputFormat {
+    /// FreeCAD `.FCStd`.
+    Fcstd,
     /// Autodesk Fusion `.f3d`.
     F3d,
     /// `SolidWorks` `.sldprt`.
@@ -103,6 +105,7 @@ enum ForcedInput {
 impl InputFormat {
     fn resolution(self) -> ForcedInput {
         match self {
+            Self::Fcstd => ForcedInput::Codec("fcstd"),
             Self::F3d => ForcedInput::Codec("f3d"),
             Self::Sldprt => ForcedInput::Codec("sldprt"),
             Self::Catpart => ForcedInput::Codec("catia"),

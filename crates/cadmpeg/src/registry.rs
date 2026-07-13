@@ -4,6 +4,7 @@
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
+use cadmpeg_codec_freecad::FcstdCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
@@ -21,6 +22,7 @@ impl Registry {
     pub fn with_builtins() -> Self {
         Registry {
             codecs: vec![
+                Box::new(FcstdCodec),
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
                 Box::new(CatiaCodec),
