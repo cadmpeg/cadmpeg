@@ -297,7 +297,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         || model.regions.len() != 1
         || model.shells.len() != 1
         || model.faces.len() != 1
-        || model.loops.len() != 1
+        || model.loops.is_empty()
         || edge_count < 3
         || model.edges.len() != edge_count
         || model.vertices.len() != edge_count
@@ -307,7 +307,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         || !model.tessellations.is_empty()
     {
         return Err(CodecError::NotImplemented(
-            "planar sheet writing currently requires one polygonal face".into(),
+            "planar sheet writing currently requires one polygonal face with disjoint loops".into(),
         ));
     }
     if body.regions.len() != 1
@@ -323,7 +323,6 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     let region = &model.regions[0];
     let shell = &model.shells[0];
     let face = &model.faces[0];
-    let loop_ = &model.loops[0];
     if region.id != body.regions[0]
         || region.body != body.id
         || region.shells != [shell.id.clone()]
@@ -332,11 +331,22 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         || !shell.wire_edges.is_empty()
         || !shell.free_vertices.is_empty()
         || face.shell != shell.id
-        || face.loops != [loop_.id.clone()]
+        || face.loops.len() != model.loops.len()
+        || face
+            .loops
+            .iter()
+            .zip(&model.loops)
+            .any(|(id, loop_)| *id != loop_.id)
         || face.name.is_some()
         || face.color.is_some()
-        || loop_.face != face.id
-        || loop_.coedges.len() != edge_count
+        || model.loops.iter().any(|loop_| loop_.face != face.id)
+        || model
+            .loops
+            .iter()
+            .map(|loop_| loop_.coedges.len())
+            .sum::<usize>()
+            != edge_count
+        || model.loops.iter().any(|loop_| loop_.coedges.len() < 3)
     {
         return Err(CodecError::Malformed(
             "planar sheet ownership graph is inconsistent".into(),
@@ -366,31 +376,39 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     let v_axis = cross(normal, u_axis);
 
     let mut ordered_coedges = Vec::with_capacity(edge_count);
-    for id in &loop_.coedges {
-        let coedge = model
-            .coedges
-            .iter()
-            .find(|coedge| coedge.id == *id)
-            .ok_or_else(|| CodecError::Malformed(format!("coedge {} is missing", id.0)))?;
-        if coedge.owner_loop != loop_.id || coedge.pcurve.is_some() {
-            return Err(CodecError::NotImplemented(format!(
-                "coedge {} ownership or attributed pcurve is not writable",
-                coedge.id.0
-            )));
+    let mut loop_ranges = Vec::with_capacity(model.loops.len());
+    for loop_ in &model.loops {
+        let start = ordered_coedges.len();
+        for id in &loop_.coedges {
+            let coedge = model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *id)
+                .ok_or_else(|| CodecError::Malformed(format!("coedge {} is missing", id.0)))?;
+            if coedge.owner_loop != loop_.id || coedge.pcurve.is_some() {
+                return Err(CodecError::NotImplemented(format!(
+                    "coedge {} ownership or attributed pcurve is not writable",
+                    coedge.id.0
+                )));
+            }
+            ordered_coedges.push(coedge);
         }
-        ordered_coedges.push(coedge);
-    }
-    for index in 0..edge_count {
-        let current = ordered_coedges[index];
-        if current.next != ordered_coedges[(index + 1) % edge_count].id
-            || current.previous != ordered_coedges[(index + edge_count - 1) % edge_count].id
-            || current.radial_next != current.id
-        {
-            return Err(CodecError::Malformed(format!(
-                "coedge {} ring is inconsistent",
-                current.id.0
-            )));
+        let end = ordered_coedges.len();
+        for index in start..end {
+            let current = ordered_coedges[index];
+            let offset = index - start;
+            let count = end - start;
+            if current.next != ordered_coedges[start + (offset + 1) % count].id
+                || current.previous != ordered_coedges[start + (offset + count - 1) % count].id
+                || current.radial_next != current.id
+            {
+                return Err(CodecError::Malformed(format!(
+                    "coedge {} ring is inconsistent",
+                    current.id.0
+                )));
+            }
         }
+        loop_ranges.push(start..end);
     }
 
     let mut ordered_edges = Vec::with_capacity(edge_count);
@@ -417,17 +435,20 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         traversal_vertices.push(from_id.clone());
         ordered_edges.push(edge);
     }
-    for index in 0..edge_count {
-        let edge = ordered_edges[index];
-        let traversal_end = if ordered_coedges[index].sense == Sense::Forward {
-            &edge.end
-        } else {
-            &edge.start
-        };
-        if *traversal_end != traversal_vertices[(index + 1) % edge_count] {
-            return Err(CodecError::Malformed(
-                "planar coedge traversal does not close".into(),
-            ));
+    for range in &loop_ranges {
+        for index in range.clone() {
+            let edge = ordered_edges[index];
+            let traversal_end = if ordered_coedges[index].sense == Sense::Forward {
+                &edge.end
+            } else {
+                &edge.start
+            };
+            let next = range.start + (index - range.start + 1) % range.len();
+            if *traversal_end != traversal_vertices[next] {
+                return Err(CodecError::Malformed(
+                    "planar coedge traversal does not close".into(),
+                ));
+            }
         }
     }
 
@@ -462,9 +483,20 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     let mut payload = vec![0x32];
     let c2 = (0..edge_count)
         .map(|index| {
-            let from = plane_uv(ordered_points[index], origin, u_axis, v_axis);
+            let edge = ordered_edges[index];
+            let (from, to) = if ordered_coedges[index].sense == Sense::Forward {
+                (&edge.start, &edge.end)
+            } else {
+                (&edge.end, &edge.start)
+            };
+            let from = plane_uv(
+                vertex_point(model, from).expect("validated trim start"),
+                origin,
+                u_axis,
+                v_axis,
+            );
             let to = plane_uv(
-                ordered_points[(index + 1) % edge_count],
+                vertex_point(model, to).expect("validated trim end"),
                 origin,
                 u_axis,
                 v_axis,
@@ -555,7 +587,11 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
             record.extend(i32::from(coedge.sense == Sense::Reversed).to_le_bytes());
             record.extend(1_i32.to_le_bytes());
             record.extend(0_i32.to_le_bytes());
-            record.extend(0_i32.to_le_bytes());
+            let loop_index = loop_ranges
+                .iter()
+                .position(|range| range.contains(&index))
+                .expect("trim belongs to one loop");
+            record.extend((loop_index as i32).to_le_bytes());
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
             record.extend([0_u8; 48]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
@@ -563,13 +599,22 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         })
         .collect::<Vec<_>>();
     payload.extend(raw_array(&trim_records));
-    let mut loop_record = 0_i32.to_le_bytes().to_vec();
-    loop_record.extend(indexes(&(0..edge_count as i32).collect::<Vec<_>>()));
-    loop_record.extend(1_i32.to_le_bytes());
-    loop_record.extend(0_i32.to_le_bytes());
-    payload.extend(raw_array(&[loop_record]));
+    let loop_records = loop_ranges
+        .iter()
+        .enumerate()
+        .map(|(index, range)| {
+            let mut record = (index as i32).to_le_bytes().to_vec();
+            record.extend(indexes(
+                &range.clone().map(|trim| trim as i32).collect::<Vec<_>>(),
+            ));
+            record.extend(if index == 0 { 1_i32 } else { 2_i32 }.to_le_bytes());
+            record.extend(0_i32.to_le_bytes());
+            record
+        })
+        .collect::<Vec<_>>();
+    payload.extend(raw_array(&loop_records));
     let mut face_record = 0_i32.to_le_bytes().to_vec();
-    face_record.extend(indexes(&[0]));
+    face_record.extend(indexes(&(0..model.loops.len() as i32).collect::<Vec<_>>()));
     face_record.extend(0_i32.to_le_bytes());
     face_record.extend(i32::from(face.sense == Sense::Reversed).to_le_bytes());
     face_record.extend(0_i32.to_le_bytes());
@@ -1843,7 +1888,7 @@ mod tests {
             Point3::new(2.0, 0.0, 0.0),
             Point3::new(0.0, 2.0, 0.0),
         ]);
-        assert_planar_sheet_round_trip(&ir, 3);
+        assert_planar_sheet_round_trip(&ir, 1, 3);
     }
 
     #[test]
@@ -1854,10 +1899,30 @@ mod tests {
             Point3::new(3.0, 2.0, 0.0),
             Point3::new(0.0, 2.0, 0.0),
         ]);
-        assert_planar_sheet_round_trip(&ir, 4);
+        assert_planar_sheet_round_trip(&ir, 1, 4);
     }
 
-    fn assert_planar_sheet_round_trip(ir: &CadIr, edge_count: usize) {
+    #[test]
+    fn planar_sheet_with_hole_round_trips_connected_topology() {
+        let mut ir = polygon_sheet(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+            Point3::new(4.0, 3.0, 0.0),
+            Point3::new(0.0, 3.0, 0.0),
+        ]);
+        add_polygon_hole(
+            &mut ir,
+            &[
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(1.0, 2.0, 0.0),
+                Point3::new(3.0, 2.0, 0.0),
+                Point3::new(3.0, 1.0, 0.0),
+            ],
+        );
+        assert_planar_sheet_round_trip(&ir, 2, 8);
+    }
+
+    fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
         for version in [
             RhinoArchiveVersion::V5,
             RhinoArchiveVersion::V6,
@@ -1871,7 +1936,7 @@ mod tests {
                 .unwrap();
             assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
             assert_eq!(decoded.ir.model.faces.len(), 1, "{version:?}");
-            assert_eq!(decoded.ir.model.loops.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir.model.loops.len(), loop_count, "{version:?}");
             assert_eq!(decoded.ir.model.coedges.len(), edge_count, "{version:?}");
             assert_eq!(decoded.ir.model.edges.len(), edge_count, "{version:?}");
             assert_eq!(decoded.ir.model.vertices.len(), edge_count, "{version:?}");
@@ -2002,5 +2067,83 @@ mod tests {
         }
         ir.finalize();
         ir
+    }
+
+    fn add_polygon_hole(ir: &mut CadIr, points: &[Point3]) {
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+        use cadmpeg_ir::ids::*;
+        use cadmpeg_ir::math::Vector3;
+        use cadmpeg_ir::topology::*;
+
+        let base = ir.model.edges.len();
+        let face = ir.model.faces[0].id.clone();
+        let loop_id = LoopId(format!("cadir:model:loop#polygon.{}", ir.model.loops.len()));
+        let point_ids = (0..points.len())
+            .map(|index| PointId(format!("cadir:model:point#polygon.{}", base + index)))
+            .collect::<Vec<_>>();
+        let vertex_ids = (0..points.len())
+            .map(|index| VertexId(format!("cadir:model:vertex#polygon.{}", base + index)))
+            .collect::<Vec<_>>();
+        let edge_ids = (0..points.len())
+            .map(|index| EdgeId(format!("cadir:model:edge#polygon.{}", base + index)))
+            .collect::<Vec<_>>();
+        let curve_ids = (0..points.len())
+            .map(|index| CurveId(format!("cadir:model:curve#polygon.{}", base + index)))
+            .collect::<Vec<_>>();
+        let coedge_ids = (0..points.len())
+            .map(|index| CoedgeId(format!("cadir:model:coedge#polygon.{}", base + index)))
+            .collect::<Vec<_>>();
+        ir.model.faces[0].loops.push(loop_id.clone());
+        ir.model.loops.push(Loop {
+            id: loop_id.clone(),
+            face,
+            coedges: coedge_ids.clone(),
+        });
+        for index in 0..points.len() {
+            let next_index = (index + 1) % points.len();
+            let next = points[next_index];
+            let delta = Vector3::new(
+                next.x - points[index].x,
+                next.y - points[index].y,
+                next.z - points[index].z,
+            );
+            let length = delta.norm();
+            ir.model.points.push(Point {
+                id: point_ids[index].clone(),
+                position: points[index],
+            });
+            ir.model.vertices.push(Vertex {
+                id: vertex_ids[index].clone(),
+                point: point_ids[index].clone(),
+                tolerance: None,
+            });
+            ir.model.curves.push(Curve {
+                id: curve_ids[index].clone(),
+                geometry: CurveGeometry::Line {
+                    origin: points[index],
+                    direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+                },
+                source_object: None,
+            });
+            ir.model.edges.push(Edge {
+                id: edge_ids[index].clone(),
+                curve: Some(curve_ids[index].clone()),
+                start: vertex_ids[index].clone(),
+                end: vertex_ids[next_index].clone(),
+                param_range: Some([0.0, length]),
+                tolerance: None,
+            });
+            ir.model.coedges.push(Coedge {
+                id: coedge_ids[index].clone(),
+                owner_loop: loop_id.clone(),
+                edge: edge_ids[index].clone(),
+                next: coedge_ids[next_index].clone(),
+                previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
+                radial_next: coedge_ids[index].clone(),
+                sense: Sense::Forward,
+                pcurve: None,
+            });
+        }
+        ir.finalize();
     }
 }
