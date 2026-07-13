@@ -981,6 +981,75 @@ fn decode_projects_an_unbounded_plane_from_implicit_coefficients() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+fn offset_plane_file(indicator_z: f64, distance: f64) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["108", "1", "0", "0", "0", "0", "0", "0", "00010000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["108", "0", "0", "1", "0", "", "", "PLANE", "0"],
+        2,
+    ));
+    bytes.extend(directory_card(
+        ["140", "2", "0", "0", "0", "0", "0", "0", "00000000"],
+        3,
+    ));
+    bytes.extend(directory_card(
+        ["140", "0", "0", "1", "0", "", "", "OFFSET", "0"],
+        4,
+    ));
+    bytes.extend(parameter_card(b"108,0,0,1,0,0,0,0,0,0;", 1, 1));
+    bytes.extend(parameter_card(
+        format!("140,0,0,{indicator_z},{distance},1;").as_bytes(),
+        3,
+        2,
+    ));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_solves_signed_analytic_offset_surfaces() {
+    for (indicator_z, expected_z) in [(1.0, 2.0), (-1.0, -2.0)] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(offset_plane_file(indicator_z, 2.0)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        let offset = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.0 == "iges:model:surface#D3")
+            .unwrap();
+        let cadmpeg_ir::geometry::SurfaceGeometry::Plane { origin, .. } = offset.geometry else {
+            panic!("expected an exact plane offset carrier");
+        };
+        assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, expected_z));
+        assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
+            result.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected an offset dependency");
+        };
+        assert_eq!(distance, expected_z);
+        assert!(result.report.losses.is_empty());
+        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
 #[test]
 fn decode_projects_a_bspline_surface_with_u_major_control_order() {
     let result = IgesCodec

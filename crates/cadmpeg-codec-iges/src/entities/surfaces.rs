@@ -137,6 +137,104 @@ fn angular_basis(start: f64, end: f64) -> Option<AngularBasis> {
     Some(AngularBasis { knots, controls })
 }
 
+fn offset_analytic(
+    geometry: &SurfaceGeometry,
+    indicator: Vector3,
+    distance: f64,
+) -> Option<(SurfaceGeometry, f64)> {
+    let (normal, solved) = match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => (
+            *normal,
+            SurfaceGeometry::Plane {
+                origin: add_point_vector(*origin, scale(*normal, distance)),
+                normal: *normal,
+                u_axis: *u_axis,
+            },
+        ),
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => (
+            *ref_direction,
+            SurfaceGeometry::Cylinder {
+                origin: *origin,
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius: radius + distance,
+            },
+        ),
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => (
+            *ref_direction,
+            SurfaceGeometry::Sphere {
+                center: *center,
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius: radius + distance,
+            },
+        ),
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            *ref_direction,
+            SurfaceGeometry::Torus {
+                center: *center,
+                axis: *axis,
+                ref_direction: *ref_direction,
+                major_radius: *major_radius,
+                minor_radius: minor_radius + distance,
+            },
+        ),
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } if *ratio == 1.0 => {
+            let normal = Vector3::new(
+                half_angle.cos() * ref_direction.x - half_angle.sin() * axis.x,
+                half_angle.cos() * ref_direction.y - half_angle.sin() * axis.y,
+                half_angle.cos() * ref_direction.z - half_angle.sin() * axis.z,
+            );
+            (
+                normal,
+                SurfaceGeometry::Cone {
+                    origin: add_point_vector(*origin, scale(*axis, -distance * half_angle.sin())),
+                    axis: *axis,
+                    ref_direction: *ref_direction,
+                    radius: radius + distance * half_angle.cos(),
+                    ratio: *ratio,
+                    half_angle: *half_angle,
+                },
+            )
+        }
+        SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Unknown { .. } => return None,
+    };
+    if dot(normal, indicator) >= 0.0 {
+        Some((solved, distance))
+    } else {
+        offset_analytic(geometry, scale(indicator, -1.0), -distance)
+    }
+}
+
 pub(super) struct SurfaceProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -883,6 +981,112 @@ pub(super) fn project(
                 v_periodic: flags[4] == Some(1),
             }),
             source_object: Some(source_object(entry)),
+        });
+        decoded.insert(entry.sequence);
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 140 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let components = [record.number(1), record.number(2), record.number(3)];
+        let [Some(x), Some(y), Some(z)] = components else {
+            losses.push(entity_loss(entry, "offset indicator is not numeric"));
+            continue;
+        };
+        let indicator = Vector3::new(x, y, z);
+        let indicator_norm = indicator.norm();
+        if !indicator_norm.is_finite() || (indicator_norm - 1.0).abs() > 1.0e-10 {
+            losses.push(entity_loss(entry, "offset indicator is not a unit vector"));
+            continue;
+        }
+        let Some(distance) = record
+            .number(4)
+            .filter(|value| value.is_finite() && *value != 0.0)
+        else {
+            losses.push(entity_loss(entry, "offset distance is zero or non-finite"));
+            continue;
+        };
+        let Some(support_sequence) = record
+            .integer(5)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "offset support pointer is invalid"));
+            continue;
+        };
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "placed offset surfaces require transformed support projection",
+            ));
+            continue;
+        }
+        let support_id = SurfaceId(format!("iges:model:surface#D{support_sequence}"));
+        let Some(support) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == support_id)
+        else {
+            losses.push(entity_loss(entry, "offset support surface is missing"));
+            continue;
+        };
+        let distance = distance * factor;
+        let Some((geometry, signed_distance)) =
+            offset_analytic(&support.geometry, indicator, distance)
+        else {
+            losses.push(entity_loss(
+                entry,
+                "support surface has no exact analytic offset carrier",
+            ));
+            continue;
+        };
+        let regular = match &geometry {
+            SurfaceGeometry::Cylinder { radius, .. } | SurfaceGeometry::Sphere { radius, .. } => {
+                *radius > 0.0
+            }
+            SurfaceGeometry::Torus {
+                major_radius,
+                minor_radius,
+                ..
+            } => *major_radius > 0.0 && *minor_radius > 0.0,
+            SurfaceGeometry::Cone { radius, .. } => *radius > 0.0,
+            SurfaceGeometry::Plane { .. } => true,
+            SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => false,
+        };
+        if !regular {
+            losses.push(entity_loss(
+                entry,
+                "offset collapses or reverses the analytic carrier",
+            ));
+            continue;
+        }
+        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry,
+            source_object: Some(source_object(entry)),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: support_id,
+                distance: signed_distance,
+                u_sense: 0,
+                v_sense: 0,
+                extension_flags: Vec::new(),
+            },
+            cache_fit_tolerance: None,
         });
         decoded.insert(entry.sequence);
     }
