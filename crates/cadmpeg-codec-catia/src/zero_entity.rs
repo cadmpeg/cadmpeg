@@ -3,6 +3,7 @@
 
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::le::u32_at;
+use std::collections::{BTreeMap, HashMap};
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
 /// and the edge/vertex tables recovered from them ([spec §8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#8-zero-entity-a9-03-variant)).
@@ -287,36 +288,69 @@ pub fn resolve_occurrence_edges(topology: &ZeroEntityTopology) -> Vec<ZeroResolv
         }
     }
 
-    let mut used = vec![false; occurrences.len()];
-    let mut edges = Vec::new();
-    for left in 0..occurrences.len() {
-        let Some(endpoints) = occurrences[left].1 else {
+    let loop_owners: HashMap<usize, usize> = topology
+        .faces
+        .iter()
+        .enumerate()
+        .flat_map(|(face_index, face)| {
+            face.loop_indices
+                .iter()
+                .map(move |loop_index| (*loop_index, face_index))
+        })
+        .collect();
+    let mut endpoint_groups = Vec::<Vec<usize>>::new();
+    for (index, (_, endpoints)) in occurrences.iter().enumerate() {
+        let Some(endpoints) = endpoints else { continue };
+        if let Some(group) = endpoint_groups.iter_mut().find(|group| {
+            occurrences[group[0]]
+                .1
+                .is_some_and(|other| same_endpoint_pair(*endpoints, other, TOLERANCE))
+        }) {
+            group.push(index);
+        } else {
+            endpoint_groups.push(vec![index]);
+        }
+    }
+
+    let mut face_components: Vec<usize> = (0..topology.faces.len()).collect();
+    for group in endpoint_groups.iter().filter(|group| group.len() == 2) {
+        let Some(left_face) = loop_owners.get(&occurrences[group[0]].0.loop_index) else {
             continue;
         };
-        let matches: Vec<usize> = (left + 1..occurrences.len())
-            .filter(|right| {
-                !used[*right]
-                    && occurrences[*right]
-                        .1
-                        .is_some_and(|other| same_endpoint_pair(endpoints, other, TOLERANCE))
-            })
-            .collect();
-        if used[left] || matches.len() != 1 {
+        let Some(right_face) = loop_owners.get(&occurrences[group[1]].0.loop_index) else {
+            continue;
+        };
+        union_components(&mut face_components, *left_face, *right_face);
+    }
+
+    let mut pairs = Vec::<[usize; 2]>::new();
+    for group in endpoint_groups {
+        if group.len() == 2 {
+            pairs.push([group[0], group[1]]);
             continue;
         }
-        let right = matches[0];
-        let reverse_matches = (0..left).filter(|other| {
-            !used[*other]
-                && occurrences[*other]
-                    .1
-                    .is_some_and(|value| same_endpoint_pair(endpoints, value, TOLERANCE))
-        });
-        if reverse_matches.count() != 0 {
+        let mut by_component = BTreeMap::<usize, Vec<usize>>::new();
+        for index in group {
+            let Some(face) = loop_owners.get(&occurrences[index].0.loop_index) else {
+                continue;
+            };
+            let component = component_root(&mut face_components, *face);
+            by_component.entry(component).or_default().push(index);
+        }
+        if by_component.values().any(|members| members.len() != 2) {
             continue;
         }
-        used[left] = true;
-        used[right] = true;
-        let Some(right_endpoints) = occurrences[right].1 else {
+        pairs.extend(
+            by_component
+                .into_values()
+                .map(|members| [members[0], members[1]]),
+        );
+    }
+
+    let mut edges = Vec::with_capacity(pairs.len());
+    for [left, right] in pairs {
+        let (Some(endpoints), Some(right_endpoints)) = (occurrences[left].1, occurrences[right].1)
+        else {
             continue;
         };
         edges.push(ZeroResolvedEdge {
@@ -326,6 +360,20 @@ pub fn resolve_occurrence_edges(topology: &ZeroEntityTopology) -> Vec<ZeroResolv
         });
     }
     edges
+}
+
+fn component_root(components: &mut [usize], mut index: usize) -> usize {
+    while components[index] != index {
+        components[index] = components[components[index]];
+        index = components[index];
+    }
+    index
+}
+
+fn union_components(components: &mut [usize], left: usize, right: usize) {
+    let left = component_root(components, left);
+    let right = component_root(components, right);
+    components[left] = right;
 }
 
 fn same_endpoint_pair(left: [[f64; 3]; 2], right: [[f64; 3]; 2], tolerance: f64) -> bool {
@@ -796,6 +844,16 @@ mod occurrence_tests {
         }
     }
 
+    fn face(loop_index: usize) -> ZeroEntityFace {
+        ZeroEntityFace {
+            record_ordinal: 0,
+            references: Vec::new(),
+            loop_terminals: Vec::new(),
+            loop_indices: vec![loop_index],
+            carrier_run: None,
+        }
+    }
+
     #[test]
     fn isolated_unlifted_occurrence_closes_and_pairs_from_neighbors() {
         let a = [0.0, 0.0, 0.0];
@@ -824,5 +882,59 @@ mod occurrence_tests {
         assert!(edges
             .iter()
             .any(|edge| same_endpoint_pair(edge.endpoints, [b, c], 1e-12)));
+    }
+
+    #[test]
+    fn coincident_edges_partition_by_established_face_components() {
+        let a = [0.0, 0.0, 0.0];
+        let b = [1.0, 0.0, 0.0];
+        let c = [0.0, 1.0, 0.0];
+        let d = [0.0, -1.0, 0.0];
+        let triangles = [[a, b, c], [b, a, c], [a, b, d], [b, a, d]];
+        let mut supports = Vec::new();
+        let mut loops = Vec::new();
+        for (face_index, triangle) in triangles.into_iter().enumerate() {
+            let base = supports.len();
+            supports.extend([
+                support(base, Some([triangle[0], triangle[1]])),
+                support(base + 1, Some([triangle[1], triangle[2]])),
+                support(base + 2, Some([triangle[2], triangle[0]])),
+            ]);
+            let mut loop_ = loop_([base, base + 1, base + 2]);
+            loop_.record_ordinal = face_index;
+            loops.push(loop_);
+        }
+        let topology = ZeroEntityTopology {
+            records: Vec::new(),
+            faces: (0..4).map(face).collect(),
+            loops,
+            carrier_runs: Vec::new(),
+            supports,
+            physical_edges: Vec::new(),
+            coedge_twins: Vec::new(),
+            side_pairs: Vec::new(),
+            vertices: Vec::new(),
+        };
+        let edges = resolve_occurrence_edges(&topology);
+        assert_eq!(edges.len(), 6);
+        let coincident: Vec<_> = edges
+            .iter()
+            .filter(|edge| same_endpoint_pair(edge.endpoints, [a, b], 1e-12))
+            .collect();
+        assert_eq!(coincident.len(), 2);
+        let face_pairs: Vec<Vec<usize>> = coincident
+            .iter()
+            .map(|edge| {
+                let mut faces: Vec<_> = edge
+                    .occurrences
+                    .iter()
+                    .map(|occurrence| occurrence.loop_index)
+                    .collect();
+                faces.sort_unstable();
+                faces
+            })
+            .collect();
+        assert!(face_pairs.contains(&vec![0, 1]));
+        assert!(face_pairs.contains(&vec![2, 3]));
     }
 }

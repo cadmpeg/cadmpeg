@@ -141,7 +141,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
                 losses: vec![LossNote {
                     category: LossCategory::Topology,
                     severity: Severity::Blocking,
-                    message: "The zero-entity B-rep graph is connected; face/shell orientation gauge and pcurve geometry for odd support families remain unresolved."
+                    message: "The zero-entity B-rep graph is reconstructed; face/shell orientation gauge and pcurve geometry for odd support families remain unresolved."
                         .to_string(),
                     provenance: None,
                 }],
@@ -255,6 +255,30 @@ fn transfer_zero_entity_topology(
     {
         return false;
     }
+    let loop_owner: HashMap<usize, usize> = topology
+        .faces
+        .iter()
+        .enumerate()
+        .flat_map(|(face, value)| value.loop_indices.iter().map(move |loop_| (*loop_, face)))
+        .collect();
+    if loop_owner.len() != topology.loops.len() {
+        return false;
+    }
+    let mut face_parents: Vec<usize> = (0..topology.faces.len()).collect();
+    for edge in &edges {
+        let left = loop_owner[&edge.occurrences[0].loop_index];
+        let right = loop_owner[&edge.occurrences[1].loop_index];
+        union_indices(&mut face_parents, left, right);
+    }
+    let mut component_by_root = BTreeMap::<usize, usize>::new();
+    let mut face_components = Vec::with_capacity(topology.faces.len());
+    for face_index in 0..topology.faces.len() {
+        let root = index_root(&mut face_parents, face_index);
+        let next = component_by_root.len();
+        let component = *component_by_root.entry(root).or_insert(next);
+        face_components.push(component);
+    }
+    let component_count = component_by_root.len();
 
     let mut points = Vec::<Point3>::new();
     let mut edge_vertices = Vec::with_capacity(edges.len());
@@ -335,55 +359,60 @@ fn transfer_zero_entity_topology(
         });
     }
 
-    let body_id = BodyId("catia:zero-entity:body#0".to_string());
-    let region_id = RegionId("catia:zero-entity:region#0".to_string());
-    let shell_id = ShellId("catia:zero-entity:shell#0".to_string());
-    for (id, tag) in [
-        (&body_id.0, "derived_body"),
-        (&region_id.0, "derived_region"),
-        (&shell_id.0, "derived_shell"),
-    ] {
-        annotate(
-            annotations,
-            id,
-            "zero_entity_a9_03",
-            0,
-            tag,
-            Exactness::Inferred,
-        );
+    for component in 0..component_count {
+        let body_id = BodyId(format!("catia:zero-entity:body#{component}"));
+        let region_id = RegionId(format!("catia:zero-entity:region#{component}"));
+        let shell_id = ShellId(format!("catia:zero-entity:shell#{component}"));
+        for (id, tag) in [
+            (&body_id.0, "derived_body"),
+            (&region_id.0, "derived_region"),
+            (&shell_id.0, "derived_shell"),
+        ] {
+            annotate(
+                annotations,
+                id,
+                "zero_entity_a9_03",
+                0,
+                tag,
+                Exactness::Inferred,
+            );
+        }
+        annotations
+            .derived(&body_id, "kind")
+            .derived(&body_id, "regions");
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        annotations
+            .derived(&region_id, "body")
+            .derived(&region_id, "shells");
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        annotations
+            .derived(&shell_id, "region")
+            .derived(&shell_id, "faces");
+        ir.model.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: face_components
+                .iter()
+                .enumerate()
+                .filter(|(_, owner)| **owner == component)
+                .map(|(face, _)| FaceId(format!("catia:zero-entity:face#{face}")))
+                .collect(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
     }
-    annotations
-        .derived(&body_id, "kind")
-        .derived(&body_id, "regions");
-    ir.model.bodies.push(Body {
-        id: body_id.clone(),
-        kind: BodyKind::Solid,
-        regions: vec![region_id.clone()],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    annotations
-        .derived(&region_id, "body")
-        .derived(&region_id, "shells");
-    ir.model.regions.push(Region {
-        id: region_id.clone(),
-        body: body_id,
-        shells: vec![shell_id.clone()],
-    });
-    annotations
-        .derived(&shell_id, "region")
-        .derived(&shell_id, "faces");
-    ir.model.shells.push(Shell {
-        id: shell_id.clone(),
-        region: region_id,
-        faces: (0..topology.faces.len())
-            .map(|index| FaceId(format!("catia:zero-entity:face#{index}")))
-            .collect(),
-        wire_edges: Vec::new(),
-        free_vertices: Vec::new(),
-    });
 
     for (edge_index, pair) in edge_vertices.iter().enumerate() {
         let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
@@ -406,15 +435,6 @@ fn transfer_zero_entity_topology(
         });
     }
 
-    let loop_owner: HashMap<usize, usize> = topology
-        .faces
-        .iter()
-        .enumerate()
-        .flat_map(|(face, value)| value.loop_indices.iter().map(move |loop_| (*loop_, face)))
-        .collect();
-    if loop_owner.len() != topology.loops.len() {
-        return false;
-    }
     for (face_index, face) in topology.faces.iter().enumerate() {
         let id = FaceId(format!("catia:zero-entity:face#{face_index}"));
         let carrier = face.carrier_run.unwrap_or(face_index);
@@ -431,7 +451,10 @@ fn transfer_zero_entity_topology(
         }
         ir.model.faces.push(Face {
             id,
-            shell: shell_id.clone(),
+            shell: ShellId(format!(
+                "catia:zero-entity:shell#{}",
+                face_components[face_index]
+            )),
             surface: SurfaceId(format!("catia:zero-entity:surf#{carrier}")),
             sense: Sense::Forward,
             loops: face
@@ -1725,6 +1748,20 @@ fn e5_body_kind(topology: &crate::e5::E5Topology, faces: &[u32]) -> BodyKind {
 
 fn point_distance(a: Point3, b: Point3) -> f64 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+}
+
+fn index_root(parents: &mut [usize], mut index: usize) -> usize {
+    while parents[index] != index {
+        parents[index] = parents[parents[index]];
+        index = parents[index];
+    }
+    index
+}
+
+fn union_indices(parents: &mut [usize], left: usize, right: usize) {
+    let left = index_root(parents, left);
+    let right = index_root(parents, right);
+    parents[left] = right;
 }
 
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
