@@ -978,6 +978,7 @@ failure make the buffer invalid.
 | `ON_PointCloud`          | `2488F347-F8FA-11D3-BFEC-0010830122F0` |
 | `ON_PointGrid`           | `4ED7D4E5-E947-11D3-BFE5-0010830122F0` |
 | `ON_Hatch`               | `0559733B-5332-49D1-A936-0532AC76ADE5` |
+| `ON_DetailView`          | `C8C66EFA-B3CB-4E00-9440-2AD66203379E` |
 | `ON_Layer`               | `95809813-E985-11D3-BFE5-0010830122F0` |
 | `ON_InstanceDefinition`  | `26F8BFF6-2618-417F-A158-153D64A94989` |
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
@@ -1775,6 +1776,26 @@ and basepoint coordinates use document length conversion. Plane axes, pattern
 scale, and pattern rotation are unscaled. Pattern scale is finite and positive;
 pattern rotation and every geometric coordinate are finite. Loop count is
 nonnegative and every loop object derives from the curve family.
+
+### 18.3 Detail views
+
+`ON_DetailView` uses an anonymous chunk with major version 1 and minor version
+0 or 1:
+
+```text
+anonymous detail version 1.minor
+  anonymous view-state version 1.0
+    ON_3dmView payload
+  anonymous boundary version 1.0
+    raw ON_NurbsCurve payload
+  if minor >= 1: f64 page-per-model ratio
+```
+
+The child declarations independently bound extensible view state and boundary
+geometry. The boundary NURBS curve uses the ordinary NURBS curve layout
+without a class wrapper. Its control points use document length conversion.
+The page-per-model ratio is finite and nonnegative; version 1.0 defaults it to
+zero.
 
 ## 19. Exact gates and invariants
 

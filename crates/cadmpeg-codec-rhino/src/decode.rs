@@ -429,6 +429,10 @@ impl<'a> DecodeContext<'a> {
                 self.decode_hatch(source_order, object);
                 continue;
             }
+            if object.class_uuid == crate::detail::CLASS {
+                self.decode_detail(source_order, object);
+                continue;
+            }
             if !crate::curves::supported_class(object.class_uuid)
                 && !crate::mesh::supported_class(object.class_uuid)
             {
@@ -750,6 +754,109 @@ impl<'a> DecodeContext<'a> {
             }
             Err(error) => {
                 self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_detail(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "detail retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "detail retained because identity is unavailable",
+            );
+            return;
+        };
+        let detail = match crate::detail::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(detail) => detail,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "detail {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let entity_count = decoded_curve_entity_count(&detail.boundary).saturating_add(1);
+        if !self.charge_entities(source_order, entity_count) {
+            return;
+        }
+        let key = self.object_key(identity, source_order);
+        let association = self.source_association(identity);
+        let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
+        let feature_id = FeatureId(format!("rhino:detail:feature#{key}"));
+        let view = &self.scan.data[detail.view_range.clone()];
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(detail.source_range.start).expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoDetailView".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "detail_view".to_string(),
+                parameters: BTreeMap::from([
+                    ("boundary".to_string(), curve_id.clone()),
+                    (
+                        "page_per_model_ratio".to_string(),
+                        detail.page_per_model_ratio.to_string(),
+                    ),
+                ]),
+                properties: BTreeMap::from([
+                    ("view_bytes".to_string(), view.len().to_string()),
+                    ("view_sha256".to_string(), sha256_hex(view)),
+                ]),
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        let result = self.validate_candidate(|candidate| {
+            commit_curve_tree(
+                candidate,
+                detail.boundary,
+                &key,
+                &association,
+                None,
+                "detail-boundary",
+            );
+            candidate.model.features.push(feature);
+        });
+        match result {
+            Ok(()) => {
+                self.append_links(source_order, &[curve_id, feature_id.to_string()]);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(source_order, &format!("detail candidate rejected: {error}"));
                 self.mark_failed(source_order);
             }
         }

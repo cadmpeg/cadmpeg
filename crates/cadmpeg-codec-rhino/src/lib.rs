@@ -13,6 +13,7 @@ pub(crate) mod chunks;
 pub(crate) mod container;
 pub(crate) mod curves;
 pub(crate) mod decode;
+pub(crate) mod detail;
 pub(crate) mod dimensions;
 pub(crate) mod extrusion;
 pub(crate) mod hatch;
