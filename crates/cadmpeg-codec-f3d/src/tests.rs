@@ -4957,6 +4957,40 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let supports = match &source_less.model.procedural_surfaces[0].definition {
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { supports, .. } => {
+            supports.each_ref().map(|support| {
+                support
+                    .as_ref()
+                    .expect("rolling-ball support")
+                    .surface
+                    .clone()
+            })
+        }
+        _ => panic!("expected rolling-ball definition"),
+    };
+    let support_geometries = [
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
+        cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
+            center: cadmpeg_ir::math::Point3::new(10.0, -5.0, 2.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            radius: 7.5,
+        },
+    ];
+    for (support, geometry) in supports.iter().zip(&support_geometries) {
+        source_less
+            .model
+            .surfaces
+            .iter_mut()
+            .find(|surface| surface.id == *support)
+            .expect("rolling-ball support carrier")
+            .geometry = geometry.clone();
+    }
     let expected = source_less.model.procedural_surfaces[0].clone();
 
     let mut encoded = Vec::new();
@@ -4970,6 +5004,22 @@ fn generated_source_less_writes_rolling_ball_blend_definition() {
     let actual = &round_trip.ir.model.procedural_surfaces[0];
     assert_eq!(actual.definition, expected.definition);
     assert_eq!(actual.cache_fit_tolerance, expected.cache_fit_tolerance);
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Blend { supports, .. } =
+        &actual.definition
+    else {
+        unreachable!()
+    };
+    for (support, expected) in supports.iter().zip(support_geometries) {
+        let support = support.as_ref().expect("round-trip rolling-ball support");
+        let actual = round_trip
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == support.surface)
+            .expect("round-trip rolling-ball support carrier");
+        assert_eq!(actual.geometry, expected);
+    }
 }
 
 #[test]

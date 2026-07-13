@@ -2805,7 +2805,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     ));
                                     out.surfaces.push(Surface {
                                         id: support_id.clone(),
-                                        geometry: SurfaceGeometry::Nurbs(support),
+                                        geometry: support,
                                         source_object: None,
                                     });
                                     resolved_supports[side] = Some(BlendSupport {

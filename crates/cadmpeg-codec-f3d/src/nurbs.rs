@@ -759,7 +759,7 @@ pub enum DecodedProceduralSurfaceDefinition {
     /// Rolling-ball blend with embedded support and spine caches.
     Blend {
         /// Embedded support caches in side order.
-        supports: Box<[Option<NurbsSurface>; 2]>,
+        supports: Box<[Option<SurfaceGeometry>; 2]>,
         /// Embedded center/spine curve.
         spine: Option<NurbsCurve>,
         /// Signed radius law.
@@ -4101,16 +4101,23 @@ fn decode_rb_blend_spl_sur_fallback(
         .filter_map(|at| decode_surface_block(span, at, int_width))
         .next_back()?;
 
-    let mut support_count = 0usize;
+    let mut support_geometries = Vec::new();
     let mut radius_boundary = None;
     let mut pos = header_len;
     while pos < cache.end {
         match span[pos] {
-            0x0d | 0x0e => {
+            0x0e => {
                 let len = usize::from(*span.get(pos + 1)?);
                 let name = span.get(pos + 2..pos + 2 + len)?;
                 if [b"plane".as_slice(), b"sphere", b"cone", b"torus"].contains(&name) {
-                    support_count += 1;
+                    let at = next_token(span, pos, int_width)?;
+                    let mut end = at;
+                    let geometry =
+                        decode_embedded_surface(span, &mut end, int_width).or_else(|| {
+                            decode_surface_block(span, at, int_width)
+                                .map(|decoded| SurfaceGeometry::Nurbs(decoded.surface))
+                        });
+                    support_geometries.push(geometry);
                 }
             }
             0x15 if read_int(span, pos + 1, int_width) == Some(-1) => radius_boundary = Some(pos),
@@ -4141,15 +4148,13 @@ fn decode_rb_blend_spl_sur_fallback(
         .filter_map(|at| decode_curve_block(span, at, int_width))
         .map(|decoded| decoded.curve)
         .next_back();
-    let mut support_caches = marker_positions(span)
+    let supports: [Option<SurfaceGeometry>; 2] = support_geometries
         .into_iter()
-        .filter_map(|at| decode_surface_block(span, at, int_width))
-        .filter(|decoded| decoded.end < cache.end)
-        .map(|decoded| decoded.surface);
-    let supports = [
-        (support_count > 0).then(|| support_caches.next()).flatten(),
-        (support_count > 1).then(|| support_caches.next()).flatten(),
-    ];
+        .chain(std::iter::repeat(None))
+        .take(2)
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("two support slots collected");
     let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
         .then(|| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM))
         .flatten();

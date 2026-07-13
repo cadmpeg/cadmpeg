@@ -5824,14 +5824,9 @@ fn encode_native_rolling_ball(
                     procedural.id, support.surface
                 ))
             })?;
-        let SurfaceGeometry::Nurbs(cache) = &carrier.geometry else {
-            return Err(CodecError::NotImplemented(
-                "source-less rb_blend_spl_sur requires NURBS support caches".into(),
-            ));
-        };
         native_string(bytes, "blend_support_surface")?;
         native_subident(bytes, if side == 0 { "plane" } else { "sphere" })?;
-        native_nurbs_surface(bytes, cache)?;
+        native_embedded_surface(bytes, &carrier.geometry)?;
     }
     let spine = spine.ok_or_else(|| {
         CodecError::Malformed("source-less rb_blend_spl_sur lacks a spine".into())
