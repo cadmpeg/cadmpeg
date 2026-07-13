@@ -4917,6 +4917,61 @@ fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<Embedded
     })
 }
 
+/// Writable light and optional taper fields in a silhouette subtype.
+pub(crate) struct SilhouettePatchLayout {
+    pub(crate) light_direction: usize,
+    pub(crate) draft_factor: Option<usize>,
+}
+
+/// Locate silhouette fields by walking its context and cast surface.
+pub(crate) fn silhouette_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+    silhouette: &cadmpeg_ir::geometry::SilhouetteKind,
+) -> Option<SilhouettePatchLayout> {
+    use cadmpeg_ir::geometry::SilhouetteKind;
+    let (names, tapered): (&[&[u8]], bool) = match silhouette {
+        SilhouetteKind::Standard => (&[b"silh_int_cur"], false),
+        SilhouetteKind::Parametric => (&[b"para_silh_int_cur", b"parasil"], false),
+        SilhouetteKind::Taper { .. } => (&[b"taper_silh_int_cur"], true),
+    };
+    let (marker, name) = names.iter().find_map(|name| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == *name
+            })
+            .map(|marker| (marker, *name))
+    })?;
+    let mut position = marker + name.len() + 3;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    take_double_payload(bytes, &mut position)?;
+    take_double_payload(bytes, &mut position)?;
+    for _ in 0..3 {
+        take_float_array_payloads(bytes, &mut position, int_width)?;
+    }
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    (*bytes.get(position)? == 0x14).then_some(())?;
+    let light_direction = position + 1;
+    bytes.get(light_direction..light_direction + 24)?;
+    position = light_direction + 24;
+    let draft_factor = if tapered {
+        Some(take_double_payload(bytes, &mut position)?)
+    } else {
+        None
+    };
+    Some(SilhouettePatchLayout {
+        light_direction,
+        draft_factor,
+    })
+}
+
 fn decode_embedded_surface_curve(
     bytes: &[u8],
     int_width: usize,
@@ -6541,6 +6596,55 @@ mod width_tests {
                         assert_eq!(&bytes[role], b"surf1");
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn silhouette_layout_walks_each_family_at_both_widths() {
+        use cadmpeg_ir::geometry::SilhouetteKind;
+        for int_width in [4usize, 8] {
+            for (name, kind) in [
+                ("silh_int_cur", SilhouetteKind::Standard),
+                ("para_silh_int_cur", SilhouetteKind::Parametric),
+                (
+                    "taper_silh_int_cur",
+                    SilhouetteKind::Taper { draft_factor: 0.5 },
+                ),
+            ] {
+                let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+                bytes.extend_from_slice(name.as_bytes());
+                for _ in 0..2 {
+                    bytes.extend_from_slice(&[0x0d, 0x06]);
+                    bytes.extend_from_slice(b"spline");
+                    bytes.extend_from_slice(&surface_block(int_width));
+                }
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                push_f64(&mut bytes, -2.0);
+                push_f64(&mut bytes, 3.0);
+                for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+                    push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                    for value in values {
+                        push_f64(&mut bytes, *value);
+                    }
+                }
+                bytes.extend_from_slice(&[0x0d, 0x06]);
+                bytes.extend_from_slice(b"spline");
+                bytes.extend_from_slice(&surface_block(int_width));
+                bytes.push(0x14);
+                let light = bytes.len();
+                for value in [0.0f64, -1.0, 0.0] {
+                    bytes.extend_from_slice(&value.to_le_bytes());
+                }
+                if matches!(kind, SilhouetteKind::Taper { .. }) {
+                    push_f64(&mut bytes, 0.5);
+                }
+
+                let layout = silhouette_patch_layout(&bytes, int_width, &kind)
+                    .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+                assert_eq!(layout.light_direction, light);
+                assert_eq!(layout.draft_factor.is_some(), name.starts_with("taper"));
             }
         }
     }
