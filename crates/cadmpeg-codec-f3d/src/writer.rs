@@ -11541,19 +11541,18 @@ fn patch_transform_hints(
                 record.head
             )));
         }
-        let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        offsets.extend(
-            sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-        );
-        offsets.sort_unstable();
-        let offsets: [usize; 3] = offsets.try_into().map_err(|_| {
-            CodecError::Malformed(format!(
-                "F3D transform record {record_index} does not contain three hint flags"
-            ))
-        })?;
-        for (offset, flag) in offsets.into_iter().zip(flags) {
+        for (index, flag) in (5usize..=7).zip(flags) {
+            let offset =
+                sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "F3D transform record {record_index} lacks hint field {index}"
+                    ))
+                })?;
+            if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D transform record {record_index} field {index} is not a hint flag"
+                )));
+            }
             bytes[offset] = native_bool(*flag);
         }
     }
@@ -14600,19 +14599,13 @@ fn patch_transform_record(
     transform: Transform,
     header_scale: f64,
 ) -> Result<(), CodecError> {
-    let mut offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x13)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    offsets.extend(
-        sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x14)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?,
-    );
-    offsets.sort_unstable();
-    if offsets.len() != 4 || header_scale == 0.0 {
+    if header_scale == 0.0 {
         return Err(CodecError::Malformed(format!(
-            "transform record {} does not contain four vectors or has zero header scale",
+            "transform record {} has zero header scale",
             record.index
         )));
     }
+    let ref_width = active_ref_width(bytes);
     let vectors = [
         [
             transform.rows[0][0],
@@ -14635,17 +14628,14 @@ fn patch_transform_record(
             transform.rows[2][3] / (header_scale * 10.0),
         ],
     ];
-    for (offset, vector) in offsets.into_iter().zip(vectors) {
+    for (index, vector) in vectors.into_iter().enumerate() {
+        let offset = required_payload_field(bytes, record, ref_width, index, 0x14)?;
         for (component, value) in vector.into_iter().enumerate() {
             let at = offset + 1 + component * 8;
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
-    let scale_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    let scale = *scale_offsets.last().ok_or_else(|| {
-        CodecError::Malformed(format!("transform record {} lacks scale", record.index))
-    })?;
+    let scale = required_payload_field(bytes, record, ref_width, 4, 0x06)?;
     bytes[scale + 1..scale + 9].copy_from_slice(&transform.rows[3][3].to_le_bytes());
     Ok(())
 }

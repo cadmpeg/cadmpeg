@@ -808,6 +808,26 @@ mod tests {
         bytes
     }
 
+    fn generated_transform_record() -> Vec<u8> {
+        let mut bytes = vec![0x0d, 9];
+        bytes.extend_from_slice(b"transform");
+        for vector in [
+            [1.0f64, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [2.0, 3.0, 4.0],
+        ] {
+            bytes.push(0x14);
+            for value in vector {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        bytes.extend_from_slice(&[0x0b, 0x0a, 0x0b, 0x11]);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -1051,6 +1071,25 @@ mod tests {
             let owner =
                 payload_token_offset(&edge, &records[0], ref_width, 7).expect("edge owner field");
             assert_eq!(edge[owner], 0x0c);
+        }
+    }
+
+    #[test]
+    fn generated_transform_has_fixed_matrix_and_hint_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_transform_record();
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated transform");
+            let record = &records[0];
+            for (index, tag) in [(0usize, 0x14), (1, 0x14), (2, 0x14), (3, 0x14), (4, 0x06)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("transform numeric field");
+                assert_eq!(bytes[offset], tag);
+            }
+            for index in 5..=7 {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("transform hint field");
+                assert!(matches!(bytes[offset], 0x0a | 0x0b));
+            }
         }
     }
 }
