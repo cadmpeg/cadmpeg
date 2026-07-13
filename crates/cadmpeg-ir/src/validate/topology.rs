@@ -1231,7 +1231,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 ..
             } => {
                 face_selections.push(removed_faces);
-                if !positive_feature_length(*thickness) {
+                if thickness.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "shell thickness is invalid");
                 }
             }
@@ -1239,7 +1239,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 faces, thickness, ..
             } => {
                 face_selections.push(faces);
-                if !positive_feature_length(*thickness) {
+                if thickness.is_some_and(|value| !positive_feature_length(value)) {
                     feature_geometry_error(findings, feature, "thicken thickness is invalid");
                 }
             }

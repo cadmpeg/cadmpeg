@@ -455,20 +455,24 @@ pub enum FeatureDefinition {
     Shell {
         /// Faces removed to open the shell.
         removed_faces: FaceSelection,
-        /// Wall thickness left after shelling.
-        thickness: Length,
+        /// Wall thickness left after shelling, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thickness: Option<Length>,
         /// Whether the wall is grown outward from the original boundary,
-        /// as opposed to inward.
-        outward: bool,
+        /// as opposed to inward, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outward: Option<bool>,
     },
     /// Adds material normal to selected faces.
     Thicken {
         /// Faces offset by the operation.
         faces: FaceSelection,
-        /// Finished added thickness.
-        thickness: Length,
-        /// Distribution of thickness relative to the selected faces.
-        side: ThickenSide,
+        /// Finished added thickness, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thickness: Option<Length>,
+        /// Distribution of thickness relative to the selected faces, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        side: Option<ThickenSide>,
     },
     /// Surface copied at a signed normal offset from selected support faces.
     OffsetSurface {

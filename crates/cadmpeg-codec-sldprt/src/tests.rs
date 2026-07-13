@@ -2245,8 +2245,8 @@ fn encoder_writes_source_less_native_features() {
                 faces: vec![ir.model.faces[0].id.clone()],
                 native: "face-a".into(),
             },
-            thickness: Length(1.5),
-            outward: true,
+            thickness: Some(Length(1.5)),
+            outward: Some(true),
         },
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),
@@ -2600,7 +2600,7 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 5);
-    for index in [0, 2, 3] {
+    for index in [0, 3] {
         assert!(matches!(
             decoded.ir.model.features[index].definition,
             FeatureDefinition::Native { .. }
@@ -2613,6 +2613,14 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
                 form: Some(cadmpeg_ir::features::RadiusForm::Constant),
             },
             ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::Shell {
+            removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+            thickness: None,
+            outward: Some(false),
         }
     ));
     assert!(matches!(
@@ -2649,7 +2657,7 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 6);
-    for index in [0, 2, 3, 4] {
+    for index in [0, 3, 4] {
         assert!(matches!(
             decoded.ir.model.features[index].definition,
             FeatureDefinition::Native { .. }
@@ -2662,6 +2670,14 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
                 form: Some(cadmpeg_ir::features::RadiusForm::Constant),
             },
             ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::Shell {
+            removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+            thickness: None,
+            outward: Some(false),
         }
     ));
     assert!(matches!(
@@ -7861,6 +7877,68 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
 }
 
 #[test]
+fn semantic_writer_retains_partial_native_wall_operations() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Shell Name="Unknown shell" Type="Shell" id="14" RemovedFaces="face:1"><Dimension Name="Thickness">NaNmm</Dimension></Shell><Thicken Name="Unknown thicken" Type="Thicken" id="15" Faces="face:2" BothSides="invalid"><Dimension Name="Thickness">NaNmm</Dimension></Thicken></Keywords>"#,
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Shell {
+            removed_faces: FaceSelection::Native(faces),
+            thickness: None,
+            outward: None,
+        } if faces == "face:1"
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[1].definition,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Native(faces),
+            thickness: None,
+            side: None,
+        } if faces == "face:2"
+    ));
+
+    let mut detached = decoded.ir.clone();
+    detached.model.features[0].native_ref = None;
+    let error = SldprtCodec
+        .write_preserved(&detached, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("unresolved shell construction"));
+    detached.model.features[0] = decoded.ir.model.features[0].clone();
+    detached.model.features[1].native_ref = None;
+    let error = SldprtCodec
+        .write_preserved(&detached, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("unresolved thicken construction"));
+
+    decoded.ir.model.features[0].name = Some("Renamed shell".into());
+    decoded.ir.model.features[1].name = Some("Renamed thicken".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].parameters["Thickness"], "NaNmm");
+    assert!(!native[0].properties.contains_key("Outward"));
+    assert_eq!(native[1].parameters["Thickness"], "NaNmm");
+    assert_eq!(native[1].properties["BothSides"], "invalid");
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_shell() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
 
@@ -7877,8 +7955,8 @@ fn semantic_writer_round_trips_typed_shell() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Native(selection),
-            thickness: Length(value),
-            outward: false,
+            thickness: Some(Length(value)),
+            outward: Some(false),
         } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
     ));
 
@@ -7890,8 +7968,8 @@ fn semantic_writer_round_trips_typed_shell() {
     else {
         panic!("typed shell feature");
     };
-    *thickness = Length(3.0);
-    *outward = true;
+    *thickness = Some(Length(3.0));
+    *outward = Some(true);
     *removed_faces = FaceSelection::Native("face:5,face:6".into());
 
     let mut encoded = Vec::new();
@@ -7908,8 +7986,8 @@ fn semantic_writer_round_trips_typed_shell() {
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Shell {
-            thickness: Length(3.0),
-            outward: true,
+            thickness: Some(Length(3.0)),
+            outward: Some(true),
             ..
         }
     ));
@@ -7932,8 +8010,8 @@ fn semantic_writer_round_trips_typed_thicken() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Native(selection),
-            thickness: Length(value),
-            side: ThickenSide::Reverse,
+            thickness: Some(Length(value)),
+            side: Some(ThickenSide::Reverse),
         } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
     ));
 
@@ -7946,8 +8024,8 @@ fn semantic_writer_round_trips_typed_thicken() {
         panic!("typed thicken feature");
     };
     *faces = FaceSelection::Native("face:5,face:6".into());
-    *thickness = Length(3.0);
-    *side = ThickenSide::Both;
+    *thickness = Some(Length(3.0));
+    *side = Some(ThickenSide::Both);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -7964,8 +8042,8 @@ fn semantic_writer_round_trips_typed_thicken() {
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Thicken {
-            thickness: Length(3.0),
-            side: ThickenSide::Both,
+            thickness: Some(Length(3.0)),
+            side: Some(ThickenSide::Both),
             ..
         }
     ));
@@ -7995,8 +8073,8 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
-            thickness: Length(6.0),
-            side: ThickenSide::Forward,
+            thickness: Some(Length(6.0)),
+            side: Some(ThickenSide::Forward),
         }
     ));
     assert_eq!(
@@ -8008,7 +8086,7 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
     else {
         panic!("typed positional thicken");
     };
-    *thickness = Length(8.5);
+    *thickness = Some(Length(8.5));
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -8025,8 +8103,8 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Thicken {
-            thickness: Length(8.5),
-            side: ThickenSide::Forward,
+            thickness: Some(Length(8.5)),
+            side: Some(ThickenSide::Forward),
             ..
         }
     ));
@@ -8279,7 +8357,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
     else {
         panic!("typed shell");
     };
-    *thickness = Length(1.5);
+    *thickness = Some(Length(1.5));
     let FeatureDefinition::Draft { angle, .. } = &mut decoded.ir.model.features[2].definition
     else {
         panic!("typed draft");

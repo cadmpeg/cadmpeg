@@ -2154,8 +2154,8 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
-            thickness: Length(0.0),
-            side: ThickenSide::Forward,
+            thickness: Some(Length(0.0)),
+            side: Some(ThickenSide::Forward),
         },
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Unresolved,

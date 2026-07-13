@@ -1125,9 +1125,9 @@ fn project_definition(
     } else if class == Some(FeatureClass::Chamfer) {
         project_chamfer(feature)
     } else if class == Some(FeatureClass::Shell) {
-        project_shell(feature).unwrap_or_else(|| native_definition(feature))
+        project_shell(feature)
     } else if class == Some(FeatureClass::Thicken) {
-        project_thicken(feature).unwrap_or_else(|| native_definition(feature))
+        project_thicken(feature)
     } else if class == Some(FeatureClass::OffsetSurface) {
         project_offset_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::KnitSurface) {
@@ -2075,7 +2075,7 @@ fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
     })
 }
 
-fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
+fn project_shell(feature: &Feature) -> FeatureDefinition {
     let thickness = feature
         .parameters
         .get("Thickness")
@@ -2085,20 +2085,23 @@ fn project_shell(feature: &Feature) -> Option<FeatureDefinition> {
                 .parameters
                 .get("D1")
                 .and_then(|value| parse_positive_dimension_length_mm(value))
-        })?;
-    let outward = parse_bool(feature.properties.get("Outward")?)?;
-    Some(FeatureDefinition::Shell {
+        });
+    let outward = feature
+        .properties
+        .get("Outward")
+        .and_then(|value| parse_bool(value));
+    FeatureDefinition::Shell {
         removed_faces: feature
             .properties
             .get("RemovedFaces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: Length(thickness),
+        thickness: thickness.map(Length),
         outward,
-    })
+    }
 }
 
-fn project_thicken(feature: &Feature) -> Option<FeatureDefinition> {
+fn project_thicken(feature: &Feature) -> FeatureDefinition {
     use cadmpeg_ir::features::ThickenSide;
 
     let thickness = feature
@@ -2110,33 +2113,31 @@ fn project_thicken(feature: &Feature) -> Option<FeatureDefinition> {
                 .parameters
                 .get("D1")
                 .and_then(|value| parse_positive_dimension_length_mm(value))
-        })?;
+        });
     let both_sides = feature
         .properties
         .get("BothSides")
-        .map_or(Some(false), |value| parse_bool(value))?;
+        .map(|value| parse_bool(value));
     let reverse = feature
         .properties
         .get("Reverse")
-        .map_or(Some(false), |value| parse_bool(value))?;
-    if both_sides && reverse {
-        return None;
-    }
-    Some(FeatureDefinition::Thicken {
+        .map(|value| parse_bool(value));
+    let side = match (both_sides, reverse) {
+        (Some(Some(true)), Some(Some(true))) | (Some(None), _) | (_, Some(None)) => None,
+        (Some(Some(true)), _) => Some(ThickenSide::Both),
+        (_, Some(Some(true))) => Some(ThickenSide::Reverse),
+        (Some(Some(false)), _) | (_, Some(Some(false))) => Some(ThickenSide::Forward),
+        (None, None) => Some(ThickenSide::Forward),
+    };
+    FeatureDefinition::Thicken {
         faces: feature
             .properties
             .get("Faces")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        thickness: Length(thickness),
-        side: if both_sides {
-            ThickenSide::Both
-        } else if reverse {
-            ThickenSide::Reverse
-        } else {
-            ThickenSide::Forward
-        },
-    })
+        thickness: thickness.map(Length),
+        side,
+    }
 }
 
 fn project_offset_surface(feature: &Feature) -> Option<FeatureDefinition> {
@@ -4939,6 +4940,12 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
+                if existing.is_none() && (thickness.is_none() || outward.is_none()) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved shell construction",
+                        feature.id
+                    )));
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
@@ -4949,16 +4956,18 @@ pub fn sync_neutral_features(
                     } else {
                         "Thickness"
                     };
-                parameters.insert(
-                    thickness_key.into(),
-                    format_length_like(
-                        thickness.0,
-                        existing
-                            .as_deref()
-                            .and_then(|record| record.parameters.get(thickness_key))
-                            .map(String::as_str),
-                    ),
-                );
+                if let Some(thickness) = thickness {
+                    parameters.insert(
+                        thickness_key.into(),
+                        format_length_like(
+                            thickness.0,
+                            existing
+                                .as_deref()
+                                .and_then(|record| record.parameters.get(thickness_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                }
                 let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
                     write_native_selection(
@@ -4968,7 +4977,9 @@ pub fn sync_neutral_features(
                         existing.as_deref().map_or("", |record| record.id.as_str()),
                     );
                 }
-                properties.insert("Outward".into(), outward.to_string());
+                if let Some(outward) = outward {
+                    properties.insert("Outward".into(), outward.to_string());
+                }
                 (
                     existing
                         .as_deref()
@@ -4998,9 +5009,9 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if !thickness.0.is_finite() || thickness.0 <= 0.0 {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an invalid thicken thickness",
+                if existing.is_none() && (thickness.is_none() || side.is_none()) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved thicken construction",
                         feature.id
                     )));
                 }
@@ -5014,16 +5025,18 @@ pub fn sync_neutral_features(
                     } else {
                         "Thickness"
                     };
-                parameters.insert(
-                    thickness_key.into(),
-                    format_length_like(
-                        thickness.0,
-                        existing
-                            .as_deref()
-                            .and_then(|record| record.parameters.get(thickness_key))
-                            .map(String::as_str),
-                    ),
-                );
+                if let Some(thickness) = thickness {
+                    parameters.insert(
+                        thickness_key.into(),
+                        format_length_like(
+                            thickness.0,
+                            existing
+                                .as_deref()
+                                .and_then(|record| record.parameters.get(thickness_key))
+                                .map(String::as_str),
+                        ),
+                    );
+                }
                 let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
                     write_native_selection(
@@ -5033,13 +5046,15 @@ pub fn sync_neutral_features(
                         existing.as_deref().map_or("", |record| record.id.as_str()),
                     );
                 }
-                let both_sides = matches!(side, ThickenSide::Both);
-                if both_sides || properties.contains_key("BothSides") {
-                    properties.insert("BothSides".into(), both_sides.to_string());
-                }
-                let reverse = matches!(side, ThickenSide::Reverse);
-                if reverse || properties.contains_key("Reverse") {
-                    properties.insert("Reverse".into(), reverse.to_string());
+                if let Some(side) = side {
+                    let both_sides = matches!(side, ThickenSide::Both);
+                    if both_sides || properties.contains_key("BothSides") {
+                        properties.insert("BothSides".into(), both_sides.to_string());
+                    }
+                    let reverse = matches!(side, ThickenSide::Reverse);
+                    if reverse || properties.contains_key("Reverse") {
+                        properties.insert("Reverse".into(), reverse.to_string());
+                    }
                 }
                 (
                     existing
