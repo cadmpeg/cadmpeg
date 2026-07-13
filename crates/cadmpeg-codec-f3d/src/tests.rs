@@ -5676,6 +5676,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less sketch BulkStream encode");
+    f3d_native_mut(&mut source_less).sketch_relations[0].constraint_kinds =
+        vec![SketchConstraintKind::Horizontal];
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("inconsistent generated sketch constraint mask must be rejected");
+    assert!(error
+        .to_string()
+        .contains("mask inconsistent with its typed constraint kinds"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less sketch BulkStream round trip");

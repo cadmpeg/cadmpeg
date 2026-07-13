@@ -608,6 +608,16 @@ fn encode_sketch_relation(
     out: &mut Vec<u8>,
     relation: &crate::records::SketchRelation,
 ) -> Result<(), CodecError> {
+    let (constraint_kinds, unknown_constraint_bits) =
+        crate::design::decode_constraint_kinds(relation.state);
+    if constraint_kinds != relation.constraint_kinds
+        || unknown_constraint_bits != relation.unknown_constraint_bits
+    {
+        return Err(CodecError::Malformed(format!(
+            "F3D sketch relation {} has a mask inconsistent with its typed constraint kinds",
+            relation.id
+        )));
+    }
     let mut record = vec![0u8; 101];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
     record[19] = 1;
