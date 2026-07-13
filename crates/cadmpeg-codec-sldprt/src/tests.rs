@@ -7564,6 +7564,100 @@ fn semantic_writer_round_trips_helix() {
 }
 
 #[test]
+fn semantic_writer_round_trips_wrap() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ProfileRef, WrapMode};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><Wrap Name="Mark" Type="Wrap" id="31" Profile="{face}" Face="{face}" Mode="Emboss" Method="Spline"><Dimension Name="Depth">2mm</Dimension></Wrap></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Wrap {
+            profile: ProfileRef::Faces(faces),
+            face: FaceSelection::Resolved { faces: targets, native },
+            mode: WrapMode::Emboss,
+            depth: Some(Length(2.0)),
+        } if faces == &[face_id.clone()] && targets == &[face_id.clone()] && native == &face
+    ));
+
+    let FeatureDefinition::Wrap {
+        profile,
+        face,
+        mode,
+        depth,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed wrap");
+    };
+    *profile = ProfileRef::Faces(vec![face_id.clone()]);
+    *face = FaceSelection::Faces(vec![face_id.clone()]);
+    *mode = WrapMode::Deboss;
+    *depth = Some(Length(3.5));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Profile"], face_id.0);
+    assert_eq!(native.properties["Face"], face_id.0);
+    assert_eq!(native.properties["Mode"], "Deboss");
+    assert_eq!(native.properties["Method"], "Spline");
+    assert_eq!(native.parameters["Depth"], "3.5mm");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Wrap {
+            mode: WrapMode::Deboss,
+            depth: Some(Length(3.5)),
+            ..
+        }
+    ));
+
+    let mut scribed = regenerated;
+    let FeatureDefinition::Wrap { mode, depth, .. } = &mut scribed.ir.model.features[0].definition
+    else {
+        panic!("typed wrap");
+    };
+    *mode = WrapMode::Scribe;
+    *depth = None;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&scribed.ir, &mut encoded)
+        .unwrap();
+    let scribed = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&scribed.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Mode"], "Scribe");
+    assert!(!native.parameters.contains_key("Depth"));
+    assert!(matches!(
+        scribed.ir.model.features[0].definition,
+        FeatureDefinition::Wrap {
+            mode: WrapMode::Scribe,
+            depth: None,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

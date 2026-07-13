@@ -10,6 +10,7 @@ use cadmpeg_ir::features::{
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, VariableRadius,
+    WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -747,6 +748,10 @@ pub fn bind_topology_selections(
             } => {
                 resolve_face_selection(face, &face_ids);
             }
+            FeatureDefinition::Wrap { profile, face, .. } => {
+                resolve_profile_ref(profile, &face_ids);
+                resolve_face_selection(face, &face_ids);
+            }
             _ => {}
         }
     }
@@ -868,7 +873,8 @@ fn bind_definition_sketch(
     match definition {
         FeatureDefinition::Extrude { profile, .. }
         | FeatureDefinition::Revolve { profile, .. }
-        | FeatureDefinition::Rib { profile, .. } => bind_profile(profile),
+        | FeatureDefinition::Rib { profile, .. }
+        | FeatureDefinition::Wrap { profile, .. } => bind_profile(profile),
         FeatureDefinition::Sweep { profile, path, .. } => bind_profile(profile) | bind_path(path),
         FeatureDefinition::Loft {
             profiles, guides, ..
@@ -915,6 +921,10 @@ fn project_definition(
     }
     if feature_family(feature, "Helix") || feature_family(feature, "HelixSpiral") {
         return project_helix(feature).unwrap_or_else(|| native_definition(feature));
+    }
+    if feature_family(feature, "Wrap") {
+        return project_wrap(feature, native_by_source)
+            .unwrap_or_else(|| native_definition(feature));
     }
     if is_extrude(feature) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
@@ -1161,6 +1171,40 @@ fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         pitch: Length(pitch),
         revolutions,
         clockwise,
+    })
+}
+
+fn project_wrap(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let profile = feature.properties.get("Profile")?;
+    let profile = native_by_source
+        .get(profile.as_str())
+        .map_or_else(|| profile.clone(), |id| (*id).to_string());
+    let face = FaceSelection::Native(feature.properties.get("Face")?.clone());
+    let mode = match feature
+        .properties
+        .get("Mode")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "emboss" => WrapMode::Emboss,
+        "deboss" => WrapMode::Deboss,
+        "scribe" => WrapMode::Scribe,
+        _ => return None,
+    };
+    let depth = match mode {
+        WrapMode::Emboss | WrapMode::Deboss => Some(Length(parse_positive_length_mm(
+            feature.parameters.get("Depth")?,
+        )?)),
+        WrapMode::Scribe => None,
+    };
+    Some(FeatureDefinition::Wrap {
+        profile: ProfileRef::Native(profile),
+        face,
+        mode,
+        depth,
     })
 }
 
@@ -3005,6 +3049,80 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::Wrap {
+                profile,
+                face,
+                mode,
+                depth,
+            } => {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !feature_family(record, "Wrap"))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let profile = profile_source(profile, &record_sources, &sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing wrap profile",
+                            feature.id
+                        ))
+                    })?;
+                let face = face_selection_value(face).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no wrap target face",
+                        feature.id
+                    ))
+                })?;
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                match mode {
+                    WrapMode::Emboss | WrapMode::Deboss => {
+                        let depth = depth
+                            .filter(|value| value.0.is_finite() && value.0 > 0.0)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "SLDPRT feature {} has invalid wrap depth",
+                                    feature.id
+                                ))
+                            })?;
+                        parameters.insert("Depth".into(), format_length_mm(depth.0));
+                    }
+                    WrapMode::Scribe => {
+                        if depth.is_some() {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} gives a scribe wrap a depth",
+                                feature.id
+                            )));
+                        }
+                        parameters.remove("Depth");
+                    }
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Profile".into(), profile);
+                properties.insert("Face".into(), face);
+                properties.insert(
+                    "Mode".into(),
+                    match mode {
+                        WrapMode::Emboss => "Emboss",
+                        WrapMode::Deboss => "Deboss",
+                        WrapMode::Scribe => "Scribe",
+                    }
+                    .into(),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Wrap".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Sketch { .. } => {
                 if existing
                     .as_deref()
@@ -4667,6 +4785,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
         FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
         FeatureDefinition::Helix { .. } => "Helix",
+        FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",

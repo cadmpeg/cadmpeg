@@ -2058,6 +2058,12 @@ fn feature_operation_geometry_is_validated() {
             revolutions: 0.0,
             clockwise: false,
         },
+        FeatureDefinition::Wrap {
+            profile: ProfileRef::Native("profile".into()),
+            face: FaceSelection::Unresolved,
+            mode: crate::features::WrapMode::Emboss,
+            depth: None,
+        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
@@ -2076,6 +2082,7 @@ fn feature_operation_geometry_is_validated() {
         "coordinate-system frame is invalid",
         "equation curve is invalid",
         "helix geometry is invalid",
+        "wrap depth is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

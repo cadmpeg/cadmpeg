@@ -1493,6 +1493,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "helix geometry is invalid");
                 }
             }
+            FeatureDefinition::Wrap {
+                profile,
+                face,
+                mode,
+                depth,
+            } => {
+                profiles.push(profile);
+                face_selections.push(face);
+                let valid = match mode {
+                    crate::features::WrapMode::Emboss | crate::features::WrapMode::Deboss => {
+                        depth.is_some_and(positive_feature_length)
+                    }
+                    crate::features::WrapMode::Scribe => depth.is_none(),
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "wrap depth is invalid");
+                }
+            }
             FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }

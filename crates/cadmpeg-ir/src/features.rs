@@ -248,6 +248,18 @@ pub enum FeatureDefinition {
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
     },
+    /// Profile mapped onto a target face.
+    Wrap {
+        /// Sketch or face profile mapped onto the target.
+        profile: ProfileRef,
+        /// Face receiving the mapped profile.
+        face: FaceSelection,
+        /// Material or imprint operation performed by the mapping.
+        mode: WrapMode,
+        /// Normal offset for emboss and deboss operations.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        depth: Option<Length>,
+    },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Neutral sketch geometry owned by this history node, when resolved.
@@ -485,6 +497,18 @@ pub enum BodyRetentionMode {
     DeleteSelected,
     /// Delete every body except the selected bodies.
     KeepSelected,
+}
+
+/// Material effect of a wrapped profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum WrapMode {
+    /// Add material above the target face.
+    Emboss,
+    /// Remove material below the target face.
+    Deboss,
+    /// Imprint the profile without adding or removing material.
+    Scribe,
 }
 
 /// Fixed locus of a body-scale transform.
