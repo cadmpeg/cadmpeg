@@ -119,8 +119,50 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }];
     };
     let mut findings = Vec::new();
+    for history in &native.feature_histories {
+        let mut feature_ordinals = std::collections::HashSet::new();
+        for feature in &history.features {
+            if !feature_ordinals.insert(feature.ordinal) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!(
+                        "SolidWorks history repeats feature ordinal {}",
+                        feature.ordinal
+                    ),
+                    entity: Some(feature.id.clone()),
+                });
+            }
+        }
+        let mut configuration_ordinals = std::collections::HashSet::new();
+        for configuration in &history.configurations {
+            if !configuration_ordinals.insert(configuration.ordinal) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!(
+                        "SolidWorks history repeats configuration ordinal {}",
+                        configuration.ordinal
+                    ),
+                    entity: Some(configuration.id.clone()),
+                });
+            }
+        }
+    }
     for lane in &native.feature_input_lanes {
+        let mut ordinals = std::collections::HashSet::new();
         for entity in &lane.sketch_entities {
+            if !ordinals.insert(entity.ordinal) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!(
+                        "SolidWorks feature-input lane repeats entity ordinal {}",
+                        entity.ordinal
+                    ),
+                    entity: Some(entity.id.clone()),
+                });
+            }
             let valid = usize::try_from(entity.offset).ok().is_some_and(|offset| {
                 offset
                     .checked_add(MARKER.len())

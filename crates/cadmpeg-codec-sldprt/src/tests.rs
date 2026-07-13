@@ -4208,6 +4208,22 @@ fn decode_extracts_parametric_history() {
 }
 
 #[test]
+fn native_validation_rejects_duplicate_history_ordinals() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_histories[0].features[1].ordinal = 0;
+    });
+    assert!(crate::validate_native(&decoded.ir)
+        .iter()
+        .any(|finding| finding.message.contains("repeats feature ordinal")));
+}
+
+#[test]
 fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
