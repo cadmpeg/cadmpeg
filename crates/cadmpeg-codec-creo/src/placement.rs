@@ -74,7 +74,6 @@ fn generated_datum_plane_equation(
     reference_id: u32,
     datums: &[DatumPlane],
     geometry_tables: &[FeatureGeometryTable],
-    entity_tables: &[FeatureEntityTable],
     affected_ids: &[FeatureAffectedIds],
 ) -> Option<([f64; 3], f64)> {
     let datum_ids = geometry_tables
@@ -85,36 +84,34 @@ fn generated_datum_plane_equation(
         .filter(|id| **id == sketch_id)
         .count();
     (datum_ids == 1).then_some(())?;
-    let generators = entity_tables
-        .iter()
-        .filter(|table| table.entry_ids.contains(&sketch_id))
-        .filter_map(|table| table.feature_id)
-        .collect::<std::collections::BTreeSet<_>>();
-    let generators = generators.into_iter().collect::<Vec<_>>();
-    let [generator] = generators.as_slice() else {
-        return None;
-    };
     let reference_feature = datums
         .iter()
         .find(|datum| datum.id == reference_id)?
         .feature_id;
-    let parent_rows = affected_ids
+    let candidates = affected_ids
         .iter()
-        .filter(|record| record.feature_id == *generator && record.kind == AffectedIdKind::Parents)
+        .filter(|record| {
+            record.kind == AffectedIdKind::Parents && record.ids.contains(&reference_feature)
+        })
+        .filter_map(|parents| {
+            let other = parents
+                .ids
+                .iter()
+                .filter(|parent| **parent != reference_feature)
+                .collect::<Vec<_>>();
+            let [other] = other.as_slice() else {
+                return None;
+            };
+            datums
+                .iter()
+                .find(|datum| datum.feature_id == **other)
+                .map(|datum| (datum.normal, datum.offset))
+        })
         .collect::<Vec<_>>();
-    let [parents] = parent_rows.as_slice() else {
+    let [equation] = candidates.as_slice() else {
         return None;
     };
-    let candidates = parents
-        .ids
-        .iter()
-        .filter(|parent| **parent != reference_feature)
-        .filter_map(|parent| datums.iter().find(|datum| datum.feature_id == *parent))
-        .collect::<Vec<_>>();
-    let [datum] = candidates.as_slice() else {
-        return None;
-    };
-    Some((datum.normal, datum.offset))
+    Some(*equation)
 }
 
 /// Resolve feature frames whose sketch and orientation references reduce to
@@ -125,7 +122,7 @@ pub fn resolve(
     model_planes: &[PlaneLocalSystem],
     outline_planes: &[OutlinePlane],
     geometry_tables: &[FeatureGeometryTable],
-    entity_tables: &[FeatureEntityTable],
+    _entity_tables: &[FeatureEntityTable],
     affected_ids: &[FeatureAffectedIds],
 ) -> Vec<FeatureSectionTransform> {
     let mut result = Vec::new();
@@ -146,7 +143,6 @@ pub fn resolve(
                     reference_id,
                     datums,
                     geometry_tables,
-                    entity_tables,
                     affected_ids,
                 )
             })
@@ -314,7 +310,7 @@ mod tests {
     }
 
     #[test]
-    fn resolves_generated_sketch_datum_from_the_other_parent() {
+    fn resolves_generated_sketch_datum_from_unique_parent_relation() {
         let definition = FeatureDefinition {
             id: 80,
             owner_feature_id: Some(40),
@@ -353,15 +349,8 @@ mod tests {
             entry_ids: Some(vec![42]),
             offset: 20,
         };
-        let entity_table = FeatureEntityTable {
-            feature_id: Some(41),
-            entry_ids: vec![42],
-            surface_ids: vec![42],
-            non_surface_entity_ids: Vec::new(),
-            offset: 30,
-        };
         let parents = FeatureAffectedIds {
-            feature_id: 41,
+            feature_id: 11,
             kind: AffectedIdKind::Parents,
             ids: vec![1, 3],
             offset: 40,
@@ -375,7 +364,7 @@ mod tests {
             &[],
             &[],
             &[geometry_table],
-            &[entity_table],
+            &[],
             &[parents],
         );
         assert_eq!(transforms.len(), 1);

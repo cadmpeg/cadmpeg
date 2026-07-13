@@ -1035,7 +1035,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_affected_ids = feature::affected_ids(&feature_rows);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
-    let feature_definitions = feature_definitions(&data, &sections);
+    let mut feature_definitions = feature_definitions(&data, &sections);
+    feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let feature_section_transforms = placement::resolve(

@@ -364,9 +364,11 @@ sweep and `protrevolve` identifies a rotational section sweep. The recipe name
 precedes the `<Kind> id <N>` operation name and applies to that feature state.
 
 A `FeatDefs` record-name identifier belongs to the feature-definition record
-namespace. A unique named `feat_id` inside the bounded record is the owning
-modeling feature identifier and joins `MdlStatus` and `AllFeatur`. The two
-identifiers are not interchangeable.
+namespace. A unique canonical named `feat_id` inside the bounded record is the
+owning modeling feature identifier and joins `MdlStatus` and `AllFeatur`; `f6`
+in this slot is null. When `feat_id` is null, the unique `DatumIds` generated
+table containing the section's `sketch_plane_entity_id` identifies the owning
+modeling feature. The definition and feature identifiers are not interchangeable.
 
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
@@ -394,6 +396,12 @@ containment.
 regeneration-parent table. Its compact integers are modeling feature
 identifiers. Both `parent_table` and `strong_parents` contribute dependency
 edges; neither establishes feature-tree containment.
+
+A generated sketch-plane datum is identified by its unique `DatumIds` entry.
+Its section plane is the parent datum other than the `gsec3d` orientation
+reference in the unique `Parents` row containing that orientation-reference
+feature. The `DatumIds` table owner and `Parents` row owner occupy independent
+feature namespaces and need not be equal.
 
 `dtm_id_tab [f1|f2] f8 <count> f7 <class> fb e2` is followed by exactly
 `count` named `dtm_id` compact integers. These identifiers occupy the outer

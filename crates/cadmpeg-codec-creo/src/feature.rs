@@ -2687,8 +2687,9 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
                 let name_end = start + token.offset + token.length - 1;
                 (payload.get(name_start..name_end) == Some(b"feat_id".as_slice())).then(|| {
                     let value_start = start + token.offset + token.length;
-                    let (value, after) = psb::compact_int(payload, value_start);
-                    (after > value_start).then_some(value)
+                    psb::reference_id(payload, value_start)
+                        .ok()
+                        .map(|(value, _)| value)
                 })?
             })
             .collect::<BTreeSet<_>>();
@@ -2712,6 +2713,40 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         });
     }
     result
+}
+
+/// Bind an owner omitted by `feat_id` through the section's unique generated
+/// datum entry. An explicit canonical `feat_id` remains authoritative.
+pub fn bind_definition_owners(
+    definitions: &mut [FeatureDefinition],
+    geometry_tables: &[FeatureGeometryTable],
+) {
+    for definition in definitions
+        .iter_mut()
+        .filter(|definition| definition.owner_feature_id.is_none())
+    {
+        let Some(sketch_plane) = definition
+            .section_3d
+            .as_ref()
+            .and_then(|section| section.sketch_plane_entity_id)
+        else {
+            continue;
+        };
+        let owners = geometry_tables
+            .iter()
+            .filter(|table| table.kind == FeatureGeometryTableKind::DatumIds)
+            .filter(|table| {
+                table
+                    .entry_ids
+                    .as_ref()
+                    .is_some_and(|ids| ids.contains(&sketch_plane))
+            })
+            .map(|table| table.feature_id)
+            .collect::<BTreeSet<_>>();
+        if let [owner] = owners.into_iter().collect::<Vec<_>>().as_slice() {
+            definition.owner_feature_id = Some(*owner);
+        }
+    }
 }
 
 /// Decode the implicit named-record entity table and every canonical `f7`
@@ -2830,6 +2865,48 @@ pub fn entity_tables(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binds_missing_definition_owner_from_unique_generated_datum_table() {
+        let mut definitions = [FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(FeatureSection3d {
+                sketch_plane_entity_id: Some(12),
+                sketch_plane_flip: None,
+                reference_plane_entity_ids: Vec::new(),
+                reference_plane_datum_geometry_id: None,
+                orientation: FeatureSectionOrientation::default(),
+                dimension_ids: Vec::new(),
+                offset: 1,
+            }),
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        }];
+        bind_definition_owners(
+            &mut definitions,
+            &[FeatureGeometryTable {
+                feature_id: 10,
+                kind: FeatureGeometryTableKind::DatumIds,
+                count: 1,
+                entity_class: 87,
+                entry_ids: Some(vec![12]),
+                offset: 2,
+            }],
+        );
+
+        assert_eq!(definitions[0].owner_feature_id, Some(10));
+    }
 
     #[test]
     fn decodes_var_arr_dictionary_sign_pairs() {
