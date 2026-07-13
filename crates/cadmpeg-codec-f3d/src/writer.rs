@@ -2175,6 +2175,8 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         if let Some(range) = tolerant_range {
             native_f64(&mut records, range[0]);
             native_f64(&mut records, range[1]);
+            records.push(native_bool(false));
+            native_ref(&mut records, -1);
         }
         records.push(0x11);
     }
@@ -3470,6 +3472,8 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         if let Some(range) = tolerant_range {
             native_f64(&mut records, range[0]);
             native_f64(&mut records, range[1]);
+            records.push(native_bool(false));
+            native_ref(&mut records, -1);
         }
         records.push(0x11);
     }

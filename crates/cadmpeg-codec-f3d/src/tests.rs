@@ -5333,6 +5333,25 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less unit cube encode");
+    {
+        let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).unwrap();
+        let mut stream = Vec::new();
+        archive
+            .by_name("FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh")
+            .unwrap()
+            .read_to_end(&mut stream)
+            .unwrap();
+        let records = crate::sab::frame(&stream, 47, stream.len(), 8).unwrap();
+        let tolerant = records
+            .iter()
+            .find(|record| record.head == "tcoedge")
+            .expect("canonical tolerant coedge record");
+        assert!(matches!(tolerant.chunk(13), Some(crate::sab::Token::False)));
+        assert!(matches!(
+            tolerant.chunk(14),
+            Some(crate::sab::Token::Ref(-1))
+        ));
+    }
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less unit cube round trip");
