@@ -17,11 +17,11 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
 };
-use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId, UnknownId,
-    VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
+    UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -572,6 +572,11 @@ fn transfer_cap_pair_cylinders(
         .iter()
         .map(|plane| (plane.surface_id, plane))
         .collect::<BTreeMap<_, _>>();
+    let circle_offsets = scan
+        .fc05_circles
+        .iter()
+        .map(|circle| (circle.curve_id, circle.offset))
+        .collect::<BTreeMap<_, _>>();
     for pair in &scan.fc05_cylinder_cap_pairs {
         let placed_caps = pair
             .cap_plane_ids
@@ -647,6 +652,56 @@ fn transfer_cap_pair_cylinders(
                 instance_path: Vec::new(),
             }),
         });
+        for ((curve_id, ordinate), cap_plane_id) in pair
+            .curve_ids
+            .iter()
+            .zip(&pair.curve_cap_ordinates_row_frame)
+            .zip(&pair.cap_plane_ids)
+        {
+            let cap_offset = planes.get(cap_plane_id).map_or_else(
+                || ordinate + translations[0],
+                |plane| plane.origin[axis_index],
+            );
+            let center = if axis_index == 0 {
+                [cap_offset, second, first]
+            } else {
+                [first, cap_offset, second]
+            };
+            let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+            if ir.model.curves.iter().any(|curve| curve.id == id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &id,
+                "VisibGeom",
+                circle_offsets.get(curve_id).copied().unwrap_or(pair.offset) as u64,
+                "fc05_cap_circle",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id,
+                geometry: CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(
+                        ref_direction[0],
+                        ref_direction[1],
+                        ref_direction[2],
+                    ),
+                    radius: pair.radius_mm,
+                },
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{curve_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
     }
 }
 

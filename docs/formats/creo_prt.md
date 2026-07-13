@@ -260,6 +260,10 @@ When both cap-plane outlines establish parallel model-X or model-Y planes, the
 axis direction and cap offsets supply that transform directly. Model-Z cap-pair
 coordinate permutation is not defined by this grammar.
 
+Each participating `fc 05` curve is a circle centered at the shared in-plane
+center and its own transformed cap ordinate, with the cylinder axis and radius.
+The curve identifier remains the `crv_array.crv_id`.
+
 ## 5. Topology and section records
 
 Build the B-rep half-edge graph from the `crv_array` suffixes. A single-loop face has an outer boundary by topology. Multi-loop faces require parameter-space containment to distinguish outer from inner loops. Shells follow connected components of face references.

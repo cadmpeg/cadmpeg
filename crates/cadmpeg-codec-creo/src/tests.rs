@@ -1286,6 +1286,19 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             radius: 1.0,
         }
     );
+    assert_eq!(result.ir.model.curves.len(), 2);
+    assert!(result.ir.model.curves.iter().all(|curve| matches!(
+        curve.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Circle {
+            axis: cadmpeg_ir::math::Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            },
+            radius: 1.0,
+            ..
+        }
+    )));
 }
 
 #[test]
