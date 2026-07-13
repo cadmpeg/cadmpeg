@@ -449,6 +449,11 @@ A printable OM string value is framed as `66 32 03, declared_len:u8, text[declar
 
 A complex part contains an active body and sub-bodies, each with its own partition/deltas pair and stream-local xmt namespace, plus optional plain cached tool bodies. The final solid is the load-time feature-history Boolean composition of those bodies. NX OM feature-history records encode operand binding and order.
 
+`/Root/part/attrs` is a versioned XML attribute table. Each `Attr` element
+contains its owner token, UTF-8 title and value, schema type, PDM-ownership flag,
+and record version. These part-level values transfer as document attributes;
+the native record retains the remaining ownership and schema fields.
+
 ```text
 live = partition ∪ delta_full − tombstones
 ```

@@ -3059,6 +3059,36 @@ fn nx_part_attributes_require_typed_atomic_xml() {
 }
 
 #[test]
+fn decode_projects_part_attributes_to_document_attributes() {
+    let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<UgAttributes version="4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Attribute owner="part" pdmBased="false" utf8title="Material"
+    utf8value="Steel" version="3" xsi:type="StringAttributeType"/>
+</UgAttributes>"#;
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        ("/Root/part/attrs", xml.to_vec()),
+    ]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.attributes.len(), 1);
+    let attribute = &result.ir.model.attributes[0];
+    assert_eq!(attribute.name, "Material");
+    assert_eq!(
+        attribute.target,
+        cadmpeg_ir::attributes::AttributeTarget::Document
+    );
+    assert_eq!(
+        attribute.values,
+        vec![cadmpeg_ir::attributes::AttributeValue::String(
+            "Steel".to_string()
+        )]
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_retains_length_framed_nx_class_definition() {
     let mut cur = Cursor::new(prt_with_indexed_om_section());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
@@ -27,8 +28,8 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
-    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId,
+    ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -2641,7 +2642,7 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Materials, appearances, feature history, and assembly \
+        message: "Materials, appearances, entity-owned attributes, feature history, and assembly \
                   occurrence placements were not transferred: they live in the NX object-model \
                   per-class field serialization, which is not decoded."
             .to_string(),
@@ -2723,6 +2724,19 @@ fn attach_native_object_model(
             .note(&attribute.id, annotation_stream, attribute.source_offset)
             .tag("Attribute");
         annotations.exactness(&attribute.id, Exactness::ByteExact);
+        let id = AttributeId(format!("{}:neutral", attribute.id));
+        annotations
+            .note(&id.0, annotation_stream, attribute.source_offset)
+            .tag("Attribute");
+        annotations.derived(&id.0, "target");
+        annotations.derived(&id.0, "name");
+        annotations.derived(&id.0, "values");
+        ir.model.attributes.push(SourceAttribute {
+            id,
+            target: AttributeTarget::Document,
+            name: attribute.title.clone(),
+            values: vec![AttributeValue::String(attribute.value.clone())],
+        });
     }
     for record in &external_reference_records {
         annotations
