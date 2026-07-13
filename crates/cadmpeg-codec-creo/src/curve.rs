@@ -5,6 +5,8 @@
 //! add the two face sides and successor curve for each native half-edge. Curve
 //! parameter bodies are not interpreted here.
 
+use std::collections::BTreeMap;
+
 use crate::psb::{self, compact_int, reference_id};
 use crate::scalar;
 
@@ -40,7 +42,7 @@ pub struct CurveExpressionLine {
 }
 
 /// Expression program stored by a curve-from-equation entity.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CurveExpressionRecord {
     /// Entity identifier from the enclosing record.
     pub entity_id: u32,
@@ -57,7 +59,7 @@ pub struct CurveExpressionRecord {
 }
 
 /// One executable assignment in a curve expression program.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CurveExpressionAssignment {
     /// Assigned identifier.
     pub name: String,
@@ -65,6 +67,8 @@ pub struct CurveExpressionAssignment {
     pub expression: String,
     /// Referenced identifiers in first-appearance order.
     pub dependencies: Vec<String>,
+    /// Sequentially evaluated scalar when every dependency is resolved.
+    pub value: Option<f64>,
     /// Byte offset of the assignment source line.
     pub offset: usize,
 }
@@ -342,7 +346,18 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             cursor = line_end + 1;
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
-            let assignments = lines.iter().filter_map(expression_assignment).collect();
+            let mut values = BTreeMap::new();
+            let assignments = lines
+                .iter()
+                .filter_map(expression_assignment)
+                .map(|mut assignment| {
+                    assignment.value = evaluate_expression(&assignment.expression, &values);
+                    if let Some(value) = assignment.value {
+                        values.insert(assignment.name.clone(), value);
+                    }
+                    assignment
+                })
+                .collect();
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
@@ -397,8 +412,144 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
         name: name.to_owned(),
         expression: expression.to_owned(),
         dependencies,
+        value: None,
         offset: line.offset,
     })
+}
+
+struct ArithmeticParser<'a> {
+    source: &'a [u8],
+    cursor: usize,
+    values: &'a BTreeMap<String, f64>,
+}
+
+impl ArithmeticParser<'_> {
+    fn whitespace(&mut self) {
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(u8::is_ascii_whitespace)
+        {
+            self.cursor += 1;
+        }
+    }
+
+    fn expression(&mut self) -> Option<f64> {
+        let mut value = self.term()?;
+        loop {
+            self.whitespace();
+            match self.source.get(self.cursor) {
+                Some(b'+') => {
+                    self.cursor += 1;
+                    value += self.term()?;
+                }
+                Some(b'-') => {
+                    self.cursor += 1;
+                    value -= self.term()?;
+                }
+                _ => return Some(value),
+            }
+        }
+    }
+
+    fn term(&mut self) -> Option<f64> {
+        let mut value = self.factor()?;
+        loop {
+            self.whitespace();
+            match self.source.get(self.cursor) {
+                Some(b'*') => {
+                    self.cursor += 1;
+                    value *= self.factor()?;
+                }
+                Some(b'/') => {
+                    self.cursor += 1;
+                    value /= self.factor()?;
+                }
+                _ => return Some(value),
+            }
+        }
+    }
+
+    fn factor(&mut self) -> Option<f64> {
+        self.whitespace();
+        match self.source.get(self.cursor)? {
+            b'+' => {
+                self.cursor += 1;
+                self.factor()
+            }
+            b'-' => {
+                self.cursor += 1;
+                Some(-self.factor()?)
+            }
+            b'(' => {
+                self.cursor += 1;
+                let value = self.expression()?;
+                self.whitespace();
+                (self.source.get(self.cursor) == Some(&b')')).then(|| {
+                    self.cursor += 1;
+                    value
+                })
+            }
+            byte if byte.is_ascii_digit() || *byte == b'.' => self.number(),
+            byte if byte.is_ascii_alphabetic() || *byte == b'_' => self.identifier(),
+            _ => None,
+        }
+    }
+
+    fn number(&mut self) -> Option<f64> {
+        let start = self.cursor;
+        while self
+            .source
+            .get(self.cursor)
+            .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'.')
+        {
+            self.cursor += 1;
+        }
+        if self
+            .source
+            .get(self.cursor)
+            .is_some_and(|byte| matches!(byte, b'e' | b'E'))
+        {
+            self.cursor += 1;
+            if self
+                .source
+                .get(self.cursor)
+                .is_some_and(|byte| matches!(byte, b'+' | b'-'))
+            {
+                self.cursor += 1;
+            }
+            while self.source.get(self.cursor).is_some_and(u8::is_ascii_digit) {
+                self.cursor += 1;
+            }
+        }
+        std::str::from_utf8(&self.source[start..self.cursor])
+            .ok()?
+            .parse()
+            .ok()
+    }
+
+    fn identifier(&mut self) -> Option<f64> {
+        let start = self.cursor;
+        self.cursor += 1;
+        while self.source.get(self.cursor).is_some_and(|byte| {
+            byte.is_ascii_alphabetic() || byte.is_ascii_digit() || *byte == b'_'
+        }) {
+            self.cursor += 1;
+        }
+        let name = std::str::from_utf8(&self.source[start..self.cursor]).ok()?;
+        self.values.get(name).copied()
+    }
+}
+
+fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Option<f64> {
+    let mut parser = ArithmeticParser {
+        source: expression.as_bytes(),
+        cursor: 0,
+        values,
+    };
+    let value = parser.expression()?;
+    parser.whitespace();
+    (parser.cursor == parser.source.len() && value.is_finite()).then_some(value)
 }
 
 /// Decode positional `crv_array` rows whose terminal
@@ -1068,7 +1219,7 @@ mod tests {
     #[test]
     fn decodes_counted_curve_expression_source_lines() {
         let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x89\x4c\
-            \xe0\x0aexpression\0\xf8\x03r=5\0theta=t*360\0z=71*t\0\
+            \xe0\x0aexpression\0\xf8\x04r=5\0theta=t*360\0z=71*t\0q=r+2*(3)\0\
             \xe0\x00backup_ents(crv_fr_eqn)\0\xe3\xe0\x01id\0\0\
             \xe0\x0aexpression\0\xf8\x01r=5\0";
         let records = expression_records(payload);
@@ -1081,18 +1232,23 @@ mod tests {
                 .iter()
                 .map(|line| line.text.as_str())
                 .collect::<Vec<_>>(),
-            ["r=5", "theta=t*360", "z=71*t"]
+            ["r=5", "theta=t*360", "z=71*t", "q=r+2*(3)"]
         );
         assert!(records[1].backup);
         assert_eq!(records[1].lines[0].text, "r=5");
         assert!(records[0].lines[0].offset < records[0].lines[1].offset);
-        assert_eq!(records[0].assignments.len(), 3);
+        assert_eq!(records[0].assignments.len(), 4);
         assert_eq!(records[0].assignments[0].name, "r");
         assert_eq!(records[0].assignments[0].expression, "5");
         assert!(records[0].assignments[0].dependencies.is_empty());
+        assert_eq!(records[0].assignments[0].value, Some(5.0));
         assert_eq!(records[0].assignments[1].name, "theta");
         assert_eq!(records[0].assignments[1].expression, "t*360");
         assert_eq!(records[0].assignments[1].dependencies, ["t"]);
+        assert_eq!(records[0].assignments[1].value, None);
+        assert_eq!(records[0].assignments[2].value, None);
+        assert_eq!(records[0].assignments[3].dependencies, ["r"]);
+        assert_eq!(records[0].assignments[3].value, Some(11.0));
     }
 
     #[test]

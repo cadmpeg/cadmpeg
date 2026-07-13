@@ -1212,6 +1212,7 @@ fn decode_preserves_counted_curve_expression_programs() {
     assert_eq!(records[0].fields["lines"][1]["text"], "theta=t*360");
     assert_eq!(records[0].fields["assignments"][1]["name"], "theta");
     assert_eq!(records[0].fields["assignments"][1]["dependencies"][0], "t");
+    assert_eq!(records[0].fields["assignments"][0]["value"], 5.0);
     assert_annotation(
         &result.ir,
         &records[0].id,

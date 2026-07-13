@@ -117,6 +117,7 @@ struct CreoCurveExpressionAssignment {
     name: String,
     expression: String,
     dependencies: Vec<String>,
+    value: Option<f64>,
     offset: usize,
 }
 
@@ -147,6 +148,7 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                     name: assignment.name.clone(),
                     expression: assignment.expression.clone(),
                     dependencies: assignment.dependencies.clone(),
+                    value: assignment.value,
                     offset: assignment.offset,
                 })
                 .collect(),
