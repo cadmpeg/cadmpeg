@@ -1104,6 +1104,17 @@ fn write_native_selection(
     }
 }
 
+fn native_face_selection(selection: &FaceSelection) -> Option<&str> {
+    match selection {
+        FaceSelection::Native(native) | FaceSelection::Resolved { native, .. }
+            if !native.trim().is_empty() =>
+        {
+            Some(native)
+        }
+        _ => None,
+    }
+}
+
 fn parse_boolean_op(value: &str) -> Option<BooleanOp> {
     match value.to_ascii_lowercase().as_str() {
         "join" => Some(BooleanOp::Join),
@@ -1929,18 +1940,23 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Chamfer {
-                edges:
+            FeatureDefinition::Chamfer { edges, spec } => {
+                let selection = match edges {
                     EdgeSelection::Native(selection)
                     | EdgeSelection::Resolved {
                         native: selection, ..
-                    },
-                spec,
-            } => {
+                    } if !selection.trim().is_empty() => Some(selection.as_str()),
+                    EdgeSelection::Unresolved if existing.is_some() => None,
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes unsupported chamfer semantics",
+                            feature.id
+                        )))
+                    }
+                };
                 if existing
                     .as_deref()
                     .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Chamfer"))
-                    || selection.trim().is_empty()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported chamfer semantics",
@@ -1999,12 +2015,14 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.properties.clone())
                     .unwrap_or_default();
-                write_native_selection(
-                    &mut properties,
-                    "Edges",
-                    selection,
-                    existing.as_deref().map_or("", |record| record.id.as_str()),
-                );
+                if let Some(selection) = selection {
+                    write_native_selection(
+                        &mut properties,
+                        "Edges",
+                        selection,
+                        existing.as_deref().map_or("", |record| record.id.as_str()),
+                    );
+                }
                 (
                     existing
                         .as_deref()
@@ -2014,18 +2032,26 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Shell {
-                removed_faces:
-                    FaceSelection::Native(selection)
-                    | FaceSelection::Resolved {
-                        native: selection, ..
-                    },
+                removed_faces,
                 thickness,
                 outward,
             } => {
+                let selection = match removed_faces {
+                    FaceSelection::Native(selection)
+                    | FaceSelection::Resolved {
+                        native: selection, ..
+                    } if !selection.trim().is_empty() => Some(selection.as_str()),
+                    FaceSelection::Unresolved if existing.is_some() => None,
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes unsupported shell semantics",
+                            feature.id
+                        )))
+                    }
+                };
                 if existing
                     .as_deref()
                     .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Shell"))
-                    || selection.trim().is_empty()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported shell semantics",
@@ -2041,12 +2067,14 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.properties.clone())
                     .unwrap_or_default();
-                write_native_selection(
-                    &mut properties,
-                    "RemovedFaces",
-                    selection,
-                    existing.as_deref().map_or("", |record| record.id.as_str()),
-                );
+                if let Some(selection) = selection {
+                    write_native_selection(
+                        &mut properties,
+                        "RemovedFaces",
+                        selection,
+                        existing.as_deref().map_or("", |record| record.id.as_str()),
+                    );
+                }
                 properties.insert("Outward".into(), outward.to_string());
                 (
                     existing
@@ -2057,22 +2085,23 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Draft {
-                faces: FaceSelection::Native(faces) | FaceSelection::Resolved { native: faces, .. },
-                neutral_plane:
-                    FaceSelection::Native(neutral_plane)
-                    | FaceSelection::Resolved {
-                        native: neutral_plane,
-                        ..
-                    },
+                faces: face_selection,
+                neutral_plane: plane_selection,
                 pull_direction,
                 angle,
                 outward,
             } => {
+                let faces = native_face_selection(face_selection);
+                let neutral_plane = native_face_selection(plane_selection);
+                let operands_supported = |selection: &FaceSelection, native: Option<&str>| {
+                    native.is_some()
+                        || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
+                };
                 if existing
                     .as_deref()
                     .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Draft"))
-                    || faces.trim().is_empty()
-                    || neutral_plane.trim().is_empty()
+                    || !operands_supported(face_selection, faces)
+                    || !operands_supported(plane_selection, neutral_plane)
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported draft semantics",
@@ -2096,8 +2125,17 @@ pub fn sync_neutral_features(
                     .map(|record| record.properties.clone())
                     .unwrap_or_default();
                 let fallback = existing.as_deref().map_or("", |record| record.id.as_str());
-                write_native_selection(&mut properties, "Faces", faces, fallback);
-                write_native_selection(&mut properties, "NeutralPlane", neutral_plane, fallback);
+                if let Some(faces) = faces {
+                    write_native_selection(&mut properties, "Faces", faces, fallback);
+                }
+                if let Some(neutral_plane) = neutral_plane {
+                    write_native_selection(
+                        &mut properties,
+                        "NeutralPlane",
+                        neutral_plane,
+                        fallback,
+                    );
+                }
                 properties.insert("Direction".into(), format_vector3(*pull_direction));
                 properties.insert("Outward".into(), outward.to_string());
                 (

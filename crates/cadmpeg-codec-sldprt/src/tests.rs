@@ -4908,6 +4908,86 @@ fn semantic_writer_round_trips_typed_draft() {
 }
 
 #[test]
+fn semantic_writer_preserves_absent_feature_selections() {
+    use cadmpeg_ir::features::{
+        Angle, ChamferSpec, EdgeSelection, FaceSelection, FeatureDefinition, Length,
+    };
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Chamfer Name="Bevel" Type="Chamfer" id="31"><Dimension Name="Distance">2mm</Dimension></Chamfer>
+            <Shell Name="Thin" Type="Shell" id="32" Outward="false"><Dimension Name="Thickness">1mm</Dimension></Shell>
+            <Draft Name="Taper" Type="Draft" id="33" Direction="0,0,1" Outward="false"><Dimension Name="Angle">3deg</Dimension></Draft>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Chamfer {
+            edges: EdgeSelection::Unresolved,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[1].definition,
+        FeatureDefinition::Shell {
+            removed_faces: FaceSelection::Unresolved,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[2].definition,
+        FeatureDefinition::Draft {
+            faces: FaceSelection::Unresolved,
+            neutral_plane: FaceSelection::Unresolved,
+            ..
+        }
+    ));
+
+    let FeatureDefinition::Chamfer { spec, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed chamfer");
+    };
+    *spec = ChamferSpec::Distance {
+        distance: Length(2.5),
+    };
+    let FeatureDefinition::Shell { thickness, .. } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed shell");
+    };
+    *thickness = Length(1.5);
+    let FeatureDefinition::Draft { angle, .. } = &mut decoded.ir.model.features[2].definition
+    else {
+        panic!("typed draft");
+    };
+    *angle = Angle(5f64.to_radians());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(features[0].parameters["Distance"], "2.5mm");
+    assert!(!features[0].properties.contains_key("Edges"));
+    assert_eq!(features[1].parameters["Thickness"], "1.5mm");
+    assert!(!features[1].properties.contains_key("RemovedFaces"));
+    assert_eq!(
+        features[2].parameters["Angle"],
+        format!("{}rad", 5f64.to_radians())
+    );
+    assert!(!features[2].properties.contains_key("Faces"));
+    assert!(!features[2].properties.contains_key("NeutralPlane"));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_combine() {
     use cadmpeg_ir::features::{BodySelection, BooleanOp, FeatureDefinition};
 
