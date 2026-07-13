@@ -4,7 +4,7 @@
 detects 3DM input, inspects chunk and table structure, decodes document
 metadata, and transfers supported model data into CADIR version 3.
 
-Support level: [L6](../../docs/format-support.md#support-ladder) for archive
+Support level: [L8](../../docs/format-support.md#support-ladder) for archive
 versions 50, 60, 70, and 80.
 
 Archive versions 50, 60, 70, and 80 decode points, point clouds, line, arc,
@@ -26,15 +26,17 @@ embedded typed geometry. The native operation parameters preserve the complete
 built-in command-value map without assigning application-specific meanings to
 numeric parameter identifiers.
 
-Third-party classes and userdata, future payload versions, general annotations,
-lights, rendering details, and other presentation records remain native unknown
-records. Rendering-attribute and nested material-reference records are
-structurally framed but are not transferred as typed appearance data. Complete
-record bytes are retained within per-record and per-document limits; larger
-records retain their exact length and SHA-256 digest. A truncated prefix is
-never retained as a complete record. Checksum failures, invalid compressed
-channels, and invalid Brep, extrusion, SubD, or instance candidates stay within
-their bounded parent and do not commit partial geometry or topology.
+Product definitions, occurrences, placements, linked-file identities, layers,
+object display attributes, materials, texture slots and mappings, bitmaps,
+groups, lights, linetypes, hatch patterns, text styles, dimension styles,
+general annotations, document render and drafting settings, saved views,
+cameras, construction planes, page settings, wallpaper, trace images, notes,
+revisions, previews, and application identity transfer into typed native
+arenas. Third-party classes and userdata remain named exact records with their
+class, item, or record identity. A complete byte ledger classifies every source
+byte as typed header data, structural framing, or part of a named opaque
+record. Complete record bytes are retained within bounded limits; larger
+records retain exact length and SHA-256 identity.
 
 V3 and V4 archives support full container inspection and metadata decoding;
 their object geometry remains unknown. V1, V2, and archive version 5 support

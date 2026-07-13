@@ -2483,3 +2483,147 @@ ON_BoundingBox
 
 The transform and definition UUID identify the reference. Definition
 membership comes from the member UUID array, not object attributes.
+
+## 20. Product, presentation, and complete-record semantics
+
+### 20.1 External file identity
+
+A file reference is an anonymous chunk version 1.0 or 1.1:
+
+```
+UTF-16 full path
+UTF-16 relative path
+anonymous content-hash chunk version 1.0:
+  u64 referenced byte count
+  u64 hash acquisition time
+  u64 content modification time
+  anonymous SHA-1 chunk version 1.0: 20 digest bytes
+  anonymous SHA-1 chunk version 1.0: 20 digest bytes
+u32 path status
+minor >= 1: UUID embedded-file component
+```
+
+The first SHA-1 identifies the normalized name and the second identifies the
+content. A linked instance definition and a texture image reference use this
+same structure. Linked definitions preserve their structure when the archive
+contains no local member geometry.
+
+### 20.2 Materials, textures, and mappings
+
+A modern material is anonymous version 1.0 followed by model-component
+attributes. An early archive-60 component-attribute child uses anonymous type
+`0x40008000` and a `u32` presence mask: bits 0 through 4 gate UUID, parent UUID,
+archive index, UTF-16 name, and two component-status integers. Later component
+attributes use `0x40008002` and independent status bytes. The remaining
+material fields are six colors, index of refraction, reflectivity, shine,
+transparency, an anonymous texture array, material-channel pairs, shareable and
+lighting flags, Fresnel controls, reflection and refraction glossiness, an RDK
+instance UUID, and the diffuse-texture alpha switch.
+
+Each texture-array element is an `ON_Texture` class wrapper. Its anonymous
+version 1.0 through 1.2 payload is:
+
+```
+UUID texture ID
+u32 mapping channel
+UTF-16 legacy image path
+bool enabled
+u32 texture type, mode, minification filter, magnification filter
+3 × u32 U/V/W wrap mode
+16 × f64 UVW transform
+ON_Color border, ON_Color transparent
+UUID transparency texture
+2 × f64 bump interval
+5 × f64 alpha blend constant and coefficients
+ON_Color RGB blend constant
+4 × f64 RGB blend coefficients
+i32 blend order
+minor >= 1: file reference
+minor >= 2: bool treat as linear
+```
+
+Texture transforms and blend coefficients are dimensionless. Texture mappings
+store mapping and projection enums, primitive and UVW transforms, a primitive
+class object, texture-space enum, and capped flag. Material channels bind a
+material UUID to an integer channel.
+
+### 20.3 Drafting resources and annotations
+
+Linetypes store model-component identity, ordered length/type segments, cap and
+join styles, width and width units, taper points, and the model-distance flag.
+Segment lengths and widths with model units are length values. Hatch patterns
+store identity, fill type, description, and hatch lines. Hatch-line base,
+offset, and dash values are lengths; angle is radians.
+
+Text styles use the legacy packed font format through archive 50 and the
+anonymous model-component form in later archives. Font state includes the raw
+characteristics word, Windows and PostScript names, Windows and Apple weights,
+point size, family and localized names, the ten-byte PANOSE classification,
+and rich-text quartet member. Font point size is not a model length.
+
+Dimension-style anonymous versions 1.0 through 1.9 store the common size,
+format, resolution, prefix, suffix, alternate-unit, suppression, and parent
+fields followed by field-override bits; tolerance values; baseline and text
+mask state; scale and source style; display and plot colors, sources, and
+weights; fixed extension length; text rotation; arrow suppression and custom
+arrow UUIDs; leader curve, landing, content-angle, and alignment state; scale
+value, font, and text-mask child chunks; text locations, alignments,
+orientations, and angle styles; primary and alternate unit/display modes;
+center-mark style; dimension-line, text-fit, and arrow-fit controls; and the
+decimal separator. Sizes, baseline spacing, fixed extension length, leader
+landing length, and plot weights are length values. Scale factors, rotations,
+fractions, rounding values, colors, enums, and override bits are not scaled.
+
+Modern text and leader objects contain the common annotation structure and an
+ordered leader point array. V5 text and leader classes contain outer anonymous
+version 1.0 and the common V5 annotation chunk described in section 18. Text
+dots store packed version, model point, point height, primary and secondary
+text, font face, and independent always-on-top, transparency, bold, and italic
+bits.
+
+### 20.4 Views and document presentation
+
+A view record is an ordered child-chunk list terminated by `TCODE_ENDOFTABLE`.
+The construction-plane child stores packed version 1.0 or 1.1, plane, grid and
+snap spacing, grid counts, UTF-16 name, and depth-buffer flag. The viewport
+child stores packed version 1.0 through 1.5, validity flags, projection, camera
+location and frame vectors, six frustum coordinates, six integer port bounds,
+viewport UUID, five camera/frustum lock flags, target point, camera-frame
+validity, and three dimensionless view-scale values. Camera locations, targets,
+frustum coordinates, construction-plane origins, and grid spacing are length
+values. Camera axes and view scale are not scaled.
+
+View-attributes packed versions 1.1 through 1.9 add view type; page dimensions;
+display-mode UUID; anonymous page settings; projection lock; an array of
+versioned clipping-plane equations, UUIDs, enabled flags, and depths; named-view
+UUID; construction-Z-axis flag; focal-blur values; rendering pixel size; and
+section behavior. Page sizes and margins are millimeters already. A clipping
+plane equation's constant and depth are model lengths.
+
+Trace images store path, width, height, plane, grayscale, hidden, filtered, and
+file-reference state. Wallpaper stores path, grayscale, hidden, and file
+reference. Windows bitmap classes store a Windows bitmap header followed by
+one or two compressed palette/pixel buffers. `ON_WindowsBitmapEx` prefixes the
+bitmap with packed version 1.0 and a UTF-16 file path. Embedded bitmaps store
+component identity, file reference, compression method, uncompressed size, and
+the image buffer.
+
+Global annotation settings store drafting sizes, unit and format enums, font
+face, text and hatch scales, model/layout scaling flags, and optional dimension
+layer identity. Grid defaults store grid/snap spacing, line counts, and grid and
+axis visibility. Render settings store image dimensions, DPI and units,
+ambient and background state, geometry and lighting switches, antialias and
+shadow settings, rendering source and view names, and viewport-aspect lock.
+
+### 20.5 Byte partition and opaque identity
+
+The 32-byte archive header is typed data. Every long chunk consists of a
+structural header, bounded body, and optional structural checksum. Short chunks
+are structural header/value pairs. Table and class end markers and the EOF
+record are structural. Bodies decoded by the preceding sections are typed.
+Every remaining complete table, property, setting, object, userdata, and class
+record is one named opaque record identified by its typecode and, when present,
+class UUID, userdata class UUID, userdata item UUID, plug-in UUID, object UUID,
+or archive offset. These categories partition the archive byte range without
+gaps or overlap. An opaque record's identity includes its exact byte length and
+SHA-256; retained bytes, when present, cover the complete record.
