@@ -137,6 +137,64 @@ fn point_file() -> Vec<u8> {
     bytes
 }
 
+fn nested_transformed_point_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,0.5,10,2HCM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, transform, entity_type, label) in [
+        (1, 1, 0, "124", "PARENT"),
+        (3, 2, 1, "124", "LOCAL"),
+        (5, 3, 3, "116", "POINT"),
+    ] {
+        bytes.extend(directory_card(
+            [
+                entity_type,
+                &parameter_start.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                &transform.to_string(),
+                "0",
+                "00000000",
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [entity_type, "0", "0", "1", "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"124,1,0,0,0,0,1,0,2,0,0,1,0;", 1, 1));
+    bytes.extend(parameter_card(b"124,-1,0,0,1,0,1,0,0,0,0,1,0;", 3, 2));
+    bytes.extend(parameter_card(b"116,1,2,3;", 5, 3));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_applies_nested_transforms_reflection_units_and_model_scale_once() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(nested_transformed_point_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.points[0].position.x, 0.0);
+    assert_eq!(result.ir.model.points[0].position.y, 80.0);
+    assert_eq!(result.ir.model.points[0].position.z, 60.0);
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn inspect_rejects_terminate_count_mismatch() {
     let mut bytes = card(b"original fixture", b'S', 1);
