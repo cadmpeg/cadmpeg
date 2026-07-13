@@ -582,13 +582,15 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
 fn scan_decodes_allfeatur_affected_id_arrays() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x03\x07\x80\x80\x09\xe0\x22contours\0\xf8\x01\x2a".to_vec();
+    let allfeatur = b"\x04\xeb\x04\xe0\x21geoms_affected\0\xf8\x03\x07\x80\x80\x09\
+        \xe0\x22contours\0\xf8\x01\x2a\xe0\x01parent_table\0\xf8\x02\x01\x03"
+        .to_vec();
     let scan = container::scan_bytes(build_prt(
         "c",
         &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
     ));
 
-    assert_eq!(scan.feature_affected_ids.len(), 2);
+    assert_eq!(scan.feature_affected_ids.len(), 3);
     assert_eq!(
         scan.feature_affected_ids[0].kind,
         crate::feature::AffectedIdKind::Geometry
@@ -599,6 +601,11 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
         crate::feature::AffectedIdKind::Contours
     );
     assert_eq!(scan.feature_affected_ids[1].ids, vec![42]);
+    assert_eq!(
+        scan.feature_affected_ids[2].kind,
+        crate::feature::AffectedIdKind::Parents
+    );
+    assert_eq!(scan.feature_affected_ids[2].ids, vec![1, 3]);
 }
 
 #[test]
@@ -608,7 +615,9 @@ fn decode_transfers_strong_parents_as_ordered_dependencies() {
     datum.extend([0x0f; 6]);
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let allfeatur = b"\x04\xeb\x04\xe0\x21strong_parents\0\xf8\x03\x01\x02\x01".to_vec();
+    let allfeatur = b"\x04\xeb\x04\xe0\x01parent_table\0\xf8\x01\x01\
+        \xe0\x21strong_parents\0\xf8\x02\x02\x01"
+        .to_vec();
     let data = build_prt(
         "c",
         &[

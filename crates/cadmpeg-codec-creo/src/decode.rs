@@ -1484,6 +1484,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 crate::feature::AffectedIdKind::Geometry => "affected_geometry_ids",
                 crate::feature::AffectedIdKind::Edges => "affected_edge_ids",
                 crate::feature::AffectedIdKind::StrongParents => "strong_parent_feature_ids",
+                crate::feature::AffectedIdKind::Parents => "parent_feature_ids",
                 crate::feature::AffectedIdKind::Contours => "contour_ids",
             };
             parameters.insert(
@@ -1538,7 +1539,11 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             .iter()
             .filter(|record| {
                 record.feature_id == operation.feature_id
-                    && record.kind == crate::feature::AffectedIdKind::StrongParents
+                    && matches!(
+                        record.kind,
+                        crate::feature::AffectedIdKind::StrongParents
+                            | crate::feature::AffectedIdKind::Parents
+                    )
             })
             .flat_map(|record| &record.ids)
             .filter(|dependency| {

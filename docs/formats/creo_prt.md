@@ -336,6 +336,11 @@ identifiers are not interchangeable.
 regenerate the owning feature. It is a dependency relation, not feature-tree
 containment.
 
+`parent_table f8 <count> <ids...>` is the owning feature's ordered
+regeneration-parent table. Its compact integers are modeling feature
+identifiers. Both `parent_table` and `strong_parents` contribute dependency
+edges; neither establishes feature-tree containment.
+
 `ActDatums` stores datum-plane geometry as `act_datum_geoms → srf_array` records. Each section includes one named datum row and can include positional `<gid> 22 ...` rows. For datum planes, `outline` stores two diagonal corners. Let `k = argmin_i |p0[i] - p1[i]|`; the plane equation is `x_k = p0[k]`. Datum names do not define their geometric orientation.
 
 The datum surface row's `feat_id` is the owning modeling feature identifier.

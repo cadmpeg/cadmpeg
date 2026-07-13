@@ -201,6 +201,8 @@ pub enum AffectedIdKind {
     Edges,
     /// `strong_parents` parent-feature identifiers.
     StrongParents,
+    /// `parent_table` regeneration-parent feature identifiers.
+    Parents,
     /// `contours` contour identifiers.
     Contours,
 }
@@ -2163,6 +2165,7 @@ pub fn affected_ids(rows: &[FeatureRow]) -> Vec<FeatureAffectedIds> {
         (b"geoms_affected", AffectedIdKind::Geometry),
         (b"edgs_affected", AffectedIdKind::Edges),
         (b"strong_parents", AffectedIdKind::StrongParents),
+        (b"parent_table", AffectedIdKind::Parents),
         (b"contours", AffectedIdKind::Contours),
     ];
     let mut result = Vec::new();
