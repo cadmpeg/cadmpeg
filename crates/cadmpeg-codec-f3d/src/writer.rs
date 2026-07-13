@@ -7370,6 +7370,21 @@ fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecE
         ));
     }
     let history = &histories[0];
+    if let Some(stream_size) = history.stream_size {
+        if history
+            .states
+            .first()
+            .is_none_or(|state| state.state_id != stream_size)
+            || history
+                .high_water_mark
+                .is_none_or(|high_water_mark| high_water_mark < stream_size)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                history.id
+            )));
+        }
+    }
     for name in ["Begin", "of", "ASM", "History"] {
         native_subident(bytes, name)?;
     }
@@ -7402,6 +7417,12 @@ fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecE
             native_ref(bytes, board.owner_ref);
             native_i64(bytes, board.number);
             for change in &board.changes {
+                if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D entity change {} has a kind inconsistent with its references",
+                        change.id
+                    )));
+                }
                 native_i64(bytes, 1);
                 native_ref(bytes, change.old_ref.unwrap_or(-1));
                 native_ref(bytes, change.new_ref.unwrap_or(-1));
