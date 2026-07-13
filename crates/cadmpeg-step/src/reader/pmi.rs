@@ -9,6 +9,7 @@ use cadmpeg_ir::pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
     PmiQuantity, PmiTarget, PmiValue,
 };
+use cadmpeg_ir::transform::Transform;
 
 use crate::parse::{Exchange, RawRecord, Value};
 
@@ -212,6 +213,55 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }));
     }
 
+    for (&id, record) in &exchange.records {
+        let Some(name) = record.simple_name() else {
+            continue;
+        };
+        if !is_presentation_annotation(name) {
+            continue;
+        }
+        let mut text_records = BTreeSet::new();
+        let text = find_annotation_text(id, exchange, &mut text_records);
+        let mut placement_records = BTreeSet::new();
+        let placement = record
+            .parameters()
+            .iter()
+            .flat_map(references)
+            .find_map(|reference| {
+                find_placement(reference, exchange, geometry, &mut placement_records)
+            });
+        let semantics = record
+            .parameters()
+            .iter()
+            .flat_map(references)
+            .filter(|reference| annotations.contains_key(reference))
+            .map(pmi_id)
+            .collect::<Vec<_>>();
+        push_annotation(
+            ir,
+            &mut annotations,
+            id,
+            record.parameter(0).and_then(ValueExt::text),
+            Vec::new(),
+            PmiDefinition::Presentation {
+                text,
+                placement,
+                semantics,
+            },
+        );
+        typed.insert(id);
+        typed.extend(text_records);
+        typed.extend(placement_records);
+    }
+    for (&id, record) in &exchange.records {
+        if matches!(
+            record.simple_name(),
+            Some("DRAUGHTING_MODEL" | "ANNOTATION_PLANE" | "DRAUGHTING_CALLOUT")
+        ) {
+            typed.insert(id);
+        }
+    }
+
     typed.extend(aspects.into_iter().filter(|id| {
         ir.model.pmi.iter().any(|annotation| {
             annotation.targets.iter().any(|target| {
@@ -223,6 +273,72 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         typed_records: typed,
         warnings,
     }
+}
+
+fn is_presentation_annotation(name: &str) -> bool {
+    name.starts_with("ANNOTATION_") && name.ends_with("_OCCURRENCE")
+        || matches!(
+            name,
+            "TESSELLATED_ANNOTATION_OCCURRENCE"
+                | "LEADER_CURVE"
+                | "LEADER_DIRECTED_CALLOUT"
+                | "LEADER_DIRECTED_DIMENSION"
+        )
+}
+
+fn find_annotation_text(
+    id: u64,
+    exchange: &Exchange,
+    visited: &mut BTreeSet<u64>,
+) -> Option<String> {
+    if !visited.insert(id) {
+        return None;
+    }
+    let record = exchange.records.get(&id)?;
+    if matches!(
+        record.simple_name(),
+        Some("TEXT_LITERAL" | "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")
+    ) {
+        return record.parameter(1).and_then(ValueExt::text);
+    }
+    record
+        .parameters()
+        .iter()
+        .flat_map(references)
+        .find_map(|reference| find_annotation_text(reference, exchange, visited))
+}
+
+fn find_placement(
+    id: u64,
+    exchange: &Exchange,
+    geometry: &GeometryResult,
+    visited: &mut BTreeSet<u64>,
+) -> Option<Transform> {
+    if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&id) {
+        let y_axis = cadmpeg_ir::math::Vector3::new(
+            z_axis.y * x_axis.z - z_axis.z * x_axis.y,
+            z_axis.z * x_axis.x - z_axis.x * x_axis.z,
+            z_axis.x * x_axis.y - z_axis.y * x_axis.x,
+        );
+        return Some(Transform {
+            rows: [
+                [x_axis.x, y_axis.x, z_axis.x, origin.x],
+                [x_axis.y, y_axis.y, z_axis.y, origin.y],
+                [x_axis.z, y_axis.z, z_axis.z, origin.z],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        });
+    }
+    if !visited.insert(id) {
+        return None;
+    }
+    exchange
+        .records
+        .get(&id)?
+        .parameters()
+        .iter()
+        .flat_map(references)
+        .find_map(|reference| find_placement(reference, exchange, geometry, visited))
 }
 
 fn push_annotation(

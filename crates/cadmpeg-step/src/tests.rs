@@ -459,6 +459,33 @@ fn decode_transfers_ap242_semantic_pmi() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
+#[test]
+fn decode_transfers_ap242_presentation_pmi() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let bytes = include_bytes!("../tests/fixtures/ap242_presentation_pmi.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 presentation PMI");
+
+    assert_eq!(result.ir.model.pmi.len(), 1);
+    let PmiDefinition::Presentation {
+        ref text,
+        ref placement,
+        ..
+    } = result.ir.model.pmi[0].definition
+    else {
+        panic!("annotation occurrence is not presentation PMI")
+    };
+    assert_eq!(text.as_deref(), Some("inspect surface"));
+    let transform = placement.as_ref().unwrap();
+    assert_eq!(transform.rows[0][3], 10.0);
+    assert_eq!(transform.rows[1][3], 20.0);
+    assert_eq!(transform.rows[2][3], 30.0);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");

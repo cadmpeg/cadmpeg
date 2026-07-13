@@ -15,3 +15,4 @@ authored against `docs/formats/step.md`.
 | `ap242_tessellation.p21` | shared coordinate list and one-based AP242 triangulated face indices |
 | `ap242_semantic_pmi.p21` | datum, datum system, dimensional size with plus/minus limits, and geometric tolerance |
 | `ap242_conversion_units.p21` | conversion-based length unit chain and representation uncertainty |
+| `ap242_presentation_pmi.p21` | drafting model, annotation plane, placed text literal, and annotation occurrence |
