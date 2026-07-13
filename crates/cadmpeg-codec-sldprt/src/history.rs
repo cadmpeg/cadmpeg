@@ -713,6 +713,9 @@ pub fn bind_topology_selections(
             FeatureDefinition::Thicken { faces, .. } => {
                 resolve_face_selection(faces, &face_ids);
             }
+            FeatureDefinition::OffsetSurface { faces, .. } => {
+                resolve_face_selection(faces, &face_ids);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
@@ -939,6 +942,8 @@ fn project_definition(
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Thicken") || feature_family(feature, "Thickness") {
         project_thicken(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "OffsetSurface") {
+        project_offset_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
@@ -1674,6 +1679,13 @@ fn project_thicken(feature: &Feature) -> Option<FeatureDefinition> {
         } else {
             ThickenSide::Forward
         },
+    })
+}
+
+fn project_offset_surface(feature: &Feature) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::OffsetSurface {
+        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        distance: Length(parse_length_mm(feature.parameters.get("Distance")?)?),
     })
 }
 
@@ -3527,6 +3539,43 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::OffsetSurface { faces, distance } => {
+                let selection = face_selection_value(faces).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no offset-surface support faces",
+                        feature.id
+                    ))
+                })?;
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !feature_family(record, "OffsetSurface"))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                if !distance.0.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite surface offset",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.insert("Distance".into(), format_length_mm(distance.0));
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Faces".into(), selection);
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "OffsetSurface".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Draft {
                 faces: face_selection,
                 neutral_plane: plane_selection,
@@ -4898,6 +4947,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Chamfer { .. } => "Chamfer",
         FeatureDefinition::Shell { .. } => "Shell",
         FeatureDefinition::Thicken { .. } => "Thicken",
+        FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::DeleteBody {

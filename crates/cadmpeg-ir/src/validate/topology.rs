@@ -1226,6 +1226,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "thicken thickness is invalid");
                 }
             }
+            FeatureDefinition::OffsetSurface { faces, distance } => {
+                face_selections.push(faces);
+                if !distance.0.is_finite() {
+                    feature_geometry_error(findings, feature, "surface offset is invalid");
+                }
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,

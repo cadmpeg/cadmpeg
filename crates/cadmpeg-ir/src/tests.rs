@@ -2031,6 +2031,10 @@ fn feature_operation_geometry_is_validated() {
             thickness: Length(0.0),
             side: ThickenSide::Forward,
         },
+        FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Unresolved,
+            distance: Length(f64::NAN),
+        },
         FeatureDefinition::Scale {
             bodies: crate::features::BodySelection::Unresolved,
             center: ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0)),
@@ -2088,6 +2092,7 @@ fn feature_operation_geometry_is_validated() {
         "rib geometry is invalid",
         "hole geometry is invalid",
         "thicken thickness is invalid",
+        "surface offset is invalid",
         "scale transform is invalid",
         "coordinate-system frame is invalid",
         "equation curve is invalid",

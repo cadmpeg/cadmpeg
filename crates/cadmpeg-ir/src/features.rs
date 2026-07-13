@@ -374,6 +374,13 @@ pub enum FeatureDefinition {
         /// Distribution of thickness relative to the selected faces.
         side: ThickenSide,
     },
+    /// Surface copied at a signed normal offset from selected support faces.
+    OffsetSurface {
+        /// Faces supplying the source surface geometry.
+        faces: FaceSelection,
+        /// Signed normal offset in canonical millimeters.
+        distance: Length,
+    },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
         /// Faces whose angle is modified.
