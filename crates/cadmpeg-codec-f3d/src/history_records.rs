@@ -4,6 +4,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_ir::document::Model;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistory {
     pub id: String,
@@ -11,8 +13,13 @@ pub(crate) struct AsmHistory {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stream_size: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub high_water_mark: Option<i64>,
+    #[serde(alias = "high_water_mark")]
+    pub history_entry_count: Option<i64>,
     pub states: Vec<AsmDeltaState>,
+    /// Typed kernel models reconstructed for older linked states. The active
+    /// head state's model is the document's top-level model.
+    #[serde(default)]
+    pub historical_models: Vec<AsmHistoricalModel>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -42,10 +49,27 @@ pub(crate) struct AsmHistoryRecord {
     pub id: String,
     pub parent: String,
     pub index: u64,
+    /// Byte offset of the record in the decompressed ASM stream.
+    #[serde(default)]
+    pub byte_offset: u64,
+    /// Original ASM `RecordTable` index. History boundary records have no
+    /// entity-table identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_index: Option<i64>,
     pub name: String,
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,
+}
+
+/// A kernel model reconstructed at one retained construction-history state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalModel {
+    pub id: String,
+    pub history: String,
+    pub state_id: i64,
+    pub node_index: i64,
+    pub model: Model,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

@@ -5992,7 +5992,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     {
         let mut native = f3d_native_mut(&mut preambleless);
         native.asm_histories[0].stream_size = None;
-        native.asm_histories[0].high_water_mark = None;
+        native.asm_histories[0].history_entry_count = None;
     }
     let mut preambleless_bytes = Vec::new();
     F3dCodec
@@ -6009,7 +6009,7 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         None
     );
     assert_eq!(
-        f3d_native(&preambleless_round_trip.ir).asm_histories[0].high_water_mark,
+        f3d_native(&preambleless_round_trip.ir).asm_histories[0].history_entry_count,
         None
     );
     f3d_native_mut(&mut source_less).asm_histories[0].states[0].bulletin_boards[0].changes[0]
@@ -6031,13 +6031,13 @@ fn generated_source_less_writes_typed_asm_history_graph() {
         .expect_err("incoherent generated history preamble must be rejected");
     assert!(error
         .to_string()
-        .contains("head state_id == stream_size <= high_water_mark"));
+        .contains("head state_id == stream_size and nonnegative history_entry_count"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less history round trip");
     let actual = &f3d_native(&round_trip.ir).asm_histories[0];
     assert_eq!(actual.stream_size, expected.stream_size);
-    assert_eq!(actual.high_water_mark, expected.high_water_mark);
+    assert_eq!(actual.history_entry_count, expected.history_entry_count);
     assert_eq!(actual.states.len(), expected.states.len());
     assert_eq!(actual.states[0].state_id, expected.states[0].state_id);
     assert_eq!(actual.states[0].bulletin_boards.len(), 1);
@@ -8784,7 +8784,7 @@ fn decode_retains_generated_asm_history_graph() {
     assert_eq!(f3d_native(&result.ir).asm_histories.len(), 1);
     let history = &f3d_native(&result.ir).asm_histories[0];
     assert_eq!(history.stream_size, Some(2));
-    assert_eq!(history.high_water_mark, Some(99));
+    assert_eq!(history.history_entry_count, Some(99));
     assert_eq!(history.states.len(), 2);
     assert_eq!(history.states[0].state_id, 2);
     assert_eq!(history.states[0].next_ref, Some(1));
@@ -8814,7 +8814,7 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         assert!(history.byte_offset > 0);
         assert!(history.states[0].byte_offset > 0);
         history.stream_size = Some(8);
-        history.high_water_mark = Some(120);
+        history.history_entry_count = Some(120);
         history.states[0].state_id = 8;
         history.states[0].version_flag = 4;
         history.states[0].state_flag = 6;
@@ -8847,7 +8847,7 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         Some(8)
     );
     assert_eq!(
-        f3d_native(&round_trip.ir).asm_histories[0].high_water_mark,
+        f3d_native(&round_trip.ir).asm_histories[0].history_entry_count,
         Some(120)
     );
     assert_eq!(state.state_id, 8);

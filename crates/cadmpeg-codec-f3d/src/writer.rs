@@ -693,16 +693,16 @@ fn validate_source_less_history_graph(
         }
     }
     for history in &native.asm_histories {
-        match (history.stream_size, history.high_water_mark) {
-            (Some(size), Some(high_water))
+        match (history.stream_size, history.history_entry_count) {
+            (Some(size), Some(entry_count))
                 if history
                     .states
                     .first()
                     .is_some_and(|state| state.state_id == size)
-                    && high_water >= size => {}
+                    && entry_count >= 0 => {}
             (Some(_), Some(_)) => {
                 return Err(CodecError::Malformed(format!(
-                    "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                    "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
             }
@@ -9273,16 +9273,16 @@ fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecE
         ));
     }
     let history = &histories[0];
-    match (history.stream_size, history.high_water_mark) {
-        (Some(stream_size), Some(high_water_mark)) => {
+    match (history.stream_size, history.history_entry_count) {
+        (Some(stream_size), Some(history_entry_count)) => {
             if history
                 .states
                 .first()
                 .is_none_or(|state| state.state_id != stream_size)
-                || high_water_mark < stream_size
+                || history_entry_count < 0
             {
                 return Err(CodecError::Malformed(format!(
-                    "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                    "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
             }
@@ -9294,7 +9294,7 @@ fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecE
             native_i64(bytes, stream_size);
             native_i64(bytes, stream_size);
             native_i64(bytes, 0);
-            native_i64(bytes, high_water_mark);
+            native_i64(bytes, history_entry_count);
             for reference in [-1, 0, 1, -1] {
                 native_ref(bytes, reference);
             }
@@ -12306,7 +12306,7 @@ fn validate_history_state_edits(
         }
         let mut normalized = history.clone();
         normalized.stream_size = before.stream_size;
-        normalized.high_water_mark = before.high_water_mark;
+        normalized.history_entry_count = before.history_entry_count;
         for (state, before_state) in normalized.states.iter_mut().zip(&before.states) {
             state.state_id = before_state.state_id;
             state.version_flag = before_state.version_flag;
@@ -12362,28 +12362,29 @@ fn validate_history_state_edits(
                 .first()
                 .is_none_or(|state| state.state_id != size)
                 || history
-                    .high_water_mark
-                    .is_none_or(|high_water| high_water < size)
+                    .history_entry_count
+                    .is_none_or(|entry_count| entry_count < 0)
             {
                 return Err(CodecError::Malformed(format!(
-                    "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                    "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
             }
         }
         if history.stream_size != before.stream_size
-            || history.high_water_mark != before.high_water_mark
+            || history.history_entry_count != before.history_entry_count
         {
-            let (Some(size), Some(high_water)) = (history.stream_size, history.high_water_mark)
+            let (Some(_size), Some(entry_count)) =
+                (history.stream_size, history.history_entry_count)
             else {
                 return Err(CodecError::NotImplemented(format!(
                     "cannot add or remove the F3D history preamble: {}",
                     history.id
                 )));
             };
-            if history.byte_offset == 0 || high_water < size {
+            if history.byte_offset == 0 || entry_count < 0 {
                 return Err(CodecError::Malformed(format!(
-                    "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                    "F3D history {} requires head state_id == stream_size and nonnegative history_entry_count",
                     history.id
                 )));
             }
@@ -12442,8 +12443,10 @@ fn patch_history_states(bytes: &mut [u8], edits: &HistoryEdits) -> Result<(), Co
                 CodecError::Malformed("ASM preamble offset exceeds address space".into())
             })?;
         let size = history.stream_size.expect("validated history preamble");
-        let high_water = history.high_water_mark.expect("validated history preamble");
-        for (ordinal, value) in [(0, size), (1, size), (3, high_water)] {
+        let entry_count = history
+            .history_entry_count
+            .expect("validated history preamble");
+        for (ordinal, value) in [(0, size), (1, size), (3, entry_count)] {
             let tag = start + ordinal * 9;
             if bytes.get(tag) != Some(&0x04) {
                 return Err(CodecError::Malformed(format!(
