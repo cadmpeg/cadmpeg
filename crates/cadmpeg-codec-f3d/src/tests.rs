@@ -10170,6 +10170,7 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     let scale = construction.scales[0].as_ref().expect("first scale");
     assert!(construction.scales[1..].iter().all(Option::is_none));
     assert_eq!(scale.members.len(), 1);
+    assert!(scale.members[0].data.pcurve.is_some());
     assert_eq!(scale.auxiliaries.len(), 1);
     assert_eq!(scale.tail, [2, 3]);
     assert_eq!(construction.flags, [true, false]);
@@ -10186,10 +10187,21 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
     assert_eq!(*selector, 0);
     assert!(matches!(direction, CompoundLoftDirection::Vector { .. }));
     assert_eq!(*trailing_flags, [true, false]);
+    let member_curve = scale.members[0].curve.clone();
 
     let mut source_less = result.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == member_curve)
+        .expect("compound-loft member curve")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+        direction: cadmpeg_ir::math::Vector3::new(4.0, -3.0, 2.0),
+    };
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -10212,6 +10224,22 @@ fn generated_compound_loft_decodes_scale_and_zero_tail() {
             direction: CompoundLoftDirection::Vector { .. },
             ..
         }
+    ));
+    let member_curve = &construction.scales[0]
+        .as_ref()
+        .expect("round-trip scale")
+        .members[0]
+        .curve;
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *member_curve)
+            .map(|curve| &curve.geometry),
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
     ));
 }
 

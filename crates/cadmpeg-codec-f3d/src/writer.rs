@@ -4354,7 +4354,50 @@ fn native_compound_loft_scale(
     );
     for member in &scale.members {
         native_i64(bytes, member.type_code);
-        native_nurbs_curve(bytes, native_loft_curve(target, &member.curve)?)?;
+        let curve = target
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == member.curve)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "compound loft references missing member curve {}",
+                    member.curve
+                ))
+            })?;
+        let curve = match (&curve.geometry, &member.data.pcurve) {
+            (CurveGeometry::Nurbs(curve), _) => curve.clone(),
+            (CurveGeometry::Line { .. }, Some(PcurveGeometry::Nurbs { knots, .. })) => {
+                native_interval_curve(
+                    &curve.geometry,
+                    [
+                        knots.first().copied().ok_or_else(|| {
+                            CodecError::Malformed(
+                                "compound-loft member pcurve has no knot domain".into(),
+                            )
+                        })?,
+                        knots.last().copied().ok_or_else(|| {
+                            CodecError::Malformed(
+                                "compound-loft member pcurve has no knot domain".into(),
+                            )
+                        })?,
+                    ],
+                )?
+            }
+            (CurveGeometry::Line { .. }, _) => {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D compound-loft member line requires a bounded NURBS pcurve"
+                        .into(),
+                ));
+            }
+            _ => {
+                return Err(CodecError::NotImplemented(
+                    "source-less F3D compound-loft member requires a NURBS or bounded line curve"
+                        .into(),
+                ));
+            }
+        };
+        native_nurbs_curve(bytes, &curve)?;
         let surface = target
             .model
             .surfaces
