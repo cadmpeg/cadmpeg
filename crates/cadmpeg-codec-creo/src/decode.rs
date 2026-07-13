@@ -2927,7 +2927,7 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, and topology-bound `fc 05` \
-             cylinders with a placed cap transfer as carriers; other parameter bodies remain \
+             cylinders with a resolved model-X or model-Y cap plane transfer as carriers; other parameter bodies remain \
              structural records.",
             scan.sections.len(),
             scan.layout.token(),
@@ -2946,8 +2946,8 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         message: format!(
             "General model B-rep transfer remains incomplete. Exact single-loop plane components \
              transfer when their vertices are determined by placed-plane intersections. Selected \
-             cylinders transfer when an exact `fc 05` cap pair and placed cap outline establish the \
-             complete equation. VisibGeom \
+             cylinders transfer when an exact `fc 05` record and placed cap outline establish the \
+             complete axis placement, parameterization, and radius. VisibGeom \
              stores one surface prototype per family (a first-instance template), not per-instance \
              located geometry, so other prototype scalars cannot be emitted as model surfaces \
              without mislabeling most instances \
