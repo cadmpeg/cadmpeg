@@ -860,10 +860,11 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             continue;
         }
         for (record_start, record_end, family, class, object_id) in run {
-            if family != 0xb5 || !is_topology_class(class) {
+            if !is_topology_class(class) || !matches!((family, class), (0xb5, _) | (0xa8, 0x62)) {
                 continue;
             }
-            let payload = bytes[record_start + 8..record_end].to_vec();
+            let header = if family == 0xa8 { 11 } else { 8 };
+            let payload = bytes[record_start + header..record_end].to_vec();
             if seen
                 .get(&object_id)
                 .is_some_and(|(seen_class, seen_payload)| {
@@ -1093,6 +1094,33 @@ mod tests {
                 axis_direction: [1.0, 0.0, 0.0],
                 gauge_radius: 2.0,
             })
+        );
+    }
+
+    #[test]
+    fn record_walk_includes_wide_header_loop_nodes() {
+        let mut bytes = vec![0xa8, 0x03, 0x62];
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x83, 0x81, 0x82]);
+        bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x00]);
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        assert_eq!(
+            records(&bytes),
+            vec![
+                B5Record {
+                    offset: 0,
+                    class: 0x62,
+                    object_id: 7,
+                    payload: vec![0x83, 0x81, 0x82],
+                },
+                B5Record {
+                    offset: 14,
+                    class: 0x5e,
+                    object_id: 8,
+                    payload: Vec::new(),
+                },
+            ]
         );
     }
 }

@@ -61,6 +61,5 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 - `u24be` endpoint-port to logical-vertex collapse.
 - The record-family discriminator and following byte grammar are unspecified when a nested file contains an FBB-like run but lacks one or more required edge or vertex populations.
-- Float-packed loop records, markerless loops, and multi-loop inner loops.
-- `b5 03 62` variant loop-node payloads, loop records without a `b5 03 62` marker, and inner-loop binding on multi-loop float-packed faces are unspecified.
+- Variant loop-node payloads outside the length-framed `b5 03 62` and `a8 03 62` forms are unspecified.
 - The delimiter grammar of the marker-only `00 33 3X` surface path is unspecified.
