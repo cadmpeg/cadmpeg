@@ -411,3 +411,51 @@ pub fn frame(
 
     Ok(records)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{frame, payload_subtype_is};
+
+    fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 6];
+        bytes.extend_from_slice(b"pcurve");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1), (0x04, 0)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x0f, 0x0d, 11]);
+        bytes.extend_from_slice(b"exp_par_cur");
+        bytes.extend_from_slice(&[0x02, 0x7f, 0x10, 0x11]);
+        bytes
+    }
+
+    #[test]
+    fn generated_payload_subtype_lookup_uses_declared_integer_width() {
+        for ref_width in [4, 8] {
+            let bytes = generated_pcurve_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated record");
+            let record = records.first().expect("generated pcurve");
+            assert!(payload_subtype_is(
+                &bytes,
+                record,
+                5,
+                ref_width,
+                "exp_par_cur"
+            ));
+            assert!(!payload_subtype_is(
+                &bytes,
+                record,
+                4,
+                ref_width,
+                "exp_par_cur"
+            ));
+            assert!(!payload_subtype_is(
+                &bytes,
+                record,
+                5,
+                ref_width,
+                "bad_par_cur"
+            ));
+        }
+    }
+}
