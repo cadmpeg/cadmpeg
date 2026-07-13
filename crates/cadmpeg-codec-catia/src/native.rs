@@ -149,7 +149,7 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
-        let object_graphs = object_graph::parse(bytes)
+        let object_graphs = object_graph::parse_all(bytes)
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();

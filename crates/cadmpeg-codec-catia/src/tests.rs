@@ -2882,6 +2882,17 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
 }
 
 #[test]
+fn outer_object_graph_parser_preserves_every_root() {
+    let first = object_graph_stream();
+    let mut bytes = first.clone();
+    bytes.extend(object_graph_vm_stream());
+    let graphs = crate::object_graph::parse_all(&bytes);
+    assert_eq!(graphs.len(), 2);
+    assert_eq!(graphs[0].pos, 0);
+    assert_eq!(graphs[1].pos, first.len());
+}
+
+#[test]
 fn catalog_parser_reads_exact_inclusive_length_dictionary() {
     let entries = [
         "CATCatalogManager",

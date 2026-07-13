@@ -275,35 +275,55 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
 #[must_use]
 pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
-    let mut graph = data
-        .windows(2)
+    parse_all(data)
+        .into_iter()
+        .max_by_key(|graph| graph.records.len())
+}
+
+/// Parse every length-closed `7C08` object graph in source order.
+#[must_use]
+pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
+    let catalogs = catalog::parse(data);
+    let value_blocks = value_block::parse(data);
+    data.windows(2)
         .enumerate()
         .filter(|(_, marker)| *marker == [0x7c, 0x08])
         .filter_map(|(pos, _)| parse_candidate(data, pos))
-        .max_by_key(|graph| graph.records.len())?;
-    if let Some(schema) = associated_catalog(data, &graph) {
-        graph.catalog_pos = Some(schema.pos);
-        for record in &mut graph.records {
-            record.class_name = record
-                .class_ref
-                .and_then(|ordinal| schema.entries.get(ordinal as usize))
-                .map(|entry| entry.value.clone());
-        }
-    }
-    Some(graph)
+        .map(|mut graph| {
+            bind_catalog(&mut graph, &catalogs, &value_blocks);
+            graph
+        })
+        .collect()
 }
 
-fn associated_catalog(data: &[u8], graph: &ObjectGraph) -> Option<catalog::Catalog> {
-    let graph_end = graph.pos.checked_add(graph.total_len)?;
-    let catalogs = catalog::parse(data);
-    if let Some(schema) = catalogs.iter().find(|schema| schema.pos == graph_end) {
-        return Some(schema.clone());
+fn bind_catalog(
+    graph: &mut ObjectGraph,
+    catalogs: &[catalog::Catalog],
+    value_blocks: &[value_block::ValueBlock],
+) {
+    let Some(graph_end) = graph.pos.checked_add(graph.total_len) else {
+        return;
+    };
+    let schema = catalogs
+        .iter()
+        .find(|schema| schema.pos == graph_end)
+        .or_else(|| {
+            value_blocks
+                .iter()
+                .find(|block| block.pos == graph_end)
+                .and_then(|block| block.pos.checked_add(block.total_len))
+                .and_then(|value_end| catalogs.iter().find(|schema| schema.pos == value_end))
+        });
+    let Some(schema) = schema else {
+        return;
+    };
+    graph.catalog_pos = Some(schema.pos);
+    for record in &mut graph.records {
+        record.class_name = record
+            .class_ref
+            .and_then(|ordinal| schema.entries.get(ordinal as usize))
+            .map(|entry| entry.value.clone());
     }
-    let block = value_block::parse(data)
-        .into_iter()
-        .find(|block| block.pos == graph_end)?;
-    let value_end = block.pos.checked_add(block.total_len)?;
-    catalogs.into_iter().find(|schema| schema.pos == value_end)
 }
 
 fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
