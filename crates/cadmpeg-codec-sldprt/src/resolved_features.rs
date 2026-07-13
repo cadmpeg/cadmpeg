@@ -1495,26 +1495,89 @@ fn typed_marker_relation_definition(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
-    use crate::records::SketchRelationKind::{Fixed, Horizontal, Vertical};
-    let SketchInputKind::Relation(kind @ (Horizontal | Vertical | Fixed)) = marker.kind else {
-        return None;
+    use crate::records::SketchRelationKind::{
+        Collinear, Concentric, Equal, Fixed, Horizontal, Parallel, Perpendicular, Tangent, Vertical,
     };
-    let entities = marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
-    let [entity] = entities.as_slice() else {
+    let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
     };
     Some(match kind {
-        Horizontal => SketchConstraintDefinition::Horizontal {
-            entity: entity.clone(),
-        },
-        Vertical => SketchConstraintDefinition::Vertical {
-            entity: entity.clone(),
-        },
-        Fixed => SketchConstraintDefinition::Fixed {
-            entity: entity.clone(),
-        },
-        _ => unreachable!("relation kind was filtered above"),
+        Horizontal | Vertical | Fixed => {
+            let entities = marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
+            let [entity] = entities.as_slice() else {
+                return None;
+            };
+            match kind {
+                Horizontal => SketchConstraintDefinition::Horizontal {
+                    entity: entity.clone(),
+                },
+                Vertical => SketchConstraintDefinition::Vertical {
+                    entity: entity.clone(),
+                },
+                Fixed => SketchConstraintDefinition::Fixed {
+                    entity: entity.clone(),
+                },
+                _ => unreachable!("relation kind was filtered above"),
+            }
+        }
+        Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric => {
+            let entities = linked_single_entities(marker, loci_by_marker)?;
+            let [first, second] = entities.as_slice() else {
+                return None;
+            };
+            match kind {
+                Parallel => SketchConstraintDefinition::Parallel {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                Perpendicular => SketchConstraintDefinition::Perpendicular {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                Tangent => SketchConstraintDefinition::Tangent {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                Equal => SketchConstraintDefinition::Equal {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                Collinear => SketchConstraintDefinition::Collinear {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                Concentric => SketchConstraintDefinition::Concentric {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                _ => unreachable!("relation kind was filtered above"),
+            }
+        }
+        _ => return None,
     })
+}
+
+fn linked_single_entities(
+    marker: &SketchInputEntity,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<Vec<SketchEntityId>> {
+    let mut result = Vec::new();
+    for link in &marker.links {
+        let mut entities = loci_by_marker
+            .get(&link.entity_ref)?
+            .iter()
+            .map(locus_entity)
+            .collect::<Vec<_>>();
+        entities.sort_by(|left, right| left.0.cmp(&right.0));
+        entities.dedup();
+        let [entity] = entities.as_slice() else {
+            return None;
+        };
+        if !result.contains(entity) {
+            result.push(entity.clone());
+        }
+    }
+    Some(result)
 }
 
 fn typed_relation_definition(
@@ -2041,7 +2104,7 @@ mod profile_join_tests {
         assert!(joins.contains_key("marker-a"));
         assert!(joins.contains_key("marker-b"));
         assert!(joins.contains_key("marker-c"));
-        let markers = lane
+        let mut markers = lane
             .sketch_entities
             .iter()
             .map(|marker| (marker.id.as_str(), marker))
@@ -2054,6 +2117,26 @@ mod profile_join_tests {
             typed_marker_relation_definition(markers["reference"], &markers, &joins,),
             Some(SketchConstraintDefinition::Vertical {
                 entity: first.clone(),
+            })
+        );
+        let mut parallel = marker("parallel", None);
+        parallel.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
+        parallel.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "marker-a".into(),
+            },
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: "marker-c".into(),
+            },
+        ];
+        markers.insert(parallel.id.as_str(), &parallel);
+        assert_eq!(
+            typed_marker_relation_definition(&parallel, &markers, &joins),
+            Some(SketchConstraintDefinition::Parallel {
+                first: first.clone(),
+                second: SketchEntityId("second".into()),
             })
         );
         let relation = FeatureInputRelationInstance {

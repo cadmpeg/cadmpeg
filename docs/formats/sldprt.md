@@ -103,6 +103,8 @@ Coordinate-bearing geometry handles and no-coordinate relation handles reuse fea
 
 A horizontal, vertical, or fixed relation marker constrains the single profile entity common to all of its resolved linked loci. The relation remains native when the linked loci identify zero or multiple profile entities.
 
+A parallel, perpendicular, tangent, equal, collinear, or concentric relation marker constrains its two distinct linked profile entities when every link identifies exactly one entity. The relation remains native when a link identifies zero or multiple entities or the resolved entity count is not two.
+
 A feature-input class declaration is `ff ff 01 00`, a little-endian u16 byte length, and an ASCII class name. When the following record begins at declaration offset `+ 6 + length`, that record is an instance of the declared class. A feature-name record begins with `04 80 ff fe ff`, a u8 UTF-16 code-unit count, and the UTF-16LE name. The little-endian u32 at eight bytes after the name is the feature object ID. It equals the corresponding Keywords feature `id` and binds the records independently of the display name.
 
 A repeated class instance stores a little-endian u16 class token immediately before its feature-name marker. The token is scoped to the `ResolvedFeatures` lane. Repeated instances with the same token have the same declared class.
