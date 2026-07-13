@@ -7734,6 +7734,11 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Wall" Type="Thicken" id="15"><Dimension Name="D1">6</Dimension></Feature></Keywords>"#,
     ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[("moThicken_c", "Wall")]),
+    ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -8660,6 +8665,11 @@ fn semantic_writer_round_trips_sparse_localized_offset_plane() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Plano2" Type="Plano" id="549"><Dimension Name="D1">3</Dimension></Feature></Keywords>"#,
     ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[("moRefPlane_c", "Plano2")]),
+    ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -9071,6 +9081,11 @@ fn semantic_writer_round_trips_slash_named_helix() {
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Coil" Type="Helix/Spiral" id="30" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1"><Dimension Name="Radius">4mm</Dimension><Dimension Name="Pitch">2mm</Dimension><Dimension Name="Revolutions">3.5</Dimension></Feature></Keywords>"#,
     ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[("moHelix_c", "Coil")]),
+    ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
@@ -9129,6 +9144,11 @@ fn semantic_writer_round_trips_native_axis_helix() {
         "Contents/Keywords",
         r#"<Keywords><Feature Name="Helix/Spiral1" Type="Helix/Spiral" id="30"><Dimension Name="D3">3200</Dimension><Dimension Name="D4">12800</Dimension><Dimension Name="D5">0.25</Dimension><Dimension Name="D7">0°</Dimension></Feature></Keywords>"#
             .as_bytes(),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[("moHelix_c", "Helix/Spiral1")]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -10738,6 +10758,11 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         0x42,
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Surface-Sweep1" Type="Surface-Sweep" id="137"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes(&[("moSweep_c", "Surface-Sweep1")]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())

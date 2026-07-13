@@ -512,6 +512,7 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
                 || feature_family(feature, "Shell")
                 || feature_family(feature, "Thicken")
                 || feature_family(feature, "Thickness")
+                || feature_input_class(feature, "moThicken_c")
                 || is_offset_plane(feature)
         }
         "D2" if is_chamfer(feature) => {
@@ -1111,7 +1112,10 @@ fn project_definition(
         project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Shell") {
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Thicken") || feature_family(feature, "Thickness") {
+    } else if feature_family(feature, "Thicken")
+        || feature_family(feature, "Thickness")
+        || feature_input_class(feature, "moThicken_c")
+    {
         project_thicken(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "OffsetSurface") {
         project_offset_surface(feature).unwrap_or_else(|| native_definition(feature))
@@ -1214,7 +1218,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
 }
 
 fn feature_family(feature: &Feature, family: &str) -> bool {
-    feature.kind.eq_ignore_ascii_case(family) || feature.xml_tag.eq_ignore_ascii_case(family)
+    feature.xml_tag.eq_ignore_ascii_case(family)
 }
 
 fn feature_input_class(feature: &Feature, class: &str) -> bool {
@@ -1274,10 +1278,11 @@ fn is_helix(feature: &Feature) -> bool {
     feature_family(feature, "Helix")
         || feature_family(feature, "HelixSpiral")
         || feature_family(feature, "Helix/Spiral")
+        || feature_input_class(feature, "moHelix_c")
 }
 
 fn is_offset_plane(feature: &Feature) -> bool {
-    (feature_family(feature, "Plane") || feature_family(feature, "Plano"))
+    (feature_family(feature, "Plane") || feature_input_class(feature, "moRefPlane_c"))
         && feature.parameters.contains_key("D1")
 }
 
@@ -1790,7 +1795,7 @@ fn project_sweep(
         .properties
         .get("Path")
         .map(|source| PathRef::Native(native_ref(source)));
-    let (op, surface) = if feature_family(feature, "Surface-Sweep") {
+    let (op, surface) = if feature.kind == "Surface-Sweep" {
         (None, true)
     } else {
         (
@@ -4869,7 +4874,9 @@ pub fn sync_neutral_features(
                 if selection.is_none()
                     && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
                     || existing.as_deref().is_some_and(|record| {
-                        !feature_family(record, "Thicken") && !feature_family(record, "Thickness")
+                        !feature_family(record, "Thicken")
+                            && !feature_family(record, "Thickness")
+                            && !feature_input_class(record, "moThicken_c")
                     })
                 {
                     return Err(CodecError::NotImplemented(format!(
