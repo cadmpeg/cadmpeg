@@ -647,16 +647,21 @@ fn e5_torus_stream() -> Vec<u8> {
 }
 
 fn e5_plane_stream() -> Vec<u8> {
-    let mut payload = vec![0u8; 90];
+    e5_plane_stream_with_transform_scalars(4)
+}
+
+fn e5_plane_stream_with_transform_scalars(scalar_count: usize) -> Vec<u8> {
+    let mut payload = vec![0u8; 58 + 8 * scalar_count];
     for (index, value) in [1.0f64, 2.0, 3.0].into_iter().enumerate() {
         payload[1 + 8 * index..9 + 8 * index].copy_from_slice(&le_f64(value));
     }
     payload[25] = 0x33;
-    for index in 0..4 {
+    for index in 0..scalar_count {
         payload[26 + 8 * index..34 + 8 * index].copy_from_slice(&le_f64(1.0));
     }
     for (index, value) in [-4.0f64, 7.0, -2.0, 9.0].into_iter().enumerate() {
-        payload[58 + 8 * index..66 + 8 * index].copy_from_slice(&le_f64(value));
+        let at = 26 + 8 * scalar_count + 8 * index;
+        payload[at..at + 8].copy_from_slice(&le_f64(value));
     }
     let mut bytes = Vec::new();
     append_e5_record(&mut bytes, 0xc8, 42, &payload);
@@ -2483,6 +2488,15 @@ fn e5_plane_parser_preserves_origin_and_natural_bounds_without_fabricating_axes(
     let planes = crate::geometry::e5_planes(&e5_plane_stream());
     assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].record_id, 42);
+    assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
+    assert_eq!(planes[0].u_range, [-4.0, 7.0]);
+    assert_eq!(planes[0].v_range, [-2.0, 9.0]);
+}
+
+#[test]
+fn e5_plane_parser_reads_terminal_bounds_after_extended_transform_lane() {
+    let planes = crate::geometry::e5_planes(&e5_plane_stream_with_transform_scalars(5));
+    assert_eq!(planes.len(), 1);
     assert_eq!(planes[0].origin, [1.0, 2.0, 3.0]);
     assert_eq!(planes[0].u_range, [-4.0, 7.0]);
     assert_eq!(planes[0].v_range, [-2.0, 9.0]);

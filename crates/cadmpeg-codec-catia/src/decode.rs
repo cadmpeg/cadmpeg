@@ -369,16 +369,16 @@ fn append_e5_planes(
                 }
             }
         }
-        let Some(normal) = normal.filter(|_| consistent) else {
+        let expected_normal = normal.filter(|_| consistent);
+        let Some((normal, u_axis)) = solve_e5_plane_frame(
+            plane.record_id,
+            plane.origin,
+            topology,
+            points,
+            expected_normal,
+        ) else {
             continue;
         };
-        let frame = solve_e5_plane_frame(plane.record_id, plane.origin, topology, points, normal);
-        let (normal, u_axis) = frame.unwrap_or_else(|| {
-            (
-                normal,
-                cadmpeg_ir::geometry::derive_reference_direction(normal),
-            )
-        });
         surfaces.push(geometry::E5Surface {
             pos: plane.pos,
             record_id: plane.record_id,
@@ -397,7 +397,7 @@ fn solve_e5_plane_frame(
     origin: [f64; 3],
     topology: &crate::e5::E5Topology,
     points: &[Point3],
-    expected_normal: Vector3,
+    expected_normal: Option<Vector3>,
 ) -> Option<(Vector3, Vector3)> {
     if topology.vertex_refs.len() != points.len() {
         return None;
@@ -417,14 +417,15 @@ fn solve_e5_plane_frame(
         for loop_ in &face.loops {
             for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
                 let edge = topology.edges.get(&edge_ref)?;
-                let uv = e5_native_uv_endpoints(topology.pcurves.get(&pcurve_ref)?)?;
-                segments.push((
-                    uv,
-                    [
-                        *point_by_ref.get(&edge.start_vertex)?,
-                        *point_by_ref.get(&edge.end_vertex)?,
-                    ],
-                ));
+                let pcurve = topology.pcurves.get(&pcurve_ref)?;
+                let uv = e5_native_uv_endpoints(pcurve)?;
+                let (Some(start), Some(end)) = (
+                    point_by_ref.get(&edge.start_vertex),
+                    point_by_ref.get(&edge.end_vertex),
+                ) else {
+                    return None;
+                };
+                segments.push((uv, [*start, *end]));
             }
         }
     }
@@ -439,9 +440,9 @@ fn solve_e5_plane_frame(
             pairs.push((uv[0], xyz[usize::from(reversed)]));
             pairs.push((uv[1], xyz[usize::from(!reversed)]));
         }
-        let Some((u_axis, v_axis, residual)) = fit_e5_plane_axes(origin, &pairs)
-            .or_else(|| fit_rank_one_e5_plane_axes(origin, &pairs, expected_normal))
-        else {
+        let Some((u_axis, v_axis, residual)) = fit_e5_plane_axes(origin, &pairs).or_else(|| {
+            expected_normal.and_then(|normal| fit_rank_one_e5_plane_axes(origin, &pairs, normal))
+        }) else {
             continue;
         };
         let Some(u_axis) = unit_vector(u_axis) else {
@@ -450,7 +451,7 @@ fn solve_e5_plane_frame(
         let Some(v_axis) = unit_vector(v_axis) else {
             continue;
         };
-        if residual > 2e-3 || scalar_product(u_axis, v_axis).abs() > 1e-8 {
+        if residual > 2e-3 || scalar_product(u_axis, v_axis).abs() > 1e-6 {
             continue;
         }
         let Some(normal) = unit_vector(Vector3::new(
@@ -460,7 +461,9 @@ fn solve_e5_plane_frame(
         )) else {
             continue;
         };
-        if scalar_product(normal, expected_normal) < 1.0 - 1e-8 {
+        if expected_normal
+            .is_some_and(|expected| scalar_product(normal, expected).abs() < 1.0 - 1e-6)
+        {
             continue;
         }
         if !candidates.iter().any(|(_, existing): &(Vector3, Vector3)| {

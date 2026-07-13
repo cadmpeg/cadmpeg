@@ -317,20 +317,19 @@ pub fn e5_planes(data: &[u8]) -> Vec<E5Plane> {
     let mut out = Vec::new();
     for record in e5_records(data) {
         let pos = record.pos;
-        if record.class != 0xc8
-            || record.size != 90
-            || data.get(pos + 38) != Some(&0x33)
-            || (0..4).any(|index| f64_le(data, pos + 39 + 8 * index) != Some(1.0))
-        {
+        if record.class != 0xc8 || record.size < 90 || (record.size - 90) % 8 != 0 {
             continue;
         }
         let Some(origin) = read_f64_array::<3>(data, pos + 14) else {
             continue;
         };
-        let Some(bounds) = read_f64_array::<4>(data, pos + 71) else {
+        let scalar_count = (record.size - 58) / 8;
+        let scalars_finite = (0..scalar_count)
+            .all(|index| f64_le(data, pos + 39 + 8 * index).is_some_and(f64::is_finite));
+        let Some(bounds) = read_f64_array::<4>(data, record.end - 32) else {
             continue;
         };
-        if origin.iter().chain(&bounds).any(|value| !value.is_finite()) {
+        if !scalars_finite || origin.iter().chain(&bounds).any(|value| !value.is_finite()) {
             continue;
         }
         out.push(E5Plane {
