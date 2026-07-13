@@ -8935,10 +8935,21 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
             _ => panic!("unexpected taper tail"),
         };
         assert_eq!(actual_kind, expected_kind);
+        let reference = reference.clone();
 
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == reference)
+            .expect("taper reference curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            direction: cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0),
+        };
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -8946,9 +8957,26 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
         let round_trip = F3dCodec
             .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
             .expect("source-less taper round trip");
+        let ProceduralSurfaceDefinition::Taper { reference, .. } =
+            &round_trip.ir.model.procedural_surfaces[0].definition
+        else {
+            panic!("expected round-trip taper")
+        };
         assert!(matches!(
-            round_trip.ir.model.procedural_surfaces[0].definition,
-            ProceduralSurfaceDefinition::Taper { .. }
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *reference)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1
+                    && curve.knots == [0.0, 0.0, 1.0, 1.0]
+                    && curve.control_points == [
+                        cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                        cadmpeg_ir::math::Point3::new(5.0, 1.0, 5.0),
+                    ]
         ));
     }
 }

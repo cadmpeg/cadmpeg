@@ -3586,10 +3586,32 @@ fn native_procedural_surface(
                 .iter()
                 .find(|curve| curve.id == *reference)
                 .ok_or_else(|| CodecError::Malformed("taper reference curve is missing".into()))?;
-            let CurveGeometry::Nurbs(reference) = &reference.geometry else {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D taper requires a NURBS reference curve".into(),
-                ));
+            let reference = match &reference.geometry {
+                CurveGeometry::Nurbs(reference) => reference.clone(),
+                CurveGeometry::Line { .. } => {
+                    let range = match pcurve {
+                        Some(PcurveGeometry::Nurbs { knots, .. }) => [
+                            knots.first().copied().ok_or_else(|| {
+                                CodecError::Malformed("taper pcurve has no knot domain".into())
+                            })?,
+                            knots.last().copied().ok_or_else(|| {
+                                CodecError::Malformed("taper pcurve has no knot domain".into())
+                            })?,
+                        ],
+                        _ => {
+                            return Err(CodecError::NotImplemented(
+                                "source-less F3D taper line requires a bounded NURBS pcurve".into(),
+                            ));
+                        }
+                    };
+                    native_interval_curve(&reference.geometry, range)?
+                }
+                _ => {
+                    return Err(CodecError::NotImplemented(
+                        "source-less F3D taper requires a NURBS or bounded line reference curve"
+                            .into(),
+                    ));
+                }
             };
             let subtype = match taper {
                 cadmpeg_ir::geometry::TaperSurfaceKind::Standard => "taper_spl_sur",
@@ -3603,7 +3625,7 @@ fn native_procedural_surface(
             bytes.push(0x0f);
             native_ident(bytes, subtype)?;
             native_embedded_surface(bytes, &support.geometry)?;
-            native_nurbs_curve(bytes, reference)?;
+            native_nurbs_curve(bytes, &reference)?;
             if let Some(pcurve) = pcurve {
                 native_nurbs_pcurve_block(bytes, pcurve)?;
             } else {
