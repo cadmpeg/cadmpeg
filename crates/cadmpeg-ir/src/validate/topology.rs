@@ -929,7 +929,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
+    let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
+        if !feature_ordinals.insert(feature.ordinal) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!("design repeats feature ordinal {}", feature.ordinal),
+                entity: Some(feature.id.0.clone()),
+            });
+        }
         if let Some(parent) = &feature.parent {
             match features.get(parent.0.as_str()) {
                 None => ref_error(findings, &feature.id.0, "parent feature", &parent.0),

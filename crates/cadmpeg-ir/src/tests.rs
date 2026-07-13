@@ -582,6 +582,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId, ProfileRef,
     };
     use crate::ids::{BodyId, FaceId};
+    use std::collections::BTreeMap;
 
     let mut ir = unit_cube();
     let feature_id = FeatureId("synthetic:test:feature#invalid".into());
@@ -605,6 +606,20 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         },
         native_ref: None,
     });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#duplicate-order".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "Marker".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
+        },
+        native_ref: None,
+    });
     ir.finalize();
     let report = validate(&ir, Vec::new());
     for fragment in [
@@ -612,6 +627,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         "missing output body",
         "missing profile face",
         "missing termination face",
+        "repeats feature ordinal",
     ] {
         assert!(
             report.findings.iter().any(|finding| {
