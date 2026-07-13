@@ -1478,19 +1478,6 @@ fn emit_topology(
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
         }
-        if curve.is_none() && fields.curve <= 1 {
-            let unresolved = CurveId(format!("{prefix}:edge-curve#implicit-{}", node.xmt));
-            push_unknown_edge_curve(
-                ir,
-                annotations,
-                &unresolved,
-                source_stream,
-                node,
-                stream_index,
-                "IMPLICIT_INTERSECTION_CURVE",
-            );
-            curve = Some(unresolved);
-        }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
             match orient_edge_range(
                 ir,

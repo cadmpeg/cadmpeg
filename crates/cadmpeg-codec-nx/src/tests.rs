@@ -748,7 +748,7 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
 }
 
 #[test]
-fn decode_retains_implicit_intersection_edge_curve_carrier() {
+fn decode_retains_native_carrierless_edge() {
     let mut stream = topology_partition_stream();
     let edge = stream
         .windows(2)
@@ -761,12 +761,7 @@ fn decode_retains_implicit_intersection_edge_curve_carrier() {
         .unwrap();
 
     let edge = &result.ir.model.edges[0];
-    let curve = edge
-        .curve
-        .as_ref()
-        .and_then(|id| result.ir.model.curves.iter().find(|curve| &curve.id == id))
-        .expect("implicit edge carrier");
-    assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    assert_eq!(edge.curve, None);
     assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
