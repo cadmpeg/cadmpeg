@@ -10,6 +10,7 @@ use crate::records::{
     SketchInputLink,
 };
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
@@ -989,6 +990,80 @@ fn repeated_class_token(payload: &[u8], name_offset: usize) -> Option<u16> {
     Some(u16::from_le_bytes(
         payload.get(start..name_offset)?.try_into().ok()?,
     ))
+}
+
+fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<u32> {
+    let name_offset = usize::try_from(name.offset).ok()?;
+    let direct_class = lane
+        .classes
+        .iter()
+        .find(|class| class.offset + 6 + class.name.len() as u64 == name.offset);
+    let code_offset = if let Some(class) = direct_class {
+        let class_offset = usize::try_from(class.offset).ok()?;
+        let code_offset = class_offset.checked_sub(12)?;
+        lane.native_payload
+            .get(code_offset + 4..class_offset)?
+            .iter()
+            .all(|byte| *byte == 0)
+            .then_some(code_offset)?
+    } else {
+        [8usize, 4].into_iter().find_map(|padding| {
+            let code_offset = name_offset.checked_sub(6 + padding)?;
+            lane.native_payload
+                .get(code_offset + 4..name_offset - 2)?
+                .iter()
+                .all(|byte| *byte == 0)
+                .then_some(code_offset)
+        })?
+    };
+    Some(u32::from_le_bytes(
+        lane.native_payload
+            .get(code_offset..code_offset + 4)?
+            .try_into()
+            .ok()?,
+    ))
+}
+
+/// Project the feature-input operation discriminator onto typed extrusions.
+pub(crate) fn bind_extrusion_operations(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let FeatureDefinition::Extrude { op, .. } = &mut feature.definition else {
+            continue;
+        };
+        if *op != BooleanOp::Unresolved {
+            continue;
+        }
+        let Some(history) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_features.get(native).copied())
+        else {
+            continue;
+        };
+        let mut operations = lanes.iter().filter_map(|lane| {
+            let name = feature_object_name(history, lane)?;
+            match feature_operation_code(lane, name)? {
+                3 => Some(BooleanOp::Join),
+                11 => Some(BooleanOp::Cut),
+                _ => None,
+            }
+        });
+        let Some(first) = operations.next() else {
+            continue;
+        };
+        if operations.all(|operation| operation == first) {
+            *op = first;
+        }
+    }
 }
 
 /// Bind profile streams to uniquely enclosing sketch feature records.

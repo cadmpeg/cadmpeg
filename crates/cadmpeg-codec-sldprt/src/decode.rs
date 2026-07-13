@@ -286,6 +286,7 @@ fn build_geometry_ir(
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories, &lanes);
+    crate::resolved_features::bind_extrusion_operations(&mut ir.model.features, &histories, &lanes);
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,
         &ir.model.features,

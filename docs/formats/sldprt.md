@@ -87,6 +87,8 @@ PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, h
 
 Keywords feature attributes that contain object identifiers use the feature's `id` namespace. `DissectableChildren` is a separator-delimited ordered list of child object identifiers. A single sketch child of an extrusion is that extrusion's profile dependency.
 
+An extrusion feature-input object stores a little-endian u32 operation discriminator before its object-name record. A direct class declaration is preceded by the discriminator and eight zero bytes. A repeated-class name is preceded by the discriminator, four or eight zero bytes, and its little-endian u16 class token. The padding width is selected by the record schema and is self-delimiting because every padding byte is zero. Discriminator `3` joins the extrusion result and discriminator `11` subtracts it.
+
 A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. Marker local identifiers are scoped to that feature object.
 
 A feature-input class declaration is `ff ff 01 00`, a little-endian u16 byte length, and an ASCII class name. When the following record begins at declaration offset `+ 6 + length`, that record is an instance of the declared class. A feature-name record begins with `04 80 ff fe ff`, a u8 UTF-16 code-unit count, and the UTF-16LE name. The little-endian u32 at eight bytes after the name is the feature object ID. It equals the corresponding Keywords feature `id` and binds the records independently of the display name.

@@ -13039,6 +13039,70 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
 }
 
 #[test]
+fn decode_projects_feature_input_extrusion_operations() {
+    fn operation_payload(
+        code: u32,
+        object_id: u32,
+        name: &str,
+        repeated_padding: Option<usize>,
+    ) -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&code.to_le_bytes());
+        if let Some(padding) = repeated_padding {
+            payload.extend(std::iter::repeat_n(0, padding));
+            payload.extend_from_slice(&0x84d8u16.to_le_bytes());
+        } else {
+            payload.extend_from_slice(&[0; 8]);
+            payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
+            payload.extend_from_slice(&7u16.to_le_bytes());
+            payload.extend_from_slice(b"moICE_c");
+        }
+        payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
+        payload.push(name.encode_utf16().count() as u8);
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 8]);
+        payload.extend_from_slice(&object_id.to_le_bytes());
+        payload
+    }
+
+    for (code, expected) in [
+        (3, cadmpeg_ir::features::BooleanOp::Join),
+        (11, cadmpeg_ir::features::BooleanOp::Cut),
+    ] {
+        for repeated_padding in [None, Some(8), Some(4)] {
+            let mut source = sldprt_with_body(&triangle_body());
+            source.extend(make_block(
+                0x42,
+                "Contents/Keywords",
+                br#"<Keywords><Extrusion Name="Extrude1" Type="Extrusion" id="8"><Dimension Name="D1">25</Dimension></Extrusion></Keywords>"#,
+            ));
+            source.extend(make_block(
+                0x45,
+                "Contents/Config-0-ResolvedFeatures",
+                &operation_payload(code, 8, "Extrude1", repeated_padding),
+            ));
+
+            let decoded = SldprtCodec
+                .decode(&mut Cursor::new(source), &DecodeOptions::default())
+                .unwrap();
+            let feature = decoded
+                .ir
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Extrude1"))
+                .expect("projected extrusion feature");
+            assert!(matches!(
+                &feature.definition,
+                cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
+            ));
+        }
+    }
+}
+
+#[test]
 fn semantic_writer_updates_linked_resolved_feature_scalar() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
