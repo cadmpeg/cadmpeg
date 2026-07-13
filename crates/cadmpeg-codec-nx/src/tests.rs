@@ -638,7 +638,8 @@ fn topology_retains_shell_body_identity_without_body_record() {
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert_eq!(result.ir.model.bodies[0].id.0, "nx:s0:body#2");
     assert_eq!(result.ir.model.faces.len(), 1);
-    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
@@ -3774,7 +3775,55 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(context.sides[0].pcurve.is_some());
     assert!(context.sides[1].surface.is_none());
     assert_eq!(context.parameter_range, [0.0, 0.01]);
-    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+    assert!(result.ir.model.coedges[0].pcurve.is_none());
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn intersection_pcurve_attachment_requires_face_incidence() {
+    let ir = cadmpeg_ir::examples::unit_cube();
+    let edge = cadmpeg_ir::ids::EdgeId("synthetic:cube:edge#0".into());
+    let surface = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.edge == edge && coedge.id.0.contains("bottom"))
+        .and_then(|coedge| {
+            let loop_ = ir
+                .model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id == coedge.owner_loop)?;
+            ir.model
+                .faces
+                .iter()
+                .find(|face| face.id == loop_.face)
+                .map(|face| face.surface.clone())
+        })
+        .expect("bottom support surface");
+    let pcurve = |end| PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), end],
+        weights: None,
+        periodic: false,
+    };
+
+    assert!(crate::decode::pcurve_matches_edge(
+        &ir,
+        &edge,
+        &surface,
+        &pcurve(Point2::new(10.0, 0.0)),
+        None,
+    ));
+    assert!(!crate::decode::pcurve_matches_edge(
+        &ir,
+        &edge,
+        &surface,
+        &pcurve(Point2::new(10.0, 5.0)),
+        None,
+    ));
 }
 
 #[test]

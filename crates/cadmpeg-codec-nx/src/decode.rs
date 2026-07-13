@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::eval::curve_point;
+use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::features::{
     Angle, ConfigurationId, DesignConfiguration, DesignParameter, Feature, FeatureDefinition,
     FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
@@ -1686,6 +1686,28 @@ fn emit_topology(
         })
         .map(|xmt| (*xmt, CoedgeId(format!("{prefix}:fin#{xmt}"))))
         .collect();
+    let intersection_pcurves: BTreeMap<_, _> = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|procedural| {
+            let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
+            else {
+                return None;
+            };
+            Some(context.sides.iter().filter_map(move |side| {
+                Some((
+                    (procedural.curve.clone(), side.surface.clone()?),
+                    (
+                        side.pcurve.clone()?,
+                        context.parameter_range,
+                        procedural.cache_fit_tolerance,
+                    ),
+                ))
+            }))
+        })
+        .flatten()
+        .collect();
     for &fin_xmt in fin_ids.keys() {
         let Some(node) = graph.get(17, fin_xmt) else {
             continue;
@@ -1711,6 +1733,53 @@ fn emit_topology(
             .expect("validated FIN ring resolves backward link");
         let partner = fin_ids.get(&fields.other).cloned();
         let radial_next = partner.clone().unwrap_or_else(|| id.clone());
+        let mut pcurve = pcurves.get(&fields.curve_xmt).cloned();
+        if pcurve.is_none() {
+            let carrier = ir
+                .model
+                .edges
+                .iter()
+                .find(|candidate| candidate.id == edge)
+                .and_then(|edge| edge.curve.clone());
+            let support = graph
+                .get(15, fields.loop_xmt)
+                .and_then(Node::loop_fields)
+                .and_then(|loop_| graph.get(14, loop_.face))
+                .and_then(Node::face_fields)
+                .and_then(|face| surfaces.get(&face.surface))
+                .cloned();
+            if let Some((_support, geometry, parameter_range, fit_tolerance)) = carrier
+                .zip(support)
+                .and_then(|key| {
+                    intersection_pcurves
+                        .get(&key)
+                        .cloned()
+                        .map(|value| (key.1, value.0, value.1, value.2))
+                })
+                .filter(|(support, geometry, _, fit_tolerance)| {
+                    pcurve_matches_edge(ir, &edge, support, geometry, *fit_tolerance)
+                })
+            {
+                let pcurve_id = PcurveId(format!("{prefix}:intersection-pcurve#{fin_xmt}"));
+                annotations
+                    .note(&pcurve_id, source_stream, node.pos as u64)
+                    .tag("INTERSECTION_PCURVE");
+                annotations.derived(&pcurve_id, "geometry");
+                annotations.derived(&pcurve_id, "parameter_range");
+                if fit_tolerance.is_some() {
+                    annotations.derived(&pcurve_id, "fit_tolerance");
+                }
+                ir.model.pcurves.push(Pcurve {
+                    id: pcurve_id.clone(),
+                    geometry,
+                    wrapper_reversed: None,
+                    native_tail_flags: None,
+                    parameter_range: Some(parameter_range),
+                    fit_tolerance,
+                });
+                pcurve = Some(pcurve_id);
+            }
+        }
         ir.model.coedges.push(Coedge {
             id: id.clone(),
             owner_loop: loop_id.clone(),
@@ -1719,7 +1788,7 @@ fn emit_topology(
             previous,
             radial_next,
             sense: sense(Some(fields.sense)),
-            pcurve: pcurves.get(&fields.curve_xmt).cloned(),
+            pcurve,
         });
         if let Some(parent) = ir
             .model
@@ -1750,6 +1819,67 @@ fn emit_topology(
     ir.model.vertices.retain(|vertex| {
         !vertex.id.0.starts_with(&prefix) || retained_vertices.contains(&vertex.id)
     });
+}
+
+pub(crate) fn pcurve_matches_edge(
+    ir: &CadIr,
+    edge_id: &EdgeId,
+    surface_id: &SurfaceId,
+    geometry: &PcurveGeometry,
+    fit_tolerance: Option<f64>,
+) -> bool {
+    let Some(edge) = ir.model.edges.iter().find(|edge| &edge.id == edge_id) else {
+        return false;
+    };
+    let Some(coincident_surface) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| &surface.id == surface_id)
+        .and_then(|surface| {
+            let [t0, t1] = match geometry {
+                PcurveGeometry::Nurbs { knots, .. } => [*knots.first()?, *knots.last()?],
+                PcurveGeometry::Line { .. } => return None,
+            };
+            let uv = [pcurve_uv(geometry, t0)?, pcurve_uv(geometry, t1)?];
+            Some([
+                surface_point(&surface.geometry, uv[0].u, uv[0].v)?,
+                surface_point(&surface.geometry, uv[1].u, uv[1].v)?,
+            ])
+        })
+    else {
+        return false;
+    };
+    let vertex = |id: &VertexId| {
+        let vertex = ir.model.vertices.iter().find(|vertex| &vertex.id == id)?;
+        let point = ir
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)?;
+        Some((point.position, vertex.tolerance))
+    };
+    let (Some((start, start_tolerance)), Some((end, end_tolerance))) =
+        (vertex(&edge.start), vertex(&edge.end))
+    else {
+        return false;
+    };
+    let allowance = [
+        edge.tolerance,
+        start_tolerance,
+        end_tolerance,
+        fit_tolerance,
+    ]
+    .into_iter()
+    .flatten()
+    .fold(0.01_f64, f64::max);
+    let distance = |a: cadmpeg_ir::math::Point3, b: cadmpeg_ir::math::Point3| {
+        ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
+    };
+    (distance(coincident_surface[0], start) <= allowance
+        && distance(coincident_surface[1], end) <= allowance)
+        || (distance(coincident_surface[0], end) <= allowance
+            && distance(coincident_surface[1], start) <= allowance)
 }
 
 #[allow(clippy::too_many_arguments)]

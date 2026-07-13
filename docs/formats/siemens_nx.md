@@ -305,6 +305,8 @@ The value `-31415800000000.0` is a missing-parameter sentinel. Preserve the tupl
 
 CHART_s and its two term_use endpoints define the bounded 3D carrier independently of the values-array. A null, sentinel-bearing, or count-mismatched values-array omits the corresponding pcurve; it does not invalidate the 3D chart carrier.
 
+When a FIN carries the intersection and its owning FACE uses one of the intersection supports, that support's UV chart is the FIN pcurve. Transfer requires both pcurve endpoints, mapped through the FACE surface, to coincide with the EDGE vertices within the stored edge, vertex, face, or chart-fit tolerance. A chart that fails this incidence relation remains construction data and is not attached to the coedge.
+
 ```text
 cylinder: P = O_mm + (v·1000)·A + r_mm·(cos u · X + sin u · (A×X))
 plane:    P = O_mm + (u·1000)·X + (v·1000)·(N×X)

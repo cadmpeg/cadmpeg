@@ -181,7 +181,13 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         ) else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
+        let bound = allowance(&[
+            edge.tolerance,
+            *start_tol,
+            *end_tol,
+            face.tolerance,
+            pcurve.fit_tolerance,
+        ]);
         let forward = distance(p0, *start).max(distance(p1, *end));
         let reversed = distance(p0, *end).max(distance(p1, *start));
         let mismatch = forward.min(reversed);

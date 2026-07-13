@@ -1946,7 +1946,7 @@ fn pcurve_surface_mismatch_is_flagged() {
     // derived u/v frame maps `(u, v) -> (u, -v, 0)`. Edge #0 runs from
     // `(0,0,0)` to `(10,0,0)`, so its parameter image is the line
     // `(0,0) -> (10,0)`.
-    let good = |u_end: f64, v_end: f64| {
+    let check = |u_end: f64, v_end: f64, fit_tolerance: Option<f64>| {
         let mut ir = unit_cube();
         ir.model.pcurves.push(crate::geometry::Pcurve {
             id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
@@ -1963,7 +1963,7 @@ fn pcurve_surface_mismatch_is_flagged() {
             wrapper_reversed: None,
             native_tail_flags: None,
             parameter_range: None,
-            fit_tolerance: None,
+            fit_tolerance,
         });
         let coedge = ir
             .model
@@ -1977,7 +1977,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         validate(&ir, Vec::new())
     };
 
-    let consistent = good(10.0, 0.0);
+    let consistent = check(10.0, 0.0, None);
     assert!(
         !consistent
             .findings
@@ -1987,7 +1987,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         consistent.findings
     );
 
-    let inconsistent = good(10.0, 5.0);
+    let inconsistent = check(10.0, 5.0, None);
     assert!(
         inconsistent
             .findings
@@ -1996,6 +1996,14 @@ fn pcurve_surface_mismatch_is_flagged() {
                 && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
+    );
+    let tolerance_bounded = check(10.0, 5.0, Some(5.0));
+    assert!(
+        !tolerance_bounded
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::GeometricConsistency),
+        "declared pcurve fit tolerance must bound its surface-image deviation"
     );
 }
 
