@@ -37,7 +37,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
-| Rhino `.3dm` (archive 50/60/70/80)         | **L8 claimed** | exact-record retention; bounded semantic native writing                                                 |
+| Rhino `.3dm` (archive 50/60/70/80)         | **L9 tested**  |                                                                                                         |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
 | Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
 | CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
@@ -63,7 +63,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
 - **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
-- **Rhino `.3dm` (L8 claimed for archive 50/60/70/80):** complete built-in model, product, presentation, annotation, metadata, application-data retention, and byte accounting, plus bounded semantic native writing. V3/V4 score L1; V1/V2 and archive 5 score L0.
+- **Rhino `.3dm` (L9 tested for archive 50/60/70/80):** complete built-in model, product, presentation, annotation, metadata, application-data retention, and byte accounting, plus bounded semantic native writing with source-less generation, supported edits, explicit target selection, and atomic refusal. V3/V4 score L1; V1/V2 and archive 5 score L0.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
@@ -73,7 +73,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 **Model:** 3DM object graph
 
-**Ladder: L8 claimed for archive 50/60/70/80; L1 tested for V3/V4; L0 tested for V1/V2 and archive 5.**
+**Ladder: L9 tested for archive 50/60/70/80; L1 tested for V3/V4; L0 tested for V1/V2 and archive 5.**
 
 ### Read profile
 
