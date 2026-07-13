@@ -5,7 +5,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::codec::CodecError;
 
-use crate::native::{DynamicPropertyMeta, LinkTarget, ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{
+    DynamicPropertyMeta, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord, ValueRecord,
+};
 
 /// Recovered persistence graph.
 pub struct Graph {
@@ -212,6 +214,7 @@ fn parse_properties(
             id: format!("{owner}:property:{name}"),
             owner: owner.to_owned(),
             name,
+            family: classify_property(&type_name),
             type_name,
             status: node
                 .attribute("status")
@@ -228,9 +231,60 @@ fn parse_properties(
             links,
             side_entries,
             raw_xml: text[node.range()].to_owned(),
+            byte_start: node.range().start as u64,
+            byte_end: node.range().end as u64,
         });
     }
     Ok(())
+}
+
+fn classify_property(type_name: &str) -> PropertyFamily {
+    if type_name.contains("PropertyPythonObject") {
+        PropertyFamily::PythonObject
+    } else if type_name.contains("PropertyExpression") {
+        PropertyFamily::Expression
+    } else if type_name.contains("PropertyLink") {
+        PropertyFamily::Link
+    } else if type_name.contains("PropertyFile") {
+        PropertyFamily::File
+    } else if type_name.contains("PropertyPlacement") || type_name.contains("PropertyTransform") {
+        PropertyFamily::Placement
+    } else if type_name.contains("PropertyMatrix") {
+        PropertyFamily::Matrix
+    } else if type_name.contains("PropertyVector") {
+        PropertyFamily::Vector
+    } else if type_name.contains("PropertyEnumeration") {
+        PropertyFamily::Enumeration
+    } else if type_name.contains("PropertyQuantity")
+        || type_name.contains("PropertyLength")
+        || type_name.contains("PropertyDistance")
+        || type_name.contains("PropertyAngle")
+        || type_name.contains("PropertyArea")
+        || type_name.contains("PropertyVolume")
+        || type_name.contains("PropertySpeed")
+        || type_name.contains("PropertyAcceleration")
+        || type_name.contains("PropertyPressure")
+        || type_name.contains("PropertyForce")
+    {
+        PropertyFamily::Quantity
+    } else if type_name.contains("PropertyMap") {
+        PropertyFamily::Map
+    } else if type_name.contains("List") {
+        PropertyFamily::List
+    } else if type_name.contains("PropertyString")
+        || type_name.contains("PropertyPath")
+        || type_name.contains("PropertyUUID")
+    {
+        PropertyFamily::String
+    } else if type_name.contains("PropertyBool")
+        || type_name.contains("PropertyInteger")
+        || type_name.contains("PropertyFloat")
+        || type_name.contains("PropertyPercent")
+    {
+        PropertyFamily::Scalar
+    } else {
+        PropertyFamily::Unknown
+    }
 }
 
 fn link_targets(value: &ValueRecord) -> Vec<LinkTarget> {

@@ -155,9 +155,11 @@ impl Codec for FcstdCodec {
                     })
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
+            let logical_ledger = logical_ledger(&entry_records, &graph.properties)?;
             namespace.set_arena("objects", &graph.objects)?;
             namespace.set_arena("properties", &graph.properties)?;
             namespace.set_arena("entries", &entry_records)?;
+            namespace.set_arena("logical_ledger", &logical_ledger)?;
         }
         let losses = if options.container_only {
             Vec::new()
@@ -180,6 +182,87 @@ impl Codec for FcstdCodec {
                 notes: container::summarize(&scan).notes,
             },
         ))
+    }
+}
+
+fn logical_ledger(
+    entries: &[native::EntryRecord],
+    properties: &[native::PropertyRecord],
+) -> Result<Vec<native::LogicalSpan>, CodecError> {
+    let mut output = Vec::new();
+    for entry in entries {
+        if entry.name == "Document.xml" {
+            let mut ranges = properties
+                .iter()
+                .map(|property| {
+                    (
+                        property.byte_start,
+                        property.byte_end,
+                        if property.family == native::PropertyFamily::Unknown {
+                            "named_opaque"
+                        } else {
+                            "typed"
+                        },
+                        property.id.clone(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            ranges.sort_by_key(|range| range.0);
+            let mut cursor = 0_u64;
+            for (start, end, classification, owner) in ranges {
+                if start < cursor || end < start || end > entry.byte_len {
+                    return Err(CodecError::Malformed(
+                        "overlapping or invalid Document.xml property spans".into(),
+                    ));
+                }
+                push_logical_span(&mut output, entry, cursor, start, "structural", None);
+                push_logical_span(&mut output, entry, start, end, classification, Some(owner));
+                cursor = end;
+            }
+            push_logical_span(
+                &mut output,
+                entry,
+                cursor,
+                entry.byte_len,
+                "structural",
+                None,
+            );
+        } else {
+            let owner = entry
+                .referenced_by
+                .first()
+                .cloned()
+                .unwrap_or_else(|| entry.id.clone());
+            push_logical_span(
+                &mut output,
+                entry,
+                0,
+                entry.byte_len,
+                "named_opaque",
+                Some(owner),
+            );
+        }
+    }
+    Ok(output)
+}
+
+fn push_logical_span(
+    output: &mut Vec<native::LogicalSpan>,
+    entry: &native::EntryRecord,
+    start: u64,
+    end: u64,
+    classification: &str,
+    owner: Option<String>,
+) {
+    if start < end {
+        output.push(native::LogicalSpan {
+            id: format!("fcstd:logical-span#{}", output.len()),
+            entry: entry.name.clone(),
+            start,
+            end,
+            classification: classification.into(),
+            owner,
+        });
     }
 }
 

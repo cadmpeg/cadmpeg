@@ -108,6 +108,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         support.links[0].object.as_deref(),
         Some("fcstd:object:Sketch")
     );
+    assert_eq!(support.family, crate::native::PropertyFamily::Link);
     assert_eq!(support.links[0].subelements, vec!["Face1"]);
     assert_eq!(
         support.dynamic.as_ref().and_then(|meta| meta.read_only),
@@ -127,6 +128,18 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         .expect("payload entry");
     assert_eq!(payload_entry.referenced_by, vec![payload.id.clone()]);
     assert_eq!(payload_entry.data, b"payload");
+    let ledger = namespace
+        .arena_as::<crate::native::LogicalSpan>("logical_ledger")
+        .expect("logical ledger");
+    for entry in &entries {
+        let spans = ledger
+            .iter()
+            .filter(|span| span.entry == entry.name)
+            .collect::<Vec<_>>();
+        assert_eq!(spans.first().map(|span| span.start), Some(0));
+        assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len));
+        assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
+    }
 }
 
 #[test]
