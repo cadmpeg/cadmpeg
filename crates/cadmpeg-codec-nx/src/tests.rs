@@ -2041,6 +2041,12 @@ fn mismatched_trimmed_topology_partition_stream() -> Vec<u8> {
 
 fn partnered_trimmed_topology_partition_stream() -> Vec<u8> {
     let mut stream = trimmed_topology_partition_stream();
+    let trim = stream
+        .windows(4)
+        .position(|window| window == [0, 133, 0, 12])
+        .expect("trimmed curve");
+    put_f64(&mut stream, trim + 69, 0.000_75);
+    put_f64(&mut stream, trim + 77, 0.000_25);
     let face = stream
         .windows(4)
         .position(|window| window == [0, 14, 0, 4])

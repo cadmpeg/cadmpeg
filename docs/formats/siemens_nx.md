@@ -213,7 +213,7 @@ A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`,
 
 POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.vertex → VERTEX.point` path. An unreferenced POINT is not a free vertex of an existing body.
 An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP references it.
-A periodic edge interval is normalized by reducing its start modulo `2π` and preserving its nonnegative sweep; a seam-crossing interval therefore ends above `2π`.
+An edge's two serialized trim limits are an unordered interval. Canonical start/end order follows evaluation at the ascending limits. A periodic interval is then normalized by reducing its start modulo `2π` and preserving its nonnegative sweep; a seam-crossing interval therefore ends above `2π`.
 A body is solid when every assembled EDGE has exactly two FIN uses in that body. A body with faces and any edge-use count other than two is a sheet body.
 
 BODY, REGION, and SHELL records contain no placement reference. POINT coordinates and the origins and axes stored by curve and surface carriers are part-model coordinates. An inline Parasolid body's part placement is therefore the identity transform.

@@ -54,6 +54,16 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         .iter()
         .map(|curve| (curve.id.0.as_str(), &curve.geometry))
         .collect::<HashMap<_, _>>();
+    let cache_tolerances = ir
+        .model
+        .procedural_curves
+        .iter()
+        .filter_map(|curve| {
+            curve
+                .cache_fit_tolerance
+                .map(|tolerance| (curve.curve.0.as_str(), tolerance))
+        })
+        .collect::<HashMap<_, _>>();
     let vertices = vertex_positions(ir);
     for edge in &ir.model.edges {
         let Some([start_t, end_t]) = edge.param_range else {
@@ -73,7 +83,12 @@ pub(super) fn check_edge_endpoint_consistency(ir: &CadIr, findings: &mut Vec<Fin
         else {
             continue;
         };
-        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol]);
+        let cache_tolerance = edge
+            .curve
+            .as_ref()
+            .and_then(|curve| cache_tolerances.get(curve.0.as_str()))
+            .copied();
+        let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, cache_tolerance]);
         let mismatch = distance(at_start, *start).max(distance(at_end, *end));
         if !mismatch.is_finite() || mismatch > bound {
             findings.push(Finding {

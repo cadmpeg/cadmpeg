@@ -7,9 +7,12 @@ use crate::annotations::{ExactnessNote, Provenance};
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, SurfaceGeometry,
 };
-use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
+use crate::ids::{
+    CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, UnknownId,
+};
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
@@ -1856,6 +1859,41 @@ fn edge_endpoint_mismatch_is_flagged() {
         "displaced vertex must fail edge endpoint consistency, got: {:?}",
         report.findings
     );
+}
+
+#[test]
+fn procedural_curve_cache_tolerance_bounds_endpoint_consistency() {
+    let mut ir = unit_cube();
+    let edge = ir.model.edges[0].clone();
+    let curve_id = edge.curve.expect("cube edge curve");
+    let CurveGeometry::Line { origin, .. } = &mut ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .expect("curve")
+        .geometry
+    else {
+        panic!("cube edge uses a line");
+    };
+    origin.z += 0.5;
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::GeometricConsistency
+            && finding.entity.as_deref() == Some(edge.id.0.as_str())
+    }));
+
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("synthetic:cube:procedural-curve#0".into()),
+        curve: curve_id,
+        definition: ProceduralCurveDefinition::Exact,
+        cache_fit_tolerance: Some(0.5),
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.check == Check::GeometricConsistency
+            && finding.entity.as_deref() == Some(edge.id.0.as_str())
+    }));
 }
 
 #[test]

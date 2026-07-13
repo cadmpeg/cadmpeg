@@ -1892,6 +1892,11 @@ fn orient_edge_range(
         .iter()
         .find(|candidate| candidate.id == *curve)?
         .geometry;
+    let range = if range[0] <= range[1] {
+        range
+    } else {
+        [range[1], range[0]]
+    };
     let range = match geometry {
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
             let sweep = range[1] - range[0];
@@ -1901,10 +1906,7 @@ fn orient_edge_range(
             let start = range[0].rem_euclid(std::f64::consts::TAU);
             [start, start + sweep]
         }
-        _ => {
-            (range[0] <= range[1]).then_some(())?;
-            range
-        }
+        _ => range,
     };
     let at = [
         curve_point(geometry, range[0])?,
@@ -1925,10 +1927,21 @@ fn orient_edge_range(
     };
     let (start_position, start_tolerance) = vertex_position(start)?;
     let (end_position, end_tolerance) = vertex_position(end)?;
-    let allowance = [edge_tolerance, start_tolerance, end_tolerance]
-        .into_iter()
-        .flatten()
-        .fold(0.01_f64, f64::max);
+    let cache_tolerance = ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| procedural.curve == *curve)
+        .and_then(|procedural| procedural.cache_fit_tolerance);
+    let allowance = [
+        edge_tolerance,
+        start_tolerance,
+        end_tolerance,
+        cache_tolerance,
+    ]
+    .into_iter()
+    .flatten()
+    .fold(0.01_f64, f64::max);
     let distance = |a: cadmpeg_ir::math::Point3, b: cadmpeg_ir::math::Point3| {
         ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
     };
