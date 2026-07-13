@@ -283,8 +283,15 @@ fn build_geometry_ir(
     let histories = crate::history::histories(scan, &mut ir.annotations);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories, &lanes);
-    let (sketches, sketch_entities, sketch_constraints) =
+    let (mut sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
+    crate::resolved_features::bind_sketch_profiles(
+        &mut ir.model.features,
+        &mut sketches,
+        &histories,
+        &lanes,
+        &ir.annotations,
+    );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
     stamp_feature_baseline(&mut ir);
     let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
@@ -821,6 +828,15 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         attributes,
     });
     project_design_history(&mut ir, &histories, &lanes);
+    crate::resolved_features::bind_sketch_profiles(
+        &mut ir.model.features,
+        &mut ir.model.sketches,
+        &histories,
+        &lanes,
+        &ir.annotations,
+    );
+    crate::history::bind_unique_sketch_feature(&mut ir.model.features, &ir.model.sketches);
+    stamp_feature_baseline(&mut ir);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),

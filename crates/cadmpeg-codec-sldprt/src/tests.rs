@@ -11061,6 +11061,41 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
 }
 
 #[test]
+fn decode_binds_profile_stream_by_feature_object_interval() {
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let sketch = decoded
+        .ir
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.name.as_deref() == Some("Sketch1"))
+        .expect("named feature-input sketch");
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("sketch history feature");
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Sketch {
+            sketch: Some(id),
+            ..
+        } if id == &sketch.id
+    ));
+}
+
+#[test]
 fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition, SketchConstraintId};
 

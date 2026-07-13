@@ -21,6 +21,14 @@ const WRAPPED_MAGIC_PREFIX: [u8; 16] = [
 
 /// Extract every valid direct or nested Parasolid stream in one block payload.
 pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
+    extract_streams_with_offsets(payload)
+        .into_iter()
+        .map(|(_, stream)| stream)
+        .collect()
+}
+
+/// Extract every stream with its direct or wrapper offset in the outer payload.
+pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
     let mut out = Vec::new();
     let signatures: Vec<_> = payload
         .windows(4)
@@ -31,14 +39,14 @@ pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
         let end = signatures.get(index + 1).copied().unwrap_or(payload.len());
         let candidate = payload[start..end].to_vec();
         if stream_header(&candidate).is_some() {
-            out.push(candidate);
+            out.push((start, candidate));
         }
     }
     if !out.is_empty() {
         return out;
     }
     if let Some(off) = parasolid_offset(payload) {
-        return vec![payload[off..].to_vec()];
+        return vec![(off, payload[off..].to_vec())];
     }
     if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
         return out;
@@ -51,9 +59,9 @@ pub fn extract_streams(payload: &[u8]) -> Vec<Vec<u8>> {
             if let Some(inner) = inflate_zlib_prefix(&payload[i..]) {
                 if inner.starts_with(&[b'P', b'S', 0x00, 0x00])
                     && stream_header(&inner).is_some()
-                    && !out.contains(&inner)
+                    && !out.iter().any(|(_, stream)| stream == &inner)
                 {
-                    out.push(inner);
+                    out.push((i, inner));
                 }
             }
         }

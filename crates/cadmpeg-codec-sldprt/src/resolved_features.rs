@@ -285,6 +285,73 @@ pub(crate) fn enrich_history_parameters(
     }
 }
 
+/// Bind profile streams to uniquely enclosing sketch feature records.
+pub(crate) fn bind_sketch_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut [Sketch],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    annotations: &Annotations,
+) {
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let mut feature_name_counts = HashMap::<&str, usize>::new();
+    for feature in native_features.values() {
+        *feature_name_counts.entry(&feature.name).or_default() += 1;
+    }
+
+    for lane in lanes {
+        let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
+        for feature in native_features.values() {
+            if feature_name_counts.get(feature.name.as_str()) != Some(&1) {
+                continue;
+            }
+            let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
+            let Some(name) = matches.next() else { continue };
+            if matches.next().is_none() {
+                starts.push((name.offset, feature));
+            }
+        }
+        starts.sort_by_key(|start| start.0);
+        for (index, &(start, native_feature)) in starts.iter().enumerate() {
+            let Some(feature) = features.iter_mut().find(|feature| {
+                feature.native_ref.as_deref() == Some(native_feature.id.as_str())
+                    && matches!(
+                        feature.definition,
+                        cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
+                    )
+            }) else {
+                continue;
+            };
+            let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
+            let mut enclosed = sketches.iter_mut().filter(|sketch| {
+                sketch.native_ref.as_deref() == Some(lane.id.as_str())
+                    && annotations
+                        .provenance
+                        .get(&sketch.id.0)
+                        .is_some_and(|source| source.offset > start && source.offset < end)
+            });
+            let Some(sketch) = enclosed.next() else {
+                continue;
+            };
+            if enclosed.next().is_some() {
+                continue;
+            }
+            sketch.name = Some(native_feature.name.clone());
+            if let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                sketch: feature_sketch,
+                ..
+            } = &mut feature.definition
+            {
+                *feature_sketch = Some(sketch.id.clone());
+            }
+        }
+    }
+}
+
 pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
     payload
@@ -437,6 +504,7 @@ pub fn sketches(
         }
         let native_ref = format!("sldprt:feature-input:resolved-features#{}", block.offset);
         for (stream_ordinal, payload) in block.ps_streams.iter().enumerate() {
+            let stream_offset = block.ps_stream_offsets[stream_ordinal];
             let Some(header) = crate::parasolid::stream_header(payload) else {
                 continue;
             };
@@ -445,6 +513,7 @@ pub fn sketches(
                 &brep,
                 block.offset,
                 stream_ordinal,
+                stream_offset,
                 section,
                 &header.description,
                 configuration(section).as_deref(),
@@ -464,6 +533,7 @@ fn project_brep(
     brep: &crate::brep::Brep,
     block_offset: usize,
     stream_ordinal: usize,
+    stream_offset: usize,
     section: &str,
     sketch_name: &str,
     configuration: Option<&str>,
@@ -637,7 +707,7 @@ fn project_brep(
             annotations,
             sketch_id.0.clone(),
             section,
-            0,
+            stream_offset as u64,
             "feature_input_profile",
             Exactness::Derived,
         );

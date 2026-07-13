@@ -127,6 +127,8 @@ pub struct Block {
     pub ps_stream: Option<Vec<u8>>,
     /// Every Parasolid stream carried by this block.
     pub ps_streams: Vec<Vec<u8>>,
+    /// Outer-payload offset of each entry in `ps_streams`.
+    pub ps_stream_offsets: Vec<usize>,
 }
 
 /// One tail-directory entry naming a section.
@@ -249,6 +251,7 @@ struct RawBlock {
     payload: Vec<u8>,
     ps_stream: Option<Vec<u8>>,
     ps_streams: Vec<Vec<u8>>,
+    ps_stream_offsets: Vec<usize>,
 }
 
 impl RawBlock {
@@ -263,6 +266,7 @@ impl RawBlock {
             payload: self.payload,
             ps_stream: self.ps_stream,
             ps_streams: self.ps_streams,
+            ps_stream_offsets: self.ps_stream_offsets,
         }
     }
 }
@@ -298,7 +302,12 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let ps_streams = crate::parasolid::extract_streams(&inflated);
+    let located_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
+    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
+    let ps_streams = located_streams
+        .into_iter()
+        .map(|(_, stream)| stream)
+        .collect::<Vec<_>>();
     let ps_stream = ps_streams.first().cloned();
     let family = if ps_streams.is_empty() {
         payload_family(&inflated)
@@ -317,6 +326,7 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
         payload: inflated,
         ps_stream,
         ps_streams,
+        ps_stream_offsets,
     })
 }
 
