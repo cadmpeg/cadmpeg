@@ -561,6 +561,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: definitions[1].clone(),
         native_ref: None,
@@ -594,6 +595,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         suppressed: false,
         parent: Some(feature_id.clone()),
         dependencies: vec![feature_id.clone(), feature_id.clone()],
+        source_properties: std::collections::BTreeMap::new(),
         outputs: vec![BodyId("synthetic:test:body#missing".into())],
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
@@ -615,6 +617,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Marker".into(),
@@ -657,6 +660,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
@@ -703,6 +707,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
@@ -1869,6 +1874,7 @@ fn feature_extent_magnitudes_are_validated() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("profile".into()),
@@ -1912,6 +1918,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id.clone()),
@@ -1932,6 +1939,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: Some(sketch_id.clone()),
@@ -2011,6 +2019,7 @@ fn feature_operation_geometry_is_validated() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -2045,6 +2054,7 @@ fn flex_modes_round_trip_and_validate() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Flex {
             axis: Vector3::new(0.0, 0.0, 0.0),

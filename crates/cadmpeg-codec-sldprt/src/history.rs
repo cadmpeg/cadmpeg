@@ -305,6 +305,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                                 .and_then(|source| by_source.get(source).cloned())
                         }),
                     dependencies: project_feature_dependencies(feature, &by_source),
+                    source_properties: feature.properties.clone(),
                     outputs: Vec::new(),
                     definition: project_definition(feature, &by_source, &native_by_source),
                     native_ref: Some(feature.id.clone()),
@@ -2422,7 +2423,11 @@ pub fn sync_neutral_features(
                 kind,
                 parameters,
                 properties,
-            } => (kind.clone(), parameters.clone(), properties.clone()),
+            } => {
+                let mut merged = feature.source_properties.clone();
+                merged.extend(properties.clone());
+                (kind.clone(), parameters.clone(), merged)
+            }
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
@@ -2452,10 +2457,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Origin".into(), format_point3_mm(*origin));
                 properties.insert("Normal".into(), format_vector3(*normal));
                 properties.insert("UAxis".into(), format_vector3(*u_axis));
@@ -2495,10 +2497,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Origin".into(), format_point3_mm(*origin));
                 properties.insert("Direction".into(), format_vector3(*direction));
                 (
@@ -2531,10 +2530,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Position".into(), format_point3_mm(*position));
                 (
                     existing
@@ -2565,10 +2561,7 @@ pub fn sync_neutral_features(
                         .as_deref()
                         .map(|record| record.parameters.clone())
                         .unwrap_or_default(),
-                    existing
-                        .as_deref()
-                        .map(|record| record.properties.clone())
-                        .unwrap_or_default(),
+                    feature.source_properties.clone(),
                 )
             }
             FeatureDefinition::Extrude {
@@ -2598,10 +2591,7 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 parameters.remove("Depth");
                 parameters.remove("Depth2");
                 parameters.remove("Draft");
@@ -2726,10 +2716,7 @@ pub fn sync_neutral_features(
                         }
                     }
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
                     write_native_selection(
                         &mut properties,
@@ -2813,10 +2800,7 @@ pub fn sync_neutral_features(
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
                     write_native_selection(
                         &mut properties,
@@ -2861,10 +2845,7 @@ pub fn sync_neutral_features(
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
                 parameters.insert("Thickness".into(), format_length_mm(thickness.0));
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
                     write_native_selection(
                         &mut properties,
@@ -2918,10 +2899,7 @@ pub fn sync_neutral_features(
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
                 parameters.insert("Angle".into(), format_angle_rad(angle.0));
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 let fallback = existing.as_deref().map_or("", |record| record.id.as_str());
                 if let Some(faces) = faces {
                     write_native_selection(&mut properties, "Faces", &faces, fallback);
@@ -2965,10 +2943,7 @@ pub fn sync_neutral_features(
                 }
                 let target = target.expect("checked above");
                 let tools = tools.expect("checked above");
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Target".into(), target);
                 properties.insert("Tools".into(), tools);
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
@@ -2995,10 +2970,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Faces".into(), faces.expect("checked above"));
                 properties.insert("Heal".into(), heal.to_string());
                 (
@@ -3028,10 +3000,7 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Faces".into(), faces.expect("checked above"));
                 parameters.remove("Distance");
                 parameters.remove("Angle");
@@ -3106,10 +3075,7 @@ pub fn sync_neutral_features(
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
                 parameters.insert("Height".into(), format_length_mm(height.0));
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Faces".into(), faces.expect("checked above"));
                 properties.insert("Elliptical".into(), elliptical.to_string());
                 properties.insert("Reverse".into(), reverse.to_string());
@@ -3139,10 +3105,7 @@ pub fn sync_neutral_features(
                 parameters.remove("Angle");
                 parameters.remove("Factor");
                 parameters.remove("Distance");
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Axis".into(), format_vector3(*axis));
                 properties.remove("AxisDirection");
                 match mode {
@@ -3234,10 +3197,7 @@ pub fn sync_neutral_features(
                         parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
                     }
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 match face {
                     Some(face) if face_selection_value(face).is_some() => {
                         properties.insert(
@@ -3348,10 +3308,7 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 parameters.remove("Angle");
                 parameters.remove("Angle2");
                 match angle {
@@ -3443,10 +3400,7 @@ pub fn sync_neutral_features(
                         parameters.remove("Scale");
                     }
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Profile".into(), profile_source.clone());
                 properties.insert("Path".into(), path_source.clone());
                 properties.insert("Operation".into(), format_boolean_op(*op).into());
@@ -3494,10 +3448,7 @@ pub fn sync_neutral_features(
                             feature.id
                         ))
                     })?;
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Profiles".into(), profile_sources.join(","));
                 if guide_sources.is_empty() {
                     properties.remove("Guides");
@@ -3555,10 +3506,7 @@ pub fn sync_neutral_features(
                         parameters.remove("Draft");
                     }
                 }
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Profile".into(), profile_source.clone());
                 properties.insert("Direction".into(), format_vector3(*direction));
                 properties.insert("BothSides".into(), both_sides.to_string());
@@ -3606,10 +3554,7 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                let mut properties = existing
-                    .as_deref()
-                    .map(|record| record.properties.clone())
-                    .unwrap_or_default();
+                let mut properties = feature.source_properties.clone();
                 properties.insert("Seeds".into(), seed_sources.join(","));
                 match pattern {
                     PatternKind::Linear {

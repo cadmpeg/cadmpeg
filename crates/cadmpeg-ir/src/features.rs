@@ -148,6 +148,9 @@ pub struct Feature {
     /// Earlier features consumed during regeneration, in source operand order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<FeatureId>,
+    /// Source operation attributes not consumed by the neutral definition.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub source_properties: BTreeMap<String, String>,
     /// Bodies produced or modified by the feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outputs: Vec<BodyId>,

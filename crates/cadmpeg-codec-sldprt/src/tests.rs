@@ -1486,6 +1486,7 @@ fn encoder_writes_source_less_line_sketches() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: Some(sketch_id.clone()),
@@ -1532,6 +1533,7 @@ fn encoder_writes_source_less_line_sketches() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -1544,6 +1546,7 @@ fn encoder_writes_source_less_line_sketches() {
         suppressed: false,
         parent: Some(sketch_feature_id),
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
@@ -1845,6 +1848,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: Some(sketch_id),
@@ -1910,6 +1914,7 @@ fn encoder_writes_source_less_native_features() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "BossExtrude".into(),
@@ -1998,6 +2003,7 @@ fn encoder_writes_source_less_native_features() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -2028,6 +2034,7 @@ fn encoder_writes_source_less_native_features() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: vec![seed_id.clone()],
@@ -2558,6 +2565,7 @@ fn encoder_writes_source_less_datum_features() {
             suppressed: false,
             parent: None,
             dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -3054,6 +3062,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         suppressed: false,
         parent: None,
         dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "EquationDriven".into(),
@@ -5807,7 +5816,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
         br#"<Keywords>
             <Sketch Name="Profile" Type="CustomSketch" id="51"/>
             <ReferencePoint Name="Origin" Type="CustomDatum" id="52" Position="1mm,2mm,3mm"/>
-            <Fillet Name="Round" Type="CustomFillet" id="53" Dependencies="51,52,51"><Dimension Name="Radius">2mm</Dimension></Fillet>
+            <Fillet Name="Round" Type="CustomFillet" id="53" Dependencies="51,52,51" Algorithm="RollingBall"><Dimension Name="Radius">2mm</Dimension></Fillet>
             <Chamfer Name="Bevel" Type="CustomChamfer" id="54"><Dimension Name="Distance">3mm</Dimension></Chamfer>
             <Hole Name="Drill" Type="CustomHole" id="55"><Dimension Name="Diameter">4mm</Dimension><Dimension Name="Depth">5mm</Dimension></Hole>
         </Keywords>"#,
@@ -5839,6 +5848,10 @@ fn decode_dispatches_typed_features_by_xml_family() {
             decoded.ir.model.features[1].id.clone(),
         ]
     );
+    assert_eq!(
+        decoded.ir.model.features[2].source_properties["Algorithm"],
+        "RollingBall"
+    );
     assert!(matches!(
         decoded.ir.model.features[3].definition,
         FeatureDefinition::Chamfer {
@@ -5865,6 +5878,9 @@ fn decode_dispatches_typed_features_by_xml_family() {
         panic!("typed custom fillet");
     };
     *radius = Length(2.5);
+    decoded.ir.model.features[2]
+        .source_properties
+        .insert("Algorithm".into(), "FaceBlend".into());
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved(&decoded.ir, &mut encoded)
@@ -5875,6 +5891,11 @@ fn decode_dispatches_typed_features_by_xml_family() {
     let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
     assert_eq!(native[2].kind, "CustomFillet");
     assert_eq!(native[2].parameters["Radius"], "2.5mm");
+    assert_eq!(native[2].properties["Algorithm"], "FaceBlend");
+    assert_eq!(
+        regenerated.ir.model.features[2].source_properties["Algorithm"],
+        "FaceBlend"
+    );
     assert_eq!(
         regenerated.ir.model.features[2].dependencies,
         vec![
