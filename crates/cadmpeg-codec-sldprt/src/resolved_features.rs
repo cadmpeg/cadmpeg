@@ -847,9 +847,7 @@ fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> bool {
         kind,
         FeatureInputOperandKind::D6
             | FeatureInputOperandKind::E1
-            | FeatureInputOperandKind::Native(
-                0x837b | 0x8386 | 0x83fe | 0x8dcb | 0x8dda | 0xbc7c | 0xbc87
-            )
+            | FeatureInputOperandKind::Native(0x83fe)
     )
 }
 
@@ -5025,7 +5023,7 @@ fn generated_entity_operand(
     kind: FeatureInputOperandKind,
 ) -> Result<u16, cadmpeg_ir::codec::CodecError> {
     let local_id = unique_generated_entity_marker(ir, sketch, markers, entity)?;
-    generated_operand_ordinal(markers, local_id, kind, sketch)
+    generated_operand_address(markers, local_id, kind, sketch)
 }
 
 fn generated_locus_operand(
@@ -5036,15 +5034,18 @@ fn generated_locus_operand(
     kind: FeatureInputOperandKind,
 ) -> Result<u16, cadmpeg_ir::codec::CodecError> {
     let local_id = unique_generated_locus_marker(ir, sketch, markers, locus)?;
-    generated_operand_ordinal(markers, local_id, kind, sketch)
+    generated_operand_address(markers, local_id, kind, sketch)
 }
 
-fn generated_operand_ordinal(
+fn generated_operand_address(
     markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     local_id: u16,
     kind: FeatureInputOperandKind,
     sketch: &Sketch,
 ) -> Result<u16, cadmpeg_ir::codec::CodecError> {
+    if !operand_uses_compatible_ordinal(kind) {
+        return Ok(local_id);
+    }
     let ordinal = markers
         .iter()
         .filter(|(_, _, marker_kind, _)| operand_accepts_marker(kind, *marker_kind))

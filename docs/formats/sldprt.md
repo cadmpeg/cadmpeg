@@ -117,7 +117,7 @@ A compact dimensional relation instance contains one or two adjacent scalar reco
 
 A named scalar begins with `04 80 ff fe ff`, followed by a u8 UTF-16 code-unit count, that many UTF-16LE code units, the 22-byte scalar header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00 00 00 ff fe ff 00 00 00`, and a finite little-endian f64 value. Scalar trailer offsets are relative to the byte immediately after that f64. Trailer +3 stores the little-endian u32 scalar object identifier. Trailer +24 stores `00 00 00 02 00`; trailer +29 stores role `0` for driving or `1` for display. Operand cells begin at trailer +35 and repeat every 12 bytes. Each cell stores its little-endian u16 tag at +0, its u16 marker address at +2, `ff ff ff ff` at +4, and four zero bytes at +8. The name length therefore moves the value and every trailer field together.
 
-The instance operand list is the first scalar record's complete ordered operand-cell list. A resolved operand marker is selected by the operand-cell tag's marker family and the address's zero-based ordinal within that family. Marker order is byte-offset order within the owning feature object.
+The instance operand list is the first scalar record's complete ordered operand-cell list. Tags `d6 80`, `e1 80`, and `fe 83` use a zero-based ordinal within the tag's marker family, ordered by marker byte offset in the owning feature object. Tags `7b 83`, `86 83`, `cb 8d`, `da 8d`, `7c bc`, and `87 bc` use a feature-local marker identifier qualified by the tag's marker family; resolution requires one matching marker.
 
 Operand-cell tags `d6 80`, `7b 83`, `cb 8d`, and `7c bc` address point or constrained-point handles. Tags `e1 80`, `86 83`, `fe 83`, `da 8d`, and `87 bc` address line-or-circle handles. Tag `fe 83` is used by circular dimensions.
 
@@ -147,9 +147,9 @@ Sketch relations use named scalar records with reference cells at fixed scalar-r
 
 Distance, horizontal-distance, vertical-distance, and circular-dimension driving scalars store metres. Angular driving scalars store radians. These relation-family units apply when the owning Keywords feature has no dimension expression.
 
-Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object. These reference-object indices are distinct from scalar operand-cell ordinals.
+Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.
 
-Operand tags `80d6`, `837b`, `8dcb`, and `bc7c` select point or constrained-point markers. Tags `80e1`, `8386`, `83fe`, `8dda`, and `bc87` select line-or-circle markers. Every scalar operand address is an ordinal within the selected marker family.
+Operand tags `80d6`, `837b`, `8dcb`, and `bc7c` select point or constrained-point markers. Tags `80e1`, `8386`, `83fe`, `8dda`, and `bc87` select line-or-circle markers.
 
 Feature-input geometry-handle coordinates and the nested Parasolid profile differ by a signed axis permutation and constant translation per sketch feature. A unique transform mapping at least two distinct geometry-handle coordinates onto profile loci binds every matching geometry or relation marker coordinate to those loci. Relation-marker coordinates do not participate in selecting the frame. The identity axis permutation has precedence when it has a unique translation. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
 

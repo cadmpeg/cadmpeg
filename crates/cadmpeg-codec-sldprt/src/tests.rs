@@ -13874,12 +13874,6 @@ fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
             payload[offset..offset + 2].copy_from_slice(&0x837bu16.to_le_bytes());
         }
     }
-    let operand_cells = payload
-        .windows(2)
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == [0x7b, 0x83]).then_some(offset))
-        .collect::<Vec<_>>();
-    payload[operand_cells[1] + 2..operand_cells[1] + 4].copy_from_slice(&0u16.to_le_bytes());
     let marker = [0xff, 0xff, 0x1f, 0x00, 0x03];
     let first = payload
         .windows(marker.len())
@@ -13897,7 +13891,7 @@ fn decode_uses_operand_tag_to_disambiguate_marker_kind() {
         .unwrap();
     let lane = &sldprt_native(&decoded.ir).feature_input_lanes[0];
     let operand = &lane.scalars[0].operands[1];
-    assert_eq!(operand.entity_index, 0);
+    assert_eq!(operand.entity_index, 2);
     assert_eq!(
         operand.entity_ref.as_deref(),
         Some(lane.sketch_entities[0].id.as_str())
