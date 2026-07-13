@@ -5621,9 +5621,11 @@ fn native_procedural_surface(
                 procedural.id
             )))
         }
-        ProceduralSurfaceDefinition::Unknown { .. } => {
+        ProceduralSurfaceDefinition::LinearSweep { .. }
+        | ProceduralSurfaceDefinition::AxisRevolution { .. }
+        | ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
-                "source-less F3D unknown procedural surface {} cannot be regenerated losslessly",
+                "source-less F3D procedural surface {} has no lossless native encoding",
                 procedural.id
             )))
         }
