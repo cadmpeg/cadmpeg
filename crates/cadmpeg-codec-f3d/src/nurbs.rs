@@ -189,6 +189,7 @@ struct DecodedSurfaceBlock {
     v_knot_layout: KnotLayout,
     periodic_value_offsets: [usize; 2],
     degree_value_offsets: [usize; 2],
+    int_width: usize,
 }
 
 fn decode_surface_block(
@@ -272,11 +273,14 @@ fn decode_surface_block(
         v_knot_layout,
         periodic_value_offsets: [enum_value_offsets[0], enum_value_offsets[1]],
         degree_value_offsets: [degree_u_offset, degree_v_offset],
+        int_width,
     })
 }
 
 /// Writable value offsets for the final valid surface cache in one carrier record.
 pub(crate) struct SurfacePatchLayout {
+    /// Payload width of integer and enum fields.
+    pub(crate) int_width: usize,
     /// Native v-major tagged-double payload offsets, excluding each tag byte.
     pub(crate) control_value_offsets: Vec<usize>,
     /// Whether every pole includes a fourth rational weight component.
@@ -327,6 +331,7 @@ pub(crate) fn final_surface_patch_layout(record: &[u8]) -> Option<SurfacePatchLa
             .next_back()
     })?;
     Some(SurfacePatchLayout {
+        int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
         u_count: decoded.surface.u_count as usize,
@@ -348,6 +353,7 @@ pub(crate) fn surface_patch_layout_at(record: &[u8], ordinal: usize) -> Option<S
             .nth(ordinal)
     })?;
     Some(SurfacePatchLayout {
+        int_width: decoded.int_width,
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
         u_count: decoded.surface.u_count as usize,
@@ -370,6 +376,7 @@ struct DecodedCurveBlock {
     knot_layout: KnotLayout,
     periodic_value_offset: usize,
     degree_value_offset: usize,
+    int_width: usize,
 }
 
 fn decode_curve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<DecodedCurveBlock> {
@@ -409,11 +416,14 @@ fn decode_curve_block(b: &[u8], marker_pos: usize, int_width: usize) -> Option<D
         knot_layout,
         periodic_value_offset,
         degree_value_offset,
+        int_width,
     })
 }
 
 /// Writable value offsets for a 3D curve cache in one carrier record.
 pub(crate) struct CurvePatchLayout {
+    /// Payload width of integer and enum fields.
+    pub(crate) int_width: usize,
     /// Tagged-double payload offsets in pole/component order.
     pub(crate) control_value_offsets: Vec<usize>,
     /// Whether every pole includes a fourth rational weight component.
@@ -438,6 +448,7 @@ pub(crate) fn first_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout
             .find_map(|position| decode_curve_block(record, position, int_width))
     })?;
     Some(CurvePatchLayout {
+        int_width: decoded.int_width,
         control_count: decoded.curve.control_points.len(),
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
@@ -457,6 +468,7 @@ pub(crate) fn final_curve_patch_layout(record: &[u8]) -> Option<CurvePatchLayout
             .next_back()
     })?;
     Some(CurvePatchLayout {
+        int_width: decoded.int_width,
         control_count: decoded.curve.control_points.len(),
         control_value_offsets: decoded.control_value_offsets,
         rational: decoded.rational,
@@ -483,6 +495,8 @@ pub struct NurbsPcurve {
 
 /// Writable value offsets for one 2D pcurve cache.
 pub(crate) struct PcurvePatchLayout {
+    /// Payload width of integer and enum fields.
+    pub(crate) int_width: usize,
     /// Tagged-integer payload offset for the curve degree.
     pub(crate) degree_value_offset: usize,
     /// Tagged-double payload offsets in `(u, v)` pole order.
@@ -542,6 +556,7 @@ fn final_pcurve_patch_layout_at(record: &[u8], int_width: usize) -> Option<Pcurv
                 }
             }
             Some(PcurvePatchLayout {
+                int_width,
                 degree_value_offset,
                 control_value_offsets: offsets,
                 weight_value_offsets: weight_offsets,

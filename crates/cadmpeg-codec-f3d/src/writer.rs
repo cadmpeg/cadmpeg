@@ -14678,21 +14678,33 @@ fn patch_nurbs_surface_record(
             record.index
         )));
     }
-    patch_knot_structure(bytes, record.offset, &layout.u_knots, &surface.u_knots)?;
-    patch_knot_structure(bytes, record.offset, &layout.v_knots, &surface.v_knots)?;
+    patch_knot_structure(
+        bytes,
+        record.offset,
+        &layout.u_knots,
+        &surface.u_knots,
+        layout.int_width,
+    )?;
+    patch_knot_structure(
+        bytes,
+        record.offset,
+        &layout.v_knots,
+        &surface.v_knots,
+        layout.int_width,
+    )?;
     for (offset, degree) in layout
         .degree_value_offsets
         .into_iter()
         .zip([surface.u_degree, surface.v_degree])
     {
         let at = record.offset + offset;
-        bytes[at..at + 8].copy_from_slice(&i64::from(degree).to_le_bytes());
+        patch_layout_integer(bytes, at, layout.int_width, i64::from(degree))?;
     }
     if let Some(periodic) = edit.periodic {
         for (offset, periodic) in layout.periodic_value_offsets.into_iter().zip(periodic) {
             let at = record.offset + offset;
             let value = if periodic { 2i64 } else { 0i64 };
-            bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+            patch_layout_integer(bytes, at, layout.int_width, value)?;
         }
     }
     let components = if layout.rational { 4 } else { 3 };
@@ -14784,13 +14796,19 @@ fn patch_nurbs_curve_record(
             record.index
         )));
     }
-    patch_knot_structure(bytes, record.offset, &layout.knots, &curve.knots)?;
+    patch_knot_structure(
+        bytes,
+        record.offset,
+        &layout.knots,
+        &curve.knots,
+        layout.int_width,
+    )?;
     let degree_at = record.offset + layout.degree_value_offset;
-    bytes[degree_at..degree_at + 8].copy_from_slice(&i64::from(curve.degree).to_le_bytes());
+    patch_layout_integer(bytes, degree_at, layout.int_width, i64::from(curve.degree))?;
     if let Some(periodic) = edit.periodic {
         let periodic = if periodic { 2i64 } else { 0i64 };
         let periodic_at = record.offset + layout.periodic_value_offset;
-        bytes[periodic_at..periodic_at + 8].copy_from_slice(&periodic.to_le_bytes());
+        patch_layout_integer(bytes, periodic_at, layout.int_width, periodic)?;
     }
     let components = if layout.rational { 4 } else { 3 };
     if layout.control_value_offsets.len() != curve.control_points.len() * components {
@@ -15904,13 +15922,13 @@ fn patch_nurbs_pcurve_record(
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {
         unreachable!()
     };
-    patch_knot_structure(bytes, scope.start, &layout.knots, knots)?;
+    patch_knot_structure(bytes, scope.start, &layout.knots, knots, layout.int_width)?;
     let at = scope.start + layout.degree_value_offset;
-    bytes[at..at + 8].copy_from_slice(&i64::from(*degree).to_le_bytes());
+    patch_layout_integer(bytes, at, layout.int_width, i64::from(*degree))?;
     if let Some(periodic) = edit.periodic {
         let value = if periodic { 2i64 } else { 0i64 };
         let at = scope.start + layout.periodic_value_offset;
-        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        patch_layout_integer(bytes, at, layout.int_width, value)?;
     }
     if let Some(reversed) = edit.wrapper_reversed {
         let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
@@ -16039,6 +16057,7 @@ fn patch_knot_structure(
     record_offset: usize,
     layout: &crate::nurbs::KnotPatchLayout,
     knots: &[f64],
+    int_width: usize,
 ) -> Result<(), CodecError> {
     let mut runs: Vec<(f64, usize)> = Vec::new();
     for knot in knots {
@@ -16080,8 +16099,26 @@ fn patch_knot_structure(
         let value_at = record_offset + *value_offset;
         bytes[value_at..value_at + 8].copy_from_slice(&value.to_le_bytes());
         let multiplicity_at = record_offset + *multiplicity_offset;
-        bytes[multiplicity_at..multiplicity_at + 8].copy_from_slice(&stored.to_le_bytes());
+        patch_layout_integer(bytes, multiplicity_at, int_width, stored)?;
     }
+    Ok(())
+}
+
+fn patch_layout_integer(
+    bytes: &mut [u8],
+    offset: usize,
+    width: usize,
+    value: i64,
+) -> Result<(), CodecError> {
+    if width == 4 && i64::from(value as i32) != value {
+        return Err(CodecError::NotImplemented(
+            "F3D NURBS integer edit exceeds BinaryFile4 range".into(),
+        ));
+    }
+    let target = bytes
+        .get_mut(offset..offset + width)
+        .ok_or_else(|| CodecError::Malformed("F3D NURBS integer payload is truncated".into()))?;
+    target.copy_from_slice(&value.to_le_bytes()[..width]);
     Ok(())
 }
 

@@ -8133,6 +8133,46 @@ fn synthetic_geometry_bf4_smbh() -> Vec<u8> {
     synthetic_geometry_bf4_smbh_with_arc_sense(0x0b)
 }
 
+fn synthetic_geometry_bf4_nurbs_smbh() -> Vec<u8> {
+    fn tagged_i32(bytes: &mut Vec<u8>, tag: u8, value: i32) {
+        bytes.push(tag);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    let mut bytes = synthetic_geometry_bf4_smbh();
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 4).unwrap();
+    let ellipse_range = records[19].offset..records[19].offset + records[19].len;
+
+    let mut curve = Vec::new();
+    t_subident(&mut curve, "intcurve");
+    t_ident(&mut curve, "curve");
+    tagged_i32(&mut curve, 0x0c, -1);
+    tagged_i32(&mut curve, 0x04, -1);
+    tagged_i32(&mut curve, 0x0c, -1);
+    curve.push(0x0f);
+    t_ident(&mut curve, "surf_surf_int_cur");
+    curve.extend_from_slice(b"\x0d\x04nubs");
+    tagged_i32(&mut curve, 0x04, 2);
+    tagged_i32(&mut curve, 0x15, 0);
+    tagged_i32(&mut curve, 0x04, 2);
+    for (knot, multiplicity) in [(0.0, 2), (1.0, 2)] {
+        push_tagged_f64(&mut curve, knot);
+        tagged_i32(&mut curve, 0x04, multiplicity);
+    }
+    for point in [[0.0, 0.0, 0.0], [0.5, 0.5, 0.0], [1.0, 0.0, 0.0]] {
+        for coordinate in point {
+            push_tagged_f64(&mut curve, coordinate);
+        }
+    }
+    t_dbl(&mut curve, 0.0005);
+    curve.push(0x10);
+    t_end(&mut curve);
+    bytes.splice(ellipse_range, curve);
+    bytes
+}
+
 /// `synthetic_geometry_bf4_smbh` with the arc edge's sense byte set to
 /// `arc_edge_sense` (`0x0b` forward, `0x0a` reversed).
 fn synthetic_geometry_bf4_smbh_with_arc_sense(arc_edge_sense: u8) -> Vec<u8> {
@@ -8399,6 +8439,45 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         Some(expected_range)
     );
     assert_eq!(round_trip.ir.model.faces[0].sense, expected_face_sense);
+}
+
+#[test]
+fn generated_f3d_rewrites_binaryfile4_nurbs_integer_fields() {
+    let source = f3d_with_smbh(&synthetic_geometry_bf4_nurbs_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated BinaryFile4 NURBS decode");
+    let mut edited = decoded.ir;
+    let curve = edited
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| {
+            matches!(
+                curve.geometry,
+                cadmpeg_ir::geometry::CurveGeometry::Nurbs(_)
+            )
+        })
+        .expect("generated BinaryFile4 NURBS curve");
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &mut curve.geometry else {
+        unreachable!()
+    };
+    nurbs.degree = 1;
+    nurbs.periodic = true;
+    nurbs.knots = vec![-1.0, -1.0, 2.0, 2.0, 2.0];
+    nurbs.control_points[1].z = 4.5;
+    let expected = nurbs.clone();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("generated BinaryFile4 NURBS regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated BinaryFile4 NURBS decode");
+    assert!(round_trip.ir.model.curves.iter().any(|curve| {
+        matches!(&curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) if nurbs == &expected)
+    }));
 }
 
 #[test]
