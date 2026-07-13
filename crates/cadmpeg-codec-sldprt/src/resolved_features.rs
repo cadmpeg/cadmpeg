@@ -1496,8 +1496,8 @@ fn typed_marker_relation_definition(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        Coincident, Collinear, Concentric, Equal, Fixed, Horizontal, Parallel, Perpendicular,
-        Tangent, Vertical,
+        Coincident, Collinear, Concentric, Equal, Fixed, Horizontal, HorizontalPoints, Parallel,
+        Perpendicular, Tangent, Vertical, VerticalPoints,
     };
     let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
@@ -1560,6 +1560,23 @@ fn typed_marker_relation_definition(
                 return None;
             }
             SketchConstraintDefinition::CoincidentLoci { loci }
+        }
+        HorizontalPoints | VerticalPoints => {
+            let loci = linked_single_loci(marker, loci_by_marker)?;
+            let [first, second] = loci.as_slice() else {
+                return None;
+            };
+            match kind {
+                HorizontalPoints => SketchConstraintDefinition::HorizontalPoints {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                VerticalPoints => SketchConstraintDefinition::VerticalPoints {
+                    first: first.clone(),
+                    second: second.clone(),
+                },
+                _ => unreachable!("relation kind was filtered above"),
+            }
         }
         _ => return None,
     })
@@ -2175,6 +2192,17 @@ mod profile_join_tests {
                     cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
                     cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
                 ],
+            })
+        );
+        let mut horizontal_points = marker("horizontal-points", None);
+        horizontal_points.kind = SketchInputKind::Relation(SketchRelationKind::HorizontalPoints);
+        horizontal_points.links = parallel.links.clone();
+        markers.insert(horizontal_points.id.as_str(), &horizontal_points);
+        assert_eq!(
+            typed_marker_relation_definition(&horizontal_points, &markers, &joins),
+            Some(SketchConstraintDefinition::HorizontalPoints {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
             })
         );
         let relation = FeatureInputRelationInstance {

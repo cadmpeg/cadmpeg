@@ -337,6 +337,8 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
 fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
     match definition {
         Constraint::CoincidentLoci { loci } => loci.iter().collect(),
+        Constraint::HorizontalPoints { first, second }
+        | Constraint::VerticalPoints { first, second } => vec![first, second],
         Constraint::Midpoint { point, .. } => vec![point],
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
