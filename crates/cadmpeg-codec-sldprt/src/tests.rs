@@ -12397,7 +12397,7 @@ fn decode_resolves_feature_input_operands_within_sketch() {
 }
 
 #[test]
-fn decode_resolves_marker_links_by_trailing_local_id() {
+fn decode_resolves_each_marker_link_by_trailing_local_id() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -12411,7 +12411,7 @@ fn decode_resolves_marker_links_by_trailing_local_id() {
         .position(|window| window == marker)
         .expect("first sketch marker");
     payload[offset + 64..offset + 66].copy_from_slice(&2u16.to_le_bytes());
-    payload[offset + 66..offset + 68].copy_from_slice(&3u16.to_le_bytes());
+    payload[offset + 66..offset + 68].copy_from_slice(&99u16.to_le_bytes());
     payload[offset + 68..offset + 70].copy_from_slice(&1u16.to_le_bytes());
     payload[offset + 70..offset + 72].fill(0);
     payload[offset + 72..offset + 80].copy_from_slice(&(-1.0f64).to_le_bytes());
@@ -12440,10 +12440,7 @@ fn decode_resolves_marker_links_by_trailing_local_id() {
             .iter()
             .map(|link| (link.local_id, link.entity_ref.as_str()))
             .collect::<Vec<_>>(),
-        [
-            (2, lane.sketch_entities[1].id.as_str()),
-            (3, lane.sketch_entities[2].id.as_str()),
-        ]
+        [(2, lane.sketch_entities[1].id.as_str())]
     );
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())

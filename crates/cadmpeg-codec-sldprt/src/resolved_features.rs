@@ -510,7 +510,7 @@ pub(crate) fn bind_scalar_operands(
             };
             let links = local_ids
                 .into_iter()
-                .map(|local_id| {
+                .filter_map(|local_id| {
                     let [entity_ref] = marker_ids
                         .get(&(owner.clone(), u32::from(local_id)))?
                         .as_slice()
@@ -522,8 +522,8 @@ pub(crate) fn bind_scalar_operands(
                         entity_ref: entity_ref.clone(),
                     })
                 })
-                .collect::<Option<Vec<_>>>();
-            if let Some(links) = links {
+                .collect::<Vec<_>>();
+            if !links.is_empty() {
                 entity.links = links;
                 entity.link_selector = Some(selector);
             }
