@@ -6,7 +6,7 @@ use std::ops::Range;
 
 use crate::chunks::{checked_count_bytes, chunk_at, ArchiveVersion, BoundedReader, FramingError};
 use crate::container::Record;
-use crate::objects::parse_class_wrapper;
+use crate::objects::{parse_class_wrapper, parse_class_wrapper_with_userdata, UserdataDescriptor};
 use crate::settings::{point, utf16, vector, xform, Point3, Vector3, Xform};
 use crate::wire::Uuid;
 
@@ -56,6 +56,7 @@ pub(crate) enum Value {
 pub(crate) struct EmbeddedGeometry {
     pub(crate) class_id: Uuid,
     pub(crate) class_data_range: Range<usize>,
+    pub(crate) userdata: Vec<UserdataDescriptor>,
 }
 
 /// Persistent construction data for one polyedge.
@@ -386,7 +387,7 @@ fn geometries(
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
         let mut warnings = Vec::new();
-        let class = parse_class_wrapper(
+        let (class, userdata) = parse_class_wrapper_with_userdata(
             nested.backing_bytes(),
             start..wrapper.next_offset,
             archive,
@@ -396,6 +397,7 @@ fn geometries(
         values.push(EmbeddedGeometry {
             class_id: class.class_uuid,
             class_data_range: class.class_data_range,
+            userdata,
         });
     }
     if nested.remaining() != 0 {
@@ -1128,6 +1130,8 @@ fn extended_geometry_json(
             archive,
         )
         .ok()?;
+        let mut dimension = dimension;
+        crate::dimensions::apply_userdata(data, &value.userdata, archive, &mut dimension).ok()?;
         return crate::dimensions::semantic_json(&dimension);
     } else {
         return None;
@@ -1502,6 +1506,7 @@ mod tests {
         let geometry = EmbeddedGeometry {
             class_id: crate::cage::CLASS,
             class_data_range: 0..bytes.len(),
+            userdata: Vec::new(),
         };
         let semantic = extended_geometry_json(&bytes, &geometry, ArchiveVersion::V8, None, 10.0)
             .expect("cage semantics");
@@ -1517,6 +1522,7 @@ mod tests {
         let geometry = EmbeddedGeometry {
             class_id: crate::subd::ON_SUBD,
             class_data_range: 0..1,
+            userdata: Vec::new(),
         };
         let semantic =
             extended_geometry_json(&empty_subd, &geometry, ArchiveVersion::V8, None, 1.0)
@@ -1530,6 +1536,7 @@ mod tests {
         let geometry = EmbeddedGeometry {
             class_id: crate::brep::ON_BREP,
             class_data_range: 0..brep.len(),
+            userdata: Vec::new(),
         };
         let semantic = extended_geometry_json(&brep, &geometry, ArchiveVersion::V8, None, 10.0)
             .expect("Brep topology semantics");
