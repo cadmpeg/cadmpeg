@@ -1027,6 +1027,7 @@ failure make the buffer invalid.
 | `ON_DetailView`          | `C8C66EFA-B3CB-4E00-9440-2AD66203379E` |
 | `ON_NurbsCage`           | `06936AFB-3D3C-41AC-BF70-C9319FA480A1` |
 | `ON_MorphControl`        | `D379E6D8-7C31-4407-A913-E3B7040D034A` |
+| `ON_Centermark`          | `D46767BA-7E8F-4D9D-9A92-66050219A5B9` |
 | `ON_Layer`               | `95809813-E985-11D3-BFE5-0010830122F0` |
 | `ON_InstanceDefinition`  | `26F8BFF6-2618-417F-A158-153D64A94989` |
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
@@ -1847,6 +1848,11 @@ Annotation type 6 selects ordinate. Measured direction 1 measures plane x and
 2 measures plane y. Zero infers x when the absolute leader displacement in x
 does not exceed its displacement in y, and otherwise infers y. Measurement is
 the absolute selected definition-point coordinate times distance scale.
+
+`ON_Centermark` uses the same anonymous family and common-dimension chunks.
+Annotation type 8 selects center mark. Its family suffix is one nonnegative
+`f64` radius. The radius uses document length conversion. Center marks have no
+measured dimension value; the radius controls the persisted mark geometry.
 
 All points and distance-valued fields use document length conversion.
 Directions, angles, and distance scale are unscaled. Coordinates, scales, and

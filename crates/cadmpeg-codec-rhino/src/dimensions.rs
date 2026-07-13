@@ -36,6 +36,9 @@ pub(crate) const ORDINATE: Uuid = Uuid::from_canonical([
 pub(crate) const V5_ORDINATE: Uuid = Uuid::from_canonical([
     0xc8, 0x28, 0x8d, 0x69, 0x5b, 0xd8, 0x4f, 0x50, 0x9b, 0xaf, 0x52, 0x5a, 0x00, 0x86, 0xb0, 0xc3,
 ]);
+pub(crate) const CENTERMARK: Uuid = Uuid::from_canonical([
+    0xd4, 0x67, 0x67, 0xba, 0x7e, 0x8f, 0x4d, 0x9d, 0x9a, 0x92, 0x66, 0x05, 0x02, 0x19, 0xa5, 0xb9,
+]);
 
 /// Dimension family and defining plane-space geometry.
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +64,9 @@ pub(crate) enum Definition {
         leader_point: [f64; 2],
         measured_direction: i32,
         kink_offsets: [f64; 2],
+    },
+    CenterMark {
+        radius: f64,
     },
 }
 
@@ -101,7 +107,15 @@ struct Annotation {
 pub(crate) fn supported_class(class: Uuid) -> bool {
     matches!(
         class,
-        LINEAR | ANGULAR | RADIAL | ORDINATE | V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE
+        LINEAR
+            | ANGULAR
+            | RADIAL
+            | ORDINATE
+            | CENTERMARK
+            | V5_LINEAR
+            | V5_ANGULAR
+            | V5_RADIAL
+            | V5_ORDINATE
     )
 }
 
@@ -795,6 +809,17 @@ pub(crate) fn decode(
             measured_direction,
             kink_offsets,
         }
+    } else if class == CENTERMARK {
+        if annotation.kind != 8 {
+            return Err(structural(
+                outer.position(),
+                "invalid center-mark annotation type",
+            ));
+        }
+        let radius = scaled_coordinate(outer.f64()?, scale)
+            .filter(|radius| *radius >= 0.0)
+            .ok_or_else(|| structural(outer.position() - 8, "invalid center-mark radius"))?;
+        Definition::CenterMark { radius }
     } else {
         return Err(structural(range.start, "unsupported dimension class"));
     };
@@ -831,6 +856,7 @@ pub(crate) fn decode(
                 definition_point[1].abs()
             }) * distance_scale
         }
+        Definition::CenterMark { .. } => 0.0,
     };
     if !measurement.is_finite() {
         return Err(structural(range.start, "dimension measurement is invalid"));
@@ -981,6 +1007,7 @@ pub(crate) fn project(
             ParameterValue::Length(Length(dimension.measurement)),
             None,
         ),
+        Definition::CenterMark { .. } => ("center_mark", ParameterValue::Length(Length(0.0)), None),
     };
     let mut parameters =
         BTreeMap::from([("measurement".to_string(), dimension.measurement.to_string())]);
@@ -1136,6 +1163,9 @@ pub(crate) fn project(
                 "kink_offsets".to_string(),
                 format!("{},{}", kink_offsets[0], kink_offsets[1]),
             );
+        }
+        Definition::CenterMark { radius } => {
+            properties.insert("radius".to_string(), radius.to_string());
         }
     }
     parameters.insert("parameter_id".to_string(), parameter_id.0.clone());
@@ -1440,6 +1470,21 @@ mod tests {
                 second_extension_offset: 0.0,
                 ..
             }
+        ));
+
+        let center_bytes = payload(8, &4.5_f64.to_le_bytes());
+        let center = decode(
+            &center_bytes,
+            CENTERMARK,
+            0..center_bytes.len(),
+            10.0,
+            archive,
+        )
+        .unwrap();
+        assert_eq!(center.measurement, 0.0);
+        assert!(matches!(
+            center.definition,
+            Definition::CenterMark { radius: 45.0 }
         ));
 
         let annotation = legacy_annotation_payload(8, &[[4.0, -7.0], [4.0, 2.0]]);
