@@ -9,6 +9,7 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 
+pub(crate) mod accounting;
 pub(crate) mod brep;
 pub(crate) mod cage;
 pub(crate) mod chunks;

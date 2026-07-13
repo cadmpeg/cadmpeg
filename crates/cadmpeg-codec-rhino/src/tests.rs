@@ -2234,6 +2234,41 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
 }
 
 #[test]
+fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
+    let archive = ArchiveVersion::V5;
+    let object = object_record(archive, 1, [0; 16]);
+    let bytes = minimal_document(
+        "50",
+        &[
+            table(archive, 0x1000_0014, &[]),
+            table(archive, 0x1000_0015, &[]),
+            table(archive, 0x1000_0013, &[object]),
+        ],
+    );
+    let result = RhinoCodec
+        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
+        .unwrap();
+    let namespace = result.ir.native.namespace("rhino").unwrap();
+    let spans = namespace.arenas.get("byte_spans").unwrap();
+    let mut cursor = 0_u64;
+    for span in spans {
+        let offset = span.fields["offset"].as_u64().unwrap();
+        let byte_len = span.fields["byte_len"].as_u64().unwrap();
+        assert_eq!(offset, cursor);
+        assert!(matches!(
+            span.fields["classification"].as_str(),
+            Some("typed" | "structural" | "opaque")
+        ));
+        cursor += byte_len;
+    }
+    assert_eq!(cursor, bytes.len() as u64);
+    let opaque = namespace.arenas.get("opaque_records").unwrap();
+    assert_eq!(opaque.len(), 1);
+    assert_eq!(opaque[0].id, "rhino:source:opaque#comment");
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+}
+
+#[test]
 fn rejected_candidate_detaches_payload_clone_and_preserves_live_bytes() {
     let archive = ArchiveVersion::V5;
     let object = object_record(archive, 1, [0; 16]);

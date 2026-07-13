@@ -233,15 +233,7 @@ fn table_base(typecode: u32) -> u32 {
 }
 
 fn retain_record_descriptors(typecode: u32) -> bool {
-    matches!(
-        table_base(typecode),
-        TCODE_PROPERTIES
-            | TCODE_SETTINGS
-            | TCODE_LAYER
-            | TCODE_INSTANCE_DEFINITION
-            | TCODE_OBJECTS
-            | TCODE_HISTORY
-    )
+    table_base(typecode) != TCODE_USER
 }
 
 fn record_is_allowed(table: u32, record: u32, short: bool) -> bool {
