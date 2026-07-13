@@ -215,6 +215,8 @@ POINT is a geometric carrier. It becomes a topological vertex only through a val
 An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP references it.
 A body is solid when every assembled EDGE has exactly two FIN uses in that body. A body with faces and any edge-use count other than two is a sheet body.
 
+BODY, REGION, and SHELL records contain no placement reference. POINT coordinates and the origins and axes stored by curve and surface carriers are part-model coordinates. An inline Parasolid body's part placement is therefore the identity transform.
+
 Body-shape SHELL validation: invariant/ref predicate passes; `body_ref` and `region_ref` are non-null; `first_face`→FACE in the SHELL's stream. A null `face_anchor` requires the `FACE.next` walk to close at null with visited faces back-referencing the SHELL. A non-null `face_anchor` equals `first_face` and selects all FACE records that back-reference the SHELL.
 
 **Periodic faces / closed edges.** Parasolid stores a periodic surface as one face. A full-circle/ellipse edge stores no trim interval or wrap-count field and references the bare CIRCLE/ELLIPSE. Its one-FIN loop has `forward_fin == backward_fin == self`. The FIN vertex is either a VERTEX shared by both edge ends or the null reference; the null form's canonical topological point is the analytic curve point at parameter zero. The full revolution has parameter identity `[0, 2π]`. An EDGE with `curve == 1` has no curve record and is the surface-intersection locus of its incident faces.

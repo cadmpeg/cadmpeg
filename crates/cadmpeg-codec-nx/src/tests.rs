@@ -583,6 +583,7 @@ fn decode_retains_topology_owned_point_at_origin() {
         .decode(&mut input, &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].transform, None);
     assert_eq!(result.ir.model.edges.len(), 1);
     assert_eq!(
         result.ir.model.points[0].position,

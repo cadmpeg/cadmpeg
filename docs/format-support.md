@@ -148,13 +148,13 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 
 **Kernel:** Parasolid in an SPLMSSTR container
 
-**Ladder: L2 claimed.** L3 requires complete incidence, placement, transforms, and final body composition across the band.
+**Ladder: L2 claimed.** L3 requires complete incidence and final body composition across the band.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec decodes the SPLMSSTR directory, extracts and classifies embedded Parasolid partition, deltas, and related streams, and retains primary and fixed-ID NX object-model entities at their external index boundaries.
 - **Geometry: Partial.** Points, analytic surfaces and curves, typed B-spline surfaces and curves, and supported type-133 trimmed curves transfer into IR.
-- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when framing and references resolve. Non-null shell BODY and REGION references supply ownership identity when either record is omitted; shell layouts use either a FACE chain or a face anchor with FACE back-references. A validated partition shell defines the current topology image; paired deltas topology records remain revision history. Supported non-topology replacements and tombstones use the last event for each exact key. Final feature-history Boolean composition remains unresolved.
+- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when framing and references resolve. Non-null shell BODY and REGION references supply ownership identity when either record is omitted; shell layouts use either a FACE chain or a face anchor with FACE back-references. Solid and sheet kinds derive from edge incidence. Inline Parasolid coordinates are in part-model space and bodies have identity placement. A validated partition shell defines the current topology image; paired deltas topology records remain revision history. Supported non-topology replacements and tombstones use the last event for each exact key. Final feature-history Boolean composition remains unresolved.
 - **Tessellation: None.**
 - **Design intent: Partial.** Typed numeric expressions retain object identity, name, declared millimeter or degree unit, and value. Named arrangements retain ordered configuration names and default state. Feature, sketch, constraint, and history operation semantics remain open.
 - **Product structure: Inspect.** The codec reports external part dependencies. Assembly graph instances, placements, and constraints remain open.
