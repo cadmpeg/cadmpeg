@@ -2626,12 +2626,16 @@ fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
 
 #[test]
 fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
-    let records = crate::geometry::b2_revolutions(&b2_revolution_stream());
-    assert_eq!(records.len(), 1);
-    assert_eq!(records[0].profile_curve_id, 0x1234);
-    assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
-    assert_eq!(records[0].axis, [0.0, 0.0, 1.0]);
-    assert_eq!(records[0].profile_range, [-4.0, 9.0]);
+    for reference_token in [0x08, 0x0a] {
+        let mut stream = b2_revolution_stream();
+        stream[5] = reference_token;
+        let records = crate::geometry::b2_revolutions(&stream);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].profile_curve_id, 0x1234);
+        assert_eq!(records[0].origin, [1.0, 2.0, 3.0]);
+        assert_eq!(records[0].axis, [0.0, 0.0, 1.0]);
+        assert_eq!(records[0].profile_range, [-4.0, 9.0]);
+    }
 }
 
 #[test]

@@ -1457,7 +1457,7 @@ pub fn b2_revolutions(data: &[u8]) -> Vec<B2Revolution> {
     for frame in b_family_frames(data, 0x2d) {
         let p = frame.payload;
         if frame.end - p != 0xae
-            || data.get(p) != Some(&0x0a)
+            || !matches!(data.get(p), Some(0x08 | 0x0a))
             || data.get(p + 131..p + 133) != Some(&[0x05, 0x05])
             || f64_le(data, p + 141) != Some(1.0)
             || f64_le(data, p + 149) != Some(1.0)
