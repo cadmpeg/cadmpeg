@@ -92,6 +92,8 @@ Each history node is a linked construction state:
 
 Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores an old and new entity reference: null→entity is insertion, entity→null is deletion, and entity→entity is update.
 
+The BulletinBoard chain closes with its tagged-zero terminator. A second `04 0 11` sequence separates the state body from the following record sequence. On a non-tail state, that `0x11` is the next `delta_state` record delimiter and the state owns no intervening entity records. The tail state is followed by `End-of-ASM-History-Section`, the retained history entity snapshot, and `End-of-ASM-data`. These records use the ordinary SAB name-chain and payload grammar. The final `End-of-ASM-data` record ends at the enclosing stream boundary without a trailing `0x11`; EOF terminates only that final history record.
+
 ---
 
 ## 3. ASM binary header

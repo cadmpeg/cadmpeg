@@ -168,12 +168,18 @@ fn decode_history_records(
     state_id: &str,
     width: usize,
 ) -> Vec<AsmHistoryRecord> {
-    let start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
+    let mut start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
+    if bytes.get(start) == Some(&0x04)
+        && int_at(bytes, start + 1, width) == Some(0)
+        && bytes.get(start + 1 + width) == Some(&0x11)
+    {
+        start += 2 + width;
+    }
     let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
     if start >= limit {
         return Vec::new();
     }
-    match crate::sab::frame(bytes, start, limit, width) {
+    match crate::sab::frame_history(bytes, start, limit, width) {
         Ok(records) => records
             .into_iter()
             .map(|record| AsmHistoryRecord {
@@ -184,13 +190,15 @@ fn decode_history_records(
                 raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
             })
             .collect(),
-        Err(_) => vec![AsmHistoryRecord {
-            id: format!("f3d:{stream}:asm-history-record#{start:010}"),
-            parent: state_id.to_string(),
-            index: 0,
-            name: "opaque_history_payload".into(),
-            raw_bytes: bytes[start..limit].to_vec(),
-        }],
+        Err(_) => {
+            vec![AsmHistoryRecord {
+                id: format!("f3d:{stream}:asm-history-record#{start:010}"),
+                parent: state_id.to_string(),
+                index: 0,
+                name: "opaque_history_payload".into(),
+                raw_bytes: bytes[start..limit].to_vec(),
+            }]
+        }
     }
 }
 

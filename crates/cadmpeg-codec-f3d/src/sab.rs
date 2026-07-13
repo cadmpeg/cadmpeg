@@ -405,6 +405,27 @@ pub fn frame(
     limit: usize,
     ref_width: usize,
 ) -> Result<Vec<Record>, FrameError> {
+    frame_impl(bytes, start, limit, ref_width, false)
+}
+
+/// Frame a history-section slice whose final record ends at the enclosing
+/// stream boundary without an explicit `0x11` terminator.
+pub(crate) fn frame_history(
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    ref_width: usize,
+) -> Result<Vec<Record>, FrameError> {
+    frame_impl(bytes, start, limit, ref_width, true)
+}
+
+fn frame_impl(
+    bytes: &[u8],
+    start: usize,
+    limit: usize,
+    ref_width: usize,
+    eof_terminates_final_record: bool,
+) -> Result<Vec<Record>, FrameError> {
     let limit = limit.min(bytes.len());
     let mut records = Vec::new();
     let mut pos = start;
@@ -419,6 +440,9 @@ pub fn frame(
         let mut is_delta = false;
 
         loop {
+            if eof_terminates_final_record && pos == limit && depth == 0 && !name_parts.is_empty() {
+                break;
+            }
             let (lexed, next) = lex(bytes, pos, ref_width)?;
             pos = next;
             match lexed {
@@ -483,7 +507,17 @@ pub fn frame(
 
 #[cfg(test)]
 mod tests {
-    use super::{frame, payload_subtype_span, payload_token_offset};
+    use super::{frame, frame_history, payload_subtype_span, payload_token_offset};
+
+    #[test]
+    fn history_framer_accepts_only_the_final_record_at_eof() {
+        let bytes = [0x0d, 4, b'e', b'd', b'g', b'e'];
+        assert!(frame(&bytes, 0, bytes.len(), 8).is_err());
+        let records = frame_history(&bytes, 0, bytes.len(), 8).expect("history EOF record");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "edge");
+        assert_eq!(records[0].len, bytes.len());
+    }
 
     fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
         let mut bytes = vec![0x0d, 6];
