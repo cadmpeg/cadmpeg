@@ -104,6 +104,32 @@ fn validate_source_less_procedural_carriers(target: &CadIr) -> Result<(), CodecE
     Ok(())
 }
 
+fn validate_source_less_topology_tolerances(target: &CadIr) -> Result<(), CodecError> {
+    if let Some(face) = target
+        .model
+        .faces
+        .iter()
+        .find(|face| face.tolerance.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize face {} tolerance losslessly",
+            face.id
+        )));
+    }
+    if let Some(edge) = target
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.tolerance.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize edge {} tolerance until the tedge tolerance grammar is defined",
+            edge.id
+        )));
+    }
+    Ok(())
+}
+
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
@@ -114,6 +140,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         ));
     }
     validate_source_less_procedural_carriers(target)?;
+    validate_source_less_topology_tolerances(target)?;
     if let Some(native) = &native {
         validate_source_less_history_graph(target, native)?;
         validate_source_less_act(native)?;

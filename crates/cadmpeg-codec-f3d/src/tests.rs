@@ -4103,6 +4103,44 @@ fn generated_source_less_writes_document_tolerance_contract() {
 }
 
 #[test]
+fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated planar triangle decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+
+    source_less.model.faces[0].tolerance = Some(0.02);
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("face tolerance must not disappear");
+    assert!(
+        error.to_string().contains("cannot serialize face")
+            && error.to_string().contains("tolerance losslessly")
+    );
+
+    source_less.model.faces[0].tolerance = None;
+    source_less.model.edges[0].tolerance = Some(0.03);
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("edge tolerance must not disappear");
+    assert!(error.to_string().contains("tedge tolerance grammar"));
+
+    source_less.model.edges[0].tolerance = None;
+    source_less.model.vertices[0].tolerance = Some(0.04);
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("supported tolerant vertex encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("supported tolerant vertex round trip");
+    assert_eq!(round_trip.ir.model.vertices[0].tolerance, Some(0.04));
+}
+
+#[test]
 fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
