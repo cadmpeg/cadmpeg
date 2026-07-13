@@ -260,6 +260,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
+        if lane.scalars
+            != crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names)
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "SolidWorks feature-input scalar index does not match its native payload"
+                    .into(),
+                entity: Some(lane.id.clone()),
+            });
+        }
         let expected_offsets = lane
             .native_payload
             .windows(MARKER.len())

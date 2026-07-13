@@ -3,7 +3,7 @@
 
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
-    SketchInputEntity, SketchInputKind,
+    FeatureInputScalar, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
@@ -30,6 +30,10 @@ use crate::container::ContainerScan;
 const SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const NAME_MARKER: &[u8] = &[0x04, 0x80, 0xff, 0xfe, 0xff];
+const SCALAR_HEADER: &[u8] = &[
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
+];
 const SKETCH_POINT_TOLERANCE: f64 = 1.0e-9;
 
 pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
@@ -43,6 +47,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             let parent = format!("sldprt:feature-input:resolved-features#{}", block.offset);
             let classes = class_declarations(&block.payload, &parent);
             let names = object_names(&block.payload, &parent);
+            let scalars = named_scalars(&block.payload, &parent, &names);
             let sketch_entities = block
                 .payload
                 .windows(SKETCH_MARKER.len())
@@ -96,8 +101,47 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 native_payload: block.payload.clone(),
                 classes,
                 names,
+                scalars,
                 sketch_entities,
             })
+        })
+        .collect()
+}
+
+pub(crate) fn named_scalars(
+    payload: &[u8],
+    parent: &str,
+    names: &[FeatureInputName],
+) -> Vec<FeatureInputScalar> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    names
+        .iter()
+        .filter_map(|name| {
+            let name_offset = usize::try_from(name.offset).ok()?;
+            let value_offset = name_offset
+                .checked_add(NAME_MARKER.len() + 1)?
+                .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?
+                .checked_add(SCALAR_HEADER.len())?;
+            let header_offset = value_offset.checked_sub(SCALAR_HEADER.len())?;
+            if payload.get(header_offset..value_offset)? != SCALAR_HEADER {
+                return None;
+            }
+            let value = f64::from_le_bytes(
+                payload
+                    .get(value_offset..value_offset + 8)?
+                    .try_into()
+                    .ok()?,
+            );
+            value.is_finite().then_some((name, value_offset, value))
+        })
+        .enumerate()
+        .map(|(ordinal, (name, offset, value))| FeatureInputScalar {
+            id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
+            parent: parent.to_string(),
+            ordinal: ordinal as u32,
+            offset: offset as u64,
+            name: name.id.clone(),
+            value,
         })
         .collect()
 }
@@ -822,6 +866,7 @@ fn source_less_lanes(
                 native_payload: Vec::new(),
                 classes: Vec::new(),
                 names: Vec::new(),
+                scalars: Vec::new(),
                 sketch_entities: Vec::new(),
             });
             lanes.last_mut().expect("lane was inserted")

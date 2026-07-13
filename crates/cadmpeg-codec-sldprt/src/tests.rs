@@ -937,6 +937,13 @@ fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
+        if name == "D1" {
+            payload.extend_from_slice(&[
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
+                0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
+            ]);
+            payload.extend_from_slice(&0.025f64.to_le_bytes());
+        }
     }
     for code in codes {
         payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
@@ -10709,6 +10716,9 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .collect::<Vec<_>>(),
         ["Sketch1", "D1"]
     );
+    assert_eq!(lane.scalars.len(), 1);
+    assert_eq!(lane.scalars[0].name, lane.names[1].id);
+    assert_eq!(lane.scalars[0].value, 0.025);
     assert!(lane
         .classes
         .iter()
@@ -10805,6 +10815,25 @@ fn semantic_writer_rejects_edited_feature_input_name_index() {
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("has edited object names"));
+}
+
+#[test]
+fn semantic_writer_rejects_edited_feature_input_scalar_index() {
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].scalars[0].value = 0.050;
+    });
+    assert!(crate::validate_native(&decoded.ir)
+        .iter()
+        .any(|finding| finding.message.contains("scalar index does not match")));
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("has edited named scalars"));
 }
 
 #[test]

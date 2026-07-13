@@ -743,6 +743,14 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    if lane.scalars
+        != crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names)
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "feature-input lane {} has edited named scalars",
+            lane.id
+        )));
+    }
     let expected_offsets = lane
         .native_payload
         .windows(MARKER.len())
