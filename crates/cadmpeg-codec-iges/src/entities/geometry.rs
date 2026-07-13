@@ -56,6 +56,36 @@ impl Affine {
         };
         Point3::new(coordinate(0), coordinate(1), coordinate(2))
     }
+
+    fn vector(self, vector: Vector3) -> Vector3 {
+        let values = [vector.x, vector.y, vector.z];
+        let coordinate = |row: usize| {
+            values
+                .iter()
+                .enumerate()
+                .map(|(column, value)| self.rows[row][column] * value)
+                .sum::<f64>()
+        };
+        Vector3::new(coordinate(0), coordinate(1), coordinate(2))
+    }
+}
+
+fn dot(left: Vector3, right: Vector3) -> f64 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+fn cross(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
+}
+
+fn normalized(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0)
+        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
 fn resolve_transform(
@@ -147,6 +177,22 @@ fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     }
 }
 
+fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
+    SourceObjectAssociation {
+        format: "iges".into(),
+        object_id: format!("D{}", entry.sequence),
+        name: std::str::from_utf8(&entry.label)
+            .ok()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned),
+        color: None,
+        visible: Some(entry.status.blank == 0),
+        layer: Some(entry.level.to_string()),
+        instance_path: Vec::new(),
+    }
+}
+
 pub(crate) fn project_geometry(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -172,6 +218,147 @@ pub(crate) fn project_geometry(
     );
     let mut free_vertices = Vec::new();
     let mut wire_edges = Vec::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 100 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let mut values = [0.0; 7];
+        let mut malformed = None;
+        for (index, value) in values.iter_mut().enumerate() {
+            match record.number(index + 1) {
+                Some(number) if number.is_finite() => *value = number * factor,
+                _ => malformed = Some(index + 1),
+            }
+        }
+        if let Some(index) = malformed {
+            losses.push(entity_loss(
+                entry,
+                format!("arc parameter {index} is not a finite number"),
+            ));
+            continue;
+        }
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        let basis_x = transform.vector(Vector3::new(1.0, 0.0, 0.0));
+        let basis_y = transform.vector(Vector3::new(0.0, 1.0, 0.0));
+        let scale_x = basis_x.norm();
+        let scale_y = basis_y.norm();
+        let scale_tolerance = scale_x.max(scale_y).max(1.0) * 1.0e-12;
+        if !scale_x.is_finite()
+            || !scale_y.is_finite()
+            || (scale_x - scale_y).abs() > scale_tolerance
+            || dot(basis_x, basis_y).abs() > scale_x * scale_y * 1.0e-12
+        {
+            losses.push(entity_loss(
+                entry,
+                "affine placement does not preserve circular geometry",
+            ));
+            continue;
+        }
+        let center = transform.point(Point3::new(values[1], values[2], values[0]));
+        let start = transform.point(Point3::new(values[3], values[4], values[0]));
+        let end = transform.point(Point3::new(values[5], values[6], values[0]));
+        let start_delta = Vector3::new(start.x - center.x, start.y - center.y, start.z - center.z);
+        let end_delta = Vector3::new(end.x - center.x, end.y - center.y, end.z - center.z);
+        let radius = start_delta.norm();
+        let end_radius = end_delta.norm();
+        let Some(ref_direction) = normalized(start_delta) else {
+            losses.push(entity_loss(entry, "arc start point equals its center"));
+            continue;
+        };
+        let Some(axis) = normalized(cross(basis_x, basis_y)) else {
+            losses.push(entity_loss(entry, "arc placement collapses its plane"));
+            continue;
+        };
+        if !end_radius.is_finite()
+            || (end_radius - radius).abs() > radius.max(end_radius).max(1.0) * 1.0e-10
+        {
+            losses.push(entity_loss(
+                entry,
+                "arc start and terminate points have different radii",
+            ));
+            continue;
+        }
+        let Some(end_direction) = normalized(end_delta) else {
+            losses.push(entity_loss(entry, "arc terminate point equals its center"));
+            continue;
+        };
+        let mut angle = dot(axis, cross(ref_direction, end_direction))
+            .atan2(dot(ref_direction, end_direction))
+            .rem_euclid(std::f64::consts::TAU);
+        if angle <= 1.0e-14 {
+            angle = std::f64::consts::TAU;
+        }
+        let stem = format!("D{}", entry.sequence);
+        let start_point = PointId(format!("iges:model:point#{stem}-start"));
+        let end_point = PointId(format!("iges:model:point#{stem}-end"));
+        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
+        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
+        let curve = CurveId(format!("iges:model:curve#{stem}"));
+        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        ir.model.points.extend([
+            Point {
+                id: start_point.clone(),
+                position: start,
+            },
+            Point {
+                id: end_point.clone(),
+                position: end,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: start_vertex.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end_vertex.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            },
+            source_object: Some(source_object(entry)),
+        });
+        ir.model.edges.push(Edge {
+            id: edge.clone(),
+            curve: Some(curve),
+            start: start_vertex,
+            end: end_vertex,
+            param_range: Some([0.0, angle]),
+            tolerance: None,
+        });
+        wire_edges.push(edge);
+        decoded.insert(entry.sequence);
+    }
     for entry in directory
         .iter()
         .filter(|entry| entry.entity_type == 116 && entry.form == 0)
@@ -309,19 +496,7 @@ pub(crate) fn project_geometry(
                 origin: start,
                 direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
             },
-            source_object: Some(SourceObjectAssociation {
-                format: "iges".into(),
-                object_id: format!("D{}", entry.sequence),
-                name: std::str::from_utf8(&entry.label)
-                    .ok()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_owned),
-                color: None,
-                visible: Some(entry.status.blank == 0),
-                layer: Some(entry.level.to_string()),
-                instance_path: Vec::new(),
-            }),
+            source_object: Some(source_object(entry)),
         });
         ir.model.edges.push(Edge {
             id: edge.clone(),
@@ -335,9 +510,9 @@ pub(crate) fn project_geometry(
         decoded.insert(entry.sequence);
     }
     if !decoded.is_empty() {
-        let body = BodyId("iges:model:body#points".into());
-        let region = RegionId("iges:model:region#points".into());
-        let shell = ShellId("iges:model:shell#points".into());
+        let body = BodyId("iges:model:body#free-geometry".into());
+        let region = RegionId("iges:model:region#free-geometry".into());
+        let shell = ShellId("iges:model:shell#free-geometry".into());
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Wire,
