@@ -468,6 +468,7 @@ fn build_geometry_ir(
         body_native_keys: brep.body_native_keys,
         sketch_curve_links: brep.sketch_curve_links,
         persistent_design_links: brep.persistent_design_links,
+        persistent_subentity_tags: brep.persistent_subentity_tags,
         edge_continuities: brep.edge_continuities,
         edge_ownerships: brep.edge_ownerships,
         vertex_ownerships: brep.vertex_ownerships,

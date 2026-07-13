@@ -5807,7 +5807,9 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
 #[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
-    use crate::records::{CreationTimestamp, PersistentDesignLink, SketchCurveLink};
+    use crate::records::{
+        CreationTimestamp, PersistentDesignLink, PersistentSubentityTag, SketchCurveLink,
+    };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::topology::Color;
 
@@ -5849,23 +5851,23 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
             ordinal: 1,
             is_current: true,
         },
-        PersistentDesignLink {
-            id: "generated:persistent-design-link#2".into(),
+    ];
+    native.persistent_subentity_tags = vec![
+        PersistentSubentityTag {
+            id: "generated:persistent-subentity-tag#0".into(),
             target: AttributeTarget::Face(face_id.clone()),
-            design_id: "411".into(),
-            entity_kind: 2,
-            design_reference: 9,
+            selector: 1,
+            token: "8".into(),
+            design_references: vec![301, -314, 411],
             ordinal: 0,
-            is_current: true,
         },
-        PersistentDesignLink {
-            id: "generated:persistent-design-link#3".into(),
+        PersistentSubentityTag {
+            id: "generated:persistent-subentity-tag#1".into(),
             target: AttributeTarget::Edge(edge_id.clone()),
-            design_id: "511".into(),
-            entity_kind: 1,
-            design_reference: 10,
+            selector: 2,
+            token: "-1".into(),
+            design_references: vec![511],
             ordinal: 0,
-            is_current: true,
         },
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
@@ -5902,18 +5904,22 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less provenance attribute round trip");
     let native = f3d_native(&round_trip.ir);
-    assert_eq!(native.persistent_design_links.len(), 4);
+    assert_eq!(native.persistent_design_links.len(), 2);
     assert_eq!(native.persistent_design_links[0].design_id, "311");
     assert_eq!(native.persistent_design_links[0].entity_kind, 3);
     assert_eq!(native.persistent_design_links[0].design_reference, 7);
     assert_eq!(native.persistent_design_links[1].design_id, "322");
     assert_eq!(native.persistent_design_links[1].design_reference, 8);
     assert!(native.persistent_design_links[1].is_current);
-    assert!(native.persistent_design_links.iter().any(|link| {
-        link.design_id == "411" && matches!(link.target, AttributeTarget::Face(_))
+    assert_eq!(native.persistent_subentity_tags.len(), 2);
+    assert!(native.persistent_subentity_tags.iter().any(|tag| {
+        tag.design_references == [301, -314, 411] && matches!(tag.target, AttributeTarget::Face(_))
     }));
-    assert!(native.persistent_design_links.iter().any(|link| {
-        link.design_id == "511" && matches!(link.target, AttributeTarget::Edge(_))
+    assert!(crate::validate_native(&round_trip.ir).is_empty());
+    assert!(native.persistent_subentity_tags.iter().any(|tag| {
+        tag.token == "-1"
+            && tag.design_references == [511]
+            && matches!(tag.target, AttributeTarget::Edge(_))
     }));
     assert_eq!(native.sketch_curve_links.len(), 1);
     assert_eq!(native.sketch_curve_links[0].sketch_curve_id, 113);

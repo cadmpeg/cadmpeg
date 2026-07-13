@@ -10,8 +10,9 @@ use crate::records::{
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
     DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, EdgeOwnership,
     FaceSidedness, LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink,
-    PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
-    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    PersistentReference, PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint,
+    SketchRelation, TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership,
+    WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -43,6 +44,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "mesh_surface_sentinels",
     "persistent_design_links",
     "persistent_references",
+    "persistent_subentity_tags",
     "sketch_curve_identities",
     "sketch_curve_links",
     "sketch_points",
@@ -75,6 +77,7 @@ macro_rules! f3d_arenas {
             creation_timestamps: CreationTimestamp;
             persistent_design_links: PersistentDesignLink;
             persistent_references: PersistentReference;
+            persistent_subentity_tags: PersistentSubentityTag;
             sketch_curve_links: SketchCurveLink;
             sketch_relations: SketchRelation;
             sketch_points: SketchPoint;
@@ -193,6 +196,9 @@ pub struct F3dNative {
     /// Persistent point/curve references from Design construction records.
     #[serde(default)]
     pub persistent_references: Vec<PersistentReference>,
+    /// Variable-width persistent tag groups attached to solved faces and edges.
+    #[serde(default)]
+    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
     /// Provenance links from sketch curves to generated B-rep coedges.
     #[serde(default)]
     pub sketch_curve_links: Vec<SketchCurveLink>,
@@ -253,6 +259,7 @@ impl Default for F3dNative {
             creation_timestamps: Vec::new(),
             persistent_design_links: Vec::new(),
             persistent_references: Vec::new(),
+            persistent_subentity_tags: Vec::new(),
             sketch_curve_links: Vec::new(),
             sketch_relations: Vec::new(),
             sketch_points: Vec::new(),

@@ -12,7 +12,7 @@ use crate::native::F3dNative;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipeKind, CreationTimestamp,
     DesignMaterialAssignment, DesignObjectKind, LostEdgeReference, PersistentDesignLink,
-    PersistentReferenceKind, SketchCurveGeometry, SketchCurveLink,
+    PersistentReferenceKind, PersistentSubentityTag, SketchCurveGeometry, SketchCurveLink,
 };
 use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -792,12 +792,35 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
         .iter()
         .map(|item| &item.id)
         .collect::<BTreeSet<_>>();
-    let mut groups: BTreeMap<(u8, String), Vec<&PersistentDesignLink>> = BTreeMap::new();
+    let mut groups: BTreeMap<String, Vec<&PersistentDesignLink>> = BTreeMap::new();
     for link in &native.persistent_design_links {
         let target_key = match &link.target {
             cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains(id) => {
-                Some((3, id.0.clone()))
+                Some(id.0.clone())
             }
+            _ => None,
+        };
+        let Some(target_key) = target_key else {
+            return Err(CodecError::Malformed(format!(
+                "F3D persistent design link {} has an unsupported or missing target",
+                link.id
+            )));
+        };
+        if link.entity_kind != 3
+            || link.design_id.is_empty()
+            || !link.design_id.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D persistent body link {} has an invalid kind or design id",
+                link.id
+            )));
+        }
+        groups.entry(target_key).or_default().push(link);
+    }
+    let mut subentity_groups: BTreeMap<(u8, String), Vec<&PersistentSubentityTag>> =
+        BTreeMap::new();
+    for tag in &native.persistent_subentity_tags {
+        let target_key = match &tag.target {
             cadmpeg_ir::attributes::AttributeTarget::Face(id) if faces.contains(id) => {
                 Some((2, id.0.clone()))
             }
@@ -808,11 +831,27 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
         };
         let Some(target_key) = target_key else {
             return Err(CodecError::Malformed(format!(
-                "F3D persistent design link {} has an unsupported or missing target",
-                link.id
+                "F3D persistent subentity tag {} has an unsupported or missing target",
+                tag.id
             )));
         };
-        groups.entry(target_key).or_default().push(link);
+        if tag.token.is_empty() || tag.design_references.is_empty() {
+            return Err(CodecError::Malformed(format!(
+                "F3D persistent subentity tag {} requires a token and at least one reference",
+                tag.id
+            )));
+        }
+        subentity_groups.entry(target_key).or_default().push(tag);
+    }
+    for (target, mut tags) in subentity_groups {
+        tags.sort_by_key(|tag| tag.ordinal);
+        for (ordinal, tag) in tags.iter().enumerate() {
+            if tag.ordinal != ordinal as u32 {
+                return Err(CodecError::Malformed(format!(
+                    "F3D persistent subentity tags for {target:?} require contiguous ordinals"
+                )));
+            }
+        }
     }
     for (target, mut links) in groups {
         links.sort_by_key(|link| link.ordinal);
@@ -3693,6 +3732,21 @@ fn persistent_links(
     links
 }
 
+fn persistent_subentity_tags(
+    target: &CadIr,
+    entity: &cadmpeg_ir::attributes::AttributeTarget,
+) -> Vec<PersistentSubentityTag> {
+    let mut tags = f3d_native(target)
+        .ok()
+        .flatten()
+        .into_iter()
+        .flat_map(|native| native.persistent_subentity_tags)
+        .filter(|tag| &tag.target == entity)
+        .collect::<Vec<_>>();
+    tags.sort_by_key(|tag| tag.ordinal);
+    tags
+}
+
 fn creation_timestamp(
     target: &CadIr,
     entity: &cadmpeg_ir::attributes::AttributeTarget,
@@ -3806,40 +3860,36 @@ fn persistent_body_group_count(target: &CadIr) -> usize {
     )
 }
 
-fn face_persistent_links(target: &CadIr, face: &Face) -> Vec<PersistentDesignLink> {
-    persistent_links(
+fn face_persistent_tags(target: &CadIr, face: &Face) -> Vec<PersistentSubentityTag> {
+    persistent_subentity_tags(
         target,
         &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
     )
 }
 
-fn edge_persistent_links(target: &CadIr, edge: &Edge) -> Vec<PersistentDesignLink> {
-    persistent_links(
+fn edge_persistent_tags(target: &CadIr, edge: &Edge) -> Vec<PersistentSubentityTag> {
+    persistent_subentity_tags(
         target,
         &cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone()),
     )
 }
 
 fn persistent_face_group_count(target: &CadIr) -> usize {
-    persistent_group_count(
-        target,
-        target
-            .model
-            .faces
-            .iter()
-            .map(|face| cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone())),
-    )
+    target
+        .model
+        .faces
+        .iter()
+        .filter(|face| !face_persistent_tags(target, face).is_empty())
+        .count()
 }
 
 fn persistent_edge_group_count(target: &CadIr) -> usize {
-    persistent_group_count(
-        target,
-        target
-            .model
-            .edges
-            .iter()
-            .map(|edge| cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone())),
-    )
+    target
+        .model
+        .edges
+        .iter()
+        .filter(|edge| !edge_persistent_tags(target, edge).is_empty())
+        .count()
 }
 
 fn body_persistent_attribute_ref(
@@ -3928,7 +3978,7 @@ fn face_persistent_attribute_ref(
     face: &Face,
     attribute_start: i64,
 ) -> Result<Option<i64>, CodecError> {
-    if face_persistent_links(target, face).is_empty() {
+    if face_persistent_tags(target, face).is_empty() {
         return Ok(None);
     }
     let ordinal = target
@@ -3936,7 +3986,7 @@ fn face_persistent_attribute_ref(
         .faces
         .iter()
         .take_while(|candidate| candidate.id != face.id)
-        .filter(|candidate| !face_persistent_links(target, candidate).is_empty())
+        .filter(|candidate| !face_persistent_tags(target, candidate).is_empty())
         .count();
     native_record_index(
         attribute_start,
@@ -4011,12 +4061,12 @@ fn edge_persistent_attribute_ref(
     edge_ordinal: usize,
     attribute_start: i64,
 ) -> Result<Option<i64>, CodecError> {
-    if edge_persistent_links(target, edge).is_empty() {
+    if edge_persistent_tags(target, edge).is_empty() {
         return Ok(None);
     }
     let ordinal = target.model.edges[..edge_ordinal]
         .iter()
-        .filter(|candidate| !edge_persistent_links(target, candidate).is_empty())
+        .filter(|candidate| !edge_persistent_tags(target, candidate).is_empty())
         .count();
     native_record_index(
         attribute_start,
@@ -4129,6 +4179,42 @@ fn native_persistent_design_attribute(
         for value in [link.design_reference, 0, 0] {
             native_i64(records, value);
         }
+    }
+    Ok(())
+}
+
+fn native_persistent_subentity_attribute(
+    records: &mut Vec<u8>,
+    tags: &[PersistentSubentityTag],
+    next: i64,
+) -> Result<(), CodecError> {
+    native_subident(records, "ATTRIB_CUSTOM")?;
+    native_ident(records, "attrib")?;
+    native_ref(records, next);
+    native_string(records, "generic_tag_attrib_def")?;
+    for value in [3, 3, -1] {
+        native_i64(records, value);
+    }
+    native_string(records, "generic_tag_attrib_def ")?;
+    native_i64(
+        records,
+        i64::try_from(tags.len())
+            .map_err(|_| CodecError::NotImplemented("too many persistent subentity tags".into()))?,
+    );
+    for tag in tags {
+        native_i64(records, tag.selector);
+        native_string(records, &tag.token)?;
+        native_i64(records, 0);
+        native_i64(
+            records,
+            i64::try_from(tag.design_references.len()).map_err(|_| {
+                CodecError::NotImplemented("too many persistent subentity references".into())
+            })?,
+        );
+        for reference in &tag.design_references {
+            native_i64(records, *reference);
+        }
+        native_i64(records, 0);
     }
     Ok(())
 }
@@ -4282,8 +4368,8 @@ fn encode_source_less_attributes(
         records.push(0x11);
     }
     for face in &model.faces {
-        let links = face_persistent_links(target, face);
-        if links.is_empty() {
+        let tags = face_persistent_tags(target, face);
+        if tags.is_empty() {
             continue;
         }
         let next = timestamp_attribute_ref(
@@ -4292,12 +4378,12 @@ fn encode_source_less_attributes(
             attribute_start,
         )?
         .unwrap_or(-1);
-        native_persistent_design_attribute(records, &links, 2, next)?;
+        native_persistent_subentity_attribute(records, &tags, next)?;
         records.push(0x11);
     }
     for edge in &model.edges {
-        let links = edge_persistent_links(target, edge);
-        if links.is_empty() {
+        let tags = edge_persistent_tags(target, edge);
+        if tags.is_empty() {
             continue;
         }
         let next = timestamp_attribute_ref(
@@ -4306,7 +4392,7 @@ fn encode_source_less_attributes(
             attribute_start,
         )?
         .unwrap_or(-1);
-        native_persistent_design_attribute(records, &links, 1, next)?;
+        native_persistent_subentity_attribute(records, &tags, next)?;
         records.push(0x11);
     }
     for coedge in &model.coedges {

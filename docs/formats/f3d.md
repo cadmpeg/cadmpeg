@@ -316,7 +316,32 @@ Every entity carries an `attrib` ref-chain. `Entity.attrib` is the chain head, e
 
 `string_attrib-name_attrib-gen-attrib` stores the four ASM keep/copy/ignore/copy integer flags, a tagged attribute-name string, and a tagged value string. Attribute name `name` assigns the value as the owning body or face display name. The record participates in the ordinary attribute-ref chain between direct-color attributes and persistent-design attributes.
 
-`generic_tag_attrib_def` stores a count followed by repeated `(kind, token string, design reference, 0, 0)` groups. `kind` identifies the labelled entity class: `3` for body, `2` for face, and `1` for edge. Each token/reference pair binds a persistent Fusion design ID to an ASM entity reference.
+`generic_tag_attrib_def` begins with the family string, three tagged integers `3, 3, -1`, the string `"generic_tag_attrib_def "` including its trailing space, and a tagged integer group count. The group count determines the complete remaining payload. The record terminator follows the final group's final zero.
+
+A body-owned group has five fields:
+
+```text
+04 i64 = 3
+07 string persistent_design_id
+04 i64 design_reference
+04 i64 = 0
+04 i64 = 0
+```
+
+The persistent design ID string contains ASCII decimal digits. Groups are ordered from older assignments to the current final assignment.
+
+A face- or edge-owned group is variable-width:
+
+```text
+04 i64 selector
+07 string token
+04 i64 = 0
+04 i64 reference_count
+reference_count * (04 i64 design_reference)
+04 i64 = 0
+```
+
+`reference_count` supplies the only boundary for the signed reference vector. The token retains its UTF-8 spelling, including the `"-1"` form. Face and edge groups are distinct from the fixed-width body persistent-ID history and do not use the body group's five-field interpretation.
 
 `sketch_attrib_def` is coedge-owned source-link metadata. After its three-integer attribute header, a tagged UTF-8 field stores the six-integer ASCII tuple `(sketch_curve_id, 0, signed_ref, 0, enum_a, enum_b)`, where `signed_ref` uses `-1` as null. It links a B-rep coedge to a sketch curve and does not define analytic geometry.
 

@@ -193,6 +193,105 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let body_ids = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| &body.id)
+        .collect::<HashSet<_>>();
+    let face_ids = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| &face.id)
+        .collect::<HashSet<_>>();
+    let edge_ids = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| &edge.id)
+        .collect::<HashSet<_>>();
+    let mut body_links = std::collections::BTreeMap::new();
+    for link in &native.persistent_design_links {
+        let target_key = match &link.target {
+            cadmpeg_ir::attributes::AttributeTarget::Body(id) if body_ids.contains(id) => {
+                Some(id.0.clone())
+            }
+            _ => None,
+        };
+        let valid = target_key.is_some()
+            && link.entity_kind == 3
+            && !link.design_id.is_empty()
+            && link.design_id.bytes().all(|byte| byte.is_ascii_digit());
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion persistent body link has an invalid target or group payload"
+                    .into(),
+                entity: Some(link.id.clone()),
+            });
+            continue;
+        }
+        body_links
+            .entry(target_key.expect("validated body target"))
+            .or_insert_with(Vec::new)
+            .push(link);
+    }
+    for links in body_links.values_mut() {
+        links.sort_by_key(|link| link.ordinal);
+        if links.iter().enumerate().any(|(ordinal, link)| {
+            link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len())
+        }) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion persistent body links have noncanonical history ordering".into(),
+                entity: links.first().map(|link| link.id.clone()),
+            });
+        }
+    }
+    let mut subentity_tags = std::collections::BTreeMap::new();
+    for tag in &native.persistent_subentity_tags {
+        let target_key = match &tag.target {
+            cadmpeg_ir::attributes::AttributeTarget::Face(id) if face_ids.contains(id) => {
+                Some(format!("face:{}", id.0))
+            }
+            cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edge_ids.contains(id) => {
+                Some(format!("edge:{}", id.0))
+            }
+            _ => None,
+        };
+        if target_key.is_none() || tag.token.is_empty() || tag.design_references.is_empty() {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion persistent subentity tag has an invalid target or group payload"
+                    .into(),
+                entity: Some(tag.id.clone()),
+            });
+            continue;
+        }
+        subentity_tags
+            .entry(target_key.expect("validated subentity target"))
+            .or_insert_with(Vec::new)
+            .push(tag);
+    }
+    for tags in subentity_tags.values_mut() {
+        tags.sort_by_key(|tag| tag.ordinal);
+        if tags
+            .iter()
+            .enumerate()
+            .any(|(ordinal, tag)| tag.ordinal != ordinal as u32)
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion persistent subentity tags have noncanonical group ordering".into(),
+                entity: tags.first().map(|tag| tag.id.clone()),
+            });
+        }
+    }
     for history in &native.asm_histories {
         if !history::graph_is_coherent(history) {
             findings.push(Finding {

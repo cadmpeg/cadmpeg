@@ -49,6 +49,23 @@ pub struct PersistentDesignLink {
     pub is_current: bool,
 }
 
+/// Native face/edge tag group linking a solved subentity to design records.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PersistentSubentityTag {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep face or edge carrying this tag group.
+    pub target: AttributeTarget,
+    /// Native selector stored before the tag token.
+    pub selector: i64,
+    /// Native UTF-8 tag token. Numeric strings and `-1` retain their spelling.
+    pub token: String,
+    /// Ordered signed Design-stream references carried by this group.
+    pub design_references: Vec<i64>,
+    /// Position of this group in the owning attribute record.
+    pub ordinal: u32,
+}
+
 /// Original authoring time attached to a solved ASM entity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CreationTimestamp {

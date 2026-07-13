@@ -19,9 +19,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceContainment,
-    FaceSidedness, MeshSurfaceSentinel, PersistentDesignLink, SketchCurveLink,
-    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireSide,
-    WireTopology,
+    FaceSidedness, MeshSurfaceSentinel, PersistentDesignLink, PersistentSubentityTag,
+    SketchCurveLink, TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership,
+    WireSide, WireTopology,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -95,6 +95,8 @@ pub struct Brep {
     pub sketch_curve_links: Vec<SketchCurveLink>,
     /// Persistent design identifiers attached to solved entities.
     pub persistent_design_links: Vec<PersistentDesignLink>,
+    /// Variable-width persistent tag groups attached to solved faces and edges.
+    pub persistent_subentity_tags: Vec<PersistentSubentityTag>,
     /// Original authoring times attached to solved entities.
     pub creation_timestamps: Vec<CreationTimestamp>,
     /// Kernel continuity classifications stored on solved edges.
@@ -4217,6 +4219,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         .iter()
         .flat_map(persistent_design_links)
         .collect();
+    out.persistent_subentity_tags = out
+        .attributes
+        .iter()
+        .flat_map(persistent_subentity_tags)
+        .collect();
     out.creation_timestamps = out
         .attributes
         .iter()
@@ -4573,13 +4580,31 @@ fn sketch_curve_link(attribute: &SourceAttribute) -> Option<SketchCurveLink> {
 }
 
 fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignLink> {
+    let AttributeTarget::Body(_) = &attribute.target else {
+        return Vec::new();
+    };
     let Some(family) = attribute.values.iter().position(
         |value| matches!(value, AttributeValue::String(name) if name == "generic_tag_attrib_def"),
     ) else {
         return Vec::new();
     };
-    let groups = attribute.values[family + 1..]
-        .windows(5)
+    let values = &attribute.values[family + 1..];
+    let [AttributeValue::Integer(3), AttributeValue::Integer(3), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
+        values
+    else {
+        return Vec::new();
+    };
+    if marker != "generic_tag_attrib_def " || *group_count < 0 {
+        return Vec::new();
+    }
+    let Ok(group_count) = usize::try_from(*group_count) else {
+        return Vec::new();
+    };
+    if rest.len() != group_count.saturating_mul(5) {
+        return Vec::new();
+    }
+    let groups = rest
+        .chunks_exact(5)
         .filter_map(|values| match values {
             [
                 AttributeValue::Integer(entity_kind),
@@ -4595,6 +4620,9 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
             _ => None,
         })
         .collect::<Vec<_>>();
+    if groups.len() != group_count {
+        return Vec::new();
+    }
     let last = groups.len().saturating_sub(1);
     groups
         .into_iter()
@@ -4614,6 +4642,82 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
             },
         )
         .collect()
+}
+
+fn persistent_subentity_tags(attribute: &SourceAttribute) -> Vec<PersistentSubentityTag> {
+    if !matches!(
+        attribute.target,
+        AttributeTarget::Face(_) | AttributeTarget::Edge(_)
+    ) {
+        return Vec::new();
+    }
+    let Some(family) = attribute.values.iter().position(
+        |value| matches!(value, AttributeValue::String(name) if name == "generic_tag_attrib_def"),
+    ) else {
+        return Vec::new();
+    };
+    let values = &attribute.values[family + 1..];
+    let [AttributeValue::Integer(3), AttributeValue::Integer(3), AttributeValue::Integer(-1), AttributeValue::String(marker), AttributeValue::Integer(group_count), rest @ ..] =
+        values
+    else {
+        return Vec::new();
+    };
+    if marker != "generic_tag_attrib_def " || *group_count < 0 {
+        return Vec::new();
+    }
+    let Ok(group_count) = usize::try_from(*group_count) else {
+        return Vec::new();
+    };
+    let mut position: usize = 0;
+    let mut groups = Vec::with_capacity(group_count);
+    for ordinal in 0..group_count {
+        let Some(
+            [AttributeValue::Integer(selector), AttributeValue::String(token), AttributeValue::Integer(0), AttributeValue::Integer(reference_count)],
+        ) = rest.get(position..position.saturating_add(4))
+        else {
+            return Vec::new();
+        };
+        if token.is_empty() || *reference_count < 0 {
+            return Vec::new();
+        }
+        let Ok(reference_count) = usize::try_from(*reference_count) else {
+            return Vec::new();
+        };
+        let reference_start = position + 4;
+        let reference_end = reference_start.saturating_add(reference_count);
+        let Some(reference_values) = rest.get(reference_start..reference_end) else {
+            return Vec::new();
+        };
+        let references = reference_values
+            .iter()
+            .map(|value| match value {
+                AttributeValue::Integer(value) => Some(*value),
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(design_references) = references else {
+            return Vec::new();
+        };
+        if !matches!(rest.get(reference_end), Some(AttributeValue::Integer(0))) {
+            return Vec::new();
+        }
+        groups.push(PersistentSubentityTag {
+            id: format!(
+                "f3d:design:persistent-subentity-tag#{}:{ordinal}",
+                attribute_key(attribute)
+            ),
+            target: attribute.target.clone(),
+            selector: *selector,
+            token: token.clone(),
+            design_references,
+            ordinal: ordinal as u32,
+        });
+        position = reference_end + 1;
+    }
+    if position != rest.len() {
+        return Vec::new();
+    }
+    groups
 }
 
 fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
