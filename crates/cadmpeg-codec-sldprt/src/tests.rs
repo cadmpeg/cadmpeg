@@ -1489,6 +1489,7 @@ fn encoder_writes_source_less_line_sketches() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Sketch {
             sketch: Some(sketch_id.clone()),
@@ -1538,6 +1539,7 @@ fn encoder_writes_source_less_line_sketches() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -1553,6 +1555,7 @@ fn encoder_writes_source_less_line_sketches() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
@@ -1857,6 +1860,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: Some(sketch_id),
@@ -1925,6 +1929,7 @@ fn encoder_writes_source_less_native_features() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "BossExtrude".into(),
@@ -2016,6 +2021,7 @@ fn encoder_writes_source_less_native_features() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -2049,6 +2055,7 @@ fn encoder_writes_source_less_native_features() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
                 seeds: vec![seed_id.clone()],
@@ -2381,6 +2388,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
 #[test]
 fn semantic_writer_preserves_native_feature_leaf_text() {
     use crate::records::FeatureContent;
+    use cadmpeg_ir::features::FeatureSourceContent;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -2415,6 +2423,27 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
             FeatureContent::Dimension("B".into()),
         ]
     );
+    let neutral_macro = decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.source_tag.as_deref() == Some("MacroFeature"))
+        .unwrap();
+    assert!(matches!(
+        neutral_macro.source_content.as_slice(),
+        [
+            FeatureSourceContent::Text(prefix),
+            FeatureSourceContent::Parameter(_),
+            FeatureSourceContent::Feature(_),
+            FeatureSourceContent::Text(suffix),
+            FeatureSourceContent::Parameter(_),
+        ] if prefix == "prefix" && suffix == "suffix"
+    ));
+    let FeatureSourceContent::Text(prefix) = &mut neutral_macro.source_content[0] else {
+        unreachable!()
+    };
+    *prefix = "lead & more".into();
     let neutral_definition = decoded
         .ir
         .model
@@ -2461,7 +2490,7 @@ fn semantic_writer_preserves_native_feature_leaf_text() {
     assert_eq!(
         macro_feature.content,
         [
-            FeatureContent::Text("prefix".into()),
+            FeatureContent::Text("lead & more".into()),
             FeatureContent::Dimension("A".into()),
             FeatureContent::Feature(definition.id.clone()),
             FeatureContent::Text("suffix".into()),
@@ -2603,6 +2632,7 @@ fn encoder_writes_source_less_datum_features() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -3102,6 +3132,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "EquationDriven".into(),

@@ -564,6 +564,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: definitions[1].clone(),
         native_ref: None,
@@ -583,7 +584,8 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
 #[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
-        BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId, ProfileRef,
+        BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
+        FeatureSourceContent, ParameterId, ProfileRef,
     };
     use crate::ids::{BodyId, FaceId};
     use std::collections::BTreeMap;
@@ -600,6 +602,10 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: vec![
+            FeatureSourceContent::Parameter(ParameterId("synthetic:test:parameter#missing".into())),
+            FeatureSourceContent::Feature(feature_id.clone()),
+        ],
         outputs: vec![BodyId("synthetic:test:body#missing".into())],
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
@@ -624,6 +630,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Marker".into(),
@@ -641,6 +648,8 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         "missing termination face",
         "repeats feature ordinal",
         "repeats dependency",
+        "missing content parameter",
+        "content child",
     ] {
         assert!(
             report.findings.iter().any(|finding| {
@@ -669,6 +678,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
@@ -718,6 +728,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Native {
             kind: "Test".into(),
@@ -1887,6 +1898,7 @@ fn feature_extent_magnitudes_are_validated() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("profile".into()),
@@ -1933,6 +1945,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id.clone()),
@@ -1956,6 +1969,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
                 sketch: Some(sketch_id.clone()),
@@ -2038,6 +2052,7 @@ fn feature_operation_geometry_is_validated() {
             source_properties: std::collections::BTreeMap::new(),
             source_tag: None,
             source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition,
             native_ref: None,
@@ -2075,6 +2090,7 @@ fn flex_modes_round_trip_and_validate() {
         source_properties: std::collections::BTreeMap::new(),
         source_tag: None,
         source_text: None,
+        source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Flex {
             axis: Vector3::new(0.0, 0.0, 0.0),

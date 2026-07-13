@@ -157,6 +157,9 @@ pub struct Feature {
     /// Text payload of a source leaf operation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_text: Option<String>,
+    /// Ordered source text, parameter, and child-feature content.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub source_content: Vec<FeatureSourceContent>,
     /// Bodies produced or modified by the feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub outputs: Vec<BodyId>,
@@ -165,6 +168,18 @@ pub struct Feature {
     /// Identifier of the full-fidelity record in a native namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+/// One item in a source feature's mixed-content sequence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FeatureSourceContent {
+    /// Literal text between child records.
+    Text(String),
+    /// Dimension or equation parameter at this position.
+    Parameter(ParameterId),
+    /// Nested feature record at this position.
+    Feature(FeatureId),
 }
 
 /// Neutral construction semantics, with an explicit native escape hatch.

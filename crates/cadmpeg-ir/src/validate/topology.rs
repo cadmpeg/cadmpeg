@@ -4,7 +4,8 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, FaceMotion, FlexMode, HoleKind, Length, PatternKind, RadiusSpec,
+    ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
+    RadiusSpec,
 };
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
@@ -999,6 +1000,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
+    let parameters_by_id = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, &parameter.owner))
+        .collect::<HashMap<_, _>>();
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
         if !feature_ordinals.insert(feature.ordinal) {
@@ -1044,6 +1051,61 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     entity: Some(feature.id.0.clone()),
                 }),
                 Some(_) => {}
+            }
+        }
+        let mut content_parameters = HashSet::new();
+        let mut content_features = HashSet::new();
+        for item in &feature.source_content {
+            match item {
+                FeatureSourceContent::Text(_) => {}
+                FeatureSourceContent::Parameter(parameter) => {
+                    if !content_parameters.insert(parameter) {
+                        findings.push(Finding {
+                            check: Check::Counts,
+                            severity: Severity::Error,
+                            message: format!("feature repeats content parameter `{}`", parameter.0),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                    match parameters_by_id.get(parameter) {
+                        None => {
+                            ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
+                        }
+                        Some(owner) if *owner != &feature.id => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "content parameter `{}` belongs to another feature",
+                                parameter.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+                FeatureSourceContent::Feature(child) => {
+                    if !content_features.insert(child) {
+                        findings.push(Finding {
+                            check: Check::Counts,
+                            severity: Severity::Error,
+                            message: format!("feature repeats content child `{}`", child.0),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                    match features.get(child.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "content child", &child.0),
+                        Some(ordinal) if *ordinal <= feature.ordinal => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "content child `{}` does not follow its parent",
+                                child.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
             }
         }
         for body in &feature.outputs {

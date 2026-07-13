@@ -8,8 +8,8 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration,
     DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition,
-    FeatureId, FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind,
-    ProfileRef, RadiusSpec, VariableRadius,
+    FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId, ParameterValue,
+    PathRef, PatternKind, ProfileRef, RadiusSpec, VariableRadius,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -308,12 +308,71 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                     source_properties: feature.properties.clone(),
                     source_tag: Some(feature.xml_tag.clone()),
                     source_text: feature.text.clone(),
+                    source_content: project_feature_content(feature, &by_native),
                     outputs: Vec::new(),
                     definition: project_definition(feature, &by_source, &native_by_source),
                     native_ref: Some(feature.id.clone()),
                 })
         })
         .collect()
+}
+
+fn project_feature_content(
+    feature: &Feature,
+    by_native: &HashMap<&str, FeatureId>,
+) -> Vec<FeatureSourceContent> {
+    if feature.text.is_some() {
+        return Vec::new();
+    }
+    let parameters = parameter_names(feature)
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, name)| (name, neutral_parameter_id(feature, ordinal)))
+        .collect::<HashMap<_, _>>();
+    feature
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            FeatureContent::Text(text) => Some(FeatureSourceContent::Text(text.clone())),
+            FeatureContent::Dimension(name) => parameters
+                .get(name)
+                .cloned()
+                .map(FeatureSourceContent::Parameter),
+            FeatureContent::Feature(id) => by_native
+                .get(id.as_str())
+                .cloned()
+                .map(FeatureSourceContent::Feature),
+        })
+        .collect()
+}
+
+fn parameter_names(feature: &Feature) -> Vec<String> {
+    let mut names = feature
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            FeatureContent::Dimension(name) if feature.parameters.contains_key(name) => {
+                Some(name.clone())
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let missing = feature
+        .parameters
+        .keys()
+        .filter(|name| !names.contains(name))
+        .cloned()
+        .collect::<Vec<_>>();
+    names.extend(missing);
+    names
+}
+
+fn neutral_parameter_id(feature: &Feature, ordinal: usize) -> ParameterId {
+    let key = feature
+        .id
+        .strip_prefix("sldprt:history:feature#")
+        .unwrap_or(&feature.id);
+    ParameterId(format!("sldprt:model:parameter#{key}:{ordinal}"))
 }
 
 fn project_feature_dependencies(
@@ -379,49 +438,31 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
         .iter()
         .flat_map(|history| &history.features)
         .flat_map(|feature| {
-            let mut names = feature
-                .content
-                .iter()
-                .filter_map(|content| match content {
-                    FeatureContent::Dimension(name) if feature.parameters.contains_key(name) => {
-                        Some(name.clone())
+            parameter_names(feature)
+                .into_iter()
+                .enumerate()
+                .map(move |(ordinal, name)| {
+                    let expression = &feature.parameters[&name];
+                    let properties = feature
+                        .dimension_properties
+                        .get(&name)
+                        .cloned()
+                        .unwrap_or_default();
+                    let value = properties
+                        .get("Value")
+                        .and_then(|value| parse_parameter_literal(value))
+                        .or_else(|| parse_parameter_literal(expression));
+                    DesignParameter {
+                        id: neutral_parameter_id(feature, ordinal),
+                        owner: neutral_feature_id(&feature.id),
+                        ordinal: ordinal as u32,
+                        properties,
+                        name,
+                        expression: expression.clone(),
+                        value,
+                        dependencies: Vec::new(),
                     }
-                    _ => None,
                 })
-                .collect::<Vec<_>>();
-            let missing = feature
-                .parameters
-                .keys()
-                .filter(|name| !names.contains(name))
-                .cloned()
-                .collect::<Vec<_>>();
-            names.extend(missing);
-            names.into_iter().enumerate().map(move |(ordinal, name)| {
-                let expression = &feature.parameters[&name];
-                let key = feature
-                    .id
-                    .strip_prefix("sldprt:history:feature#")
-                    .unwrap_or(&feature.id);
-                let properties = feature
-                    .dimension_properties
-                    .get(&name)
-                    .cloned()
-                    .unwrap_or_default();
-                let value = properties
-                    .get("Value")
-                    .and_then(|value| parse_parameter_literal(value))
-                    .or_else(|| parse_parameter_literal(expression));
-                DesignParameter {
-                    id: ParameterId(format!("sldprt:model:parameter#{key}:{ordinal}")),
-                    owner: neutral_feature_id(&feature.id),
-                    ordinal: ordinal as u32,
-                    properties,
-                    name,
-                    expression: expression.clone(),
-                    value,
-                    dependencies: Vec::new(),
-                }
-            })
         })
         .collect::<Vec<_>>();
     populate_parameter_dependencies(&mut parameters);
@@ -1895,7 +1936,12 @@ pub fn prepare_features_for_write(
         (None, None) => false,
     };
     if baseline_neutral.is_none() && baseline_native.is_none() {
-        return sync_neutral_features(&ir.model.features, &ir.model.bodies, native);
+        return sync_neutral_features(
+            &ir.model.features,
+            &ir.model.parameters,
+            &ir.model.bodies,
+            native,
+        );
     }
     match (neutral_changed, native_changed) {
         (false, _) => Ok(()),
@@ -1912,7 +1958,12 @@ pub fn prepare_features_for_write(
                 ))
             }
         }
-        (true, false) => sync_neutral_features(&ir.model.features, &ir.model.bodies, native),
+        (true, false) => sync_neutral_features(
+            &ir.model.features,
+            &ir.model.parameters,
+            &ir.model.bodies,
+            native,
+        ),
     }
 }
 
@@ -2305,6 +2356,7 @@ fn sync_neutral_configurations(
 /// Apply neutral native-feature edits to the `SolidWorks` history used for writing.
 pub fn sync_neutral_features(
     features: &[cadmpeg_ir::features::Feature],
+    parameters: &[DesignParameter],
     bodies: &[Body],
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
@@ -3692,6 +3744,7 @@ pub fn sync_neutral_features(
             });
         }
     }
+    synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
     let projected_features = project_features(&native.feature_histories);
     let desired_sketches = features
         .iter()
@@ -3744,6 +3797,64 @@ pub fn sync_neutral_features(
     }
     synchronize_feature_content_order(native);
     synchronize_history_content_order(native);
+    Ok(())
+}
+
+fn synchronize_neutral_feature_content(
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[DesignParameter],
+    record_ids: &HashMap<FeatureId, String>,
+    native: &mut crate::native::SldprtNative,
+) -> Result<(), CodecError> {
+    let parameters = parameters
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        if feature.source_content.is_empty() {
+            continue;
+        }
+        let content = feature
+            .source_content
+            .iter()
+            .map(|item| match item {
+                FeatureSourceContent::Text(text) => Ok(FeatureContent::Text(text.clone())),
+                FeatureSourceContent::Parameter(id) => {
+                    let parameter = parameters.get(id).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} content references missing parameter {}",
+                            feature.id, id.0
+                        ))
+                    })?;
+                    if parameter.owner != feature.id {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} content references parameter {} owned by another feature",
+                            feature.id, id.0
+                        )));
+                    }
+                    Ok(FeatureContent::Dimension(parameter.name.clone()))
+                }
+                FeatureSourceContent::Feature(id) => record_ids
+                    .get(id)
+                    .cloned()
+                    .map(FeatureContent::Feature)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} content references missing feature {}",
+                            feature.id, id
+                        ))
+                    }),
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let record_id = &record_ids[&feature.id];
+        let record = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .find(|record| &record.id == record_id)
+            .ok_or_else(|| CodecError::Malformed("missing SLDPRT feature record".into()))?;
+        record.content = content;
+    }
     Ok(())
 }
 
