@@ -45,6 +45,17 @@ pub struct PersistentDesignLink {
     pub is_current: bool,
 }
 
+/// Original authoring time attached to a solved ASM entity.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CreationTimestamp {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep entity carrying the timestamp attribute.
+    pub target: AttributeTarget,
+    /// Creation time as microseconds since the Unix epoch.
+    pub unix_microseconds: f64,
+}
+
 /// Design `BulkStream` regeneration-recipe family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

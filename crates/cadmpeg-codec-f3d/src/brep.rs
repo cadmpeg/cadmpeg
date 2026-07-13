@@ -17,7 +17,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::records::{PersistentDesignLink, SketchCurveLink};
+use crate::records::{CreationTimestamp, PersistentDesignLink, SketchCurveLink};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
 use cadmpeg_ir::geometry::{
@@ -90,6 +90,8 @@ pub struct Brep {
     pub sketch_curve_links: Vec<SketchCurveLink>,
     /// Persistent design identifiers attached to solved entities.
     pub persistent_design_links: Vec<PersistentDesignLink>,
+    /// Original authoring times attached to solved entities.
+    pub creation_timestamps: Vec<CreationTimestamp>,
     /// Native ASM body key by emitted body id, used by Design-side joins.
     pub body_keys: HashMap<BodyId, u64>,
     /// Linked source-native attributes.
@@ -3953,6 +3955,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         .iter()
         .flat_map(persistent_design_links)
         .collect();
+    out.creation_timestamps = out
+        .attributes
+        .iter()
+        .filter_map(creation_timestamp)
+        .collect();
 
     // Preserve undecoded carriers referenced by real topology as passthrough.
     for r in records {
@@ -4353,6 +4360,27 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
             is_current: ordinal == last,
         })
         .collect()
+}
+
+fn creation_timestamp(attribute: &SourceAttribute) -> Option<CreationTimestamp> {
+    let family = attribute.values.iter().position(
+        |value| matches!(value, AttributeValue::String(name) if name == "Timestamp_attrib_def"),
+    )?;
+    let marker = attribute.values.get(family + 1)?;
+    if !matches!(marker, AttributeValue::Integer(1)) {
+        return None;
+    }
+    let AttributeValue::Float(unix_microseconds) = attribute.values.get(family + 2)? else {
+        return None;
+    };
+    if !unix_microseconds.is_finite() {
+        return None;
+    }
+    Some(CreationTimestamp {
+        id: format!("f3d:design:creation-timestamp#{}", attribute_key(attribute)),
+        target: attribute.target.clone(),
+        unix_microseconds: *unix_microseconds,
+    })
 }
 
 fn collect_attributes(

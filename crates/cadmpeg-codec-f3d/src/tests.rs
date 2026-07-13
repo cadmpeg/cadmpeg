@@ -1367,7 +1367,7 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     let mut attribute = Vec::new();
     t_subident(&mut attribute, "ATTRIB_CUSTOM");
     t_ident(&mut attribute, "attrib");
-    t_ref(&mut attribute, -1);
+    t_ref(&mut attribute, 20);
     push_u8_string(&mut attribute, "generic_tag_attrib_def");
     for value in [3, 3, -1] {
         t_long(&mut attribute, value);
@@ -1379,6 +1379,13 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
     for value in [7, 0, 0] {
         t_long(&mut attribute, value);
     }
+    t_end(&mut attribute);
+    t_subident(&mut attribute, "ATTRIB_CUSTOM");
+    t_ident(&mut attribute, "attrib");
+    t_ref(&mut attribute, -1);
+    push_u8_string(&mut attribute, "Timestamp_attrib_def");
+    t_long(&mut attribute, 1);
+    t_dbl(&mut attribute, 1_579_392_000_000_007.0);
     t_end(&mut attribute);
     bytes.splice(delta..delta, attribute);
     bytes
@@ -5118,7 +5125,7 @@ fn generated_source_less_unit_cube_writes_body_and_face_colors() {
 
 #[test]
 fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes() {
-    use crate::records::{PersistentDesignLink, SketchCurveLink};
+    use crate::records::{CreationTimestamp, PersistentDesignLink, SketchCurveLink};
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::topology::Color;
 
@@ -5139,6 +5146,7 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     let face_id = source_less.model.faces[0].id.clone();
     let edge_id = source_less.model.edges[0].id.clone();
     let coedge_id = source_less.model.coedges[0].id.clone();
+    let vertex_id = source_less.model.vertices[0].id.clone();
     let mut native = f3d_native_mut(&mut source_less);
     native.persistent_design_links = vec![
         PersistentDesignLink {
@@ -5150,21 +5158,21 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         },
         PersistentDesignLink {
             id: "generated:persistent-design-link#1".into(),
-            target: AttributeTarget::Body(body_id),
+            target: AttributeTarget::Body(body_id.clone()),
             design_id: "322".into(),
             ordinal: 1,
             is_current: true,
         },
         PersistentDesignLink {
             id: "generated:persistent-design-link#2".into(),
-            target: AttributeTarget::Face(face_id),
+            target: AttributeTarget::Face(face_id.clone()),
             design_id: "411".into(),
             ordinal: 0,
             is_current: true,
         },
         PersistentDesignLink {
             id: "generated:persistent-design-link#3".into(),
-            target: AttributeTarget::Edge(edge_id),
+            target: AttributeTarget::Edge(edge_id.clone()),
             design_id: "511".into(),
             ordinal: 0,
             is_current: true,
@@ -5172,12 +5180,27 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     ];
     native.sketch_curve_links = vec![SketchCurveLink {
         id: "generated:sketch-curve-link#0".into(),
-        coedge: coedge_id,
+        coedge: coedge_id.clone(),
         sketch_curve_id: 113,
         signed_reference: Some(1),
         role: 2,
         closure: 3,
     }];
+    native.creation_timestamps = [
+        (AttributeTarget::Body(body_id), 1_579_392_000_000_001.0),
+        (AttributeTarget::Face(face_id), 1_579_392_000_000_002.0),
+        (AttributeTarget::Edge(edge_id), 1_579_392_000_000_003.0),
+        (AttributeTarget::Coedge(coedge_id), 1_579_392_000_000_004.0),
+        (AttributeTarget::Vertex(vertex_id), 1_579_392_000_000_005.0),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(ordinal, (target, unix_microseconds))| CreationTimestamp {
+        id: format!("generated:creation-timestamp#{ordinal}"),
+        target,
+        unix_microseconds,
+    })
+    .collect();
 
     drop(native);
     let mut encoded = Vec::new();
@@ -5203,6 +5226,11 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     assert_eq!(native.sketch_curve_links[0].signed_reference, Some(1));
     assert_eq!(native.sketch_curve_links[0].role, 2);
     assert_eq!(native.sketch_curve_links[0].closure, 3);
+    assert_eq!(native.creation_timestamps.len(), 5);
+    assert!(native.creation_timestamps.iter().any(|timestamp| {
+        matches!(timestamp.target, AttributeTarget::Vertex(_))
+            && timestamp.unix_microseconds == 1_579_392_000_000_005.0
+    }));
     assert_eq!(
         round_trip.ir.model.bodies[0].color,
         source_less.model.bodies[0].color
@@ -5211,6 +5239,17 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
         round_trip.ir.model.faces[0].color,
         source_less.model.faces[0].color
     );
+
+    let duplicate = f3d_native(&source_less).creation_timestamps[0].clone();
+    f3d_native_mut(&mut source_less)
+        .creation_timestamps
+        .push(duplicate);
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("duplicate generated timestamp target must be rejected");
+    assert!(error
+        .to_string()
+        .contains("multiple F3D creation timestamps target the same entity"));
 }
 
 #[test]
@@ -14555,8 +14594,22 @@ fn decode_transfers_generated_custom_attribute() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
 
-    assert_eq!(result.ir.model.attributes.len(), 1);
-    let attribute = &result.ir.model.attributes[0];
+    assert_eq!(result.ir.model.attributes.len(), 2);
+    let attribute = result
+        .ir
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| {
+            attribute.values.iter().any(|value| {
+                matches!(
+                    value,
+                    cadmpeg_ir::attributes::AttributeValue::String(text)
+                        if text == "generic_tag_attrib_def"
+                )
+            })
+        })
+        .expect("generic tag attribute");
     assert_eq!(attribute.name, "ATTRIB_CUSTOM-attrib");
     assert!(matches!(
         &attribute.target,
@@ -14572,6 +14625,11 @@ fn decode_transfers_generated_custom_attribute() {
         "322"
     );
     assert!(f3d_native(&result.ir).persistent_design_links[0].is_current);
+    assert_eq!(f3d_native(&result.ir).creation_timestamps.len(), 1);
+    assert_eq!(
+        f3d_native(&result.ir).creation_timestamps[0].unix_microseconds,
+        1_579_392_000_000_007.0
+    );
 }
 
 #[test]

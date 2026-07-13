@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::history_records::AsmHistory;
 use crate::records::{
-    ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, DesignBodyMember,
+    ActEntity, ActGuid, ActRootComponent, ConstructionRecipe, CreationTimestamp, DesignBodyMember,
     DesignConfiguration, DesignEntityHeader, DesignMaterialAssignment, DesignObject,
     DesignRecordHeader, LostEdgeReference, PersistentDesignLink, PersistentReference,
     SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
@@ -25,6 +25,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "asm_histories",
     "asm_history_records",
     "construction_recipes",
+    "creation_timestamps",
     "design_body_members",
     "design_configurations",
     "design_entity_headers",
@@ -53,6 +54,7 @@ macro_rules! f3d_arenas {
             design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
             construction_recipes: ConstructionRecipe;
+            creation_timestamps: CreationTimestamp;
             persistent_design_links: PersistentDesignLink;
             persistent_references: PersistentReference;
             sketch_curve_links: SketchCurveLink;
@@ -143,6 +145,9 @@ pub struct F3dNative {
     /// Parametric regeneration recipes from the Design `BulkStream`.
     #[serde(default)]
     pub construction_recipes: Vec<ConstructionRecipe>,
+    /// Original authoring times attached to solved entities.
+    #[serde(default)]
+    pub creation_timestamps: Vec<CreationTimestamp>,
     /// Persistent Fusion design identifiers attached to solved B-rep entities.
     #[serde(default)]
     pub persistent_design_links: Vec<PersistentDesignLink>,
@@ -183,6 +188,7 @@ impl Default for F3dNative {
             design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
             construction_recipes: Vec::new(),
+            creation_timestamps: Vec::new(),
             persistent_design_links: Vec::new(),
             persistent_references: Vec::new(),
             sketch_curve_links: Vec::new(),
