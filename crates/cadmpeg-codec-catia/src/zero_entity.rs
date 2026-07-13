@@ -191,6 +191,144 @@ pub struct ZeroEntityLoop {
     pub support_indices: Vec<Option<usize>>,
 }
 
+/// One loop-member occurrence participating in a geometrically closed radial
+/// edge pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ZeroResolvedOccurrence {
+    /// Index into [`ZeroEntityTopology::loops`].
+    pub loop_index: usize,
+    /// Member index within the loop.
+    pub member_index: usize,
+    /// Index into [`ZeroEntityTopology::supports`].
+    pub support_index: usize,
+}
+
+/// One physical edge resolved from two surface-side occurrences with equal
+/// unordered world-space endpoint pairs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZeroResolvedEdge {
+    /// Canonical endpoint order inherited from the first occurrence.
+    pub endpoints: [[f64; 3]; 2],
+    /// The two radial surface-side occurrences.
+    pub occurrences: [ZeroResolvedOccurrence; 2],
+}
+
+/// Resolve the reference-closed subset of zero-entity edge occurrences.
+///
+/// Stored support endpoints are oriented by each loop's packed sense lane.
+/// An occurrence without a lifted carrier is completed only when it is isolated
+/// between two lifted occurrences in the same closed loop. Radial twins are the
+/// unique pairs with equal unordered endpoints within single-precision storage
+/// tolerance. Ambiguous and unpaired occurrences remain unresolved.
+#[must_use]
+pub fn resolve_occurrence_edges(topology: &ZeroEntityTopology) -> Vec<ZeroResolvedEdge> {
+    const TOLERANCE: f64 = 2e-3;
+    let mut occurrences = Vec::<(ZeroResolvedOccurrence, Option<[[f64; 3]; 2]>)>::new();
+    for (loop_index, loop_) in topology.loops.iter().enumerate() {
+        let mut endpoints: Vec<Option<[[f64; 3]; 2]>> = loop_
+            .support_indices
+            .iter()
+            .zip(&loop_.reversed)
+            .map(|(support, reversed)| {
+                let mut endpoints = topology.supports.get((*support)?)?.lifted_endpoints?;
+                if *reversed {
+                    endpoints.swap(0, 1);
+                }
+                Some(endpoints)
+            })
+            .collect();
+        if endpoints.is_empty() {
+            continue;
+        }
+        for index in 0..endpoints.len() {
+            let next = (index + 1) % endpoints.len();
+            if let (Some(current), Some(next_endpoints)) = (endpoints[index], endpoints[next]) {
+                if point_distance(current[1], next_endpoints[0]) > TOLERANCE {
+                    endpoints.fill(None);
+                    break;
+                }
+            }
+        }
+        let stored = endpoints.clone();
+        for index in 0..endpoints.len() {
+            if endpoints[index].is_some() {
+                continue;
+            }
+            let previous = (index + endpoints.len() - 1) % endpoints.len();
+            let next = (index + 1) % endpoints.len();
+            if let (Some(previous), Some(next)) = (stored[previous], stored[next]) {
+                if point_distance(previous[1], next[0]) > TOLERANCE {
+                    endpoints[index] = Some([previous[1], next[0]]);
+                }
+            }
+        }
+        for (member_index, (support_index, endpoints)) in loop_
+            .support_indices
+            .iter()
+            .copied()
+            .zip(endpoints)
+            .enumerate()
+        {
+            if let Some(support_index) = support_index {
+                occurrences.push((
+                    ZeroResolvedOccurrence {
+                        loop_index,
+                        member_index,
+                        support_index,
+                    },
+                    endpoints,
+                ));
+            }
+        }
+    }
+
+    let mut used = vec![false; occurrences.len()];
+    let mut edges = Vec::new();
+    for left in 0..occurrences.len() {
+        let Some(endpoints) = occurrences[left].1 else {
+            continue;
+        };
+        let matches: Vec<usize> = (left + 1..occurrences.len())
+            .filter(|right| {
+                !used[*right]
+                    && occurrences[*right]
+                        .1
+                        .is_some_and(|other| same_endpoint_pair(endpoints, other, TOLERANCE))
+            })
+            .collect();
+        if used[left] || matches.len() != 1 {
+            continue;
+        }
+        let right = matches[0];
+        let reverse_matches = (0..left).filter(|other| {
+            !used[*other]
+                && occurrences[*other]
+                    .1
+                    .is_some_and(|value| same_endpoint_pair(endpoints, value, TOLERANCE))
+        });
+        if reverse_matches.count() != 0 {
+            continue;
+        }
+        used[left] = true;
+        used[right] = true;
+        edges.push(ZeroResolvedEdge {
+            endpoints,
+            occurrences: [occurrences[left].0, occurrences[right].0],
+        });
+    }
+    edges
+}
+
+fn same_endpoint_pair(left: [[f64; 3]; 2], right: [[f64; 3]; 2], tolerance: f64) -> bool {
+    (point_distance(left[0], right[0]).max(point_distance(left[1], right[1])) <= tolerance)
+        || (point_distance(left[0], right[1]).max(point_distance(left[1], right[0])) <= tolerance)
+}
+
+fn point_distance(left: [f64; 3], right: [f64; 3]) -> f64 {
+    ((left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2))
+        .sqrt()
+}
+
 /// Walk native zero-entity records by `YY + 12`, then decode face counted
 /// references and `62xx` alternating loop lanes with packed 3-bit senses.
 #[must_use]
@@ -711,4 +849,63 @@ fn counted_references(bytes: &[u8], position: usize) -> Option<(Vec<u32>, usize)
         cursor += 5;
     }
     Some((references, cursor))
+}
+
+#[cfg(test)]
+mod occurrence_tests {
+    use super::*;
+
+    fn support(index: usize, endpoints: Option<[[f64; 3]; 2]>) -> ZeroSupport {
+        ZeroSupport {
+            record_ordinal: index,
+            owner_carrier_ordinal: 0,
+            slot: index as u32,
+            uv_endpoints: None,
+            lifted_endpoints: endpoints,
+        }
+    }
+
+    fn loop_(support_indices: [usize; 3]) -> ZeroEntityLoop {
+        ZeroEntityLoop {
+            record_ordinal: 0,
+            member_ids: vec![0; 3],
+            secondary_refs: vec![0; 3],
+            terminal_id: 0,
+            gap: 0,
+            loop_class: 0x41,
+            inner: false,
+            reversed: vec![false; 3],
+            support_indices: support_indices.into_iter().map(Some).collect(),
+        }
+    }
+
+    #[test]
+    fn isolated_unlifted_occurrence_closes_and_pairs_from_neighbors() {
+        let a = [0.0, 0.0, 0.0];
+        let b = [1.0, 0.0, 0.0];
+        let c = [0.0, 1.0, 0.0];
+        let topology = ZeroEntityTopology {
+            records: Vec::new(),
+            faces: Vec::new(),
+            loops: vec![loop_([0, 1, 2]), loop_([3, 4, 5])],
+            carrier_runs: Vec::new(),
+            supports: vec![
+                support(0, Some([a, b])),
+                support(1, None),
+                support(2, Some([c, a])),
+                support(3, Some([b, a])),
+                support(4, Some([a, c])),
+                support(5, Some([c, b])),
+            ],
+            physical_edges: Vec::new(),
+            coedge_twins: Vec::new(),
+            side_pairs: Vec::new(),
+            vertices: Vec::new(),
+        };
+        let edges = resolve_occurrence_edges(&topology);
+        assert_eq!(edges.len(), 3);
+        assert!(edges
+            .iter()
+            .any(|edge| same_endpoint_pair(edge.endpoints, [b, c], 1e-12)));
+    }
 }
