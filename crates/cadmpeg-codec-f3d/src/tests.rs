@@ -10615,10 +10615,26 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 }
                 _ => panic!("wrong G2 singularity payload"),
             }
+            let side_curves = [
+                construction.first.curve.clone(),
+                construction.second.curve.clone(),
+            ];
 
             let mut source_less = result.ir;
             source_less.source = None;
             source_less.set_native_unknowns("f3d", &[]).unwrap();
+            for (ordinal, side) in side_curves.into_iter().enumerate() {
+                source_less
+                    .model
+                    .curves
+                    .iter_mut()
+                    .find(|curve| curve.id == side)
+                    .expect("G2 side curve")
+                    .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 2.0, -1.0),
+                    direction: cadmpeg_ir::math::Vector3::new(3.0, -2.0, 4.0),
+                };
+            }
             let mut encoded = Vec::new();
             F3dCodec
                 .encode(&source_less, &mut encoded)
@@ -10639,6 +10655,19 @@ fn generated_g2_blend_surfaces_decode_both_singularity_branches() {
                 matches!(construction.first_shape, G2BlendFirstShape::Full { .. }),
                 full
             );
+            for side in [&construction.first, &construction.second] {
+                assert!(matches!(
+                    round_trip
+                        .ir
+                        .model
+                        .curves
+                        .iter()
+                        .find(|curve| curve.id == side.curve)
+                        .map(|curve| &curve.geometry),
+                    Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                        if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+                ));
+            }
         }
     }
 }
