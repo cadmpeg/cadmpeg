@@ -206,7 +206,7 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
 - **Geometry: Partial.** ActDatums and VisibGeom plane carriers transfer in model space. Topology-bound cylinders transfer when cap records establish their complete placement. Other analytic and spline families remain incomplete.
 - **Topology: Partial.** Native half-edges and closed loops decode. Exact single-loop plane components transfer as connected body, region, shell, face, loop, coedge, edge, and vertex graphs.
 - **Tessellation: None.**
-- **Design intent: Partial.** Named feature operations, dependencies, placed section sketches, line-orientation constraints, dimensions, and curve-equation programs transfer as typed or native design records.
+- **Design intent: Partial.** Named feature operations, dependencies, placed section sketches, line-orientation constraints, dimensions, curve-equation programs, and cylindrical native-axis helix semantics transfer as typed or native design records.
 - **Product structure: None.**
 - **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata. Materials and display data remain open.
 
