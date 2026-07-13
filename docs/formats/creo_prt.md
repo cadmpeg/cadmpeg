@@ -492,6 +492,15 @@ triple `[0, 1, 0]`, `41` occupies eight bytes, and `74` and `75` are positive
 DICT prefixes. Entity references may also follow the sixth coordinate before
 the row-closing `e3`.
 
+A saved-line family may contain a named `entity(point)` prototype between
+positional line rows. Positional line replay resumes after that prototype's
+`f1 f7 <ref> e3` close. A line row may end directly at the following named
+entity record without an `e3` separator. After its six endpoint coordinates,
+the row may carry six-byte `82..8f` state tokens and standalone `0f`, `18`, or
+`e6` state markers before the row boundary; these fields do not alter the two
+stored XYZ endpoints. In this lane, `18 e0` stores a standalone zero followed
+by a named-record opener and is not dictionary index `e0`.
+
 A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
 
 When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.

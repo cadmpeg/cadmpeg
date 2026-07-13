@@ -1925,7 +1925,7 @@ fn saved_section_scalar(
     if prefix == 0x18
         && payload
             .get(offset + 1)
-            .is_some_and(|next| matches!(next, 0xe3 | 0xf0 | 0xf1))
+            .is_some_and(|next| matches!(next, 0xe0 | 0xe3 | 0xf0 | 0xf1))
     {
         return (Some(0.0), offset + 1);
     }
@@ -1962,17 +1962,12 @@ fn saved_section_scalar(
         .map_or((None, offset + 1), |(value, next)| (Some(value), next))
 }
 
-fn saved_line_entities(
+fn saved_line_block(
     payload: &[u8],
-    start: usize,
-    end: usize,
+    mut cursor: usize,
+    segment_end: usize,
     cache: &scalar::ScalarCache,
 ) -> Vec<FeatureSavedEntity> {
-    let Some(label) = find_bytes(payload, b"\xe0\x00entity(line)\0", start, end) else {
-        return Vec::new();
-    };
-    let mut cursor = label + b"\xe0\x00entity(line)\0".len();
-    let segment_end = find_bytes(payload, b"\xe0\x00entity(", cursor, end).unwrap_or(end);
     if payload.get(cursor) == Some(&0xf1) {
         cursor = payload[cursor..segment_end]
             .iter()
@@ -1983,6 +1978,25 @@ fn saved_line_entities(
     while cursor < segment_end {
         if payload.get(cursor) == Some(&0xe3) {
             cursor += 1;
+        }
+        let point_label = b"\xe0\x00entity(point)\0";
+        if payload.get(cursor..cursor + point_label.len()) == Some(point_label) {
+            let Some(close) = find_bytes(
+                payload,
+                &[0xf1, psb::token::ENTITY_REF],
+                cursor + point_label.len(),
+                segment_end,
+            ) else {
+                break;
+            };
+            let Ok((_, after_reference)) = psb::reference_id(payload, close + 2) else {
+                break;
+            };
+            if payload.get(after_reference) != Some(&0xe3) {
+                break;
+            }
+            cursor = after_reference + 1;
+            continue;
         }
         if payload.get(cursor) == Some(&psb::token::NAMED_RECORD)
             || payload.get(cursor..cursor + 2) == Some(&[0xf1, 0xe1])
@@ -2077,6 +2091,21 @@ fn saved_line_entities(
             cursor = next;
         }
         loop {
+            if payload
+                .get(cursor)
+                .is_some_and(|prefix| matches!(prefix, 0x0f | 0x18 | 0xe6))
+            {
+                cursor += 1;
+                continue;
+            }
+            if payload
+                .get(cursor)
+                .is_some_and(|prefix| matches!(prefix, 0x82..=0x8f))
+                && cursor + 6 <= segment_end
+            {
+                cursor += 6;
+                continue;
+            }
             let reference_start = match payload.get(cursor..cursor + 2) {
                 Some([0xf0 | 0xf1, 0xf7]) => Some(cursor + 2),
                 _ if payload.get(cursor) == Some(&psb::token::ENTITY_REF) => Some(cursor + 1),
@@ -2091,11 +2120,15 @@ fn saved_line_entities(
             references.push(reference);
             cursor = next;
         }
-        if values.len() != 6 || payload.get(cursor) != Some(&0xe3) {
+        let row_separator = payload.get(cursor) == Some(&0xe3);
+        let named_boundary = payload.get(cursor) == Some(&psb::token::NAMED_RECORD);
+        if values.len() != 6 || (!row_separator && !named_boundary) {
             cursor = record_offset + 1;
             continue;
         }
-        cursor += 1;
+        if row_separator {
+            cursor += 1;
+        }
         entities.push(FeatureSavedEntity::Line(FeatureSavedLine {
             entity_id,
             references,
@@ -2106,6 +2139,32 @@ fn saved_line_entities(
             ],
             offset: record_offset,
         }));
+    }
+    entities
+}
+
+fn saved_line_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
+    let label = b"\xe0\x00entity(line)\0";
+    let mut entities = Vec::new();
+    let mut search = start;
+    while let Some(label_offset) = find_bytes(payload, label, search, end) {
+        let body_start = label_offset + label.len();
+        let body_end = [
+            b"\xe0\x00entity(arc)\0".as_slice(),
+            b"\xe0\x00entity(circle)\0".as_slice(),
+            b"\xe0\x00entity(dummy_ent)\0".as_slice(),
+        ]
+        .into_iter()
+        .filter_map(|next_label| find_bytes(payload, next_label, body_start, end))
+        .min()
+        .unwrap_or(end);
+        entities.extend(saved_line_block(payload, body_start, body_end, cache));
+        search = body_end;
     }
     entities
 }
@@ -3027,6 +3086,51 @@ mod tests {
     }
 
     #[test]
+    fn saved_line_replay_continues_after_point_prototype() {
+        let scalar_triple = b"\x2f\x20\0\x2f\x20\0\x2f\x20\0";
+        let mut payload = b"\xe0\0entity(line)\0\x05\xe2".to_vec();
+        payload.extend_from_slice(scalar_triple);
+        payload.extend_from_slice(scalar_triple);
+        payload.push(0xe3);
+        payload.extend_from_slice(b"\xe0\0entity(point)\0\xe0\x01id\0\x04\xf1\xf7\x2a\xe3\x06\xe2");
+        payload.extend_from_slice(scalar_triple);
+        payload.extend_from_slice(scalar_triple);
+        payload.extend_from_slice(b"\xe0\0entity(arc)\0");
+
+        let entities =
+            saved_line_entities(&payload, 0, payload.len(), &scalar::ScalarCache::default());
+
+        assert_eq!(entities.len(), 2);
+        assert_eq!(
+            entities
+                .iter()
+                .filter_map(|entity| match entity {
+                    FeatureSavedEntity::Line(line) => Some(line.entity_id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>(),
+            [5, 6]
+        );
+    }
+
+    #[test]
+    fn saved_line_accepts_named_record_boundary() {
+        let payload = b"\xe0\0entity(line)\0\x03\xe2\xf1\xf7\x80\xc4\
+            \x48\x20\0\x46\x15\xff\xff\xff\xff\xff\x8f\x18\
+            \x48\x1e\0\x46\x15\xff\xff\xff\xff\xff\x8f\x18\x8a\x01\x02\x03\x04\x05\x0f\
+            \xe0\0entity(point)\0\xf1\xf7\x2a\xe3\xe0\0entity(arc)\0";
+        let entities =
+            saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+
+        assert_eq!(entities.len(), 1);
+        let FeatureSavedEntity::Line(line) = &entities[0] else {
+            panic!("expected saved line");
+        };
+        assert_eq!(line.entity_id, 3);
+        assert_eq!(line.references, [196]);
+    }
+
+    #[test]
     fn saved_section_41_form_occupies_eight_bytes() {
         let bytes = [0x41, 0xfd, 0x6b, 0xf1, 0xa1, 0xc2, 0x1f, 0xf0];
         let (value, next) =
@@ -3037,6 +3141,20 @@ mod tests {
             Some(f64::from_be_bytes([
                 0x3f, 0xfd, 0x6b, 0xf1, 0xa1, 0xc2, 0x1f, 0xf0
             ]))
+        );
+    }
+
+    #[test]
+    fn saved_section_zero_does_not_consume_named_record_opener() {
+        let mut section = Vec::new();
+        for index in 0_u16..=224 {
+            section.extend_from_slice(&[0x46, 0x08, (index >> 8) as u8, index as u8, 0, 0, 0, 0]);
+        }
+        let cache = scalar::ScalarCache::from_section(&section);
+
+        assert_eq!(
+            saved_section_scalar(&[0x18, 0xe0], 0, 2, &cache),
+            (Some(0.0), 1)
         );
     }
 
