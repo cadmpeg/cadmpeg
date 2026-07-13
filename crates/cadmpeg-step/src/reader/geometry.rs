@@ -34,7 +34,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 Some(position) => {
                     points.insert(id, position);
                     ir.model.points.push(Point {
-                        id: PointId(format!("step:point:#{id}")),
+                        id: PointId(format!("step:data:point#{id}")),
                         position,
                     });
                     typed.insert(id);
@@ -145,7 +145,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         };
         if let Some(geometry) = geometry {
             ir.model.curves.push(Curve {
-                id: CurveId(format!("step:curve:#{id}")),
+                id: CurveId(format!("step:data:curve#{id}")),
                 geometry,
                 source_object: None,
             });
@@ -165,7 +165,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         if let Some(nurbs) = nurbs_curve(record, &points) {
             ir.model.curves.push(Curve {
-                id: CurveId(format!("step:curve:#{id}")),
+                id: CurveId(format!("step:data:curve#{id}")),
                 geometry: CurveGeometry::Nurbs(nurbs),
                 source_object: None,
             });
@@ -239,7 +239,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         };
         if let Some(geometry) = geometry {
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(format!("step:surface:#{id}")),
+                id: SurfaceId(format!("step:data:surface#{id}")),
                 geometry,
                 source_object: None,
             });
@@ -259,7 +259,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
         if let Some(nurbs) = nurbs_surface(record, &points) {
             ir.model.surfaces.push(Surface {
-                id: SurfaceId(format!("step:surface:#{id}")),
+                id: SurfaceId(format!("step:data:surface#{id}")),
                 geometry: SurfaceGeometry::Nurbs(nurbs),
                 source_object: None,
             });

@@ -137,7 +137,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .model
         .points
         .iter()
-        .find(|point| point.id.0 == "step:point:#3")
+        .find(|point| point.id.0 == "step:data:point#3")
         .unwrap();
     assert_eq!(placed.position.x, 1.0);
     assert_eq!(placed.position.y, 2.0);
@@ -202,6 +202,34 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
     )));
     assert!(result.report.geometry_transferred);
+}
+
+#[test]
+fn decode_builds_a_valid_connected_sheet_brep() {
+    use cadmpeg_ir::topology::{BodyKind, Sense};
+
+    let bytes = include_bytes!("../tests/fixtures/ap214_sheet.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP214 sheet");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(result.ir.model.regions.len(), 1);
+    assert_eq!(result.ir.model.shells.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 3);
+    assert_eq!(result.ir.model.edges.len(), 3);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert!(result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.sense == Sense::Forward));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 fn export(ir: &CadIr) -> String {

@@ -14,6 +14,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use crate::parse::{self, Exchange, Value};
 
 mod geometry;
+mod topology;
 
 /// Decode a complete clear-text exchange structure.
 pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, CodecError> {
@@ -47,6 +48,7 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
     }
 
     let geometry = geometry::decode(&exchange, &mut ir);
+    let topology = topology::decode(&exchange, &mut ir);
     report.geometry_transferred =
         !ir.model.points.is_empty() || !ir.model.curves.is_empty() || !ir.model.surfaces.is_empty();
     report
@@ -57,11 +59,21 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
             message,
             provenance: None,
         }));
+    report
+        .losses
+        .extend(topology.warnings.into_iter().map(|message| LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Warning,
+            message,
+            provenance: None,
+        }));
+    let mut typed_records = geometry.typed_records;
+    typed_records.extend(topology.typed_records);
 
     let mut opaque = Vec::with_capacity(exchange.records.len());
     let mut counts = BTreeMap::<String, usize>::new();
     for record in exchange.records.values() {
-        if geometry.typed_records.contains(&record.id) {
+        if typed_records.contains(&record.id) {
             continue;
         }
         let kind = record
