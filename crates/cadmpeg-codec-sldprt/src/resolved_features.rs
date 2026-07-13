@@ -1425,7 +1425,7 @@ pub(crate) fn project_relation_bindings(
         .collect::<HashMap<_, _>>();
     let parameters_by_scalar = parameters
         .iter()
-        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, &parameter.id)))
+        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
         .collect::<HashMap<_, _>>();
 
     for lane in lanes {
@@ -1441,7 +1441,8 @@ pub(crate) fn project_relation_bindings(
                 .parameter_scalar_ref
                 .as_deref()
                 .and_then(|scalar| parameters_by_scalar.get(scalar))
-                .map(|parameter| (*parameter).clone());
+                .copied();
+            let parameter_id = parameter.map(|parameter| parameter.id.clone());
             let native_kind = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
                 FeatureInputRelationFamily::PointPointDistance => "sgPntPntDist",
@@ -1463,14 +1464,15 @@ pub(crate) fn project_relation_bindings(
             entities.dedup();
             let definition = typed_relation_definition(
                 relation,
-                parameter.clone(),
+                parameter_id.clone(),
+                parameter.and_then(|parameter| parameter.display),
                 &markers_by_id,
                 &loci_by_marker,
             )
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: native_kind.into(),
                 entities,
-                parameter,
+                parameter: parameter_id,
                 operands: relation
                     .operands
                     .iter()
@@ -1682,6 +1684,7 @@ fn linked_single_entities(
 fn typed_relation_definition(
     relation: &FeatureInputRelationInstance,
     parameter: Option<cadmpeg_ir::features::ParameterId>,
+    display: Option<cadmpeg_ir::features::DimensionDisplay>,
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
@@ -1728,10 +1731,18 @@ fn typed_relation_definition(
             second: single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?,
             parameter,
         }),
-        CircleDiameter => Some(SketchConstraintDefinition::Diameter {
-            entity: single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
-            parameter,
-        }),
+        CircleDiameter => {
+            let entity = single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?;
+            match display {
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
+                    Some(SketchConstraintDefinition::Radius { entity, parameter })
+                }
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
+                    Some(SketchConstraintDefinition::Diameter { entity, parameter })
+                }
+                None => None,
+            }
+        }
     }
 }
 
@@ -2103,7 +2114,9 @@ mod profile_join_tests {
         FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
         SketchRelationKind,
     };
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, ParameterId, SketchSpace};
+    use cadmpeg_ir::features::{
+        DimensionDisplay, Feature, FeatureDefinition, FeatureId, ParameterId, SketchSpace,
+    };
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
@@ -2326,6 +2339,7 @@ mod profile_join_tests {
             typed_relation_definition(
                 &relation,
                 Some(ParameterId("distance".into())),
+                None,
                 &markers,
                 &joins,
             ),
@@ -2334,6 +2348,49 @@ mod profile_join_tests {
                 ..
             }) if parameter.0 == "distance"
         ));
+        let circle = FeatureInputRelationInstance {
+            family: FeatureInputRelationFamily::CircleDiameter,
+            operands: vec![FeatureInputOperand {
+                offset: 0,
+                reference_ref: "circle-reference".into(),
+                kind: FeatureInputOperandKind::E1,
+                entity_index: 0,
+                entity_ref: Some("marker-a".into()),
+            }],
+            ..relation
+        };
+        assert!(matches!(
+            typed_relation_definition(
+                &circle,
+                Some(ParameterId("circle".into())),
+                Some(DimensionDisplay::Radius),
+                &markers,
+                &joins,
+            ),
+            Some(SketchConstraintDefinition::Radius { parameter, .. })
+                if parameter.0 == "circle"
+        ));
+        assert!(matches!(
+            typed_relation_definition(
+                &circle,
+                Some(ParameterId("circle".into())),
+                Some(DimensionDisplay::Diameter),
+                &markers,
+                &joins,
+            ),
+            Some(SketchConstraintDefinition::Diameter { parameter, .. })
+                if parameter.0 == "circle"
+        ));
+        assert_eq!(
+            typed_relation_definition(
+                &circle,
+                Some(ParameterId("circle".into())),
+                None,
+                &markers,
+                &joins,
+            ),
+            None
+        );
     }
 
     #[test]
