@@ -974,29 +974,21 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
             .flat_map(|value| value.to_le_bytes())
             .collect::<Vec<_>>();
         descriptor(&mut out, 4, 8, 2, mesh.strip_lengths.len(), &strips);
-        let positions = mesh
-            .vertices
-            .iter()
-            .flat_map(|point| {
-                [
-                    (point.x * length_scale) as f32,
-                    (point.y * length_scale) as f32,
-                    (point.z * length_scale) as f32,
-                ]
-                .into_iter()
-                .flat_map(f32::to_le_bytes)
-            })
-            .collect::<Vec<_>>();
+        let mut positions = Vec::with_capacity(mesh.vertices.len() * 12);
+        for point in &mesh.vertices {
+            for value in [point.x, point.y, point.z] {
+                positions.extend_from_slice(
+                    &tessellation_f32(value * length_scale, "position")?.to_le_bytes(),
+                );
+            }
+        }
         descriptor(&mut out, 12, 100, 2, mesh.vertices.len(), &positions);
-        let normals = mesh
-            .normals
-            .iter()
-            .flat_map(|normal| {
-                [normal.x as f32, normal.y as f32, normal.z as f32]
-                    .into_iter()
-                    .flat_map(f32::to_le_bytes)
-            })
-            .collect::<Vec<_>>();
+        let mut normals = Vec::with_capacity(mesh.normals.len() * 12);
+        for normal in &mesh.normals {
+            for value in [normal.x, normal.y, normal.z] {
+                normals.extend_from_slice(&tessellation_f32(value, "normal")?.to_le_bytes());
+            }
+        }
         descriptor(&mut out, 12, 100, 2, mesh.normals.len(), &normals);
         for channel in mesh.channels.iter().skip(3).take(3) {
             descriptor(
@@ -1013,6 +1005,17 @@ fn tessellation_payload(ir: &CadIr, length_scale: f64) -> Result<Vec<u8>, CodecE
         }
     }
     Ok(out)
+}
+
+fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
+    let narrowed = value as f32;
+    if narrowed.is_finite() {
+        Ok(narrowed)
+    } else {
+        Err(CodecError::Malformed(format!(
+            "SLDPRT tessellation {role} exceeds f32 range"
+        )))
+    }
 }
 
 fn triangles_from_strips(strips: &[u32]) -> Result<Vec<[u32; 3]>, CodecError> {

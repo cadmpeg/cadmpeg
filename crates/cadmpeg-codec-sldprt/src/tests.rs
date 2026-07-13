@@ -7929,6 +7929,23 @@ fn semantic_writer_preserves_display_list_geometry() {
 }
 
 #[test]
+fn semantic_writer_rejects_tessellation_f32_overflow() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_display_list(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.model.tessellations[0].vertices[0].x = f64::MAX;
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("tessellation position exceeds f32 range"));
+}
+
+#[test]
 fn compact_carrier_shapes_decode() {
     use crate::brep::{parse_carrier, CarrierGeometry};
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
