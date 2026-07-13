@@ -12,7 +12,9 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+};
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::Exactness;
 
@@ -66,6 +68,7 @@ fn partition_stream() -> Vec<u8> {
 
     // PLANE (type 50): origin +19, normal +43, x_axis +67.
     let mut pl = record(0x32, 91);
+    pl[18] = b'+';
     put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]); // 76.2 mm
     put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
     put_vec3(&mut pl, 67, [1.0, 0.0, 0.0]);
@@ -73,6 +76,7 @@ fn partition_stream() -> Vec<u8> {
 
     // CYLINDER (type 51): origin +19, axis +43, radius +67, x_axis +75.
     let mut cy = record(0x33, 99);
+    cy[18] = b'+';
     put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
     put_f64(&mut cy, 67, 0.004_05); // 4.05 mm
@@ -81,6 +85,7 @@ fn partition_stream() -> Vec<u8> {
 
     // LINE (type 30): point +19, direction +43.
     let mut ln = record(0x1e, 67);
+    ln[18] = b'+';
     put_vec3(&mut ln, 19, [0.01, 0.02, 0.03]);
     put_vec3(&mut ln, 43, [1.0, 0.0, 0.0]);
     s.extend_from_slice(&ln);
@@ -143,6 +148,7 @@ fn topology_partition_stream() -> Vec<u8> {
 
     let mut plane = record(50, 91);
     put_ref(&mut plane, 2, 6);
+    plane[18] = b'+';
     put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
     put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
@@ -150,6 +156,7 @@ fn topology_partition_stream() -> Vec<u8> {
 
     let mut line = record(30, 67);
     put_ref(&mut line, 2, 9);
+    line[18] = b'+';
     put_vec3(&mut line, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut line, 43, [1.0, 0.0, 0.0]);
     s.extend_from_slice(&line);
@@ -167,11 +174,345 @@ fn topology_partition_stream() -> Vec<u8> {
     s
 }
 
+fn offset_surface_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face record");
+    put_ref(&mut stream, face + 26, 12);
+
+    let mut offset = record(60, 39);
+    put_ref(&mut offset, 2, 12);
+    offset[18] = b'+';
+    offset[19] = b'V';
+    offset[20] = 1;
+    put_ref(&mut offset, 21, 6);
+    put_f64(&mut offset, 23, 0.002_5);
+    stream.extend(offset);
+    stream
+}
+
+fn surface_curve_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
+        let marker = [0, tag, 0, xmt];
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("topology record");
+        put_ref(&mut stream, record + offset, 12);
+    }
+    let mut surface_curve = record(137, 33);
+    put_ref(&mut surface_curve, 2, 12);
+    surface_curve[18] = b'+';
+    put_ref(&mut surface_curve, 19, 6);
+    put_ref(&mut surface_curve, 21, 9);
+    put_ref(&mut surface_curve, 23, 9);
+    put_f64(&mut surface_curve, 25, 0.000_01);
+    stream.extend(surface_curve);
+    stream
+}
+
+fn blend_surface_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face record");
+    put_ref(&mut stream, face + 26, 12);
+
+    let mut blend = record(56, 66);
+    put_ref(&mut blend, 2, 12);
+    blend[18] = b'+';
+    blend[19] = b'R';
+    put_ref(&mut blend, 20, 6);
+    put_ref(&mut blend, 22, 6);
+    put_ref(&mut blend, 24, 1);
+    put_f64(&mut blend, 26, -0.003);
+    put_f64(&mut blend, 34, 0.003);
+    put_f64(&mut blend, 42, 1.0);
+    put_f64(&mut blend, 50, 1.0);
+    for at in [58, 60, 62, 64] {
+        put_ref(&mut blend, at, 1);
+    }
+    stream.extend(blend);
+    stream
+}
+
+fn blend_surface_with_extended_support_reference() -> Vec<u8> {
+    let mut stream = blend_surface_topology_partition_stream();
+    let blend = stream
+        .windows(4)
+        .position(|window| window == [0, 56, 0, 12])
+        .expect("blend record");
+    stream.splice(blend + 20..blend + 22, [0xff, 0xfa, 0x00, 0x00]);
+    stream
+}
+
+fn intersection_curve_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
+        let marker = [0, tag, 0, xmt];
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("topology record");
+        put_ref(&mut stream, record + offset, 12);
+    }
+    let mut intersection = record(38, 31);
+    put_ref(&mut intersection, 2, 12);
+    intersection[18] = b'+';
+    for (index, reference) in [6, 6, 1, 1, 1, 1].into_iter().enumerate() {
+        put_ref(&mut intersection, 19 + index * 2, reference);
+    }
+    stream.extend(intersection);
+    stream
+}
+
+fn charted_intersection_curve_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
+        let marker = [0, tag, 0, xmt];
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("topology record");
+        put_ref(&mut stream, record + offset, 12);
+    }
+
+    let mut intersection = record(38, 31);
+    put_ref(&mut intersection, 2, 12);
+    intersection[18] = b'+';
+    for (index, reference) in [6, 1, 20, 21, 22, 23].into_iter().enumerate() {
+        put_ref(&mut intersection, 19 + index * 2, reference);
+    }
+    stream.extend(intersection);
+
+    let mut chart = record(40, 108);
+    chart[2..6].copy_from_slice(&2u32.to_be_bytes());
+    put_ref(&mut chart, 6, 20);
+    put_f64(&mut chart, 8, 0.0);
+    put_f64(&mut chart, 16, 1.0);
+    chart[24..28].copy_from_slice(&2u32.to_be_bytes());
+    put_f64(&mut chart, 28, 0.000_01);
+    put_f64(&mut chart, 36, 0.001);
+    put_f64(&mut chart, 44, -31_415_800_000_000.0);
+    put_f64(&mut chart, 52, -31_415_800_000_000.0);
+    put_vec3(&mut chart, 60, [0.0, 0.0, 0.0]);
+    put_vec3(&mut chart, 84, [0.01, 0.0, 0.0]);
+    stream.extend(chart);
+
+    for (xmt, point) in [(21, [0.0, 0.0, 0.0]), (22, [0.01, 0.0, 0.0])] {
+        let mut term = record(41, 34);
+        term[2..6].copy_from_slice(&1u32.to_be_bytes());
+        put_ref(&mut term, 6, xmt);
+        term[8..10].copy_from_slice(b"L?");
+        put_vec3(&mut term, 10, point);
+        stream.extend(term);
+    }
+
+    let mut uv = record(204, 41);
+    uv[2..6].copy_from_slice(&4u32.to_be_bytes());
+    put_ref(&mut uv, 6, 23);
+    uv[8] = 2;
+    for (index, value) in [0.0, 0.0, 0.01, 0.0].into_iter().enumerate() {
+        put_f64(&mut uv, 9 + index * 8, value);
+    }
+    stream.extend(uv);
+    stream
+}
+
+fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let chart = stream
+        .windows(8)
+        .position(|window| window == [0, 40, 0, 0, 0, 2, 0, 20])
+        .expect("chart record");
+    let mut entries = vec![0u8; 2 * 11 * 8];
+    for (index, point) in [[0.0, 0.0, 0.0], [0.01, 0.0, 0.0]].into_iter().enumerate() {
+        let at = index * 88;
+        put_vec3(&mut entries, at, point);
+        put_vec3(&mut entries, at + 56, [1.0, 0.0, 0.0]);
+        put_f64(&mut entries, at + 80, index as f64 * 0.01);
+    }
+    stream.splice(chart + 60..chart + 108, entries);
+    stream
+}
+
+fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 21, 13);
+
+    let uv = stream
+        .windows(8)
+        .position(|window| window == [0, 204, 0, 0, 0, 4, 0, 23])
+        .expect("UV record");
+    stream[uv + 2..uv + 6].copy_from_slice(&8u32.to_be_bytes());
+    stream[uv + 8] = 4;
+    let mut values = vec![0u8; 8 * 8];
+    for (index, value) in [0.0, 0.0, 0.0, 0.0, 0.01, 0.0, 0.01, 0.0]
+        .into_iter()
+        .enumerate()
+    {
+        put_f64(&mut values, index * 8, value);
+    }
+    stream.splice(uv + 9..uv + 41, values);
+
+    let mut second_plane = record(50, 91);
+    put_ref(&mut second_plane, 2, 13);
+    second_plane[18] = b'+';
+    put_vec3(&mut second_plane, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut second_plane, 43, [0.0, 1.0, 0.0]);
+    put_vec3(&mut second_plane, 67, [1.0, 0.0, 0.0]);
+    stream.extend(second_plane);
+    stream
+}
+
+fn blend_bound_charted_intersection_curve_stream() -> Vec<u8> {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 21, 14);
+
+    let mut bridge = record(59, 24);
+    put_ref(&mut bridge, 2, 14);
+    bridge[4..8].copy_from_slice(&9u32.to_be_bytes());
+    for at in [8, 10, 12, 14, 16] {
+        put_ref(&mut bridge, at, 1);
+    }
+    bridge[18] = b'+';
+    put_ref(&mut bridge, 19, 0);
+    put_ref(&mut bridge, 21, 13);
+    stream.extend(bridge);
+    stream
+}
+
+fn inline_descriptor_intersection_curve_stream() -> Vec<u8> {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let uv = stream
+        .windows(8)
+        .position(|window| window == [0, 204, 0, 0, 0, 4, 0, 23])
+        .expect("UV record");
+    let mut inline_uv = b"values\x00\x00\x00\x02\x01\x66\x01".to_vec();
+    inline_uv.extend_from_slice(&4u32.to_be_bytes());
+    inline_uv.extend_from_slice(&23u16.to_be_bytes());
+    inline_uv.push(2);
+    for value in [0.0_f64, 0.0, 0.01, 0.0] {
+        inline_uv.extend_from_slice(&value.to_be_bytes());
+    }
+    stream.splice(uv..uv + 41, inline_uv);
+
+    for (xmt, point) in [(22u16, [0.01_f64, 0.0, 0.0]), (21, [0.0, 0.0, 0.0])] {
+        let marker = [0, 41, 0, 0, 0, 1, (xmt >> 8) as u8, xmt as u8];
+        let term = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("term record");
+        let mut inline = b"term_use\x00\x00\x00\x01\x01\x63\x43\x5a".to_vec();
+        inline.extend_from_slice(&1u32.to_be_bytes());
+        inline.extend_from_slice(&xmt.to_be_bytes());
+        inline.extend_from_slice(b"L?");
+        for coordinate in point {
+            inline.extend_from_slice(&coordinate.to_be_bytes());
+        }
+        stream.splice(term..term + 34, inline);
+    }
+    stream
+}
+
+fn deltas_intersection_curve_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let subtype = stream
+        .windows(b"(partition)".len())
+        .position(|window| window == b"(partition)")
+        .expect("partition subtype");
+    stream.splice(
+        subtype..subtype + b"(partition)".len(),
+        b"(deltas)".iter().copied(),
+    );
+    for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
+        let marker = [0, tag, 0, xmt];
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("topology record");
+        put_ref(&mut stream, record + offset, 12);
+    }
+    stream.extend_from_slice(b"intersection_data");
+    stream.push(0x5a);
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&7u32.to_be_bytes());
+    for reference in [1u16, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream.push(b'+');
+    for reference in [6u16, 6, 1, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+    }
+    stream
+}
+
+fn status_framed_deltas_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    let mut face = Vec::new();
+    face.extend_from_slice(&14u16.to_be_bytes());
+    face.extend_from_slice(&100u16.to_be_bytes());
+    face.extend_from_slice(&7u32.to_be_bytes());
+    let push_ref = |record: &mut Vec<u8>, reference: u16| {
+        record.extend_from_slice(&reference.to_be_bytes());
+        record.push(1);
+    };
+    push_ref(&mut face, 1);
+    face.extend_from_slice(&(-31_415_800_000_000.0f64).to_be_bytes());
+    for reference in [1u16; 5] {
+        push_ref(&mut face, reference);
+    }
+    face.push(b'+');
+    for reference in [1u16; 5] {
+        push_ref(&mut face, reference);
+    }
+    stream.extend(face);
+    stream.extend_from_slice(&16u16.to_be_bytes());
+    stream.extend_from_slice(&50_000u16.to_be_bytes());
+    stream.extend_from_slice(&[0, 1]);
+    stream
+}
+
+fn variable_status_framed_deltas_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&15u16.to_be_bytes());
+    stream.extend_from_slice(&(-100i16).to_be_bytes());
+    stream.extend_from_slice(&0u16.to_be_bytes());
+    stream.extend_from_slice(&8u32.to_be_bytes());
+    for reference in [1u16, 2, 3] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.extend_from_slice(&17u16.to_be_bytes());
+    stream.extend_from_slice(&101u16.to_be_bytes());
+    stream.extend_from_slice(&9u32.to_be_bytes());
+    for reference in [1u16, 2] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream
+}
+
 fn bspline_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
     let mut surface = record(124, 23);
     put_ref(&mut surface, 2, 10);
+    surface[18] = b'+';
     put_ref(&mut surface, 19, 20);
     put_ref(&mut surface, 21, 21);
     s.extend(surface);
@@ -228,6 +569,7 @@ fn bspline_partition_stream() -> Vec<u8> {
 
     let mut curve = record(134, 23);
     put_ref(&mut curve, 2, 50);
+    curve[18] = b'+';
     put_ref(&mut curve, 19, 40);
     put_ref(&mut curve, 21, 41);
     s.extend(curve);
@@ -273,6 +615,7 @@ fn trimmed_topology_partition_stream() -> Vec<u8> {
     put_ref(&mut stream, edge + 24, 12);
     let mut trim = record(133, 85);
     put_ref(&mut trim, 2, 12);
+    trim[18] = b'+';
     put_ref(&mut trim, 19, 9);
     put_f64(&mut trim, 69, 0.25);
     put_f64(&mut trim, 77, 0.75);
@@ -295,6 +638,82 @@ fn topology_with_extended_edge_curve_reference() -> Vec<u8> {
     stream[edge + 24..edge + 26].copy_from_slice(&(-9i16).to_be_bytes());
     stream.splice(edge + 26..edge + 26, [0, 0]);
     stream
+}
+
+fn topology_with_extended_face_attribute_reference() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face record");
+    stream.splice(face + 8..face + 10, [0xff, 0xff, 0x00, 0x00]);
+    stream
+}
+
+fn topology_with_extended_edge_attribute_reference() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let edge = stream
+        .windows(4)
+        .position(|window| window == [0, 16, 0, 8])
+        .expect("edge record");
+    stream.splice(edge + 8..edge + 10, [0xff, 0xff, 0x00, 0x00]);
+    stream
+}
+
+fn topology_with_extended_internal_topology_references() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (tag, xmt, offset) in [(13, 3, 8), (15, 5, 8), (17, 7, 4), (18, 10, 8), (29, 11, 8)] {
+        let marker = [0, tag, 0, xmt];
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("topology record");
+        stream.splice(
+            record + offset..record + offset + 2,
+            [0xff, 0xff, 0x00, 0x00],
+        );
+    }
+    stream
+}
+
+fn topology_with_fully_extended_geometry_headers() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    for (tag, xmt) in [(50, 6), (30, 9)] {
+        let marker = [0, tag, 0, xmt];
+        let record = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("geometry record");
+        for index in 0..5 {
+            let at = record + 8 + index * 4;
+            stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
+        }
+    }
+    stream
+}
+
+fn offset_surface_with_fully_extended_common_header() -> Vec<u8> {
+    let mut stream = offset_surface_topology_partition_stream();
+    let record = stream
+        .windows(4)
+        .position(|window| window == [0, 60, 0, 12])
+        .expect("offset record");
+    for index in 0..5 {
+        let at = record + 8 + index * 4;
+        stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
+    }
+    stream
+}
+
+fn fully_extend_common_header(stream: &mut Vec<u8>, marker: [u8; 4]) {
+    let record = stream
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("compact geometry record");
+    for index in 0..5 {
+        let at = record + 8 + index * 4;
+        stream.splice(at..at + 2, [0xff, 0xff, 0x00, 0x00]);
+    }
 }
 
 fn zlib_compress(raw: &[u8]) -> Vec<u8> {
@@ -449,6 +868,100 @@ fn rmfastload_prt() -> Vec<u8> {
     f
 }
 
+fn many_face_partition_stream(node_id_start: u32) -> Vec<u8> {
+    let mut stream = Vec::new();
+    stream.extend_from_slice(
+        b"PS\x00\x00XX: TRANSMIT FILE (partition) created by modeller\x00SCH_TEST_1_9999\x00",
+    );
+    let mut body = record(12, 24);
+    put_ref(&mut body, 2, 2);
+    body[4..8].copy_from_slice(&(node_id_start + 100).to_be_bytes());
+    stream.extend(body);
+    let mut shell = record(13, 24);
+    put_ref(&mut shell, 2, 3);
+    shell[4..8].copy_from_slice(&(node_id_start + 101).to_be_bytes());
+    put_ref(&mut shell, 10, 2);
+    put_ref(&mut shell, 14, 300);
+    stream.extend(shell);
+    for index in 0..50u16 {
+        let mut face = record(14, 39);
+        put_ref(&mut face, 2, 300 + index);
+        face[4..8].copy_from_slice(&(node_id_start + u32::from(index)).to_be_bytes());
+        put_f64(&mut face, 10, 0.000_1);
+        put_ref(&mut face, 22, 1);
+        put_ref(&mut face, 24, 3);
+        put_ref(&mut face, 26, 500 + index);
+        face[28] = b'+';
+        stream.extend(face);
+    }
+    for index in 0..50u16 {
+        let mut plane = record(50, 91);
+        put_ref(&mut plane, 2, 500 + index);
+        plane[18] = b'+';
+        put_vec3(&mut plane, 19, [f64::from(index) * 0.001, 0.0, 0.0]);
+        put_vec3(&mut plane, 43, [0.0, 0.0, 1.0]);
+        put_vec3(&mut plane, 67, [1.0, 0.0, 0.0]);
+        stream.extend(plane);
+    }
+    stream
+}
+
+fn prt_with_two_bodies_and_rmfastload() -> Vec<u8> {
+    let mut part_payload = zlib_compress(&many_face_partition_stream(1_000));
+    part_payload.extend(zlib_compress(&many_face_partition_stream(2_000)));
+    let mut rm_payload = b"UGS::Solid::Topol".to_vec();
+    rm_payload.extend_from_slice(&50u32.to_le_bytes());
+    for id in 1_000..1_050u32 {
+        rm_payload.extend_from_slice(&id.to_le_bytes());
+    }
+
+    let mut file = Vec::new();
+    file.extend_from_slice(MAGIC);
+    file.push(6);
+    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
+    file.extend_from_slice(b"HEADER");
+    let part_name = b"/Root/UG_PART/UG_PART";
+    file.extend_from_slice(&(part_name.len() as u32).to_le_bytes());
+    file.extend_from_slice(part_name);
+    let part_span = file.len();
+    file.extend_from_slice(&[0; 16]);
+    let rm_name = b"/Root/FastLoad/RMFastLoad";
+    file.extend_from_slice(&(rm_name.len() as u32).to_le_bytes());
+    file.extend_from_slice(rm_name);
+    let rm_span = file.len();
+    file.extend_from_slice(&[0; 16]);
+    let part_offset = file.len();
+    file.extend_from_slice(&part_payload);
+    let rm_offset = file.len();
+    file.extend_from_slice(&rm_payload);
+    file[part_span..part_span + 8].copy_from_slice(&(part_offset as u64).to_le_bytes());
+    file[part_span + 8..part_span + 16].copy_from_slice(&(part_payload.len() as u64).to_le_bytes());
+    file[rm_span..rm_span + 8].copy_from_slice(&(rm_offset as u64).to_le_bytes());
+    file[rm_span + 8..rm_span + 16].copy_from_slice(&(rm_payload.len() as u64).to_le_bytes());
+    file
+}
+
+fn prt_with_weak_rmfastload_overlap() -> Vec<u8> {
+    let mut file = prt_with_two_bodies_and_rmfastload();
+    let marker = b"UGS::Solid::Topol";
+    let payload = file
+        .windows(marker.len())
+        .position(|window| window == marker)
+        .expect("RMFastLoad payload")
+        + marker.len()
+        + 4;
+    for index in 0..50u32 {
+        let id = if index < 5 {
+            1_000 + index
+        } else {
+            10_000 + index
+        };
+        let at = payload + index as usize * 4;
+        file[at..at + 4].copy_from_slice(&id.to_le_bytes());
+    }
+    file
+}
+
 #[test]
 fn detect_high_on_magic() {
     assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
@@ -599,7 +1112,362 @@ fn decode_emits_connected_primitive_brep() {
         .losses
         .iter()
         .all(|loss| loss.category != cadmpeg_ir::report::LossCategory::Topology));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_emits_offset_surface_construction() {
+    let stream = offset_surface_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let procedural = result
+        .ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("offset surface");
+    let ProceduralSurfaceDefinition::Offset {
+        support,
+        distance,
+        u_sense,
+        v_sense,
+        extension_flags,
+    } = &procedural.definition
+    else {
+        panic!("offset definition");
+    };
+    assert_eq!(*distance, 2.5);
+    assert_eq!(*u_sense, 0);
+    assert_eq!(*v_sense, 0);
+    assert!(extension_flags.is_empty());
+    assert_ne!(procedural.surface, *support);
+    assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+    assert!(matches!(
+        result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == procedural.surface)
+            .expect("offset carrier")
+            .geometry,
+        SurfaceGeometry::Unknown { .. }
+    ));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_tracks_fully_extended_offset_common_header() {
+    let stream = offset_surface_with_fully_extended_common_header();
+    assert_eq!(crate::topology::offset_surfaces(&stream).len(), 1);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let procedural = result
+        .ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("offset surface");
+    let ProceduralSurfaceDefinition::Offset {
+        support, distance, ..
+    } = &procedural.definition
+    else {
+        panic!("offset definition");
+    };
+    assert_eq!(*distance, 2.5);
+    assert_ne!(procedural.surface, *support);
+    assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+}
+
+#[test]
+fn decode_tracks_fully_extended_compact_geometry_headers() {
+    let mut blend = blend_surface_topology_partition_stream();
+    fully_extend_common_header(&mut blend, [0, 56, 0, 12]);
+    assert_eq!(crate::topology::blend_surfaces(&blend).len(), 1);
+
+    let mut intersection = intersection_curve_topology_partition_stream();
+    fully_extend_common_header(&mut intersection, [0, 38, 0, 12]);
+    assert_eq!(crate::topology::composite_curves(&intersection).len(), 1);
+
+    let mut surface_curve = surface_curve_topology_partition_stream();
+    fully_extend_common_header(&mut surface_curve, [0, 137, 0, 12]);
+    assert_eq!(crate::topology::surface_curves(&surface_curve), [(12, 9)]);
+
+    let mut trimmed = trimmed_topology_partition_stream();
+    fully_extend_common_header(&mut trimmed, [0, 133, 0, 12]);
+    let trims = crate::topology::trimmed_curves(&trimmed);
+    assert_eq!(trims.len(), 1);
+    assert_eq!(trims[0].parameters, [0.25, 0.75]);
+
+    let mut bspline = bspline_partition_stream();
+    fully_extend_common_header(&mut bspline, [0, 124, 0, 10]);
+    fully_extend_common_header(&mut bspline, [0, 134, 0, 50]);
+    let mut cur = Cursor::new(prt_with_partition(&bspline));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| matches!(surface.geometry, SurfaceGeometry::Nurbs(_))));
+    assert!(result
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| matches!(curve.geometry, CurveGeometry::Nurbs(_))));
+}
+
+#[test]
+fn decode_resolves_surface_curve_to_its_basis_curve() {
+    let stream = surface_curve_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(
+        result.ir.model.edges[0].curve.as_ref(),
+        Some(&result.ir.model.curves[0].id)
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_emits_rolling_ball_blend_surface() {
+    let stream = blend_surface_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let procedural = result
+        .ir
+        .model
+        .procedural_surfaces
+        .first()
+        .expect("blend surface");
+    let ProceduralSurfaceDefinition::Blend {
+        supports,
+        radius,
+        cross_section,
+        spine,
+        native,
+    } = &procedural.definition
+    else {
+        panic!("blend definition");
+    };
+    assert_eq!(*cross_section, BlendCrossSection::Circular);
+    assert_eq!(*radius, BlendRadiusLaw::Constant { signed_radius: 3.0 });
+    assert_eq!(supports[0].as_ref().map(|side| side.reversed), Some(true));
+    assert_eq!(supports[1].as_ref().map(|side| side.reversed), Some(false));
+    assert!(spine.is_none());
+    assert!(native.is_none());
+    assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_emits_blend_with_extended_support_reference() {
+    let stream = blend_surface_with_extended_support_reference();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    assert_eq!(
+        result.ir.model.faces[0].surface,
+        result.ir.model.procedural_surfaces[0].surface
+    );
+}
+
+#[test]
+fn decode_preserves_intersection_curve_as_connected_carrier() {
+    let stream = intersection_curve_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let edge_curve = result.ir.model.edges[0].curve.as_ref().expect("edge curve");
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == edge_curve)
+        .expect("intersection carrier");
+    assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    assert_eq!(result.ir.model.procedural_curves[0].curve, curve.id);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_preserves_deltas_intersection_data_curve() {
+    let stream = deltas_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    assert_eq!(
+        result.ir.model.edges[0].curve.as_ref(),
+        Some(&result.ir.model.procedural_curves[0].curve)
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_reports_status_framed_deltas_records_and_tombstones() {
+    let stream = status_framed_deltas_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let attributes = &result.ir.source.expect("source metadata").attributes;
+
+    assert_eq!(
+        attributes.get("deltas.0.full.FACE").map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        attributes
+            .get("deltas.0.tombstone.EDGE")
+            .map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        attributes.get("deltas.0.grammar").map(String::as_str),
+        Some("status_byte_framed_topology")
+    );
+}
+
+#[test]
+fn decode_reports_variable_deltas_records_with_extended_xmt() {
+    let stream = variable_status_framed_deltas_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let attributes = &result.ir.source.expect("source metadata").attributes;
+
+    assert_eq!(
+        attributes.get("deltas.0.full.FIN").map(String::as_str),
+        Some("1")
+    );
+    assert_eq!(
+        attributes.get("deltas.0.full.LOOP").map(String::as_str),
+        Some("1")
+    );
+}
+
+#[test]
+fn decode_emits_charted_surface_intersection_construction() {
+    let stream = charted_intersection_curve_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let procedural = result
+        .ir
+        .model
+        .procedural_curves
+        .first()
+        .expect("intersection construction");
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == procedural.curve)
+        .expect("solved chart cache");
+    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+        panic!("charted NURBS cache");
+    };
+    assert_eq!(nurbs.degree, 1);
+    assert_eq!(nurbs.control_points[0].x, 0.0);
+    assert_eq!(nurbs.control_points[1].x, 10.0);
+    assert_eq!(procedural.cache_fit_tolerance, Some(0.01));
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
+        &procedural.definition
+    else {
+        panic!("typed surface intersection");
+    };
+    assert!(context.sides[0].surface.is_some());
+    assert!(context.sides[0].pcurve.is_some());
+    assert!(context.sides[1].surface.is_none());
+    assert_eq!(context.parameter_range, [0.0, 0.01]);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_emits_ext11_deltas_intersection_chart() {
+    let stream = ext11_charted_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let curve_id = &result.ir.model.procedural_curves[0].curve;
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == curve_id)
+        .expect("intersection cache");
+    let CurveGeometry::Nurbs(nurbs) = &curve.geometry else {
+        panic!("NURBS chart cache");
+    };
+    assert_eq!(nurbs.control_points[1].x, 10.0);
+    assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.01, 0.01]);
+}
+
+#[test]
+fn decode_emits_both_intersection_support_pcurves() {
+    let stream = two_support_charted_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    assert!(context.sides[0].surface.is_some());
+    assert!(context.sides[0].pcurve.is_some());
+    assert!(context.sides[1].surface.is_some());
+    assert!(context.sides[1].pcurve.is_some());
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_resolves_intersection_second_support_through_blend_bound() {
+    let stream = blend_bound_charted_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    let second = context.sides[1].surface.as_ref().expect("bridged support");
+    assert_ne!(context.sides[0].surface.as_ref(), Some(second));
+    assert!(context.sides[1].pcurve.is_some());
+}
+
+#[test]
+fn decode_emits_inline_descriptor_intersection_witnesses() {
+    let stream = inline_descriptor_intersection_curve_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(matches!(
+        result.ir.model.procedural_curves[0].definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+    ));
+    assert!(matches!(
+        result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id == result.ir.model.procedural_curves[0].curve)
+            .expect("intersection curve")
+            .geometry,
+        CurveGeometry::Nurbs(_)
+    ));
 }
 
 #[test]
@@ -735,6 +1603,75 @@ fn decode_resolves_extended_xmt_reference_inside_edge_record() {
 }
 
 #[test]
+fn decode_tracks_extended_face_reference_shift() {
+    let mut cur = Cursor::new(prt_with_partition(
+        &topology_with_extended_face_attribute_reference(),
+    ));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.2));
+    assert_eq!(
+        result.ir.model.faces[0].surface,
+        result.ir.model.surfaces[0].id
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_tracks_extended_edge_reference_shift() {
+    let mut cur = Cursor::new(prt_with_partition(
+        &topology_with_extended_edge_attribute_reference(),
+    ));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.3));
+    assert_eq!(
+        result.ir.model.edges[0].curve.as_ref(),
+        Some(&result.ir.model.curves[0].id)
+    );
+}
+
+#[test]
+fn decode_tracks_all_extended_topology_reference_shifts() {
+    let mut cur = Cursor::new(prt_with_partition(
+        &topology_with_extended_internal_topology_references(),
+    ));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.shells.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.1));
+    assert_eq!(result.ir.model.points[0].position.x, 10.0);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_tracks_fully_extended_geometry_header_shift() {
+    let mut cur = Cursor::new(prt_with_partition(
+        &topology_with_fully_extended_geometry_headers(),
+    ));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        SurfaceGeometry::Plane { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.curves[0].geometry,
+        CurveGeometry::Line { .. }
+    ));
+}
+
+#[test]
 fn cylinder_gate_rejects_denormal_radius() {
     // A coincidental byte alignment can present a unit axis and a model-scale
     // origin alongside a denormal (near-zero) double at the radius slot; the radius
@@ -781,6 +1718,46 @@ fn container_reads_rmfastload_active_ids() {
         container.rmfastload_object_ids(),
         (1..=50).collect::<Vec<_>>()
     );
+}
+
+#[test]
+fn decode_selects_dominant_rmfastload_body() {
+    let mut cur = Cursor::new(prt_with_two_bodies_and_rmfastload());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert!(result.ir.model.bodies[0].id.0.starts_with("nx:s0:"));
+    assert_eq!(result.ir.model.faces.len(), 50);
+    assert!(result
+        .ir
+        .model
+        .faces
+        .iter()
+        .all(|face| face.id.0.starts_with("nx:s0:")));
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .and_then(|source| source.attributes.get("active_body_selector"))
+            .map(String::as_str),
+        Some("rmfastload_object_id_membership")
+    );
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
+    let mut cur = Cursor::new(prt_with_weak_rmfastload_overlap());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert!(result
+        .ir
+        .source
+        .as_ref()
+        .is_none_or(|source| !source.attributes.contains_key("active_body_selector")));
 }
 
 #[test]

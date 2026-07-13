@@ -8,7 +8,7 @@
 //! from the graph.
 
 use cadmpeg_ir::be;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// A supported fixed-record node with its XMT identifier and source offset.
 #[derive(Debug, Clone)]
@@ -23,7 +23,94 @@ pub struct Node {
     bytes: Vec<u8>,
 }
 
+/// Decoded fields needed from a sequentially framed FACE record.
+#[derive(Debug, Clone, Copy)]
+pub struct FaceFields {
+    /// Face tolerance in Parasolid metres.
+    pub tolerance: f64,
+    /// First loop reference.
+    pub loop_xmt: u32,
+    /// Owning shell reference.
+    pub shell: u32,
+    /// Surface-carrier reference.
+    pub surface: u32,
+    /// Stored orientation byte.
+    pub sense: u8,
+}
+
+/// Decoded fields needed from a sequentially framed EDGE record.
+#[derive(Debug, Clone, Copy)]
+pub struct EdgeFields {
+    /// Edge tolerance in Parasolid metres.
+    pub tolerance: f64,
+    /// First fin reference.
+    pub fin: u32,
+    /// Curve-carrier reference.
+    pub curve: u32,
+}
+
+/// Sequentially decoded SHELL references.
+#[derive(Debug, Clone, Copy)]
+pub struct ShellFields {
+    /// Owning body.
+    pub body: u32,
+    /// First face in the shell.
+    pub first_face: u32,
+}
+
+/// Sequentially decoded LOOP references.
+#[derive(Debug, Clone, Copy)]
+pub struct LoopFields {
+    /// First fin in the loop.
+    pub fin: u32,
+    /// Owning face.
+    pub face: u32,
+}
+
+/// Sequentially decoded FIN references and sense.
+#[derive(Debug, Clone, Copy)]
+pub struct FinFields {
+    /// Owning loop.
+    pub loop_xmt: u32,
+    /// Forward fin in the ring.
+    pub forward: u32,
+    /// Backward fin in the ring.
+    pub backward: u32,
+    /// Vertex at this fin.
+    pub vertex: u32,
+    /// Edge carried by this fin.
+    pub edge: u32,
+    /// Partner fin on the opposite side of the edge.
+    pub other: u32,
+    /// Curve carried by this fin.
+    pub curve_xmt: u32,
+    /// Stored orientation byte.
+    pub sense: u8,
+}
+
+/// Sequentially decoded VERTEX fields.
+#[derive(Debug, Clone, Copy)]
+pub struct VertexFields {
+    /// Referenced point record.
+    pub point: u32,
+    /// Vertex tolerance in Parasolid metres.
+    pub tolerance: f64,
+}
+
 impl Node {
+    /// Locate the payload following the five-reference compact geometry header.
+    pub fn compact_tail_offset(&self) -> Option<usize> {
+        let mut at = 8 + self.shift;
+        read_sequence_at(&self.bytes, &mut at, 5)?;
+        matches!(self.bytes.get(at), Some(b'+' | b'-')).then_some(at + 1)
+    }
+
+    /// Decode adjacent references at the start of a compact geometry payload.
+    pub fn compact_tail_references(&self, count: usize) -> Option<Vec<u32>> {
+        let mut at = self.compact_tail_offset()?;
+        read_sequence_at(&self.bytes, &mut at, count)
+    }
+
     /// Read an XMT reference at a logical record offset.
     pub fn xmt_at(&self, offset: usize) -> Option<u32> {
         read_xmt(&self.bytes, offset + self.shift).map(|(xmt, _)| xmt)
@@ -50,6 +137,114 @@ impl Node {
     pub fn f64_at(&self, offset: usize) -> Option<f64> {
         be::f64_at(&self.bytes, offset + self.shift)
     }
+
+    /// Read a big-endian unsigned 32-bit field at a logical record offset.
+    pub fn u32_at(&self, offset: usize) -> Option<u32> {
+        be::u32_at(&self.bytes, offset + self.shift)
+    }
+
+    /// Read a floating-point field immediately after an XMT reference.
+    pub fn f64_after_xmt(&self, offset: usize) -> Option<f64> {
+        let (_, extra) = read_xmt(&self.bytes, offset + self.shift)?;
+        be::f64_at(&self.bytes, offset + self.shift + 2 + extra)
+    }
+
+    /// Read a floating-point field immediately after adjacent XMT references.
+    pub fn f64_after_xmt_sequence(&self, offset: usize, count: usize) -> Option<f64> {
+        let mut at = offset + self.shift;
+        for _ in 0..count {
+            let (_, extra) = read_xmt(&self.bytes, at)?;
+            at += 2 + extra;
+        }
+        be::f64_at(&self.bytes, at)
+    }
+
+    /// Decode FACE fields while accumulating every preceding large-index shift.
+    pub fn face_fields(&self) -> Option<FaceFields> {
+        (self.kind == 14).then_some(())?;
+        let mut at = 8 + self.shift;
+        read_and_advance(&self.bytes, &mut at)?;
+        let tolerance = be::f64_at(&self.bytes, at)?;
+        at += 8;
+        let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
+        let sense = *self.bytes.get(at)?;
+        matches!(sense, b'+' | b'-').then_some(())?;
+        Some(FaceFields {
+            tolerance,
+            loop_xmt: refs[2],
+            shell: refs[3],
+            surface: refs[4],
+            sense,
+        })
+    }
+
+    /// Decode EDGE fields while accumulating every preceding large-index shift.
+    pub fn edge_fields(&self) -> Option<EdgeFields> {
+        (self.kind == 16).then_some(())?;
+        let mut at = 8 + self.shift;
+        read_and_advance(&self.bytes, &mut at)?;
+        let tolerance = be::f64_at(&self.bytes, at)?;
+        at += 8;
+        let refs = read_sequence_at(&self.bytes, &mut at, 7)?;
+        Some(EdgeFields {
+            tolerance,
+            fin: refs[0],
+            curve: refs[3],
+        })
+    }
+
+    /// Decode SHELL references with cumulative large-index shifts.
+    pub fn shell_fields(&self) -> Option<ShellFields> {
+        (self.kind == 13).then_some(())?;
+        let mut at = 8 + self.shift;
+        let refs = read_sequence_at(&self.bytes, &mut at, 8)?;
+        Some(ShellFields {
+            body: refs[1],
+            first_face: refs[3],
+        })
+    }
+
+    /// Decode LOOP references with cumulative large-index shifts.
+    pub fn loop_fields(&self) -> Option<LoopFields> {
+        (self.kind == 15).then_some(())?;
+        let mut at = 8 + self.shift;
+        let refs = read_sequence_at(&self.bytes, &mut at, 4)?;
+        Some(LoopFields {
+            fin: refs[1],
+            face: refs[2],
+        })
+    }
+
+    /// Decode FIN references with cumulative large-index shifts.
+    pub fn fin_fields(&self) -> Option<FinFields> {
+        (self.kind == 17).then_some(())?;
+        let mut at = 4 + self.shift;
+        let refs = read_sequence_at(&self.bytes, &mut at, 9)?;
+        let sense = *self.bytes.get(at)?;
+        matches!(sense, b'+' | b'-').then_some(())?;
+        Some(FinFields {
+            loop_xmt: refs[1],
+            forward: refs[2],
+            backward: refs[3],
+            vertex: refs[4],
+            other: refs[5],
+            edge: refs[6],
+            curve_xmt: refs[7],
+            sense,
+        })
+    }
+
+    /// Decode VERTEX fields with cumulative large-index shifts.
+    pub fn vertex_fields(&self) -> Option<VertexFields> {
+        (self.kind == 18).then_some(())?;
+        let mut at = 8 + self.shift;
+        let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
+        let tolerance = be::f64_at(&self.bytes, at)?;
+        Some(VertexFields {
+            point: refs[4],
+            tolerance,
+        })
+    }
 }
 
 /// An index of supported records keyed by `(node type, XMT identifier)`.
@@ -70,6 +265,192 @@ pub struct TrimmedCurve {
     pub parameters: [f64; 2],
 }
 
+/// A type-60 offset surface referencing its support carrier.
+#[derive(Debug, Clone, Copy)]
+pub struct OffsetSurface {
+    /// Cross-reference index of the offset surface record.
+    pub xmt: u32,
+    /// Cross-reference index of the support surface.
+    pub support: u32,
+    /// Signed offset distance in millimetres.
+    pub distance: f64,
+    /// Record type-tag offset in the inflated stream.
+    pub pos: usize,
+}
+
+/// A type-56 rolling-ball blend surface.
+#[derive(Debug, Clone, Copy)]
+pub struct BlendSurface {
+    /// Cross-reference index of the blend surface record.
+    pub xmt: u32,
+    /// Ordered support-surface references.
+    pub supports: [u32; 2],
+    /// Signed support offsets in millimetres.
+    pub offsets: [f64; 2],
+    /// Record type-tag offset in the inflated stream.
+    pub pos: usize,
+}
+
+/// A type-38 surface-intersection construction record.
+#[derive(Debug, Clone, Copy)]
+pub struct CompositeCurve {
+    /// Cross-reference index of the curve record.
+    pub xmt: u32,
+    /// Six ordered construction references.
+    pub references: [u32; 6],
+    /// Record type-tag offset in the inflated stream.
+    pub pos: usize,
+}
+
+/// Decode validated type-38 surface-intersection construction records.
+pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
+    Graph::parse(stream)
+        .of_kind(38)
+        .filter_map(|node| {
+            let mut at = node.compact_tail_offset()?;
+            let references: [u32; 6] =
+                read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
+            (references[0] > 1 || references[1] > 1).then_some(CompositeCurve {
+                xmt: node.xmt,
+                references,
+                pos: node.pos,
+            })
+        })
+        .collect()
+}
+
+/// Decode single-byte `0x5a` intersection-data construction records.
+pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
+    let mut out = Vec::new();
+    let mut seen = BTreeSet::new();
+    for pos in stream
+        .iter()
+        .enumerate()
+        .filter_map(|(pos, byte)| (*byte == 0x5a).then_some(pos))
+    {
+        let Some((xmt, xmt_extra)) = read_xmt(stream, pos + 1) else {
+            continue;
+        };
+        if xmt <= 1 || !seen.insert(xmt) {
+            continue;
+        }
+        let mut at = pos + 1 + 2 + xmt_extra + 4;
+        let mut header_refs = [0u32; 5];
+        let mut valid = true;
+        for reference in &mut header_refs {
+            let Some((value, extra)) = read_xmt(stream, at) else {
+                valid = false;
+                break;
+            };
+            *reference = value;
+            at += 2 + extra;
+        }
+        if !valid || header_refs[0] != 1 {
+            continue;
+        }
+        if header_refs[4] != 1
+            && !stream[..pos]
+                .windows(b"intersection_data".len())
+                .rev()
+                .take(64)
+                .any(|window| window == b"intersection_data")
+        {
+            continue;
+        }
+        if !matches!(stream.get(at), Some(b'+' | b'-')) {
+            continue;
+        }
+        at += 1;
+        let mut references = [0u32; 6];
+        for reference in &mut references {
+            let Some((value, extra)) = read_xmt(stream, at) else {
+                valid = false;
+                break;
+            };
+            *reference = value;
+            at += 2 + extra;
+        }
+        if valid && (references[0] > 1 || references[1] > 1) {
+            out.push(CompositeCurve {
+                xmt,
+                references,
+                pos,
+            });
+        }
+    }
+    out
+}
+
+/// Decode validated type-56 rolling-ball blend surfaces.
+pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
+    Graph::parse(stream)
+        .of_kind(56)
+        .filter_map(|node| {
+            let mut at = node.compact_tail_offset()?;
+            (*node.bytes.get(at)? == b'R').then_some(())?;
+            at += 1;
+            let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+            let values = [
+                be::f64_at(&node.bytes, at)?,
+                be::f64_at(&node.bytes, at + 8)?,
+                be::f64_at(&node.bytes, at + 16)?,
+                be::f64_at(&node.bytes, at + 24)?,
+            ];
+            if !values.iter().all(|value| value.is_finite())
+                || node.bytes.get(at + 32..at + 40)? != [0, 1, 0, 1, 0, 1, 0, 1]
+                || refs[0] <= 1
+                || refs[1] <= 1
+                || (values[0].abs() - values[1].abs()).abs() > 1.0e-9
+            {
+                return None;
+            }
+            Some(BlendSurface {
+                xmt: node.xmt,
+                supports: [refs[0], refs[1]],
+                offsets: [values[0] * 1000.0, values[1] * 1000.0],
+                pos: node.pos,
+            })
+        })
+        .collect()
+}
+
+/// Decode validated type-60 offset-surface records.
+pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
+    Graph::parse(stream)
+        .of_kind(60)
+        .filter_map(|node| {
+            let mut at = node.compact_tail_offset()?;
+            matches!(node.bytes.get(at)?, b'V' | b'I' | b'U').then_some(())?;
+            at += 1;
+            matches!(node.bytes.get(at)?, 0 | 1).then_some(())?;
+            at += 1;
+            let support = read_and_advance(&node.bytes, &mut at)?;
+            let distance = be::f64_at(&node.bytes, at)?;
+            (support > 1 && distance.is_finite() && distance.abs() <= 1_000.0).then_some(
+                OffsetSurface {
+                    xmt: node.xmt,
+                    support,
+                    distance: distance * 1000.0,
+                    pos: node.pos,
+                },
+            )
+        })
+        .collect()
+}
+
+/// Decode type-137 surface-curve records as aliases of their 3D basis curves.
+pub fn surface_curves(stream: &[u8]) -> Vec<(u32, u32)> {
+    Graph::parse(stream)
+        .of_kind(137)
+        .filter_map(|node| {
+            let mut at = node.compact_tail_offset()?;
+            let refs = read_sequence_at(&node.bytes, &mut at, 3)?;
+            let tolerance = be::f64_at(&node.bytes, at)?;
+            (refs[0] > 1 && refs[1] > 1 && tolerance.is_finite()).then_some((node.xmt, refs[1]))
+        })
+        .collect()
+}
+
 /// Decode supported type-133 trimmed-curve records.
 ///
 /// The result retains the basis-curve reference and parameter range. Topological
@@ -78,9 +459,10 @@ pub fn trimmed_curves(stream: &[u8]) -> Vec<TrimmedCurve> {
     Graph::parse(stream)
         .of_kind(133)
         .filter_map(|node| {
-            let basis = node.xmt_at(19)?;
-            let p0 = node.bytes.get(69 + node.shift..77 + node.shift)?;
-            let p1 = node.bytes.get(77 + node.shift..85 + node.shift)?;
+            let mut at = node.compact_tail_offset()?;
+            let basis = read_and_advance(&node.bytes, &mut at)?;
+            let p0 = node.bytes.get(at + 48..at + 56)?;
+            let p1 = node.bytes.get(at + 56..at + 64)?;
             let p0 = f64::from_be_bytes(p0.try_into().ok()?);
             let p1 = f64::from_be_bytes(p1.try_into().ok()?);
             (basis > 1 && p0.is_finite() && p1.is_finite()).then_some(TrimmedCurve {
@@ -111,7 +493,10 @@ impl Graph {
             if xmt <= 1 {
                 continue;
             }
-            let Some(bytes) = stream.get(pos..pos + len + shift) else {
+            let Some(payload_shift) = payload_shift(stream, pos, kind, shift) else {
+                continue;
+            };
+            let Some(bytes) = stream.get(pos..pos + len + shift + payload_shift) else {
                 continue;
             };
             let node = Node {
@@ -144,6 +529,101 @@ impl Graph {
     }
 }
 
+fn payload_shift(stream: &[u8], pos: usize, kind: u8, header_shift: usize) -> Option<usize> {
+    if kind == 14 {
+        let mut at = pos + 8 + header_shift;
+        let start = at;
+        read_and_advance(stream, &mut at)?;
+        at += 8;
+        read_sequence_at(stream, &mut at, 5)?;
+        at += 1;
+        read_sequence_at(stream, &mut at, 5)?;
+        return Some(at - start - 31);
+    }
+    if kind == 16 {
+        let mut at = pos + 8 + header_shift;
+        let start = at;
+        read_and_advance(stream, &mut at)?;
+        at += 8;
+        read_sequence_at(stream, &mut at, 7)?;
+        return Some(at - start - 24);
+    }
+    let (offset, before, trailing_bytes, after) = match kind {
+        13 => (8, 8, 0, 0),
+        15 => (8, 4, 0, 0),
+        17 => (4, 9, 1, 0),
+        18 => (8, 5, 8, 1),
+        29 => (8, 4, 24, 0),
+        _ => (0, 0, 0, 0),
+    };
+    if before != 0 {
+        let mut at = pos + offset + header_shift;
+        let start = at;
+        read_sequence_at(stream, &mut at, before)?;
+        at += trailing_bytes;
+        read_sequence_at(stream, &mut at, after)?;
+        let compact = before * 2 + trailing_bytes + after * 2;
+        return Some(at - start - compact);
+    }
+    let compact_kind = matches!(
+        kind,
+        30..=32 | 38 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
+    );
+    if !compact_kind {
+        return Some(0);
+    }
+    let mut at = pos + 8 + header_shift;
+    let start = at;
+    read_sequence_at(stream, &mut at, 5)?;
+    matches!(stream.get(at), Some(b'+' | b'-')).then_some(())?;
+    at += 1;
+    let common_extra = at - start - 11;
+    let tail_start = at;
+    match kind {
+        38 => {
+            read_sequence_at(stream, &mut at, 6)?;
+        }
+        56 => {
+            at += 1;
+            read_sequence_at(stream, &mut at, 3)?;
+        }
+        60 => {
+            at += 2;
+            read_and_advance(stream, &mut at)?;
+        }
+        124 | 134 => {
+            read_sequence_at(stream, &mut at, 2)?;
+        }
+        133 => {
+            read_and_advance(stream, &mut at)?;
+        }
+        137 => {
+            read_sequence_at(stream, &mut at, 3)?;
+        }
+        _ => {}
+    }
+    let compact_tail_len = match kind {
+        38 => 12,
+        56 => 7,
+        60 => 4,
+        124 | 134 => 4,
+        133 => 2,
+        137 => 6,
+        _ => 0,
+    };
+    Some(common_extra + at - tail_start - compact_tail_len)
+}
+
+fn read_and_advance(stream: &[u8], at: &mut usize) -> Option<u32> {
+    let (value, extra) = read_xmt(stream, *at)?;
+    *at += 2 + extra;
+    Some(value)
+}
+
+fn read_sequence_at(stream: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
+    (0..count).map(|_| read_and_advance(stream, at)).collect()
+}
+
 /// Decode the compact and extended XMT forms. The extended form uses a negative
 /// signed remainder followed by a quotient: `quotient * 32767 + remainder`.
 fn read_xmt(stream: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -170,13 +650,17 @@ fn fixed_len(kind: u8) -> Option<usize> {
         30 => 67,
         31 => 99,
         32 => 107,
+        38 => 31,
         50 => 91,
         51 => 99,
         52 => 115,
         53 => 99,
         54 => 107,
+        56 => 66,
+        60 => 39,
         124 | 134 => 23,
         133 => 85,
+        137 => 33,
         _ => return None,
     })
 }

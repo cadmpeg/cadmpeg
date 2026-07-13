@@ -48,15 +48,17 @@
 //! partitions are not combined through NX feature-history Booleans. Assembly
 //! files may contain only references to external child parts.
 //!
-//! Procedural blend surfaces, design history, assembly occurrence placement,
-//! materials, appearances, attributes, tessellation, and `.prt` writing are not
-//! supported. The public submodules expose the lower-level container, stream,
-//! geometry, NURBS, and topology decoders; applications that need a complete IR
+//! Design history, assembly occurrence placement, materials, appearances,
+//! attributes, tessellation, and `.prt` writing are not supported. The public
+//! submodules expose the lower-level container, stream, geometry, NURBS,
+//! intersection, and topology decoders; applications that need a complete IR
 //! entry point should use [`NxCodec`].
 
 pub mod container;
 pub mod decode;
+pub mod deltas;
 pub mod geometry;
+pub mod intersection;
 pub mod nurbs;
 pub mod parasolid;
 pub mod topology;
