@@ -67,7 +67,7 @@ The inner sub-container stores fragmented named streams and a stream directory. 
 
 ### 3.3 FINJPL segments
 
-`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. An E5 stream may live in a FINJPL segment; storage type `0x0000008e` is the E5-blob carrier when multiple candidate E5 walks exist.
+`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. An E5 stream candidate is coherent when at least ten records walk by their declared strides. A coherent preamble wins; otherwise the segment with the largest valid walk wins, with storage type `0x0000008e` breaking equal-count ties.
 
 ### 3.4 Nested-container stream directory
 
@@ -109,6 +109,7 @@ A parallel representation of faces/edges/vertices indexed by the same topologica
 | Marker                                | Region                     | Meaning                                                                  |
 | ------------------------------------- | -------------------------- | ------------------------------------------------------------------------ |
 | `FINJPL  `                            | after outer preamble       | starts named stream blocks                                               |
+| `7C 02`                               | outer preamble             | total-length-framed source-schema string catalog                         |
 | `7C 05` / `7C 08` / `7C 09` / `7C 0A` | outer preamble             | entity table / object-graph root / object records / tagged-atom payloads |
 | `7C D9`                               | outer preamble             | literal float-data bytes (not a framed record family)                    |
 | `30 04 04 ff`                         | inner body                 | face outer-bound (FBB) spine row marker                                  |
@@ -240,13 +241,13 @@ The `00 33 30` byte is only the kind tag; geometry is a dedicated 174-byte `b2 0
 The object stream is a contiguous run of length-framed records in two width-prefixed families.
 
 ```text
-A-family (u32 length):  byte0 = 0xA4 + W  (a5/a6/a7 for W=1/2/3), byte1 low nibble 0x03
+A-family (u32 length):  byte0 = 0xA4 + W  (a5/a6/a7 for W=1/2/3), flag 0x03/0x13/0x83
   +2 class  +3 payload_len:u32le  +7 header_token (W bytes)  payload @ +7+W  next @ +7+W+payload_len
 B-family (u8 length):   byte0 = 0xB1 + W  (b2/b3/b4), flag bytes 0x03/0x13/0x83
   +2 class  +3 payload_len:u8  +4 header_token (W bytes)  payload @ +4+W  next @ +4+W+payload_len
 ```
 
-The header token is a small repeating type code, **not** a per-record object id. The frame is length-closed (walking lands exactly on each next record and on the cluster end). A literal marker scan (e.g. `find b"\xa5\x03\x20"`) is both lossy (misses wide-header `a6`/`a7` records, real geometry) and noisy (in-payload coincidences); census by the frame walk, not by marker hits. The compact integer code (shared by `4n+1` header ints and leading operands): read byte `F`: if `F ≡ 1 (mod 4)` value is `(F−1)/4`; if `F = 4·w`, value is the next `w` bytes LE.
+Header width and flag are independent; all three flags occur with width-1 records and wide records retain flag `0x03`. The header token is a small repeating type code, **not** a per-record object id. The frame is length-closed (walking lands exactly on each next record and on the cluster end). A literal marker scan (e.g. `find b"\xa5\x03\x20"`) is both lossy (misses wide-header `a6`/`a7` records, real geometry) and noisy (in-payload coincidences); census by the frame walk, not by marker hits. The compact integer code (shared by `4n+1` header ints and leading operands): read byte `F`: if `F ≡ 1 (mod 4)` value is `(F−1)/4`; if `F = 4·w`, value is the next `w` bytes LE.
 
 ### 6.1 `a5 03 34` freeform surface (consolidated class)
 
@@ -262,32 +263,65 @@ Frames an explicit 3D spline support (a swept band around a freeform curve). Hea
 
 A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is an absolute persistent CGM object tag. The `mode/offset` byte encodes the leading-extrapolation count `q = (mode−1)/4`.
 
-### 6.4 `b2 03 28/31/30` analytic support / offset / construction records
+`b2 03 20` is the B-family form with the same support reference, degree, knot-site parameters, U/V values, first derivatives, second derivatives, and native range. Wide `a6/a7` and `b3/b4` records use identical payload grammars.
 
-- **`b2 03 28`** analytic cylinder support (90 B): origin, a frame token (`0x19` = stored 2-vector is the axis; `0x1c` = it is the ref direction, `axis = ±(vy,−vx,0)`), radius, u/v ranges. The HI-pool pcurves lift onto it by an **arc-length chart** `u = radius·angle(P about axis from ref), v = (P−origin)·axis`.
+### 6.4 Consolidated guide and topology metadata
+
+- **`a5 03 39`** stores `K`, degree, repeated `K`, distinct knots, three `K × 6 × f64le` blocks, and a 48-byte tail. Each position-site pair is two triples `(P,Q)` satisfying `|Q−P|=1`; `P` is a guide-curve point and `Q−P` is its unit reference direction. The next two blocks contain first and second derivatives of all six channels.
+- **`b2 03 18`** stores surface-chart data after a two-byte payload prefix. Length `0x12` is `(u,v)`, `0x1a` is `(station,u,v)`, and `0x2a` is five unsplit f64 values.
+- **`b2 03 37`** stores a compact-int persistent-tag reference list followed by f64 `1.0`; its payload length is `0x22`, `0x24`, or `0x26`.
+- **`b2 03 3b`** has payload length `0x20`: compact references followed by f64 angular scale and cone half-angle.
+- **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine f64 values. The repeated range is the native parameter interval shared by the two preceding pcurves.
+
+### 6.5 `b2 03 19/28/29/31/30/60` support and construction records
+
+- **`b2 03 19`** stores a compact record id and five f64 values `(c1,c2,radius,arc_lo,arc_hi)`. The interval is arc length; a full circle satisfies `arc_hi−arc_lo=2πr`.
+- **`b2 03 28`** analytic cylinder support: layout `0x5a` stores origin, a frame token (`0x19` = stored 2-vector is the axis; `0x1c` = it is the ref direction and `axis=(vy,−vx,0)`), radius, u/v ranges, and terminator. Layout `0x52` implies `axis=+x`, `ref=+y`. Layout `0x62` adds a phase tail but does not determine a complete carrier frame. Resolved cylinders use the arc-length chart `u = radius·angle(P about axis from ref), v = (P−origin)·axis`.
+- **`b2 03 29`** stores apex, two transverse unit vectors, axis, half-angle, angular offset, slant range, and angular scale. Its chart is `P(U,V)=apex+V·(cos(half)·axis+sin(half)·(cos(U/scale)·T1+sin(U/scale)·T2))`.
 - **`b2 03 31`** constant-offset support: `(carrier ref, signed offset d, carrier UV sub-domain box)`, defining `O(u,v) = S(u,v) + d·n(u,v)` reconstructed from the carrier's analytic NURBS partials; the offset is part-characteristic (a constant wall thickness).
 - **`b2 03 30`** construction-use wrapper with a `kind` discriminant: `0x01` offset (byte-equal to `b2 03 31`), `0x19` offset-of-fillet (`R_eff = R_support + |d|`), `{0x05,0x15}` variable-radius domain wrappers.
+- **`b2 03 65`** is the constant group separator `81 03 05 0d`.
+- **`b2 03 60`** is a two-compact-integer typed group opener. The first integer is the group id; type `3` opens a cylinder chain. Following `<pre> 03 28 5a <compact id>` frames carry the same 90-byte cylinder payload as standalone layout `0x5a` and belong to the type-3 group until the next opener.
 
-### 6.5 `a8 03` common object-stream freeform class
+### 6.6 `a8 03` common object-stream freeform class
 
 Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 03 32` stores a 3D curve and `a8 03 20` stores a pcurve.
 
 **In-stream object-id resolver:** `a8 03` and `b5 03` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
 
-### 6.6 Object-stream topology (`b5 03`)
+### 6.7 Object-stream topology (`b5 03`)
 
 - `b5 03 5f` (per-face node): first ref token names the surface (`b5 03 27` plane / `28` cylinder / `2d` revolution / `a8 03 34` bspline), resolved through the object-id map. The bspline subset binds injectively to `a8 03 34`. The `5f` stream rank is the native face ordinal.
 - `b5 03 62` (loop node): payload `<0x80 + n_refs> (pcurve_ref edge_ref)* surface_ref`, `n_refs` odd. Member ref tokens use the E5-style compact set (`18`/`38`/`10 <hi>`=hi<<8/`08 <lo>`/`30 <lo><hi>`=(u16le)<<8).
 - `b5 03 21` (pcurve): `catia_support_ref` is the owning surface's `object_id` directly. The 3D edge is the pcurve lifted through the surface (plane / cylinder arc-length `θ=u/r` / surface-of-revolution / bspline), and the clamped end poles land on `05 08 01` vertices to f32 round-trip.
 - `b5 03 27/28/2d` analytic surfaces: plane origin+normal, cylinder origin+axis+radius, revolution axis origin+direction.
 
-**Object-stream topology:** `b5 03 5f` nodes are faces in native ordinal order. Distinct `b5 03 5e` identifiers referenced by loop nodes are physical edges. Each `b5 03 62` node defines one loop and stores its ordered edge occurrences. A paired pcurve lifted through its carrier defines the edge curve, and its endpoints coincide with `05 08 01` vertex rows. Pcurve degree and carrier identify lines, circles, and B-splines. An object-stream file contains one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
+**Object-stream topology:** `b5 03 5f` nodes are faces in native ordinal order. Distinct `b5 03 5e` identifiers referenced by loop nodes are physical edges. Each `b5 03 62` node defines one loop and stores its ordered edge occurrences. A paired pcurve lifted through its carrier defines the edge curve, and its endpoints coincide with unique `05 08 01` vertex rows. The fixed serialized loop sequence has exactly one head-to-tail endpoint-sense assignment when it represents a closed boundary. Pcurve degree and carrier identify lines, circles, and B-splines. An object-stream file contains one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
 
 ---
 
-## 7. Outer `7C08` object graph
+## 7. Outer schema and object records
+
+### 7.1 `7C02` source-schema catalogs
+
+```text
+catalog := 7C 02 <total_len:u32le> <count:atom> entry{count-1}
+entry   := <inclusive_len:u8> <ascii[inclusive_len-1]>
+```
+
+`total_len` includes the marker and length field. The entries consume the frame exactly. The first four entries are `CATCatalogManager`, `catalogManager`, `catalogLinks`, and the empty string. The catalog names source classes and fields available to the serialized object schema; a name does not declare an object instance.
+
+### 7.2 `7C08` object graph
 
 A nested total-length tree rooted at `7C 08`; each `7C09` object holds a lead-coded head and a `7C0A` tagged-atom payload. It is the **feature/object-ownership layer**, not the expanded face→loop→coedge table or the port→vertex collapse. `7C09` head: `<lead> 01 <owner_ref> <class_ref> [storage_ref]`; references are compact record ordinals, class refs are per-file prototype ordinals rather than global type codes. `7C0A` atoms: compact `0x80..0xD0` (value = byte−0x80), raw `0x51..0x7F`, **paged** `0xD1..0xE4 <byte>` (value = `(prefix−0xD1)·256 + byte + 1`, consumes 2 bytes, **not** little-endian-widened), escaped `0x80 <u32le>`. E5 blobs inside `7C0A` are templated descriptor records (≈59 or 46 bytes), not NURBS payloads. The class30 pair records and `76 ac 7f`-delimited handle table are coedge/half-edge sub-tables, not the port→vertex relation.
+
+### 7.3 `7C0B` value blocks
+
+```text
+value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
+```
+
+`declared_len` measures from the `7C0B` marker through the byte before the terminator. The complete block occupies `declared_len + 1` bytes. The trailing `FE` is followed immediately by the associated `7C02` source-schema catalog.
 
 ---
 
@@ -316,13 +350,13 @@ Framing `E5 0D 03 <cls> <sub> <payload_size_u16le> 00 00 00 <record_id_u32le> <p
 
 Classes: `0x01` body, `0x00` advanced face, `0x08` datum/template face, `0x09` edge loop, `0x0d` reference bundle, `0x0e` parameter-bound, `0x96`/`0x97` UV line/circle pcurve, `0xa0` complex/spline pcurve, `0xc0`/`0xc1` boundary/intersection curve support, `0xc8`/`0xc9`/`0xca`/`0xcc` plane/cylinder/cone/torus carrier, `0xfe` vertex, `0xff` trimmed edge-use.
 
-**Topology:** a face is `<0x81 + loop_count> <surface_ref> <loop_ref>* <01 00>`: loop location is structural (`loop_count==1` simply bounded, `>1` = 1 outer + `loop_count−1` holes; `Σ(loop_count−1)` = part hole count). A loop is `<0x81 + 2*edge_count> (pcurve_ref edge_use_ref)* surface_ref`. An edge-use (`0xff`) is `85 <curve_support_ref> <start_vertex> <end_vertex> <param_start> <param_end>`. **Vertex ref → index** is sorted-ref-rank, validated by the exact on-circle check (every circle edge's endpoints lie exactly on its decoded circle support to f32).
+**Topology:** a class-`0x01` body references one class-`0x08` root whose counted face roster names the body's class-`0x00` faces. A face is `<0x81 + loop_count> <surface_ref> <loop_ref>* <01 00>`: loop location is structural (`loop_count==1` simply bounded, `>1` = 1 outer + `loop_count−1` holes; `Σ(loop_count−1)` = part hole count). A loop is `<0x81 + 2*edge_count> (pcurve_ref edge_use_ref)* surface_ref`. An edge-use (`0xff`) is `85 <curve_support_ref> <start_vertex> <end_vertex> <param_start> <param_end>`. The paired pcurve must occur in the referenced `0xc0`/`0xc1` support. **Vertex ref → index** is sorted-ref-rank. The binding is valid only when each edge endpoint identity closes against decoded bytes: evaluating the paired pcurve through its referenced surface, or evaluating an explicit 3D curve carrier, yields the two mapped `05 08 01` coordinates within f32 precision.
 
 **E5 orientation** for non-digon loops is `absolute_sense = g_loop × relative_chain_sense`, where `relative_chain_sense` is the unique head-to-tail vertex-chain closure of the fixed cyclic member list. The per-loop sign `g_loop` follows manifold coherence: the `0xff` edge-sharing graph is a closed 2-manifold, every edge is referenced by exactly two loop members, and shared edges satisfy `g_A·g_B = −r_A·r_B`. One global sign per `0xff`-coherent component follows majority `face_trailer_sign` alignment. `ref_aligned_signs[1]` stores loop role: `+1` is outer and `−1` is inner.
 
 **E5 surface carriers** use these byte layouts: plane `0xc8` 90 B, cylinder/circle `0xc9` 137 B, cone `0xca` 185 B, and torus `0xcc` 201 B. **Edge curve descriptors** evaluate pcurves on their carriers: cylinder isoparametric curves yield circles or lines, torus isoparametric curves yield circles, and cone isoparametric curves yield circles. Torus and cone boundary UV pcurves are co-parameterized to the 3D edge angle parameter. The `0xa0` UV jet encodes a constant-speed circular arc with degree-5 C2 grammar; a square Hermite solve recovers `P/D/DD`.
 
-E5 `0x96` p-curves store `<surface_ref>, origin_u, origin_v, dir_u, dir_v, param_lo, param_hi` as f64 values. E5 `0x97` p-curves store `<surface_ref>, center_u, center_v, radius, param_lo, param_hi` with two intervening u32 fields. `0xc0` is a one-pcurve boundary support and `0xc1` is a two-pcurve intersection support. Edge type follows `0xff -> 0xc0/0xc1 -> pcurve -> carrier`.
+E5 `0x96` p-curves store `<surface_ref>, origin_u, origin_v, dir_u, dir_v, param_lo, param_hi` as f64 values. E5 `0x97` p-curves store `<surface_ref>, center_u, center_v, radius, param_lo, param_hi` with two intervening u32 fields. Cylinder `0x96` U is arc length (`U_angle=U_native/radius`); torus U and V are arc lengths (`U_angle=U_native/major_radius`, `V_angle=V_native/minor_radius`). `0xc0` is a one-pcurve boundary support and `0xc1` is a two-pcurve intersection support. Edge type follows `0xff -> 0xc0/0xc1 -> pcurve -> carrier`.
 
 E5 carrier frames use f64 fields. `0xc9` stores origin, `frame_u`, `frame_v`, radius, and angular/arc data, with `axis = frame_u × frame_v`. `0xca` stores origin, `frame_u`, `frame_v`, axis, angle, reference radius, UV bounds, and the native-U scale at `+158`. `0xcc` stores origin, `frame_u`, `frame_v`, axis, major radius, minor radius, and UV bounds.
 
