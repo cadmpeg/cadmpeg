@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` Keywords XML feature history.
 
+use crate::classification::{classify, FeatureClass};
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
@@ -1052,7 +1053,8 @@ fn project_definition(
     if let Some(role) = feature_tree_node_role(feature) {
         return FeatureDefinition::TreeNode { role };
     }
-    if feature_family(feature, "Sketch") {
+    let class = classify(feature);
+    if class == Some(FeatureClass::Sketch) {
         return FeatureDefinition::Sketch {
             space: if feature.kind.eq_ignore_ascii_case("3DSketch") {
                 SketchSpace::Spatial
@@ -1062,108 +1064,103 @@ fn project_definition(
             sketch: None,
         };
     }
-    if is_offset_plane(feature) {
+    if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
         return project_offset_plane(feature, by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
     if let Some(plane) = principal_plane(feature) {
         return FeatureDefinition::DatumPrincipalPlane { plane };
     }
-    if feature_family(feature, "ReferencePlane") {
+    if class == Some(FeatureClass::ReferencePlane) {
         return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "ReferenceAxis") {
+    if class == Some(FeatureClass::ReferenceAxis) {
         return project_datum_axis(feature).unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "ReferencePoint") {
+    if class == Some(FeatureClass::ReferencePoint) {
         return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "CoordinateSystem")
-        || feature_family(feature, "ReferenceCoordinateSystem")
-    {
+    if class == Some(FeatureClass::CoordinateSystem) {
         return project_datum_coordinate_system(feature)
             .unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "EquationDrivenCurve") || feature_family(feature, "EquationCurve") {
+    if class == Some(FeatureClass::EquationCurve) {
         return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "ProjectedCurve") || feature_family(feature, "ProjectionCurve") {
+    if class == Some(FeatureClass::ProjectedCurve) {
         return project_projected_curve(feature, native_by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "CompositeCurve") {
+    if class == Some(FeatureClass::CompositeCurve) {
         return project_composite_curve(feature, native_by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
-    if is_helix(feature) {
+    if class == Some(FeatureClass::Helix) {
         return project_helix(feature)
             .or_else(|| project_native_axis_helix(feature))
             .unwrap_or_else(|| native_definition(feature));
     }
-    if feature_family(feature, "Wrap") {
+    if class == Some(FeatureClass::Wrap) {
         return project_wrap(feature, native_by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
-    if is_extrude(feature) {
+    if class == Some(FeatureClass::Extrude) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if is_fillet(feature) {
+    } else if class == Some(FeatureClass::Fillet) {
         project_fillet(feature).unwrap_or_else(|| native_definition(feature))
-    } else if is_chamfer(feature) {
+    } else if class == Some(FeatureClass::Chamfer) {
         project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Shell") {
+    } else if class == Some(FeatureClass::Shell) {
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Thicken")
-        || feature_family(feature, "Thickness")
-        || feature_input_class(feature, "moThicken_c")
-    {
+    } else if class == Some(FeatureClass::Thicken) {
         project_thicken(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "OffsetSurface") {
+    } else if class == Some(FeatureClass::OffsetSurface) {
         project_offset_surface(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "KnitSurface") || feature_family(feature, "Knit") {
+    } else if class == Some(FeatureClass::KnitSurface) {
         project_knit_surface(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "FilledSurface") || feature_family(feature, "FillSurface") {
+    } else if class == Some(FeatureClass::FilledSurface) {
         project_filled_surface(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "TrimSurface") || feature_family(feature, "SurfaceTrim") {
+    } else if class == Some(FeatureClass::TrimSurface) {
         project_trim_surface(feature, native_by_source)
             .unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "ExtendSurface") || feature_family(feature, "SurfaceExtend") {
+    } else if class == Some(FeatureClass::ExtendSurface) {
         project_extend_surface(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "RuledSurface") || feature_family(feature, "SurfaceRuled") {
+    } else if class == Some(FeatureClass::RuledSurface) {
         project_ruled_surface(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Draft") {
+    } else if class == Some(FeatureClass::Draft) {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Combine") {
+    } else if class == Some(FeatureClass::Combine) {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "CutWithSurface") || feature_family(feature, "SurfaceCut") {
+    } else if class == Some(FeatureClass::CutWithSurface) {
         project_cut_with_surface(feature).unwrap_or_else(|| native_definition(feature))
-    } else if body_retention_mode(feature).is_some() {
+    } else if class == Some(FeatureClass::DeleteBody) {
         project_delete_body(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "DeleteFace") {
+    } else if class == Some(FeatureClass::DeleteFace) {
         project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "ReplaceFace") {
+    } else if class == Some(FeatureClass::ReplaceFace) {
         project_replace_face(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "MoveFace") {
+    } else if class == Some(FeatureClass::MoveFace) {
         project_move_face(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "MoveBody") || feature_family(feature, "MoveCopyBody") {
+    } else if class == Some(FeatureClass::MoveBody) {
         project_move_body(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Dome") {
+    } else if class == Some(FeatureClass::Dome) {
         project_dome(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Flex") {
+    } else if class == Some(FeatureClass::Flex) {
         project_flex(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Scale") {
+    } else if class == Some(FeatureClass::Scale) {
         project_scale(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Hole") {
+    } else if class == Some(FeatureClass::Hole) {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
-    } else if is_revolve(feature) {
+    } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if pattern_form(feature).is_some() {
+    } else if class == Some(FeatureClass::Pattern) {
         project_pattern(feature, by_source, native_by_source)
             .unwrap_or_else(|| native_definition(feature))
-    } else if is_sweep(feature) {
+    } else if class == Some(FeatureClass::Sweep) {
         project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if is_loft(feature) {
+    } else if class == Some(FeatureClass::Loft) {
         project_loft(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if feature_family(feature, "Rib") {
+    } else if class == Some(FeatureClass::Rib) {
         project_rib(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else {
         native_definition(feature)
@@ -1219,15 +1216,15 @@ fn feature_input_class(feature: &Feature, class: &str) -> bool {
 }
 
 fn is_fillet(feature: &Feature) -> bool {
-    feature_family(feature, "Fillet") || feature_input_class(feature, "Fillet_c")
+    classify(feature) == Some(FeatureClass::Fillet)
 }
 
 fn is_chamfer(feature: &Feature) -> bool {
-    feature_family(feature, "Chamfer") || feature_input_class(feature, "Chamfer_c")
+    classify(feature) == Some(FeatureClass::Chamfer)
 }
 
 fn is_extrude(feature: &Feature) -> bool {
-    extrude_feature_op(feature).is_some() || feature.xml_tag.eq_ignore_ascii_case("Extrusion")
+    classify(feature) == Some(FeatureClass::Extrude)
 }
 
 fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
@@ -1235,42 +1232,23 @@ fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
 }
 
 fn is_revolve(feature: &Feature) -> bool {
-    (feature.xml_tag.eq_ignore_ascii_case("Revolve")
-        || feature.xml_tag.eq_ignore_ascii_case("Revolution"))
-        && feature
-            .properties
-            .get("Operation")
-            .and_then(|operation| parse_boolean_op(operation))
-            .is_some()
+    classify(feature) == Some(FeatureClass::Revolve)
 }
 
 fn is_loft(feature: &Feature) -> bool {
-    loft_op(&feature.kind).is_some()
-        || (feature.xml_tag.eq_ignore_ascii_case("Loft")
-            || feature.xml_tag.eq_ignore_ascii_case("Boundary"))
-            && feature
-                .properties
-                .get("Operation")
-                .and_then(|operation| parse_boolean_op(operation))
-                .is_some()
+    classify(feature) == Some(FeatureClass::Loft)
 }
 
 fn is_sweep(feature: &Feature) -> bool {
-    feature_family(feature, "Sweep")
-        || feature_family(feature, "Surface-Sweep")
-        || feature_input_class(feature, "moSweep_c")
+    classify(feature) == Some(FeatureClass::Sweep)
 }
 
 fn is_helix(feature: &Feature) -> bool {
-    feature_family(feature, "Helix")
-        || feature_family(feature, "HelixSpiral")
-        || feature_family(feature, "Helix/Spiral")
-        || feature_input_class(feature, "moHelix_c")
+    classify(feature) == Some(FeatureClass::Helix)
 }
 
 fn is_offset_plane(feature: &Feature) -> bool {
-    (feature_family(feature, "Plane") || feature_input_class(feature, "moRefPlane_c"))
-        && feature.parameters.contains_key("D1")
+    classify(feature) == Some(FeatureClass::ReferencePlane) && feature.parameters.contains_key("D1")
 }
 
 fn principal_plane(feature: &Feature) -> Option<cadmpeg_ir::features::PrincipalPlane> {
