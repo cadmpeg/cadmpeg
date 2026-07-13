@@ -5202,6 +5202,53 @@ fn decode_embedded_intersection(
     ))
 }
 
+/// Writable shared-context fields in an `int_int_cur` subtype.
+pub(crate) struct IntersectionPatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) discontinuities: [Vec<usize>; 3],
+    pub(crate) discontinuity_flag: usize,
+}
+
+/// Locate an intersection context by walking both ordered support pairs.
+pub(crate) fn intersection_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<IntersectionPatchLayout> {
+    let names: [&[u8]; 3] = [b"int_int_cur", b"surf_surf_int_cur", b"surfintcur"];
+    let (marker, name) = names.into_iter().find_map(|name| {
+        bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|marker| (marker, name))
+    })?;
+    let mut position = marker + name.len() + 3;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = position;
+    take_bool(bytes, &mut position)?;
+    Some(IntersectionPatchLayout {
+        parameter_range,
+        discontinuities,
+        discontinuity_flag,
+    })
+}
+
 fn decode_embedded_two_sided_offset(
     bytes: &[u8],
     int_width: usize,
@@ -6332,6 +6379,41 @@ mod width_tests {
 
                 let layout = surface_curve_patch_layout(&bytes, int_width, &family)
                     .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+                assert_eq!(
+                    layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
+                    3
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn intersection_layout_walks_modern_and_legacy_names_at_both_widths() {
+        for int_width in [4usize, 8] {
+            for name in ["int_int_cur", "surf_surf_int_cur", "surfintcur"] {
+                let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+                bytes.extend_from_slice(name.as_bytes());
+                for _ in 0..2 {
+                    bytes.extend_from_slice(&[0x0d, 0x06]);
+                    bytes.extend_from_slice(b"spline");
+                    bytes.extend_from_slice(&surface_block(int_width));
+                }
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                push_f64(&mut bytes, -2.0);
+                push_f64(&mut bytes, 3.0);
+                for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+                    push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                    for value in values {
+                        push_f64(&mut bytes, *value);
+                    }
+                }
+                let flag = bytes.len();
+                bytes.push(0x0a);
+
+                let layout = intersection_patch_layout(&bytes, int_width)
+                    .unwrap_or_else(|| panic!("{name} layout at width {int_width}"));
+                assert_eq!(layout.discontinuity_flag, flag);
                 assert_eq!(
                     layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
                     3

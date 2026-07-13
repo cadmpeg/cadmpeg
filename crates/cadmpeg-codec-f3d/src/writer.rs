@@ -15523,56 +15523,33 @@ fn patch_intersection_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("intersection record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"int_int_cur".len())
-        .any(|window| window == b"int_int_cur")
+    let layout = crate::nurbs::intersection_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| CodecError::Malformed("intersection construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
     {
-        return Err(CodecError::Malformed("record is not an int_int_cur".into()));
-    }
-    let solved = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
-        .into_iter()
-        .filter_map(|marker| {
-            record_bytes
-                .windows(marker.len())
-                .rposition(|window| window == marker)
-        })
-        .max()
-        .ok_or_else(|| CodecError::Malformed("intersection solved cache is missing".into()))?;
-    let flag_offset = record
-        .offset
-        .checked_add(solved)
-        .and_then(|offset| offset.checked_sub(1))
-        .ok_or_else(|| CodecError::Malformed("intersection flag is missing".into()))?;
-    if !matches!(bytes.get(flag_offset), Some(0x0a | 0x0b)) {
-        return Err(CodecError::Malformed(
-            "intersection discontinuity flag is malformed".into(),
-        ));
-    }
-    let context_count = 2usize
-        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
-        .ok_or_else(|| CodecError::Malformed("intersection context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .filter(|offset| *offset < flag_offset)
-        .collect::<Vec<_>>();
-    let context_offsets = context_offsets
-        .get(context_offsets.len().saturating_sub(context_count)..)
-        .ok_or_else(|| CodecError::Malformed("intersection context is incomplete".into()))?;
-    if context_offsets.len() != context_count {
         return Err(CodecError::Malformed(
             "intersection context is incomplete".into(),
         ));
     }
-    for (offset, value) in context_offsets.iter().zip(
-        context
-            .parameter_range
-            .into_iter()
-            .chain(context.discontinuities.iter().flatten().copied()),
-    ) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    bytes[flag_offset] = native_bool(*discontinuity_flag);
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     Ok(())
 }
 
