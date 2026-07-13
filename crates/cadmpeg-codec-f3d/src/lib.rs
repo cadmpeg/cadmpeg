@@ -140,6 +140,37 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|owner| (owner.record_index, owner))
         .collect::<std::collections::HashMap<_, _>>();
+    let scopes_by_index = native
+        .design_parameter_scopes
+        .iter()
+        .map(|scope| (scope.record_index, scope))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut scope_indices = HashSet::new();
+    for scope in &native.design_parameter_scopes {
+        let unique_index = scope_indices.insert(scope.record_index);
+        let valid = scope.class_tag.len() == 3
+            && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && scope.paired_class_tag.len() == 3
+            && scope
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && !scope.kind.is_empty()
+            && scope.frame_length > 89
+            && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
+            && scope.kind_offset > scope.byte_offset
+            && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
+            && record_indices.contains(&scope.record_index)
+            && unique_index;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design parameter scope has an invalid paired frame".into(),
+                entity: Some(scope.id.clone()),
+            });
+        }
+    }
     let mut owner_indices = HashSet::new();
     let mut owner_ordinals = HashSet::new();
     let mut owner_local_ordinals = HashSet::new();
@@ -156,7 +187,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && owner.evaluated_value_offset == owner.byte_offset + 40
             && owner.parameter_record_index == owner.record_index.saturating_add(1)
             && owner.companion_record_index == owner.record_index.saturating_add(2)
-            && record_indices.contains(&owner.scope_record_index)
+            && scopes_by_index.contains_key(&owner.scope_record_index)
             && record_indices.contains(&owner.parameter_record_index)
             && record_indices.contains(&owner.companion_record_index)
             && parameter.is_some_and(|parameter| {

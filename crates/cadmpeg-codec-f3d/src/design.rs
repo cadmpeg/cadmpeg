@@ -10,9 +10,9 @@ use std::collections::{HashMap, HashSet};
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterKind, DesignParameterOwner, DesignRecordHeader, LostEdgeReference,
-    PersistentReference, PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -527,6 +527,83 @@ fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
         owned_ordinal: u32_at(frame, 59)?,
         variant: *frame.get(79)?,
         companion_record_index: u32_at(frame, 82)?,
+    })
+}
+
+/// Decode each sketch or construction-operation record referenced by a
+/// parameter owner frame.
+pub fn decode_parameter_scopes(
+    scan: &ContainerScan,
+    owners: &[DesignParameterOwner],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignParameterScope>, CodecError> {
+    let wanted = owners
+        .iter()
+        .map(|owner| owner.scope_record_index)
+        .collect::<HashSet<_>>();
+    let mut out = Vec::new();
+    for header in headers
+        .iter()
+        .filter(|header| wanted.contains(&header.record_index))
+    {
+        let entry = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && header.id.starts_with(&format!("f3d:{}:", entry.name))
+        });
+        let Some(entry) = entry else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(mut scope) = parse_parameter_scope(bytes, header) else {
+            continue;
+        };
+        scope.id = format!(
+            "f3d:{}:design-parameter-scope#{}",
+            entry.name, header.byte_offset
+        );
+        out.push(scope);
+    }
+    out.sort_by_key(|scope| scope.record_index);
+    Ok(out)
+}
+
+fn parse_parameter_scope(
+    bytes: &[u8],
+    header: &DesignRecordHeader,
+) -> Option<DesignParameterScope> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let mut position = start.checked_add(11)?;
+    let (paired_at, paired_class_tag) = loop {
+        let at = next_indexed_record_offset(bytes, position)?;
+        let (class_tag, after_tag) = lp_ascii(bytes, at)?;
+        if u32_at(bytes, after_tag)? == header.record_index {
+            break (at, class_tag);
+        }
+        position = at.checked_add(1)?;
+    };
+    let kind_end = paired_at.checked_sub(78)?;
+    let mut candidates = Vec::new();
+    for at in start + 11..kind_end {
+        if let Some((kind, end)) = lp_utf16(bytes, at) {
+            if end == kind_end && kind.chars().all(|character| !character.is_control()) {
+                candidates.push((at, kind));
+            }
+        }
+    }
+    let [(kind_at, kind)] = candidates.as_slice() else {
+        return None;
+    };
+    Some(DesignParameterScope {
+        id: String::new(),
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        record_index: header.record_index,
+        frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
+        kind: kind.clone(),
+        kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
+        paired_class_tag,
+        paired_byte_offset: paired_at as u64,
     })
 }
 
@@ -2109,9 +2186,9 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 mod relation_tests {
     use super::{
         next_indexed_record_offset, parse_design_parameter, parse_parameter_owner,
-        parse_sketch_relation, project_user_parameters,
+        parse_parameter_scope, parse_sketch_relation, project_user_parameters,
     };
-    use crate::records::DesignParameterKind;
+    use crate::records::{DesignParameterKind, DesignRecordHeader};
     use cadmpeg_ir::features::{Length, ParameterValue};
     use std::collections::HashSet;
 
@@ -2258,6 +2335,33 @@ mod relation_tests {
         let mut malformed = parameter_owner_frame();
         malformed[94..98].copy_from_slice(&13u32.to_le_bytes());
         assert!(parse_parameter_owner(&malformed).is_none());
+    }
+
+    #[test]
+    fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"301");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        lp_utf16(&mut bytes, "Sketch");
+        bytes.extend_from_slice(&[0; 78]);
+        let paired_at = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"261");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        let header = DesignRecordHeader {
+            id: "generated:scope-header#0".into(),
+            record_index: 12,
+            class_tag: "301".into(),
+            byte_offset: 0,
+        };
+
+        let scope = parse_parameter_scope(&bytes, &header).unwrap();
+        assert_eq!(scope.kind, "Sketch");
+        assert_eq!(scope.frame_length, paired_at as u64);
+        assert_eq!(scope.paired_class_tag, "261");
+        assert_eq!(scope.paired_byte_offset, paired_at as u64);
     }
 
     #[test]

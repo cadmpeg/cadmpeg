@@ -339,6 +339,29 @@ pub struct DesignParameterOwner {
     pub companion_record_index: u32,
 }
 
+/// Indexed sketch or construction-operation record that scopes parameters.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignParameterScope {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Byte offset of the primary indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    pub frame_length: u64,
+    /// Source feature-family name.
+    pub kind: String,
+    /// Byte offset of the kind's UTF-16LE code units.
+    pub kind_offset: u64,
+    /// Per-file dynamic class tag of the paired header.
+    pub paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+}
+
 /// Persistent-reference channel in the Design construction stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

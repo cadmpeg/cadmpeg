@@ -1148,6 +1148,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     if !target.model.parameters.is_empty()
         || !native.design_parameters.is_empty()
         || !native.design_parameter_owners.is_empty()
+        || !native.design_parameter_scopes.is_empty()
     {
         return Err(CodecError::NotImplemented(
             "source-less F3D Design parameter records are not writable".into(),

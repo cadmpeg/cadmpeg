@@ -9,10 +9,10 @@ use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
     DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterOwner,
-    DesignRecordHeader, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
-    MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    DesignParameterScope, DesignRecordHeader, EdgeContinuity, EdgeOwnership, FaceSidedness,
+    LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink, PersistentReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
+    TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -37,6 +37,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_material_assignments",
     "design_objects",
     "design_parameter_owners",
+    "design_parameter_scopes",
     "design_parameters",
     "design_record_headers",
     "edge_continuities",
@@ -68,6 +69,7 @@ macro_rules! f3d_arenas {
             body_visibilities: BodyVisibility;
             design_objects: DesignObject;
             design_parameter_owners: DesignParameterOwner;
+            design_parameter_scopes: DesignParameterScope;
             design_parameters: DesignParameter;
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
@@ -167,6 +169,9 @@ pub struct F3dNative {
     /// Fixed-width owner frames for indexed Design parameters.
     #[serde(default)]
     pub design_parameter_owners: Vec<DesignParameterOwner>,
+    /// Sketch and construction-operation records that scope parameters.
+    #[serde(default)]
+    pub design_parameter_scopes: Vec<DesignParameterScope>,
     /// Indexed Design parameter and expression records.
     #[serde(default)]
     pub design_parameters: Vec<DesignParameter>,
@@ -258,6 +263,7 @@ impl Default for F3dNative {
             body_visibilities: Vec::new(),
             design_objects: Vec::new(),
             design_parameter_owners: Vec::new(),
+            design_parameter_scopes: Vec::new(),
             design_parameters: Vec::new(),
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),

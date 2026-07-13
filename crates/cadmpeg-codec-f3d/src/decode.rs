@@ -304,6 +304,9 @@ fn populate_annotations(
         for entity in &native.design_parameter_owners {
             note(&entity.id, "design_parameter_owner");
         }
+        for entity in &native.design_parameter_scopes {
+            note(&entity.id, "design_parameter_scope");
+        }
         for entity in &native.design_entity_headers {
             note(&entity.id, "design_entity_header");
         }
@@ -464,6 +467,11 @@ fn extend_related_design_records(
     native
         .design_record_headers
         .sort_by_key(|record| record.record_index);
+    native.design_parameter_scopes = crate::design::decode_parameter_scopes(
+        scan,
+        &native.design_parameter_owners,
+        &native.design_record_headers,
+    )?;
     Ok(())
 }
 
