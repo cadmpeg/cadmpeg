@@ -12,7 +12,7 @@ use cadmpeg_ir::features::{
     FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
     FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
     RadiusSpec, RuledSurfaceMode, ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension,
-    TrimRegion, VariableRadius, WrapMode,
+    SweepMode, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1761,17 +1761,17 @@ fn project_sweep(
         .properties
         .get("Path")
         .map(|source| PathRef::Native(native_ref(source)));
-    let (op, surface) = if feature.kind == "Surface-Sweep" {
-        (None, true)
+    let mode = if feature.xml_tag == "Surface-Sweep" || feature.kind == "Surface-Sweep" {
+        SweepMode::Surface
+    } else if let Some(op) = feature
+        .properties
+        .get("Operation")
+        .and_then(|value| parse_boolean_op(value))
+    {
+        SweepMode::Solid { op }
     } else {
-        (
-            Some(parse_boolean_op(feature.properties.get("Operation")?)?),
-            false,
-        )
+        SweepMode::Unresolved
     };
-    if !surface && (profile.is_none() || path.is_none()) {
-        return None;
-    }
     let twist = match feature.parameters.get("Twist") {
         Some(value) => Some(Angle(parse_angle_rad(value)?)),
         None => None,
@@ -1789,8 +1789,7 @@ fn project_sweep(
     Some(FeatureDefinition::Sweep {
         profile,
         path,
-        op,
-        surface,
+        mode,
         twist,
         scale,
     })
@@ -5877,8 +5876,7 @@ pub fn sync_neutral_features(
             FeatureDefinition::Sweep {
                 profile,
                 path,
-                op,
-                surface,
+                mode,
                 twist,
                 scale,
             } => {
@@ -5918,6 +5916,12 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
+                if existing.is_none() && *mode == SweepMode::Unresolved {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved sweep result semantics",
+                        feature.id
+                    )));
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
@@ -5951,26 +5955,27 @@ pub fn sync_neutral_features(
                 if let Some(path) = path_source {
                     properties.insert("Path".into(), path);
                 }
-                if *surface == op.is_some() {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has ambiguous sweep result semantics",
-                        feature.id
-                    )));
-                }
-                match op {
-                    Some(op) => {
+                match mode {
+                    SweepMode::Solid { op } => {
                         properties.insert(
                             "Operation".into(),
                             resolved_boolean_op(*op, &feature.id)?.into(),
                         );
                     }
-                    None => {
+                    SweepMode::Surface => {
                         properties.remove("Operation");
                     }
+                    SweepMode::Unresolved => {}
                 }
                 (
                     existing.as_deref().map_or_else(
-                        || if *surface { "Surface-Sweep" } else { "Sweep" }.into(),
+                        || {
+                            match mode {
+                                SweepMode::Surface => "Surface-Sweep",
+                                SweepMode::Solid { .. } | SweepMode::Unresolved => "Sweep",
+                            }
+                            .into()
+                        },
                         |record| record.kind.clone(),
                     ),
                     parameters,
@@ -6702,7 +6707,10 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
-        FeatureDefinition::Sweep { surface: true, .. } => "Surface-Sweep",
+        FeatureDefinition::Sweep {
+            mode: SweepMode::Surface,
+            ..
+        } => "Surface-Sweep",
         FeatureDefinition::Sweep { .. } => "Sweep",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",

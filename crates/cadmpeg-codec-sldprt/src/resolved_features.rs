@@ -1011,7 +1011,11 @@ fn class_role(name: &str) -> FeatureInputClassRole {
     };
 
     match name {
-        "moExtrusion_c" | "Fillet_c" | "moOriginProfileFeature_c" | "moProfileFeature_c" => Feature,
+        "moExtrusion_c"
+        | "Fillet_c"
+        | "moOriginProfileFeature_c"
+        | "moProfileFeature_c"
+        | "moSweepRefSurface_c" => Feature,
         "sgSketch" => Sketch,
         "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" => SketchEntity,
         "sgAnglDim" | "sgLLDist" | "sgPntLineDist" | "sgPntPntDist" | "sgPntPntHorDist"

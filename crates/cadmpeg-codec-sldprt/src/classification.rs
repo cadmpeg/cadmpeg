@@ -66,7 +66,7 @@ fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {
         "moOriginProfileFeature_c" | "moProfileFeature_c" => FeatureClass::Sketch,
         "moRefPlane_c" => FeatureClass::ReferencePlane,
         "moThicken_c" => FeatureClass::Thicken,
-        "moSweep_c" => FeatureClass::Sweep,
+        "moSweep_c" | "moSweepRefSurface_c" => FeatureClass::Sweep,
         "moHelix_c" => FeatureClass::Helix,
         "moLPattern_c" | "moCurvePattern_c" => FeatureClass::Pattern,
         "moDeleteBody_c" => FeatureClass::DeleteBody,

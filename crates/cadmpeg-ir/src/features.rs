@@ -414,12 +414,8 @@ pub enum FeatureDefinition {
         /// Trajectory followed by the profile, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<PathRef>,
-        /// Boolean combination with existing bodies; absent for a surface sweep.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        op: Option<BooleanOp>,
-        /// Whether the sweep creates a sheet body.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        surface: bool,
+        /// Result family and solid Boolean operation.
+        mode: SweepMode,
         /// Total profile twist along the path, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         twist: Option<Angle>,
@@ -1008,6 +1004,21 @@ pub enum BooleanOp {
     Intersect,
     /// Creates an independent new body without combining.
     NewBody,
+}
+
+/// Result semantics of a swept profile.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "mode", rename_all = "snake_case")]
+pub enum SweepMode {
+    /// Native sweep family is known but its result subtype is unresolved.
+    Unresolved,
+    /// Sweep creates or modifies a solid body.
+    Solid {
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+    },
+    /// Sweep creates a sheet body.
+    Surface,
 }
 
 /// Profile consumed by an extrude or revolve.

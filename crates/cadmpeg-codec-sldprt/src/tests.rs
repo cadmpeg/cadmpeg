@@ -1737,8 +1737,9 @@ fn encoder_writes_source_less_line_sketches() {
         FeatureDefinition::Sweep {
             profile: Some(profile.clone()),
             path: Some(path.clone()),
-            op: Some(BooleanOp::Join),
-            surface: false,
+            mode: cadmpeg_ir::features::SweepMode::Solid {
+                op: BooleanOp::Join,
+            },
             twist: Some(Angle(0.3)),
             scale: Some(1.5),
         },
@@ -10782,8 +10783,9 @@ fn semantic_writer_round_trips_typed_sweep() {
         FeatureDefinition::Sweep {
             profile: Some(ProfileRef::Native(profile)),
             path: Some(PathRef::Native(path_ref)),
-            op: Some(BooleanOp::NewBody),
-            surface: false,
+            mode: cadmpeg_ir::features::SweepMode::Solid {
+                op: BooleanOp::NewBody,
+            },
             twist: Some(Angle(twist)),
             scale: Some(1.5),
         } if profile == &profile_a
@@ -10793,7 +10795,7 @@ fn semantic_writer_round_trips_typed_sweep() {
 
     let FeatureDefinition::Sweep {
         profile,
-        op,
+        mode,
         twist,
         scale,
         ..
@@ -10802,7 +10804,9 @@ fn semantic_writer_round_trips_typed_sweep() {
         panic!("typed sweep");
     };
     *profile = Some(ProfileRef::Native(profile_b));
-    *op = Some(BooleanOp::Join);
+    *mode = cadmpeg_ir::features::SweepMode::Solid {
+        op: BooleanOp::Join,
+    };
     *twist = Some(Angle(std::f64::consts::PI));
     *scale = Some(2.0);
 
@@ -10847,8 +10851,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         FeatureDefinition::Sweep {
             profile: None,
             path: None,
-            op: None,
-            surface: true,
+            mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: None,
             scale: None,
         }
@@ -10878,10 +10881,56 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
         FeatureDefinition::Sweep {
             profile: None,
             path: None,
-            op: None,
-            surface: true,
+            mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: Some(Angle(0.5)),
             scale: None,
+        }
+    ));
+}
+
+#[test]
+fn semantic_writer_retains_unresolved_native_sweep_mode() {
+    use cadmpeg_ir::features::{FeatureDefinition, SweepMode};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Operacion1" Type="Personalizado" id="137"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moSweep_c", "Operacion1", 137)]),
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sweep {
+            profile: None,
+            path: None,
+            mode: SweepMode::Unresolved,
+            twist: None,
+            scale: None,
+        }
+    ));
+    decoded.ir.model.features[0].name = Some("Renamed sweep".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Sweep {
+            mode: SweepMode::Unresolved,
+            ..
         }
     ));
 }

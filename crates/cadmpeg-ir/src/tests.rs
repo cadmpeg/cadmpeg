@@ -545,8 +545,9 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         FeatureDefinition::Sweep {
             profile: Some(ProfileRef::Sketch(sketch.clone())),
             path: Some(PathRef::Sketch(sketch.clone())),
-            op: Some(BooleanOp::NewBody),
-            surface: false,
+            mode: crate::features::SweepMode::Solid {
+                op: BooleanOp::NewBody,
+            },
             twist: None,
             scale: None,
         },
@@ -2257,10 +2258,9 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::Sweep {
             profile: None,
             path: None,
-            op: None,
-            surface: false,
+            mode: crate::features::SweepMode::Unresolved,
             twist: None,
-            scale: None,
+            scale: Some(-1.0),
         },
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
@@ -2286,7 +2286,7 @@ fn feature_operation_geometry_is_validated() {
         "body motion is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",
-        "sweep result is invalid",
+        "sweep magnitude is invalid",
         "datum-plane offset is invalid",
     ];
     let mut ir = unit_cube();

@@ -1144,8 +1144,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Sweep {
                 profile,
                 path,
-                op,
-                surface,
                 twist,
                 scale,
                 ..
@@ -1156,9 +1154,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
                 {
                     feature_geometry_error(findings, feature, "sweep magnitude is invalid");
-                }
-                if *surface == op.is_some() {
-                    feature_geometry_error(findings, feature, "sweep result is invalid");
                 }
             }
             FeatureDefinition::Loft {
