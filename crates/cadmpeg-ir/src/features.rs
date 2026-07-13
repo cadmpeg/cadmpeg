@@ -78,14 +78,15 @@ pub struct DesignConfiguration {
 #[serde(transparent)]
 pub struct ParameterId(pub String);
 
-/// A named expression owned by a construction feature.
+/// A named design expression, optionally owned by a construction feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameter {
     /// Globally unique parameter id.
     pub id: ParameterId,
-    /// Feature that consumes this parameter.
-    pub owner: FeatureId,
-    /// Position among parameters owned by the feature.
+    /// Feature that consumes this parameter; absent for a document parameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<FeatureId>,
+    /// Position among parameters in the same ownership scope.
     #[serde(default)]
     pub ordinal: u32,
     /// Source parameter name.

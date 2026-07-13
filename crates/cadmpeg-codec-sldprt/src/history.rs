@@ -476,7 +476,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                         .or_else(|| parse_value(expression));
                     DesignParameter {
                         id: neutral_parameter_id(feature, ordinal),
-                        owner: neutral_feature_id(&feature.id),
+                        owner: Some(neutral_feature_id(&feature.id)),
                         ordinal: ordinal as u32,
                         properties,
                         name,
@@ -550,7 +550,11 @@ fn populate_parameter_dependencies(
         if let Some(equation_id) = parameter.properties.get("EquationId") {
             parameter_aliases.push(equation_id.clone());
         }
-        if let Some(owner_name) = feature_names.get(&parameter.owner) {
+        if let Some(owner_name) = parameter
+            .owner
+            .as_ref()
+            .and_then(|owner| feature_names.get(owner))
+        {
             parameter_aliases.push(format!("{}@{owner_name}", parameter.name));
             if let Some(equation_id) = parameter.properties.get("EquationId") {
                 parameter_aliases.push(format!("{equation_id}@{owner_name}"));
@@ -3229,7 +3233,13 @@ fn sync_neutral_parameters(
         .collect::<HashMap<_, _>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
     for parameter in &parameters {
-        let Some(owner) = features.get(&parameter.owner) else {
+        let Some(owner_id) = parameter.owner.as_ref() else {
+            return Err(CodecError::Malformed(format!(
+                "SLDPRT parameter {} has no feature owner",
+                parameter.id.0
+            )));
+        };
+        let Some(owner) = features.get(owner_id) else {
             return Err(CodecError::Malformed(format!(
                 "SLDPRT parameter {} references a missing feature",
                 parameter.id.0
@@ -3249,14 +3259,14 @@ fn sync_neutral_parameters(
                 parameter.id.0
             )));
         }
-        let owner_parameters = desired.entry(parameter.owner.clone()).or_default();
+        let owner_parameters = desired.entry(owner_id.clone()).or_default();
         if owner_parameters
             .iter()
             .any(|candidate| candidate.name == parameter.name)
         {
             return Err(CodecError::Malformed(format!(
                 "duplicate SLDPRT parameter {} on feature {}",
-                parameter.name, parameter.owner
+                parameter.name, owner_id
             )));
         }
         if owner_parameters
@@ -3265,7 +3275,7 @@ fn sync_neutral_parameters(
         {
             return Err(CodecError::Malformed(format!(
                 "duplicate SLDPRT parameter ordinal {} on feature {}",
-                parameter.ordinal, parameter.owner
+                parameter.ordinal, owner_id
             )));
         }
         owner_parameters.push(parameter);
@@ -3403,7 +3413,11 @@ fn rewrite_renamed_parameter_references(
         let mut aliases = HashMap::new();
         if previous.name != parameter.name {
             aliases.insert(previous.name.clone(), parameter.name.clone());
-            if let Some(owner_name) = feature_names.get(&parameter.owner) {
+            if let Some(owner_name) = parameter
+                .owner
+                .as_ref()
+                .and_then(|owner| feature_names.get(owner))
+            {
                 aliases.insert(
                     format!("{}@{owner_name}", previous.name),
                     format!("{}@{owner_name}", parameter.name),
@@ -6698,7 +6712,7 @@ fn synchronize_neutral_feature_content(
                             feature.id, id.0
                         ))
                     })?;
-                    if parameter.owner != feature.id {
+                    if parameter.owner.as_ref() != Some(&feature.id) {
                         return Err(CodecError::Malformed(format!(
                             "SLDPRT feature {} content references parameter {} owned by another feature",
                             feature.id, id.0

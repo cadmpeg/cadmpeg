@@ -695,7 +695,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
     for (index, name) in ["Width", "Width"].into_iter().enumerate() {
         ir.model.parameters.push(DesignParameter {
             id: ParameterId(format!("synthetic:test:parameter#{index}")),
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal: 0,
             name: name.into(),
             expression: "1mm".into(),
@@ -757,7 +757,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
     ] {
         ir.model.parameters.push(DesignParameter {
             id,
-            owner: owner.clone(),
+            owner: Some(owner.clone()),
             ordinal,
             name: format!("P{ordinal}"),
             expression: String::new(),
@@ -778,6 +778,63 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
             .message
             .contains("parameter dependency `synthetic:test:parameter#missing`")
     }));
+}
+
+#[test]
+fn document_parameters_can_feed_feature_parameters() {
+    use crate::features::{DesignParameter, Feature, FeatureDefinition, FeatureId, ParameterId};
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let owner = FeatureId("synthetic:test:feature#consumer".into());
+    ir.model.features.push(Feature {
+        id: owner.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Native {
+            kind: "Test".into(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
+        },
+        native_ref: None,
+    });
+    let document = ParameterId("synthetic:test:parameter#document".into());
+    ir.model.parameters.push(DesignParameter {
+        id: document.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "Width".into(),
+        expression: "60 mm".into(),
+        display: None,
+        value: None,
+        dependencies: Vec::new(),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model.parameters.push(DesignParameter {
+        id: ParameterId("synthetic:test:parameter#owned".into()),
+        owner: Some(owner),
+        ordinal: 0,
+        name: "Distance".into(),
+        expression: "Width / 2".into(),
+        display: None,
+        value: None,
+        dependencies: vec![document],
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).findings.is_empty());
 }
 
 #[test]
@@ -1626,7 +1683,9 @@ fn parameter_native_ref_must_resolve() {
     let id = crate::features::ParameterId("synthetic:test:parameter#native-ref".into());
     ir.model.parameters.push(crate::features::DesignParameter {
         id: id.clone(),
-        owner: crate::features::FeatureId("synthetic:test:feature#missing".into()),
+        owner: Some(crate::features::FeatureId(
+            "synthetic:test:feature#missing".into(),
+        )),
         ordinal: 0,
         name: "D1".into(),
         expression: "1mm".into(),

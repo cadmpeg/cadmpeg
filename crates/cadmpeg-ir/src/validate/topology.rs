@@ -973,20 +973,22 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         .model
         .parameters
         .iter()
-        .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal)))
+        .map(|parameter| (&parameter.id, (parameter.owner.as_ref(), parameter.ordinal)))
         .collect::<HashMap<_, _>>();
     let mut parameter_names = HashSet::new();
     let mut parameter_ordinals = HashSet::new();
     for parameter in &ir.model.parameters {
-        if !features.contains(parameter.owner.0.as_str()) {
-            ref_error(findings, &parameter.id.0, "feature", &parameter.owner.0);
+        if let Some(owner) = &parameter.owner {
+            if !features.contains(owner.0.as_str()) {
+                ref_error(findings, &parameter.id.0, "feature", &owner.0);
+            }
         }
         if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
             findings.push(Finding {
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: format!(
-                    "feature {} repeats parameter name `{}`",
+                    "parameter scope {:?} repeats parameter name `{}`",
                     parameter.owner, parameter.name
                 ),
                 entity: Some(parameter.id.0.clone()),
@@ -997,7 +999,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 check: Check::Counts,
                 severity: Severity::Error,
                 message: format!(
-                    "feature {} repeats parameter ordinal {}",
+                    "parameter scope {:?} repeats parameter ordinal {}",
                     parameter.owner, parameter.ordinal
                 ),
                 entity: Some(parameter.id.0.clone()),
@@ -1026,15 +1028,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 );
                 continue;
             };
-            let precedes = if *owner == &parameter.owner {
+            let precedes = if *owner == parameter.owner.as_ref() {
                 *ordinal < parameter.ordinal
             } else {
-                feature_ordinals
-                    .get(*owner)
-                    .zip(feature_ordinals.get(&parameter.owner))
-                    .is_some_and(|(dependency_owner, parameter_owner)| {
-                        dependency_owner < parameter_owner
-                    })
+                match (*owner, parameter.owner.as_ref()) {
+                    (None, Some(_)) => true,
+                    (Some(dependency_owner), Some(parameter_owner)) => feature_ordinals
+                        .get(dependency_owner)
+                        .zip(feature_ordinals.get(parameter_owner))
+                        .is_some_and(|(dependency_owner, parameter_owner)| {
+                            dependency_owner < parameter_owner
+                        }),
+                    (Some(_), None) | (None, None) => false,
+                }
             };
             if !precedes {
                 findings.push(Finding {
@@ -1263,7 +1269,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .model
         .parameters
         .iter()
-        .map(|parameter| (&parameter.id, &parameter.owner))
+        .map(|parameter| (&parameter.id, parameter.owner.as_ref()))
         .collect::<HashMap<_, _>>();
     let mut feature_ordinals = HashSet::new();
     for feature in &ir.model.features {
@@ -1330,7 +1336,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         None => {
                             ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
                         }
-                        Some(owner) if *owner != &feature.id => findings.push(Finding {
+                        Some(owner) if *owner != Some(&feature.id) => findings.push(Finding {
                             check: Check::ReferentialIntegrity,
                             severity: Severity::Error,
                             message: format!(

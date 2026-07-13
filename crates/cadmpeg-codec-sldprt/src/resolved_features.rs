@@ -799,7 +799,12 @@ pub(crate) fn bind_parameter_scalars(
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
             let owner_parameters = parameters.iter_mut().filter(|parameter| {
-                neutral_owners.get(&parameter.owner).copied() == Some(native_feature.id.as_str())
+                parameter
+                    .owner
+                    .as_ref()
+                    .and_then(|owner| neutral_owners.get(owner))
+                    .copied()
+                    == Some(native_feature.id.as_str())
             });
             for parameter in owner_parameters {
                 if parameter.native_ref.is_some() {

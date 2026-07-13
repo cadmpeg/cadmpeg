@@ -3586,7 +3586,7 @@ fn encoder_writes_source_less_neutral_parameters() {
     });
     ir.model.parameters.push(DesignParameter {
         id: ParameterId("sldprt:model:parameter#generated:equation:0".into()),
-        owner: feature_id,
+        owner: Some(feature_id),
         ordinal: 0,
         name: "Pitch".into(),
         expression: "D1@Sketch1 * 2".into(),
@@ -6280,7 +6280,7 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     assert_eq!(value("Ratio"), Some(&ParameterValue::Real(1.25)));
     assert!(parameters
         .iter()
-        .all(|parameter| parameter.owner == decoded.ir.model.features[0].id));
+        .all(|parameter| parameter.owner.as_ref() == Some(&decoded.ir.model.features[0].id)));
 
     let radius = decoded
         .ir
@@ -6561,7 +6561,7 @@ fn semantic_writer_resolves_and_rewrites_owner_qualified_parameters() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == sketch1.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&sketch1.id) && parameter.name == "D1")
         .unwrap()
         .id
         .clone();
@@ -12383,7 +12383,7 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
@@ -12595,7 +12595,7 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
     assert_eq!(parameter.expression, "0.025");
     assert_eq!(
@@ -12641,7 +12641,7 @@ fn decode_projects_owned_native_sketch_relation() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected relation parameter");
     let constraint = decoded
         .ir
@@ -13029,7 +13029,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
         .model
         .parameters
         .iter()
-        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .find(|parameter| parameter.owner.as_ref() == Some(&feature.id) && parameter.name == "D1")
         .expect("projected D1 parameter");
     assert_eq!(parameter.expression, "25mm");
     assert_eq!(
