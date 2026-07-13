@@ -144,7 +144,10 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
             },
             |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
         );
-        sections.push((section, resolved_feature_payload(lane)?));
+        let histories = native
+            .as_ref()
+            .map_or(&[][..], |native| native.feature_histories.as_slice());
+        sections.push((section, resolved_feature_payload(lane, histories)?));
     }
     let opaque = opaque_blocks(ir, &active_partition_section, retain_native_brep)?;
     if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
@@ -727,6 +730,7 @@ fn patch_active_configuration_xml(
 
 fn resolved_feature_payload(
     lane: &crate::records::FeatureInputLane,
+    histories: &[crate::records::FeatureHistory],
 ) -> Result<Vec<u8>, CodecError> {
     const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
     let expected_classes =
@@ -743,9 +747,14 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
-    if lane.scalars
-        != crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names)
-    {
+    let mut expected_lane = lane.clone();
+    expected_lane.scalars =
+        crate::resolved_features::named_scalars(&lane.native_payload, &lane.id, &lane.names);
+    crate::resolved_features::bind_scalar_operands(
+        histories,
+        std::slice::from_mut(&mut expected_lane),
+    );
+    if lane.scalars != expected_lane.scalars {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited named scalars",
             lane.id

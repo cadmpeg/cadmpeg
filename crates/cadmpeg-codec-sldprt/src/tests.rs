@@ -10857,6 +10857,39 @@ fn decode_retains_e1_feature_input_operands() {
 }
 
 #[test]
+fn decode_resolves_feature_input_operands_within_sketch() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names(&[0, 1, 2], &["Sketch1", "D1"]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let lane = &native.feature_input_lanes[0];
+    let scalar = &lane.scalars[0];
+    assert_eq!(scalar.operands[0].entity_index, 0);
+    assert_eq!(scalar.operands[0].entity_ref, None);
+    assert_eq!(scalar.operands[1].entity_index, 2);
+    assert_eq!(
+        scalar.operands[1].entity_ref.as_deref(),
+        Some(lane.sketch_entities[1].id.as_str())
+    );
+
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
+}
+
+#[test]
 fn semantic_writer_rejects_edited_feature_input_class_index() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
     let mut decoded = SldprtCodec

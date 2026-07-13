@@ -201,9 +201,62 @@ fn scalar_operands(payload: &[u8], name_offset: usize) -> Vec<FeatureInputOperan
                 offset: offset as u64,
                 kind,
                 entity_index: u16::from_le_bytes([cell[2], cell[3]]),
+                entity_ref: None,
             })
         })
         .collect()
+}
+
+/// Resolve scalar operand indices within their owning feature-object interval.
+pub(crate) fn bind_scalar_operands(
+    histories: &[crate::records::FeatureHistory],
+    lanes: &mut [FeatureInputLane],
+) {
+    let mut feature_name_counts = HashMap::<&str, usize>::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        *feature_name_counts.entry(&feature.name).or_default() += 1;
+    }
+    for lane in lanes {
+        let mut starts = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|feature| feature_name_counts.get(feature.name.as_str()) == Some(&1))
+            .filter_map(|feature| {
+                let mut names = lane.names.iter().filter(|name| name.value == feature.name);
+                let first = names.next()?;
+                names.next().is_none().then_some(first.offset)
+            })
+            .collect::<Vec<_>>();
+        starts.sort_unstable();
+        for (index, &start) in starts.iter().enumerate() {
+            let end = starts.get(index + 1).copied().unwrap_or(u64::MAX);
+            let entities = lane
+                .sketch_entities
+                .iter()
+                .filter(|entity| entity.offset > start && entity.offset < end)
+                .collect::<Vec<_>>();
+            for scalar in lane
+                .scalars
+                .iter_mut()
+                .filter(|scalar| scalar.offset > start && scalar.offset < end)
+            {
+                for operand in &mut scalar.operands {
+                    if operand.kind != FeatureInputOperandKind::D6 {
+                        continue;
+                    }
+                    let mut matches = entities
+                        .iter()
+                        .filter(|entity| entity.local_id == Some(u32::from(operand.entity_index)));
+                    let Some(entity) = matches.next() else {
+                        continue;
+                    };
+                    if matches.next().is_none() {
+                        operand.entity_ref = Some(entity.id.clone());
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn scalar_role(payload: &[u8], name_offset: usize) -> FeatureInputScalarRole {

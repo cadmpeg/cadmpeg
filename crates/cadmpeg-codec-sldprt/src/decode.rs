@@ -281,7 +281,8 @@ fn build_geometry_ir(
     ir.source = Some(source_meta(scan, block, header));
     ir.annotations = std::mem::take(&mut brep.annotations);
     let histories = crate::history::histories(scan, &mut ir.annotations);
-    let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
     project_design_history(&mut ir, &histories, &lanes);
     let (mut sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
@@ -773,7 +774,8 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
 fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let histories = crate::history::histories(scan, &mut ir.annotations);
-    let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
+    crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
     let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);

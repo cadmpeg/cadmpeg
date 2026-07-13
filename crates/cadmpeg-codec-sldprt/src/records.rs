@@ -206,6 +206,9 @@ pub struct FeatureInputOperand {
     pub kind: FeatureInputOperandKind,
     /// Local entity index carried by the cell.
     pub entity_index: u16,
+    /// Resolved sketch-input entity in the same feature object, when unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_ref: Option<String>,
 }
 
 /// Native feature-input entity-reference cell family.
