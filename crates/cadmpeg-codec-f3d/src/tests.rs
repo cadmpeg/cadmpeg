@@ -5552,6 +5552,50 @@ fn generated_source_less_rejects_lossy_design_link_metadata() {
 }
 
 #[test]
+fn generated_source_less_rejects_collapsed_native_topology_metadata() {
+    use crate::records::{EdgeContinuity, TolerantVertexTail};
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let edge = source_less.model.edges[0].id.clone();
+    let vertex = source_less.model.vertices[0].id.clone();
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.edge_continuities = [0, 1]
+            .map(|ordinal| EdgeContinuity {
+                id: format!("f3d:asm:edge-continuity#generated-{ordinal}"),
+                edge: edge.clone(),
+                record_index: ordinal,
+                sense: cadmpeg_ir::topology::Sense::Forward,
+                continuity: "unknown".into(),
+            })
+            .into();
+    }
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("duplicate edge metadata must not collapse");
+    assert!(error
+        .to_string()
+        .contains("multiple F3D edge-continuity records"));
+
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.edge_continuities.truncate(1);
+        native.tolerant_vertex_tails = vec![TolerantVertexTail {
+            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            vertex,
+            record_index: 0,
+            trailing_floats: [1.0, 2.0],
+        }];
+    }
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("tolerant metadata on an ordinary vertex must not be dropped");
+    assert!(error
+        .to_string()
+        .contains("requires finite fields and a tolerant vertex"));
+}
+
+#[test]
 fn generated_source_less_writes_two_independent_cube_bodies() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let second_json = source_less

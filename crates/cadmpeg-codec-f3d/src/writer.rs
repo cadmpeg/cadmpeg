@@ -271,6 +271,115 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
             )));
         }
     }
+
+    let vertices = target
+        .model
+        .vertices
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let shells = target
+        .model
+        .shells
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    macro_rules! validate_unique_targets {
+        ($items:expr, $field:ident, $valid:expr, $label:literal) => {{
+            let mut seen = BTreeSet::new();
+            for item in $items {
+                if !$valid.contains(&item.$field) {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D {} metadata {} targets missing entity {}",
+                        $label, item.id, item.$field
+                    )));
+                }
+                if !seen.insert(&item.$field) {
+                    return Err(CodecError::Malformed(format!(
+                        "multiple F3D {} records target {}",
+                        $label, item.$field
+                    )));
+                }
+            }
+        }};
+    }
+    validate_unique_targets!(&native.body_native_keys, body, bodies, "body-native-key");
+    validate_unique_targets!(&native.body_visibilities, body, bodies, "body-visibility");
+    validate_unique_targets!(&native.transform_hints, body, bodies, "transform-hint");
+    validate_unique_targets!(&native.edge_continuities, edge, edges, "edge-continuity");
+    validate_unique_targets!(&native.edge_ownerships, edge, edges, "edge-ownership");
+    validate_unique_targets!(
+        &native.vertex_ownerships,
+        vertex,
+        vertices,
+        "vertex-ownership"
+    );
+    validate_unique_targets!(&native.face_sidedness, face, faces, "face-sidedness");
+    validate_unique_targets!(
+        &native.tolerant_vertex_tails,
+        vertex,
+        vertices,
+        "tolerant-vertex"
+    );
+    validate_unique_targets!(&native.wire_topologies, shell, shells, "wire-topology");
+
+    for visibility in &native.body_visibilities {
+        let body = target
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id == visibility.body)
+            .expect("validated body-visibility target");
+        if body.visible != Some(visibility.visible) {
+            return Err(CodecError::Malformed(format!(
+                "F3D body visibility {} conflicts with body {} visibility",
+                visibility.id, visibility.body
+            )));
+        }
+    }
+    for hints in &native.transform_hints {
+        if target
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id == hints.body)
+            .is_none_or(|body| body.transform.is_none())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D transform hints {} target a body without a transform",
+                hints.id
+            )));
+        }
+    }
+    for tail in &native.tolerant_vertex_tails {
+        if tail.trailing_floats.iter().any(|value| !value.is_finite())
+            || target
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == tail.vertex)
+                .is_none_or(|vertex| vertex.tolerance.is_none())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-vertex metadata {} requires finite fields and a tolerant vertex",
+                tail.id
+            )));
+        }
+    }
+    for wire in &native.wire_topologies {
+        if target
+            .model
+            .shells
+            .iter()
+            .find(|shell| shell.id == wire.shell)
+            .is_none_or(|shell| shell.wire_edges.is_empty())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D wire metadata {} targets a shell without wire edges",
+                wire.id
+            )));
+        }
+    }
     Ok(())
 }
 
