@@ -1062,7 +1062,7 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        fit_rank_one_e5_plane_axes, quintic_jet_pcurve, rational_pcurve_arc,
+        fit_rank_one_e5_plane_axes, ordered_range, quintic_jet_pcurve, rational_pcurve_arc,
         standard_pcurve_geometry,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
@@ -1083,6 +1083,23 @@ mod chart_tests {
             assert!((point.u - expected[0]).abs() < 1e-12);
             assert!((point.v - expected[1]).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn reverse_angular_interval_becomes_an_increasing_nurbs_domain() {
+        let range = ordered_range([0.0, -std::f64::consts::PI]);
+        let arc = rational_pcurve_arc([0.0, 0.0], 2.0, range).expect("reverse semicircle");
+        let PcurveGeometry::Nurbs { knots, .. } = &arc else {
+            panic!("expected rational NURBS arc");
+        };
+        assert!(knots.windows(2).all(|pair| pair[0] <= pair[1]));
+        assert_eq!(range, [-std::f64::consts::PI, 0.0]);
+        let start = pcurve_uv(&arc, range[0]).expect("start evaluation");
+        let end = pcurve_uv(&arc, range[1]).expect("end evaluation");
+        assert!((start.u + 2.0).abs() < 1e-12);
+        assert!(start.v.abs() < 1e-12);
+        assert!((end.u - 2.0).abs() < 1e-12);
+        assert!(end.v.abs() < 1e-12);
     }
 
     #[test]
@@ -1651,7 +1668,7 @@ fn e5_pcurve_on_surface(
             range,
             ..
         } if matches!(surface, SurfaceGeometry::Plane { .. }) => {
-            let angular_range = [range[0] / radius, range[1] / radius];
+            let angular_range = ordered_range([range[0] / radius, range[1] / radius]);
             let geometry = rational_pcurve_arc(*center, *radius, angular_range)?;
             let endpoints = angular_range.map(|angle| {
                 cadmpeg_ir::eval::surface_point(
@@ -2583,7 +2600,7 @@ fn standard_pcurve_geometry(
     {
         let center_uv = analytic_surface_uv(surface, *center)?;
         let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
-        let range = [range[0], unwrap_angle(range[1], range[0])];
+        let range = ordered_range([range[0], unwrap_angle(range[1], range[0])]);
         let geometry = rational_pcurve_arc([center_uv.u, center_uv.v], *radius, range)?;
         return Some((geometry, range));
     }
@@ -2609,6 +2626,14 @@ fn standard_pcurve_geometry(
         },
         [0.0, 1.0],
     ))
+}
+
+fn ordered_range(range: [f64; 2]) -> [f64; 2] {
+    if range[0] <= range[1] {
+        range
+    } else {
+        [range[1], range[0]]
+    }
 }
 
 fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point2> {
