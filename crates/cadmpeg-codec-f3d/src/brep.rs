@@ -3907,7 +3907,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         match r.head.as_str() {
             "shell" => {
                 let Some(owner) = r.ref_at(7) else { continue };
-                let faces = face_chain(r, &by_index, &kept_faces);
+                let faces = shell_faces(r, &by_index, &kept_faces);
                 out.shells.push(Shell {
                     id: ShellId(id(i)),
                     region: RegionId(id(owner)),
@@ -3980,6 +3980,24 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 });
             }
             _ => {}
+        }
+    }
+
+    // A face owned by a subshell is projected onto its nearest shell ancestor;
+    // the neutral IR deliberately has no subshell arena. This keeps the exact
+    // native ownership graph in the retained source while making every face
+    // reachable through the normalized shell.
+    let subshell_shells = subshell_ancestor_shells(records, &by_index);
+    for face in &mut out.faces {
+        let native_owner = face
+            .id
+            .0
+            .rsplit_once('#')
+            .and_then(|(_, index)| index.parse::<i64>().ok())
+            .and_then(|index| by_index.get(&index))
+            .and_then(|record| record.ref_at(5));
+        if let Some(shell) = native_owner.and_then(|owner| subshell_shells.get(&owner)) {
+            face.shell = ShellId(id(*shell));
         }
     }
 
@@ -4710,6 +4728,76 @@ fn face_chain(
     out
 }
 
+fn subshell_ancestor_shells(
+    records: &[Record],
+    by_index: &HashMap<i64, &Record>,
+) -> HashMap<i64, i64> {
+    let mut out = HashMap::new();
+    for record in records.iter().filter(|record| record.head == "subshell") {
+        let mut owner = record.ref_at(3);
+        let mut guard = HashSet::new();
+        while let Some(index) = owner.filter(|index| guard.insert(*index)) {
+            let Some(parent) = by_index.get(&index) else {
+                break;
+            };
+            if parent.head == "shell" {
+                out.insert(record.index as i64, index);
+                break;
+            }
+            if parent.head != "subshell" {
+                break;
+            }
+            owner = parent.ref_at(3);
+        }
+    }
+    out
+}
+
+fn shell_faces(
+    shell: &Record,
+    by_index: &HashMap<i64, &Record>,
+    kept: &HashSet<i64>,
+) -> Vec<FaceId> {
+    let mut out = face_chain(shell, by_index, kept);
+    let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
+    let mut guard = HashSet::new();
+    while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
+        let Some(record) = by_index
+            .get(&index)
+            .filter(|record| record.head == "subshell")
+        else {
+            break;
+        };
+        out.extend(face_chain_from(record.ref_at(6), by_index, kept));
+        if let Some(next) = record.ref_at(4) {
+            pending.push(next);
+        }
+        if let Some(child) = record.ref_at(5) {
+            pending.push(child);
+        }
+    }
+    out
+}
+
+fn face_chain_from(
+    mut current: Option<i64>,
+    by_index: &HashMap<i64, &Record>,
+    kept: &HashSet<i64>,
+) -> Vec<FaceId> {
+    let mut out = Vec::new();
+    let mut guard = HashSet::new();
+    while let Some(index) = current.filter(|index| guard.insert(*index)) {
+        if kept.contains(&index) {
+            out.push(FaceId(format!("f3d:brep:entity#{index}")));
+        }
+        let Some(face) = by_index.get(&index) else {
+            break;
+        };
+        current = face.ref_at(3);
+    }
+    out
+}
+
 fn shell_chain(region_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<ShellId> {
     let id = |i: i64| ShellId(format!("f3d:brep:entity#{i}"));
     let mut out = Vec::new();
@@ -4740,4 +4828,59 @@ fn region_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<Regi
         cur = l.ref_at(0);
     }
     out
+}
+
+#[cfg(test)]
+mod topology_tests {
+    use super::*;
+
+    fn ident(bytes: &mut Vec<u8>, name: &str) {
+        bytes.push(0x0d);
+        bytes.push(name.len() as u8);
+        bytes.extend_from_slice(name.as_bytes());
+    }
+
+    fn reference(bytes: &mut Vec<u8>, value: i64) {
+        bytes.push(0x0c);
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn record(bytes: &mut Vec<u8>, name: &str, fields: &[i64]) {
+        ident(bytes, name);
+        for field in fields {
+            reference(bytes, *field);
+        }
+        bytes.push(0x11);
+    }
+
+    #[test]
+    fn generated_subshell_hierarchy_flattens_faces_onto_shell() {
+        let mut bytes = Vec::new();
+        record(&mut bytes, "asmheader", &[]); // 0
+        record(&mut bytes, "shell", &[-1, -1, -1, -1, 2, -1, -1, -1]); // 1
+        record(&mut bytes, "subshell", &[-1, -1, -1, 1, -1, 3, 4, -1]); // 2
+        record(&mut bytes, "subshell", &[-1, -1, -1, 2, -1, -1, 5, -1]); // 3
+        record(&mut bytes, "face", &[-1, -1, -1, -1]); // 4
+        record(&mut bytes, "face", &[-1, -1, -1, -1]); // 5
+
+        let records = crate::sab::frame(&bytes, 0, bytes.len(), 8)
+            .expect("generated subshell bytes must frame");
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect::<HashMap<_, _>>();
+        let kept = [4, 5].into_iter().collect::<HashSet<_>>();
+
+        assert_eq!(
+            shell_faces(&records[1], &by_index, &kept),
+            vec![
+                FaceId("f3d:brep:entity#4".into()),
+                FaceId("f3d:brep:entity#5".into())
+            ]
+        );
+        assert_eq!(
+            subshell_ancestor_shells(&records, &by_index).get(&3),
+            Some(&1)
+        );
+    }
 }

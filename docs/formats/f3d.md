@@ -226,6 +226,12 @@ All records of a given class are fixed-size on Fusion files. Offsets are record-
 
 **Shell (80 B):** `chunk[5]` @+53 = first_face, `chunk[6]` = wire, `chunk[7]` = owner.
 
+**Subshell:** after the entity base header, `chunk[3]` = owner shell or parent subshell,
+`chunk[4]` = next sibling subshell, `chunk[5]` = first child subshell,
+`chunk[6]` = first face, and `chunk[7]` = wire. Subshell faces are projected onto
+their nearest shell ancestor in the neutral IR; retained-source writing preserves
+the native subshell records and ownership references byte-for-byte.
+
 **Face (81 B; +1 chunk if double-sided):**
 
 ```
