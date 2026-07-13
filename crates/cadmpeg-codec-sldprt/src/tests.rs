@@ -5129,23 +5129,27 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
     use cadmpeg_ir::features::{Angle, Length, ParameterValue};
 
     let mut source = sldprt_with_body(&triangle_body());
-    source.extend(make_block(
-        0x42,
-        "Contents/Keywords",
-        br#"<Keywords><Feature Name="Inputs" Type="EquationDriven" id="16">
+    let keywords = format!(
+        r#"<Keywords><Feature Name="Inputs" Type="EquationDriven" id="16">
             <Dimension Name="Angle">90deg</Dimension>
+            <Dimension Name="DisplayAngle">45.00{degree}</Dimension>
             <Dimension Name="Count">4</Dimension>
+            <Dimension Name="Diameter">{diameter}2.5</Dimension>
             <Dimension Name="Enabled">true</Dimension>
             <Dimension Name="Expression">D1@Sketch1 * 2</Dimension>
             <Dimension Name="Length">0.5in</Dimension>
+            <Dimension Name="Radius">R0.5</Dimension>
             <Dimension Name="Ratio">1.25</Dimension>
         </Feature></Keywords>"#,
-    ));
-    let decoded = SldprtCodec
+        degree = '\u{00b0}',
+        diameter = '\u{2300}',
+    );
+    source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameters = &decoded.ir.model.parameters;
-    assert_eq!(parameters.len(), 6);
+    assert_eq!(parameters.len(), 9);
     assert_eq!(
         parameters
             .iter()
@@ -5153,11 +5157,14 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
             .collect::<Vec<_>>(),
         vec![
             (0, "Angle"),
-            (1, "Count"),
-            (2, "Enabled"),
-            (3, "Expression"),
-            (4, "Length"),
-            (5, "Ratio"),
+            (1, "DisplayAngle"),
+            (2, "Count"),
+            (3, "Diameter"),
+            (4, "Enabled"),
+            (5, "Expression"),
+            (6, "Length"),
+            (7, "Radius"),
+            (8, "Ratio"),
         ]
     );
     let value = |name: &str| {
@@ -5171,14 +5178,79 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         Some(ParameterValue::Angle(Angle(angle)))
             if (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-12
     ));
+    assert!(matches!(
+        value("DisplayAngle"),
+        Some(ParameterValue::Angle(Angle(angle)))
+            if (*angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+    ));
     assert_eq!(value("Count"), Some(&ParameterValue::Integer(4)));
+    assert_eq!(
+        value("Diameter"),
+        Some(&ParameterValue::Length(Length(2.5)))
+    );
     assert_eq!(value("Enabled"), Some(&ParameterValue::Boolean(true)));
     assert_eq!(value("Expression"), None);
     assert_eq!(value("Length"), Some(&ParameterValue::Length(Length(12.7))));
+    assert_eq!(value("Radius"), Some(&ParameterValue::Length(Length(0.5))));
     assert_eq!(value("Ratio"), Some(&ParameterValue::Real(1.25)));
     assert!(parameters
         .iter()
         .all(|parameter| parameter.owner == decoded.ir.model.features[0].id));
+
+    let radius = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Radius")
+        .unwrap();
+    radius.expression = "R2".into();
+    radius.value = Some(ParameterValue::Length(Length(2.0)));
+    let display_angle = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "DisplayAngle")
+        .unwrap();
+    display_angle.expression = format!("30{}", '\u{00b0}');
+    display_angle.value = Some(ParameterValue::Angle(Angle(30.0_f64.to_radians())));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native_parameters =
+        &sldprt_native(&regenerated.ir).feature_histories[0].features[0].parameters;
+    assert_eq!(native_parameters["Radius"], "R2");
+    assert_eq!(
+        native_parameters["DisplayAngle"],
+        format!("30{}", '\u{00b0}')
+    );
+    assert!(matches!(
+        regenerated
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "Radius")
+            .and_then(|parameter| parameter.value.as_ref()),
+        Some(ParameterValue::Length(Length(2.0)))
+    ));
+    assert!(matches!(
+        regenerated
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.name == "DisplayAngle")
+            .and_then(|parameter| parameter.value.as_ref()),
+        Some(ParameterValue::Angle(Angle(angle)))
+            if (*angle - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+    ));
 }
 
 #[test]

@@ -2229,6 +2229,9 @@ fn native_definition(feature: &Feature) -> FeatureDefinition {
 
 fn parse_length_mm(value: &str) -> Option<f64> {
     let value = value.trim();
+    let (value, display_length) = value
+        .strip_prefix(['R', 'r', '\u{2300}', '\u{00d8}'])
+        .map_or((value, false), |value| (value.trim(), true));
     for (suffix, scale) in [("mm", 1.0), ("cm", 10.0), ("in", 25.4), ("m", 1000.0)] {
         if let Some(number) = value.strip_suffix(suffix) {
             return number
@@ -2239,7 +2242,10 @@ fn parse_length_mm(value: &str) -> Option<f64> {
                 .filter(|value| value.is_finite());
         }
     }
-    None
+    display_length
+        .then(|| value.parse::<f64>().ok())
+        .flatten()
+        .filter(|value| value.is_finite())
 }
 
 fn parse_positive_length_mm(value: &str) -> Option<f64> {
@@ -2252,7 +2258,10 @@ fn format_length_mm(value: f64) -> String {
 
 fn parse_angle_rad(value: &str) -> Option<f64> {
     let value = value.trim();
-    if let Some(number) = value.strip_suffix("deg") {
+    if let Some(number) = value
+        .strip_suffix("deg")
+        .or_else(|| value.strip_suffix('\u{00b0}'))
+    {
         return number
             .trim()
             .parse::<f64>()
