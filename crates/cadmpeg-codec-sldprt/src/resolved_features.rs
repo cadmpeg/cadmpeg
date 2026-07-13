@@ -538,7 +538,11 @@ fn source_less_lanes(
         let sketch_ir = sketch_brep(ir, sketch)?;
         let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
         lane.native_payload
-            .extend(crate::writer::parasolid_stream(&body, "SCH_SW_33103_11000"));
+            .extend(crate::writer::parasolid_stream_named(
+                &body,
+                "SCH_SW_33103_11000",
+                sketch.name.as_deref().unwrap_or(&sketch.id.0),
+            ));
     }
     Ok(lanes)
 }

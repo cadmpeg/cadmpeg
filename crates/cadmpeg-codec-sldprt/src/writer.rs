@@ -1878,7 +1878,11 @@ fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, values: &[f64]) {
     }
 }
 pub(crate) fn parasolid_stream(body: &[u8], schema: &str) -> Vec<u8> {
-    let description = b"partition body";
+    parasolid_stream_named(body, schema, "partition body")
+}
+
+pub(crate) fn parasolid_stream_named(body: &[u8], schema: &str, description: &str) -> Vec<u8> {
+    let description = description.as_bytes();
     let schema = schema.as_bytes();
     let mut out = b"PS\0\0".to_vec();
     be16(&mut out, description.len() as u16);

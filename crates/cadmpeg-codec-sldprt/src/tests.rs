@@ -1789,6 +1789,88 @@ fn encoder_writes_source_less_curved_sketches() {
 }
 
 #[test]
+fn encoder_binds_multiple_source_less_sketches_by_name() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    for (ordinal, name) in ["Profile A", "Profile B"].into_iter().enumerate() {
+        let sketch_id = SketchId(format!("synthetic:test:sketch#named-{ordinal}"));
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: Some(name.into()),
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, ordinal as f64),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        });
+        ir.model.sketch_entities.push(SketchEntity {
+            id: SketchEntityId(format!("synthetic:test:sketch-entity#named-{ordinal}")),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(ordinal as f64, ordinal as f64 + 1.0),
+            },
+        });
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("synthetic:test:feature#named-{ordinal}")),
+            ordinal: ordinal as u64,
+            name: Some(name.into()),
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                sketch: Some(sketch_id),
+            },
+            native_ref: None,
+        });
+    }
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.sketches.len(), 2);
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .sketches
+            .iter()
+            .filter_map(|sketch| sketch.name.as_deref())
+            .collect::<Vec<_>>(),
+        ["Profile A", "Profile B"]
+    );
+    let bound = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+            } => Some(sketch),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(bound.len(), 2);
+    assert_ne!(bound[0], bound[1]);
+}
+
+#[test]
 fn encoder_writes_source_less_native_features() {
     use cadmpeg_ir::features::{
         Angle, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent, FaceMotion,
