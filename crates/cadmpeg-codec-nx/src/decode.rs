@@ -2674,19 +2674,17 @@ pub(crate) fn attach_expression_parameters(
             },
             native_ref: None,
         });
-        let parameter_ids = expressions
-            .iter()
-            .map(|expression| {
-                let key = expression
-                    .id
-                    .rsplit_once('#')
-                    .map_or("unknown", |(_, key)| key);
-                (
-                    expression.name.clone(),
-                    ParameterId(format!("{section}:parameter#{key}")),
-                )
-            })
-            .collect::<BTreeMap<_, _>>();
+        let mut parameter_ids = BTreeMap::<String, Vec<ParameterId>>::new();
+        for expression in &expressions {
+            let key = expression
+                .id
+                .rsplit_once('#')
+                .map_or("unknown", |(_, key)| key);
+            parameter_ids
+                .entry(expression.name.clone())
+                .or_default()
+                .push(ParameterId(format!("{section}:parameter#{key}")));
+        }
         for (ordinal, expression) in expressions.into_iter().enumerate() {
             let key = expression
                 .id
@@ -2703,7 +2701,10 @@ pub(crate) fn attach_expression_parameters(
             let mut seen_dependencies = BTreeSet::new();
             let dependencies = crate::native::expression_parameter_names(&expression.expression)
                 .into_iter()
-                .filter_map(|name| parameter_ids.get(name).cloned())
+                .filter_map(|name| {
+                    let candidates = parameter_ids.get(name)?;
+                    (candidates.len() == 1).then(|| candidates[0].clone())
+                })
                 .filter(|dependency| seen_dependencies.insert(dependency.clone()))
                 .collect::<Vec<_>>();
             if !dependencies.is_empty() {

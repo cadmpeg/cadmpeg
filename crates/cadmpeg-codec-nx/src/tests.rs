@@ -104,6 +104,33 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
     );
 }
 
+#[test]
+fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
+    let expression = |key: u32, name: &str, text: &str| crate::native::Expression {
+        id: format!("nx:test:expression#{key}"),
+        object_id: Some(key),
+        record: None,
+        name: name.into(),
+        parameter_index: Some(key),
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: text.into(),
+        value: None,
+        source_entry: "/Root/UG_PART/UG_PART".into(),
+        source_offset: u64::from(key),
+    };
+    let expressions = [
+        expression(20, "p2", "5"),
+        expression(21, "p2", "7"),
+        expression(90, "p9", "p2 * 2"),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &mut annotations);
+
+    assert!(ir.model.parameters[2].dependencies.is_empty());
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
