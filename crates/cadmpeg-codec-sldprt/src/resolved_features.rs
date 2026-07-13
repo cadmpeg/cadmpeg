@@ -838,6 +838,29 @@ pub(crate) fn bind_history_classes(
             feature.input_class = Some(first.to_string());
         }
     }
+
+    let mut classes_by_type = HashMap::<String, Vec<String>>::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        if let Some(class) = &feature.input_class {
+            classes_by_type
+                .entry(feature.kind.clone())
+                .or_default()
+                .push(class.clone());
+        }
+    }
+    for classes in classes_by_type.values_mut() {
+        classes.sort();
+        classes.dedup();
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.input_class.is_none())
+    {
+        if let Some([class]) = classes_by_type.get(&feature.kind).map(Vec::as_slice) {
+            feature.input_class = Some(class.clone());
+        }
+    }
 }
 
 /// Bind profile streams to uniquely enclosing sketch feature records.

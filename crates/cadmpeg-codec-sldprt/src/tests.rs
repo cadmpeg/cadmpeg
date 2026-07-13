@@ -5741,6 +5741,61 @@ fn decode_binds_duplicate_feature_names_by_native_object_id() {
 }
 
 #[test]
+fn decode_propagates_unique_object_class_by_serialized_type_token() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Redondeo1" Type="Redondeo" id="41"/>
+            <Feature Name="Redondeo2" Type="Redondeo" id="42"/>
+        </Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("Fillet_c", "Redondeo2", 42)]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    assert!(native.feature_histories[0]
+        .features
+        .iter()
+        .all(|feature| feature.input_class.as_deref() == Some("Fillet_c")));
+}
+
+#[test]
+fn decode_does_not_propagate_ambiguous_object_class_by_type_token() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="First" Type="Custom" id="41"/>
+            <Feature Name="Second" Type="Custom" id="42"/>
+            <Feature Name="Third" Type="Custom" id="43"/>
+        </Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("Fillet_c", "First", 41),
+            ("moRefPlane_c", "Second", 42),
+        ]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    assert_eq!(native.feature_histories[0].features[2].input_class, None);
+}
+
+#[test]
 fn decode_does_not_bind_object_class_by_display_name() {
     use cadmpeg_ir::features::FeatureDefinition;
 
