@@ -722,6 +722,41 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.design_entity_headers,
     )?;
+    let indices = native
+        .design_parameter_scopes
+        .iter()
+        .flat_map(|scope| {
+            let stream = crate::design::native_stream(&scope.id)
+                .unwrap_or("f3d:design")
+                .to_owned();
+            scope
+                .reference_members
+                .iter()
+                .map(move |record_index| (stream.clone(), *record_index))
+        })
+        .collect::<Vec<_>>();
+    let existing = native
+        .design_record_headers
+        .iter()
+        .filter_map(|record| {
+            Some((
+                crate::design::native_stream(&record.id)?.to_owned(),
+                record.record_index,
+            ))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    native.design_record_headers.extend(
+        crate::design::decode_related_record_headers(reader, scan, &indices)?
+            .into_iter()
+            .filter(|record| {
+                crate::design::native_stream(&record.id).is_none_or(|stream| {
+                    !existing.contains(&(stream.to_owned(), record.record_index))
+                })
+            }),
+    );
+    native
+        .design_record_headers
+        .sort_by_key(|record| record.id.clone());
     native.design_sketch_placements =
         crate::design::decode_sketch_placements(scan, &native.design_parameter_scopes)?;
     Ok(())

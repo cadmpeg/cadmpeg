@@ -240,6 +240,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.reference_member_offsets.iter().all(|offset| {
                 *offset > scope.reference_count_offset && *offset < scope.kind_offset
             })
+            && scope
+                .reference_members
+                .iter()
+                .all(|record_index| record_indices.contains(&(native_stream, *record_index)))
             && record_indices.contains(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(scope.kind != "Sketch")
             && (scope.kind != "Sketch"
