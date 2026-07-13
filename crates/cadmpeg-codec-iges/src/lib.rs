@@ -20,8 +20,9 @@ impl Codec for IgesCodec {
         card::detect_fixed_ascii(prefix)
     }
 
-    fn inspect(&self, _reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
-        Err(CodecError::NotImplemented("IGES inspection".into()))
+    fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
+        let scan = card::scan(reader)?;
+        Ok(card::summarize(&scan))
     }
 
     fn decode(

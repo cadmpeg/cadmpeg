@@ -2,8 +2,80 @@
 //! Exact physical-line and fixed-card framing.
 
 use cadmpeg_ir::codec::Confidence;
+use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use cadmpeg_ir::{ByteLedger, ByteSpan, ByteSpanClass};
+use std::collections::BTreeMap;
+use std::io::Read;
 
 const CARD_WIDTH: usize = 80;
+const MAX_SOURCE_BYTES: usize = 256 * 1024 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Section {
+    Start,
+    Global,
+    Directory,
+    Parameter,
+    Terminate,
+}
+
+impl Section {
+    fn parse(marker: u8) -> Option<Self> {
+        match marker {
+            b'S' => Some(Self::Start),
+            b'G' => Some(Self::Global),
+            b'D' => Some(Self::Directory),
+            b'P' => Some(Self::Parameter),
+            b'T' => Some(Self::Terminate),
+            _ => None,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Global => "global",
+            Self::Directory => "directory-entry",
+            Self::Parameter => "parameter-data",
+            Self::Terminate => "terminate",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LineEnding {
+    Lf,
+    CrLf,
+    Cr,
+    None,
+}
+
+impl LineEnding {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Lf => "lf",
+            Self::CrLf => "crlf",
+            Self::Cr => "cr",
+            Self::None => "none",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct PhysicalLine {
+    pub(crate) offset: u64,
+    pub(crate) payload: Vec<u8>,
+    ending: LineEnding,
+    pub(crate) section: Option<Section>,
+    pub(crate) sequence: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CardScan {
+    pub(crate) source: Vec<u8>,
+    pub(crate) lines: Vec<PhysicalLine>,
+    pub(crate) ledger: ByteLedger,
+}
 
 fn take_line(input: &[u8]) -> Option<(&[u8], &[u8])> {
     let ending_at = input
@@ -51,5 +123,216 @@ pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
     match header(second) {
         Some((b'S', 2) | (b'G', 1)) => Confidence::High,
         _ => Confidence::No,
+    }
+}
+
+fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
+    let mut lines = Vec::new();
+    let mut start = 0_usize;
+    while start < source.len() {
+        let relative_end = source[start..]
+            .iter()
+            .position(|byte| matches!(byte, b'\r' | b'\n'));
+        let (payload_end, ending, next) = match relative_end {
+            Some(relative) => {
+                let end = start
+                    .checked_add(relative)
+                    .ok_or_else(|| CodecError::Malformed("IGES line offset overflow".into()))?;
+                if source[end] == b'\r' && source.get(end + 1) == Some(&b'\n') {
+                    (end, LineEnding::CrLf, end + 2)
+                } else if source[end] == b'\r' {
+                    (end, LineEnding::Cr, end + 1)
+                } else {
+                    (end, LineEnding::Lf, end + 1)
+                }
+            }
+            None => (source.len(), LineEnding::None, source.len()),
+        };
+        let payload = source[start..payload_end].to_vec();
+        let section = payload.get(72).copied().and_then(Section::parse);
+        let sequence = (payload.len() >= CARD_WIDTH)
+            .then(|| sequence(&payload))
+            .flatten();
+        lines.push(PhysicalLine {
+            offset: u64::try_from(start)
+                .map_err(|_| CodecError::Malformed("IGES source offset exceeds u64".into()))?,
+            payload,
+            ending,
+            section,
+            sequence,
+        });
+        start = next;
+    }
+    Ok(lines)
+}
+
+fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
+    let mut section = None;
+    let mut expected_sequence = 1_u32;
+    for line in lines {
+        let current = line.section.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "IGES card at offset {} has no recognized section marker",
+                line.offset
+            ))
+        })?;
+        let current_sequence = line.sequence.ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "IGES card at offset {} has an invalid sequence field",
+                line.offset
+            ))
+        })?;
+        if section != Some(current) {
+            if section.is_some_and(|previous| current <= previous) {
+                return Err(CodecError::Malformed(format!(
+                    "IGES section {} is out of order",
+                    current.name()
+                )));
+            }
+            section = Some(current);
+            expected_sequence = 1;
+        }
+        if current_sequence != expected_sequence {
+            return Err(CodecError::Malformed(format!(
+                "IGES {} sequence is {current_sequence}, expected {expected_sequence}",
+                current.name()
+            )));
+        }
+        expected_sequence = expected_sequence
+            .checked_add(1)
+            .ok_or_else(|| CodecError::Malformed("IGES section sequence overflow".into()))?;
+    }
+    if lines.first().and_then(|line| line.section) != Some(Section::Start)
+        || lines.last().and_then(|line| line.section) != Some(Section::Terminate)
+    {
+        return Err(CodecError::Malformed(
+            "IGES Fixed ASCII requires Start through Terminate sections".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn structural_ledger(source_length: u64, lines: &[PhysicalLine]) -> ByteLedger {
+    let mut spans = Vec::new();
+    for (index, line) in lines.iter().enumerate() {
+        let owner = format!("iges:physical:card#{}", index + 1);
+        let payload_length = u64::try_from(line.payload.len()).unwrap_or(u64::MAX);
+        let payload_end = line.offset.saturating_add(payload_length);
+        if payload_length > 0 {
+            spans.push(ByteSpan {
+                start: line.offset,
+                end: payload_end,
+                class: ByteSpanClass::Structural,
+                owner: owner.clone(),
+                meaning: "card_payload".into(),
+                retained_record: None,
+            });
+        }
+        let ending_length = match line.ending {
+            LineEnding::CrLf => 2,
+            LineEnding::Lf | LineEnding::Cr => 1,
+            LineEnding::None => 0,
+        };
+        if ending_length > 0 {
+            spans.push(ByteSpan {
+                start: payload_end,
+                end: payload_end + ending_length,
+                class: ByteSpanClass::Structural,
+                owner,
+                meaning: "line_ending".into(),
+                retained_record: None,
+            });
+        }
+    }
+    ByteLedger {
+        source_length,
+        spans,
+    }
+}
+
+pub(crate) fn scan(reader: &mut dyn ReadSeek) -> Result<CardScan, CodecError> {
+    let mut source = Vec::new();
+    reader
+        .take(u64::try_from(MAX_SOURCE_BYTES + 1).unwrap_or(u64::MAX))
+        .read_to_end(&mut source)?;
+    if source.len() > MAX_SOURCE_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "IGES source exceeds {MAX_SOURCE_BYTES} byte limit"
+        )));
+    }
+    if source.is_empty() {
+        return Err(CodecError::WrongFormat("empty IGES source".into()));
+    }
+    let lines = physical_lines(&source)?;
+    validate_card_order(&lines)?;
+    let source_length = u64::try_from(source.len())
+        .map_err(|_| CodecError::Malformed("IGES source length exceeds u64".into()))?;
+    let ledger = structural_ledger(source_length, &lines);
+    Ok(CardScan {
+        source,
+        lines,
+        ledger,
+    })
+}
+
+pub(crate) fn summarize(scan: &CardScan) -> ContainerSummary {
+    let sections = [
+        Section::Start,
+        Section::Global,
+        Section::Directory,
+        Section::Parameter,
+        Section::Terminate,
+    ];
+    let entries = sections
+        .into_iter()
+        .filter_map(|section| {
+            let lines = scan
+                .lines
+                .iter()
+                .filter(|line| line.section == Some(section))
+                .collect::<Vec<_>>();
+            if lines.is_empty() {
+                return None;
+            }
+            let mut endings = BTreeMap::<&str, usize>::new();
+            for line in &lines {
+                *endings.entry(line.ending.name()).or_default() += 1;
+            }
+            let mut attributes = BTreeMap::new();
+            attributes.insert("cards".into(), lines.len().to_string());
+            attributes.insert(
+                "line_endings".into(),
+                endings
+                    .into_iter()
+                    .map(|(name, count)| format!("{name}:{count}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            let size = lines.iter().fold(0_u64, |size, line| {
+                let ending = match line.ending {
+                    LineEnding::CrLf => 2,
+                    LineEnding::Lf | LineEnding::Cr => 1,
+                    LineEnding::None => 0,
+                };
+                size.saturating_add(u64::try_from(line.payload.len()).unwrap_or(u64::MAX) + ending)
+            });
+            Some(ContainerEntry {
+                name: section.name().into(),
+                role: "section".into(),
+                compression: "none".into(),
+                compressed_size: size,
+                uncompressed_size: size,
+                attributes,
+            })
+        })
+        .collect();
+    ContainerSummary {
+        format: "iges".into(),
+        container_kind: "fixed-ascii".into(),
+        entries,
+        notes: vec![
+            format!("source_bytes={}", scan.source.len()),
+            format!("ledger_spans={}", scan.ledger.spans.len()),
+        ],
     }
 }
