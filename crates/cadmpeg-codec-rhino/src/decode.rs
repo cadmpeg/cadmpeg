@@ -3414,6 +3414,67 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
     Ok(staged)
 }
 
+/// Projects one embedded Brep into a self-contained semantic topology value.
+pub(crate) fn embedded_brep_json(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    scale: f64,
+) -> Option<String> {
+    let parsed = crate::brep::parse(data, range, archive, writer_version).ok()?;
+    let raw = match parsed {
+        crate::brep::BrepParse::Valid(value) => value.raw,
+        crate::brep::BrepParse::SemanticInvalid { .. } => return None,
+    };
+    let association = SourceObjectAssociation {
+        format: "rhino".to_string(),
+        object_id: "embedded-history-brep".to_string(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown = UnknownId("rhino:history:embedded-brep".to_string());
+    let mut mesh_budget = crate::mesh::MeshBudget::new();
+    let staged = stage_brep(BrepTransferInput {
+        data,
+        archive,
+        writer_version,
+        raw: &raw,
+        key: "history:embedded-brep",
+        association: &association,
+        unknown: &unknown,
+        scale,
+        semantic_error: None,
+        mesh_budget: &mut mesh_budget,
+    })
+    .ok()?;
+    if staged.kind != BrepTransferKind::FullTopology {
+        return None;
+    }
+    serde_json::to_string(&serde_json::json!({
+        "kind": "brep",
+        "bodies": staged.bodies,
+        "regions": staged.regions,
+        "shells": staged.shells,
+        "faces": staged.faces,
+        "loops": staged.loops,
+        "coedges": staged.coedges,
+        "edges": staged.edges,
+        "vertices": staged.vertices,
+        "points": staged.points,
+        "surfaces": staged.surfaces,
+        "curves": staged.curves,
+        "procedural_curves": staged.procedural_curves,
+        "procedural_surfaces": staged.procedural_surfaces,
+        "pcurves": staged.pcurves,
+        "tessellations": staged.tessellations,
+    }))
+    .ok()
+}
+
 /// Rhino trim curves live in the surface's native parameter space. A plane's
 /// parameters are lengths, so a unit-scaled document moves the plane's
 /// parameterization to millimeters while the trims stay in native units;

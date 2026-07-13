@@ -1067,6 +1067,14 @@ fn extended_geometry_json(
             "quick_preview": morph.quick_preview,
             "preserve_structure": morph.preserve_structure,
         })
+    } else if crate::brep::supported_class(value.class_id) {
+        return crate::decode::embedded_brep_json(
+            data,
+            value.class_data_range.clone(),
+            archive,
+            writer_version,
+            scale,
+        );
     } else {
         return None;
     };
@@ -1463,5 +1471,18 @@ mod tests {
             serde_json::from_str::<serde_json::Value>(&semantic).unwrap(),
             serde_json::json!({"kind": "subd", "empty": true})
         );
+
+        let brep = crate::archive_test_support::brep_payload(false);
+        let geometry = EmbeddedGeometry {
+            class_id: crate::brep::ON_BREP,
+            class_data_range: 0..brep.len(),
+        };
+        let semantic = extended_geometry_json(&brep, &geometry, ArchiveVersion::V8, None, 10.0)
+            .expect("Brep topology semantics");
+        let semantic: serde_json::Value = serde_json::from_str(&semantic).unwrap();
+        assert_eq!(semantic["kind"], "brep");
+        assert_eq!(semantic["bodies"].as_array().unwrap().len(), 1);
+        assert_eq!(semantic["faces"].as_array().unwrap().len(), 1);
+        assert_eq!(semantic["vertices"].as_array().unwrap().len(), 3);
     }
 }
