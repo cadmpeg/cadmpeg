@@ -745,15 +745,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         provenance: None,
     });
     losses.push(LossNote {
-        category: LossCategory::Geometry,
-        severity: Severity::Warning,
-        message: "Stored curve-on-surface families and non-isoparametric NURBS trims are not \
-                  reconstructed. Planar lines, cylindrical and spherical analytic trims, and \
-                  byte-matching NURBS boundary isocurves receive derived pcurves."
-            .to_string(),
-        provenance: None,
-    });
-    losses.push(LossNote {
         category: LossCategory::Material,
         severity: Severity::Warning,
         message: "Conflicting per-face appearance carriers have unresolved override precedence; UnQLite document metadata is preserved but not typed."

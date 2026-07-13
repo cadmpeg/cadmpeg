@@ -3496,6 +3496,22 @@ fn decode_builds_valid_topology_and_plane() {
 }
 
 #[test]
+fn decode_does_not_report_derived_pcurves_as_stored_geometry_loss() {
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("curve-on-surface")));
+}
+
+#[test]
 fn decode_merges_partition_and_deltas_records() {
     let body = triangle_body();
     let split = body.len() / 2;
