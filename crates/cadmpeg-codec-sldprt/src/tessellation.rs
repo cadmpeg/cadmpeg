@@ -74,6 +74,16 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
         }
         at = end;
     }
+    let vertex_count = strips
+        .iter()
+        .try_fold(0usize, |total, length| total.checked_add(*length))?;
+    if strips.is_empty()
+        || vertices.is_empty()
+        || vertex_count != vertices.len()
+        || !normals.is_empty() && normals.len() != vertices.len()
+    {
+        return None;
+    }
     let mut triangles = Vec::new();
     let mut base = 0usize;
     for length in &strips {

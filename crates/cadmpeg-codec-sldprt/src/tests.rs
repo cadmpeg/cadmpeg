@@ -4223,6 +4223,35 @@ fn decode_reports_display_list_geometry() {
 }
 
 #[test]
+fn decode_rejects_inconsistent_display_list_table() {
+    let mut payload = display_list_payload();
+    let marker = b"uoTempFaceTessData_c";
+    let at = payload
+        .windows(marker.len())
+        .position(|bytes| bytes == marker)
+        .unwrap()
+        + marker.len()
+        + 8
+        + 16;
+    payload[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x41, "Contents/DisplayLists", &payload));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(result.ir.model.tessellations.is_empty());
+    assert!(result
+        .ir
+        .source
+        .as_ref()
+        .unwrap()
+        .attributes
+        .get("displaylist_vertices")
+        .is_none());
+}
+
+#[test]
 fn decode_extracts_parametric_history() {
     let f = sldprt_with_body_and_history(&triangle_body());
     let mut cur = Cursor::new(f);
