@@ -1496,7 +1496,8 @@ fn typed_marker_relation_definition(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        Collinear, Concentric, Equal, Fixed, Horizontal, Parallel, Perpendicular, Tangent, Vertical,
+        Coincident, Collinear, Concentric, Equal, Fixed, Horizontal, Parallel, Perpendicular,
+        Tangent, Vertical,
     };
     let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
@@ -1553,8 +1554,32 @@ fn typed_marker_relation_definition(
                 _ => unreachable!("relation kind was filtered above"),
             }
         }
+        Coincident => {
+            let loci = linked_single_loci(marker, loci_by_marker)?;
+            if loci.len() < 2 {
+                return None;
+            }
+            SketchConstraintDefinition::CoincidentLoci { loci }
+        }
         _ => return None,
     })
+}
+
+fn linked_single_loci(
+    marker: &SketchInputEntity,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<Vec<SketchLocus>> {
+    let mut result = Vec::new();
+    for link in &marker.links {
+        let loci = loci_by_marker.get(&link.entity_ref)?;
+        let [locus] = loci.as_slice() else {
+            return None;
+        };
+        if !result.contains(locus) {
+            result.push(locus.clone());
+        }
+    }
+    Some(result)
 }
 
 fn linked_single_entities(
@@ -2137,6 +2162,19 @@ mod profile_join_tests {
             Some(SketchConstraintDefinition::Parallel {
                 first: first.clone(),
                 second: SketchEntityId("second".into()),
+            })
+        );
+        let mut coincident = marker("coincident", None);
+        coincident.kind = SketchInputKind::Relation(SketchRelationKind::Coincident);
+        coincident.links = parallel.links.clone();
+        markers.insert(coincident.id.as_str(), &coincident);
+        assert_eq!(
+            typed_marker_relation_definition(&coincident, &markers, &joins),
+            Some(SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                    cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+                ],
             })
         );
         let relation = FeatureInputRelationInstance {
