@@ -24,7 +24,7 @@ use cadmpeg_ir::Exactness;
 
 use super::entity;
 use super::topology::{self, Record};
-use super::{scan_carriers, Carrier, CarrierGeometry, LEN_TO_MM};
+use super::{scan_carriers, Carrier, CarrierGeometry, CarrierIndex, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
 /// Decoded B-rep arenas, provenance, and transfer statistics.
@@ -65,6 +65,124 @@ pub struct Brep {
     pub stats: Stats,
 }
 
+impl Brep {
+    /// Qualify every document-arena identity and internal reference by one site key.
+    pub(crate) fn qualify_ids(&mut self, site: &str) {
+        let qualify = |value: &str| {
+            value.split_once('#').map_or_else(
+                || value.to_owned(),
+                |(namespace, key)| format!("{namespace}#{key}@{site}"),
+            )
+        };
+        for body in &mut self.bodies {
+            body.id.0 = qualify(&body.id.0);
+            body.regions.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+        }
+        for region in &mut self.regions {
+            region.id.0 = qualify(&region.id.0);
+            region.body.0 = qualify(&region.body.0);
+            region
+                .shells
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+        }
+        for shell in &mut self.shells {
+            shell.id.0 = qualify(&shell.id.0);
+            shell.region.0 = qualify(&shell.region.0);
+            shell.faces.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+            shell
+                .wire_edges
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+            shell
+                .free_vertices
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+        }
+        for face in &mut self.faces {
+            face.id.0 = qualify(&face.id.0);
+            face.shell.0 = qualify(&face.shell.0);
+            face.surface.0 = qualify(&face.surface.0);
+            face.loops.iter_mut().for_each(|id| id.0 = qualify(&id.0));
+        }
+        for loop_ in &mut self.loops {
+            loop_.id.0 = qualify(&loop_.id.0);
+            loop_.face.0 = qualify(&loop_.face.0);
+            loop_
+                .coedges
+                .iter_mut()
+                .for_each(|id| id.0 = qualify(&id.0));
+        }
+        for coedge in &mut self.coedges {
+            coedge.id.0 = qualify(&coedge.id.0);
+            coedge.owner_loop.0 = qualify(&coedge.owner_loop.0);
+            coedge.edge.0 = qualify(&coedge.edge.0);
+            coedge.next.0 = qualify(&coedge.next.0);
+            coedge.previous.0 = qualify(&coedge.previous.0);
+            coedge.radial_next.0 = qualify(&coedge.radial_next.0);
+            if let Some(pcurve) = &mut coedge.pcurve {
+                pcurve.0 = qualify(&pcurve.0);
+            }
+        }
+        for edge in &mut self.edges {
+            edge.id.0 = qualify(&edge.id.0);
+            if let Some(curve) = &mut edge.curve {
+                curve.0 = qualify(&curve.0);
+            }
+            edge.start.0 = qualify(&edge.start.0);
+            edge.end.0 = qualify(&edge.end.0);
+        }
+        for vertex in &mut self.vertices {
+            vertex.id.0 = qualify(&vertex.id.0);
+            vertex.point.0 = qualify(&vertex.point.0);
+        }
+        self.points
+            .iter_mut()
+            .for_each(|point| point.id.0 = qualify(&point.id.0));
+        for surface in &mut self.surfaces {
+            surface.id.0 = qualify(&surface.id.0);
+            if let SurfaceGeometry::Unknown {
+                record: Some(record),
+            } = &mut surface.geometry
+            {
+                record.0 = qualify(&record.0);
+            }
+        }
+        for curve in &mut self.curves {
+            curve.id.0 = qualify(&curve.id.0);
+            if let CurveGeometry::Unknown {
+                record: Some(record),
+            } = &mut curve.geometry
+            {
+                record.0 = qualify(&record.0);
+            }
+        }
+        self.pcurves
+            .iter_mut()
+            .for_each(|pcurve| pcurve.id.0 = qualify(&pcurve.id.0));
+        for record in &mut self.unknowns {
+            record.id.0 = qualify(&record.id.0);
+            record
+                .links
+                .iter_mut()
+                .for_each(|link| *link = qualify(link));
+        }
+        for color in &mut self.face_colors {
+            if let Some(target) = &mut color.target {
+                *target = qualify(target);
+            }
+        }
+        self.annotations.provenance = std::mem::take(&mut self.annotations.provenance)
+            .into_iter()
+            .map(|(id, value)| (qualify(&id), value))
+            .collect();
+        self.annotations.exactness = std::mem::take(&mut self.annotations.exactness)
+            .into_iter()
+            .map(|(id, value)| (qualify(&id), value))
+            .collect();
+    }
+}
+
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
 pub struct Stats {
@@ -73,8 +191,6 @@ pub struct Stats {
     pub unknown_surface_faces: usize,
     /// Edges whose support curve is an untyped carrier (emitted with no curve).
     pub unknown_curve_edges: usize,
-    /// Cone/torus carriers decoded from a single observed field layout.
-    pub single_sample_carriers: usize,
     /// No explicit body record was available, so one body hierarchy was derived.
     pub synthetic_body_grouping: bool,
 }
@@ -102,6 +218,12 @@ fn id_vertex(a: u16) -> String {
 }
 fn id_point(a: u16) -> String {
     format!("sldprt:brep:point#{a}")
+}
+fn id_closed_point(edge: u16) -> String {
+    format!("sldprt:brep:point#closed-circle-{edge}")
+}
+fn id_closed_vertex(edge: u16) -> String {
+    format!("sldprt:brep:vertex#closed-circle-{edge}")
 }
 
 /// One face-use's decoded loops: ordered coedge rings, keyed by loop attr.
@@ -171,17 +293,54 @@ pub fn decode(payload: &[u8], header: &StreamHeader, stream: &str) -> Brep {
 /// Input order determines override order for topology records with the same
 /// attribute id. `stream` names the combined provenance source.
 pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
-    let mut combined = Vec::new();
+    let mut carriers = CarrierIndex::default();
+    let mut tables = topology::Tables::default();
+    let mut facts = entity::Facts::default();
+    let mut initialized = false;
     for (payload, header) in bodies {
-        combined.extend_from_slice(&payload[header.body_offset.min(payload.len())..]);
+        let body = &payload[header.body_offset.min(payload.len())..];
+        let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
+        let scanned_tables = if is_deltas {
+            topology::scan_deltas(body)
+        } else {
+            topology::scan(body)
+        };
+        let mut scanned_facts = entity::scan(body);
+        if !initialized || !is_deltas {
+            carriers.merge_missing(scan_carriers(body));
+            if initialized {
+                tables.merge_deltas(scanned_tables);
+                if facts.bodies.is_empty() {
+                    facts.bodies = scanned_facts.bodies;
+                }
+                facts.face_colors.append(&mut scanned_facts.face_colors);
+            } else {
+                tables = scanned_tables;
+                facts = scanned_facts;
+                initialized = true;
+            }
+        } else {
+            carriers.merge_missing(scan_carriers(body));
+            tables.merge_deltas(scanned_tables);
+            facts.face_colors.append(&mut scanned_facts.face_colors);
+        }
     }
-    decode_body(&combined, stream)
+    decode_graph(&carriers, &tables, facts, stream)
 }
 
 fn decode_body(body: &[u8], stream: &str) -> Brep {
     let carriers = scan_carriers(body);
     let t = topology::scan(body);
     let entity_facts = entity::scan(body);
+    decode_graph(&carriers, &t, entity_facts, stream)
+}
+
+fn decode_graph(
+    carriers: &CarrierIndex,
+    t: &topology::Tables,
+    entity_facts: entity::Facts,
+    stream: &str,
+) -> Brep {
     let body_records = entity_facts.bodies;
 
     let mut out = Brep {
@@ -196,7 +355,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     }
 
     // Walk every face-use bridge to collect its ordered loop/coedge structure.
-    let mut faces: Vec<WalkedFace> = t.bridges.values().map(|b| walk_face(b, &t)).collect();
+    let mut faces: Vec<WalkedFace> = t.bridges.values().map(|b| walk_face(b, t)).collect();
     faces.sort_by_key(|f| f.bridge_attr);
     let mut face_owners = HashSet::new();
     faces.retain(|face| {
@@ -291,16 +450,60 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     edge_attrs.sort_unstable();
     for e in edge_attrs {
         let (start_v, end_v, curve_attr) = edge_ends[&e];
-        if !kept_vertices.contains(&start_v) || !kept_vertices.contains(&end_v) {
+        let resolved_endpoints = kept_vertices.contains(&start_v) && kept_vertices.contains(&end_v);
+        let closed_circle_point = (!resolved_endpoints && start_v <= 1 && end_v <= 1)
+            .then(|| carriers.curve(curve_attr))
+            .flatten()
+            .and_then(|carrier| match &carrier.geometry {
+                CarrierGeometry::Curve(CurveGeometry::Circle {
+                    center,
+                    ref_direction,
+                    radius,
+                    ..
+                }) => Some(cadmpeg_ir::math::Point3::new(
+                    center.x + ref_direction.x * radius,
+                    center.y + ref_direction.y * radius,
+                    center.z + ref_direction.z * radius,
+                )),
+                _ => None,
+            });
+        if !resolved_endpoints && closed_circle_point.is_none() {
             continue;
         }
+        let (start_id, end_id) = if let Some(position) = closed_circle_point {
+            let point_id = id_closed_point(e);
+            let vertex_id = id_closed_vertex(e);
+            annotations
+                .note(&point_id, source_stream, 0)
+                .tag("derived_closed_circle_seam");
+            annotations.exactness(&point_id, Exactness::Derived);
+            annotations
+                .note(&vertex_id, source_stream, 0)
+                .tag("derived_closed_circle_seam");
+            annotations.exactness(&vertex_id, Exactness::Derived);
+            out.points.push(Point {
+                id: PointId(point_id.clone()),
+                position,
+            });
+            out.vertices.push(Vertex {
+                id: VertexId(vertex_id.clone()),
+                point: PointId(point_id),
+                tolerance: None,
+            });
+            (VertexId(vertex_id.clone()), VertexId(vertex_id))
+        } else {
+            (VertexId(id_vertex(start_v)), VertexId(id_vertex(end_v)))
+        };
         let eu = t.edge_uses.get(&e);
         let mut curve = None;
         if curve_attr != 0 {
-            match carriers.get(&curve_attr).map(|c| &c.geometry) {
+            match carriers.curve(curve_attr).map(|c| &c.geometry) {
                 Some(CarrierGeometry::Curve(_)) => {
                     if emitted_curves.insert(curve_attr) {
-                        emit_curve(&mut out, &carriers[&curve_attr]);
+                        emit_curve(
+                            &mut out,
+                            carriers.curve(curve_attr).expect("matched curve carrier"),
+                        );
                     }
                     curve = Some(CurveId(id_curve(curve_attr)));
                 }
@@ -329,8 +532,8 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
         out.edges.push(Edge {
             id: EdgeId(id_edge(e)),
             curve,
-            start: VertexId(id_vertex(start_v)),
-            end: VertexId(id_vertex(end_v)),
+            start: start_id,
+            end: end_id,
             param_range: None,
             tolerance: None,
         });
@@ -431,11 +634,25 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
 
     // Surfaces + faces.
     let mut bridge_group = HashMap::new();
+    let mut bridge_shell = HashMap::new();
     for (group, body_record) in body_records.iter().enumerate() {
         for face in &faces {
             let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
-            if owner.is_some_and(|owner| body_record.refs.contains(&owner)) {
+            if body_record.refs.contains(&face.bridge_attr)
+                || owner.is_some_and(|owner| body_record.refs.contains(&owner))
+            {
                 bridge_group.insert(face.bridge_attr, group);
+                if let Some(shell) = body_record
+                    .regions
+                    .iter()
+                    .flat_map(|region| &region.shells)
+                    .find(|shell| {
+                        shell.refs.contains(&face.bridge_attr)
+                            || owner.is_some_and(|owner| shell.refs.contains(&owner))
+                    })
+                {
+                    bridge_shell.insert(face.bridge_attr, shell.attr);
+                }
             }
         }
     }
@@ -454,11 +671,8 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
         }
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges.get(&f.bridge_attr).map_or(0, |r| r.offset);
-        match carriers.get(&f.surface_attr).map(|c| (c, &c.geometry)) {
+        match carriers.surface(f.surface_attr).map(|c| (c, &c.geometry)) {
             Some((c, CarrierGeometry::Surface(geo))) => {
-                if c.single_sample {
-                    out.stats.single_sample_carriers += 1;
-                }
                 annotations
                     .note(id_surf(f.bridge_attr), source_stream, c.offset as u64)
                     .tag("compact_surface");
@@ -491,21 +705,14 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             .tag("00_0e");
         out.faces.push(Face {
             id: FaceId(id_face(f.bridge_attr)),
-            shell: ShellId(
-                bridge_group
+            shell: ShellId(format!(
+                "sldprt:brep:shell#{}",
+                bridge_shell
                     .get(&f.bridge_attr)
-                    .and_then(|group| body_records.get(*group))
-                    .and_then(|record| record.shell)
-                    .map_or_else(
-                        || {
-                            format!(
-                                "sldprt:brep:shell#{}",
-                                bridge_group.get(&f.bridge_attr).copied().unwrap_or(0)
-                            )
-                        },
-                        |(attr, _)| format!("sldprt:brep:shell#{attr}"),
-                    ),
-            ),
+                    .copied()
+                    .or_else(|| bridge_group.get(&f.bridge_attr).copied().map(|v| v as u16))
+                    .unwrap_or(0)
+            )),
             surface: SurfaceId(id_surf(f.bridge_attr)),
             sense: sense_of(f.marker),
             loops,
@@ -523,6 +730,11 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             tolerance: None,
         });
     }
+    let emitted_faces = out
+        .faces
+        .iter()
+        .map(|face| face.id.0.as_str())
+        .collect::<HashSet<_>>();
     for appearance in &mut out.face_colors {
         appearance.target = faces
             .iter()
@@ -532,7 +744,8 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
                     .and_then(|bridge| bridge.owner)
                     == Some(appearance.face_attr)
             })
-            .map(|face| id_face(face.bridge_attr));
+            .map(|face| id_face(face.bridge_attr))
+            .filter(|face| emitted_faces.contains(face.as_str()));
     }
     solve_face_orientation(&mut out);
     synthesize_cylinder_seams(&mut out, &mut annotations, source_stream);
@@ -541,6 +754,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
     derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
     derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
     derive_nurbs_boundary_pcurves(&mut out, &mut annotations, source_stream);
+    prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
         return Brep::default();
@@ -553,20 +767,6 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             || "sldprt:brep:body#0".to_string(),
             |r| format!("sldprt:brep:body#{}", r.attr),
         );
-        let region_id = body_record.and_then(|record| record.region).map_or_else(
-            || format!("sldprt:brep:region#{group}"),
-            |(attr, _)| format!("sldprt:brep:region#{attr}"),
-        );
-        let shell_id = body_record.and_then(|record| record.shell).map_or_else(
-            || format!("sldprt:brep:shell#{group}"),
-            |(attr, _)| format!("sldprt:brep:shell#{attr}"),
-        );
-        let faces = out
-            .faces
-            .iter()
-            .filter(|face| face.shell.0 == shell_id)
-            .map(|face| face.id.clone())
-            .collect();
         let mut annotate_group = |id: &str, source: Option<(usize, &str)>| {
             let (offset, tag, exactness) = source.map_or(
                 (0, "synthetic_grouping", Exactness::Derived),
@@ -576,37 +776,68 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
             annotations.exactness(id, exactness);
         };
         annotate_group(
-            &shell_id,
-            body_record
-                .and_then(|record| record.shell)
-                .map(|(_, offset)| (offset, "00_51_shell")),
-        );
-        annotate_group(
-            &region_id,
-            body_record
-                .and_then(|record| record.region)
-                .map(|(_, offset)| (offset, "00_51_region")),
-        );
-        annotate_group(
             &body_id,
             body_record.map(|record| (record.offset, "00_51_body")),
         );
-        out.shells.push(Shell {
-            id: ShellId(shell_id.clone()),
-            region: RegionId(region_id.clone()),
-            faces,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
-        out.regions.push(Region {
-            id: RegionId(region_id.clone()),
-            body: BodyId(body_id.clone()),
-            shells: vec![ShellId(shell_id)],
-        });
+        let native_regions = body_record.map_or(&[][..], |record| record.regions.as_slice());
+        let mut body_regions = Vec::new();
+        if native_regions.is_empty() {
+            let region_id = format!("sldprt:brep:region#{group}");
+            let shell_id = format!("sldprt:brep:shell#{group}");
+            annotate_group(&shell_id, None);
+            annotate_group(&region_id, None);
+            out.shells.push(Shell {
+                id: ShellId(shell_id.clone()),
+                region: RegionId(region_id.clone()),
+                faces: out
+                    .faces
+                    .iter()
+                    .filter(|face| face.shell.0 == shell_id)
+                    .map(|face| face.id.clone())
+                    .collect(),
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
+            });
+            out.regions.push(Region {
+                id: RegionId(region_id.clone()),
+                body: BodyId(body_id.clone()),
+                shells: vec![ShellId(shell_id)],
+            });
+            body_regions.push(RegionId(region_id));
+        } else {
+            for region in native_regions {
+                let region_id = format!("sldprt:brep:region#{}", region.attr);
+                annotate_group(&region_id, Some((region.offset, "00_51_region")));
+                let mut region_shells = Vec::new();
+                for shell in &region.shells {
+                    let shell_id = format!("sldprt:brep:shell#{}", shell.attr);
+                    annotate_group(&shell_id, Some((shell.offset, "00_51_shell")));
+                    out.shells.push(Shell {
+                        id: ShellId(shell_id.clone()),
+                        region: RegionId(region_id.clone()),
+                        faces: out
+                            .faces
+                            .iter()
+                            .filter(|face| face.shell.0 == shell_id)
+                            .map(|face| face.id.clone())
+                            .collect(),
+                        wire_edges: Vec::new(),
+                        free_vertices: Vec::new(),
+                    });
+                    region_shells.push(ShellId(shell_id));
+                }
+                out.regions.push(Region {
+                    id: RegionId(region_id.clone()),
+                    body: BodyId(body_id.clone()),
+                    shells: region_shells,
+                });
+                body_regions.push(RegionId(region_id));
+            }
+        }
         out.bodies.push(Body {
             id: BodyId(body_id),
             kind: body_record.map_or(BodyKind::Solid, |record| record.kind),
-            regions: vec![RegionId(region_id)],
+            regions: body_regions,
             transform: None,
             name: None,
             color: None,
@@ -623,7 +854,7 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
         else {
             continue;
         };
-        if let Some(carrier) = carriers.get(&attr) {
+        if let Some(carrier) = carriers.curve(attr) {
             annotations
                 .note(&curve.id, source_stream, carrier.offset as u64)
                 .tag("compact_curve");
@@ -668,6 +899,49 @@ fn decode_body(body: &[u8], stream: &str) -> Brep {
         .exactness
         .retain(|id, _| retained_ids.contains(id.as_str()));
     out
+}
+
+fn prune_rejected_topology(out: &mut Brep) {
+    let kept_edges = out
+        .coedges
+        .iter()
+        .map(|coedge| coedge.edge.clone())
+        .collect::<HashSet<_>>();
+    out.edges.retain(|edge| kept_edges.contains(&edge.id));
+
+    let kept_vertices = out
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .cloned()
+        .collect::<HashSet<_>>();
+    out.vertices
+        .retain(|vertex| kept_vertices.contains(&vertex.id));
+
+    let kept_points = out
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect::<HashSet<_>>();
+    out.points.retain(|point| kept_points.contains(&point.id));
+
+    let kept_curves = out
+        .edges
+        .iter()
+        .filter_map(|edge| edge.curve.clone())
+        .collect::<HashSet<_>>();
+    out.curves.retain(|curve| kept_curves.contains(&curve.id));
+    out.stats.unknown_curve_edges = out
+        .edges
+        .iter()
+        .filter(|edge| {
+            edge.curve.as_ref().is_some_and(|curve_id| {
+                out.curves.iter().any(|curve| {
+                    curve.id == *curve_id && matches!(curve.geometry, CurveGeometry::Unknown { .. })
+                })
+            })
+        })
+        .count();
 }
 
 fn fold_surface_frame(
@@ -1343,7 +1617,10 @@ fn synthesize_cylinder_seams(
         let Some(surface) = surfaces.get(&face.surface) else {
             continue;
         };
-        if !matches!(surface.geometry, SurfaceGeometry::Cylinder { .. }) || face.loops.len() != 2 {
+        let SurfaceGeometry::Cylinder { ref_direction, .. } = surface.geometry else {
+            continue;
+        };
+        if face.loops.len() != 2 {
             continue;
         }
         let Some(a) = loops.get(&face.loops[0]) else {
@@ -1367,15 +1644,21 @@ fn synthesize_cylinder_seams(
         let Some(eb) = edges.get(&cb.edge) else {
             continue;
         };
-        let circular = |edge: &Edge| {
-            edge.start == edge.end
-                && edge.curve.as_ref().is_some_and(|id| {
-                    curves
-                        .get(id)
-                        .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Circle { .. }))
-                })
+        let seam_point = |edge: &Edge| {
+            if edge.start != edge.end {
+                return None;
+            }
+            let curve = curves.get(edge.curve.as_ref()?)?;
+            let CurveGeometry::Circle { center, radius, .. } = curve.geometry else {
+                return None;
+            };
+            Some(cadmpeg_ir::math::Point3::new(
+                center.x - ref_direction.x * radius,
+                center.y - ref_direction.y * radius,
+                center.z - ref_direction.z * radius,
+            ))
         };
-        if circular(ea) && circular(eb) {
+        if let (Some(pa), Some(pb)) = (seam_point(ea), seam_point(eb)) {
             candidates.push((
                 face.id.clone(),
                 a.id.clone(),
@@ -1384,6 +1667,8 @@ fn synthesize_cylinder_seams(
                 cb.id.clone(),
                 ea.start.clone(),
                 eb.start.clone(),
+                pa,
+                pb,
             ));
         }
     }
@@ -1395,29 +1680,20 @@ fn synthesize_cylinder_seams(
         .enumerate()
         .map(|(index, coedge)| (coedge.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b) in candidates {
-        let point_for = |vertex: &Vertex| {
-            out.points
+    for (face_id, loop_a, loop_b, circle_a, circle_b, vertex_a, vertex_b, pa, pb) in candidates {
+        for (vertex_id, position) in [(&vertex_a, pa), (&vertex_b, pb)] {
+            let Some(point_id) = out
+                .vertices
                 .iter()
-                .find(|point| point.id == vertex.point)
-                .map(|point| point.position)
-        };
-        let Some(pa) = out
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == vertex_a)
-            .and_then(point_for)
-        else {
-            continue;
-        };
-        let Some(pb) = out
-            .vertices
-            .iter()
-            .find(|vertex| vertex.id == vertex_b)
-            .and_then(point_for)
-        else {
-            continue;
-        };
+                .find(|vertex| vertex.id == *vertex_id)
+                .map(|vertex| vertex.point.clone())
+            else {
+                continue;
+            };
+            if let Some(point) = out.points.iter_mut().find(|point| point.id == point_id) {
+                point.position = position;
+            }
+        }
         let direction = cadmpeg_ir::math::Vector3::new(pb.x - pa.x, pb.y - pa.y, pb.z - pa.z);
         let norm = direction.norm();
         if norm == 0.0 {

@@ -4,6 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::ids::BodyId;
 use crate::math::{Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
 
@@ -12,6 +13,9 @@ use crate::provenance::SourceObjectAssociation;
 pub struct Tessellation {
     /// Stable source-derived identifier.
     pub id: String,
+    /// Body represented by this mesh, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<BodyId>,
     /// Native source-object identity and effective display metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_object: Option<SourceObjectAssociation>,

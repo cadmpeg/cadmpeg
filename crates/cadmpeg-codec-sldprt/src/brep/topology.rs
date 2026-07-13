@@ -227,24 +227,25 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
 
 /// World point `00 1d`: 38-byte body, no magic, `refs[4]` at body+6, xyz as
 /// three big-endian f64 (metres) at body+14.
-fn parse_point(buf: &[u8], off: usize) -> Option<Record> {
+fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     let p = body_start(buf, off, 0x1d)?;
     if p + 38 > buf.len() {
         return None;
     }
     let attr = attr_at(buf, p)?;
-    let mut xyz_at = p + 14;
-    let mut tripled = Vec::new();
-    let mut cursor = p + 6;
-    while buf.get(cursor + 2) == Some(&1) && tripled.len() < 16 {
-        tripled.push(u16_be(buf, cursor)?);
-        cursor += 3;
-    }
-    let refs = if tripled.is_empty() {
-        refs_be(buf, p + 6, 4)?
+    let (refs, xyz_at) = if prefixed {
+        let mut refs = Vec::new();
+        let mut cursor = p + 6;
+        while buf.get(cursor + 2) == Some(&1) && refs.len() < 16 {
+            refs.push(u16_be(buf, cursor)?);
+            cursor += 3;
+        }
+        if refs.is_empty() {
+            return None;
+        }
+        (refs, cursor)
     } else {
-        xyz_at = cursor;
-        tripled
+        (refs_be(buf, p + 6, 4)?, p + 14)
     };
     let x = f64_be(buf, xyz_at)?;
     let y = f64_be(buf, xyz_at + 8)?;
@@ -277,13 +278,68 @@ pub struct Tables {
     pub points: HashMap<u16, Record>,
 }
 
+impl Tables {
+    /// Merge a deltas table without replacing partition topology membership.
+    pub fn merge_deltas(&mut self, mut deltas: Self) {
+        if self.bridges.is_empty() {
+            self.bridges = deltas.bridges;
+        }
+        merge_missing(&mut self.loops, deltas.loops);
+        merge_missing(&mut self.edge_uses, deltas.edge_uses);
+        merge_missing(&mut self.coedges, deltas.coedges);
+        merge_missing(&mut self.vertex_uses, deltas.vertex_uses);
+        self.points.extend(deltas.points.drain());
+    }
+}
+
+fn merge_missing(target: &mut HashMap<u16, Record>, source: HashMap<u16, Record>) {
+    for (attr, record) in source {
+        target.entry(attr).or_insert(record);
+    }
+}
+
+/// Replace one world-point record while preserving its framing.
+pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
+    let Some(record) = scan(buf).points.remove(&attr) else {
+        return false;
+    };
+    let Some(p) = body_start(buf, record.offset, 0x1d) else {
+        return false;
+    };
+    let mut xyz_at = p + 14;
+    let mut cursor = p + 6;
+    while buf.get(cursor + 2) == Some(&1) && cursor < p + 54 {
+        cursor += 3;
+    }
+    if cursor != p + 6 {
+        xyz_at = cursor;
+    }
+    let Some(bytes) = buf.get_mut(xyz_at..xyz_at + 24) else {
+        return false;
+    };
+    for (slot, value) in bytes.chunks_exact_mut(8).zip(xyz_m) {
+        slot.copy_from_slice(&value.to_be_bytes());
+    }
+    true
+}
+
 /// Scan the stream body for every typed topology record. Successful records do
 /// not advance the scan past their extent because valid records can overlap an
 /// enclosing payload. Family-specific framing gates reject payload coincidences.
 /// Later full records replace earlier records with the same `attr`, matching
 /// partition-base plus deltas-override merge order.
 pub fn scan(body: &[u8]) -> Tables {
+    scan_with_point_framing(body, false)
+}
+
+/// Scan a deltas stream whose world-point reference lanes use prefixed triples.
+pub fn scan_deltas(body: &[u8]) -> Tables {
+    scan_with_point_framing(body, true)
+}
+
+fn scan_with_point_framing(body: &[u8], prefixed_points: bool) -> Tables {
     let mut t = Tables::default();
+    let mut loop_candidates = Vec::new();
     let mut i = 0usize;
     while i + 14 <= body.len() {
         if body[i] != 0x00 {
@@ -292,11 +348,23 @@ pub fn scan(body: &[u8]) -> Tables {
         }
         let (rec, table): (Option<Record>, Option<&mut HashMap<u16, Record>>) = match body[i + 1] {
             0x0e => (parse_bridge(body, i), Some(&mut t.bridges)),
-            0x0f => (parse_loop(body, i), Some(&mut t.loops)),
+            0x0f => {
+                if let Some(record) = parse_loop(body, i) {
+                    loop_candidates.push(record);
+                }
+                (None, None)
+            }
             0x10 => (parse_edge_use(body, i), Some(&mut t.edge_uses)),
             0x11 => (parse_coedge(body, i), Some(&mut t.coedges)),
             0x12 => (parse_vertex_use(body, i), Some(&mut t.vertex_uses)),
-            0x1d => (parse_point(body, i), Some(&mut t.points)),
+            0x1d => (
+                if prefixed_points {
+                    parse_point(body, i, true).or_else(|| parse_point(body, i, false))
+                } else {
+                    parse_point(body, i, false)
+                },
+                Some(&mut t.points),
+            ),
             _ => (None, None),
         };
         match (rec, table) {
@@ -305,6 +373,17 @@ pub fn scan(body: &[u8]) -> Tables {
                 i += 1;
             }
             _ => i += 1,
+        }
+    }
+    for record in loop_candidates {
+        let owner = record.refs.get(2).copied().unwrap_or(0);
+        let first = record.refs.get(1).copied().unwrap_or(0);
+        if t.bridges.contains_key(&owner)
+            && t.coedges
+                .get(&first)
+                .is_some_and(|coedge| coedge.refs.get(1) == Some(&record.attr))
+        {
+            t.loops.insert(record.attr, record);
         }
     }
     t

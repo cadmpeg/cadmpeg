@@ -54,6 +54,7 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
                     bytes
                         .get(at..at + 4)
                         .map(|v| f32::from_le_bytes([v[0], v[1], v[2], v[3]]) as f64)
+                        .filter(|value| value.is_finite())
                 };
                 vertices.push(Point3::new(
                     read(p)? * 1000.0,
@@ -68,11 +69,22 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
                     bytes
                         .get(at..at + 4)
                         .map(|v| f32::from_le_bytes([v[0], v[1], v[2], v[3]]) as f64)
+                        .filter(|value| value.is_finite())
                 };
                 normals.push(Vector3::new(read(p)?, read(p + 4)?, read(p + 8)?));
             }
         }
         at = end;
+    }
+    let vertex_count = strips
+        .iter()
+        .try_fold(0usize, |total, length| total.checked_add(*length))?;
+    if strips.is_empty()
+        || vertices.is_empty()
+        || vertex_count != vertices.len()
+        || !normals.is_empty() && normals.len() != vertices.len()
+    {
+        return None;
     }
     let mut triangles = Vec::new();
     let mut base = 0usize;

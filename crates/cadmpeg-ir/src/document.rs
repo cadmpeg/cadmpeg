@@ -9,9 +9,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::annotations::Annotations;
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
-use crate::features::Feature;
+use crate::features::{DesignConfiguration, DesignParameter, Feature};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
+use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
@@ -37,6 +38,11 @@ macro_rules! arena_registry {
             procedural_surfaces: ProceduralSurface, "Procedural surface arena.", [] => |e| e.id.0.clone();
             procedural_curves: ProceduralCurve, "Procedural curve arena.", [] => |e| e.id.0.clone();
             features: Feature, "Feature arena.", [] => |e| e.id.0.clone();
+            configurations: DesignConfiguration, "Design configuration arena.", [serde(default)] => |e| e.id.0.clone();
+            parameters: DesignParameter, "Design parameter arena.", [serde(default)] => |e| e.id.0.clone();
+            sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
+            sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
+            sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
             tessellations: Tessellation, "Tessellation arena.", [] => |e| e.id.clone();
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
@@ -47,11 +53,12 @@ macro_rules! arena_registry {
 pub(crate) use arena_registry;
 
 macro_rules! declare_model {
-    ($($field:ident: $ty:ty, $doc:literal, $attrs:tt => $key:expr;)*) => {
+    ($($field:ident: $ty:ty, $doc:literal, [$($attribute:meta),*] => $key:expr;)*) => {
         /// Format-neutral entity arenas connected by typed IDs.
         #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
         pub struct Model {
             $(
+                $(#[$attribute])*
                 #[doc = $doc]
                 pub $field: Vec<$ty>,
             )*

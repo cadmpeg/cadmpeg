@@ -751,10 +751,16 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             name: Some(format!("{} id {}", operation.kind, operation.feature_id)),
             suppressed: false,
             parent,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
             outputs: Vec::new(),
             definition: IrFeatureDefinition::Native {
                 kind: operation.kind.clone(),
                 parameters,
+                properties: BTreeMap::new(),
             },
             native_ref: None,
         });

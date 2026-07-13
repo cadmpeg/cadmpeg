@@ -477,6 +477,7 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         .tessellations
         .push(cadmpeg_ir::tessellation::Tessellation {
             id: "test:step:tessellation#0".into(),
+            body: None,
             source_object: Some(source_object),
             vertices: Vec::new(),
             triangles: Vec::new(),
