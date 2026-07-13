@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness, PersistentDesignLink,
-    SketchCurveLink, TolerantVertexTail, VertexOwnership,
+    SketchCurveLink, TolerantVertexTail, TransformHints, VertexOwnership,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -103,6 +103,8 @@ pub struct Brep {
     pub face_sidedness: Vec<FaceSidedness>,
     /// Native trailing fields stored on tolerant vertices.
     pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
+    /// Native rotation/reflection/shear classifications stored on transforms.
+    pub transform_hints: Vec<TransformHints>,
     /// Native ASM body key by emitted body id, used by Design-side joins.
     pub body_keys: HashMap<BodyId, u64>,
     /// Linked source-native attributes.
@@ -3936,13 +3938,33 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         out.body_keys.insert(body_id.clone(), *key as u64);
                     }
                 }
+                let transform_record = r.ref_at(5).and_then(|reference| by_index.get(&reference));
+                if let Some(transform) = transform_record {
+                    let flags = transform
+                        .tokens
+                        .iter()
+                        .filter_map(|token| match token {
+                            Token::True => Some(true),
+                            Token::False => Some(false),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+                    if let [rotation, reflection, shear] = flags.as_slice() {
+                        out.transform_hints.push(TransformHints {
+                            id: format!("f3d:asm:transform-hints#{}", transform.index),
+                            body: body_id.clone(),
+                            record_index: transform.index as u32,
+                            rotation: *rotation,
+                            reflection: *reflection,
+                            shear: *shear,
+                        });
+                    }
+                }
                 out.bodies.push(Body {
                     id: body_id,
                     kind: cadmpeg_ir::topology::BodyKind::Solid,
                     regions,
-                    transform: r
-                        .ref_at(5)
-                        .and_then(|reference| by_index.get(&reference))
+                    transform: transform_record
                         .and_then(|transform| decode_transform(transform, header_scale)),
                     name: None,
                     color: attribute_color(r),

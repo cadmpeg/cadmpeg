@@ -1772,7 +1772,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
-            native_transform(&mut records, transform)?;
+            native_transform(&mut records, target, body, transform)?;
             records.push(0x11);
         }
     }
@@ -2584,9 +2584,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         attribute_start,
         Some(&wire_edge_owners),
     )?;
-    for transform in model.bodies.iter().filter_map(|body| body.transform) {
-        native_transform(&mut records, transform)?;
-        records.push(0x11);
+    for body in &model.bodies {
+        if let Some(transform) = body.transform {
+            native_transform(&mut records, target, body, transform)?;
+            records.push(0x11);
+        }
     }
     encode_source_less_attributes(&mut records, target, attribute_start)?;
     native_history_tail(&mut records, target)?;
@@ -7807,7 +7809,12 @@ fn native_vector(bytes: &mut Vec<u8>, vector: [f64; 3]) {
     }
 }
 
-fn native_transform(bytes: &mut Vec<u8>, transform: Transform) -> Result<(), CodecError> {
+fn native_transform(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    body: &Body,
+    transform: Transform,
+) -> Result<(), CodecError> {
     native_ident(bytes, "transform")?;
     for vector in [
         [
@@ -7834,7 +7841,60 @@ fn native_transform(bytes: &mut Vec<u8>, transform: Transform) -> Result<(), Cod
         native_vector(bytes, vector);
     }
     native_f64(bytes, transform.rows[3][3]);
+    let hints = f3d_native(target)?
+        .and_then(|native| {
+            native
+                .transform_hints
+                .into_iter()
+                .find(|hints| hints.body == body.id)
+        })
+        .map_or_else(
+            || derived_transform_hints(transform),
+            |hints| [hints.rotation, hints.reflection, hints.shear],
+        );
+    for hint in hints {
+        bytes.push(native_bool(hint));
+    }
     Ok(())
+}
+
+fn derived_transform_hints(transform: Transform) -> [bool; 3] {
+    let linear = [
+        [
+            transform.rows[0][0],
+            transform.rows[0][1],
+            transform.rows[0][2],
+        ],
+        [
+            transform.rows[1][0],
+            transform.rows[1][1],
+            transform.rows[1][2],
+        ],
+        [
+            transform.rows[2][0],
+            transform.rows[2][1],
+            transform.rows[2][2],
+        ],
+    ];
+    let determinant = linear[0][0] * (linear[1][1] * linear[2][2] - linear[1][2] * linear[2][1])
+        - linear[0][1] * (linear[1][0] * linear[2][2] - linear[1][2] * linear[2][0])
+        + linear[0][2] * (linear[1][0] * linear[2][1] - linear[1][1] * linear[2][0]);
+    let reflection = determinant.is_sign_negative();
+    let columns = [
+        [linear[0][0], linear[1][0], linear[2][0]],
+        [linear[0][1], linear[1][1], linear[2][1]],
+        [linear[0][2], linear[1][2], linear[2][2]],
+    ];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let scale = columns
+        .iter()
+        .map(|column| dot(*column, *column))
+        .fold(1.0f64, f64::max);
+    let shear = dot(columns[0], columns[1]).abs() > f64::EPSILON * scale
+        || dot(columns[0], columns[2]).abs() > f64::EPSILON * scale
+        || dot(columns[1], columns[2]).abs() > f64::EPSILON * scale;
+    let rotation = linear != [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    [rotation, reflection, shear]
 }
 
 fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
@@ -8049,6 +8109,7 @@ pub fn write_semantic(
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     let body_visibility_edits = validate_body_visibility_edits(&baseline.ir, target)?;
+    let transform_hint_edits = validate_transform_hint_edits(&baseline.ir, target)?;
     let mut entity_color_edits =
         validate_body_color_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     entity_color_edits.extend(validate_face_color_edits(
@@ -8201,6 +8262,9 @@ pub fn write_semantic(
         supported
             .tolerant_vertex_tails
             .clone_from(&target_native.tolerant_vertex_tails);
+        supported
+            .transform_hints
+            .clone_from(&target_native.transform_hints);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -8409,6 +8473,7 @@ pub fn write_semantic(
                 &face_sidedness_edits,
                 &tolerant_vertex_edits,
             )?;
+            patch_transform_hints(&mut bytes, &transform_hint_edits)?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
             }
@@ -10103,6 +10168,95 @@ fn patch_body_visibilities(bytes: &mut [u8], edits: &[(u64, bool)]) -> Result<()
                 CodecError::Malformed("body-visibility flag is missing or invalid".into())
             })?;
         *flag = u8::from(!visible);
+    }
+    Ok(())
+}
+
+fn validate_transform_hint_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, [bool; 3]>, CodecError> {
+    let baseline = f3d_native(baseline)?
+        .map(|native| native.transform_hints)
+        .unwrap_or_default();
+    let target = f3d_native(target)?
+        .map(|native| native.transform_hints)
+        .unwrap_or_default();
+    let baseline = baseline
+        .iter()
+        .map(|hints| (hints.id.as_str(), hints))
+        .collect::<BTreeMap<_, _>>();
+    let target = target
+        .iter()
+        .map(|hints| (hints.id.as_str(), hints))
+        .collect::<BTreeMap<_, _>>();
+    if baseline.keys().ne(target.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D transform-hint regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline {
+        let after = target[id];
+        let mut normalized = after.clone();
+        normalized.rotation = before.rotation;
+        normalized.reflection = before.reflection;
+        normalized.shear = before.shear;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D transform-hint edit changes structural fields: {id}"
+            )));
+        }
+        let flags = [after.rotation, after.reflection, after.shear];
+        if flags != [before.rotation, before.reflection, before.shear] {
+            edits.insert(after.record_index as usize, flags);
+        }
+    }
+    Ok(edits)
+}
+
+fn patch_transform_hints(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, [bool; 3]>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let records = sab::frame(bytes, start, limit, 8)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, flags) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D transform-hint record {record_index} is missing"
+                ))
+            })?;
+        if !record.name.ends_with("transform") {
+            return Err(CodecError::Malformed(format!(
+                "F3D transform-hint record {record_index} is {}, not a transform",
+                record.head
+            )));
+        }
+        let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?;
+        offsets.extend(
+            sab::payload_token_offsets(bytes, record, 8, 0x0b)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+        );
+        offsets.sort_unstable();
+        let offsets: [usize; 3] = offsets.try_into().map_err(|_| {
+            CodecError::Malformed(format!(
+                "F3D transform record {record_index} does not contain three hint flags"
+            ))
+        })?;
+        for (offset, flag) in offsets.into_iter().zip(flags) {
+            bytes[offset] = native_bool(*flag);
+        }
     }
     Ok(())
 }

@@ -613,6 +613,23 @@ pub struct BodyVisibility {
     pub visible: bool,
 }
 
+/// Native rotation, reflection, and shear classifications on an ASM transform.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TransformHints {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved body referencing the transform record.
+    pub body: BodyId,
+    /// Source SAB transform record index.
+    pub record_index: u32,
+    /// The linear transform includes rotation.
+    pub rotation: bool,
+    /// The linear transform includes reflection.
+    pub reflection: bool,
+    /// The linear transform includes shear.
+    pub shear: bool,
+}
+
 /// One entity in the Fusion ACT change-tracking table.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct ActEntity {

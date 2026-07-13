@@ -480,6 +480,7 @@ fn synthetic_geometry_with_transform_smbh() -> Vec<u8> {
         t_vec(&mut transform, vector);
     }
     t_dbl(&mut transform, 1.0);
+    transform.extend_from_slice(&[0x0b, 0x0b, 0x0b]);
     t_end(&mut transform);
     bytes.splice(limit..limit, transform);
     bytes
@@ -5175,6 +5176,10 @@ fn generated_source_less_unit_cube_writes_body_transform() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less transformed cube round trip");
     assert_eq!(round_trip.ir.model.bodies[0].transform, Some(expected));
+    let hints = &f3d_native(&round_trip.ir).transform_hints[0];
+    assert!(hints.rotation);
+    assert!(!hints.reflection);
+    assert!(!hints.shear);
 }
 
 #[test]
@@ -6311,6 +6316,8 @@ fn generated_f3d_rewrites_body_transform() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
+    assert_eq!(f3d_native(&decoded.ir).transform_hints.len(), 1);
+    assert!(!f3d_native(&decoded.ir).transform_hints[0].rotation);
     let mut edited = decoded.ir;
     let transform = edited.model.bodies[0]
         .transform
@@ -6321,6 +6328,7 @@ fn generated_f3d_rewrites_body_transform() {
     transform.rows[2][3] = 50.0;
     transform.rows[3][3] = 2.0;
     let expected = *transform;
+    f3d_native_mut(&mut edited).transform_hints[0].reflection = true;
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -6330,6 +6338,8 @@ fn generated_f3d_rewrites_body_transform() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(round_trip.ir.model.bodies[0].transform, Some(expected));
+    assert!(!f3d_native(&round_trip.ir).transform_hints[0].rotation);
+    assert!(f3d_native(&round_trip.ir).transform_hints[0].reflection);
 }
 
 #[test]

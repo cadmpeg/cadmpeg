@@ -269,7 +269,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 
 **Tolerant vertex:** `tvertex` carries the complete vertex field sequence followed by `chunk[6]` as an f64 model-space tolerance and `chunk[7..=8]` as two f32 tail slots. The tolerance converts from native centimetres to document millimetres; the f32 slots are retained verbatim.
 
-**Transform (142 B):** 13×f64 (@+18..117): `a[0..8]` 3×3 rotation, `a[9..11]` translation, `a[12]` overall scale; then 3 flag bytes (ROTATION/REFLECTION/SHEAR enums). Column mapping: `a[0..2]`→col0, `a[3..5]`→col1, `a[6..8]`→col2, `a[9..11]`→col3. The body references its transform through `body.chunk[5]`; null denotes no body transform.
+**Transform (142 B):** 13×f64 (@+18..117): `a[0..8]` 3×3 rotation, `a[9..11]` translation, `a[12]` overall scale; then ROTATION, REFLECTION, and SHEAR boolean-enum bytes in that order (`0x0a` selects the named property, `0x0b` selects `no_*`). Column mapping: `a[0..2]`→col0, `a[3..5]`→col1, `a[6..8]`→col2, `a[9..11]`→col3. The body references its transform through `body.chunk[5]`; null denotes no body transform. Native writing retains the three classifications independently of the matrix and emits all three fields.
 
 ### 6.3 Point records and coordinate authority
 
