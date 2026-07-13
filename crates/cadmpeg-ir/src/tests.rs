@@ -2175,6 +2175,10 @@ fn feature_operation_geometry_is_validated() {
             twist: None,
             scale: None,
         },
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(f64::NAN),
+        },
     ];
     let expected = [
         "fillet radius is invalid",
@@ -2196,6 +2200,7 @@ fn feature_operation_geometry_is_validated() {
         "pattern geometry is invalid",
         "pattern geometry is invalid",
         "sweep result is invalid",
+        "datum-plane offset is invalid",
     ];
     let mut ir = unit_cube();
     for (ordinal, definition) in definitions.into_iter().enumerate() {

@@ -483,6 +483,7 @@ fn parse_native_parameter_literal(
                 || feature_family(feature, "Shell")
                 || feature_family(feature, "Thicken")
                 || feature_family(feature, "Thickness")
+                || is_offset_plane(feature)
         }
         "D2" if is_chamfer(feature) => parse_angle_rad(expression).is_none(),
         "D3" if matches!(
@@ -1013,6 +1014,10 @@ fn project_definition(
             sketch: None,
         };
     }
+    if is_offset_plane(feature) {
+        return project_offset_plane(feature, by_source)
+            .unwrap_or_else(|| native_definition(feature));
+    }
     if feature_family(feature, "ReferencePlane") {
         return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
     }
@@ -1162,6 +1167,11 @@ fn is_sweep(feature: &Feature) -> bool {
         || feature_family(feature, "Barrer")
 }
 
+fn is_offset_plane(feature: &Feature) -> bool {
+    (feature_family(feature, "Plane") || feature_family(feature, "Plano"))
+        && feature.parameters.contains_key("D1")
+}
+
 fn project_extrude(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
@@ -1239,6 +1249,21 @@ fn project_datum_plane(feature: &Feature) -> Option<FeatureDefinition> {
         origin,
         normal,
         u_axis,
+    })
+}
+
+fn project_offset_plane(
+    feature: &Feature,
+    by_source: &HashMap<&str, FeatureId>,
+) -> Option<FeatureDefinition> {
+    let reference = feature
+        .properties
+        .get("Reference")
+        .or_else(|| feature.properties.get("Plane"))
+        .and_then(|source| by_source.get(source.as_str()).cloned());
+    Some(FeatureDefinition::DatumOffsetPlane {
+        reference,
+        distance: Length(parse_dimension_length_mm(feature.parameters.get("D1")?)?),
     })
 }
 
@@ -2434,6 +2459,16 @@ fn parse_positive_dimension_length_mm(value: &str) -> Option<f64> {
     })
 }
 
+fn parse_dimension_length_mm(value: &str) -> Option<f64> {
+    parse_length_mm(value).or_else(|| {
+        value
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|value| value.is_finite())
+    })
+}
+
 fn format_length_like(value: f64, previous: Option<&str>) -> String {
     let previous = previous.map(str::trim).unwrap_or_default();
     if previous.starts_with(['R', 'r']) {
@@ -2655,6 +2690,7 @@ fn parse_neutral_parameter_literal(
                 | FeatureDefinition::Chamfer { .. }
                 | FeatureDefinition::Shell { .. }
                 | FeatureDefinition::Thicken { .. }
+                | FeatureDefinition::DatumOffsetPlane { .. }
         ),
         "D2" => matches!(
             feature.definition,
@@ -3389,6 +3425,73 @@ pub fn sync_neutral_features(
                         .as_deref()
                         .map(|record| record.parameters.clone())
                         .unwrap_or_default(),
+                    properties,
+                )
+            }
+            FeatureDefinition::DatumOffsetPlane {
+                reference,
+                distance,
+            } => {
+                if !distance.0.is_finite() {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has a non-finite reference-plane offset",
+                        feature.id
+                    )));
+                }
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !is_offset_plane(record))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                match reference {
+                    Some(reference) => {
+                        let source = parent_sources.get(reference).ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing datum plane",
+                                feature.id
+                            ))
+                        })?;
+                        let key = if properties.contains_key("Plane")
+                            && !properties.contains_key("Reference")
+                        {
+                            "Plane"
+                        } else {
+                            "Reference"
+                        };
+                        properties.insert(key.into(), source.clone());
+                    }
+                    None if existing.is_some() => {}
+                    None => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has an unresolved datum-plane reference",
+                            feature.id
+                        )));
+                    }
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.insert(
+                    "D1".into(),
+                    format_length_like(
+                        distance.0,
+                        existing
+                            .as_deref()
+                            .and_then(|record| record.parameters.get("D1"))
+                            .map(String::as_str),
+                    ),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Plane".into(), |record| record.kind.clone()),
+                    parameters,
                     properties,
                 )
             }
@@ -6171,6 +6274,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
     }
     let tag = match &feature.definition {
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
+        FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",

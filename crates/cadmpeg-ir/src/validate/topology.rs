@@ -1640,6 +1640,29 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::Native { .. } => {}
+            FeatureDefinition::DatumOffsetPlane {
+                reference,
+                distance,
+            } => {
+                if let Some(reference) = reference {
+                    match features.get(reference.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "reference plane", &reference.0),
+                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "reference plane `{}` does not precede its offset plane",
+                                reference.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+                if !distance.0.is_finite() {
+                    feature_geometry_error(findings, feature, "datum-plane offset is invalid");
+                }
+            }
         }
         for profile in profiles {
             if let ProfileRef::Faces(faces) = profile {

@@ -7642,6 +7642,59 @@ fn semantic_writer_round_trips_typed_reference_plane() {
 }
 
 #[test]
+fn semantic_writer_round_trips_sparse_localized_offset_plane() {
+    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Plano2" Type="Plano" id="549"><Dimension Name="D1">3</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(3.0),
+        }
+    ));
+    assert_eq!(
+        decoded.ir.model.parameters[0].value,
+        Some(ParameterValue::Length(Length(3.0)))
+    );
+
+    let FeatureDefinition::DatumOffsetPlane { distance, .. } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("localized offset plane");
+    };
+    *distance = Length(-4.5);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "Plano");
+    assert_eq!(native.parameters["D1"], "-4.5");
+    assert!(!native.properties.contains_key("Reference"));
+    assert!(!native.properties.contains_key("Plane"));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::DatumOffsetPlane {
+            reference: None,
+            distance: Length(-4.5),
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_reference_axis_and_point() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point3, Vector3};

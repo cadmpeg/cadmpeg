@@ -195,6 +195,14 @@ pub enum FeatureDefinition {
         /// In-plane u-axis.
         u_axis: Vector3,
     },
+    /// Reference plane offset from another datum plane.
+    DatumOffsetPlane {
+        /// Source plane, when its feature reference is available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reference: Option<FeatureId>,
+        /// Signed normal offset from the source plane.
+        distance: Length,
+    },
     /// Constructed reference axis.
     DatumAxis {
         /// Point on the axis in model space.
