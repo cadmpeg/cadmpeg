@@ -34,3 +34,4 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 - The profile carrier for extrusion objects with neither `Profile` nor `DissectableChildren` is unresolved.
 - The operation, target-body, and tool-body carriers for compact `moCombineBodies_c` objects without corresponding Keywords attributes are unresolved.
 - The delete/keep mode discriminator and the mapping from compact `moDeleteBody_c` feature-local body identifiers to B-rep bodies are unresolved.
+- The role and ownership fields that bind `moSweep_c` composite-profile and general-curve-reference children to the neutral profile and path, and the solid/surface result discriminator for sweep objects without Keywords attributes, are unresolved.
