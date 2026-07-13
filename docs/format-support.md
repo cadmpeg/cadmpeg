@@ -35,6 +35,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 
 | Codec                                      | Score          | Extras above score                                                                                    |
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
+| FreeCAD `.FCStd` (schema 4, file 1)        | planned        | read-only L8 envelope; implementation and public-fixture proof pending                                |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                       |
@@ -47,6 +48,27 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
 
 Each current score applies to the envelope described in its profile.
+
+## FreeCAD `.FCStd`
+
+**Model:** ZIP-packaged application object/property graph with exact-shape and presentation side
+entries
+
+**Primary envelope:** `SchemaVersion=4`, `FileVersion=1`, including core App, Part, PartDesign,
+Sketcher, Spreadsheet, Assembly, TechDraw, GUI records, text and binary B-rep entries, and
+identity-preserving extension objects. GUI state, thumbnails, persistent element maps, and
+string-hasher tables are independently optional.
+
+**Ladder: planned.** No score is claimed until implementation and authorized public fixtures pass
+the corresponding cumulative gates. Schema versions 2 and 3 and earlier layout bands are separate
+legacy profiles and must be identified and explicitly refused until supported.
+
+- **Read profile:** None.
+- **Native write:** None; L9 is outside this envelope.
+
+See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md),
+[`formats/freecad_fcstd-open-items.md`](formats/freecad_fcstd-open-items.md), and
+[`formats/freecad_fcstd-coverage.md`](formats/freecad_fcstd-coverage.md).
 
 ## Status terms
 
