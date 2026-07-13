@@ -2253,6 +2253,34 @@ fn decode_retains_invalid_flex_operations_as_native() {
 }
 
 #[test]
+fn decode_retains_nonfinite_feature_dimensions_as_native() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Extrusion Name="Extrude" Type="BossExtrude" id="1"><Dimension Name="Depth">NaNmm</Dimension></Extrusion>
+            <Fillet Name="Fillet" Type="Fillet" id="2"><Dimension Name="Radius">infmm</Dimension></Fillet>
+            <Shell Name="Shell" Type="Shell" id="3" Outward="false"><Dimension Name="Thickness">NaNmm</Dimension></Shell>
+            <Dome Name="Dome" Type="Dome" id="4" Faces="face:1" Elliptical="false" Reverse="false"><Dimension Name="Height">infmm</Dimension></Dome>
+            <Revolve Name="Revolve" Type="Revolve" id="5" AxisOrigin="0mm,0mm,0mm" AxisDirection="0,0,1" Operation="Join"><Dimension Name="Angle">NaNrad</Dimension></Revolve>
+        </Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.features.len(), 5);
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+}
+
+#[test]
 fn semantic_writer_preserves_native_feature_leaf_text() {
     use crate::records::FeatureContent;
 

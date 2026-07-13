@@ -1209,7 +1209,12 @@ fn parse_length_mm(value: &str) -> Option<f64> {
     let value = value.trim();
     for (suffix, scale) in [("mm", 1.0), ("cm", 10.0), ("in", 25.4), ("m", 1000.0)] {
         if let Some(number) = value.strip_suffix(suffix) {
-            return number.trim().parse::<f64>().ok().map(|value| value * scale);
+            return number
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .map(|value| value * scale)
+                .filter(|value| value.is_finite());
         }
     }
     None
@@ -1222,11 +1227,17 @@ fn format_length_mm(value: f64) -> String {
 fn parse_angle_rad(value: &str) -> Option<f64> {
     let value = value.trim();
     if let Some(number) = value.strip_suffix("deg") {
-        return number.trim().parse::<f64>().ok().map(f64::to_radians);
+        return number
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .map(f64::to_radians)
+            .filter(|value| value.is_finite());
     }
     value
         .strip_suffix("rad")
         .and_then(|number| number.trim().parse::<f64>().ok())
+        .filter(|value| value.is_finite())
 }
 
 fn format_angle_rad(value: f64) -> String {
