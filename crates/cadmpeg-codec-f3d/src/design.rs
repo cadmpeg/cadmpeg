@@ -288,6 +288,28 @@ pub fn project_parameter_design(
                         .get(&(native_scope, scope.record_index))
                         .cloned(),
                 }
+            } else if scope.kind == "Extrude" {
+                project_extrude(scope, &parameters, placements).unwrap_or_else(|| {
+                    let mut properties = BTreeMap::new();
+                    if let Some(profile) = scope.extrude_profile.as_ref() {
+                        if let Some(placement) = placements.iter().find(|placement| {
+                            native_stream(&placement.id) == Some(native_scope)
+                                && placement.entity_id == profile.entity_id
+                        }) {
+                            properties.insert("profile".into(), neutral_sketch_id(placement).0);
+                        }
+                    }
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties,
+                    }
+                })
             } else if scope.kind == "Fillet" {
                 let radii = parameters
                     .iter()
@@ -499,6 +521,76 @@ fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Le
     (parameter.unit.as_deref() == Some("mm") && parameter.evaluated_value.is_finite()).then_some(
         cadmpeg_ir::features::Length(parameter.evaluated_value * 10.0),
     )
+}
+
+fn project_extrude(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    placements: &[DesignSketchPlacement],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
+
+    scope.extrude_profile.as_ref()?;
+    let unique = |source_kind: &str| {
+        let matches = parameters
+            .iter()
+            .map(|(_, parameter)| *parameter)
+            .filter(|parameter| parameter.source_kind == source_kind)
+            .collect::<Vec<_>>();
+        (matches.len() <= 1).then(|| matches.first().copied())
+    };
+    let along = design_length(unique("AlongDistance")??)?;
+    if along.0 == 0.0 {
+        return None;
+    }
+    let against = match unique("AgainstDistance")? {
+        Some(parameter) => Some(design_length(parameter)?),
+        None => None,
+    };
+    if against.is_some_and(|distance| distance.0 == 0.0) {
+        return None;
+    }
+    let side_two_draft = match unique("Side2TaperAngle")? {
+        Some(parameter) => Some(design_angle(parameter)?),
+        None => None,
+    };
+    if side_two_draft.is_some_and(|angle| angle.0 != 0.0) {
+        return None;
+    }
+    let direction = if along.0 < 0.0 {
+        let profile = scope.extrude_profile.as_ref()?;
+        let placement = placements.iter().find(|placement| {
+            native_stream(&placement.id) == native_stream(&scope.id)
+                && placement.entity_id == profile.entity_id
+        })?;
+        Some(Vector3::new(
+            -placement.transform[0][2],
+            -placement.transform[1][2],
+            -placement.transform[2][2],
+        ))
+    } else {
+        None
+    };
+    let extent = against.map_or_else(
+        || Extent::Blind {
+            length: Length(along.0.abs()),
+        },
+        |against| Extent::TwoSided {
+            first: Length(along.0.abs()),
+            second: Length(against.0.abs()),
+        },
+    );
+    let draft = match unique("TaperAngle")? {
+        Some(parameter) => design_angle(parameter).filter(|angle| angle.0 != 0.0),
+        None => None,
+    };
+    Some(FeatureDefinition::Extrude {
+        profile: ProfileRef::Native(scope.id.clone()),
+        direction,
+        extent,
+        op: BooleanOp::Unresolved,
+        draft,
+    })
 }
 
 fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
@@ -4493,13 +4585,15 @@ mod relation_tests {
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
         parse_extrude_profile, parse_parameter_companion, parse_parameter_owner,
         parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
-        DesignObjectKind, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-        DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry,
-        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignExtrudeProfileOperand, DesignObjectKind, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+        SketchRelationOperand,
     };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -5495,6 +5589,118 @@ mod relation_tests {
                 .map(String::as_str),
             Some("AlongDistance")
         );
+    }
+
+    #[test]
+    fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
+        use cadmpeg_ir::features::{Angle, BooleanOp, Extent, ProfileRef};
+
+        let parameter = |source_kind: &str, unit: &str, value| {
+            parse_design_parameter(&parameter_record(
+                Some(44),
+                "value",
+                source_kind,
+                Some(unit),
+                "d1",
+                value,
+            ))
+            .expect("generated feature parameter is canonical")
+        };
+        let scope = DesignParameterScope {
+            id: "f3d:Design/BulkStream.dat:scope#12".into(),
+            byte_offset: 100,
+            class_tag: "301".into(),
+            record_index: 12,
+            frame_length: 200,
+            kind: "Extrude".into(),
+            kind_offset: 210,
+            reference_count_offset: 180,
+            reference_members: vec![100],
+            reference_member_offsets: vec![185],
+            extrude_profile: Some(DesignExtrudeProfileOperand {
+                scope_reference_ordinal: 0,
+                record_index: 100,
+                byte_offset: 300,
+                class_tag: "308".into(),
+                type_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
+                type_id_offset: 330,
+                entity_id: "0_172".into(),
+                entity_suffix: 172,
+                entity_reference_offset: 420,
+                paired_class_tag: "259".into(),
+                paired_byte_offset: 520,
+            }),
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 300,
+        };
+        let along = parameter("AlongDistance", "mm", 0.55);
+        let taper = parameter("TaperAngle", "deg", 0.2);
+        let blind =
+            project_extrude(&scope, &[(0, &along), (1, &taper)], &[]).expect("typed blind Extrude");
+        assert!(matches!(
+            blind,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Native(ref profile),
+                direction: None,
+                extent: Extent::Blind { length: Length(5.5) },
+                op: BooleanOp::Unresolved,
+                draft: Some(Angle(0.2)),
+            } if profile == &scope.id
+        ));
+
+        let against = parameter("AgainstDistance", "mm", -0.05);
+        let two_sided = project_extrude(&scope, &[(0, &along), (1, &against)], &[])
+            .expect("typed two-sided Extrude");
+        assert!(matches!(
+            two_sided,
+            FeatureDefinition::Extrude {
+                extent: Extent::TwoSided {
+                    first: Length(5.5),
+                    second: Length(0.5),
+                },
+                ..
+            }
+        ));
+
+        let reversed_along = parameter("AlongDistance", "mm", -0.6);
+        let placement = DesignSketchPlacement {
+            id: "f3d:Design/BulkStream.dat:placement#200".into(),
+            scope_record_index: 11,
+            entity_id: "0_172".into(),
+            entity_suffix: 172,
+            byte_offset: 600,
+            class_tag: "300".into(),
+            record_index: 200,
+            frame_length: 329,
+            transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: Some(655),
+            paired_class_tag: "260".into(),
+            paired_byte_offset: 929,
+        };
+        let reversed = project_extrude(&scope, &[(0, &reversed_along)], &[placement])
+            .expect("typed reversed Extrude");
+        assert!(matches!(
+            reversed,
+            FeatureDefinition::Extrude {
+                direction: Some(Vector3 {
+                    x: 0.0,
+                    y: -1.0,
+                    z: 0.0
+                }),
+                extent: Extent::Blind {
+                    length: Length(6.0)
+                },
+                ..
+            }
+        ));
     }
 
     #[test]
