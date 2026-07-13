@@ -2284,8 +2284,12 @@ fn attach_standard_topology(
             .iter()
             .map(|support| native_edges.get(&support.tag).copied())
             .collect::<Option<Vec<_>>>();
-        if let Some(bound) = native_ports
-            .as_ref()
+        let has_spline = supports
+            .iter()
+            .any(|support| matches!(support.geometry, geometry::StandardCurveGeometry::Bspline));
+        if let Some(bound) = has_spline
+            .then_some(native_ports.as_ref())
+            .flatten()
             .and_then(|ports| topology::bind_edge_port_candidates(ports, options))
         {
             for (pairs, pair) in options.iter_mut().zip(bound) {
