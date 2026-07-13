@@ -274,8 +274,6 @@ pub(crate) fn scan_carriers(body: &[u8]) -> HashMap<u16, Carrier> {
         if body[i] == 0x00 {
             if let Some(c) = parse_carrier(body, i) {
                 out.insert(c.attr, c.clone());
-                i = c.end;
-                continue;
             }
         }
         i += 1;
@@ -342,6 +340,22 @@ mod tests {
             bytes.extend_from_slice(&value.to_be_bytes());
         }
         bytes
+    }
+
+    #[test]
+    fn scan_does_not_skip_overlapping_carrier_starts() {
+        let mut bytes = compact_carrier(tag::LINE, 7, &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        bytes.truncate(60);
+        bytes.extend(compact_carrier(
+            tag::LINE,
+            8,
+            &[1.0, 2.0, 3.0, 0.0, 0.0, 1.0],
+        ));
+
+        let carriers = scan_carriers(&bytes);
+
+        assert!(carriers.contains_key(&7));
+        assert!(carriers.contains_key(&8));
     }
 
     #[test]
