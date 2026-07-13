@@ -27,7 +27,8 @@ use cadmpeg_ir::ids::{
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
@@ -227,6 +228,20 @@ fn section_segment_geometry(
     section_line_geometry(points, segment).or_else(|| section_arc_geometry(points, segment))
 }
 
+fn line_orientation_definition(
+    segment: &crate::feature::FeatureSegment,
+    entity: SketchEntityId,
+) -> Option<SketchConstraintDefinition> {
+    if segment.kind != crate::feature::FeatureSegmentKind::Line {
+        return None;
+    }
+    match segment.vertical_horizontal {
+        Some(0) => Some(SketchConstraintDefinition::Vertical { entity }),
+        Some(1) => Some(SketchConstraintDefinition::Horizontal { entity }),
+        _ => None,
+    }
+}
+
 fn resolved_profile_chains(
     definition: &crate::feature::FeatureDefinition,
     emitted: &BTreeSet<u32>,
@@ -409,7 +424,41 @@ fn transfer_resolved_sketches(
             .filter(|segment| section_segment_geometry(&points, segment).is_some())
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
+        let constraints = segments
+            .rows
+            .iter()
+            .filter(|segment| emitted.contains(&segment.external_id))
+            .filter_map(|segment| {
+                let entity = SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{}:{}",
+                    definition.id, segment.external_id
+                ));
+                let constraint_definition = line_orientation_definition(segment, entity)?;
+                let id = SketchConstraintId(format!(
+                    "creo:featdefs:sketch_constraint#{}:verhor:{}",
+                    definition.id, segment.external_id
+                ));
+                annotate(
+                    annotations,
+                    &id.0,
+                    "FeatDefs",
+                    segment.offset as u64,
+                    "section_line_orientation_constraint",
+                    Exactness::ByteExact,
+                );
+                Some(SketchConstraint {
+                    id,
+                    sketch: sketch_id.clone(),
+                    definition: constraint_definition,
+                    native_ref: Some(format!(
+                        "creo:featdefs:sketch#{}:segment#{}",
+                        definition.id, segment.external_id
+                    )),
+                })
+            })
+            .collect::<Vec<_>>();
         ir.model.sketch_entities.extend(entities);
+        ir.model.sketch_constraints.extend(constraints);
         annotate(
             annotations,
             &sketch_id.0,
@@ -545,6 +594,41 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
             })
         );
+    }
+
+    #[test]
+    fn line_orientation_selectors_are_closed() {
+        let mut segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [7, 9],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: Some(0),
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 12,
+            offset: 40,
+        };
+        let entity = SketchEntityId("entity".into());
+        assert_eq!(
+            line_orientation_definition(&segment, entity.clone()),
+            Some(SketchConstraintDefinition::Vertical {
+                entity: entity.clone()
+            })
+        );
+        segment.vertical_horizontal = Some(1);
+        assert_eq!(
+            line_orientation_definition(&segment, entity.clone()),
+            Some(SketchConstraintDefinition::Horizontal {
+                entity: entity.clone()
+            })
+        );
+        segment.vertical_horizontal = Some(2);
+        assert_eq!(line_orientation_definition(&segment, entity.clone()), None);
+        segment.kind = crate::feature::FeatureSegmentKind::Arc;
+        segment.vertical_horizontal = Some(0);
+        assert_eq!(line_orientation_definition(&segment, entity), None);
     }
 
     #[test]
