@@ -10,7 +10,7 @@ use crate::records::{
     DesignConfiguration, DesignEntityHeader, DesignMaterialAssignment, DesignObject,
     DesignRecordHeader, EdgeContinuity, FaceSidedness, LostEdgeReference, PersistentDesignLink,
     PersistentReference, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
-    VertexOwnership,
+    TolerantVertexTail, VertexOwnership,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -42,6 +42,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "sketch_curve_links",
     "sketch_points",
     "sketch_relations",
+    "tolerant_vertex_tails",
     "vertex_ownerships",
 ];
 
@@ -69,6 +70,7 @@ macro_rules! f3d_arenas {
             sketch_curve_identities: SketchCurveIdentity;
             lost_edge_references: LostEdgeReference;
             vertex_ownerships: VertexOwnership;
+            tolerant_vertex_tails: TolerantVertexTail;
             asm_histories: AsmHistory;
         }
     };
@@ -185,6 +187,9 @@ pub struct F3dNative {
     /// Native owner-edge and endpoint-slot fields stored on ASM vertices.
     #[serde(default)]
     pub vertex_ownerships: Vec<VertexOwnership>,
+    /// Native trailing f32 slots stored on tolerant ASM vertices.
+    #[serde(default)]
+    pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
     /// ASM construction-history containers and their linked delta states.
     #[serde(default)]
     pub asm_histories: Vec<AsmHistory>,
@@ -215,6 +220,7 @@ impl Default for F3dNative {
             sketch_curve_identities: Vec::new(),
             lost_edge_references: Vec::new(),
             vertex_ownerships: Vec::new(),
+            tolerant_vertex_tails: Vec::new(),
             asm_histories: Vec::new(),
         }
     }

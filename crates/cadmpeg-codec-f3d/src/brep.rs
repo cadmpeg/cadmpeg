@@ -19,7 +19,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness, PersistentDesignLink,
-    SketchCurveLink, VertexOwnership,
+    SketchCurveLink, TolerantVertexTail, VertexOwnership,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -101,6 +101,8 @@ pub struct Brep {
     pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native sidedness fields stored on solved faces.
     pub face_sidedness: Vec<FaceSidedness>,
+    /// Native trailing fields stored on tolerant vertices.
+    pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
     /// Native ASM body key by emitted body id, used by Design-side joins.
     pub body_keys: HashMap<BodyId, u64>,
     /// Linked source-native attributes.
@@ -367,9 +369,13 @@ fn deterministic_ref_direction(axis: Vector3) -> Vector3 {
 /// that surface's parameter-space image.
 const PCURVE_ENDPOINT_TOLERANCE_MM: f64 = 0.01;
 
+fn is_vertex_record(record: &Record) -> bool {
+    matches!(record.head.as_str(), "vertex" | "tvertex")
+}
+
 /// The millimeter-space position of an edge-record vertex reference.
 fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
-    let vertex_record = by_index.get(&vertex).filter(|r| r.head == "vertex")?;
+    let vertex_record = by_index.get(&vertex).filter(|r| is_vertex_record(r))?;
     let point_record = by_index.get(&vertex_record.ref_at(5)?)?;
     collect_carrier(point_record)
         .positions
@@ -744,7 +750,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 for slot in [3usize, 5] {
                                     if let Some(vi) = edge.ref_at(slot) {
                                         if let Some(v) = by_index.get(&vi) {
-                                            if v.head == "vertex" {
+                                            if is_vertex_record(v) {
                                                 kept_vertices.insert(vi);
                                                 if let Some(pi) = v.ref_at(5) {
                                                     kept_points.insert(pi);
@@ -855,7 +861,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 for slot in [3usize, 5] {
                                     if let Some(vertex_index) = edge.ref_at(slot) {
                                         if let Some(vertex) = by_index.get(&vertex_index) {
-                                            if vertex.head == "vertex" {
+                                            if is_vertex_record(vertex) {
                                                 kept_vertices.insert(vertex_index);
                                                 if let Some(point_index) = vertex.ref_at(5) {
                                                     kept_points.insert(point_index);
@@ -3681,14 +3687,31 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
 
     for r in records {
         let i = r.index as i64;
-        if r.head == "vertex" && kept_vertices.contains(&i) {
+        if is_vertex_record(r) && kept_vertices.contains(&i) {
             if let Some(pi) = r.ref_at(5) {
                 if kept_points.contains(&pi) {
                     out.vertices.push(Vertex {
                         id: VertexId(id(i)),
                         point: PointId(id(pi)),
-                        tolerance: None,
+                        tolerance: matches!(r.head.as_str(), "tvertex")
+                            .then(|| match r.chunk(6) {
+                                Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
+                                _ => None,
+                            })
+                            .flatten(),
                     });
+                    if r.head == "tvertex" {
+                        if let (Some(Token::Float(first)), Some(Token::Float(second))) =
+                            (r.chunk(7), r.chunk(8))
+                        {
+                            out.tolerant_vertex_tails.push(TolerantVertexTail {
+                                id: format!("f3d:asm:tolerant-vertex-tail#{i}"),
+                                vertex: VertexId(id(i)),
+                                record_index: r.index as u32,
+                                trailing_floats: [*first, *second],
+                            });
+                        }
+                    }
                     if let (Some(owning_edge), Some(Token::Long(endpoint_index @ 0..=1))) =
                         (r.ref_at(3), r.chunk(4))
                     {

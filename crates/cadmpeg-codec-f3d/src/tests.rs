@@ -3666,7 +3666,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.model.vertices[0].tolerance = Some(0.025);
     let tangent_edge = source_less.model.edges[0].id.clone();
+    let tolerant_vertex = source_less.model.vertices[0].id.clone();
     {
         let mut native = f3d_native_mut(&mut source_less);
         let metadata = native
@@ -3677,6 +3679,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         metadata.continuity = "tangent".into();
         metadata.sense = cadmpeg_ir::topology::Sense::Reversed;
         native.face_sidedness[0].containment = Some(crate::records::FaceContainment::In);
+        native.tolerant_vertex_tails = vec![crate::records::TolerantVertexTail {
+            id: "f3d:asm:tolerant-vertex-tail#generated".into(),
+            vertex: tolerant_vertex,
+            record_index: 0,
+            trailing_floats: [1.25, -2.5],
+        }];
     }
     let mut encoded = Vec::new();
     F3dCodec
@@ -3705,6 +3713,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.coedges.len(), 3);
     assert_eq!(round_trip.ir.model.edges.len(), 3);
     assert_eq!(round_trip.ir.model.vertices.len(), 3);
+    assert_eq!(round_trip.ir.model.vertices[0].tolerance, Some(0.025));
+    assert_eq!(
+        f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_floats,
+        [1.25, -2.5]
+    );
     let ownerships = f3d_native(&round_trip.ir).vertex_ownerships;
     assert_eq!(ownerships.len(), 3);
     assert_eq!(
@@ -3729,8 +3742,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.surfaces, source_less.model.surfaces);
 
     let mut edited = round_trip.ir;
-    f3d_native_mut(&mut edited).face_sidedness[0].containment =
-        Some(crate::records::FaceContainment::Out);
+    edited.model.vertices[0].tolerance = Some(0.05);
+    {
+        let mut native = f3d_native_mut(&mut edited);
+        native.face_sidedness[0].containment = Some(crate::records::FaceContainment::Out);
+        native.tolerant_vertex_tails[0].trailing_floats = [3.5, -4.5];
+    }
     let mut retained = Vec::new();
     F3dCodec
         .write_preserved(&edited, &mut retained)
@@ -3741,6 +3758,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         f3d_native(&retained.ir).face_sidedness[0].containment,
         Some(crate::records::FaceContainment::Out)
+    );
+    assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
+    assert_eq!(
+        f3d_native(&retained.ir).tolerant_vertex_tails[0].trailing_floats,
+        [3.5, -4.5]
     );
 }
 

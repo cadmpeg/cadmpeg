@@ -116,6 +116,19 @@ pub struct FaceSidedness {
     pub containment: Option<FaceContainment>,
 }
 
+/// Native f32 tail retained from one tolerant ASM vertex record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TolerantVertexTail {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep vertex carrying the tolerant record.
+    pub vertex: VertexId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Two trailing f32 slots following the model-space tolerance.
+    pub trailing_floats: [f32; 2],
+}
+
 /// Design `BulkStream` regeneration-recipe family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

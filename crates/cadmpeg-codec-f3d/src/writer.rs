@@ -1312,13 +1312,21 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 CodecError::Malformed(format!("vertex references missing point {}", vertex.point))
             })?;
         let (owning_edge, endpoint_index) = vertex_ownership(target, vertex)?;
-        native_ident(&mut records, "vertex")?;
+        native_ident(
+            &mut records,
+            if vertex.tolerance.is_some() {
+                "tvertex"
+            } else {
+                "vertex"
+            },
+        )?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
         native_ref(&mut records, native_record_index(edge_start, owning_edge)?);
         native_i64(&mut records, i64::from(endpoint_index));
         native_ref(&mut records, native_record_index(point_start, point)?);
+        native_tolerant_vertex_tail(&mut records, target, vertex)?;
         records.push(0x11);
     }
 
@@ -3385,7 +3393,14 @@ fn encode_source_less_edges_vertices_points(
             )));
         };
         let (edge, endpoint_index) = vertex_ownership(target, vertex)?;
-        native_ident(records, "vertex")?;
+        native_ident(
+            records,
+            if vertex.tolerance.is_some() {
+                "tvertex"
+            } else {
+                "vertex"
+            },
+        )?;
         native_ref(
             records,
             timestamp_attribute_ref(
@@ -3400,6 +3415,7 @@ fn encode_source_less_edges_vertices_points(
         native_ref(records, native_record_index(edge_start, edge)?);
         native_i64(records, i64::from(endpoint_index));
         native_ref(records, native_record_index(point_start, point)?);
+        native_tolerant_vertex_tail(records, target, vertex)?;
         records.push(0x11);
     }
     for point in &model.points {
@@ -3490,6 +3506,35 @@ fn native_face_sidedness(
             crate::records::FaceContainment::In => 0x0a,
             crate::records::FaceContainment::Out => 0x0b,
         });
+    }
+    Ok(())
+}
+
+fn native_tolerant_vertex_tail(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    vertex: &cadmpeg_ir::topology::Vertex,
+) -> Result<(), CodecError> {
+    let Some(tolerance) = vertex.tolerance else {
+        return Ok(());
+    };
+    if !tolerance.is_finite() || tolerance < 0.0 {
+        return Err(CodecError::Malformed(format!(
+            "F3D vertex {} tolerance must be finite and non-negative",
+            vertex.id
+        )));
+    }
+    native_f64(records, tolerance / 10.0);
+    let trailing = f3d_native(target)?
+        .and_then(|native| {
+            native
+                .tolerant_vertex_tails
+                .into_iter()
+                .find(|tail| tail.vertex == vertex.id)
+        })
+        .map_or([0.0; 2], |tail| tail.trailing_floats);
+    for value in trailing {
+        native_f32(records, value);
     }
     Ok(())
 }
@@ -7668,6 +7713,11 @@ fn native_f64(bytes: &mut Vec<u8>, value: f64) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
+fn native_f32(bytes: &mut Vec<u8>, value: f32) {
+    bytes.push(0x05);
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
 fn native_point(bytes: &mut Vec<u8>, point: [f64; 3]) {
     bytes.push(0x13);
     for value in point {
@@ -7959,6 +8009,7 @@ pub fn write_semantic(
     let edge_continuity_edits = validate_edge_continuity_edits(&baseline.ir, target)?;
     let vertex_ownership_edits = validate_vertex_ownership_edits(&baseline.ir, target)?;
     let face_sidedness_edits = validate_face_sidedness_edits(&baseline.ir, target)?;
+    let tolerant_vertex_edits = validate_tolerant_vertex_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -7988,6 +8039,10 @@ pub fn write_semantic(
         }
     }
     supported_target.model.edges.clone_from(&target.model.edges);
+    supported_target
+        .model
+        .vertices
+        .clone_from(&target.model.vertices);
     supported_target.model.faces.clone_from(&target.model.faces);
     supported_target
         .model
@@ -8067,6 +8122,9 @@ pub fn write_semantic(
         supported
             .face_sidedness
             .clone_from(&target_native.face_sidedness);
+        supported
+            .tolerant_vertex_tails
+            .clone_from(&target_native.tolerant_vertex_tails);
         supported.store(supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::semantic_hash(&supported_target) != decode::semantic_hash(target) {
@@ -8273,6 +8331,7 @@ pub fn write_semantic(
                 &edge_continuity_edits,
                 &vertex_ownership_edits,
                 &face_sidedness_edits,
+                &tolerant_vertex_edits,
             )?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8575,6 +8634,101 @@ fn validate_face_sidedness_edits(
                     "F3D face sidedness {id} cannot change record width"
                 )));
             }
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_tolerant_vertex_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, (f64, [f32; 2])>, CodecError> {
+    let baseline_vertices = baseline
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| (vertex.id.as_str(), vertex))
+        .collect::<BTreeMap<_, _>>();
+    let target_vertices = target
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| (vertex.id.as_str(), vertex))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_vertices.keys().ne(target_vertices.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D tolerant-vertex regeneration requires the unchanged vertex-id set".into(),
+        ));
+    }
+    for (id, before) in &baseline_vertices {
+        let after = target_vertices[id];
+        let mut normalized = after.clone();
+        normalized.tolerance = before.tolerance;
+        if &normalized != *before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D vertex edit changes fields other than tolerance: {id}"
+            )));
+        }
+        if after.tolerance != before.tolerance
+            && (before.tolerance.is_none() || after.tolerance.is_none())
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D vertex tolerance {id} cannot change record width"
+            )));
+        }
+    }
+    let baseline_tails = f3d_native(baseline)?
+        .map(|native| native.tolerant_vertex_tails)
+        .unwrap_or_default();
+    let target_tails = f3d_native(target)?
+        .map(|native| native.tolerant_vertex_tails)
+        .unwrap_or_default();
+    let baseline_by_id = baseline_tails
+        .iter()
+        .map(|tail| (tail.id.as_str(), tail))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_tails
+        .iter()
+        .map(|tail| (tail.id.as_str(), tail))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D tolerant-vertex regeneration requires the unchanged tail-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.trailing_floats = before.trailing_floats;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D tolerant-vertex tail edit changes structural fields: {id}"
+            )));
+        }
+        let tolerance = target_vertices[after.vertex.as_str()]
+            .tolerance
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("tolerant vertex {id} has no tolerance"))
+            })?;
+        if !tolerance.is_finite()
+            || tolerance < 0.0
+            || after.trailing_floats.iter().any(|value| !value.is_finite())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant vertex {id} has non-finite fields"
+            )));
+        }
+        if tolerance
+            != baseline_vertices[after.vertex.as_str()]
+                .tolerance
+                .unwrap_or(tolerance)
+            || after.trailing_floats != before.trailing_floats
+        {
+            edits.insert(
+                after.record_index as usize,
+                (tolerance / 10.0, after.trailing_floats),
+            );
         }
     }
     Ok(edits)
@@ -11958,6 +12112,7 @@ fn patch_geometry(
     edge_continuities: &BTreeMap<usize, (Sense, String)>,
     vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
     face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
+    tolerant_vertices: &BTreeMap<usize, (f64, [f32; 2])>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -11993,6 +12148,7 @@ fn patch_geometry(
         edge_continuities,
         vertex_ownerships,
         face_sidedness,
+        tolerant_vertices,
         header_scale,
     )
 }
@@ -12024,6 +12180,7 @@ fn patch_framed_geometry(
     edge_continuities: &BTreeMap<usize, (Sense, String)>,
     vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
     face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
+    tolerant_vertices: &BTreeMap<usize, (f64, [f32; 2])>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -12131,6 +12288,17 @@ fn patch_framed_geometry(
                 crate::records::FaceContainment::Out => Sense::Forward,
             };
             patch_sense_token(bytes, record, 2, sense)?;
+        }
+        if let Some((tolerance, trailing)) = tolerant_vertices.get(&record.index) {
+            if record.head != "tvertex" {
+                return Err(CodecError::Malformed(format!(
+                    "F3D tolerant-vertex record {} is not a tvertex",
+                    record.index
+                )));
+            }
+            patch_double_token(bytes, record, 0, *tolerance)?;
+            patch_float_token(bytes, record, 0, trailing[0])?;
+            patch_float_token(bytes, record, 1, trailing[1])?;
         }
         if let Some(color) = color_records.get(&record.index) {
             patch_double_token(bytes, record, 0, f64::from(color.r))?;
@@ -12452,6 +12620,25 @@ fn patch_double_token(
             ))
         })?;
     bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+    Ok(())
+}
+
+fn patch_float_token(
+    bytes: &mut [u8],
+    record: &sab::Record,
+    ordinal: usize,
+    value: f32,
+) -> Result<(), CodecError> {
+    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x05)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?
+        .get(ordinal)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "{} record {} lacks float token [{ordinal}]",
+                record.head, record.index
+            ))
+        })?;
+    bytes[offset + 1..offset + 5].copy_from_slice(&value.to_le_bytes());
     Ok(())
 }
 
@@ -14180,6 +14367,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated line edit");
@@ -14229,6 +14417,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &spheres,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -14302,6 +14491,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &tori,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
@@ -14396,6 +14586,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             1.0,
         )
         .expect("generated cylinder edit");
@@ -14451,6 +14642,7 @@ mod tests {
             &BTreeMap::new(),
             &BTreeMap::new(),
             &conics,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
             &BTreeMap::new(),
