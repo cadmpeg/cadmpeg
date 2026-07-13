@@ -14308,7 +14308,7 @@ fn decode_and_validate_compact_delete_body_selection() {
         &payload,
     ));
 
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let mut native = sldprt_native(&decoded.ir);
@@ -14317,6 +14317,68 @@ fn decode_and_validate_compact_delete_body_selection() {
     };
     assert_eq!(selection.local_body_ids, [287, 115]);
     assert!(selection.feature_ref.starts_with("sldprt:history:feature#"));
+    let delete_feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Body-Delete/Keep 1"))
+        .expect("delete-body feature");
+    assert!(matches!(
+        &delete_feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode }
+            if bodies == &cadmpeg_ir::features::BodySelection::Native(
+                "sldprt:feature-input:body-ids:287,115".into()
+            ) && *mode == cadmpeg_ir::features::BodyRetentionMode::Unresolved
+    ));
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
+
+    decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Body-Delete/Keep 1"))
+        .expect("delete-body feature")
+        .name = Some("Renamed Delete Body".into());
+    let mut renamed = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut renamed)
+        .unwrap();
+    let renamed = SldprtCodec
+        .decode(&mut Cursor::new(renamed), &DecodeOptions::default())
+        .unwrap();
+    let renamed_native = sldprt_native(&renamed.ir);
+    assert!(!renamed_native.feature_histories[0].features[0]
+        .properties
+        .contains_key("Bodies"));
+    assert_eq!(
+        renamed_native.feature_input_lanes[0].body_selections[0].local_body_ids,
+        [287, 115]
+    );
+
+    let delete_feature = decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Renamed Delete Body"))
+        .expect("delete-body feature");
+    let cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, .. } =
+        &mut delete_feature.definition
+    else {
+        panic!("typed delete-body feature");
+    };
+    *bodies =
+        cadmpeg_ir::features::BodySelection::Native("sldprt:feature-input:body-ids:287".into());
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("changes a compact body selection"));
 
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();

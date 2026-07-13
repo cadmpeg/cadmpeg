@@ -1528,6 +1528,53 @@ pub(crate) fn bind_parameter_scalars(
     }
 }
 
+pub(crate) fn project_compact_body_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    lanes: &[FeatureInputLane],
+) {
+    let selections = lanes.iter().flat_map(|lane| &lane.body_selections).fold(
+        HashMap::<&str, Vec<&FeatureInputBodySelection>>::new(),
+        |mut by_feature, selection| {
+            by_feature
+                .entry(selection.feature_ref.as_str())
+                .or_default()
+                .push(selection);
+            by_feature
+        },
+    );
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
+            continue;
+        };
+        let FeatureDefinition::DeleteBody { bodies, .. } = &mut feature.definition else {
+            continue;
+        };
+        if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
+            *bodies = cadmpeg_ir::features::BodySelection::Native(compact_body_selection_value(
+                &selection.local_body_ids,
+            ));
+        }
+    }
+}
+
+pub(crate) fn compact_body_selection_value(local_body_ids: &[u32]) -> String {
+    let mut value = String::from("sldprt:feature-input:body-ids:");
+    for (index, body_id) in local_body_ids.iter().enumerate() {
+        if index != 0 {
+            value.push(',');
+        }
+        write!(&mut value, "{body_id}").expect("writing to String cannot fail");
+    }
+    value
+}
+
+pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
+    value.starts_with("sldprt:feature-input:body-ids:")
+}
+
 /// Project owned native relation bindings into their neutral sketches.
 pub(crate) fn project_relation_bindings(
     constraints: &mut Vec<SketchConstraint>,

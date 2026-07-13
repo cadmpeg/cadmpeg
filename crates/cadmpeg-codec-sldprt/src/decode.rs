@@ -886,6 +886,7 @@ fn project_design_history(
     crate::resolved_features::enrich_history_reference_planes(&mut projection, lanes);
     crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
     ir.model.features = crate::history::project_features(&projection);
+    crate::resolved_features::project_compact_body_selections(&mut ir.model.features, lanes);
     ir.model.configurations = crate::history::project_configurations(&projection);
     ir.model.parameters = crate::history::project_parameters(&projection);
     crate::resolved_features::bind_parameter_scalars(

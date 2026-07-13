@@ -3191,6 +3191,7 @@ pub fn prepare_features_for_write(
         (None, None) => false,
     };
     if baseline_neutral.is_none() && baseline_native.is_none() {
+        validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
         return sync_neutral_features(
             &ir.model.features,
             &ir.model.parameters,
@@ -3203,7 +3204,7 @@ pub fn prepare_features_for_write(
         (true, true) => {
             let projected = native
                 .as_ref()
-                .map(|value| project_features(&value.feature_histories))
+                .map(project_features_with_native_inputs)
                 .unwrap_or_default();
             if feature_hash(&projected) == neutral_hash {
                 Ok(())
@@ -3213,13 +3214,68 @@ pub fn prepare_features_for_write(
                 ))
             }
         }
-        (true, false) => sync_neutral_features(
-            &ir.model.features,
-            &ir.model.parameters,
-            &ir.model.bodies,
-            native,
-        ),
+        (true, false) => {
+            validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
+            sync_neutral_features(
+                &ir.model.features,
+                &ir.model.parameters,
+                &ir.model.bodies,
+                native,
+            )
+        }
     }
+}
+
+fn project_features_with_native_inputs(
+    native: &crate::native::SldprtNative,
+) -> Vec<cadmpeg_ir::features::Feature> {
+    let mut features = project_features(&native.feature_histories);
+    crate::resolved_features::project_compact_body_selections(
+        &mut features,
+        &native.feature_input_lanes,
+    );
+    features
+}
+
+fn validate_compact_body_selection_edits(
+    features: &[cadmpeg_ir::features::Feature],
+    native: Option<&crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let Some(native) = native else {
+        return Ok(());
+    };
+    let mut selections = HashMap::<&str, Vec<&crate::records::FeatureInputBodySelection>>::new();
+    for selection in native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.body_selections)
+    {
+        selections
+            .entry(selection.feature_ref.as_str())
+            .or_default()
+            .push(selection);
+    }
+    for feature in features {
+        let Some(native_ref) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
+            continue;
+        };
+        let FeatureDefinition::DeleteBody { bodies, .. } = &feature.definition else {
+            continue;
+        };
+        let expected = BodySelection::Native(
+            crate::resolved_features::compact_body_selection_value(&selection.local_body_ids),
+        );
+        if bodies != &expected {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes a compact body selection",
+                feature.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Resolve neutral/native configuration edit authority before writing.
@@ -5542,7 +5598,9 @@ pub fn sync_neutral_features(
                 }
                 let mut properties = feature.source_properties.clone();
                 if let Some(selection) = selection {
-                    properties.insert("Bodies".into(), selection);
+                    if !crate::resolved_features::is_compact_body_selection_value(&selection) {
+                        properties.insert("Bodies".into(), selection);
+                    }
                 } else if !matches!(mode, BodyRetentionMode::Unresolved) || existing.is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported delete-body semantics",
