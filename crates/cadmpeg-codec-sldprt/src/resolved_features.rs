@@ -7,7 +7,7 @@ use crate::records::{
     FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputRelationFamily, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
-    SketchInputLink,
+    SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
@@ -55,54 +55,17 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             let scalars = named_scalars(&block.payload, &parent, &names);
             let relation_bindings = relation_bindings(&parent, &classes, &scalars);
             let references = reference_cells(&scalars);
-            let sketch_entities = block
-                .payload
-                .windows(SKETCH_MARKER.len())
-                .enumerate()
-                .filter_map(|(offset, bytes)| (bytes == SKETCH_MARKER).then_some(offset))
-                .filter_map(|offset| {
-                    let code = u32::from_le_bytes(
-                        block
-                            .payload
-                            .get(offset + 17..offset + 21)?
-                            .try_into()
-                            .ok()?,
-                    );
-                    Some((offset, code))
-                })
-                .enumerate()
-                .map(|(ordinal, (offset, code))| {
-                    let id = format!(
-                        "sldprt:feature-input:sketch-entity#{}:{offset}",
-                        block.offset
-                    );
-                    crate::annotations::note(
-                        annotations,
-                        id.clone(),
-                        section,
-                        offset as u64,
-                        "ff_ff_1f_00_03",
-                        Exactness::ByteExact,
-                    );
-                    let coordinates_m = marker_coordinates(&block.payload, offset);
-                    SketchInputEntity {
-                        id,
-                        parent: parent.clone(),
-                        feature_ref: None,
-                        ordinal: ordinal as u32,
-                        offset: offset as u64,
-                        local_id: marker_local_id(&block.payload, offset),
-                        kind: SketchInputKind::from_native_code_and_layout(
-                            code,
-                            coordinates_m.is_some(),
-                        ),
-                        state_value: marker_state_value(&block.payload, offset),
-                        coordinates_m,
-                        links: Vec::new(),
-                        link_selector: None,
-                    }
-                })
-                .collect::<Vec<_>>();
+            let sketch_entities = sketch_input_entities(&block.payload, &parent);
+            for entity in &sketch_entities {
+                crate::annotations::note(
+                    annotations,
+                    entity.id.clone(),
+                    section,
+                    entity.offset,
+                    "ff_ff_1f_00_03",
+                    Exactness::ByteExact,
+                );
+            }
             let id = parent;
             crate::annotations::note(
                 annotations,
@@ -125,6 +88,36 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 references,
                 sketch_entities,
             })
+        })
+        .collect()
+}
+
+fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity> {
+    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    payload
+        .windows(SKETCH_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == SKETCH_MARKER).then_some(offset))
+        .filter_map(|offset| {
+            let code = u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?);
+            Some((offset, code))
+        })
+        .enumerate()
+        .map(|(ordinal, (offset, code))| {
+            let coordinates_m = marker_coordinates(payload, offset);
+            SketchInputEntity {
+                id: format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
+                parent: parent.to_string(),
+                feature_ref: None,
+                ordinal: ordinal as u32,
+                offset: offset as u64,
+                local_id: marker_local_id(payload, offset),
+                kind: SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some()),
+                state_value: marker_state_value(payload, offset),
+                coordinates_m,
+                links: Vec::new(),
+                link_selector: None,
+            }
         })
         .collect()
 }
@@ -3277,10 +3270,8 @@ fn validate_source_less_constraints(
 ) -> Result<(), cadmpeg_ir::codec::CodecError> {
     for constraint in &ir.model.sketch_constraints {
         let SketchConstraintDefinition::CoincidentLoci { loci } = &constraint.definition else {
-            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
-                "source-less SLDPRT sketch constraints support only solved endpoint coincidences"
-                    .into(),
-            ));
+            validate_generated_marker_constraint(ir, constraint)?;
+            continue;
         };
         if loci.len() < 2 {
             return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
@@ -3333,6 +3324,69 @@ fn validate_source_less_constraints(
             }
             expected = Some(point);
         }
+    }
+    Ok(())
+}
+
+fn validate_generated_marker_constraint(
+    ir: &cadmpeg_ir::CadIr,
+    constraint: &SketchConstraint,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    if !ir.model.features.iter().any(|feature| {
+        matches!(
+            &feature.definition,
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } if sketch == &constraint.sketch
+        )
+    }) {
+        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT marker relation {} requires an owning sketch feature",
+            constraint.id.0
+        )));
+    }
+    let (entity_id, axis) = match &constraint.definition {
+        SketchConstraintDefinition::Horizontal { entity } => (entity, Some(false)),
+        SketchConstraintDefinition::Vertical { entity } => (entity, Some(true)),
+        SketchConstraintDefinition::Fixed { entity } => (entity, None),
+        _ => {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
+                "source-less SLDPRT sketch constraints support solved endpoint coincidences and horizontal, vertical, or fixed marker relations"
+                    .into(),
+            ));
+        }
+    };
+    let entity = ir
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id == *entity_id && entity.sketch == constraint.sketch)
+        .ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "sketch constraint {} references entity {} outside sketch {}",
+                constraint.id.0, entity_id.0, constraint.sketch.0
+            ))
+        })?;
+    let Some(axis) = axis else {
+        return Ok(());
+    };
+    let SketchGeometry::Line { start, end } = entity.geometry else {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "sketch constraint {} applies an axis relation to a non-line entity",
+            constraint.id.0
+        )));
+    };
+    let delta = if axis {
+        (end.u - start.u).abs()
+    } else {
+        (end.v - start.v).abs()
+    };
+    if delta > SKETCH_POINT_TOLERANCE {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "source-less SLDPRT sketch constraint {} is not satisfied by its line coordinates",
+            constraint.id.0
+        )));
     }
     Ok(())
 }
@@ -3410,6 +3464,7 @@ fn source_less_lanes(
                 },
                 object_id,
             )?;
+            append_generated_sketch_markers(ir, sketch, &mut lane.native_payload)?;
         }
         let sketch_ir = sketch_brep(ir, sketch)?;
         let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
@@ -3422,8 +3477,135 @@ fn source_less_lanes(
     }
     for lane in &mut lanes {
         lane.names = object_names(&lane.native_payload, &lane.id);
+        lane.sketch_entities = sketch_input_entities(&lane.native_payload, &lane.id);
     }
+    bind_scalar_operands(&native.feature_histories, &mut lanes);
     Ok(lanes)
+}
+
+fn append_generated_sketch_markers(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &Sketch,
+    payload: &mut Vec<u8>,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let relations = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.sketch == sketch.id)
+        .filter_map(|constraint| match &constraint.definition {
+            SketchConstraintDefinition::Horizontal { entity } => {
+                Some((SketchRelationKind::Horizontal, entity))
+            }
+            SketchConstraintDefinition::Vertical { entity } => {
+                Some((SketchRelationKind::Vertical, entity))
+            }
+            SketchConstraintDefinition::Fixed { entity } => {
+                Some((SketchRelationKind::Fixed, entity))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if relations.is_empty() {
+        return Ok(());
+    }
+
+    let mut marker_ids = HashMap::<SketchEntityId, Vec<u16>>::new();
+    let mut next_id = 1u32;
+    for entity in ir
+        .model
+        .sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id)
+    {
+        for (point, _) in sketch_entity_loci(entity) {
+            let local_id = u16::try_from(next_id).map_err(|_| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT sketch {} exceeds the marker-local id space",
+                    sketch.id.0
+                ))
+            })?;
+            append_coordinate_marker(
+                payload,
+                generated_marker_kind(&entity.geometry),
+                [point.u * 0.001, point.v * 0.001],
+                next_id,
+            );
+            marker_ids
+                .entry(entity.id.clone())
+                .or_default()
+                .push(local_id);
+            next_id += 1;
+        }
+    }
+    for (kind, entity) in relations {
+        let ids = marker_ids.get(entity).ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
+                entity.0
+            ))
+        })?;
+        let links = match ids.as_slice() {
+            [only] => [*only, *only],
+            [first, second, ..] => [*first, *second],
+            [] => unreachable!("empty marker-id vectors are never inserted"),
+        };
+        append_reference_marker(payload, kind, links, next_id);
+        next_id = next_id.checked_add(1).ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed(
+                "source-less SLDPRT marker-local id space is exhausted".into(),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {
+    match geometry {
+        SketchGeometry::Point { .. } => SketchInputKind::Point,
+        SketchGeometry::Arc { .. } => SketchInputKind::Arc,
+        SketchGeometry::Line { .. }
+        | SketchGeometry::Circle { .. }
+        | SketchGeometry::Ellipse { .. }
+        | SketchGeometry::Nurbs { .. }
+        | SketchGeometry::Native { .. } => SketchInputKind::LineOrCircle,
+    }
+}
+
+fn append_coordinate_marker(
+    payload: &mut Vec<u8>,
+    kind: SketchInputKind,
+    coordinates_m: [f64; 2],
+    local_id: u32,
+) {
+    let start = payload.len();
+    payload.resize(start + 142, 0);
+    payload[start..start + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[start + 5..start + 13].fill(0xff);
+    payload[start + 13..start + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[start + 17..start + 21].copy_from_slice(&kind.native_code().to_le_bytes());
+    payload[start + 48..start + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[start + 64..start + 66].copy_from_slice(&[0x1e, 0x00]);
+    payload[start + 66..start + 74].copy_from_slice(&coordinates_m[0].to_le_bytes());
+    payload[start + 74..start + 82].copy_from_slice(&coordinates_m[1].to_le_bytes());
+    payload[start + 138..start + 142].copy_from_slice(&local_id.to_le_bytes());
+}
+
+fn append_reference_marker(
+    payload: &mut Vec<u8>,
+    kind: SketchRelationKind,
+    links: [u16; 2],
+    local_id: u32,
+) {
+    let start = payload.len();
+    payload.resize(start + 92, 0);
+    payload[start..start + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+    payload[start + 17..start + 21].copy_from_slice(&kind.native_code().to_le_bytes());
+    payload[start + 48..start + 56].copy_from_slice(&1.0f64.to_le_bytes());
+    payload[start + 64..start + 66].copy_from_slice(&links[0].to_le_bytes());
+    payload[start + 66..start + 68].copy_from_slice(&links[1].to_le_bytes());
+    payload[start + 72..start + 80].copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[start + 88..start + 92].copy_from_slice(&local_id.to_le_bytes());
 }
 
 fn append_generated_object_name(

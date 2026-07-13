@@ -1861,6 +1861,33 @@ fn encoder_writes_source_less_line_sketches() {
             native_ref: None,
         });
     }
+    for (suffix, definition) in [
+        (
+            "fixed",
+            SketchConstraintDefinition::Fixed {
+                entity: entity_ids[1].clone(),
+            },
+        ),
+        (
+            "horizontal",
+            SketchConstraintDefinition::Horizontal {
+                entity: entity_ids[0].clone(),
+            },
+        ),
+        (
+            "vertical",
+            SketchConstraintDefinition::Vertical {
+                entity: entity_ids[2].clone(),
+            },
+        ),
+    ] {
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId(format!("synthetic:test:constraint#{suffix}")),
+            sketch: sketch_id.clone(),
+            definition,
+            native_ref: None,
+        });
+    }
     ir.model.sketch_entities.push(SketchEntity {
         id: SketchEntityId("synthetic:test:sketch-entity#point".into()),
         sketch: sketch_id.clone(),
@@ -2001,16 +2028,74 @@ fn encoder_writes_source_less_line_sketches() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let marker_lane = &sldprt_native(&decoded.ir).feature_input_lanes[0];
+    assert_eq!(
+        marker_lane
+            .sketch_entities
+            .iter()
+            .filter(|marker| marker.coordinates_m.is_some())
+            .count(),
+        7
+    );
+    let marker_relations = marker_lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| matches!(marker.kind, crate::records::SketchInputKind::Relation(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(marker_relations.len(), 3);
+    assert!(marker_relations
+        .iter()
+        .all(|marker| marker.links.len() == 2 && marker.link_selector == Some(0)));
+    assert!(marker_relations
+        .iter()
+        .all(|marker| marker.links.iter().all(|link| marker_lane
+            .sketch_entities
+            .iter()
+            .any(|candidate| candidate.id == link.entity_ref
+                && candidate.local_id == Some(u32::from(link.local_id))))));
     assert_eq!(decoded.ir.model.sketches.len(), 1);
     assert_eq!(decoded.ir.model.sketches[0].profiles.len(), 1);
     assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 3);
     assert_eq!(decoded.ir.model.sketch_entities.len(), 4);
     assert_eq!(
         decoded.ir.model.sketch_constraints.len(),
-        3,
+        6,
         "{:?}",
         decoded.ir.model.sketch_constraints
     );
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                SketchConstraintDefinition::Horizontal { .. }
+            )
+        }));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                SketchConstraintDefinition::Vertical { .. }
+            )
+        }));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| {
+            matches!(
+                constraint.definition,
+                SketchConstraintDefinition::Fixed { .. }
+            )
+        }));
     assert!(
         decoded
             .ir
@@ -2154,9 +2239,9 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         error,
         cadmpeg_ir::codec::CodecError::NotImplemented(_)
     ));
-    assert!(error.to_string().contains(
-        "source-less SLDPRT sketch constraints support only solved endpoint coincidences"
-    ));
+    assert!(error
+        .to_string()
+        .contains("requires an owning sketch feature"));
 }
 
 #[test]
