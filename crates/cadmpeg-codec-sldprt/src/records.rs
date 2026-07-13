@@ -164,8 +164,9 @@ pub struct SketchInputEntity {
 pub enum SketchInputKind {
     /// A sketch point.
     Point,
-    /// A general sketch curve.
-    Curve,
+    /// A sketch line or circle from the shared native family.
+    #[serde(alias = "curve")]
+    LineOrCircle,
     /// A sketch arc.
     Arc,
     /// A sketch point bound by a geometric constraint.
@@ -180,7 +181,7 @@ impl SketchInputKind {
     pub fn from_native_code(code: u32) -> Self {
         match code {
             0 => Self::Point,
-            1 => Self::Curve,
+            1 => Self::LineOrCircle,
             2 => Self::Arc,
             3 => Self::ConstrainedPoint,
             value => Self::Native(value),
@@ -192,7 +193,7 @@ impl SketchInputKind {
     pub fn native_code(self) -> u32 {
         match self {
             Self::Point => 0,
-            Self::Curve => 1,
+            Self::LineOrCircle => 1,
             Self::Arc => 2,
             Self::ConstrainedPoint => 3,
             Self::Native(value) => value,

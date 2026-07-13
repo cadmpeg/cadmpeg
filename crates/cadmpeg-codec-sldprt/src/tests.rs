@@ -6963,6 +6963,15 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
 fn semantic_writer_patches_resolved_feature_sketch_types() {
     use crate::records::SketchInputKind;
 
+    assert_eq!(
+        serde_json::from_str::<SketchInputKind>(r#""curve""#).unwrap(),
+        SketchInputKind::LineOrCircle
+    );
+    assert_eq!(
+        serde_json::to_string(&SketchInputKind::LineOrCircle).unwrap(),
+        r#""line_or_circle""#
+    );
+
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1, 2, 3, 9]);
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -6987,7 +6996,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .unwrap()
     };
     assert_eq!(by_ordinal(0).kind, SketchInputKind::Point);
-    assert_eq!(by_ordinal(1).kind, SketchInputKind::Curve);
+    assert_eq!(by_ordinal(1).kind, SketchInputKind::LineOrCircle);
     assert_eq!(by_ordinal(2).kind, SketchInputKind::Arc);
     assert_eq!(by_ordinal(3).kind, SketchInputKind::ConstrainedPoint);
     assert_eq!(by_ordinal(4).kind, SketchInputKind::Native(9));
