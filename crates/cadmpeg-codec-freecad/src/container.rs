@@ -156,6 +156,7 @@ pub fn summarize(scan: &Scan) -> ContainerSummary {
         format!("SchemaVersion={}", scan.document.schema_version),
         format!("FileVersion={}", scan.document.file_version),
         format!("document root={}", scan.document.root_name),
+        format!("document kind={}", scan.document.document_kind),
         format!("object count={}", scan.document.object_count),
         format!("physical ledger spans={} coverage=exact", scan.ledger.len()),
     ];
@@ -235,10 +236,42 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no SchemaVersion".into()))?;
     let file_version = attr(root, &["FileVersion", "fileVersion"])
         .ok_or_else(|| CodecError::WrongFormat("Document.xml has no FileVersion".into()))?;
-    let object_count = root
-        .descendants()
-        .filter(|node| node.is_element() && node.tag_name().name() == "Object")
-        .count();
+    let declarations = root
+        .children()
+        .find(|node| node.has_tag_name("Objects"))
+        .into_iter()
+        .flat_map(|objects| {
+            objects
+                .children()
+                .filter(|node| node.has_tag_name("Object"))
+        })
+        .collect::<Vec<_>>();
+    let object_count = declarations.len();
+    let domains = declarations
+        .iter()
+        .filter_map(|node| node.attribute("type"))
+        .filter_map(|type_name| {
+            type_name
+                .split_once("::")
+                .map(|(domain, _)| domain.to_owned())
+        })
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let document_kind = if domains.iter().any(|domain| domain == "Assembly") {
+        "assembly"
+    } else if domains.iter().any(|domain| domain == "TechDraw") {
+        "drawing"
+    } else if domains.iter().any(|domain| domain == "PartDesign") {
+        "part-design"
+    } else if domains.iter().any(|domain| domain == "Part") {
+        "part"
+    } else if object_count == 0 {
+        "empty"
+    } else {
+        "application-document"
+    }
+    .to_owned();
     Ok(DocumentFacts {
         id: "fcstd:document#0".into(),
         schema_version,
@@ -246,6 +279,8 @@ fn parse_document(bytes: &[u8]) -> Result<DocumentFacts, CodecError> {
         program_version: attr(root, &["ProgramVersion", "programVersion"]),
         root_name: root.tag_name().name().into(),
         object_count,
+        document_kind,
+        domains,
     })
 }
 

@@ -274,6 +274,11 @@ impl Codec for FcstdCodec {
             "object_count".into(),
             scan.document.object_count.to_string(),
         );
+        attributes.insert("document_kind".into(), scan.document.document_kind.clone());
+        attributes.insert(
+            "application_domains".into(),
+            scan.document.domains.join(","),
+        );
         attributes.insert("archive_entry_count".into(), scan.entries.len().to_string());
         attributes.insert(
             "physical_ledger_spans".into(),

@@ -37,6 +37,10 @@ pub struct DocumentFacts {
     pub root_name: String,
     /// Number of declared application objects.
     pub object_count: usize,
+    /// Structural document-kind classification.
+    pub document_kind: String,
+    /// Application domains present in object declarations.
+    pub domains: Vec<String>,
 }
 
 /// One declared application object and its persistence state.
