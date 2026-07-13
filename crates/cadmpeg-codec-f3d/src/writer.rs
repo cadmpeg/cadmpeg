@@ -13997,14 +13997,15 @@ fn patch_framed_geometry(
             continue;
         }
         if let Some((sense, continuity)) = edge_continuities.get(&record.index) {
-            if record.head != "edge" {
+            if !matches!(record.head.as_str(), "edge" | "tedge") {
                 return Err(CodecError::Malformed(format!(
                     "F3D edge-continuity record {} is not an edge",
                     record.index
                 )));
             }
-            patch_sense_token(bytes, record, 0, *sense)?;
-            patch_string_token(bytes, record, 0, continuity)?;
+            let ref_width = active_ref_width(bytes);
+            patch_sense_field(bytes, record, ref_width, 9, *sense)?;
+            patch_ascii_field(bytes, record, ref_width, 10, continuity)?;
         }
         if let Some((owning_edge, endpoint_index)) = vertex_ownerships.get(&record.index) {
             if record.head != "vertex" {
@@ -14027,7 +14028,7 @@ fn patch_framed_geometry(
                 crate::records::FaceContainment::In => Sense::Reversed,
                 crate::records::FaceContainment::Out => Sense::Forward,
             };
-            patch_sense_token(bytes, record, 2, sense)?;
+            patch_sense_field(bytes, record, active_ref_width(bytes), 10, sense)?;
         }
         if let Some((tolerance, trailing)) = tolerant_vertices.get(&record.index) {
             if record.head != "tvertex" {
@@ -14159,11 +14160,11 @@ fn patch_framed_geometry(
         }
         if record.head == "face" {
             if let Some(sense) = face_senses.get(&id) {
-                patch_sense_token(bytes, record, 0, *sense)?;
+                patch_sense_field(bytes, record, active_ref_width(bytes), 8, *sense)?;
             }
         } else if matches!(record.head.as_str(), "coedge" | "tcoedge") {
             if let Some(sense) = coedge_senses.get(&id) {
-                patch_sense_token(bytes, record, 0, *sense)?;
+                patch_sense_field(bytes, record, active_ref_width(bytes), 7, *sense)?;
             }
         } else if matches!(record.head.as_str(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
@@ -14563,22 +14564,14 @@ fn patch_float_token(
     Ok(())
 }
 
-fn patch_string_token(
+fn patch_ascii_field(
     bytes: &mut [u8],
     record: &sab::Record,
-    ordinal: usize,
+    ref_width: usize,
+    index: usize,
     value: &str,
 ) -> Result<(), CodecError> {
-    let ref_width = active_ref_width(bytes);
-    let offset = *sab::payload_token_offsets(bytes, record, ref_width, 0x07)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .get(ordinal)
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks string token [{ordinal}]",
-                record.head, record.index
-            ))
-        })?;
+    let offset = required_payload_field(bytes, record, ref_width, index, 0x07)?;
     let encoded_length = bytes.get(offset + 1).copied().ok_or_else(|| {
         CodecError::Malformed(format!("{} record string is truncated", record.head))
     })? as usize;
@@ -14675,26 +14668,25 @@ fn patch_transform_record(
     Ok(())
 }
 
-fn patch_sense_token(
+fn patch_sense_field(
     bytes: &mut [u8],
     record: &sab::Record,
-    ordinal: usize,
+    ref_width: usize,
+    index: usize,
     sense: Sense,
 ) -> Result<(), CodecError> {
-    let ref_width = active_ref_width(bytes);
-    let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    offsets.extend(
-        sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?,
-    );
-    offsets.sort_unstable();
-    let offset = *offsets.get(ordinal).ok_or_else(|| {
+    let offset = sab::payload_token_offset(bytes, record, ref_width, index).ok_or_else(|| {
         CodecError::Malformed(format!(
-            "{} record {} lacks sense token [{ordinal}]",
+            "{} record {} lacks payload field {index}",
             record.head, record.index
         ))
     })?;
+    if !matches!(bytes.get(offset), Some(0x0a | 0x0b)) {
+        return Err(CodecError::Malformed(format!(
+            "{} record {} payload field {index} is not a sense token",
+            record.head, record.index
+        )));
+    }
     bytes[offset] = match sense {
         Sense::Forward => 0x0b,
         Sense::Reversed => 0x0a,

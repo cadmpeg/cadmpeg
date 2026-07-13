@@ -746,6 +746,26 @@ mod tests {
         bytes
     }
 
+    fn generated_face_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0d, 4];
+        bytes.extend_from_slice(b"face");
+        for (tag, value) in [
+            (0x0c, -1i64),
+            (0x04, -1),
+            (0x0c, -1),
+            (0x0c, -1),
+            (0x0c, 1),
+            (0x0c, 2),
+            (0x04, 0),
+            (0x0c, 3),
+        ] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.extend_from_slice(&[0x0b, 0x0a, 0x0b, 0x11]);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -921,6 +941,35 @@ mod tests {
                     .expect("tolerant coedge parameter offset");
                 assert_eq!(coedge[offset], 0x06);
             }
+        }
+    }
+
+    #[test]
+    fn generated_topology_senses_have_fixed_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let face = generated_face_record(ref_width);
+            let records = frame(&face, 0, face.len(), ref_width).expect("generated face");
+            for index in [8usize, 9, 10] {
+                let offset = payload_token_offset(&face, &records[0], ref_width, index)
+                    .expect("face sense field");
+                assert!(matches!(face[offset], 0x0a | 0x0b));
+            }
+
+            let coedge = generated_tcoedge_record(ref_width);
+            let records =
+                frame(&coedge, 0, coedge.len(), ref_width).expect("generated tolerant coedge");
+            let offset = payload_token_offset(&coedge, &records[0], ref_width, 7)
+                .expect("coedge sense field");
+            assert_eq!(coedge[offset], 0x0b);
+
+            let edge = generated_edge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated edge");
+            let sense =
+                payload_token_offset(&edge, &records[0], ref_width, 9).expect("edge sense field");
+            let continuity = payload_token_offset(&edge, &records[0], ref_width, 10)
+                .expect("edge continuity field");
+            assert_eq!(edge[sense], 0x0b);
+            assert_eq!(edge[continuity], 0x07);
         }
     }
 }
