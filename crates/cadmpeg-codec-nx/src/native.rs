@@ -157,6 +157,8 @@ pub struct DataBlock {
     pub section_ordinal: u32,
     /// Zero-based block ordinal within the offset-only section.
     pub block_ordinal: u32,
+    /// Whether this is the store control block or one data column block.
+    pub role: DataBlockRole,
     /// Absolute file offset of the containing OM section base.
     pub section_offset: u64,
     /// Exact serialized block length.
@@ -167,6 +169,16 @@ pub struct DataBlock {
     pub source_entry: String,
     /// Absolute file offset of the block start.
     pub source_offset: u64,
+}
+
+/// Role of one bounded block in an offset-only NX OM store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DataBlockRole {
+    /// Store-level schema and root metadata from boundary slot zero.
+    Control,
+    /// One offset-bounded column-storage block.
+    Column,
 }
 
 /// Self-framed printable string carried by one NX OM record.
@@ -646,14 +658,24 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
             }
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let section_offset = entry_offset + section.base_offset() as u64;
-            section
-                .records
+            let mut source_blocks = Vec::with_capacity(section.records.len() + 1);
+            if let Some(control) = section.control {
+                source_blocks.push((DataBlockRole::Control, control));
+            }
+            source_blocks.extend(
+                section
+                    .records
+                    .into_iter()
+                    .map(|block| (DataBlockRole::Column, block)),
+            );
+            source_blocks
                 .into_iter()
                 .enumerate()
-                .map(move |(block_ordinal, block)| DataBlock {
+                .map(move |(block_ordinal, (role, block))| DataBlock {
                     id: format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"),
                     section_ordinal: section_ordinal as u32,
                     block_ordinal: block_ordinal as u32,
+                    role,
                     section_offset,
                     byte_len: block.bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(block.bytes),

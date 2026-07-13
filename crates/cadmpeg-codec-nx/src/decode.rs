@@ -2749,7 +2749,12 @@ fn attach_native_object_model(
     let mut unknowns = ir.native_unknowns("nx")?;
     for (section_index, (entry, section)) in object_sections.iter().enumerate() {
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (record_index, record) in section.records.iter().enumerate() {
+        for (record_index, record) in section
+            .control
+            .iter()
+            .chain(section.records.iter())
+            .enumerate()
+        {
             let kind = if record.object_id.is_some() {
                 "record"
             } else {
@@ -2804,7 +2809,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(7);
+    namespace.version = namespace.version.max(8);
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
     }
@@ -3058,7 +3063,7 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
                     .first()
                     .is_some_and(|record| record.object_id.is_none())
             })
-            .map(|(_, section)| section.records.len())
+            .map(|(_, section)| section.records.len() + usize::from(section.control.is_some()))
             .sum::<usize>();
         if blocks == 0 {
             notes.push(format!(

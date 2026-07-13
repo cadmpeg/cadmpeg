@@ -323,6 +323,7 @@ fn om_offset_only_index_bounds_storage_blocks() {
     let sections = crate::om::indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 0);
+    assert_eq!(sections[0].control.as_ref().unwrap().bytes, &[0, 0, 0, 0]);
     assert_eq!(sections[0].records.len(), 2);
     assert_eq!(sections[0].records[0].object_id, None);
     assert!(sections[0].records[0].bytes.starts_with(b"\x04\x01\x0eNX "));
@@ -342,8 +343,10 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
 
     assert!(crate::native::object_records(&container).is_empty());
     let blocks = crate::native::data_blocks(&container);
-    assert_eq!(blocks.len(), 2);
+    assert_eq!(blocks.len(), 3);
     assert_eq!(blocks[0].block_ordinal, 0);
+    assert_eq!(blocks[0].role, crate::native::DataBlockRole::Control);
+    assert_eq!(blocks[1].role, crate::native::DataBlockRole::Column);
     assert!(blocks[0].byte_len > 0);
     assert!(crate::native::string_values(&container).is_empty());
     assert!(crate::native::object_references(&container).is_empty());
@@ -2926,7 +2929,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 7);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 8);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

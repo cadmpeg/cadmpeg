@@ -111,6 +111,8 @@ pub struct IndexedSection<'a> {
     pub object_id_table_offset: usize,
     /// Length-framed class definitions preceding the entity index.
     pub types: Vec<TypeDefinition<'a>>,
+    /// Store-level control block bounded by slot zero in an offset-only index.
+    pub control: Option<EntityRecord<'a>>,
     /// Entity records following the reserved zero-offset slot.
     pub records: Vec<EntityRecord<'a>>,
 }
@@ -521,6 +523,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
                 entity_index_offset: index_start,
                 object_id_table_offset: table,
                 types,
+                control: None,
                 records,
             });
         }
@@ -583,6 +586,11 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             entity_index_offset: index_start,
             object_id_table_offset: offsets[0],
             types: type_definitions(bytes, 0, index_start),
+            control: Some(EntityRecord {
+                object_id: None,
+                offset: offsets[0],
+                bytes: &bytes[offsets[0]..offsets[1]],
+            }),
             records,
         });
     }
