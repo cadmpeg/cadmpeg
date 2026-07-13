@@ -159,6 +159,85 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 });
             }
         }
+        if !history.content.is_empty() {
+            let configurations = history
+                .configurations
+                .iter()
+                .map(|configuration| configuration.id.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let root_features = history
+                .features
+                .iter()
+                .filter(|feature| {
+                    feature.tree_parent.is_none() && feature.parent_source_id.is_none()
+                })
+                .map(|feature| feature.id.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let all_features = history
+                .features
+                .iter()
+                .map(|feature| feature.id.as_str())
+                .collect::<std::collections::HashSet<_>>();
+            let mut seen_configurations = std::collections::HashSet::new();
+            let mut seen_features = std::collections::HashSet::new();
+            for item in &history.content {
+                let error = match item {
+                    crate::records::HistoryContent::Configuration(id) => {
+                        if !configurations.contains(id.as_str()) {
+                            Some(format!(
+                                "SolidWorks history root references missing configuration {id}"
+                            ))
+                        } else if !seen_configurations.insert(id.as_str()) {
+                            Some(format!(
+                                "SolidWorks history root repeats configuration {id}"
+                            ))
+                        } else {
+                            None
+                        }
+                    }
+                    crate::records::HistoryContent::Feature(id) => {
+                        if !all_features.contains(id.as_str()) {
+                            Some(format!(
+                                "SolidWorks history root references missing feature {id}"
+                            ))
+                        } else if !root_features.contains(id.as_str()) {
+                            Some(format!(
+                                "SolidWorks history root references nested feature {id}"
+                            ))
+                        } else if !seen_features.insert(id.as_str()) {
+                            Some(format!("SolidWorks history root repeats feature {id}"))
+                        } else {
+                            None
+                        }
+                    }
+                    crate::records::HistoryContent::Text(_) => None,
+                };
+                if let Some(message) = error {
+                    findings.push(Finding {
+                        check: Check::NativeLinks,
+                        severity: Severity::Error,
+                        message,
+                        entity: Some(history.id.clone()),
+                    });
+                }
+            }
+            for missing in configurations.difference(&seen_configurations) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("SolidWorks history root omits configuration {missing}"),
+                    entity: Some(history.id.clone()),
+                });
+            }
+            for missing in root_features.difference(&seen_features) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("SolidWorks history root omits feature {missing}"),
+                    entity: Some(history.id.clone()),
+                });
+            }
+        }
     }
     for lane in &native.feature_input_lanes {
         let mut ordinals = std::collections::HashSet::new();

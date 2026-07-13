@@ -4359,6 +4359,52 @@ fn native_validation_rejects_broken_feature_graph() {
 }
 
 #[test]
+fn native_validation_rejects_broken_history_root_graph() {
+    use crate::records::HistoryContent;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Feature Name="Root" Type="Custom" id="1"><Feature Name="Nested" Type="Custom" id="2"/></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        let history = &mut native.feature_histories[0];
+        let nested = history
+            .features
+            .iter()
+            .find(|feature| feature.name == "Nested")
+            .unwrap()
+            .id
+            .clone();
+        history.content = vec![
+            HistoryContent::Feature(nested),
+            HistoryContent::Configuration("missing-configuration".into()),
+        ];
+    });
+
+    let messages = crate::validate_native(&decoded.ir)
+        .into_iter()
+        .map(|finding| finding.message)
+        .collect::<Vec<_>>();
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("references nested feature")));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("references missing configuration")));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("omits configuration")));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("omits feature")));
+}
+
+#[test]
 fn native_validation_rejects_orphan_history_records() {
     let mut decoded = SldprtCodec
         .decode(
