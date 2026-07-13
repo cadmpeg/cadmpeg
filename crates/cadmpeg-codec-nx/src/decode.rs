@@ -1177,6 +1177,19 @@ fn emit_topology(
         if decoded_tolerance(fields.tolerance).is_some() {
             annotations.derived(&id, "tolerance");
         }
+        if curve.is_none() && fields.curve <= 1 {
+            let unresolved = CurveId(format!("{prefix}:edge-curve#implicit-{}", node.xmt));
+            push_unknown_edge_curve(
+                ir,
+                annotations,
+                &unresolved,
+                source_stream,
+                node,
+                stream_index,
+                "IMPLICIT_INTERSECTION_CURVE",
+            );
+            curve = Some(unresolved);
+        }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
             match orient_edge_range(
                 ir,
@@ -1189,19 +1202,15 @@ fn emit_topology(
                 Some(oriented) => param_range = Some(oriented),
                 None => {
                     let unresolved = CurveId(format!("{prefix}:edge-curve#unknown-{}", node.xmt));
-                    annotations
-                        .note(&unresolved, source_stream, node.pos as u64)
-                        .tag("UNRESOLVED_EDGE_CURVE");
-                    annotations.exactness(&unresolved, Exactness::Unknown);
-                    ir.model.curves.push(Curve {
-                        id: unresolved.clone(),
-                        geometry: CurveGeometry::Unknown {
-                            record: Some(UnknownId(format!(
-                                "nx:container:parasolid#{stream_index}"
-                            ))),
-                        },
-                        source_object: None,
-                    });
+                    push_unknown_edge_curve(
+                        ir,
+                        annotations,
+                        &unresolved,
+                        source_stream,
+                        node,
+                        stream_index,
+                        "UNRESOLVED_EDGE_CURVE",
+                    );
                     curve = Some(unresolved);
                     param_range = None;
                 }
@@ -1446,6 +1455,28 @@ fn decoded_tolerance(value: f64) -> Option<f64> {
         value if value.is_finite() && value > 0.0 && value < 1.0e3 => Some(value * 1000.0),
         _ => None,
     }
+}
+
+fn push_unknown_edge_curve(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    id: &CurveId,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    node: &Node,
+    stream_index: usize,
+    tag: &str,
+) {
+    annotations
+        .note(id, source_stream, node.pos as u64)
+        .tag(tag);
+    annotations.exactness(id, Exactness::Unknown);
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Unknown {
+            record: Some(UnknownId(format!("nx:container:parasolid#{stream_index}"))),
+        },
+        source_object: None,
+    });
 }
 
 fn canonical_trim_range(ir: &CadIr, basis: &CurveId, raw: [f64; 2]) -> Option<[f64; 2]> {

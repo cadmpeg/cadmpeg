@@ -428,6 +428,30 @@ fn decode_retains_unknown_non_null_edge_curve_carrier() {
 }
 
 #[test]
+fn decode_retains_implicit_intersection_edge_curve_carrier() {
+    let mut stream = topology_partition_stream();
+    let edge = stream
+        .windows(2)
+        .position(|window| window == [0, 16])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 1);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    let edge = &result.ir.model.edges[0];
+    let curve = edge
+        .curve
+        .as_ref()
+        .and_then(|id| result.ir.model.curves.iter().find(|curve| &curve.id == id))
+        .expect("implicit edge carrier");
+    assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    assert_eq!(edge.param_range, None);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));
