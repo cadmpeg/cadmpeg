@@ -44,7 +44,8 @@ use crate::topology::HalfEdgeId;
 #[derive(Serialize)]
 struct CreoSketchRecord {
     id: String,
-    feature_id: u32,
+    definition_id: u32,
+    owner_feature_id: Option<u32>,
     variables: Vec<CreoSketchVariable>,
     segments: Vec<CreoSketchSegment>,
     dimensions: Vec<CreoSketchDimension>,
@@ -102,7 +103,8 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
         })
         .map(|definition| CreoSketchRecord {
             id: format!("creo:featdefs:sketch#{}", definition.id),
-            feature_id: definition.id,
+            definition_id: definition.id,
+            owner_feature_id: definition.owner_feature_id,
             variables: definition
                 .variables
                 .iter()
@@ -1538,7 +1540,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             let offset = scan
                 .feature_definitions
                 .iter()
-                .find(|definition| definition.id == sketch.feature_id)
+                .find(|definition| definition.id == sketch.definition_id)
                 .map_or(0, |definition| definition.offset);
             annotate(
                 &mut annotations,

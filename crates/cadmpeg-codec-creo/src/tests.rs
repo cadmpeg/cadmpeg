@@ -727,6 +727,8 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     let sketches = &namespace.arenas["sketches"];
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].id, "creo:featdefs:sketch#40");
+    assert_eq!(sketches[0].fields["definition_id"], 40);
+    assert!(sketches[0].fields["owner_feature_id"].is_null());
     let variables = sketches[0].fields["variables"]
         .as_array()
         .expect("variables array");
