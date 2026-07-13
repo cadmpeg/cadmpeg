@@ -2250,7 +2250,7 @@ fn encoder_writes_source_less_curved_sketches() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+        SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -2325,6 +2325,28 @@ fn encoder_writes_source_less_curved_sketches() {
             start: Point2::new(5.0, 0.0),
             end: Point2::new(11.0, 0.0),
         },
+        SketchGeometry::Arc {
+            center: Point2::new(40.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::FRAC_PI_2),
+        },
+        SketchGeometry::Line {
+            start: Point2::new(40.0, 2.0),
+            end: Point2::new(42.0, 0.0),
+        },
+        SketchGeometry::Point {
+            position: Point2::new(30.0, 0.0),
+        },
+        SketchGeometry::Point {
+            position: Point2::new(34.0, 0.0),
+        },
+        SketchGeometry::Point {
+            position: Point2::new(30.0, 4.0),
+        },
+        SketchGeometry::Point {
+            position: Point2::new(41.0, 1.0),
+        },
     ];
     let entity_ids = geometries
         .into_iter()
@@ -2365,6 +2387,7 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[2, 6]),
             profile(&[7, 8]),
             profile(&[9, 10]),
+            profile(&[11, 12]),
             profile(&[3]),
             profile(&[4]),
         ],
@@ -2427,6 +2450,20 @@ fn encoder_writes_source_less_curved_sketches() {
             },
         ),
         (
+            "horizontal-points",
+            SketchConstraintDefinition::HorizontalPoints {
+                first: SketchLocus::Entity(entity_ids[13].clone()),
+                second: SketchLocus::Entity(entity_ids[14].clone()),
+            },
+        ),
+        (
+            "midpoint",
+            SketchConstraintDefinition::Midpoint {
+                point: SketchLocus::Entity(entity_ids[16].clone()),
+                entity: entity_ids[12].clone(),
+            },
+        ),
+        (
             "parallel",
             SketchConstraintDefinition::Parallel {
                 first: entity_ids[5].clone(),
@@ -2438,6 +2475,13 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::Perpendicular {
                 first: entity_ids[5].clone(),
                 second: entity_ids[8].clone(),
+            },
+        ),
+        (
+            "vertical-points",
+            SketchConstraintDefinition::VerticalPoints {
+                first: SketchLocus::Entity(entity_ids[13].clone()),
+                second: SketchLocus::Entity(entity_ids[15].clone()),
             },
         ),
     ] {
@@ -2455,7 +2499,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 11);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 17);
     assert!(decoded
         .ir
         .model
@@ -2476,6 +2520,9 @@ fn encoder_writes_source_less_curved_sketches() {
         crate::records::SketchRelationKind::Equal,
         crate::records::SketchRelationKind::Collinear,
         crate::records::SketchRelationKind::Concentric,
+        crate::records::SketchRelationKind::HorizontalPoints,
+        crate::records::SketchRelationKind::VerticalPoints,
+        crate::records::SketchRelationKind::Midpoint,
     ] {
         assert!(sldprt_native(&decoded.ir)
             .feature_input_lanes
@@ -2532,6 +2579,25 @@ fn encoder_writes_source_less_curved_sketches() {
             .count()
             >= 2
     );
+    for definition in ["horizontal_points", "vertical_points", "midpoint"] {
+        assert!(decoded
+            .ir
+            .model
+            .sketch_constraints
+            .iter()
+            .any(|constraint| {
+                matches!(
+                    (&constraint.definition, definition),
+                    (
+                        SketchConstraintDefinition::HorizontalPoints { .. },
+                        "horizontal_points"
+                    ) | (
+                        SketchConstraintDefinition::VerticalPoints { .. },
+                        "vertical_points"
+                    ) | (SketchConstraintDefinition::Midpoint { .. }, "midpoint")
+                )
+            }));
+    }
     assert_eq!(
         decoded
             .ir
@@ -2550,7 +2616,7 @@ fn encoder_writes_source_less_curved_sketches() {
             .iter()
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
             .count(),
-        4
+        5
     );
     assert!(decoded
         .ir

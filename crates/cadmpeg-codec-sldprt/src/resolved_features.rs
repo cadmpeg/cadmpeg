@@ -3388,6 +3388,49 @@ fn validate_generated_marker_constraint(
             constraint.id.0
         )));
     }
+    match &constraint.definition {
+        SketchConstraintDefinition::HorizontalPoints { first, second }
+        | SketchConstraintDefinition::VerticalPoints { first, second } => {
+            let first_point = constraint_locus_point(ir, constraint, first)?;
+            let second_point = constraint_locus_point(ir, constraint, second)?;
+            let delta = if matches!(
+                &constraint.definition,
+                SketchConstraintDefinition::HorizontalPoints { .. }
+            ) {
+                (first_point.v - second_point.v).abs()
+            } else {
+                (first_point.u - second_point.u).abs()
+            };
+            if delta > SKETCH_POINT_TOLERANCE {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT sketch constraint {} is not satisfied by its locus coordinates",
+                    constraint.id.0
+                )));
+            }
+            return Ok(());
+        }
+        SketchConstraintDefinition::Midpoint { point, entity } => {
+            let point = constraint_locus_point(ir, constraint, point)?;
+            let entity = sketch_constraint_entity(ir, constraint, entity)?;
+            let (start, end) = sketch_line(&entity.geometry).ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT midpoint constraint {} requires a line entity",
+                    constraint.id.0
+                ))
+            })?;
+            if !same_point2(
+                point,
+                Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
+            ) {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT sketch constraint {} is not satisfied by its midpoint coordinates",
+                    constraint.id.0
+                )));
+            }
+            return Ok(());
+        }
+        _ => {}
+    }
     if let Some((kind, first, second)) = binary_marker_relation(&constraint.definition) {
         let first = sketch_constraint_entity(ir, constraint, first)?;
         let second = sketch_constraint_entity(ir, constraint, second)?;
@@ -3456,6 +3499,23 @@ fn validate_generated_marker_constraint(
         )));
     }
     Ok(())
+}
+
+fn constraint_locus_point(
+    ir: &cadmpeg_ir::CadIr,
+    constraint: &SketchConstraint,
+    locus: &SketchLocus,
+) -> Result<Point2, cadmpeg_ir::codec::CodecError> {
+    let entity = sketch_constraint_entity(ir, constraint, &locus_entity(locus))?;
+    sketch_entity_loci(entity)
+        .into_iter()
+        .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
+        .ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "sketch constraint {} references unavailable locus {:?}",
+                constraint.id.0, locus
+            ))
+        })
 }
 
 fn binary_marker_relation(
@@ -3759,6 +3819,8 @@ fn source_less_lanes(
 enum GeneratedMarkerRelation<'a> {
     Unary(SketchRelationKind, &'a SketchEntityId),
     Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
+    Loci(SketchRelationKind, &'a SketchLocus, &'a SketchLocus),
+    Midpoint(&'a SketchLocus, &'a SketchEntityId),
 }
 
 fn append_generated_sketch_markers(
@@ -3785,6 +3847,15 @@ fn append_generated_sketch_markers(
             SketchConstraintDefinition::ArcAngle { entity, angle } => Some(
                 GeneratedMarkerRelation::Unary(arc_angle_relation_kind(angle.0)?, entity),
             ),
+            SketchConstraintDefinition::HorizontalPoints { first, second } => Some(
+                GeneratedMarkerRelation::Loci(SketchRelationKind::HorizontalPoints, first, second),
+            ),
+            SketchConstraintDefinition::VerticalPoints { first, second } => Some(
+                GeneratedMarkerRelation::Loci(SketchRelationKind::VerticalPoints, first, second),
+            ),
+            SketchConstraintDefinition::Midpoint { point, entity } => {
+                Some(GeneratedMarkerRelation::Midpoint(point, entity))
+            }
             definition => binary_marker_relation(definition)
                 .map(|(kind, first, second)| GeneratedMarkerRelation::Binary(kind, first, second)),
         })
@@ -3794,7 +3865,7 @@ fn append_generated_sketch_markers(
     }
 
     let mut marker_ids = HashMap::<SketchEntityId, Vec<u16>>::new();
-    let mut marker_loci = Vec::<(SketchEntityId, Point2, SketchInputKind, u16)>::new();
+    let mut marker_loci = Vec::<(SketchLocus, Point2, SketchInputKind, u16)>::new();
     let mut next_id = 1u32;
     for entity in ir
         .model
@@ -3802,7 +3873,7 @@ fn append_generated_sketch_markers(
         .iter()
         .filter(|entity| entity.sketch == sketch.id)
     {
-        for (point, _) in sketch_entity_loci(entity) {
+        for (point, locus) in sketch_entity_loci(entity) {
             let local_id = u16::try_from(next_id).map_err(|_| {
                 cadmpeg_ir::codec::CodecError::Malformed(format!(
                     "source-less SLDPRT sketch {} exceeds the marker-local id space",
@@ -3820,7 +3891,7 @@ fn append_generated_sketch_markers(
                 .or_default()
                 .push(local_id);
             marker_loci.push((
-                entity.id.clone(),
+                locus,
                 point,
                 generated_marker_kind(&entity.geometry),
                 local_id,
@@ -3854,6 +3925,20 @@ fn append_generated_sketch_markers(
                     unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
                 ],
             ),
+            GeneratedMarkerRelation::Loci(kind, first, second) => (
+                kind,
+                [
+                    unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                    unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                ],
+            ),
+            GeneratedMarkerRelation::Midpoint(point, entity) => (
+                SketchRelationKind::Midpoint,
+                [
+                    unique_generated_locus_marker(ir, sketch, &marker_loci, point)?,
+                    unique_generated_entity_marker(ir, sketch, &marker_loci, entity)?,
+                ],
+            ),
         };
         append_reference_marker(payload, kind, links, next_id);
         next_id = next_id.checked_add(1).ok_or_else(|| {
@@ -3868,10 +3953,13 @@ fn append_generated_sketch_markers(
 fn unique_generated_entity_marker(
     ir: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
-    markers: &[(SketchEntityId, Point2, SketchInputKind, u16)],
+    markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
     entity: &SketchEntityId,
 ) -> Result<u16, cadmpeg_ir::codec::CodecError> {
-    for (_, point, kind, local_id) in markers.iter().filter(|(candidate, ..)| candidate == entity) {
+    for (_, point, kind, local_id) in markers
+        .iter()
+        .filter(|(candidate, ..)| locus_entity(candidate) == *entity)
+    {
         let mut candidates = ir
             .model
             .sketch_entities
@@ -3891,6 +3979,36 @@ fn unique_generated_entity_marker(
     Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
         "source-less SLDPRT binary relation cannot identify entity {} with one unambiguous marker locus",
         entity.0
+    )))
+}
+
+fn unique_generated_locus_marker(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &Sketch,
+    markers: &[(SketchLocus, Point2, SketchInputKind, u16)],
+    locus: &SketchLocus,
+) -> Result<u16, cadmpeg_ir::codec::CodecError> {
+    for (_, point, kind, local_id) in markers.iter().filter(|(candidate, ..)| candidate == locus) {
+        let mut candidates = ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|candidate| candidate.sketch == sketch.id)
+            .filter(|candidate| marker_accepts_locus(*kind, &candidate.geometry))
+            .flat_map(sketch_entity_loci)
+            .filter_map(|(candidate_point, candidate_locus)| {
+                same_point2(*point, candidate_point).then_some(candidate_locus)
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+        candidates.dedup();
+        if candidates.as_slice() == [locus.clone()] {
+            return Ok(*local_id);
+        }
+    }
+    Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+        "source-less SLDPRT locus relation cannot identify {:?} with one unambiguous marker",
+        locus
     )))
 }
 
