@@ -279,6 +279,53 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
         .is_empty());
 }
 
+#[test]
+fn decode_retains_connected_topology_with_unknown_surface_carrier() {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(2)
+        .position(|window| window == [0, 14])
+        .expect("face record");
+    put_ref(&mut stream, face + 26, 99);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == result.ir.model.faces[0].surface)
+        .expect("unknown face carrier");
+    assert!(matches!(surface.geometry, SurfaceGeometry::Unknown { .. }));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_retains_unknown_non_null_edge_curve_carrier() {
+    let mut stream = topology_partition_stream();
+    let edge = stream
+        .windows(2)
+        .position(|window| window == [0, 16])
+        .expect("edge record");
+    put_ref(&mut stream, edge + 24, 99);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    let curve = result.ir.model.edges[0]
+        .curve
+        .as_ref()
+        .and_then(|id| result.ir.model.curves.iter().find(|curve| &curve.id == id))
+        .expect("unknown edge carrier");
+    assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
 fn offset_surface_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     let face = stream

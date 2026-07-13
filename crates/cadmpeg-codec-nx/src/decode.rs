@@ -479,6 +479,16 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             }
         }
 
+        retain_unresolved_topology_carriers(
+            &mut ir,
+            si,
+            &graph,
+            &mut surfaces_by_xmt,
+            &mut curves_by_xmt,
+            source_stream,
+            &mut annotations,
+        );
+
         emit_topology(
             &mut ir,
             si,
@@ -1130,6 +1140,62 @@ fn emit_topology(
         {
             parent.coedges.push(id);
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn retain_unresolved_topology_carriers(
+    ir: &mut CadIr,
+    stream_index: usize,
+    graph: &Graph,
+    surfaces: &mut BTreeMap<u32, SurfaceId>,
+    curves: &mut BTreeMap<u32, CurveId>,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
+) {
+    let unknown = UnknownId(format!("nx:container:parasolid#{stream_index}"));
+    for face in graph.of_kind(14) {
+        let Some(surface_xmt) = face.face_fields().map(|fields| fields.surface) else {
+            continue;
+        };
+        if surface_xmt <= 1 || surfaces.contains_key(&surface_xmt) {
+            continue;
+        }
+        let id = SurfaceId(format!("nx:s{stream_index}:surface#unknown-{surface_xmt}"));
+        annotations
+            .note(&id, source_stream, face.pos as u64)
+            .tag("UNRESOLVED_SURFACE_REFERENCE");
+        annotations.exactness(&id, Exactness::Unknown);
+        ir.model.surfaces.push(Surface {
+            id: id.clone(),
+            geometry: SurfaceGeometry::Unknown {
+                record: Some(unknown.clone()),
+            },
+            source_object: None,
+        });
+        surfaces.insert(surface_xmt, id);
+    }
+
+    for edge in graph.of_kind(16) {
+        let Some(curve_xmt) = edge.edge_fields().map(|fields| fields.curve) else {
+            continue;
+        };
+        if curve_xmt <= 1 || curves.contains_key(&curve_xmt) {
+            continue;
+        }
+        let id = CurveId(format!("nx:s{stream_index}:curve#unknown-{curve_xmt}"));
+        annotations
+            .note(&id, source_stream, edge.pos as u64)
+            .tag("UNRESOLVED_CURVE_REFERENCE");
+        annotations.exactness(&id, Exactness::Unknown);
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Unknown {
+                record: Some(unknown.clone()),
+            },
+            source_object: None,
+        });
+        curves.insert(curve_xmt, id);
     }
 }
 
