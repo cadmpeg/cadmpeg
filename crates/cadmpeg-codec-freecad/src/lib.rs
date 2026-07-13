@@ -46,6 +46,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let extensions = match namespace.arena_as::<native::ExtensionRecord>("extensions") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
     let entries = match namespace.arena_as::<native::EntryRecord>("entries") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
@@ -68,6 +72,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|record| record.id.as_str())
         .collect::<HashSet<_>>();
+    let extension_ids = extensions
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
     if object_ids.len() != objects.len() || property_ids.len() != properties.len() {
         findings.push(finding(
             Check::Identity,
@@ -86,8 +94,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             }
         }
     }
+    for extension in &extensions {
+        if !object_ids.contains(extension.owner.as_str()) {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} has missing owner {}", extension.id, extension.owner),
+                Some(extension.id.clone()),
+            ));
+        }
+    }
     for property in &properties {
-        if property.owner != "fcstd:document#0" && !object_ids.contains(property.owner.as_str()) {
+        if property.owner != "fcstd:document#0"
+            && !object_ids.contains(property.owner.as_str())
+            && !extension_ids.contains(property.owner.as_str())
+        {
             findings.push(finding(
                 Check::ReferentialIntegrity,
                 format!("{} has missing owner {}", property.id, property.owner),
@@ -343,6 +363,7 @@ impl Codec for FcstdCodec {
                 .collect::<Result<Vec<_>, CodecError>>()?;
             let logical_ledger = logical_ledger(&entry_records, &graph.properties)?;
             namespace.set_arena("objects", &graph.objects)?;
+            namespace.set_arena("extensions", &graph.extensions)?;
             namespace.set_arena("properties", &graph.properties)?;
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("logical_ledger", &logical_ledger)?;

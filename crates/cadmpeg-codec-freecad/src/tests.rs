@@ -77,7 +77,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
 <Object type="PartDesign::Feature" name="Sketch" id="2"/>
 </Objects>
 <ObjectData Count="2">
-<Object name="Body"><Properties Count="3" TransientCount="1">
+<Object name="Body" Extensions="True"><Extensions Count="1"><Extension type="Demo::Extension" name="Demo"><Properties Count="1"><Property name="ExtensionValue" type="App::PropertyString"><String value="kept"/></Property></Properties></Extension></Extensions><Properties Count="3" TransientCount="1">
 <_Property name="TransientState" type="App::PropertyInteger" status="8"/>
 <Property name="Support" type="App::PropertyLinkSub" status="4" group="Attachment" doc="Support object" attr="2" ro="1" hide="0"><Link object="Sketch" sub="Face1"/></Property>
 <Property name="Members" type="App::PropertyLinkList"><LinkList count="2"><Link value="Sketch"/><Link value=""/></LinkList></Property>
@@ -99,7 +99,17 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     let properties = namespace
         .arena_as::<crate::native::PropertyRecord>("properties")
         .expect("properties");
+    let extensions = namespace
+        .arena_as::<crate::native::ExtensionRecord>("extensions")
+        .expect("extensions");
     assert_eq!(objects.len(), 2);
+    assert_eq!(extensions.len(), 1);
+    assert_eq!(extensions[0].owner, "fcstd:object:Body");
+    let extension_value = properties
+        .iter()
+        .find(|property| property.name == "ExtensionValue")
+        .expect("extension property");
+    assert_eq!(extension_value.owner, extensions[0].id);
     assert_eq!(objects[0].dependencies, vec!["fcstd:object:Sketch"]);
     let support = properties
         .iter()

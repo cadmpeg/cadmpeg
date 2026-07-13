@@ -6,13 +6,16 @@ use std::collections::{BTreeMap, HashMap};
 use cadmpeg_ir::codec::CodecError;
 
 use crate::native::{
-    DynamicPropertyMeta, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord, ValueRecord,
+    DynamicPropertyMeta, ExtensionRecord, LinkTarget, ObjectRecord, PropertyFamily, PropertyRecord,
+    ValueRecord,
 };
 
 /// Recovered persistence graph.
 pub struct Graph {
     /// Declared objects.
     pub objects: Vec<ObjectRecord>,
+    /// Dynamic extensions.
+    pub extensions: Vec<ExtensionRecord>,
     /// Document and object properties.
     pub properties: Vec<PropertyRecord>,
 }
@@ -115,6 +118,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
     }
 
     let mut properties = Vec::new();
+    let mut extensions = Vec::new();
     if let Some(document_properties) = root.children().find(|node| node.has_tag_name("Properties"))
     {
         parse_properties(
@@ -128,11 +132,55 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         let data = data_by_name.get(&object.name).ok_or_else(|| {
             CodecError::Malformed(format!("missing ObjectData for {}", object.name))
         })?;
+        for extensions_node in data
+            .descendants()
+            .filter(|node| node.has_tag_name("Extensions"))
+        {
+            let nodes = extensions_node
+                .children()
+                .filter(|node| node.has_tag_name("Extension"))
+                .collect::<Vec<_>>();
+            let declared = extensions_node
+                .attribute("Count")
+                .and_then(|value| value.parse::<usize>().ok())
+                .ok_or_else(|| {
+                    CodecError::Malformed("Extensions Count is missing or invalid".into())
+                })?;
+            if declared != nodes.len() {
+                return Err(CodecError::Malformed(format!(
+                    "Extensions Count={declared} but {} records were found for {}",
+                    nodes.len(),
+                    object.id
+                )));
+            }
+            for (order, node) in nodes.into_iter().enumerate() {
+                let name = required_attr(node, "name")?;
+                extensions.push(ExtensionRecord {
+                    id: extension_id(&object.id, &name, order),
+                    owner: object.id.clone(),
+                    name,
+                    type_name: required_attr(node, "type")?,
+                    order,
+                    raw_xml: text[node.range()].to_owned(),
+                });
+            }
+        }
         for container in data
             .descendants()
             .filter(|node| node.has_tag_name("Properties"))
         {
-            parse_properties(text, container, &object.id, &mut properties)?;
+            let property_owner = container
+                .ancestors()
+                .find(|ancestor| ancestor.has_tag_name("Extension"))
+                .and_then(|extension| {
+                    let name = extension.attribute("name")?;
+                    extensions
+                        .iter()
+                        .find(|record| record.owner == object.id && record.name == name)
+                        .map(|record| record.id.clone())
+                })
+                .unwrap_or_else(|| object.id.clone());
+            parse_properties(text, container, &property_owner, &mut properties)?;
         }
     }
     for property in &mut properties {
@@ -147,6 +195,7 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
 
     Ok(Graph {
         objects,
+        extensions,
         properties,
     })
 }
@@ -360,6 +409,10 @@ fn attribute_any(attributes: &BTreeMap<String, String>, names: &[&str]) -> Optio
 
 fn object_id(name: &str) -> String {
     format!("fcstd:object:{name}")
+}
+
+fn extension_id(owner: &str, name: &str, order: usize) -> String {
+    format!("{owner}:extension:{order}:{name}")
 }
 
 fn required_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Result<String, CodecError> {

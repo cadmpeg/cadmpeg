@@ -62,6 +62,23 @@ pub struct ObjectRecord {
     pub raw_xml: Option<String>,
 }
 
+/// One dynamic object extension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExtensionRecord {
+    /// Stable extension identity.
+    pub id: String,
+    /// Owning object identity.
+    pub owner: String,
+    /// Persisted extension name.
+    pub name: String,
+    /// Runtime extension type.
+    pub type_name: String,
+    /// Source-order index.
+    pub order: usize,
+    /// Exact extension XML.
+    pub raw_xml: String,
+}
+
 /// Dynamic-property persistence metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DynamicPropertyMeta {
