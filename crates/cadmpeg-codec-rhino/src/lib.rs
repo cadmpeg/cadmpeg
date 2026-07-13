@@ -10,6 +10,7 @@ use cadmpeg_ir::codec::{
 };
 
 pub(crate) mod accounting;
+pub(crate) mod annotations;
 pub(crate) mod brep;
 pub(crate) mod cage;
 pub(crate) mod chunks;

@@ -95,13 +95,27 @@ pub(crate) struct Dimension {
     pub(crate) measurement: f64,
 }
 
-struct Annotation {
+pub(crate) struct Annotation {
+    pub(crate) rich_text: String,
+    pub(crate) text_rectangle_width: f64,
+    pub(crate) text_rotation_radians: f64,
+    pub(crate) horizontal_alignment: i32,
+    pub(crate) vertical_alignment: i32,
+    pub(crate) wrapped: bool,
+    pub(crate) dimstyle_id: Uuid,
+    pub(crate) plane: Plane,
+    pub(crate) kind: i32,
+    pub(crate) horizontal_direction: [f64; 2],
+    pub(crate) allow_text_scaling: bool,
+}
+
+struct TextContent {
     rich_text: String,
-    dimstyle_id: Uuid,
-    plane: Plane,
-    kind: i32,
-    horizontal_direction: [f64; 2],
-    allow_text_scaling: bool,
+    rectangle_width: f64,
+    rotation_radians: f64,
+    horizontal_alignment: i32,
+    vertical_alignment: i32,
+    wrapped: bool,
 }
 
 pub(crate) fn supported_class(class: Uuid) -> bool {
@@ -183,7 +197,7 @@ fn text_content(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
-) -> Result<String, FramingError> {
+) -> Result<TextContent, FramingError> {
     let (mut text, next, version) = anonymous(data, reader.position(), reader.end(), archive)?;
     if version != 0 {
         return Err(structural(
@@ -193,24 +207,23 @@ fn text_content(
     }
     let rich_text = utf16(&mut text)?;
     plane(&mut text)?;
-    for label in ["text rectangle width", "text rotation"] {
-        let value = text.f64()?;
-        if !value.is_finite() {
-            return Err(structural(
-                text.position() - 8,
-                format!("{label} is not finite"),
-            ));
-        }
+    let rectangle_width = text.f64()?;
+    let rotation_radians = text.f64()?;
+    if !rectangle_width.is_finite() || !rotation_radians.is_finite() {
+        return Err(structural(
+            text.position() - 16,
+            "text layout contains a nonfinite value",
+        ));
     }
-    text.i32()?;
-    text.i32()?;
+    let horizontal_alignment = text.i32()?;
+    let vertical_alignment = text.i32()?;
     if !text.f64()?.is_finite() {
         return Err(structural(
             text.position() - 8,
             "obsolete text height is not finite",
         ));
     }
-    text.bool()?;
+    let wrapped = text.bool()?;
     if text.remaining() != 0 {
         return Err(structural(
             text.position(),
@@ -218,10 +231,17 @@ fn text_content(
         ));
     }
     reader.skip(next - reader.position())?;
-    Ok(rich_text)
+    Ok(TextContent {
+        rich_text,
+        rectangle_width,
+        rotation_radians,
+        horizontal_alignment,
+        vertical_alignment,
+        wrapped,
+    })
 }
 
-fn annotation(
+pub(crate) fn annotation(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
@@ -234,7 +254,7 @@ fn annotation(
             "unsupported annotation version",
         ));
     }
-    let rich_text = text_content(data, &mut annotation, archive)?;
+    let text = text_content(data, &mut annotation, archive)?;
     let dimstyle_id = uuid(&mut annotation)?;
     let plane = plane(&mut annotation)?;
     let annotation_type = if version >= 1 { annotation.i32()? } else { 0 };
@@ -280,7 +300,12 @@ fn annotation(
     }
     reader.skip(next - reader.position())?;
     Ok(Annotation {
-        rich_text,
+        rich_text: text.rich_text,
+        text_rectangle_width: text.rectangle_width,
+        text_rotation_radians: text.rotation_radians,
+        horizontal_alignment: text.horizontal_alignment,
+        vertical_alignment: text.vertical_alignment,
+        wrapped: text.wrapped,
         dimstyle_id,
         plane,
         kind: annotation_type,
