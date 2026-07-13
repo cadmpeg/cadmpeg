@@ -10743,6 +10743,13 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(lane.scalars[0].value, 0.025);
     assert_eq!(lane.scalars[0].object_id, 1);
     assert_eq!(lane.scalars[0].entity_indices, [0, 2]);
+    assert_eq!(lane.scalars[0].operands.len(), 2);
+    assert_eq!(lane.scalars[0].operands[0].entity_index, 0);
+    assert_eq!(lane.scalars[0].operands[1].entity_index, 2);
+    assert!(lane.scalars[0]
+        .operands
+        .iter()
+        .all(|operand| operand.kind == crate::records::FeatureInputOperandKind::D6));
     assert_eq!(
         lane.scalars[0].role,
         crate::records::FeatureInputScalarRole::Driving
@@ -10809,6 +10816,43 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
             .unwrap()
             .kind,
         SketchInputKind::Native(5)
+    );
+}
+
+#[test]
+fn decode_retains_e1_feature_input_operands() {
+    let mut payload = resolved_features_payload(&[0, 1, 2]);
+    let mut replacements = 0;
+    for index in 0..payload.len().saturating_sub(1) {
+        if payload[index..index + 2] == [0xd6, 0x80] {
+            payload[index] = 0xe1;
+            replacements += 1;
+        }
+    }
+    assert_eq!(replacements, 2);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let scalar = &native.feature_input_lanes[0].scalars[0];
+    assert!(scalar.entity_indices.is_empty());
+    assert_eq!(
+        scalar
+            .operands
+            .iter()
+            .map(|operand| (operand.kind, operand.entity_index))
+            .collect::<Vec<_>>(),
+        [
+            (crate::records::FeatureInputOperandKind::E1, 0),
+            (crate::records::FeatureInputOperandKind::E1, 2),
+        ]
     );
 }
 

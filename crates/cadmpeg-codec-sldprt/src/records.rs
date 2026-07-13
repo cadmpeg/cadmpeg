@@ -192,6 +192,30 @@ pub struct FeatureInputScalar {
     /// Local sketch-entity indices used as dimension operands.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entity_indices: Vec<u16>,
+    /// Typed native operand cells attached to this scalar.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operands: Vec<FeatureInputOperand>,
+}
+
+/// One native entity-reference cell attached to a feature-input scalar.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputOperand {
+    /// Byte offset of the reference cell within the feature-input stream.
+    pub offset: u64,
+    /// Native reference-cell family.
+    pub kind: FeatureInputOperandKind,
+    /// Local entity index carried by the cell.
+    pub entity_index: u16,
+}
+
+/// Native feature-input entity-reference cell family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureInputOperandKind {
+    /// `d6 80` reference cell.
+    D6,
+    /// `e1 80` reference cell.
+    E1,
 }
 
 /// Function of a named scalar in its dimension record.

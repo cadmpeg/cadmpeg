@@ -3,7 +3,8 @@
 
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
-    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
+    FeatureInputOperand, FeatureInputOperandKind, FeatureInputScalar, FeatureInputScalarRole,
+    SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
@@ -146,7 +147,12 @@ pub(crate) fn named_scalars(
                     .ok()?,
             );
             let role = scalar_role(payload, name_offset);
-            let entity_indices = scalar_entity_indices(payload, name_offset);
+            let operands = scalar_operands(payload, name_offset);
+            let entity_indices = operands
+                .iter()
+                .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
+                .map(|operand| operand.entity_index)
+                .collect();
             value.is_finite().then_some((
                 name,
                 value_offset,
@@ -154,11 +160,12 @@ pub(crate) fn named_scalars(
                 value,
                 role,
                 entity_indices,
+                operands,
             ))
         })
         .enumerate()
         .map(
-            |(ordinal, (name, offset, object_id, value, role, entity_indices))| {
+            |(ordinal, (name, offset, object_id, value, role, entity_indices, operands))| {
                 FeatureInputScalar {
                     id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
                     parent: parent.to_string(),
@@ -169,20 +176,32 @@ pub(crate) fn named_scalars(
                     value,
                     role,
                     entity_indices,
+                    operands,
                 }
             },
         )
         .collect()
 }
 
-fn scalar_entity_indices(payload: &[u8], name_offset: usize) -> Vec<u16> {
+fn scalar_operands(payload: &[u8], name_offset: usize) -> Vec<FeatureInputOperand> {
     [75usize, 87]
         .into_iter()
         .filter_map(|relative| {
             let offset = name_offset.checked_add(relative)?;
             let cell = payload.get(offset..offset + 12)?;
-            (cell[..2] == [0xd6, 0x80] && cell[4..8] == [0xff; 4] && cell[8..12] == [0; 4])
-                .then(|| u16::from_le_bytes([cell[2], cell[3]]))
+            if cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
+                return None;
+            }
+            let kind = match cell[..2] {
+                [0xd6, 0x80] => FeatureInputOperandKind::D6,
+                [0xe1, 0x80] => FeatureInputOperandKind::E1,
+                _ => return None,
+            };
+            Some(FeatureInputOperand {
+                offset: offset as u64,
+                kind,
+                entity_index: u16::from_le_bytes([cell[2], cell[3]]),
+            })
         })
         .collect()
 }
