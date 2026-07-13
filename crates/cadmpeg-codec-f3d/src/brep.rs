@@ -458,7 +458,7 @@ fn select_face_pcurve(
     exact_procedural_parameterization: bool,
     edge: Option<&Record>,
     by_index: &HashMap<i64, &Record>,
-) -> Option<nurbs::NurbsPcurve> {
+) -> Option<(nurbs::NurbsPcurve, [f64; 2])> {
     // Procedural surfaces retain an evaluated NURBS cache, but their pcurves
     // are expressed on the exact construction's parameterization. Evaluating
     // those UVs on the cache can drift between knots and is not a valid
@@ -466,10 +466,20 @@ fn select_face_pcurve(
     // before ambiguous 3D interpretations, so the first candidate is the
     // authoritative exact-space carrier in this case.
     if exact_procedural_parameterization {
-        return candidates.into_iter().next();
+        let candidate = candidates.into_iter().next()?;
+        let range = edge
+            .and_then(edge_pcurve_parameter_ranges)
+            .map(|ranges| ranges[0])
+            .or_else(|| Some([*candidate.knots.first()?, *candidate.knots.last()?]))?;
+        return Some((candidate, range));
     }
     let Some(SurfaceGeometry::Nurbs(surface)) = surface else {
-        return candidates.into_iter().next();
+        let candidate = candidates.into_iter().next()?;
+        let range = edge
+            .and_then(edge_pcurve_parameter_ranges)
+            .map(|ranges| ranges[0])
+            .or_else(|| Some([*candidate.knots.first()?, *candidate.knots.last()?]))?;
+        return Some((candidate, range));
     };
     let vertex_pair = edge.and_then(|edge| {
         Some((
@@ -478,9 +488,14 @@ fn select_face_pcurve(
         ))
     });
     let Some((start, end)) = vertex_pair else {
-        return candidates.into_iter().next();
+        let candidate = candidates.into_iter().next()?;
+        let range = edge
+            .and_then(edge_pcurve_parameter_ranges)
+            .map(|ranges| ranges[0])
+            .or_else(|| Some([*candidate.knots.first()?, *candidate.knots.last()?]))?;
+        return Some((candidate, range));
     };
-    let mut best: Option<(f64, nurbs::NurbsPcurve)> = None;
+    let mut best: Option<(f64, nurbs::NurbsPcurve, [f64; 2])> = None;
     for candidate in candidates {
         let (Some(&t0), Some(&t1)) = (candidate.knots.first(), candidate.knots.last()) else {
             continue;
@@ -499,7 +514,7 @@ fn select_face_pcurve(
             parameter_ranges.extend(ranges);
         }
         parameter_ranges.push([t0, t1]);
-        let Some(mismatch) = parameter_ranges
+        let Some((mismatch, range)) = parameter_ranges
             .into_iter()
             .filter_map(|[first, second]| {
                 let (uv0, uv1) = (uv_at(first)?, uv_at(second)?);
@@ -511,19 +526,21 @@ fn select_face_pcurve(
                 // edge carrier, so accept either endpoint assignment.
                 let forward = distance(p0, start).max(distance(p1, end));
                 let reversed = distance(p0, end).max(distance(p1, start));
-                Some(forward.min(reversed))
+                Some((forward.min(reversed), [first, second]))
             })
-            .reduce(f64::min)
+            .min_by(|(left, _), (right, _)| left.total_cmp(right))
         else {
             continue;
         };
         if mismatch <= PCURVE_ENDPOINT_TOLERANCE_MM
-            && best.as_ref().is_none_or(|(current, _)| mismatch < *current)
+            && best
+                .as_ref()
+                .is_none_or(|(current, _, _)| mismatch < *current)
         {
-            best = Some((mismatch, candidate));
+            best = Some((mismatch, candidate, range));
         }
     }
-    best.map(|(_, candidate)| candidate)
+    best.map(|(_, candidate, range)| (candidate, range))
 }
 
 /// Decode an analytic curve carrier.
@@ -712,6 +729,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let mut kept_curves: HashSet<i64> = HashSet::new();
     let mut kept_pcurves: HashSet<i64> = HashSet::new();
     let mut pcurve_geo: HashMap<i64, PcurveGeometry> = HashMap::new();
+    let mut pcurve_parameter_ranges: HashMap<i64, [f64; 2]> = HashMap::new();
     // Undecoded carriers referenced by real topology, to preserve as unknowns.
     let mut undecoded_carriers: HashSet<i64> = HashSet::new();
 
@@ -863,7 +881,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied(),
                                 &by_index,
                             );
-                            if let Some(decoded) = decoded {
+                            if let Some((decoded, parameter_range)) = decoded {
                                 pcurve_geo.insert(
                                     pc,
                                     PcurveGeometry::Nurbs {
@@ -874,6 +892,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         periodic: decoded.periodic,
                                     },
                                 );
+                                pcurve_parameter_ranges.insert(ci, parameter_range);
                                 kept_pcurves.insert(pc);
                             } else {
                                 out.stats.undecoded_pcurve_refs += 1;
@@ -3960,6 +3979,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     .ref_at(10)
                     .filter(|p| kept_pcurves.contains(p))
                     .map(|p| PcurveId(id(p))),
+                pcurve_parameter_range: pcurve_parameter_ranges.get(&i).copied(),
             });
             if r.head == "tcoedge" {
                 if let (Some(Token::Double(start)), Some(Token::Double(end))) =

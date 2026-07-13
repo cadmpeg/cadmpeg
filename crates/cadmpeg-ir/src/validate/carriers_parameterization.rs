@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::geometry::PcurveGeometry;
 
 pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut surfaces = ir
@@ -586,6 +587,37 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                 severity: Severity::Error,
                 message: "edge parameter range is outside its canonical carrier domain".into(),
                 entity: Some(edge.id.0.clone()),
+            });
+        }
+    }
+    let pcurves = ir
+        .model
+        .pcurves
+        .iter()
+        .map(|pcurve| (pcurve.id.0.as_str(), &pcurve.geometry))
+        .collect::<HashMap<_, _>>();
+    for coedge in &ir.model.coedges {
+        let Some([start, end]) = coedge.pcurve_parameter_range else {
+            continue;
+        };
+        let geometry = coedge
+            .pcurve
+            .as_ref()
+            .and_then(|id| pcurves.get(id.0.as_str()));
+        let mut valid = start.is_finite() && end.is_finite() && start != end && geometry.is_some();
+        if let Some(PcurveGeometry::Nurbs { knots, .. }) = geometry {
+            if let (Some(first), Some(last)) = (knots.first(), knots.last()) {
+                valid &= [start, end]
+                    .into_iter()
+                    .all(|value| value >= *first && value <= *last);
+            }
+        }
+        if !valid {
+            findings.push(Finding {
+                check: Check::ParameterDomain,
+                severity: Severity::Error,
+                message: "coedge pcurve range is outside its carrier domain".into(),
+                entity: Some(coedge.id.0.clone()),
             });
         }
     }

@@ -181,6 +181,7 @@ pub fn unit_cube() -> CadIr {
                     Sense::Reversed
                 },
                 pcurve: None,
+                pcurve_parameter_range: None,
             });
             edge_to_coedges
                 .entry(*edge_index)

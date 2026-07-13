@@ -379,6 +379,7 @@ pub(crate) fn transfer(
                         Sense::Forward
                     },
                     pcurve: Some(pcurve_ids[&pcurve].clone()),
+                    pcurve_parameter_range: None,
                 });
             }
         }

@@ -4409,6 +4409,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
             radial_next: coedge_id.clone(),
             sense: cadmpeg_ir::topology::Sense::Forward,
             pcurve: None,
+            pcurve_parameter_range: None,
         });
     source_less.model.loops[0].coedges.push(coedge_id);
     let ring = source_less.model.loops[0].coedges.clone();
@@ -5040,6 +5041,15 @@ fn generated_source_less_face_writes_inline_nurbs_pcurve() {
             .count(),
         1
     );
+    let pcurve_coedge = round_trip
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.pcurve.is_some())
+        .expect("generated coedge with pcurve");
+    assert!(pcurve_coedge.pcurve_parameter_range.is_some());
+    assert!(crate::validate_native(&round_trip.ir).is_empty());
 }
 
 #[test]
@@ -5252,6 +5262,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
                 radial_next: coedge_id,
                 sense: cadmpeg_ir::topology::Sense::Reversed,
                 pcurve: None,
+                pcurve_parameter_range: None,
             });
     }
     for index in 0..3 {

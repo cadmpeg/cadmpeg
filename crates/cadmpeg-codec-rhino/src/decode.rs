@@ -2101,6 +2101,7 @@ fn stage_extrusion_caps(
                 radial_next: coedge_id.clone(),
                 sense: Sense::Forward,
                 pcurve: Some(pcurve_id.clone()),
+                pcurve_parameter_range: None,
             });
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
@@ -2599,6 +2600,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                 radial_next: coedge_id.clone(),
                 sense: coedge_sense(trim.reversed_3d != 0),
                 pcurve,
+                pcurve_parameter_range: None,
             });
             coedges.push(coedge_id);
         }

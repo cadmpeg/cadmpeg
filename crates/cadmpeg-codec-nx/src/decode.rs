@@ -1113,6 +1113,7 @@ fn emit_topology(
             radial_next,
             sense: sense(Some(fields.sense)),
             pcurve: None,
+            pcurve_parameter_range: None,
         });
         if let Some(parent) = ir
             .model

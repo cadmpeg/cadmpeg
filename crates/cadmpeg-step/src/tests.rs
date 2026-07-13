@@ -89,6 +89,7 @@ fn edgeless_doc() -> CadIr {
         radial_next: CoedgeId("ce0".into()),
         sense: Sense::Forward,
         pcurve: None,
+        pcurve_parameter_range: None,
     });
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),

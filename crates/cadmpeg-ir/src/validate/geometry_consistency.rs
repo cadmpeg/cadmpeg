@@ -170,8 +170,11 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         ) else {
             continue;
         };
-        let Some(parameter_ranges) = pcurve_parameter_ranges(&pcurve.geometry, edge.param_range)
-        else {
+        let Some(parameter_ranges) = pcurve_parameter_ranges(
+            &pcurve.geometry,
+            coedge.pcurve_parameter_range,
+            edge.param_range,
+        ) else {
             continue;
         };
         let bound = allowance(&[edge.tolerance, *start_tol, *end_tol, face.tolerance]);
@@ -214,8 +217,12 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 /// skipped.
 fn pcurve_parameter_ranges(
     geometry: &PcurveGeometry,
+    pcurve_range: Option<[f64; 2]>,
     edge_range: Option<[f64; 2]>,
 ) -> Option<Vec<[f64; 2]>> {
+    if let Some(range) = pcurve_range {
+        return Some(vec![range]);
+    }
     let mut ranges = Vec::with_capacity(3);
     if let Some([start, end]) = edge_range {
         ranges.extend([[start, end], [-start, -end]]);

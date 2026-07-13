@@ -2013,6 +2013,8 @@ fn pcurve_surface_mismatch_is_flagged() {
     coedge.pcurve = Some(crate::ids::PcurveId(
         "synthetic:cube:pcurve#negative".into(),
     ));
+    coedge.pcurve_parameter_range = Some([-10.0, 0.0]);
+    let ranged_coedge_id = coedge.id.clone();
     let negative = validate(&negative_parameterization, Vec::new());
     assert!(
         !negative
@@ -2022,6 +2024,18 @@ fn pcurve_surface_mismatch_is_flagged() {
         "opposite-sign pcurve parameterization must validate, got: {:?}",
         negative.findings
     );
+
+    negative_parameterization
+        .model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.id == ranged_coedge_id)
+        .expect("ranged coedge")
+        .pcurve_parameter_range = Some([-11.0, 0.0]);
+    let invalid_range = validate(&negative_parameterization, Vec::new());
+    assert!(invalid_range.findings.iter().any(|finding| {
+        finding.check == Check::ParameterDomain && finding.message.contains("coedge pcurve range")
+    }));
 }
 
 #[test]

@@ -169,6 +169,9 @@ pub struct Coedge {
     /// Optional parameter-space image of this coedge on the face surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveId>,
+    /// Interval on the pcurve's own parameterization used by this coedge.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pcurve_parameter_range: Option<[f64; 2]>,
 }
 
 /// An edge: a bounded segment of a 3D curve between two vertices.

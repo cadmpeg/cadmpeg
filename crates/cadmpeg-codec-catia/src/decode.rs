@@ -670,6 +670,7 @@ fn transfer_e5_topology(
                         Sense::Forward
                     },
                     pcurve: Some(PcurveId(format!("catia:e5:pcurve#{pcurve_ref}"))),
+                    pcurve_parameter_range: None,
                 });
             }
         }
@@ -1280,6 +1281,7 @@ fn attach_standard_topology(
                         Sense::Forward
                     },
                     pcurve: None,
+                    pcurve_parameter_range: None,
                 });
             }
             annotate(
