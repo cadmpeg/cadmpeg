@@ -14292,8 +14292,9 @@ fn patch_framed_geometry(
             }
         } else if record.head == "cone" {
             if let Some((origin, axis, ref_direction, radius, ratio, half_angle)) = cones.get(&id) {
-                let doubles = sab::payload_token_offsets(bytes, record, 8, 0x06)
-                    .map_err(|error| CodecError::Malformed(error.to_string()))?;
+                let doubles =
+                    sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
+                        .map_err(|error| CodecError::Malformed(error.to_string()))?;
                 let old_sine = read_double_token(bytes, &doubles, 1, record)?;
                 let old_cosine = read_double_token(bytes, &doubles, 2, record)?;
                 let sine_sign = if old_sine < 0.0 { -1.0 } else { 1.0 };
@@ -14460,7 +14461,7 @@ fn patch_signed_ratio_token(
     record: &sab::Record,
     magnitude: f64,
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let offset = *sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .first()
         .ok_or_else(|| {
@@ -14489,10 +14490,10 @@ fn patch_transform_record(
     transform: Transform,
     header_scale: f64,
 ) -> Result<(), CodecError> {
-    let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x13)
+    let mut offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x13)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     offsets.extend(
-        sab::payload_token_offsets(bytes, record, 8, 0x14)
+        sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x14)
             .map_err(|error| CodecError::Malformed(error.to_string()))?,
     );
     offsets.sort_unstable();
@@ -14530,7 +14531,7 @@ fn patch_transform_record(
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
-    let scale_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let scale_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     let scale = *scale_offsets.last().ok_or_else(|| {
         CodecError::Malformed(format!("transform record {} lacks scale", record.index))
@@ -14599,7 +14600,7 @@ fn patch_blend_radius_tokens(
     record: &sab::Record,
     radii: [f64; 2],
 ) -> Result<(), CodecError> {
-    let boundary = sab::payload_token_offsets(bytes, record, 8, 0x15)
+    let boundary = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x15)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .find(|offset| {
@@ -14615,7 +14616,7 @@ fn patch_blend_radius_tokens(
                 record.index
             ))
         })?;
-    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .filter(|offset| *offset < boundary)
@@ -15185,7 +15186,7 @@ fn patch_surface_offset_definition(
     let base = *cache_markers
         .get(cache_markers.len().saturating_sub(2))
         .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
-    let all_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let all_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     let before_base = all_offsets
         .iter()
@@ -15311,7 +15312,7 @@ fn patch_spring_definition(
         .max()
         .ok_or_else(|| CodecError::Malformed("spring solved cache is missing".into()))?;
     let boundary = record.offset + solved;
-    let direction_offset = sab::payload_token_offsets(bytes, record, 8, 0x15)
+    let direction_offset = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x15)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .rfind(|offset| *offset < boundary)
@@ -15327,7 +15328,7 @@ fn patch_spring_definition(
     let context_count = 2usize
         .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
         .ok_or_else(|| CodecError::Malformed("spring context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .filter(|offset| *offset < flag_offset)
@@ -15419,7 +15420,7 @@ fn patch_projection_definition(
     let context_count = 2usize
         .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
         .ok_or_else(|| CodecError::Malformed("projection context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .filter(|offset| *offset < flag_offset)
@@ -15555,7 +15556,7 @@ fn patch_intersection_definition(
     let context_count = 2usize
         .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
         .ok_or_else(|| CodecError::Malformed("intersection context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .filter(|offset| *offset < flag_offset)
@@ -15642,7 +15643,7 @@ fn patch_three_surface_intersection_definition(
         .ok_or_else(|| {
             CodecError::Malformed("three-surface intersection context is too large".into())
         })?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .filter(|offset| *offset < selector_offset)
@@ -15724,7 +15725,7 @@ fn patch_surface_curve_definition(
     let context_count = 2usize
         .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
         .ok_or_else(|| CodecError::Malformed("surface-curve context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .filter(|offset| *offset < boundary)
@@ -15804,7 +15805,7 @@ fn patch_silhouette_definition(
         .max()
         .ok_or_else(|| CodecError::Malformed("silhouette solved cache is missing".into()))?;
     let boundary = record.offset + solved;
-    let vector_offset = sab::payload_token_offsets(bytes, record, 8, 0x14)
+    let vector_offset = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x14)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .into_iter()
         .rfind(|offset| *offset < boundary)
@@ -15817,7 +15818,7 @@ fn patch_silhouette_definition(
         bytes[start..start + 8].copy_from_slice(&value.to_le_bytes());
     }
     if let Some(draft_factor) = draft_factor {
-        let draft_offset = sab::payload_token_offsets(bytes, record, 8, 0x06)
+        let draft_offset = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
             .map_err(|error| CodecError::Malformed(error.to_string()))?
             .into_iter()
             .rfind(|offset| *offset < boundary)
@@ -16019,7 +16020,7 @@ fn patch_ref_pcurve_contract(
     let Some(range) = edit.parameter_range else {
         return Ok(());
     };
-    let offsets = sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     if offsets.len() != 2 {
         return Err(CodecError::Malformed(format!(
