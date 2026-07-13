@@ -410,6 +410,146 @@ fn nurbs_surface_file() -> Vec<u8> {
     bytes
 }
 
+fn ruled_surface_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, entity_type, form, label) in [
+        (1, 1, "110", 0, "RAIL1"),
+        (3, 2, "110", 0, "RAIL2"),
+        (5, 3, "118", 1, "RULED"),
+    ] {
+        bytes.extend(directory_card(
+            [
+                entity_type,
+                &parameter_start.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                if entity_type == "110" {
+                    "00010000"
+                } else {
+                    "00000000"
+                },
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [
+                entity_type,
+                "0",
+                "0",
+                "1",
+                &form.to_string(),
+                "",
+                "",
+                label,
+                "0",
+            ],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"110,0,0,0,1,0,0;", 1, 1));
+    bytes.extend(parameter_card(b"110,0,1,0,1,1,0;", 3, 2));
+    bytes.extend(parameter_card(b"118,1,3,0,1;", 5, 3));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_solves_a_parameter_matched_ruled_surface() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(ruled_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir.model.surfaces[0].geometry
+    else {
+        panic!("expected an exact NURBS ruled cache");
+    };
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
+        Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+fn tabulated_cylinder_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, entity_type, label, status) in [
+        (1, 1, "110", "DIRECTRX", "00010000"),
+        (3, 2, "122", "TABULATE", "00000000"),
+    ] {
+        bytes.extend(directory_card(
+            [
+                entity_type,
+                &parameter_start.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [entity_type, "0", "0", "1", "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"110,0,0,0,1,0,0;", 1, 1));
+    bytes.extend(parameter_card(b"122,1,0,0,2;", 3, 2));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_solves_a_tabulated_cylinder_as_an_exact_extrusion() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(tabulated_cylinder_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 1);
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir.model.surfaces[0].geometry
+    else {
+        panic!("expected an exact NURBS extrusion cache");
+    };
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.5, 0.5),
+        Some(cadmpeg_ir::math::Point3::new(0.5, 0.0, 1.0))
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn plane_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);

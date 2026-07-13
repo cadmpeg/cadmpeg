@@ -5,8 +5,11 @@ use super::geometry::{entity_loss, resolve_transform, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::geometry::{derive_reference_direction, NurbsSurface, Surface, SurfaceGeometry};
-use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::geometry::{
+    derive_reference_direction, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::CadIr;
@@ -26,6 +29,54 @@ fn normalized(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
     (norm.is_finite() && norm > 0.0)
         .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
+}
+
+fn point_for_vertex(ir: &CadIr, id: &cadmpeg_ir::ids::VertexId) -> Option<Point3> {
+    let point_id = &ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == *id)?
+        .point;
+    ir.model
+        .points
+        .iter()
+        .find(|point| point.id == *point_id)
+        .map(|point| point.position)
+}
+
+fn bounded_nurbs(ir: &CadIr, sequence: u32) -> Option<(NurbsCurve, [f64; 2])> {
+    let curve_id = CurveId(format!("iges:model:curve#D{sequence}"));
+    let curve = ir.model.curves.iter().find(|curve| curve.id == curve_id)?;
+    let edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.as_ref() == Some(&curve_id))?;
+    let interval = edge.param_range?;
+    match &curve.geometry {
+        CurveGeometry::Nurbs(nurbs) => Some((nurbs.clone(), interval)),
+        CurveGeometry::Line { .. } => Some((
+            NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![
+                    point_for_vertex(ir, &edge.start)?,
+                    point_for_vertex(ir, &edge.end)?,
+                ],
+                weights: None,
+                periodic: false,
+            },
+            [0.0, 1.0],
+        )),
+        _ => None,
+    }
+}
+
+fn reverse_knots(knots: &[f64]) -> Option<Vec<f64>> {
+    let first = *knots.first()?;
+    let last = *knots.last()?;
+    Some(knots.iter().rev().map(|knot| first + last - knot).collect())
 }
 
 pub(super) struct SurfaceProjection {
@@ -155,6 +206,243 @@ pub(super) fn project(
                 u_axis,
             },
             source_object: Some(source_object(entry)),
+        });
+        decoded.insert(entry.sequence);
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 118 && matches!(entry.form, 0 | 1))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(first_sequence) = record
+            .integer(1)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "first rail pointer is invalid"));
+            continue;
+        };
+        let Some(second_sequence) = record
+            .integer(2)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "second rail pointer is invalid"));
+            continue;
+        };
+        let (Some(direction_flag), Some(developable_flag)) = (record.integer(3), record.integer(4))
+        else {
+            losses.push(entity_loss(entry, "ruled-surface flags are not integers"));
+            continue;
+        };
+        if !matches!(direction_flag, 0 | 1) || !matches!(developable_flag, 0 | 1) {
+            losses.push(entity_loss(entry, "ruled-surface flags are not 0 or 1"));
+            continue;
+        }
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "placed ruled surfaces require transformed child-carrier projection",
+            ));
+            continue;
+        }
+        let (Some((first, first_interval)), Some((mut second, second_interval))) = (
+            bounded_nurbs(ir, first_sequence),
+            bounded_nurbs(ir, second_sequence),
+        ) else {
+            losses.push(entity_loss(
+                entry,
+                "rail curves do not have bounded polynomial or NURBS carriers",
+            ));
+            continue;
+        };
+        if first.weights.is_some() || second.weights.is_some() {
+            losses.push(entity_loss(
+                entry,
+                "rational ruled rails require homogeneous denominator reconciliation",
+            ));
+            continue;
+        }
+        if entry.form == 0
+            && (first.degree != 1
+                || second.degree != 1
+                || first.control_points.len() != 2
+                || second.control_points.len() != 2)
+        {
+            losses.push(entity_loss(
+                entry,
+                "equal-arc-length ruled projection is implemented only for linear rails",
+            ));
+            continue;
+        }
+        if direction_flag == 1 {
+            second.control_points.reverse();
+            let Some(knots) = reverse_knots(&second.knots) else {
+                losses.push(entity_loss(entry, "second rail knot vector is empty"));
+                continue;
+            };
+            second.knots = knots;
+        }
+        if first.degree != second.degree
+            || first.knots != second.knots
+            || first.control_points.len() != second.control_points.len()
+        {
+            losses.push(entity_loss(
+                entry,
+                "ruled rails do not share one exact polynomial basis",
+            ));
+            continue;
+        }
+        let Ok(u_count) = u32::try_from(first.control_points.len()) else {
+            losses.push(entity_loss(entry, "ruled rail pole count exceeds u32"));
+            continue;
+        };
+        let control_points = first
+            .control_points
+            .iter()
+            .copied()
+            .zip(second.control_points.iter().copied())
+            .flat_map(|(first, second)| [first, second])
+            .collect::<Vec<_>>();
+        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: first.degree,
+                v_degree: 1,
+                u_knots: first.knots,
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count,
+                v_count: 2,
+                control_points,
+                weights: None,
+                u_periodic: first.periodic && second.periodic,
+                v_periodic: false,
+            }),
+            source_object: Some(source_object(entry)),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Ruled {
+                first: CurveId(format!("iges:model:curve#D{first_sequence}")),
+                second: CurveId(format!("iges:model:curve#D{second_sequence}")),
+            },
+            cache_fit_tolerance: None,
+        });
+        let _ = (first_interval, second_interval, developable_flag);
+        decoded.insert(entry.sequence);
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 122 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(directrix_sequence) = record
+            .integer(1)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "directrix pointer is invalid"));
+            continue;
+        };
+        let coordinates = [record.number(2), record.number(3), record.number(4)];
+        let [Some(x), Some(y), Some(z)] = coordinates else {
+            losses.push(entity_loss(entry, "generatrix endpoint is not numeric"));
+            continue;
+        };
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "placed tabulated cylinders require transformed directrix projection",
+            ));
+            continue;
+        }
+        let Some((directrix, interval)) = bounded_nurbs(ir, directrix_sequence) else {
+            losses.push(entity_loss(
+                entry,
+                "directrix has no bounded polynomial or NURBS carrier",
+            ));
+            continue;
+        };
+        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
+            directrix.degree,
+            &directrix.knots,
+            &directrix.control_points,
+            directrix.weights.as_deref(),
+            interval[0],
+        ) else {
+            losses.push(entity_loss(entry, "directrix start cannot be evaluated"));
+            continue;
+        };
+        let target = Point3::new(x * factor, y * factor, z * factor);
+        let direction = Vector3::new(target.x - start.x, target.y - start.y, target.z - start.z);
+        if !direction.norm().is_finite() || direction.norm() <= 0.0 {
+            losses.push(entity_loss(entry, "generatrix is zero or non-finite"));
+            continue;
+        }
+        let control_points = directrix
+            .control_points
+            .iter()
+            .flat_map(|point| {
+                [
+                    *point,
+                    Point3::new(
+                        point.x + direction.x,
+                        point.y + direction.y,
+                        point.z + direction.z,
+                    ),
+                ]
+            })
+            .collect::<Vec<_>>();
+        let Ok(u_count) = u32::try_from(directrix.control_points.len()) else {
+            losses.push(entity_loss(entry, "directrix pole count exceeds u32"));
+            continue;
+        };
+        let weights = directrix.weights.as_ref().map(|weights| {
+            weights
+                .iter()
+                .flat_map(|weight| [*weight, *weight])
+                .collect()
+        });
+        let surface_id = SurfaceId(format!("iges:model:surface#D{}", entry.sequence));
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Nurbs(NurbsSurface {
+                u_degree: directrix.degree,
+                v_degree: 1,
+                u_knots: directrix.knots,
+                v_knots: vec![0.0, 0.0, 1.0, 1.0],
+                u_count,
+                v_count: 2,
+                control_points,
+                weights,
+                u_periodic: directrix.periodic,
+                v_periodic: false,
+            }),
+            source_object: Some(source_object(entry)),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("iges:model:procedural-surface#D{}", entry.sequence)),
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Extrusion {
+                directrix: CurveId(format!("iges:model:curve#D{directrix_sequence}")),
+                parameter_interval: Some(interval),
+                direction,
+                native_position: Some(target),
+            },
+            cache_fit_tolerance: None,
         });
         decoded.insert(entry.sequence);
     }
