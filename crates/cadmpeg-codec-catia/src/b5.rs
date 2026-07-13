@@ -965,18 +965,19 @@ fn parse_loop(
     parsed_pcurves: &BTreeMap<u32, B5Pcurve>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Loop> {
-    let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
+    let mut position = 0;
+    let count = counted_cardinality(&record.payload, &mut position)?;
     if count < 3 || count % 2 == 0 {
         return None;
     }
-    let mut position = 1;
     let mut references = Vec::with_capacity(count);
     for _ in 0..count {
         references.push(reference(&record.payload, &mut position, record.object_id)?);
     }
     let edge_count = (count - 1) / 2;
     if position < record.payload.len()
-        && record.payload.get(position).copied() != u8::try_from(0x80 + edge_count).ok()
+        && (counted_cardinality(&record.payload, &mut position)? != edge_count
+            || record.payload.get(position) != Some(&0x05))
     {
         return None;
     }
@@ -1002,6 +1003,16 @@ fn parse_loop(
         edges,
         surface,
     })
+}
+
+fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
+    let lead = *bytes.get(*position)?;
+    if lead >= 0x80 {
+        *position += 1;
+        Some(usize::from(lead - 0x80))
+    } else {
+        usize::try_from(reference(bytes, position, 0)?).ok()
+    }
 }
 
 fn uncounted_references(bytes: &[u8], anchor: u32) -> Option<Vec<u32>> {
@@ -1071,6 +1082,22 @@ mod tests {
         position = 0;
         assert_eq!(reference(&[0x8b], &mut position, 0), Some(11));
         assert_eq!(position, 1);
+    }
+
+    #[test]
+    fn counted_cardinality_widens_with_reference_tokens() {
+        let mut position = 0;
+        assert_eq!(counted_cardinality(&[0x81], &mut position), Some(1));
+        assert_eq!(position, 1);
+        position = 0;
+        assert_eq!(counted_cardinality(&[0x08, 0x81], &mut position), Some(129));
+        assert_eq!(position, 2);
+        position = 0;
+        assert_eq!(
+            counted_cardinality(&[0x18, 0x35, 0x01], &mut position),
+            Some(309)
+        );
+        assert_eq!(position, 3);
     }
 
     #[test]
