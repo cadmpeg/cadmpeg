@@ -14243,22 +14243,34 @@ fn patch_framed_geometry(
             }
         } else if record.head == "sphere" {
             if let Some((center, axis, ref_direction, radius)) = spheres.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
+                let field_indices = match record.name.as_str() {
+                    "sphere" => [0, 1, 2, 3],
+                    "sphere-surface" => [3, 4, 5, 6],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "sphere record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x06)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[3], 0x14)?,
+                ];
+                for (offset, values) in [fields[0], fields[2], fields[3]].into_iter().zip([
                     [center.x / 10.0, center.y / 10.0, center.z / 10.0],
-                )?;
-                patch_double_token(bytes, record, 0, radius / 10.0)?;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    0,
                     [ref_direction.x, ref_direction.y, ref_direction.z],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 1, [axis.x, axis.y, axis.z])?;
+                    [axis.x, axis.y, axis.z],
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                bytes[fields[1] + 1..fields[1] + 9].copy_from_slice(&(radius / 10.0).to_le_bytes());
             }
         } else if record.head == "torus" {
             if let Some((center, axis, ref_direction, major_radius, minor_radius)) = tori.get(&id) {

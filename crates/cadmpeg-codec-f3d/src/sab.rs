@@ -542,6 +542,32 @@ mod tests {
         bytes
     }
 
+    fn generated_sphere_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 6];
+        bytes.extend_from_slice(b"sphere");
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"surface");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x06);
+        bytes.extend_from_slice(&(-2.5f64).to_le_bytes());
+        for values in [[1.0f64, 0.0, 0.0], [0.0, 0.0, 1.0]] {
+            bytes.push(0x14);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes.extend_from_slice(&[0x0b; 5]);
+        bytes.push(0x11);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -598,6 +624,20 @@ mod tests {
             ] {
                 let offset = payload_token_offset(&bytes, record, ref_width, index)
                     .expect("cone field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_sphere_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_sphere_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated sphere");
+            let record = &records[0];
+            for (index, tag) in [(3usize, 0x13), (4, 0x06), (5, 0x14), (6, 0x14)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("sphere field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
