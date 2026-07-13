@@ -360,6 +360,9 @@ pub struct SketchInputEntity {
     pub local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     pub kind: SketchInputKind,
+    /// Finite little-endian state scalar stored 48 bytes after the marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_value: Option<f64>,
 }
 
 /// Kind of sketch entity referenced by a native feature-input marker.

@@ -86,6 +86,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                         offset: offset as u64,
                         local_id: marker_local_id(&block.payload, offset),
                         kind: SketchInputKind::from_native_code(code),
+                        state_value: marker_state_value(&block.payload, offset),
                     }
                 })
                 .collect::<Vec<_>>();
@@ -147,6 +148,12 @@ pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
     let start = offset.checked_sub(4)?;
     let id = u32::from_le_bytes(payload.get(start..offset)?.try_into().ok()?);
     (id != u32::MAX).then_some(id)
+}
+
+fn marker_state_value(payload: &[u8], offset: usize) -> Option<f64> {
+    let offset = offset.checked_add(48)?;
+    let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+    value.is_finite().then_some(value)
 }
 
 pub(crate) fn named_scalars(

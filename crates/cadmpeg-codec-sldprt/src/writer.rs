@@ -827,6 +827,23 @@ fn resolved_feature_payload(
             CodecError::Malformed("feature-input type field exceeds retained payload".into())
         })?;
         field.copy_from_slice(&entity.kind.native_code().to_le_bytes());
+        if let Some(value) = entity.state_value {
+            if !value.is_finite() {
+                return Err(CodecError::Malformed(
+                    "feature-input state value must be finite".into(),
+                ));
+            }
+            let state_start = offset
+                .checked_add(48)
+                .ok_or_else(|| CodecError::Malformed("feature-input offset overflow".into()))?;
+            let state_end = state_start
+                .checked_add(8)
+                .ok_or_else(|| CodecError::Malformed("feature-input offset overflow".into()))?;
+            let state = payload.get_mut(state_start..state_end).ok_or_else(|| {
+                CodecError::Malformed("feature-input state field exceeds retained payload".into())
+            })?;
+            state.copy_from_slice(&value.to_le_bytes());
+        }
     }
     Ok(payload)
 }

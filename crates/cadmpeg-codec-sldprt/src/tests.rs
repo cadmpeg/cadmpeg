@@ -1011,9 +1011,11 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
     for (ordinal, code) in codes.iter().enumerate() {
         payload.extend_from_slice(&((ordinal + 1) as u32).to_le_bytes());
         payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
-        payload.extend_from_slice(&[0; 12]);
-        payload.extend_from_slice(&code.to_le_bytes());
-        payload.extend_from_slice(&[0x5a; 43]);
+        let mut record = [0x5a; 59];
+        record[..12].fill(0);
+        record[12..16].copy_from_slice(&code.to_le_bytes());
+        record[43..51].copy_from_slice(&(ordinal as f64 + 1.0).to_le_bytes());
+        payload.extend_from_slice(&record);
     }
     payload
 }
@@ -10832,6 +10834,11 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .iter()
         .enumerate()
         .all(|(ordinal, entity)| entity.local_id == Some(ordinal as u32 + 1)));
+    assert!(lane
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .all(|(ordinal, entity)| entity.state_value == Some(ordinal as f64 + 1.0)));
     let by_ordinal = |ordinal| {
         lane.sketch_entities
             .iter()
@@ -10844,12 +10851,13 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     assert_eq!(by_ordinal(3).kind, SketchInputKind::ConstrainedPoint);
     assert_eq!(by_ordinal(4).kind, SketchInputKind::Native(9));
     update_sldprt_native(&mut decoded.ir, |native| {
-        native.feature_input_lanes[0]
+        let entity = native.feature_input_lanes[0]
             .sketch_entities
             .iter_mut()
             .find(|entity| entity.ordinal == 1)
-            .unwrap()
-            .kind = SketchInputKind::Native(5);
+            .unwrap();
+        entity.kind = SketchInputKind::Native(5);
+        entity.state_value = Some(12.5);
     });
 
     let mut encoded = Vec::new();
@@ -10867,6 +10875,9 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    let entity = &sldprt_native(&regenerated.ir).feature_input_lanes[0].sketch_entities[1];
+    assert_eq!(entity.kind, SketchInputKind::Native(5));
+    assert_eq!(entity.state_value, Some(12.5));
     assert_eq!(
         sldprt_native(&regenerated.ir).feature_input_lanes[0]
             .sketch_entities
