@@ -486,6 +486,42 @@ fn extruded_segment_surface(
     }
 }
 
+fn placed_section_curve_geometry(
+    transform: &crate::placement::FeatureSectionTransform,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<CurveGeometry> {
+    match section_segment_geometry(points, segment)? {
+        SketchGeometry::Line { start, end } => {
+            let start = section_point_in_model(transform, [start.u, start.v]);
+            let end = section_point_in_model(transform, [end.u, end.v]);
+            let direction = normalized(std::array::from_fn(|axis| end[axis] - start[axis]))?;
+            Some(CurveGeometry::Line {
+                origin: Point3::new(start[0], start[1], start[2]),
+                direction: Vector3::new(direction[0], direction[1], direction[2]),
+            })
+        }
+        SketchGeometry::Arc { center, radius, .. } => {
+            let center = section_point_in_model(transform, [center.u, center.v]);
+            Some(CurveGeometry::Circle {
+                center: Point3::new(center[0], center[1], center[2]),
+                axis: Vector3::new(
+                    transform.normal[0],
+                    transform.normal[1],
+                    transform.normal[2],
+                ),
+                ref_direction: Vector3::new(
+                    transform.u_axis[0],
+                    transform.u_axis[1],
+                    transform.u_axis[2],
+                ),
+                radius: radius.0,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -824,6 +860,42 @@ fn transfer_resolved_sketches(
             .collect::<Vec<_>>();
         if entities.is_empty() {
             continue;
+        }
+        for segment in &segments.rows {
+            let Some(geometry) = placed_section_curve_geometry(transform, &points, segment) else {
+                continue;
+            };
+            let id = CurveId(format!(
+                "creo:featdefs:section_curve#{}:{}",
+                definition.id, segment.external_id
+            ));
+            if ir.model.curves.iter().any(|existing| existing.id == id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &id,
+                "FeatDefs",
+                segment.offset as u64,
+                "placed_section_curve",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!(
+                        "FeatDefs:section#{}:{}",
+                        definition.id, segment.external_id
+                    ),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
         }
         let emitted = segments
             .rows
@@ -1317,6 +1389,13 @@ mod resolved_sketch_tests {
                 u_axis: Vector3::new(0.0, 1.0, 0.0),
             })
         );
+        assert_eq!(
+            placed_section_curve_geometry(&transform, &points, &segment),
+            Some(CurveGeometry::Line {
+                origin: Point3::new(10.0, 22.0, 33.0),
+                direction: Vector3::new(0.0, 1.0, 0.0),
+            })
+        );
     }
 
     #[test]
@@ -1347,6 +1426,15 @@ mod resolved_sketch_tests {
             extruded_segment_surface(&transform, &points, &segment),
             Some(SurfaceGeometry::Cylinder {
                 origin: Point3::new(10.0, 20.0, 30.0),
+                axis: Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: Vector3::new(0.0, 1.0, 0.0),
+                radius: 2.0,
+            })
+        );
+        assert_eq!(
+            placed_section_curve_geometry(&transform, &points, &segment),
+            Some(CurveGeometry::Circle {
+                center: Point3::new(10.0, 20.0, 30.0),
                 axis: Vector3::new(1.0, 0.0, 0.0),
                 ref_direction: Vector3::new(0.0, 1.0, 0.0),
                 radius: 2.0,
