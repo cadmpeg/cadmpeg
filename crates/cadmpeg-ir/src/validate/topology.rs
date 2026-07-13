@@ -1211,9 +1211,25 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
 
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
+    let mut configuration_names = HashSet::new();
     let mut active_configurations = 0;
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
+        if configuration.name.is_empty() {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: "design configuration has an empty name".into(),
+                entity: Some(configuration.id.0.clone()),
+            });
+        } else if !configuration_names.insert(configuration.name.as_str()) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!("design repeats configuration name `{}`", configuration.name),
+                entity: Some(configuration.id.0.clone()),
+            });
+        }
         if !configuration_ordinals.insert(configuration.ordinal) {
             findings.push(Finding {
                 check: Check::Counts,

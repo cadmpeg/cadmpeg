@@ -385,20 +385,6 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
             "SLDPRT writing requires exactly one active configuration".into(),
         ));
     }
-    let mut configuration_names = HashSet::new();
-    for configuration in &ir.model.configurations {
-        if configuration.name.is_empty() {
-            return Err(CodecError::Malformed(
-                "SLDPRT writing requires a non-empty name for every configuration".into(),
-            ));
-        }
-        if !configuration_names.insert(configuration.name.as_str()) {
-            return Err(CodecError::Malformed(format!(
-                "SLDPRT writing requires unique configuration names; `{}` is repeated",
-                configuration.name
-            )));
-        }
-    }
     if !ir.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not support SubD surfaces".into(),

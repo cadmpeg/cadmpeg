@@ -904,6 +904,24 @@ fn configuration_body_membership_round_trips_and_validates() {
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("repeats configuration source index")));
+
+    ir.model.configurations[0].active = false;
+    ir.model.configurations[1].active = false;
+    ir.model.configurations[0].name.clear();
+    ir.model.configurations[1].name.clear();
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("configuration has an empty name")));
+
+    ir.model.configurations[0].name = "Default".into();
+    ir.model.configurations[1].name = "Default".into();
+    let report = validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("repeats configuration name")));
 }
 
 #[test]

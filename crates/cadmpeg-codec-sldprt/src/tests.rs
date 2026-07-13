@@ -3752,7 +3752,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
     let error = SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
-    assert!(error.to_string().contains("non-empty name"), "{error}");
+    assert!(error.to_string().contains("empty name"), "{error}");
 
     decoded.ir.model.configurations[0].name = "Default".into();
     let mut duplicate = decoded.ir.model.configurations[0].clone();
@@ -3766,7 +3766,7 @@ fn semantic_writer_rejects_empty_and_duplicate_configuration_names() {
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
     assert!(
-        error.to_string().contains("unique configuration names"),
+        error.to_string().contains("repeats configuration name"),
         "{error}"
     );
 }
