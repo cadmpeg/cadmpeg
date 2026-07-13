@@ -120,12 +120,25 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     let section = crate::om::indexed_sections(&bytes).remove(0);
     let expressions = section.numeric_expressions();
     assert_eq!(expressions.len(), 1);
-    assert_eq!(expressions[0].object_id, 0x102);
+    assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(
         expressions[0].name,
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
     assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
+    assert_eq!(expressions[0].value, 120.0);
+}
+
+#[test]
+fn om_numeric_expression_table_is_independent_of_entity_indexing() {
+    let bytes = b"hostglobalvariables\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00";
+    let expressions = crate::om::numeric_expressions(bytes);
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].object_id, None);
+    assert_eq!(
+        expressions[0].name,
+        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
+    );
     assert_eq!(expressions[0].value, 120.0);
 }
 
@@ -1983,7 +1996,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
     assert_eq!(expressions.len(), 1);
-    assert_eq!(expressions[0].object_id, 0x102);
+    assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(
         expressions[0].name,
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
@@ -1991,6 +2004,26 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(expressions[0].unit, crate::native::ExpressionUnit::Degree);
     assert_eq!(expressions[0].value, 120.0);
     assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
+    assert_eq!(result.ir.model.features.len(), 1);
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations
+        }
+    ));
+    assert_eq!(result.ir.model.parameters.len(), 1);
+    let parameter = &result.ir.model.parameters[0];
+    assert_eq!(parameter.name, expressions[0].name);
+    assert_eq!(parameter.expression, "120 degrees");
+    assert!(matches!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(
+            cadmpeg_ir::features::Angle(value)
+        )) if value == 120_f64.to_radians()
+    ));
+    assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]

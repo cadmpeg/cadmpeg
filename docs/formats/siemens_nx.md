@@ -425,4 +425,10 @@ The B-spline form code does not determine whether a control grid is rational. Th
 
 Parasolid attribute definitions use a two-record catalog entry. `00 4f` contains `name_len:u32 BE`, `00 <class_id>`, and an ASCII class name. The following `00 50` contains `field_count:u32 BE`, the repeated class ID, and field-type records. The class ID is stream-local and follows declaration order. Type code `0x05` denotes a component/reference or string field, `0x06` a double field, and `0x00` a void or flag field.
 
-`hostglobalvariables` stores numeric expressions as length-prefixed ASCII records in the form `<handle:u8> 04 <len:u8> "(Number [units]) name: value; " 00`.
+`hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
+
+```text
+handle:u8  04  length:u8  "(Number [units]) name: value; "  00
+```
+
+`length - 2` is the ASCII text length. `units` is `mm` or `degrees`; `name` contains ASCII alphanumerics and underscores; `value` is a finite decimal scalar. The record framing is independent of the OM entity-index and object-ID arrays. An enclosing indexed entity supplies persistent object identity when present; otherwise the record's entry-relative byte offset supplies identity.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Siemens NX object-model records retained in the native namespace.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::container::Container;
@@ -21,7 +23,7 @@ pub struct Expression {
     /// Globally unique native-record identity.
     pub id: String,
     /// Persistent OM object identifier.
-    pub object_id: u32,
+    pub object_id: Option<u32>,
     /// NX parameter name.
     pub name: String,
     /// Declared native unit.
@@ -143,30 +145,44 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
 
 /// Decode explicit numeric expressions from all indexed OM sections.
 pub fn expressions(container: &Container) -> Vec<Expression> {
-    container
-        .indexed_om_sections()
-        .into_iter()
-        .enumerate()
-        .flat_map(|(section_index, (entry, section))| {
-            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-            section
-                .numeric_expressions()
-                .into_iter()
-                .map(move |expression| Expression {
-                    id: format!(
-                        "nx:om-section-{section_index}:expression#{}",
-                        expression.object_id
-                    ),
-                    object_id: expression.object_id,
-                    name: expression.name.to_string(),
-                    unit: match expression.unit {
-                        crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
-                        crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,
-                    },
-                    value: expression.value,
-                    source_entry: entry.name.clone(),
-                    source_offset: entry_offset + expression.offset as u64,
-                })
-        })
-        .collect()
+    let mut indexed = BTreeMap::new();
+    for (entry, section) in container.indexed_om_sections() {
+        for expression in section.numeric_expressions() {
+            indexed.insert(
+                (entry.name.clone(), expression.offset),
+                expression.object_id,
+            );
+        }
+    }
+    let mut expressions = Vec::new();
+    for (entry_index, entry) in container.entries.iter().enumerate() {
+        let Some((entry_offset, size)) = entry.file_span else {
+            continue;
+        };
+        let (Ok(offset), Ok(size)) = (usize::try_from(entry_offset), usize::try_from(size)) else {
+            continue;
+        };
+        let Some(payload) = container.data.get(offset..offset.saturating_add(size)) else {
+            continue;
+        };
+        for expression in crate::om::numeric_expressions(payload) {
+            let object_id = indexed
+                .get(&(entry.name.clone(), expression.offset))
+                .copied()
+                .flatten();
+            expressions.push(Expression {
+                id: format!("nx:om-entry-{entry_index}:expression#{}", expression.offset),
+                object_id,
+                name: expression.name.to_string(),
+                unit: match expression.unit {
+                    crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
+                    crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,
+                },
+                value: expression.value,
+                source_entry: entry.name.clone(),
+                source_offset: entry_offset + expression.offset as u64,
+            });
+        }
+    }
+    expressions
 }

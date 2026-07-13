@@ -41,8 +41,8 @@ pub enum ExpressionUnit {
 /// One numeric expression decoded from an exactly bounded OM entity.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NumericExpression<'a> {
-    /// Persistent identity of the containing OM entity.
-    pub object_id: u32,
+    /// Persistent identity of the containing OM entity, when indexed.
+    pub object_id: Option<u32>,
     /// Absolute byte offset of the expression text.
     pub offset: usize,
     /// NX parameter name.
@@ -81,9 +81,38 @@ impl<'a> IndexedSection<'a> {
         }
         self.records
             .iter()
-            .filter_map(|record| numeric_expression(record))
+            .filter_map(|record| {
+                numeric_expression_at(record.bytes, record.offset, Some(record.object_id))
+            })
             .collect()
     }
+}
+
+/// Decode every strictly length-framed numeric expression in an OM payload.
+///
+/// The `hostglobalvariables` marker identifies the owning table. Individual
+/// records are self-framed as `handle, 04, length, text, 00`, so expression
+/// decoding does not depend on an object-id table having the same cardinality
+/// as an external entity-index array.
+pub fn numeric_expressions(bytes: &[u8]) -> Vec<NumericExpression<'_>> {
+    if !bytes
+        .windows(b"hostglobalvariables".len())
+        .any(|window| window == b"hostglobalvariables")
+    {
+        return Vec::new();
+    }
+    bytes
+        .windows(b"(Number [".len())
+        .enumerate()
+        .filter(|(_, window)| *window == b"(Number [")
+        .filter_map(|(offset, _)| {
+            numeric_expression_at(
+                &bytes[offset.saturating_sub(3)..],
+                offset.saturating_sub(3),
+                None,
+            )
+        })
+        .collect()
 }
 
 /// Locate validated NX OM entity-index/object-id-table pairs.
@@ -204,20 +233,23 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
     out
 }
 
-fn numeric_expression<'a>(record: &EntityRecord<'a>) -> Option<NumericExpression<'a>> {
+fn numeric_expression_at(
+    bytes: &[u8],
+    base_offset: usize,
+    object_id: Option<u32>,
+) -> Option<NumericExpression<'_>> {
     const PREFIX: &[u8] = b"(Number [";
-    let relative = record
-        .bytes
+    let relative = bytes
         .windows(PREFIX.len())
         .position(|window| window == PREFIX)?;
-    if relative < 3 || record.bytes.get(relative - 2) != Some(&0x04) {
+    if relative < 3 || bytes.get(relative - 2) != Some(&0x04) {
         return None;
     }
-    let declared = usize::from(*record.bytes.get(relative - 1)?);
+    let declared = usize::from(*bytes.get(relative - 1)?);
     let text_len = declared.checked_sub(2)?;
     let text_end = relative.checked_add(text_len)?;
-    (record.bytes.get(text_end) == Some(&0)).then_some(())?;
-    let text = std::str::from_utf8(record.bytes.get(relative..text_end)?).ok()?;
+    (bytes.get(text_end) == Some(&0)).then_some(())?;
+    let text = std::str::from_utf8(bytes.get(relative..text_end)?).ok()?;
     text.ends_with("; ").then_some(())?;
     let text = text.strip_prefix("(Number [")?;
     let (unit, rest) = text.split_once("]) ")?;
@@ -237,8 +269,8 @@ fn numeric_expression<'a>(record: &EntityRecord<'a>) -> Option<NumericExpression
     let value_text = value_tail.strip_suffix("; ")?;
     let value = value_text.parse::<f64>().ok()?;
     value.is_finite().then_some(NumericExpression {
-        object_id: record.object_id,
-        offset: record.offset + relative,
+        object_id,
+        offset: base_offset + relative,
         name,
         unit,
         value,

@@ -15,7 +15,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::curve_point;
-use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+use cadmpeg_ir::features::{
+    Angle, ConfigurationId, DesignConfiguration, DesignParameter, Feature, FeatureDefinition,
+    FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
+};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
     IntcurveSupportSide, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -1176,7 +1179,7 @@ fn emit_topology(
         }
         if let (Some(carrier), Some(range)) = (&curve, param_range) {
             match orient_edge_range(
-                &ir,
+                ir,
                 carrier,
                 range,
                 &start,
@@ -1772,6 +1775,7 @@ fn attach_native_object_model(
             });
         }
     }
+    attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
     namespace.version = namespace.version.max(1);
     if !expressions.is_empty() {
@@ -1784,6 +1788,91 @@ fn attach_native_object_model(
         namespace.set_arena("configurations", &configurations)?;
     }
     Ok(())
+}
+
+fn attach_expression_parameters(
+    ir: &mut CadIr,
+    expressions: &[crate::native::Expression],
+    annotations: &mut AnnotationBuilder,
+) {
+    let mut sections = BTreeMap::<String, Vec<&crate::native::Expression>>::new();
+    for expression in expressions {
+        let Some((section, _)) = expression.id.split_once(":expression#") else {
+            continue;
+        };
+        sections
+            .entry(section.to_string())
+            .or_default()
+            .push(expression);
+    }
+    let stream = annotations.stream("nx:container");
+    let base_ordinal = ir.model.features.len() as u64;
+    for (section_ordinal, (section, expressions)) in sections.into_iter().enumerate() {
+        let feature_id = FeatureId(format!("{section}:feature#equations"));
+        let first_offset = expressions
+            .iter()
+            .map(|expression| expression.source_offset)
+            .min()
+            .unwrap_or(0);
+        annotations
+            .note(&feature_id, stream, first_offset)
+            .tag("hostglobalvariables");
+        annotations.exactness(&feature_id, Exactness::Derived);
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: base_ordinal + section_ordinal as u64,
+            name: Some("NX expressions".to_string()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("hostglobalvariables".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::Equations,
+            },
+            native_ref: None,
+        });
+        for (ordinal, expression) in expressions.into_iter().enumerate() {
+            let key = expression
+                .id
+                .rsplit_once('#')
+                .map_or("unknown", |(_, key)| key);
+            let id = ParameterId(format!("{section}:parameter#{key}"));
+            annotations
+                .note(&id.0, stream, expression.source_offset)
+                .tag("Number");
+            annotations.derived(&id.0, "owner");
+            annotations.derived(&id.0, "ordinal");
+            annotations.derived(&id.0, "expression");
+            annotations.derived(&id.0, "value");
+            annotations.derived(&id.0, "native_ref");
+            let (suffix, value) = match expression.unit {
+                crate::native::ExpressionUnit::Millimeter => {
+                    ("mm", ParameterValue::Length(Length(expression.value)))
+                }
+                crate::native::ExpressionUnit::Degree => (
+                    "degrees",
+                    ParameterValue::Angle(Angle(expression.value.to_radians())),
+                ),
+            };
+            ir.model.parameters.push(DesignParameter {
+                id,
+                owner: feature_id.clone(),
+                ordinal: ordinal as u32,
+                name: expression.name.clone(),
+                expression: format!("{} {suffix}", expression.value),
+                display: None,
+                value: Some(value),
+                dependencies: Vec::new(),
+                properties: BTreeMap::new(),
+                pmi: None,
+                native_ref: Some(expression.id.clone()),
+            });
+        }
+    }
 }
 
 fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
