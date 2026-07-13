@@ -133,6 +133,19 @@ pub struct TolerantVertexTail {
     pub trailing_floats: [f32; 2],
 }
 
+/// Parameter interval stored by one tolerant ASM coedge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TolerantCoedgeParameters {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep coedge carrying the tolerant interval.
+    pub coedge: CoedgeId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Native start and end parameters following the base coedge fields.
+    pub parameter_range: [f64; 2],
+}
+
 /// Design `BulkStream` regeneration-recipe family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

@@ -12907,11 +12907,11 @@ fn patch_framed_geometry(
             if let Some(sense) = face_senses.get(&id) {
                 patch_sense_token(bytes, record, 0, *sense)?;
             }
-        } else if record.head == "coedge" {
+        } else if matches!(record.head.as_str(), "coedge" | "tcoedge") {
             if let Some(sense) = coedge_senses.get(&id) {
                 patch_sense_token(bytes, record, 0, *sense)?;
             }
-        } else if record.head == "edge" {
+        } else if matches!(record.head.as_str(), "edge" | "tedge") {
             if let Some(range) = edge_ranges.get(&id) {
                 patch_double_token(bytes, record, 0, range[0])?;
                 patch_double_token(bytes, record, 1, range[1])?;

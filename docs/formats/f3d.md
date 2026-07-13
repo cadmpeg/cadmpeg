@@ -260,7 +260,7 @@ The sense token is relative to the native surface carrier. Decoding a reversed s
 
 The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partner symmetry** is a manifold invariant: every coedge's partner's partner is itself, and every shell edge is shared by exactly two mutually-referencing coedges of opposite sense.
 
-`tcoedge` inherits this complete base field sequence. Its additional parameter and version-selected tail fields do not change the offsets or meanings of the base topology links.
+`tcoedge` inherits this complete base field sequence. `chunk[11]` and `chunk[12]` are its native start and end parameters and are retained as typed coedge metadata. Its version-selected tail fields do not change the offsets or meanings of the base topology links.
 
 **Edge (98 B):**
 

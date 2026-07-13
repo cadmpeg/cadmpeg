@@ -19,7 +19,8 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, FaceContainment, FaceSidedness,
-    PersistentDesignLink, SketchCurveLink, TolerantVertexTail, TransformHints, VertexOwnership,
+    PersistentDesignLink, SketchCurveLink, TolerantCoedgeParameters, TolerantVertexTail,
+    TransformHints, VertexOwnership,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -101,6 +102,8 @@ pub struct Brep {
     pub vertex_ownerships: Vec<VertexOwnership>,
     /// Native sidedness fields stored on solved faces.
     pub face_sidedness: Vec<FaceSidedness>,
+    /// Native parameter intervals stored on tolerant coedges.
+    pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
     /// Native trailing fields stored on tolerant vertices.
     pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
     /// Native rotation/reflection/shear classifications stored on transforms.
@@ -3841,6 +3844,19 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     .filter(|p| kept_pcurves.contains(p))
                     .map(|p| PcurveId(id(p))),
             });
+            if r.head == "tcoedge" {
+                if let (Some(Token::Double(start)), Some(Token::Double(end))) =
+                    (r.chunk(11), r.chunk(12))
+                {
+                    out.tolerant_coedge_parameters
+                        .push(TolerantCoedgeParameters {
+                            id: format!("f3d:asm:tolerant-coedge-parameters#{i}"),
+                            coedge: CoedgeId(id(i)),
+                            record_index: r.index as u32,
+                            parameter_range: [*start, *end],
+                        });
+                }
+            }
         }
     }
 

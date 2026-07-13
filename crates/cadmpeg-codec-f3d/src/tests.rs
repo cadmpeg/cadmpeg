@@ -411,21 +411,61 @@ fn replace_generated_record_head(bytes: &mut Vec<u8>, from: &str, to: &str) {
     }
 }
 
+fn append_generated_record_tail(bytes: &mut Vec<u8>, head: &str, tail: &[u8]) {
+    let record_start = bytes
+        .windows(b"\x0d\x09asmheader".len())
+        .position(|window| window == b"\x0d\x09asmheader")
+        .expect("generated ASM record table");
+    let offsets = crate::sab::frame(bytes, record_start, bytes.len(), 8)
+        .expect("generated ASM records must frame")
+        .into_iter()
+        .filter(|record| record.head == head)
+        .map(|record| record.offset + record.len - 1)
+        .collect::<Vec<_>>();
+    for offset in offsets.into_iter().rev() {
+        bytes.splice(offset..offset, tail.iter().copied());
+    }
+}
+
 #[test]
-fn decode_transfers_generated_tolerant_edges_and_coedges() {
+fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     let mut smbh = synthetic_geometry_smbh();
+    let mut parameter_tail = Vec::new();
+    t_dbl(&mut parameter_tail, 0.25);
+    t_dbl(&mut parameter_tail, 0.75);
+    append_generated_record_tail(&mut smbh, "coedge", &parameter_tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
-    replace_generated_record_head(&mut smbh, "edge", "tedge");
-    let decoded = F3dCodec
+    let mut decoded = F3dCodec
         .decode(
             &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
             &DecodeOptions::default(),
         )
-        .expect("generated tolerant topology must decode");
+        .expect("generated tolerant coedges must decode");
 
     assert_eq!(decoded.ir.model.coedges.len(), 3);
     assert_eq!(decoded.ir.model.edges.len(), 3);
     assert_eq!(decoded.ir.model.shells[0].faces.len(), 1);
+    assert_eq!(
+        f3d_native(&decoded.ir)
+            .tolerant_coedge_parameters
+            .iter()
+            .map(|parameters| parameters.parameter_range)
+            .collect::<Vec<_>>(),
+        vec![[0.25, 0.75]; 3]
+    );
+
+    decoded.ir.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    let mut edited = Vec::new();
+    F3dCodec
+        .write_preserved(&decoded.ir, &mut edited)
+        .expect("tolerant coedge sense edit");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(edited), &DecodeOptions::default())
+        .expect("edited tolerant coedge round trip");
+    assert_eq!(
+        round_trip.ir.model.coedges[0].sense,
+        cadmpeg_ir::topology::Sense::Reversed
+    );
 }
 
 fn synthetic_geometry_with_history_smbh() -> Vec<u8> {

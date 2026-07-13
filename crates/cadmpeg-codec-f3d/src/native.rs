@@ -10,8 +10,8 @@ use crate::records::{
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
     DesignMaterialAssignment, DesignObject, DesignRecordHeader, EdgeContinuity, FaceSidedness,
     LostEdgeReference, PersistentDesignLink, PersistentReference, SketchCurveIdentity,
-    SketchCurveLink, SketchPoint, SketchRelation, TolerantVertexTail, TransformHints,
-    VertexOwnership,
+    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
+    TransformHints, VertexOwnership,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -45,6 +45,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "sketch_curve_links",
     "sketch_points",
     "sketch_relations",
+    "tolerant_coedge_parameters",
     "tolerant_vertex_tails",
     "transform_hints",
     "vertex_ownerships",
@@ -76,6 +77,7 @@ macro_rules! f3d_arenas {
             sketch_curve_identities: SketchCurveIdentity;
             lost_edge_references: LostEdgeReference;
             vertex_ownerships: VertexOwnership;
+            tolerant_coedge_parameters: TolerantCoedgeParameters;
             tolerant_vertex_tails: TolerantVertexTail;
             transform_hints: TransformHints;
             asm_histories: AsmHistory;
@@ -200,6 +202,9 @@ pub struct F3dNative {
     /// Native owner-edge and endpoint-slot fields stored on ASM vertices.
     #[serde(default)]
     pub vertex_ownerships: Vec<VertexOwnership>,
+    /// Native parameter intervals stored on tolerant ASM coedges.
+    #[serde(default)]
+    pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
     /// Native trailing f32 slots stored on tolerant ASM vertices.
     #[serde(default)]
     pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
@@ -238,6 +243,7 @@ impl Default for F3dNative {
             sketch_curve_identities: Vec::new(),
             lost_edge_references: Vec::new(),
             vertex_ownerships: Vec::new(),
+            tolerant_coedge_parameters: Vec::new(),
             tolerant_vertex_tails: Vec::new(),
             transform_hints: Vec::new(),
             asm_histories: Vec::new(),
