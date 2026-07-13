@@ -391,6 +391,15 @@ pub(crate) fn neutral_sketch_constraint_id(
     cadmpeg_ir::sketches::SketchConstraintId(format!("f3d:model:sketch-constraint#{record_index}"))
 }
 
+pub(crate) fn neutral_dimension_constraint_id(
+    form: &str,
+    record_index: u32,
+) -> cadmpeg_ir::sketches::SketchConstraintId {
+    cadmpeg_ir::sketches::SketchConstraintId(format!(
+        "f3d:model:sketch-constraint#dimension-{form}-{record_index}"
+    ))
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
@@ -627,6 +636,351 @@ pub fn project_sketch_constraints(
         .collect::<Vec<_>>();
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+/// Project dimensional parameter companions into parameter-backed sketch
+/// constraints. Two-locus dimensions have neutral semantics; aggregate and
+/// role-dependent forms remain explicit native constraints.
+#[allow(clippy::too_many_arguments)]
+pub fn project_dimension_constraints(
+    placements: &[DesignSketchPlacement],
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    pairs: &[DesignDimensionLocusPair],
+    groups: &[DesignDimensionLocusGroup],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+    use cadmpeg_ir::features::ParameterId;
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition as Definition, SketchGeometry,
+        SketchNativeOperand,
+    };
+
+    let sketches = placements
+        .iter()
+        .filter_map(|placement| {
+            let scope = native_stream(&placement.id)?;
+            u32::try_from(placement.entity_suffix)
+                .ok()
+                .map(|suffix| ((scope, suffix), neutral_sketch_id(placement.entity_suffix)))
+        })
+        .collect::<HashMap<_, _>>();
+    let parameters = parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((
+                (native_stream(&parameter.id)?, parameter.record_index),
+                parameter,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let parameter_by_companion = owners
+        .iter()
+        .filter_map(|owner| {
+            Some((
+                (native_stream(&owner.id)?, owner.companion_record_index),
+                owner.parameter_record_index,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let native_geometry = points
+        .iter()
+        .filter_map(|point| {
+            Some((
+                (native_stream(&point.id)?, point.record_index),
+                ("point", point.owner_reference, point.id.as_str()),
+            ))
+        })
+        .chain(curves.iter().filter_map(|curve| {
+            Some((
+                (native_stream(&curve.id)?, curve.record_index),
+                ("curve", curve.owner_reference, curve.id.as_str()),
+            ))
+        }))
+        .collect::<HashMap<_, _>>();
+    let record_indices_by_native_ref = native_geometry
+        .iter()
+        .map(|(key, (_, _, native_ref))| (*native_ref, *key))
+        .collect::<HashMap<_, _>>();
+    let projected = entities
+        .iter()
+        .filter_map(|entity| {
+            let native_ref = entity.native_ref.as_deref()?;
+            record_indices_by_native_ref
+                .get(native_ref)
+                .map(|key| (*key, entity))
+        })
+        .collect::<HashMap<_, _>>();
+
+    let parameter_for = |scope: &str, companion_record_index: u32| {
+        let record_index = *parameter_by_companion.get(&(scope, companion_record_index))?;
+        let parameter = *parameters.get(&(scope, record_index))?;
+        Some((
+            parameter,
+            ParameterId(format!("f3d:model:parameter#{record_index}")),
+        ))
+    };
+    let sketch_for_geometry = |scope: &str, indices: &[u32]| {
+        let mut owners = indices
+            .iter()
+            .filter_map(|record_index| native_geometry.get(&(scope, *record_index))?.1)
+            .collect::<HashSet<_>>();
+        (owners.len() == 1)
+            .then(|| owners.drain().next())
+            .flatten()
+            .and_then(|owner| sketches.get(&(scope, owner)).cloned())
+    };
+    let native_operands = |scope: &str, indices: &[u32]| {
+        indices
+            .iter()
+            .filter(|record_index| !projected.contains_key(&(scope, **record_index)))
+            .map(|record_index| {
+                let (native_kind, _, native_ref) = native_geometry
+                    .get(&(scope, *record_index))
+                    .copied()
+                    .unwrap_or(("record", None, ""));
+                SketchNativeOperand {
+                    native_kind: native_kind.into(),
+                    object_index: *record_index,
+                    native_ref: (!native_ref.is_empty()).then(|| native_ref.to_owned()),
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let native_definition =
+        |scope: &str, source_kind: &str, indices: &[u32], parameter| Definition::Native {
+            native_kind: source_kind.to_owned(),
+            entities: indices
+                .iter()
+                .filter_map(|record_index| {
+                    projected
+                        .get(&(scope, *record_index))
+                        .map(|entity| entity.id.clone())
+                })
+                .collect(),
+            parameter: Some(parameter),
+            operands: native_operands(scope, indices),
+        };
+    let exact_definition = |scope: &str,
+                            source_kind: &str,
+                            indices: &[u32],
+                            parameter: ParameterId|
+     -> Option<Definition> {
+        let entities = indices
+            .iter()
+            .map(|record_index| projected.get(&(scope, *record_index)).copied())
+            .collect::<Option<Vec<_>>>()?;
+        if source_kind.starts_with("Linear Dimension") && entities.len() == 2 {
+            return Some(Definition::Distance {
+                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+                parameter,
+            });
+        }
+        if source_kind.starts_with("Angular Dimension")
+            && entities.len() == 2
+            && entities
+                .iter()
+                .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        {
+            return Some(Definition::Angle {
+                first: entities[0].id.clone(),
+                second: entities[1].id.clone(),
+                parameter,
+            });
+        }
+        None
+    };
+
+    let mut constraints = pairs
+        .iter()
+        .filter_map(|pair| {
+            let scope = native_stream(&pair.id)?;
+            let (parameter, parameter_id) = parameter_for(scope, pair.companion_record_index)?;
+            let indices = [
+                pair.first_geometry_record_index,
+                pair.second_geometry_record_index,
+            ];
+            let sketch = sketch_for_geometry(scope, &indices)?;
+            let definition = exact_definition(
+                scope,
+                &parameter.source_kind,
+                &indices,
+                parameter_id.clone(),
+            )
+            .unwrap_or_else(|| {
+                native_definition(scope, &parameter.source_kind, &indices, parameter_id)
+            });
+            Some(SketchConstraint {
+                id: neutral_dimension_constraint_id("pair", pair.record_index),
+                sketch,
+                definition,
+                native_ref: Some(pair.id.clone()),
+            })
+        })
+        .chain(groups.iter().filter_map(|group| {
+            let scope = native_stream(&group.id)?;
+            let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
+            let indices = group
+                .loci
+                .iter()
+                .map(|locus| locus.geometry_record_index)
+                .collect::<Vec<_>>();
+            let sketch = sketches.get(&(scope, group.owner_reference))?.clone();
+            let definition = exact_definition(
+                scope,
+                &parameter.source_kind,
+                &indices,
+                parameter_id.clone(),
+            )
+            .unwrap_or_else(|| {
+                native_definition(scope, &parameter.source_kind, &indices, parameter_id)
+            });
+            Some(SketchConstraint {
+                id: neutral_dimension_constraint_id("group", group.record_index),
+                sketch,
+                definition,
+                native_ref: Some(group.id.clone()),
+            })
+        }))
+        .collect::<Vec<_>>();
+    constraints.sort_by_key(|constraint| constraint.id.clone());
+    constraints
+}
+
+/// Bind geometry referenced only by dimensional companions to the sketch
+/// reached through the parameter scope or the counted frame's explicit owner.
+pub fn bind_dimension_loci(
+    placements: &[DesignSketchPlacement],
+    owners: &[DesignParameterOwner],
+    pairs: &[DesignDimensionLocusPair],
+    groups: &[DesignDimensionLocusGroup],
+    points: &mut [SketchPoint],
+    curves: &mut [SketchCurveIdentity],
+) -> Result<(), CodecError> {
+    let placements_by_scope = placements
+        .iter()
+        .filter_map(|placement| {
+            Some((
+                (native_stream(&placement.id)?, placement.scope_record_index),
+                u32::try_from(placement.entity_suffix).ok()?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let scopes_by_companion = owners
+        .iter()
+        .filter_map(|owner| {
+            Some((
+                (native_stream(&owner.id)?, owner.companion_record_index),
+                owner.scope_record_index,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut bindings = HashMap::<(String, u32), u32>::new();
+    for pair in pairs {
+        let Some(scope) = native_stream(&pair.id) else {
+            continue;
+        };
+        let Some(parameter_scope) = scopes_by_companion
+            .get(&(scope, pair.companion_record_index))
+            .copied()
+        else {
+            continue;
+        };
+        let Some(owner) = placements_by_scope.get(&(scope, parameter_scope)).copied() else {
+            continue;
+        };
+        insert_dimension_binding(
+            &mut bindings,
+            scope,
+            pair.first_geometry_record_index,
+            owner,
+        )?;
+        insert_dimension_binding(
+            &mut bindings,
+            scope,
+            pair.second_geometry_record_index,
+            owner,
+        )?;
+    }
+    for group in groups {
+        let Some(scope) = native_stream(&group.id) else {
+            continue;
+        };
+        for locus in &group.loci {
+            insert_dimension_binding(
+                &mut bindings,
+                scope,
+                locus.geometry_record_index,
+                group.owner_reference,
+            )?;
+        }
+    }
+    for point in points {
+        let Some(scope) = native_stream(&point.id) else {
+            continue;
+        };
+        let Some(owner) = bindings
+            .get(&(scope.to_owned(), point.record_index))
+            .copied()
+        else {
+            continue;
+        };
+        if point
+            .owner_reference
+            .replace(owner)
+            .is_some_and(|existing| existing != owner)
+        {
+            return Err(CodecError::Malformed(format!(
+                "Fusion sketch point {} has conflicting relation and dimension owners",
+                point.record_index
+            )));
+        }
+    }
+    for curve in curves {
+        let Some(scope) = native_stream(&curve.id) else {
+            continue;
+        };
+        let Some(owner) = bindings
+            .get(&(scope.to_owned(), curve.record_index))
+            .copied()
+        else {
+            continue;
+        };
+        if curve
+            .owner_reference
+            .replace(owner)
+            .is_some_and(|existing| existing != owner)
+        {
+            return Err(CodecError::Malformed(format!(
+                "Fusion sketch curve {} has conflicting relation and dimension owners",
+                curve.record_index
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn insert_dimension_binding(
+    bindings: &mut HashMap<(String, u32), u32>,
+    scope: &str,
+    record_index: u32,
+    owner: u32,
+) -> Result<(), CodecError> {
+    if bindings
+        .insert((scope.to_owned(), record_index), owner)
+        .is_some_and(|existing| existing != owner)
+    {
+        return Err(CodecError::Malformed(format!(
+            "Fusion dimensional geometry record {record_index} belongs to multiple sketches"
+        )));
+    }
+    Ok(())
+}
+
+fn native_stream(id: &str) -> Option<&str> {
+    id.rsplit_once(':').map(|(stream, _)| stream)
 }
 
 fn exact_atomic_constraint(
@@ -3272,16 +3626,16 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        identity_matrix, next_indexed_record_offset, parse_design_parameter,
+        bind_dimension_loci, identity_matrix, next_indexed_record_offset, parse_design_parameter,
         parse_dimension_locus_group, parse_dimension_locus_pair, parse_parameter_companion,
         parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
         parse_sketch_relation, project_parameter_design, project_sketch_constraints,
         project_sketch_design,
     };
     use crate::records::{
-        DesignParameterKind, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-        SketchRelation, SketchRelationOperand,
+        DesignDimensionLocusPair, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -3753,6 +4107,94 @@ mod relation_tests {
                 ..
             } if native_kind == "horizontal" && entities.len() == 1 && operands.is_empty()
         ));
+    }
+
+    #[test]
+    fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
+        let placement = |stream: &str, suffix| DesignSketchPlacement {
+            id: format!("f3d:{stream}:design-sketch-placement#0"),
+            scope_record_index: 10,
+            entity_id: format!("0_{suffix}"),
+            entity_suffix: suffix,
+            byte_offset: 0,
+            class_tag: "356".into(),
+            record_index: 11,
+            frame_length: 201,
+            transform: identity_matrix(),
+            transform_offset: None,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 201,
+        };
+        let owner = |stream: &str| DesignParameterOwner {
+            id: format!("f3d:{stream}:design-parameter-owner#0"),
+            byte_offset: 0,
+            class_tag: "305".into(),
+            record_index: 9,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 1.0,
+            evaluated_value_offset: 40,
+            parameter_record_index: 11,
+            owned_ordinal: 0,
+            variant: 0,
+            companion_record_index: 12,
+        };
+        let pair = |stream: &str| DesignDimensionLocusPair {
+            id: format!("f3d:{stream}:design-dimension-locus-pair#0"),
+            companion_record_index: 12,
+            byte_offset: 0,
+            class_tag: "277".into(),
+            record_index: 13,
+            frame_length: 100,
+            opaque_index: 0,
+            opaque_index_offset: 35,
+            first_geometry_record_index: 20,
+            first_geometry_reference_offset: 40,
+            first_role: 0,
+            first_role_offset: 50,
+            second_geometry_record_index: 21,
+            second_geometry_reference_offset: 55,
+            second_role: 0,
+            second_role_offset: 65,
+            paired_class_tag: "273".into(),
+            paired_byte_offset: 100,
+        };
+        let point = |stream: &str, record_index| SketchPoint {
+            id: format!("f3d:{stream}:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: None,
+            class_tag: "300".into(),
+            byte_offset: 0,
+            coordinate_offset: 89,
+            entity_genesis: None,
+            persistent_id: u64::from(record_index),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+            raw_bytes: Vec::new(),
+        };
+        let mut points = vec![
+            point("A", 20),
+            point("A", 21),
+            point("B", 20),
+            point("B", 21),
+        ];
+
+        bind_dimension_loci(
+            &[placement("A", 100), placement("B", 200)],
+            &[owner("A"), owner("B")],
+            &[pair("A"), pair("B")],
+            &[],
+            &mut points,
+            &mut [],
+        )
+        .unwrap();
+        assert_eq!(
+            points
+                .iter()
+                .map(|point| point.owner_reference)
+                .collect::<Vec<_>>(),
+            [Some(100), Some(100), Some(200), Some(200)]
+        );
     }
 
     #[test]

@@ -122,6 +122,14 @@ pub fn decode(
                 &native.sketch_points,
                 &native.sketch_curve_identities,
             )?;
+            crate::design::bind_dimension_loci(
+                &native.design_sketch_placements,
+                &native.design_parameter_owners,
+                &native.design_dimension_locus_pairs,
+                &native.design_dimension_locus_groups,
+                &mut native.sketch_points,
+                &mut native.sketch_curve_identities,
+            )?;
             native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
             native.design_configurations = crate::design::decode_configurations(&scan)?;
             ir.model.configurations =
@@ -144,6 +152,21 @@ pub fn decode(
                 &native.sketch_relations,
                 &ir.model.sketch_entities,
             );
+            ir.model
+                .sketch_constraints
+                .extend(crate::design::project_dimension_constraints(
+                    &native.design_sketch_placements,
+                    &native.design_parameters,
+                    &native.design_parameter_owners,
+                    &native.design_dimension_locus_pairs,
+                    &native.design_dimension_locus_groups,
+                    &native.sketch_points,
+                    &native.sketch_curve_identities,
+                    &ir.model.sketch_entities,
+                ));
+            ir.model
+                .sketch_constraints
+                .sort_by_key(|constraint| constraint.id.clone());
             let act = crate::act::decode(reader, &scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
@@ -246,6 +269,14 @@ pub fn decode(
         &native.sketch_points,
         &native.sketch_curve_identities,
     )?;
+    crate::design::bind_dimension_loci(
+        &native.design_sketch_placements,
+        &native.design_parameter_owners,
+        &native.design_dimension_locus_pairs,
+        &native.design_dimension_locus_groups,
+        &mut native.sketch_points,
+        &mut native.sketch_curve_identities,
+    )?;
     native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
     native.design_configurations = crate::design::decode_configurations(&scan)?;
     ir.model.configurations = crate::design::project_configurations(&native.design_configurations);
@@ -267,6 +298,21 @@ pub fn decode(
         &native.sketch_relations,
         &ir.model.sketch_entities,
     );
+    ir.model
+        .sketch_constraints
+        .extend(crate::design::project_dimension_constraints(
+            &native.design_sketch_placements,
+            &native.design_parameters,
+            &native.design_parameter_owners,
+            &native.design_dimension_locus_pairs,
+            &native.design_dimension_locus_groups,
+            &native.sketch_points,
+            &native.sketch_curve_identities,
+            &ir.model.sketch_entities,
+        ));
+    ir.model
+        .sketch_constraints
+        .sort_by_key(|constraint| constraint.id.clone());
     let act = crate::act::decode(reader, &scan)?;
     native.act_entities = act.entities;
     native.act_guids = act.guids;
@@ -374,9 +420,25 @@ fn populate_annotations(
         }
         for entity in &native.design_dimension_locus_pairs {
             note(&entity.id, "design_dimension_locus_pair");
+            if let Some(projected) = ir
+                .model
+                .sketch_constraints
+                .iter()
+                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+            {
+                note(&projected.id.0, "sketch_constraint");
+            }
         }
         for entity in &native.design_dimension_locus_groups {
             note(&entity.id, "design_dimension_locus_group");
+            if let Some(projected) = ir
+                .model
+                .sketch_constraints
+                .iter()
+                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+            {
+                note(&projected.id.0, "sketch_constraint");
+            }
         }
         for entity in &native.design_parameter_owners {
             note(&entity.id, "design_parameter_owner");
