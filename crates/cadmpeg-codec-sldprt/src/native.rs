@@ -60,6 +60,7 @@ impl SldprtNative {
                 .filter(|record| record.parent == history.id)
                 .cloned()
                 .collect();
+            history.configurations.sort_by_key(|record| record.ordinal);
             history.features = features
                 .iter()
                 .filter(|record| record.parent == history.id)

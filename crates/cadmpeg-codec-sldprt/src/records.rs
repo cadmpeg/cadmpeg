@@ -13,6 +13,9 @@ pub struct Configuration {
     pub id: String,
     /// Owning feature-history record id.
     pub parent: String,
+    /// Position in the source configuration list.
+    #[serde(default)]
+    pub ordinal: u32,
     /// Source configuration name.
     pub name: String,
     /// Material assigned in this configuration, when overridden; `None` when the

@@ -2432,6 +2432,24 @@ fn encoder_writes_source_less_neutral_configurations() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .configurations
+            .iter()
+            .map(|configuration| configuration.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Metric", "Empty"]
+    );
+    assert_eq!(
+        sldprt_native(&decoded.ir).feature_histories[0]
+            .configurations
+            .iter()
+            .map(|configuration| configuration.ordinal)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
     let configuration = &decoded.ir.model.configurations[0];
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));

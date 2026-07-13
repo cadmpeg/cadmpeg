@@ -49,6 +49,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     Configuration {
                         id,
                         parent: parent.clone(),
+                        ordinal: ordinal as u32,
                         name: node.attribute("Name").unwrap_or("").into(),
                         material: node
                             .attribute("Material")
@@ -1466,13 +1467,14 @@ fn sync_neutral_configurations(
             .configurations
             .retain(|configuration| desired_ids.contains(&configuration.id));
     }
-    for configuration in configurations {
+    for (ordinal, configuration) in configurations.iter().enumerate() {
         let existing = native
             .feature_histories
             .iter_mut()
             .flat_map(|history| &mut history.configurations)
             .find(|candidate| configuration.native_ref.as_deref() == Some(candidate.id.as_str()));
         if let Some(existing) = existing {
+            existing.ordinal = ordinal as u32;
             existing.name.clone_from(&configuration.name);
             existing.material.clone_from(&configuration.material);
             existing.properties.clone_from(&configuration.properties);
@@ -1485,11 +1487,17 @@ fn sync_neutral_configurations(
                         format!("sldprt:generated:configuration#{}", configuration.id.0)
                     }),
                     parent,
+                    ordinal: ordinal as u32,
                     name: configuration.name.clone(),
                     material: configuration.material.clone(),
                     properties: configuration.properties.clone(),
                 });
         }
+    }
+    for history in &mut native.feature_histories {
+        history
+            .configurations
+            .sort_by_key(|configuration| configuration.ordinal);
     }
 }
 
