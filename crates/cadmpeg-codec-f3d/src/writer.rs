@@ -58,6 +58,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         validate_source_less_act(native)?;
         validate_source_less_design_bindings(native)?;
         validate_source_less_design_ownership(native)?;
+        validate_source_less_sketch_graph(native)?;
         validate_source_less_design_links(target, native)?;
     }
     let smbh = encode_planar_triangle_smbh(target)?;
@@ -167,6 +168,86 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
         .into_inner();
     writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecError> {
+    let sketch_owners = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.object_kind == Some(DesignObjectKind::Sketch))
+        .map(|header| header.entity_suffix)
+        .collect::<BTreeSet<_>>();
+    let root_indices = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.object_kind == Some(DesignObjectKind::Sketch))
+        .flat_map(|header| header.reference_indices.iter().copied())
+        .collect::<BTreeSet<_>>();
+    let mut typed_indices = BTreeMap::<u32, &str>::new();
+    for (record_index, id) in native
+        .sketch_points
+        .iter()
+        .map(|record| (record.record_index, record.id.as_str()))
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str())),
+        )
+        .chain(
+            native
+                .sketch_relations
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str())),
+        )
+    {
+        if let Some(before) = typed_indices.insert(record_index, id) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch records {before} and {id} share record index {record_index}"
+            )));
+        }
+    }
+    for relation in &native.sketch_relations {
+        if !root_indices.contains(&relation.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch relation {} is not reachable from a sketch header",
+                relation.id
+            )));
+        }
+        if !sketch_owners.contains(&u64::from(relation.owner_reference)) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch relation {} references missing sketch owner {}",
+                relation.id, relation.owner_reference
+            )));
+        }
+    }
+    let mut reachable_headers = root_indices;
+    for relation in &native.sketch_relations {
+        reachable_headers.extend(relation.members.iter().copied());
+        reachable_headers.extend(relation.return_members.iter().copied());
+    }
+    let mut explicit_headers = BTreeSet::new();
+    for header in &native.design_record_headers {
+        if !explicit_headers.insert(header.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D Design record headers use index {}",
+                header.record_index
+            )));
+        }
+        if typed_indices.contains_key(&header.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design record header {} shadows a typed sketch record",
+                header.id
+            )));
+        }
+        if !reachable_headers.contains(&header.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design record header {} is unreachable from the sketch graph",
+                header.id
+            )));
+        }
+    }
     Ok(())
 }
 

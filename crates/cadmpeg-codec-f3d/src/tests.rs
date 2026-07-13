@@ -6248,6 +6248,23 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less sketch BulkStream encode");
+    f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("relations with missing sketch owners must not disappear");
+    assert!(error
+        .to_string()
+        .contains("references missing sketch owner"));
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.sketch_relations[0].owner_reference = 277;
+        native.sketch_points[0].record_index = 600;
+    }
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("duplicate typed sketch indices must not be deduplicated");
+    assert!(error.to_string().contains("share record index 600"));
+    f3d_native_mut(&mut source_less).sketch_points[0].record_index = 100;
     f3d_native_mut(&mut source_less).sketch_relations[0].constraint_kinds =
         vec![SketchConstraintKind::Horizontal];
     let error = F3dCodec
