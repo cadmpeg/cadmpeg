@@ -3,7 +3,7 @@
 
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
-    FeatureInputScalar, SketchInputEntity, SketchInputKind,
+    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
@@ -132,18 +132,40 @@ pub(crate) fn named_scalars(
                     .try_into()
                     .ok()?,
             );
-            value.is_finite().then_some((name, value_offset, value))
+            let role = scalar_role(payload, name_offset);
+            value
+                .is_finite()
+                .then_some((name, value_offset, value, role))
         })
         .enumerate()
-        .map(|(ordinal, (name, offset, value))| FeatureInputScalar {
-            id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
-            parent: parent.to_string(),
-            ordinal: ordinal as u32,
-            offset: offset as u64,
-            name: name.id.clone(),
-            value,
-        })
+        .map(
+            |(ordinal, (name, offset, value, role))| FeatureInputScalar {
+                id: format!("sldprt:feature-input:scalar#{lane_key}:{offset}"),
+                parent: parent.to_string(),
+                ordinal: ordinal as u32,
+                offset: offset as u64,
+                name: name.id.clone(),
+                value,
+                role,
+            },
+        )
         .collect()
+}
+
+fn scalar_role(payload: &[u8], name_offset: usize) -> FeatureInputScalarRole {
+    let fixed_layout = payload.get(name_offset + 40..name_offset + 43) == Some(&[0, 0, 0])
+        && payload
+            .get(name_offset + 47..name_offset + 61)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload.get(name_offset + 64..name_offset + 69) == Some(&[0, 0, 0, 2, 0]);
+    if !fixed_layout {
+        return FeatureInputScalarRole::Native;
+    }
+    match payload.get(name_offset + 69) {
+        Some(0) => FeatureInputScalarRole::Driving,
+        Some(1) => FeatureInputScalarRole::Display,
+        _ => FeatureInputScalarRole::Native,
+    }
 }
 
 /// Add unambiguous `ResolvedFeatures` length parameters to a projection copy of history.
@@ -179,7 +201,7 @@ pub(crate) fn enrich_history_parameters(
         starts.sort_by_key(|start| start.0);
         for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
-            let mut owned = BTreeMap::<&str, Vec<f64>>::new();
+            let mut owned = BTreeMap::<&str, Vec<&FeatureInputScalar>>::new();
             for scalar in lane
                 .scalars
                 .iter()
@@ -188,14 +210,27 @@ pub(crate) fn enrich_history_parameters(
                 let Some(name) = names_by_id.get(scalar.name.as_str()) else {
                     continue;
                 };
-                owned.entry(&name.value).or_default().push(scalar.value);
+                owned.entry(&name.value).or_default().push(scalar);
             }
-            for (name, values) in owned {
-                if let [value] = values.as_slice() {
+            for (name, scalars) in owned {
+                let driving = scalars
+                    .iter()
+                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let candidates_for_name = if driving.is_empty() {
+                    scalars
+                        .into_iter()
+                        .filter(|scalar| scalar.role == FeatureInputScalarRole::Native)
+                        .collect::<Vec<_>>()
+                } else {
+                    driving
+                };
+                if let [scalar] = candidates_for_name.as_slice() {
                     candidates
                         .entry((history_index, feature_index, name.to_string()))
                         .or_default()
-                        .push(*value);
+                        .push(scalar.value);
                 }
             }
         }

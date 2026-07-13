@@ -185,6 +185,20 @@ pub struct FeatureInputScalar {
     pub name: String,
     /// Scalar value in native SI units.
     pub value: f64,
+    /// Function of this scalar in the dimension record.
+    pub role: FeatureInputScalarRole,
+}
+
+/// Function of a named scalar in its dimension record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FeatureInputScalarRole {
+    /// Value consumed during model regeneration.
+    Driving,
+    /// Dimension-label placement or display value.
+    Display,
+    /// Scalar from a different native record layout.
+    Native,
 }
 
 /// One class declaration in a native feature-input stream.
