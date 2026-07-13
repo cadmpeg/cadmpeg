@@ -1626,12 +1626,12 @@ pub fn decode_dimension_locus_pairs(
             )
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let start = usize::try_from(companion.byte_offset)
-            .ok()
-            .and_then(|offset| offset.checked_add(58));
-        let Some(mut pair) = start.and_then(|start| {
-            parse_dimension_locus_pair(bytes, start, companion.record_index, &geometry_indices)
-        }) else {
+        let Some((start, end)) = companion_owned_interval(companion, owners, bytes.len()) else {
+            continue;
+        };
+        let Some(mut pair) =
+            find_dimension_locus_pair(bytes, start, end, companion.record_index, &geometry_indices)
+        else {
             continue;
         };
         pair.id = format!(
@@ -1642,6 +1642,37 @@ pub fn decode_dimension_locus_pairs(
     }
     out.sort_by_key(|pair| pair.id.clone());
     Ok(out)
+}
+
+fn find_dimension_locus_pair(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    companion_record_index: u32,
+    geometry_indices: &HashSet<u32>,
+) -> Option<DesignDimensionLocusPair> {
+    let parse = |at| {
+        parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices)
+            .filter(|pair| usize::try_from(pair.paired_byte_offset).is_ok_and(|at| at < end))
+    };
+    if let Some(pair) = parse(start) {
+        return Some(pair);
+    }
+    let mut candidates = Vec::new();
+    let mut position = start.saturating_add(1);
+    while let Some(at) = next_indexed_record_offset(bytes, position) {
+        if at >= end {
+            break;
+        }
+        if let Some(pair) = parse(at) {
+            candidates.push(pair);
+        }
+        position = at.saturating_add(1);
+    }
+    let [pair] = candidates.as_slice() else {
+        return None;
+    };
+    Some(pair.clone())
 }
 
 fn parse_dimension_locus_pair(
@@ -1778,20 +1809,43 @@ pub fn decode_dimension_locus_groups(
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let start = usize::try_from(companion.byte_offset)
-            .ok()
-            .and_then(|offset| offset.checked_add(58));
-        let Some(mut group) = start.and_then(|start| {
-            parse_dimension_locus_group(
-                bytes,
-                start,
-                companion.record_index,
-                &geometry_indices,
-                &sketch_entities,
-            )
-        }) else {
+        let Some((start, end)) = companion_owned_interval(companion, owners, bytes.len()) else {
             continue;
         };
+        let mut candidates = parse_dimension_locus_group(
+            bytes,
+            start,
+            companion.record_index,
+            &geometry_indices,
+            &sketch_entities,
+        )
+        .filter(|group| usize::try_from(group.next_byte_offset).is_ok_and(|at| at <= end))
+        .into_iter()
+        .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            let mut position = start.saturating_add(1);
+            while let Some(at) = next_indexed_record_offset(bytes, position) {
+                if at >= end {
+                    break;
+                }
+                if let Some(group) = parse_dimension_locus_group(
+                    bytes,
+                    at,
+                    companion.record_index,
+                    &geometry_indices,
+                    &sketch_entities,
+                )
+                .filter(|group| usize::try_from(group.next_byte_offset).is_ok_and(|at| at <= end))
+                {
+                    candidates.push(group);
+                }
+                position = at.saturating_add(1);
+            }
+        }
+        let [group] = candidates.as_slice() else {
+            continue;
+        };
+        let mut group = group.clone();
         group.id = format!(
             "f3d:{}:design-dimension-locus-group#{}",
             entry.name, group.byte_offset
@@ -1800,6 +1854,26 @@ pub fn decode_dimension_locus_groups(
     }
     out.sort_by_key(|group| group.id.clone());
     Ok(out)
+}
+
+fn companion_owned_interval(
+    companion: &DesignParameterCompanion,
+    owners: &[DesignParameterOwner],
+    stream_length: usize,
+) -> Option<(usize, usize)> {
+    let scope = native_stream(&companion.id)?;
+    let start = usize::try_from(companion.byte_offset)
+        .ok()?
+        .checked_add(58)?;
+    let end = owners
+        .iter()
+        .filter(|owner| {
+            native_stream(&owner.id) == Some(scope) && owner.byte_offset > companion.byte_offset
+        })
+        .filter_map(|owner| usize::try_from(owner.byte_offset).ok())
+        .min()
+        .unwrap_or(stream_length);
+    (start < end && end <= stream_length).then_some((start, end))
 }
 
 fn parse_dimension_locus_group(
@@ -3825,11 +3899,11 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        bind_dimension_loci, bind_sketch_graph, identity_matrix, next_indexed_record_offset,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_parameter_design,
-        project_sketch_constraints, project_sketch_design,
+        bind_dimension_loci, bind_sketch_graph, find_dimension_locus_pair, identity_matrix,
+        next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         DesignDimensionLocusPair, DesignEntityHeader, DesignObjectKind, DesignParameterKind,
@@ -4044,6 +4118,18 @@ mod relation_tests {
         assert_eq!(pair.second_geometry_record_index, 194);
         assert_eq!(pair.second_role, 1);
         assert_eq!(pair.paired_class_tag, "273");
+
+        let mut nested = Vec::new();
+        nested.extend_from_slice(&3u32.to_le_bytes());
+        nested.extend_from_slice(b"341");
+        nested.extend_from_slice(&229u32.to_le_bytes());
+        nested.extend_from_slice(&bytes);
+        let nested_end = nested.len();
+        let nested =
+            find_dimension_locus_pair(&nested, 0, nested_end, 228, &HashSet::from([192, 194]))
+                .expect("nested paired dimension locus frame");
+        assert_eq!(nested.byte_offset, 11);
+        assert_eq!(nested.paired_byte_offset, 91);
     }
 
     #[test]

@@ -364,6 +364,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let unique_companion =
             locus_pair_companions.insert((native_stream, pair.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, pair.companion_record_index));
+        let companion_contains_frame = companion.is_some_and(|companion| {
+            pair.byte_offset >= companion.byte_offset.saturating_add(58)
+                && !native.design_parameter_owners.iter().any(|owner| {
+                    design_stream(&owner.id) == native_stream
+                        && owner.byte_offset > companion.byte_offset
+                        && owner.byte_offset <= pair.byte_offset
+                })
+        });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
                 .get(&(native_stream, companion.owner_record_index))
@@ -379,7 +387,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .paired_class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && companion.is_some_and(|companion| pair.byte_offset == companion.byte_offset + 58)
+            && companion_contains_frame
             && dimension_companion
             && pair.frame_length > 69
             && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
@@ -411,6 +419,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let unique_companion =
             locus_group_companions.insert((native_stream, group.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
+        let companion_contains_frame = companion.is_some_and(|companion| {
+            group.byte_offset >= companion.byte_offset.saturating_add(58)
+                && !native.design_parameter_owners.iter().any(|owner| {
+                    design_stream(&owner.id) == native_stream
+                        && owner.byte_offset > companion.byte_offset
+                        && owner.byte_offset <= group.byte_offset
+                })
+        });
         let dimension_companion = companion.is_some_and(|companion| {
             owners_by_index
                 .get(&(native_stream, companion.owner_record_index))
@@ -462,7 +478,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .next_class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && companion.is_some_and(|companion| group.byte_offset == companion.byte_offset + 58)
+            && companion_contains_frame
             && dimension_companion
             && (1..=64).contains(&count)
             && loci_offsets_valid
