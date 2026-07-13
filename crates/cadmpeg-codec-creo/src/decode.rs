@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, DesignParameter, Feature, FeatureDefinition as IrFeatureDefinition,
-    FeatureId as IrFeatureId, ParameterId, ParameterValue,
+    FeatureId as IrFeatureId, Length, ParameterId, ParameterValue,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::sha256_hex;
@@ -178,6 +178,44 @@ fn section_line_geometry(
     })
 }
 
+fn section_arc_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Arc && segment.arc_orientation == Some(0))
+        .then_some(())?;
+    let center = points.get(&segment.center_id?)?;
+    let first = points.get(&segment.point_ids[0])?;
+    let second = points.get(&segment.point_ids[1])?;
+    let offset = |point: &[f64; 2]| [point[0] - center[0], point[1] - center[1]];
+    let first_offset = offset(first);
+    let second_offset = offset(second);
+    let first_radius = first_offset[0].hypot(first_offset[1]);
+    let second_radius = second_offset[0].hypot(second_offset[1]);
+    let scale = first_radius.max(second_radius).max(1.0);
+    if first_radius <= 1e-12 || (first_radius - second_radius).abs() > 1e-9 * scale {
+        return None;
+    }
+    let start = second_offset[1].atan2(second_offset[0]);
+    let mut end = first_offset[1].atan2(first_offset[0]);
+    while end <= start {
+        end += std::f64::consts::TAU;
+    }
+    Some(SketchGeometry::Arc {
+        center: cadmpeg_ir::math::Point2::new(center[0], center[1]),
+        radius: Length(first_radius),
+        start_angle: Angle(start),
+        end_angle: Angle(end),
+    })
+}
+
+fn section_segment_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    section_line_geometry(points, segment).or_else(|| section_arc_geometry(points, segment))
+}
+
 fn resolved_profile_chains(
     definition: &crate::feature::FeatureDefinition,
     emitted: &BTreeSet<u32>,
@@ -317,7 +355,7 @@ fn transfer_resolved_sketches(
             .rows
             .iter()
             .filter_map(|segment| {
-                let geometry = section_line_geometry(&points, segment)?;
+                let geometry = section_segment_geometry(&points, segment)?;
                 let id = SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
                     definition.id, segment.external_id
@@ -327,7 +365,10 @@ fn transfer_resolved_sketches(
                     &id.0,
                     "FeatDefs",
                     segment.offset as u64,
-                    "solved_section_line",
+                    match segment.kind {
+                        crate::feature::FeatureSegmentKind::Line => "solved_section_line",
+                        crate::feature::FeatureSegmentKind::Arc => "solved_section_arc",
+                    },
                     Exactness::Derived,
                 );
                 Some(SketchEntity {
@@ -336,13 +377,14 @@ fn transfer_resolved_sketches(
                     construction: !solved.contains(&segment.external_id),
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                     geometry_ref: None,
-                    endpoint_refs: segment
-                        .point_ids
-                        .iter()
-                        .map(|point| {
-                            format!("creo:featdefs:sketch#{}:point#{point}", definition.id)
-                        })
-                        .collect(),
+                    endpoint_refs: if segment.kind == crate::feature::FeatureSegmentKind::Arc {
+                        [segment.point_ids[1], segment.point_ids[0]]
+                    } else {
+                        segment.point_ids
+                    }
+                    .iter()
+                    .map(|point| format!("creo:featdefs:sketch#{}:point#{point}", definition.id))
+                    .collect(),
                     geometry,
                 })
             })
@@ -353,7 +395,7 @@ fn transfer_resolved_sketches(
         let emitted = segments
             .rows
             .iter()
-            .filter(|segment| section_line_geometry(&points, segment).is_some())
+            .filter(|segment| section_segment_geometry(&points, segment).is_some())
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
         ir.model.sketch_entities.extend(entities);
@@ -488,6 +530,36 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
             })
         );
+    }
+
+    #[test]
+    fn zero_orientation_arc_runs_clockwise_from_first_endpoint() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Arc,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: Some(3),
+            arc_orientation: Some(0),
+            vertical_horizontal: None,
+            radius_ref: Some(4),
+            radius2_ref: None,
+            external_id: 12,
+            offset: 40,
+        };
+        let points = BTreeMap::from([(1, [0.0, -2.0]), (2, [0.0, 2.0]), (3, [0.0, 0.0])]);
+        let Some(SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        }) = section_arc_geometry(&points, &segment)
+        else {
+            panic!("complete arc");
+        };
+        assert_eq!(center, cadmpeg_ir::math::Point2::new(0.0, 0.0));
+        assert_eq!(radius, Length(2.0));
+        assert!((start_angle.0 - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert!((end_angle.0 - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     }
 
     #[test]

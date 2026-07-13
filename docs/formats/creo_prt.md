@@ -296,6 +296,11 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 
 An arc radius is the distance from its center to an endpoint in `var_arr`. A trim-vertex identifier is distinct from a `segtab` point identifier.
 
+For `arcorient = 0`, an arc traverses clockwise from its first endpoint to its
+second endpoint about `cntrid`. In a counterclockwise angular
+parameterization, its start is the second endpoint angle and its end is the
+first endpoint angle advanced by full turns until it exceeds the start.
+
 `gsec2d_ptr.dimtab_ptr` stores ordered feature dimensions. Each row contains
 `type`, `value`, `direct`, `aux_value`, and `ext_id`; type `0x0a` is an angular
 dimension whose `value` is in radians. `ext_id` is the dimension identity
