@@ -1759,8 +1759,44 @@ fn typed_marker_relation_definition(
         Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Tangent, Vertical,
         VerticalPoints,
     };
-    let SketchInputKind::Relation(kind) = marker.kind else {
-        return None;
+    let kind = match marker.kind {
+        SketchInputKind::Relation(kind) => Some(kind),
+        SketchInputKind::Native(_) => None,
+        _ => return None,
+    };
+    let native = || {
+        let mut entities = marker
+            .links
+            .iter()
+            .filter_map(|link| loci_by_marker.get(&link.entity_ref))
+            .flatten()
+            .map(locus_entity)
+            .collect::<Vec<_>>();
+        entities.sort_by(|left, right| left.0.cmp(&right.0));
+        entities.dedup();
+        SketchConstraintDefinition::Native {
+            native_kind: match marker.kind {
+                SketchInputKind::Relation(kind) => {
+                    format!("sldprt:marker-relation:{}", kind.native_code())
+                }
+                SketchInputKind::Native(code) => format!("sldprt:marker-relation:{code}"),
+                _ => unreachable!("non-relation markers were rejected"),
+            },
+            entities,
+            parameter: None,
+            operands: marker
+                .links
+                .iter()
+                .map(|link| SketchNativeOperand {
+                    native_kind: "sldprt:marker-local-id".into(),
+                    object_index: u32::from(link.local_id),
+                    native_ref: Some(link.entity_ref.clone()),
+                })
+                .collect(),
+        }
+    };
+    let Some(kind) = kind else {
+        return Some(native());
     };
     Some(match kind {
         Horizontal | Vertical | Fixed => {
@@ -1855,7 +1891,11 @@ fn typed_marker_relation_definition(
             let (point, entity) = linked_midpoint_operands(marker, markers_by_id, loci_by_marker)?;
             SketchConstraintDefinition::Midpoint { point, entity }
         }
-        _ => return None,
+        crate::records::SketchRelationKind::Distance
+        | crate::records::SketchRelationKind::Angle
+        | crate::records::SketchRelationKind::Radius
+        | crate::records::SketchRelationKind::Diameter => return None,
+        _ => native(),
     })
 }
 
@@ -2548,6 +2588,30 @@ mod profile_join_tests {
             Some(SketchConstraintDefinition::Parallel {
                 first: first.clone(),
                 second: SketchEntityId("second".into()),
+            })
+        );
+        let mut symmetric = marker("symmetric", None);
+        symmetric.kind = SketchInputKind::Relation(SketchRelationKind::Symmetric);
+        symmetric.links = parallel.links.clone();
+        markers.insert(symmetric.id.as_str(), &symmetric);
+        assert_eq!(
+            typed_marker_relation_definition(&symmetric, &markers, &joins),
+            Some(SketchConstraintDefinition::Native {
+                native_kind: "sldprt:marker-relation:11".into(),
+                entities: vec![first.clone(), SketchEntityId("second".into())],
+                parameter: None,
+                operands: vec![
+                    cadmpeg_ir::sketches::SketchNativeOperand {
+                        native_kind: "sldprt:marker-local-id".into(),
+                        object_index: 1,
+                        native_ref: Some("marker-a".into()),
+                    },
+                    cadmpeg_ir::sketches::SketchNativeOperand {
+                        native_kind: "sldprt:marker-local-id".into(),
+                        object_index: 3,
+                        native_ref: Some("marker-c".into()),
+                    },
+                ],
             })
         );
         let mut coincident = marker("coincident", None);
