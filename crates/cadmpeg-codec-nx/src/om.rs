@@ -88,6 +88,8 @@ pub struct NumericExpression<'a> {
     pub name: &'a str,
     /// Declared native unit.
     pub unit: ExpressionUnit,
+    /// Exact expression text following the serialized name separator.
+    pub expression: &'a str,
     /// Finite serialized numeric value in the declared unit.
     pub value: f64,
 }
@@ -649,6 +651,7 @@ fn numeric_expression_at(
         offset: base_offset + relative,
         name,
         unit,
+        expression: value_text,
         value,
     })
 }

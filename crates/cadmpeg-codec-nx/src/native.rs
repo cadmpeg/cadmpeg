@@ -30,6 +30,8 @@ pub struct Expression {
     pub name: String,
     /// Declared native unit.
     pub unit: ExpressionUnit,
+    /// Exact serialized expression text.
+    pub expression: String,
     /// Finite numeric value in the declared unit.
     pub value: f64,
     /// Directory entry containing the OM section.
@@ -458,6 +460,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                     crate::om::ExpressionUnit::Millimeter => ExpressionUnit::Millimeter,
                     crate::om::ExpressionUnit::Degree => ExpressionUnit::Degree,
                 },
+                expression: expression.expression.to_string(),
                 value: expression.value,
                 source_entry: entry.name.clone(),
                 source_offset: entry_offset + expression.offset as u64,

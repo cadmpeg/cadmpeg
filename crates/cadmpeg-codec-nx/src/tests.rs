@@ -260,6 +260,7 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
     assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
+    assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].value, 120.0);
 }
 
@@ -2469,6 +2470,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
     );
     assert_eq!(expressions[0].unit, crate::native::ExpressionUnit::Degree);
+    assert_eq!(expressions[0].expression, "120");
     assert_eq!(expressions[0].value, 120.0);
     assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
     let om_records = result
@@ -2539,9 +2541,9 @@ fn decode_retains_typed_nx_numeric_expression() {
         }
     ));
     assert_eq!(result.ir.model.parameters.len(), 1);
+    assert_eq!(result.ir.model.parameters[0].expression, "120");
     let parameter = &result.ir.model.parameters[0];
     assert_eq!(parameter.name, expressions[0].name);
-    assert_eq!(parameter.expression, "120 degrees");
     assert!(matches!(
         parameter.value,
         Some(cadmpeg_ir::features::ParameterValue::Angle(

@@ -2252,24 +2252,22 @@ fn attach_expression_parameters(
                 .tag("Number");
             annotations.derived(&id.0, "owner");
             annotations.derived(&id.0, "ordinal");
-            annotations.derived(&id.0, "expression");
             annotations.derived(&id.0, "value");
             annotations.derived(&id.0, "native_ref");
-            let (suffix, value) = match expression.unit {
+            let value = match expression.unit {
                 crate::native::ExpressionUnit::Millimeter => {
-                    ("mm", ParameterValue::Length(Length(expression.value)))
+                    ParameterValue::Length(Length(expression.value))
                 }
-                crate::native::ExpressionUnit::Degree => (
-                    "degrees",
-                    ParameterValue::Angle(Angle(expression.value.to_radians())),
-                ),
+                crate::native::ExpressionUnit::Degree => {
+                    ParameterValue::Angle(Angle(expression.value.to_radians()))
+                }
             };
             ir.model.parameters.push(DesignParameter {
                 id,
                 owner: feature_id.clone(),
                 ordinal: ordinal as u32,
                 name: expression.name.clone(),
-                expression: format!("{} {suffix}", expression.value),
+                expression: expression.expression.clone(),
                 display: None,
                 value: Some(value),
                 dependencies: Vec::new(),
