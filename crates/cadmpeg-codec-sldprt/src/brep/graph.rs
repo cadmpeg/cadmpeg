@@ -751,6 +751,7 @@ fn decode_graph(
     synthesize_sphere_seams(&mut out, &mut annotations, source_stream);
     derive_planar_pcurves(&mut out, &mut annotations, source_stream);
     derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
+    derive_revolved_circle_pcurves(&mut out, &mut annotations, source_stream);
     derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
     derive_nurbs_boundary_pcurves(&mut out, &mut annotations, source_stream);
     prune_rejected_topology(&mut out);
@@ -1237,8 +1238,8 @@ fn derive_cylindrical_pcurves(
             CurveGeometry::Circle {
                 center,
                 axis: circle_axis,
+                ref_direction: circle_reference,
                 radius: circle_radius,
-                ..
             } if (circle_radius.abs() - radius.abs()).abs() < 1e-6
                 && (circle_axis.x * axis.x + circle_axis.y * axis.y + circle_axis.z * axis.z)
                     .abs()
@@ -1264,9 +1265,14 @@ fn derive_cylindrical_pcurves(
                 {
                     continue;
                 }
+                let Some((phase, sense)) =
+                    circle_azimuth_parameter(*axis, *u_reference, *circle_axis, *circle_reference)
+                else {
+                    continue;
+                };
                 PcurveGeometry::Line {
-                    origin: cadmpeg_ir::math::Point2::new(0.0, axial),
-                    direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    origin: cadmpeg_ir::math::Point2::new(phase, axial),
+                    direction: cadmpeg_ir::math::Point2::new(sense, 0.0),
                 }
             }
             CurveGeometry::Line { direction, .. }
@@ -1380,6 +1386,191 @@ fn derive_cylindrical_pcurves(
         annotations
             .note(&id, source_stream, 0)
             .tag("derived_cylindrical_pcurve");
+        annotations.exactness(&id, Exactness::Derived);
+        out.pcurves.push(pcurve);
+    }
+}
+
+fn circle_azimuth_parameter(
+    surface_axis: cadmpeg_ir::math::Vector3,
+    surface_reference: cadmpeg_ir::math::Vector3,
+    circle_axis: cadmpeg_ir::math::Vector3,
+    circle_reference: cadmpeg_ir::math::Vector3,
+) -> Option<(f64, f64)> {
+    let axis_dot = surface_axis.x * circle_axis.x
+        + surface_axis.y * circle_axis.y
+        + surface_axis.z * circle_axis.z;
+    if axis_dot.abs() < 1.0 - 1e-9 {
+        return None;
+    }
+    let surface_tangent = cadmpeg_ir::math::Vector3::new(
+        surface_axis.y * surface_reference.z - surface_axis.z * surface_reference.y,
+        surface_axis.z * surface_reference.x - surface_axis.x * surface_reference.z,
+        surface_axis.x * surface_reference.y - surface_axis.y * surface_reference.x,
+    );
+    let phase = (circle_reference.x * surface_tangent.x
+        + circle_reference.y * surface_tangent.y
+        + circle_reference.z * surface_tangent.z)
+        .atan2(
+            circle_reference.x * surface_reference.x
+                + circle_reference.y * surface_reference.y
+                + circle_reference.z * surface_reference.z,
+        );
+    Some((phase, axis_dot.signum()))
+}
+
+fn derive_revolved_circle_pcurves(
+    out: &mut Brep,
+    annotations: &mut AnnotationBuilder,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+) {
+    let loop_faces: HashMap<_, _> = out
+        .loops
+        .iter()
+        .map(|lp| (lp.id.clone(), lp.face.clone()))
+        .collect();
+    let faces: HashMap<_, _> = out.faces.iter().map(|face| (&face.id, face)).collect();
+    let surfaces: HashMap<_, _> = out
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, surface))
+        .collect();
+    let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
+    let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let dot = |a: [f64; 3], b: cadmpeg_ir::math::Vector3| a[0] * b.x + a[1] * b.y + a[2] * b.z;
+    let mut derived = Vec::new();
+    for coedge in &out.coedges {
+        if coedge.pcurve.is_some() {
+            continue;
+        }
+        let Some(surface) = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face_id| faces.get(face_id))
+            .and_then(|face| surfaces.get(&face.surface))
+        else {
+            continue;
+        };
+        let Some(CurveGeometry::Circle {
+            center: circle_center,
+            axis: circle_axis,
+            ref_direction: circle_reference,
+            radius: circle_radius,
+        }) = edges
+            .get(&coedge.edge)
+            .and_then(|edge| edge.curve.as_ref())
+            .and_then(|curve_id| curves.get(curve_id))
+            .map(|curve| &curve.geometry)
+        else {
+            continue;
+        };
+        let (surface_axis, surface_reference, v) = match &surface.geometry {
+            SurfaceGeometry::Cone {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+                ratio,
+                half_angle,
+            } if (*ratio - 1.0).abs() < 1e-12 => {
+                let d = [
+                    circle_center.x - origin.x,
+                    circle_center.y - origin.y,
+                    circle_center.z - origin.z,
+                ];
+                let v = dot(d, *axis);
+                let radial = [d[0] - v * axis.x, d[1] - v * axis.y, d[2] - v * axis.z];
+                let expected_radius = radius + v * half_angle.tan();
+                if dot(
+                    radial,
+                    cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
+                )
+                .sqrt()
+                    > 1e-6
+                    || (circle_radius.abs() - expected_radius.abs()).abs() > 1e-6
+                {
+                    continue;
+                }
+                (*axis, *ref_direction, v)
+            }
+            SurfaceGeometry::Torus {
+                center,
+                axis,
+                ref_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                let d = [
+                    circle_center.x - center.x,
+                    circle_center.y - center.y,
+                    circle_center.z - center.z,
+                ];
+                let height = dot(d, *axis);
+                let radial = [
+                    d[0] - height * axis.x,
+                    d[1] - height * axis.y,
+                    d[2] - height * axis.z,
+                ];
+                if dot(
+                    radial,
+                    cadmpeg_ir::math::Vector3::new(radial[0], radial[1], radial[2]),
+                )
+                .sqrt()
+                    > 1e-6
+                    || ((circle_radius.abs() - major_radius).hypot(height) - minor_radius.abs())
+                        .abs()
+                        > 1e-6_f64.max(minor_radius.abs() * 1e-9)
+                {
+                    continue;
+                }
+                (
+                    *axis,
+                    *ref_direction,
+                    height.atan2(circle_radius.abs() - major_radius),
+                )
+            }
+            _ => continue,
+        };
+        let Some((phase, sense)) = circle_azimuth_parameter(
+            surface_axis,
+            surface_reference,
+            *circle_axis,
+            *circle_reference,
+        ) else {
+            continue;
+        };
+        let id = PcurveId(format!(
+            "sldprt:brep:pcurve#revolved-circle:{}",
+            coedge.id.0.rsplit('#').next().unwrap_or("0")
+        ));
+        derived.push((
+            coedge.id.clone(),
+            id.clone(),
+            Pcurve {
+                id,
+                geometry: PcurveGeometry::Line {
+                    origin: cadmpeg_ir::math::Point2::new(phase, v),
+                    direction: cadmpeg_ir::math::Point2::new(sense, 0.0),
+                },
+                wrapper_reversed: None,
+                native_tail_flags: None,
+                parameter_range: None,
+                fit_tolerance: None,
+            },
+        ));
+    }
+    let coedge_indices = out
+        .coedges
+        .iter()
+        .enumerate()
+        .map(|(index, coedge)| (coedge.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    for (coedge_id, id, pcurve) in derived {
+        if let Some(index) = coedge_indices.get(&coedge_id) {
+            out.coedges[*index].pcurve = Some(id.clone());
+        }
+        annotations
+            .note(&id, source_stream, 0)
+            .tag("derived_revolved_circle_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }

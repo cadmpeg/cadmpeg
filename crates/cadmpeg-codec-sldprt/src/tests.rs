@@ -236,6 +236,61 @@ fn cylinder_carrier(attr: u16, origin: [f64; 3], axis: [f64; 3], radius: f64) ->
     b
 }
 
+fn cone_carrier(
+    attr: u16,
+    origin: [f64; 3],
+    axis: [f64; 3],
+    radius: f64,
+    half_angle: f64,
+    reference: [f64; 3],
+) -> Vec<u8> {
+    let mut b = vec![0x00, 0x34];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for _ in 0..5 {
+        be16(&mut b, 0);
+    }
+    b.push(0x2b);
+    for value in origin.into_iter().chain(axis).chain([
+        radius,
+        half_angle.sin(),
+        half_angle.cos(),
+        reference[0],
+        reference[1],
+        reference[2],
+    ]) {
+        bef64(&mut b, value);
+    }
+    b
+}
+
+fn torus_carrier(
+    attr: u16,
+    center: [f64; 3],
+    axis: [f64; 3],
+    major_radius: f64,
+    minor_radius: f64,
+    reference: [f64; 3],
+) -> Vec<u8> {
+    let mut b = vec![0x00, 0x36];
+    be16(&mut b, attr);
+    be32(&mut b, 0);
+    for _ in 0..5 {
+        be16(&mut b, 0);
+    }
+    b.push(0x2b);
+    for value in center.into_iter().chain(axis).chain([
+        major_radius,
+        minor_radius,
+        reference[0],
+        reference[1],
+        reference[2],
+    ]) {
+        bef64(&mut b, value);
+    }
+    b
+}
+
 fn sphere_carrier(attr: u16, center: [f64; 3], radius: f64) -> Vec<u8> {
     let mut b = vec![0x00, 0x35];
     be16(&mut b, attr);
@@ -724,7 +779,7 @@ fn tripled_triangle_body() -> Vec<u8> {
         100,
         [0.0, 0.0, 0.0],
         [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
     ));
     b.extend(bridge(10, 20, 100));
     b.extend(loop_head(20, 30, 10));
@@ -4422,6 +4477,78 @@ fn oblique_cylinder_section_gets_an_exact_polar_harmonic_pcurve() {
             && radial_sin.u.abs() < 1e-9
             && (radial_sin.v - 1000.0).abs() < 1e-9
     ));
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn coaxial_cone_circle_preserves_parameter_direction() {
+    let mut body = Vec::new();
+    body.extend(cone_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        1.0,
+        std::f64::consts::FRAC_PI_4,
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(circle_carrier(200, [0.0, 0.0, 1.0], [0.0, 0.0, -1.0], 2.0));
+    body.extend(bridge(10, 20, 100));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 30, 50, 0, 40, false));
+    body.extend(edge_use(40, 200));
+    body.extend(vertex_use(50, 60));
+    body.extend(world_point(60, [2.0, 0.0, 1.0]));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } =
+        decoded.ir.model.pcurves[0].geometry
+    else {
+        panic!("expected line pcurve");
+    };
+    assert!(origin.u.abs() < 1e-12);
+    assert!((origin.v - 1000.0).abs() < 1e-9);
+    assert_eq!(direction, cadmpeg_ir::math::Point2::new(-1.0, 0.0));
+    assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn coaxial_torus_circle_gets_constant_minor_angle_pcurve() {
+    let mut body = Vec::new();
+    body.extend(torus_carrier(
+        100,
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0],
+        2.0,
+        1.0,
+        [1.0, 0.0, 0.0],
+    ));
+    body.extend(circle_carrier(200, [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], 2.0));
+    body.extend(bridge(10, 20, 100));
+    body.extend(loop_head(20, 30, 10));
+    body.extend(coedge(30, 20, 30, 50, 0, 40, false));
+    body.extend(edge_use(40, 200));
+    body.extend(vertex_use(50, 60));
+    body.extend(world_point(60, [2.0, 0.0, 1.0]));
+
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } =
+        decoded.ir.model.pcurves[0].geometry
+    else {
+        panic!("expected line pcurve");
+    };
+    assert!(origin.u.abs() < 1e-12);
+    assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+    assert_eq!(direction, cadmpeg_ir::math::Point2::new(1.0, 0.0));
     assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 
