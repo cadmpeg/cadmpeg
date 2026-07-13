@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 const MAX_TRANSFORM_DEPTH: usize = 64;
 
 #[derive(Clone, Copy)]
-struct Affine {
+pub(super) struct Affine {
     rows: [[f64; 4]; 3],
 }
 
@@ -44,7 +44,7 @@ impl Affine {
         Self { rows }
     }
 
-    fn point(self, point: Point3) -> Point3 {
+    pub(super) fn point(self, point: Point3) -> Point3 {
         let values = [point.x, point.y, point.z];
         let coordinate = |row: usize| {
             self.rows[row][3]
@@ -88,7 +88,7 @@ fn normalized(vector: Vector3) -> Option<Vector3> {
         .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
-fn resolve_transform(
+pub(super) fn resolve_transform(
     sequence: i64,
     entries: &BTreeMap<u32, &DirectoryEntry>,
     records: &BTreeMap<u32, &ParameterRecord>,
@@ -163,7 +163,7 @@ pub(crate) struct Projection {
     pub(crate) losses: Vec<LossNote>,
 }
 
-fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
+pub(super) fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     LossNote {
         category: LossCategory::Geometry,
         severity: Severity::Warning,
@@ -177,7 +177,7 @@ fn entity_loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     }
 }
 
-fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
+pub(super) fn source_object(entry: &DirectoryEntry) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: "iges".into(),
         object_id: format!("D{}", entry.sequence),
@@ -739,7 +739,11 @@ pub(crate) fn project_geometry(
         wire_edges.push(edge);
         decoded.insert(entry.sequence);
     }
-    if !decoded.is_empty() {
+    let surfaces = super::surfaces::project(ir, directory, parameters, global);
+    handled.extend(surfaces.handled);
+    decoded.extend(surfaces.decoded);
+    losses.extend(surfaces.losses);
+    if !wire_edges.is_empty() || !free_vertices.is_empty() {
         let body = BodyId("iges:model:body#free-geometry".into());
         let region = RegionId("iges:model:region#free-geometry".into());
         let shell = ShellId("iges:model:shell#free-geometry".into());
