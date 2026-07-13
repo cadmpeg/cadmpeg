@@ -1036,6 +1036,8 @@ pub struct AxisAngle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Extent {
+    /// Native extent is present structurally but its termination is unresolved.
+    Unresolved,
     /// Fixed depth or angle in one direction.
     Blind {
         /// Fixed travel distance.

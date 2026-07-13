@@ -6121,7 +6121,7 @@ fn decode_types_reserved_tree_nodes_independently_of_localized_names() {
 
 #[test]
 fn reserved_tree_node_ids_require_builtin_record_shape() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{Extent, FeatureDefinition};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -6136,12 +6136,17 @@ fn reserved_tree_node_ids_require_builtin_record_shape() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert!(decoded
-        .ir
-        .model
-        .features
-        .iter()
-        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Unresolved,
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Native { .. }
+    ));
 }
 
 #[test]
@@ -7481,6 +7486,45 @@ fn decode_projects_cut_extrude_with_canonical_length() {
                 length: cadmpeg_ir::features::Length(12.7),
             },
             op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn decode_projects_compact_extrusion_with_unresolved_extent() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Compact" Type="Extrusion" id="9"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Unresolved,
+            op: BooleanOp::Unresolved,
+            ..
+        }
+    ));
+
+    decoded.ir.model.features[0].name = Some("Renamed compact extrusion".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Unresolved,
             ..
         }
     ));

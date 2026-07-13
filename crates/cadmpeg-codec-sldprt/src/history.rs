@@ -1365,6 +1365,11 @@ fn project_extrude(
             .map(Length)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
+        None if !feature.parameters.contains_key("Depth")
+            && !feature.parameters.contains_key("D1") =>
+        {
+            Extent::Unresolved
+        }
         None | Some("Blind") => Extent::Blind {
             length: length("Depth")?,
         },
@@ -4652,12 +4657,21 @@ pub fn sync_neutral_features(
                 let positional_depth =
                     parameters.contains_key("D1") && !parameters.contains_key("Depth");
                 let mut properties = feature.source_properties.clone();
-                parameters.remove("Depth");
-                parameters.remove("Depth2");
-                parameters.remove("Draft");
-                properties.remove("Direction");
-                properties.remove("Face");
+                if matches!(extent, Extent::Unresolved) && existing.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires retained extrusion extent data",
+                        feature.id
+                    )));
+                }
+                if !matches!(extent, Extent::Unresolved) {
+                    parameters.remove("Depth");
+                    parameters.remove("Depth2");
+                    parameters.remove("Draft");
+                    properties.remove("Direction");
+                    properties.remove("Face");
+                }
                 match extent {
+                    Extent::Unresolved => {}
                     Extent::Blind { length } => {
                         if properties.contains_key("EndCondition") || existing.is_none() {
                             properties.insert("EndCondition".into(), "Blind".into());

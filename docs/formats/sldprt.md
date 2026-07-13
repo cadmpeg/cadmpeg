@@ -91,6 +91,8 @@ Keywords element order is serialization order, not regeneration order. Neutral r
 
 An extrusion feature-input object stores a little-endian u32 operation discriminator before its object-name record. A direct class declaration is preceded by the discriminator and four or eight zero bytes. A repeated-class name is preceded by the discriminator, four or eight zero bytes, and its little-endian u16 class token. The padding width is selected by the record schema and is self-delimiting because every padding byte is zero. For class `moICE_c`, discriminator `3` joins the extrusion result and discriminator `11` subtracts it. For class `moExtrusion_c`, discriminator `1` joins the extrusion result.
 
+An extrusion object without an `EndCondition` attribute and without an owned `Depth` or `D1` scalar has an unresolved extent. The class, profile reference, direction, draft, and Boolean discriminator remain independently meaningful.
+
 A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. Marker local identifiers are scoped to that feature object.
 
 Coordinate-bearing geometry handles and no-coordinate relation handles reuse feature-local identifiers. A handle reference with one coordinate-bearing candidate selects that geometry handle. With zero or multiple coordinate-bearing candidates, the identifier resolves only when it has one candidate in the complete feature-local marker set.
