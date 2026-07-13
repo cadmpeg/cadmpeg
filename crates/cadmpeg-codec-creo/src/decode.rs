@@ -925,6 +925,35 @@ fn transfer_feature_dimensions(
     }
 }
 
+fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
+    let generated_surfaces = scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .flat_map(|table| &table.surface_ids)
+        .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}")));
+    let mut outputs = Vec::new();
+    for surface in generated_surfaces {
+        for face in ir.model.faces.iter().filter(|face| face.surface == surface) {
+            let Some(shell) = ir.model.shells.iter().find(|shell| shell.id == face.shell) else {
+                continue;
+            };
+            let Some(region) = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| region.id == shell.region)
+            else {
+                continue;
+            };
+            if !outputs.contains(&region.body) {
+                outputs.push(region.body.clone());
+            }
+        }
+    }
+    outputs
+}
+
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
@@ -2004,6 +2033,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let operation_ordinal_base = ir.model.features.len();
     for (operation_index, operation) in scan.feature_operations.iter().enumerate() {
         let id = IrFeatureId(format!("creo:model:feature#{}", operation.feature_id));
+        let outputs = feature_output_bodies(scan, &ir, operation.feature_id);
         let mut source_properties = BTreeMap::new();
         if let Some(prefix) = operation.status_prefix {
             source_properties.insert(
@@ -2124,7 +2154,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_tag: None,
             source_text: None,
             source_content: Vec::new(),
-            outputs: Vec::new(),
+            outputs,
             definition: IrFeatureDefinition::Native {
                 kind: operation.kind.clone(),
                 parameters,

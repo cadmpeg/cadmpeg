@@ -1631,7 +1631,17 @@ fn decode_transfers_closed_plane_intersection_brep() {
         push_generated_topology_row(&mut payload, curve, faces, next);
     }
 
-    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0xf8, 4, 0xf7, 0x1d, 0xfb, 0xe3, 1, 0xe3, 2, 0xe3, 3, 0xe3, 4, 0xe3,
+    ];
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", payload),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Protrusion id 4\0".to_vec()),
+        ],
+    );
     let scan = container::scan_bytes(data.clone());
     assert_eq!(scan.plane_local_systems.len(), 4);
     assert_eq!(scan.curve_topology_rows.len(), 6);
@@ -1652,6 +1662,12 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(model.regions.len(), 1);
     assert_eq!(model.bodies.len(), 1);
     assert_eq!(model.bodies[0].kind, cadmpeg_ir::topology::BodyKind::Solid);
+    let feature = model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("feature 4");
+    assert_eq!(feature.outputs, vec![model.bodies[0].id.clone()]);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }
