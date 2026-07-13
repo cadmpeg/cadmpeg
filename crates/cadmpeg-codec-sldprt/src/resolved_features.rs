@@ -3538,6 +3538,7 @@ fn validate_generated_marker_constraint(
                 parameter.id.0
             )));
         }
+        validate_solved_dimension(ir, constraint, parameter)?;
         return Ok(());
     }
     if let Some((kind, first, second)) = binary_marker_relation(&constraint.definition) {
@@ -3608,6 +3609,202 @@ fn validate_generated_marker_constraint(
         )));
     }
     Ok(())
+}
+
+fn validate_solved_dimension(
+    ir: &cadmpeg_ir::CadIr,
+    constraint: &SketchConstraint,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let expected = match parameter.value {
+        Some(cadmpeg_ir::features::ParameterValue::Length(value)) => value.0,
+        Some(cadmpeg_ir::features::ParameterValue::Angle(value)) => value.0,
+        _ => unreachable!("dimension parameter compatibility was checked by the caller"),
+    };
+    let measured = match &constraint.definition {
+        SketchConstraintDefinition::DistanceLoci { first, second, .. } => match (first, second) {
+            (SketchLocus::Entity(first), SketchLocus::Entity(second))
+                if !generated_locus_is_point(ir, first)
+                    && !generated_locus_is_point(ir, second) =>
+            {
+                line_line_dimension(
+                    constraint,
+                    sketch_constraint_entity(ir, constraint, first)?,
+                    sketch_constraint_entity(ir, constraint, second)?,
+                )?
+            }
+            (SketchLocus::Entity(line), point) if !generated_locus_is_point(ir, line) => {
+                point_line_dimension(
+                    constraint_locus_point(ir, constraint, point)?,
+                    sketch_constraint_entity(ir, constraint, line)?,
+                    constraint,
+                )?
+            }
+            (point, SketchLocus::Entity(line)) if !generated_locus_is_point(ir, line) => {
+                point_line_dimension(
+                    constraint_locus_point(ir, constraint, point)?,
+                    sketch_constraint_entity(ir, constraint, line)?,
+                    constraint,
+                )?
+            }
+            _ => {
+                let first = constraint_locus_point(ir, constraint, first)?;
+                let second = constraint_locus_point(ir, constraint, second)?;
+                vector2_length([second.u - first.u, second.v - first.v])
+            }
+        },
+        SketchConstraintDefinition::Distance { entities, .. } => {
+            let [first, second] = entities.as_slice() else {
+                return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT distance dimension {} requires exactly two lines",
+                    constraint.id.0
+                )));
+            };
+            line_line_dimension(
+                constraint,
+                sketch_constraint_entity(ir, constraint, first)?,
+                sketch_constraint_entity(ir, constraint, second)?,
+            )?
+        }
+        SketchConstraintDefinition::HorizontalDistance { first, second, .. } => {
+            let first = constraint_locus_point(ir, constraint, first)?;
+            let second = constraint_locus_point(ir, constraint, second)?;
+            (second.u - first.u).abs()
+        }
+        SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+            let first = constraint_locus_point(ir, constraint, first)?;
+            let second = constraint_locus_point(ir, constraint, second)?;
+            (second.v - first.v).abs()
+        }
+        SketchConstraintDefinition::Angle { first, second, .. } => {
+            let first = sketch_constraint_entity(ir, constraint, first)?;
+            let second = sketch_constraint_entity(ir, constraint, second)?;
+            let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT angular dimension {} requires two lines",
+                    constraint.id.0
+                ))
+            })?;
+            let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                    "source-less SLDPRT angular dimension {} requires two lines",
+                    constraint.id.0
+                ))
+            })?;
+            let first = [first_end.u - first_start.u, first_end.v - first_start.v];
+            let second = [second_end.u - second_start.u, second_end.v - second_start.v];
+            let denominator = vector2_length(first) * vector2_length(second);
+            if denominator <= SKETCH_POINT_TOLERANCE {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT angular dimension {} has a degenerate line",
+                    constraint.id.0
+                )));
+            }
+            ((first[0] * second[0] + first[1] * second[1]) / denominator)
+                .clamp(-1.0, 1.0)
+                .acos()
+        }
+        SketchConstraintDefinition::Radius { entity, .. }
+        | SketchConstraintDefinition::Diameter { entity, .. } => {
+            let entity = sketch_constraint_entity(ir, constraint, entity)?;
+            let radius = match &entity.geometry {
+                SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
+                    radius.0
+                }
+                _ => {
+                    return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                        "source-less SLDPRT radial dimension {} requires circular geometry",
+                        constraint.id.0
+                    )))
+                }
+            };
+            if matches!(
+                constraint.definition,
+                SketchConstraintDefinition::Diameter { .. }
+            ) {
+                radius * 2.0
+            } else {
+                radius
+            }
+        }
+        _ => unreachable!("only dimension definitions are passed"),
+    };
+    let tolerance = SKETCH_POINT_TOLERANCE * (1.0 + measured.abs().max(expected.abs()));
+    if !measured.is_finite() || (measured - expected).abs() > tolerance {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "source-less SLDPRT dimension {} value {} is not satisfied by measured geometry {}",
+            constraint.id.0, expected, measured
+        )));
+    }
+    Ok(())
+}
+
+fn point_line_dimension(
+    point: Point2,
+    line: &SketchEntity,
+    constraint: &SketchConstraint,
+) -> Result<f64, cadmpeg_ir::codec::CodecError> {
+    let (start, end) = sketch_line(&line.geometry).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT point-line dimension {} requires a line",
+            constraint.id.0
+        ))
+    })?;
+    let direction = [end.u - start.u, end.v - start.v];
+    let length = vector2_length(direction);
+    if length <= SKETCH_POINT_TOLERANCE {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "source-less SLDPRT point-line dimension {} has a degenerate line",
+            constraint.id.0
+        )));
+    }
+    Ok(cross2([point.u - start.u, point.v - start.v], direction).abs() / length)
+}
+
+fn line_line_dimension(
+    constraint: &SketchConstraint,
+    first: &SketchEntity,
+    second: &SketchEntity,
+) -> Result<f64, cadmpeg_ir::codec::CodecError> {
+    let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT line-line dimension {} requires two lines",
+            constraint.id.0
+        ))
+    })?;
+    let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT line-line dimension {} requires two lines",
+            constraint.id.0
+        ))
+    })?;
+    let first_direction = [first_end.u - first_start.u, first_end.v - first_start.v];
+    let second_direction = [second_end.u - second_start.u, second_end.v - second_start.v];
+    let first_length = vector2_length(first_direction);
+    let second_length = vector2_length(second_direction);
+    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "source-less SLDPRT line-line dimension {} has a degenerate line",
+            constraint.id.0
+        )));
+    }
+    if cross2(first_direction, second_direction).abs()
+        > SKETCH_POINT_TOLERANCE * first_length * second_length
+    {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "source-less SLDPRT line-line dimension {} requires parallel solved lines",
+            constraint.id.0
+        )));
+    }
+    Ok(cross2(
+        [
+            second_start.u - first_start.u,
+            second_start.v - first_start.v,
+        ],
+        first_direction,
+    )
+    .abs()
+        / first_length)
 }
 
 fn constraint_locus_point(

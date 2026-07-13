@@ -2354,6 +2354,26 @@ fn encoder_writes_source_less_curved_sketches() {
             center: Point2::new(8.0, 2.0),
             radius: Length(2.0),
         },
+        SketchGeometry::Line {
+            start: Point2::new(50.0, 0.0),
+            end: Point2::new(54.0, 0.0),
+        },
+        SketchGeometry::Line {
+            start: Point2::new(54.0, 4.0),
+            end: Point2::new(50.0, 4.0),
+        },
+        SketchGeometry::Arc {
+            center: Point2::new(52.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+        SketchGeometry::Arc {
+            center: Point2::new(52.0, 4.0),
+            radius: Length(2.0),
+            start_angle: Angle(std::f64::consts::PI),
+            end_angle: Angle(std::f64::consts::TAU),
+        },
     ];
     let entity_ids = geometries
         .into_iter()
@@ -2396,6 +2416,8 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[9, 10]),
             profile(&[11, 12]),
             profile(&[17]),
+            profile(&[18, 20]),
+            profile(&[19, 21]),
             profile(&[3]),
             profile(&[4]),
         ],
@@ -2420,8 +2442,14 @@ fn encoder_writes_source_less_curved_sketches() {
         },
         native_ref: None,
     });
-    let distance_parameter = ParameterId("synthetic:test:parameter#distance".into());
-    let radius_parameter = ParameterId("synthetic:test:parameter#radius".into());
+    let distance_parameter = ParameterId("synthetic:test:parameter#00-distance".into());
+    let point_line_parameter = ParameterId("synthetic:test:parameter#01-point-line".into());
+    let line_line_parameter = ParameterId("synthetic:test:parameter#02-line-line".into());
+    let horizontal_parameter = ParameterId("synthetic:test:parameter#03-horizontal".into());
+    let vertical_parameter = ParameterId("synthetic:test:parameter#04-vertical".into());
+    let angle_parameter = ParameterId("synthetic:test:parameter#05-angle".into());
+    let radius_parameter = ParameterId("synthetic:test:parameter#06-radius".into());
+    let diameter_parameter = ParameterId("synthetic:test:parameter#07-diameter".into());
     for (id, ordinal, name, expression, display, value) in [
         (
             distance_parameter.clone(),
@@ -2432,12 +2460,60 @@ fn encoder_writes_source_less_curved_sketches() {
             ParameterValue::Length(Length(4.0)),
         ),
         (
-            radius_parameter.clone(),
+            point_line_parameter.clone(),
             1,
+            "D11",
+            "4mm",
+            None,
+            ParameterValue::Length(Length(4.0)),
+        ),
+        (
+            line_line_parameter.clone(),
+            2,
+            "D12",
+            "4mm",
+            None,
+            ParameterValue::Length(Length(4.0)),
+        ),
+        (
+            horizontal_parameter.clone(),
+            3,
+            "H1",
+            "4mm",
+            None,
+            ParameterValue::Length(Length(4.0)),
+        ),
+        (
+            vertical_parameter.clone(),
+            4,
+            "V1",
+            "4mm",
+            None,
+            ParameterValue::Length(Length(4.0)),
+        ),
+        (
+            angle_parameter.clone(),
+            5,
+            "A1",
+            "90deg",
+            None,
+            ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2)),
+        ),
+        (
+            radius_parameter.clone(),
+            6,
             "R1",
             "R2mm",
             Some(DimensionDisplay::Radius),
             ParameterValue::Length(Length(2.0)),
+        ),
+        (
+            diameter_parameter.clone(),
+            7,
+            "DIA1",
+            "<MOD-DIAM>4mm",
+            Some(DimensionDisplay::Diameter),
+            ParameterValue::Length(Length(4.0)),
         ),
     ] {
         ir.model.parameters.push(DesignParameter {
@@ -2476,6 +2552,52 @@ fn encoder_writes_source_less_curved_sketches() {
             SketchConstraintDefinition::Concentric {
                 first: entity_ids[1].clone(),
                 second: entity_ids[9].clone(),
+            },
+        ),
+        (
+            "dimension-angle",
+            SketchConstraintDefinition::Angle {
+                first: entity_ids[5].clone(),
+                second: entity_ids[8].clone(),
+                parameter: angle_parameter,
+            },
+        ),
+        (
+            "dimension-diameter",
+            SketchConstraintDefinition::Diameter {
+                entity: entity_ids[17].clone(),
+                parameter: diameter_parameter,
+            },
+        ),
+        (
+            "dimension-horizontal",
+            SketchConstraintDefinition::HorizontalDistance {
+                first: SketchLocus::Entity(entity_ids[13].clone()),
+                second: SketchLocus::Entity(entity_ids[14].clone()),
+                parameter: horizontal_parameter,
+            },
+        ),
+        (
+            "dimension-line-line",
+            SketchConstraintDefinition::Distance {
+                entities: vec![entity_ids[18].clone(), entity_ids[19].clone()],
+                parameter: line_line_parameter,
+            },
+        ),
+        (
+            "dimension-point-line",
+            SketchConstraintDefinition::DistanceLoci {
+                first: SketchLocus::Entity(entity_ids[15].clone()),
+                second: SketchLocus::Entity(entity_ids[5].clone()),
+                parameter: point_line_parameter,
+            },
+        ),
+        (
+            "dimension-vertical",
+            SketchConstraintDefinition::VerticalDistance {
+                first: SketchLocus::Entity(entity_ids[13].clone()),
+                second: SketchLocus::Entity(entity_ids[15].clone()),
+                parameter: vertical_parameter,
             },
         ),
         (
@@ -2564,7 +2686,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 18);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 22);
     assert!(decoded
         .ir
         .model
@@ -2589,6 +2711,35 @@ fn encoder_writes_source_less_curved_sketches() {
     assert!(decoded.ir.model.parameters.iter().any(|parameter| {
         parameter.name == "R1" && parameter.display == Some(DimensionDisplay::Radius)
     }));
+    for name in ["D11", "D12", "H1", "V1", "A1", "DIA1"] {
+        assert!(
+            decoded
+                .ir
+                .model
+                .parameters
+                .iter()
+                .any(|parameter| parameter.name == name),
+            "missing regenerated {name} dimension parameter"
+        );
+    }
+    for expected in ["line-line", "horizontal", "vertical", "angle", "diameter"] {
+        assert!(
+            decoded
+                .ir
+                .model
+                .sketch_constraints
+                .iter()
+                .any(|constraint| match (expected, &constraint.definition) {
+                    ("line-line", SketchConstraintDefinition::Distance { .. })
+                    | ("horizontal", SketchConstraintDefinition::HorizontalDistance { .. })
+                    | ("vertical", SketchConstraintDefinition::VerticalDistance { .. })
+                    | ("angle", SketchConstraintDefinition::Angle { .. })
+                    | ("diameter", SketchConstraintDefinition::Diameter { .. }) => true,
+                    _ => false,
+                }),
+            "missing regenerated {expected} dimension"
+        );
+    }
     assert!(decoded
         .ir
         .model
@@ -2712,7 +2863,7 @@ fn encoder_writes_source_less_curved_sketches() {
             .iter()
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
             .count(),
-        5
+        7
     );
     assert!(decoded
         .ir
@@ -2726,6 +2877,19 @@ fn encoder_writes_source_less_curved_sketches() {
         .sketch_entities
         .iter()
         .any(|entity| matches!(entity.geometry, SketchGeometry::Nurbs { .. })));
+
+    let parameter = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "D10")
+        .expect("source distance parameter");
+    parameter.expression = "5mm".into();
+    parameter.value = Some(ParameterValue::Length(Length(5.0)));
+    let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("not satisfied by measured geometry"));
 }
 
 #[test]
