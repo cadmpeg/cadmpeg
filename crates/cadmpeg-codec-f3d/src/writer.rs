@@ -673,6 +673,16 @@ fn validate_source_less_history_graph(
         ));
     }
     for state in states {
+        for board in &state.bulletin_boards {
+            for change in &board.changes {
+                if change.kind != history_change_kind(change.old_ref, change.new_ref)? {
+                    return Err(CodecError::Malformed(format!(
+                        "F3D entity change {} has a kind inconsistent with its references",
+                        change.id
+                    )));
+                }
+            }
+        }
         for record in &state.records {
             if record.raw_bytes.is_empty() {
                 return Err(CodecError::Malformed(format!(
@@ -681,6 +691,38 @@ fn validate_source_less_history_graph(
                 )));
             }
         }
+    }
+    for history in &native.asm_histories {
+        match (history.stream_size, history.high_water_mark) {
+            (Some(size), Some(high_water))
+                if history
+                    .states
+                    .first()
+                    .is_some_and(|state| state.state_id == size)
+                    && high_water >= size => {}
+            (Some(_), Some(_)) => {
+                return Err(CodecError::Malformed(format!(
+                    "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                    history.id
+                )));
+            }
+            (None, None) => {}
+            _ => {
+                return Err(CodecError::Malformed(format!(
+                    "F3D history {} has an incomplete history-stream preamble",
+                    history.id
+                )));
+            }
+        }
+    }
+    if native
+        .asm_histories
+        .iter()
+        .any(|history| !crate::history::graph_is_coherent(history))
+    {
+        return Err(CodecError::Malformed(
+            "F3D ASM history graph is not a coherent doubly linked state chain".into(),
+        ));
     }
     Ok(())
 }

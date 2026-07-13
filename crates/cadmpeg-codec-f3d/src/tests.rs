@@ -505,7 +505,7 @@ fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
     for value in [2, 1, 0] {
         t_long(&mut tail, value);
     }
-    for reference in [-1, 2, 0, -1, 0] {
+    for reference in [-1, 1, 0, -1, 0] {
         t_ref(&mut tail, reference);
     }
     tail.push(0x0b);
@@ -6070,7 +6070,7 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
         .to_string()
         .contains("orphaned or ambiguously parented records"));
 
-    let mut duplicate = decoded.ir;
+    let mut duplicate = decoded.ir.clone();
     duplicate.source = None;
     duplicate.set_native_unknowns("f3d", &[]).unwrap();
     let states = duplicate
@@ -6086,6 +6086,17 @@ fn generated_source_less_rejects_lossy_asm_history_graphs() {
     assert!(error
         .to_string()
         .contains("asm_delta_states contains duplicate record ids"));
+
+    let mut broken_chain = decoded.ir;
+    broken_chain.source = None;
+    broken_chain.set_native_unknowns("f3d", &[]).unwrap();
+    f3d_native_mut(&mut broken_chain).asm_histories[0].states[0].next_ref = Some(99);
+    let error = F3dCodec
+        .encode(&broken_chain, &mut Vec::new())
+        .expect_err("unresolved history links must be rejected");
+    assert!(error
+        .to_string()
+        .contains("not a coherent doubly linked state chain"));
 }
 
 #[test]
@@ -8776,7 +8787,7 @@ fn decode_retains_generated_asm_history_graph() {
     assert_eq!(history.high_water_mark, Some(99));
     assert_eq!(history.states.len(), 2);
     assert_eq!(history.states[0].state_id, 2);
-    assert_eq!(history.states[0].next_ref, Some(2));
+    assert_eq!(history.states[0].next_ref, Some(1));
     assert_eq!(history.states[0].bulletin_boards.len(), 1);
     assert_eq!(history.states[0].bulletin_boards[0].changes.len(), 2);
     assert_eq!(history.states[0].records.len(), 1);

@@ -10,9 +10,88 @@ use crate::history_records::{
     AsmHistoryRecord,
 };
 use cadmpeg_ir::le::int_at;
+use std::collections::{HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
+
+pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
+    if history.states.is_empty()
+        || history.stream_size.is_some() != history.high_water_mark.is_some()
+    {
+        return false;
+    }
+    let by_index = history
+        .states
+        .iter()
+        .map(|state| (state.node_index, state))
+        .collect::<HashMap<_, _>>();
+    if by_index.len() != history.states.len()
+        || history
+            .states
+            .iter()
+            .any(|state| state.node_index < 0 || state.parent != history.id)
+    {
+        return false;
+    }
+    let heads = history
+        .states
+        .iter()
+        .filter(|state| state.previous_ref.is_none())
+        .collect::<Vec<_>>();
+    let tails = history
+        .states
+        .iter()
+        .filter(|state| state.next_ref.is_none())
+        .count();
+    if heads.len() != 1 || tails != 1 {
+        return false;
+    }
+    if let (Some(size), Some(high_water)) = (history.stream_size, history.high_water_mark) {
+        if heads[0].state_id != size || high_water < size {
+            return false;
+        }
+    }
+    let mut visited = HashSet::new();
+    let mut previous = None;
+    let mut current = Some(heads[0].node_index);
+    while let Some(index) = current {
+        let Some(state) = by_index.get(&index) else {
+            return false;
+        };
+        if !visited.insert(index) || state.previous_ref != previous {
+            return false;
+        }
+        if state.version_flag != 1 || state.state_flag != 0 {
+            return false;
+        }
+        for board in &state.bulletin_boards {
+            if board.parent != state.id
+                || board.changes.iter().any(|change| {
+                    let expected = match (change.old_ref.is_some(), change.new_ref.is_some()) {
+                        (false, true) => Some(AsmEntityChangeKind::Insert),
+                        (true, false) => Some(AsmEntityChangeKind::Delete),
+                        (true, true) => Some(AsmEntityChangeKind::Update),
+                        (false, false) => None,
+                    };
+                    change.parent != board.id || expected != Some(change.kind)
+                })
+            {
+                return false;
+            }
+        }
+        if state
+            .records
+            .iter()
+            .any(|record| record.parent != state.id || record.raw_bytes.is_empty())
+        {
+            return false;
+        }
+        previous = Some(index);
+        current = state.next_ref;
+    }
+    visited.len() == history.states.len()
+}
 
 /// Decode the construction-history tail of an ASM stream: every `delta_state`
 /// record ([spec §2.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#23-delta_state-records)) from `bytes`, each with its `BulletinBoard` chain of

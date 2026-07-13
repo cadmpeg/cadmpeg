@@ -193,6 +193,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    for history in &native.asm_histories {
+        if !history::graph_is_coherent(history) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion ASM history graph is not a coherent doubly linked state chain"
+                    .into(),
+                entity: Some(history.id.clone()),
+            });
+        }
+    }
     findings
 }
 
