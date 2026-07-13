@@ -821,6 +821,11 @@ fn sldprt_with_body(body: &[u8]) -> Vec<u8> {
 
 fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u8> {
     let mut f = sldprt_with_body(body);
+    f.extend(make_block(0x40, "SWObjects", &material_payload(name, rgb)));
+    f
+}
+
+fn material_payload(name: &str, rgb: [u8; 3]) -> Vec<u8> {
     let mut material = b"moVisualProperties_c".to_vec();
     material.extend_from_slice(&u32::from_le_bytes([rgb[0], rgb[1], rgb[2], 0]).to_le_bytes());
     material.extend_from_slice(&0u32.to_le_bytes());
@@ -830,8 +835,7 @@ fn sldprt_with_body_and_material(body: &[u8], name: &str, rgb: [u8; 3]) -> Vec<u
     for unit in name.encode_utf16() {
         material.extend_from_slice(&unit.to_le_bytes());
     }
-    f.extend(make_block(0x40, "SWObjects", &material));
-    f
+    material
 }
 
 fn display_list_payload() -> Vec<u8> {
@@ -3964,6 +3968,26 @@ fn decode_transfers_body_material_color() {
         result.ir.model.appearances[0].name.as_deref(),
         Some("Steel")
     );
+}
+
+#[test]
+fn decode_preserves_ambiguous_materials_without_fabricating_ownership() {
+    let mut source = sldprt_with_body(&triangle_body());
+    let mut materials = material_payload("Steel", [32, 64, 128]);
+    materials.extend(material_payload("Aluminum", [160, 170, 180]));
+    source.extend(make_block(0x40, "SWObjects", &materials));
+
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir.model.appearances.len(), 2);
+    assert!(result.ir.model.appearance_bindings.is_empty());
+    assert!(result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.color.is_none() && body.name.is_none()));
 }
 
 #[test]

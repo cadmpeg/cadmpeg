@@ -268,7 +268,8 @@ fn build_geometry_ir(
 ) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let materials = crate::appearance::materials(scan);
-    if let Some(material) = materials.first() {
+    let unique_material = materials.len() == 1;
+    if let [material] = materials.as_slice() {
         for body in &mut brep.bodies {
             body.color = Some(material.color);
             if body.name.is_none() {
@@ -382,7 +383,7 @@ fn build_geometry_ir(
             base_color: Some(material.color),
             properties: BTreeMap::new(),
         });
-        if index == 0 {
+        if unique_material {
             for (body_index, body) in ir.model.bodies.iter().enumerate() {
                 ir.model.appearance_bindings.push(AppearanceBinding {
                     id: format!("sldprt:appearance:binding#body:{body_index}:{index}"),
