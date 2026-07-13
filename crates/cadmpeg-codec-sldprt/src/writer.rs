@@ -146,8 +146,20 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         );
         sections.push((section, resolved_feature_payload(lane)?));
     }
-    for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep)? {
-        sections.push((section.clone(), payload.clone()));
+    let opaque = opaque_blocks(ir, &active_partition_section, retain_native_brep)?;
+    if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
+        let has_document_envelope = opaque
+            .iter()
+            .any(|(_, payload)| payload.windows(12).any(|window| window == b"swSolidWorks"));
+        if !has_document_envelope {
+            sections.push((
+                "Contents/SolidWorks".into(),
+                generated_solidworks_xml(ir, &active.name),
+            ));
+        }
+    }
+    for (section, payload) in opaque {
+        sections.push((section, payload));
     }
 
     let type_ids = section_type_ids(ir, &sections)?;
@@ -162,6 +174,32 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         writer.write_all(&entry)?;
     }
     Ok(())
+}
+
+fn generated_solidworks_xml(ir: &CadIr, active: &str) -> Vec<u8> {
+    let model = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sw_name"))
+        .map_or("", String::as_str);
+    let mut output = String::from("<?xml version=\"1.0\"?><swSolidWorks><swModel swName=\"");
+    push_xml_attribute_value(&mut output, model);
+    output.push_str("\" swConfigurationName=\"");
+    push_xml_attribute_value(&mut output, active);
+    output.push_str("\"/></swSolidWorks>");
+    output.into_bytes()
+}
+
+fn push_xml_attribute_value(output: &mut String, value: &str) {
+    for character in value.chars() {
+        match character {
+            '&' => output.push_str("&amp;"),
+            '"' => output.push_str("&quot;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            _ => output.push(character),
+        }
+    }
 }
 
 fn sort_arenas(ir: &mut CadIr) {
@@ -668,15 +706,7 @@ fn patch_active_configuration_xml(
     let mut output = String::with_capacity(text.len() + name.len());
     output.push_str(&text[..range.start]);
     output.push_str("swConfigurationName=\"");
-    for character in name.chars() {
-        match character {
-            '&' => output.push_str("&amp;"),
-            '"' => output.push_str("&quot;"),
-            '<' => output.push_str("&lt;"),
-            '>' => output.push_str("&gt;"),
-            _ => output.push(character),
-        }
-    }
+    push_xml_attribute_value(&mut output, name);
     output.push('"');
     output.push_str(&text[range.end..]);
     Ok(Some(output.into_bytes()))

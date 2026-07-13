@@ -2593,7 +2593,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
         ordinal: 0,
-        active: false,
+        active: true,
         source_index: None,
         name: "Metric".into(),
         material: Some("Steel".into()),
@@ -2650,6 +2650,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     assert_eq!(configuration.name, "Metric");
     assert_eq!(configuration.material.as_deref(), Some("Steel"));
     assert_eq!(configuration.properties["Finish"], "Ground");
+    assert!(configuration.active);
     assert_eq!(
         configuration.bodies,
         decoded
