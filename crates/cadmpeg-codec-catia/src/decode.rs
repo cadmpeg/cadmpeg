@@ -1062,8 +1062,8 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        fit_rank_one_e5_plane_axes, intersection_line_direction, ordered_range, quintic_jet_pcurve,
-        rational_pcurve_arc, standard_pcurve_geometry,
+        fit_rank_one_e5_plane_axes, intersection_line_direction, ordered_range,
+        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc, standard_pcurve_geometry,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::eval::pcurve_uv;
@@ -1141,6 +1141,14 @@ mod chart_tests {
             u_axis: Vector3::new(1.0, 0.0, 0.0),
         };
         assert!(intersection_line_direction(&plane, &plane).is_none());
+    }
+
+    #[test]
+    fn unknown_surface_does_not_reject_endpoint_candidates() {
+        assert!(point_on_known_surface(
+            Point3::new(100.0, -50.0, 7.0),
+            &SurfaceGeometry::Unknown { record: None }
+        ));
     }
 
     #[test]
@@ -2299,13 +2307,13 @@ fn attach_standard_topology(
                     geometry::StandardCurveGeometry::Circle { center, radius } => {
                         (point_distance_squared(point.position, *center).sqrt() - *radius).abs()
                             <= 1e-3
-                            && point_on_surface(point.position, &surface0.geometry)
-                            && point_on_surface(point.position, &surface1.geometry)
+                            && point_on_known_surface(point.position, &surface0.geometry)
+                            && point_on_known_surface(point.position, &surface1.geometry)
                     }
                     geometry::StandardCurveGeometry::Line
                     | geometry::StandardCurveGeometry::Bspline => {
-                        point_on_surface(point.position, &surface0.geometry)
-                            && point_on_surface(point.position, &surface1.geometry)
+                        point_on_known_surface(point.position, &surface0.geometry)
+                            && point_on_known_surface(point.position, &surface1.geometry)
                     }
                 };
                 incident.then_some(index)
@@ -2687,6 +2695,10 @@ fn face_surface<'a>(
 ) -> Option<&'a Surface> {
     let id = &bindings.get(face)?.0;
     ir.model.surfaces.get(*surface_indices.get(id)?)
+}
+
+fn point_on_known_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
+    matches!(surface, SurfaceGeometry::Unknown { .. }) || point_on_surface(point, surface)
 }
 
 fn standard_pcurve_geometry(
