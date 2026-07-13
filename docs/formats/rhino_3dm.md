@@ -467,7 +467,59 @@ The class-data checksum is likewise selected by its enclosing typecode. The
 class wrapper length includes all child chunk headers, values, bodies, and
 checksums.
 
-### 7.1 Class userdata
+### 7.1 History records
+
+Each `TCODE_HISTORYRECORD_RECORD` contains one class wrapper for class UUID
+`ECD0FD2F-2088-49DC-9641-9CF7A28FFA6B`. Its class-data payload is an anonymous
+chunk with major version 1. Minor version 1 adds the record type; minor version
+2 adds the copy-on-replace flag:
+
+```text
+anonymous version 1.minor
+ON_UUID record_id
+i32 command_version
+ON_UUID command_id
+ON_UuidList descendants
+ON_UuidList antecedents
+anonymous version 1.0 values
+  i32 value_count
+  value_count × history value anonymous chunk
+if minor >= 1: i32 record_type
+if minor >= 2: bool copy_on_replace
+```
+
+An `ON_UuidList` is an anonymous version 1.0 chunk containing an archive array
+of UUIDs. Descendant order is serialized order. Antecedents identify input
+objects and descendants identify output objects. `record_type` is 0 for update
+history parameters and 1 for feature parameters.
+
+Each history value is an anonymous version 1.0 chunk:
+
+```text
+i32 value_type
+i32 value_id
+type-specific payload
+```
+
+The fixed-layout value-type numbers are:
+
+| Value type | Payload                                      |
+| ---------: | -------------------------------------------- |
+|          0 | no payload                                   |
+|          1 | archive array of one-byte booleans           |
+|          2 | archive array of `i32`                       |
+|          3 | archive array of `f64`                       |
+|          4 | archive array of four-byte `ON_Color` values |
+|          5 | archive array of `ON_3dPoint`                |
+|          6 | archive array of `ON_3dVector`               |
+|          7 | archive array of `ON_Xform`                  |
+|          8 | archive array of UTF-16 strings              |
+|         11 | archive array of UUIDs                       |
+
+Every value is independently bounded by its anonymous chunk. The next value or
+record suffix begins at that chunk's declared end.
+
+### 7.2 Class userdata
 
 A class userdata chunk begins with a packed version byte.
 
@@ -498,7 +550,7 @@ contains the userdata payload. Older userdata without archive-version fields
 uses the containing archive version below 50 and archive version 5 with
 four-byte chunk lengths at 50 and later. The anonymous child is always bounded.
 
-### 7.2 Strings
+### 7.3 Strings
 
 UTF-8 strings use a fixed four-byte unsigned element count:
 

@@ -3621,6 +3621,7 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
 pub(crate) fn decode(scan: &Scan) -> DecodeResult {
     let mut context = DecodeContext::new(scan);
     context.decode_geometry();
+    crate::history::project(&scan.history, &mut context.ir);
     context.commit()
 }
 
