@@ -12,6 +12,11 @@ use crate::records::{
 
 /// Current schema version for the SOLIDWORKS native namespace.
 pub const SLDPRT_NATIVE_VERSION: u32 = 2;
+pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
+
+pub(crate) fn native_version_supported(version: u32) -> bool {
+    (SLDPRT_MIN_NATIVE_VERSION..=SLDPRT_NATIVE_VERSION).contains(&version)
+}
 
 pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "configurations",
@@ -60,8 +65,14 @@ impl SldprtNative {
     pub fn load(
         namespace: &cadmpeg_ir::NativeNamespace,
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
+        if !native_version_supported(namespace.version) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "unsupported SLDPRT native namespace version {}",
+                namespace.version
+            )));
+        }
         let mut native = Self {
-            version: namespace.version,
+            version: SLDPRT_NATIVE_VERSION,
             feature_histories: namespace.arena_as("feature_histories")?,
             feature_input_lanes: namespace.arena_as("feature_input_lanes")?,
             pmi_dimensions: namespace.arena_as("pmi_dimensions")?,
@@ -72,8 +83,15 @@ impl SldprtNative {
         let entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
-        let body_selections: Vec<FeatureInputBodySelection> =
-            namespace.arena_as("feature_input_body_selections")?;
+        let body_selections: Vec<FeatureInputBodySelection> = if namespace.version == 1
+            && !namespace
+                .arenas
+                .contains_key("feature_input_body_selections")
+        {
+            Vec::new()
+        } else {
+            namespace.arena_as("feature_input_body_selections")?
+        };
         let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
         let references: Vec<FeatureInputReference> =
             namespace.arena_as("feature_input_references")?;

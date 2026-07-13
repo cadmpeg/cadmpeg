@@ -20,7 +20,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         .native
         .namespace("sldprt")
         .map(|namespace| {
-            if namespace.version != crate::native::SLDPRT_NATIVE_VERSION {
+            if !crate::native::native_version_supported(namespace.version) {
                 let version = namespace.version;
                 return Err(CodecError::Malformed(format!(
                     "unsupported SLDPRT native namespace version {version}"

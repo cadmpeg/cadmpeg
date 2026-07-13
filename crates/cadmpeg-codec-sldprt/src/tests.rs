@@ -64,6 +64,52 @@ fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     }
 }
 
+#[test]
+fn native_version_one_migrates_the_body_selection_arena() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    legacy.version = 1;
+    legacy.arenas.remove("feature_input_body_selections");
+
+    let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
+    assert_eq!(migrated.version, crate::native::SLDPRT_NATIVE_VERSION);
+    assert!(migrated
+        .feature_input_lanes
+        .iter()
+        .all(|lane| lane.body_selections.is_empty()));
+    let mut current = cadmpeg_ir::NativeNamespace::default();
+    migrated.store(&mut current).unwrap();
+    assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
+    assert!(current.arenas.contains_key("feature_input_body_selections"));
+
+    *decoded.ir.native.namespace_mut("sldprt") = legacy;
+    assert!(crate::validate_native(&decoded.ir).is_empty());
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
+}
+
+#[test]
+fn native_future_version_remains_rejected() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut future = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    future.version = crate::native::SLDPRT_NATIVE_VERSION + 1;
+    let error = crate::native::SldprtNative::load(&future).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("unsupported SLDPRT native namespace version"));
+}
+
 /// Nibble-swap a section name into its stored form (the swap is its own inverse,
 /// so the decoder recovers the original).
 fn swap_name(name: &str) -> Vec<u8> {
