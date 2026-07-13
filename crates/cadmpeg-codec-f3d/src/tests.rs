@@ -10822,9 +10822,20 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert!(construction.post_pcurve.is_none());
 
         let expected = construction.clone();
+        let post_curve = construction.post_curve.clone();
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == post_curve)
+            .expect("variable-blend post curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(-2.0, 1.0, 3.0),
+            direction: cadmpeg_ir::math::Vector3::new(3.0, -4.0, 2.0),
+        };
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -10839,6 +10850,17 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
             panic!("expected round-trip variable blend")
         };
         assert_eq!(actual.as_ref(), expected.as_ref());
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == actual.post_curve)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+        ));
     }
 }
 

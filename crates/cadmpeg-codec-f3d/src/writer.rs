@@ -5715,7 +5715,12 @@ fn encode_native_variable_blend(
     for value in construction.post_range {
         native_f64(bytes, value);
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &construction.post_curve)?)?;
+    let post_curve = native_loft_curve_in_range(
+        target,
+        &construction.post_curve,
+        Some(construction.post_range),
+    )?;
+    native_nurbs_curve(bytes, &post_curve)?;
     native_optional_pcurve(bytes, construction.post_pcurve.as_ref())?;
     bytes.push(0x10);
     Ok(())
