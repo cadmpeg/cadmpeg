@@ -105,7 +105,7 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
                 };
                 active_count += usize::from(active);
                 configurations.push(Configuration {
-                    id: format!("nx:arrangements#{entry_index}:configuration#{ordinal}"),
+                    id: format!("nx:arrangements-{entry_index}:configuration#{ordinal}"),
                     name: name.to_string(),
                     active,
                     source_entry: entry.name.clone(),
@@ -131,7 +131,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
                 .into_iter()
                 .enumerate()
                 .map(move |(type_index, definition)| ClassDefinition {
-                    id: format!("nx:om-section#{section_index}:class#{type_index}"),
+                    id: format!("nx:om-section-{section_index}:class#{type_index}"),
                     name: definition.name.to_string(),
                     class_id: definition.class_id,
                     source_entry: entry.name.clone(),
@@ -154,7 +154,7 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
                 .into_iter()
                 .map(move |expression| Expression {
                     id: format!(
-                        "nx:om-section#{section_index}:expression#{}",
+                        "nx:om-section-{section_index}:expression#{}",
                         expression.object_id
                     ),
                     object_id: expression.object_id,

@@ -559,6 +559,9 @@ impl Graph {
                 shift,
                 bytes: bytes.to_vec(),
             };
+            if !node.has_valid_family_framing() {
+                continue;
+            }
             graph.by_pos.insert(pos, (kind, xmt));
             graph.nodes.entry((kind, xmt)).or_insert(node);
         }
@@ -672,7 +675,6 @@ impl Graph {
         }
 
         let mut face_xmt = fields.first_face;
-        let mut previous = 1;
         let mut visited = BTreeSet::new();
         while face_xmt != 1 {
             if !visited.insert(face_xmt) {
@@ -681,13 +683,30 @@ impl Graph {
             let Some(face) = self.get(14, face_xmt).and_then(Node::face_fields) else {
                 return false;
             };
-            if face.shell != shell.xmt || face.previous_face != previous {
+            if face.shell != shell.xmt {
                 return false;
             }
-            previous = face_xmt;
             face_xmt = face.next_face;
         }
         !visited.is_empty()
+    }
+}
+
+impl Node {
+    fn has_valid_family_framing(&self) -> bool {
+        match self.kind {
+            13 => self.shell_fields().is_some(),
+            14 => self.face_fields().is_some(),
+            15 => self.loop_fields().is_some(),
+            16 => self
+                .edge_fields()
+                .is_some_and(|fields| fields.tolerance.is_finite()),
+            17 => self.fin_fields().is_some(),
+            18 => self
+                .vertex_fields()
+                .is_some_and(|fields| fields.tolerance.is_finite()),
+            _ => true,
+        }
     }
 }
 

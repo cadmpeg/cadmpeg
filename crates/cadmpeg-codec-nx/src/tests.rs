@@ -276,10 +276,23 @@ fn topology_rejects_shell_with_broken_face_ownership_chain() {
         .windows(2)
         .position(|window| window == [0, 14])
         .expect("face record");
-    put_ref(&mut broken, face + 20, 99);
+    put_ref(&mut broken, face + 24, 99);
     assert!(crate::topology::Graph::parse(&broken)
         .body_shape_shells()
         .is_empty());
+
+    let mut independent_previous = topology_partition_stream();
+    let face = independent_previous
+        .windows(2)
+        .position(|window| window == [0, 14])
+        .expect("face record");
+    put_ref(&mut independent_previous, face + 20, 99);
+    assert_eq!(
+        crate::topology::Graph::parse(&independent_previous)
+            .body_shape_shells()
+            .len(),
+        1
+    );
 }
 
 #[test]
@@ -310,6 +323,18 @@ fn topology_rejects_nonreciprocal_fin_ring() {
     assert!(crate::topology::Graph::parse(&broken_partner)
         .face_loop_rings(4)
         .is_none());
+}
+
+#[test]
+fn topology_invalid_candidate_cannot_shadow_later_valid_record() {
+    let mut stream = record(14, 39);
+    put_ref(&mut stream, 2, 4);
+    stream.extend(topology_partition_stream());
+
+    let graph = crate::topology::Graph::parse(&stream);
+    let face = graph.get(14, 4).expect("valid later FACE");
+    assert!(face.pos >= 39);
+    assert!(face.face_fields().is_some());
 }
 
 #[test]

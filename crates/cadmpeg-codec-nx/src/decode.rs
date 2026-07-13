@@ -1095,7 +1095,9 @@ fn emit_topology(
             decoded_vertex.tolerance = decoded_tolerance(fields.tolerance);
         }
         annotate_node(annotations, vertex, source_stream, node, "VERTEX");
-        annotations.derived(vertex, "tolerance");
+        if decoded_tolerance(fields.tolerance).is_some() {
+            annotations.derived(vertex, "tolerance");
+        }
         vertices.insert(node.xmt, vertex.clone());
     }
 
@@ -1126,7 +1128,9 @@ fn emit_topology(
         let curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "EDGE");
-        annotations.derived(&id, "tolerance");
+        if decoded_tolerance(fields.tolerance).is_some() {
+            annotations.derived(&id, "tolerance");
+        }
         ir.model.edges.push(Edge {
             id: id.clone(),
             curve,
@@ -1151,7 +1155,9 @@ fn emit_topology(
         };
         let id = FaceId(format!("{prefix}:face#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "FACE");
-        annotations.derived(&id, "tolerance");
+        if decoded_tolerance(fields.tolerance).is_some() {
+            annotations.derived(&id, "tolerance");
+        }
         ir.model.faces.push(Face {
             id: id.clone(),
             shell: shell.clone(),
@@ -1175,6 +1181,15 @@ fn emit_topology(
 
     let mut loops = BTreeMap::new();
     for &loop_xmt in valid_loop_rings.keys() {
+        let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
+            graph
+                .get(17, *fin_xmt)
+                .and_then(Node::fin_fields)
+                .is_some_and(|fields| edges.contains_key(&fields.edge))
+        });
+        if !ring_resolves {
+            continue;
+        }
         let Some(node) = graph.get(15, loop_xmt) else {
             continue;
         };
