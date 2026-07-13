@@ -260,6 +260,61 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
     }
 
+    let offset_sources = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (curve.id.clone(), curve.geometry.clone()))
+        .collect::<BTreeMap<_, _>>();
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("OFFSET_CURVE_3D") {
+            continue;
+        }
+        let source = record
+            .parameter(1)
+            .and_then(Value::reference)
+            .map(|source| CurveId(format!("step:data:curve#{source}")));
+        let distance = record.parameter(2).and_then(Value::number);
+        let self_intersect = record.parameter(3).and_then(logical_value);
+        let reference_direction = record
+            .parameter(4)
+            .and_then(Value::reference)
+            .and_then(|direction| directions.get(&direction).copied());
+        let Some((source, distance, self_intersect, reference_direction)) = source
+            .zip(distance)
+            .zip(self_intersect)
+            .zip(reference_direction)
+            .map(|(((source, distance), self_intersect), direction)| {
+                (source, distance, self_intersect, direction)
+            })
+        else {
+            warnings.push(format!("OFFSET_CURVE_3D #{id} has invalid parameters"));
+            continue;
+        };
+        let Some(geometry) = offset_sources.get(&source).cloned() else {
+            warnings.push(format!("OFFSET_CURVE_3D #{id} has no decoded basis curve"));
+            continue;
+        };
+        let curve = CurveId(format!("step:data:curve#{id}"));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry,
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId(format!("step:construction:offset_curve#{id}")),
+            curve,
+            definition: ProceduralCurveDefinition::SpatialOffset {
+                source,
+                distance: distance * scale,
+                reference_direction,
+                self_intersect,
+            },
+            cache_fit_tolerance: None,
+        });
+        typed.insert(id);
+    }
+
     let curve_ids = ir
         .model
         .curves
@@ -421,6 +476,50 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
+    let surface_ids = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.clone())
+        .collect::<BTreeSet<_>>();
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("OFFSET_SURFACE") {
+            continue;
+        }
+        let support = record
+            .parameter(1)
+            .and_then(Value::reference)
+            .map(|support| SurfaceId(format!("step:data:surface#{support}")))
+            .filter(|support| surface_ids.contains(support));
+        let distance = record.parameter(2).and_then(Value::number);
+        let self_intersect = record.parameter(3).and_then(logical_value);
+        let Some((support, distance, self_intersect)) = support
+            .zip(distance)
+            .zip(self_intersect)
+            .map(|((support, distance), self_intersect)| (support, distance, self_intersect))
+        else {
+            warnings.push(format!("OFFSET_SURFACE #{id} has invalid parameters"));
+            continue;
+        };
+        let surface = SurfaceId(format!("step:data:surface#{id}"));
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("step:construction:offset_surface#{id}")),
+            surface,
+            definition: ProceduralSurfaceDefinition::ParallelOffset {
+                support,
+                distance: distance * scale,
+                self_intersect,
+            },
+            cache_fit_tolerance: None,
+        });
+        typed.insert(id);
+    }
+
     for (&id, record) in &exchange.records {
         if record.partials.iter().any(|partial| {
             matches!(
@@ -567,6 +666,15 @@ fn trim_parameter(value: &Value) -> Option<f64> {
         Value::Real(value) => Some(*value),
         Value::Typed(_, value) => trim_parameter(value),
         Value::List(values) => values.iter().find_map(trim_parameter),
+        _ => None,
+    }
+}
+
+fn logical_value(value: &Value) -> Option<Option<bool>> {
+    match value {
+        Value::Enumeration(value) if value == "T" => Some(Some(true)),
+        Value::Enumeration(value) if value == "F" => Some(Some(false)),
+        Value::Enumeration(value) if value == "U" => Some(None),
         _ => None,
     }
 }

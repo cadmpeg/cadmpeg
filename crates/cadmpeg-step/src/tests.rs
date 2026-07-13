@@ -226,7 +226,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert_eq!(placed.position.x, 1.0);
     assert_eq!(placed.position.y, 2.0);
     assert_eq!(placed.position.z, 3.0);
-    assert_eq!(result.ir.model.curves.len(), 5);
+    assert_eq!(result.ir.model.curves.len(), 6);
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Line { origin, direction }
@@ -245,7 +245,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 && nurbs.knots == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 && nurbs.weights.as_deref() == Some(&[1.0, 0.5, 1.0][..])
     )));
-    assert_eq!(result.ir.model.surfaces.len(), 8);
+    assert_eq!(result.ir.model.surfaces.len(), 9);
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, normal, .. }
@@ -286,17 +286,36 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
     )));
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.procedural_curves.len(), 1);
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
-        ref source,
-        parameter_range,
-    } = result.ir.model.procedural_curves[0].definition
-    else {
-        panic!("trimmed curve was not retained as a subset construction")
-    };
+    assert_eq!(result.ir.model.procedural_curves.len(), 2);
+    let (source, parameter_range) = result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find_map(|curve| match &curve.definition {
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                source,
+                parameter_range,
+            } => Some((source, *parameter_range)),
+            _ => None,
+        })
+        .expect("trimmed curve was not retained as a subset construction");
     assert_eq!(source.as_str(), "step:data:curve#8");
     assert_eq!(parameter_range, [0.0, std::f64::consts::FRAC_PI_2]);
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
+    assert!(result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| matches!(
+            curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset {
+                distance: 1.0,
+                self_intersect: None,
+                ..
+            }
+        )));
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 3);
     assert!(result
         .ir
         .model
@@ -316,6 +335,19 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             surface.definition,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::AxisRevolution { axis_direction, .. }
                 if axis_direction.z == 1.0
+        )));
+    assert!(result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::ParallelOffset {
+                distance: 0.5,
+                self_intersect: Some(false),
+                ..
+            }
         )));
 }
 

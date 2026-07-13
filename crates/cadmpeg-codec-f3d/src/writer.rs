@@ -5623,6 +5623,7 @@ fn native_procedural_surface(
         }
         ProceduralSurfaceDefinition::LinearSweep { .. }
         | ProceduralSurfaceDefinition::AxisRevolution { .. }
+        | ProceduralSurfaceDefinition::ParallelOffset { .. }
         | ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D procedural surface {} has no lossless native encoding",
@@ -8564,7 +8565,8 @@ fn native_procedural_curve(
             apex_factor,
             axis,
         } => (angle_range, center, major, minor, pitch, apex_factor, axis),
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. } => {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SpatialOffset { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D offset curve {} lacks a defined native offset-law grammar",
                 procedural.id
