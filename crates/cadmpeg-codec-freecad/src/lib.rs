@@ -795,8 +795,15 @@ fn transfer_text_tessellations(
 ) -> Vec<Tessellation> {
     payloads
         .iter()
-        .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
-        .flat_map(|(payload, text)| {
+        .filter_map(|payload| {
+            payload
+                .text
+                .as_ref()
+                .map(|text| &text.triangulations)
+                .or_else(|| payload.binary.as_ref().map(|binary| &binary.triangulations))
+                .map(|triangulations| (payload, triangulations))
+        })
+        .flat_map(|(payload, triangulations)| {
             let object_id = properties
                 .iter()
                 .find(|property| property.id == payload.property)
@@ -804,7 +811,7 @@ fn transfer_text_tessellations(
                     || payload.property.clone(),
                     |property| property.owner.clone(),
                 );
-            text.triangulations
+            triangulations
                 .iter()
                 .enumerate()
                 .map(move |(index, triangulation)| Tessellation {

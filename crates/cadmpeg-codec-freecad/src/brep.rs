@@ -55,8 +55,12 @@ pub struct BinaryFacts {
     pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
     /// Ordered exact surface table.
     pub surfaces: Vec<TextSurface>,
-    /// Byte offset immediately after the `Triangulations` section header.
-    pub triangulations_offset: usize,
+    /// Ordered display triangulation table.
+    pub triangulations: Vec<TextTriangulation>,
+    /// Declared topology-record count.
+    pub tshape_count: usize,
+    /// Byte offset at the first topology record.
+    pub tshapes_offset: usize,
 }
 
 /// Framing facts from a text shape set.
@@ -722,7 +726,57 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
     for _ in 0..surface_count {
         surfaces.push(parse_binary_surface(&mut cursor, 0)?);
     }
-    cursor.expect_section_name("Triangulations")?;
+    let triangulation_count = cursor.section_count("Triangulations")?;
+    let mut triangulations = Vec::with_capacity(triangulation_count);
+    for _ in 0..triangulation_count {
+        let node_count = cursor.count("binary triangulation node count")?;
+        let triangle_count = cursor.count("binary triangulation triangle count")?;
+        let has_uv = cursor.bool("binary triangulation UV flag")?;
+        let has_normals = version >= 4 && cursor.bool("binary triangulation normal flag")?;
+        let deflection = cursor.f64("binary triangulation deflection")?;
+        let nodes = (0..node_count)
+            .map(|_| cursor.point3("binary triangulation node"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let uv_nodes = has_uv
+            .then(|| {
+                (0..node_count)
+                    .map(|_| cursor.point2("binary triangulation UV node"))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        let triangles = (0..triangle_count)
+            .map(|_| {
+                let mut triangle = [0_u32; 3];
+                for node in &mut triangle {
+                    let value = cursor.i32("binary triangulation triangle node")?;
+                    *node = u32::try_from(value).map_err(|_| {
+                        CodecError::Malformed("negative binary triangle node".into())
+                    })?;
+                    if *node == 0 || usize::try_from(*node).is_ok_and(|node| node > node_count) {
+                        return Err(CodecError::Malformed(
+                            "binary triangle node index is out of bounds".into(),
+                        ));
+                    }
+                }
+                Ok(triangle)
+            })
+            .collect::<Result<Vec<_>, CodecError>>()?;
+        let normals = has_normals
+            .then(|| {
+                (0..node_count)
+                    .map(|_| cursor.vector3_f32("binary triangulation normal"))
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()?;
+        triangulations.push(TextTriangulation {
+            deflection,
+            nodes,
+            uv_nodes,
+            triangles,
+            normals,
+        });
+    }
+    let tshape_count = cursor.section_count("TShapes")?;
     Ok(BinaryFacts {
         topology_version: version,
         locations,
@@ -731,7 +785,9 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         polygons3d,
         polygons_on_triangulations,
         surfaces,
-        triangulations_offset: cursor.offset,
+        triangulations,
+        tshape_count,
+        tshapes_offset: cursor.offset,
     })
 }
 
@@ -1233,17 +1289,6 @@ impl<'a> BinaryCursor<'a> {
             .ok_or_else(|| CodecError::Malformed(format!("invalid binary {name} count")))
     }
 
-    fn expect_section_name(&mut self, name: &str) -> Result<(), CodecError> {
-        let line = self.line(name)?;
-        let mut tokens = line.split_ascii_whitespace();
-        if tokens.next() != Some(name) || tokens.next().is_none() || tokens.next().is_some() {
-            return Err(CodecError::Malformed(format!(
-                "binary B-rep expected {name} section"
-            )));
-        }
-        Ok(())
-    }
-
     fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
         Ok(self.take(1, label)?[0])
     }
@@ -1286,6 +1331,18 @@ impl<'a> BinaryCursor<'a> {
             .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
     }
 
+    fn f32(&mut self, label: &str) -> Result<f32, CodecError> {
+        let value = f32::from_le_bytes(self.take(4, label)?.try_into().expect("four-byte slice"));
+        value
+            .is_finite()
+            .then_some(value)
+            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+    }
+
+    fn point2(&mut self, label: &str) -> Result<Point2, CodecError> {
+        Ok(Point2::new(self.f64(label)?, self.f64(label)?))
+    }
+
     fn point3(&mut self, label: &str) -> Result<Point3, CodecError> {
         Ok(Point3::new(
             self.f64(label)?,
@@ -1299,6 +1356,14 @@ impl<'a> BinaryCursor<'a> {
             self.f64(label)?,
             self.f64(label)?,
             self.f64(label)?,
+        ))
+    }
+
+    fn vector3_f32(&mut self, label: &str) -> Result<Vector3, CodecError> {
+        Ok(Vector3::new(
+            f64::from(self.f32(label)?),
+            f64::from(self.f32(label)?),
+            f64::from(self.f32(label)?),
         ))
     }
 
@@ -2877,7 +2942,20 @@ mod tests {
         ] {
             real(&mut bytes, value);
         }
-        bytes.extend_from_slice(b"Triangulations 0\n");
+        bytes.extend_from_slice(b"Triangulations 1\n");
+        bytes.extend_from_slice(&3_i32.to_le_bytes());
+        bytes.extend_from_slice(&1_i32.to_le_bytes());
+        bytes.push(1);
+        real(&mut bytes, 0.03);
+        for value in [
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0,
+        ] {
+            real(&mut bytes, value);
+        }
+        for node in [1_i32, 2, 3] {
+            bytes.extend_from_slice(&node.to_le_bytes());
+        }
+        bytes.extend_from_slice(b"TShapes 0\n");
 
         let facts = parse_binary_prefix(&bytes).expect("binary prefix");
         assert_eq!(facts.topology_version, 3);
@@ -2894,7 +2972,9 @@ mod tests {
         assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
         assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
         assert!(matches!(facts.surfaces[1], TextSurface::Offset { .. }));
-        assert_eq!(&bytes[facts.triangulations_offset..], b"");
+        assert_eq!(facts.triangulations[0].triangles, [[1, 2, 3]]);
+        assert_eq!(facts.tshape_count, 0);
+        assert_eq!(&bytes[facts.tshapes_offset..], b"");
     }
 
     #[test]

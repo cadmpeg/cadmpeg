@@ -50,7 +50,17 @@ fn transfers_binary_exact_curve_and_surface_carriers() {
     ] {
         brep.extend_from_slice(&value.to_le_bytes());
     }
-    brep.extend_from_slice(b"Triangulations 0\n");
+    brep.extend_from_slice(b"Triangulations 1\n");
+    brep.extend_from_slice(&3_i32.to_le_bytes());
+    brep.extend_from_slice(&1_i32.to_le_bytes());
+    brep.push(0);
+    for value in [0.01_f64, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0] {
+        brep.extend_from_slice(&value.to_le_bytes());
+    }
+    for node in [1_i32, 2, 3] {
+        brep.extend_from_slice(&node.to_le_bytes());
+    }
+    brep.extend_from_slice(b"TShapes 0\n");
     let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -65,6 +75,8 @@ fn transfers_binary_exact_curve_and_surface_carriers() {
         result.ir.model.surfaces[0].geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Plane { .. }
     ));
+    assert_eq!(result.ir.model.tessellations.len(), 1);
+    assert_eq!(result.ir.model.tessellations[0].triangles, [[0, 1, 2]]);
     assert!(result.report.geometry_transferred);
 }
 
