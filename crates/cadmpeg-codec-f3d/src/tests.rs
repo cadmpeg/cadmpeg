@@ -5669,6 +5669,30 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less history encode");
+    let mut preambleless = source_less.clone();
+    {
+        let mut native = f3d_native_mut(&mut preambleless);
+        native.asm_histories[0].stream_size = None;
+        native.asm_histories[0].high_water_mark = None;
+    }
+    let mut preambleless_bytes = Vec::new();
+    F3dCodec
+        .encode(&preambleless, &mut preambleless_bytes)
+        .expect("source-less preambleless history encode");
+    let preambleless_round_trip = F3dCodec
+        .decode(
+            &mut Cursor::new(preambleless_bytes),
+            &DecodeOptions::default(),
+        )
+        .expect("source-less preambleless history round trip");
+    assert_eq!(
+        f3d_native(&preambleless_round_trip.ir).asm_histories[0].stream_size,
+        None
+    );
+    assert_eq!(
+        f3d_native(&preambleless_round_trip.ir).asm_histories[0].high_water_mark,
+        None
+    );
     f3d_native_mut(&mut source_less).asm_histories[0].states[0].bulletin_boards[0].changes[0]
         .kind = crate::history_records::AsmEntityChangeKind::Delete;
     let error = F3dCodec
@@ -5701,6 +5725,48 @@ fn generated_source_less_writes_typed_asm_history_graph() {
     assert_eq!(actual.states[0].bulletin_boards[0].changes.len(), 2);
     assert_eq!(actual.states[0].records.len(), 1);
     assert_eq!(actual.states[0].records[0].name, "history_payload");
+}
+
+#[test]
+fn generated_source_less_rejects_lossy_asm_history_graphs() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated history decode");
+    let mut orphaned = decoded.ir.clone();
+    orphaned.source = None;
+    orphaned.set_native_unknowns("f3d", &[]).unwrap();
+    orphaned
+        .native
+        .namespace_mut("f3d")
+        .arenas
+        .get_mut("asm_history_records")
+        .expect("history-record arena")[0]
+        .fields
+        .insert("parent".into(), serde_json::json!("missing-state"));
+    let error = F3dCodec
+        .encode(&orphaned, &mut Vec::new())
+        .expect_err("orphan history records must not be discarded");
+    assert!(error
+        .to_string()
+        .contains("orphaned or ambiguously parented records"));
+
+    let mut duplicate = decoded.ir;
+    duplicate.source = None;
+    duplicate.set_native_unknowns("f3d", &[]).unwrap();
+    let states = duplicate
+        .native
+        .namespace_mut("f3d")
+        .arenas
+        .get_mut("asm_delta_states")
+        .expect("delta-state arena");
+    states.push(states[0].clone());
+    let error = F3dCodec
+        .encode(&duplicate, &mut Vec::new())
+        .expect_err("duplicate history identities must not multiply children");
+    assert!(error
+        .to_string()
+        .contains("asm_delta_states contains duplicate record ids"));
 }
 
 #[test]

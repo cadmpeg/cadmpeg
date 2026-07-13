@@ -54,6 +54,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         ));
     }
     if let Some(native) = &native {
+        validate_source_less_history_graph(target, native)?;
         validate_source_less_design_links(target, native)?;
     }
     let smbh = encode_planar_triangle_smbh(target)?;
@@ -163,6 +164,72 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
         .into_inner();
     writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn validate_source_less_history_graph(
+    target: &CadIr,
+    native: &F3dNative,
+) -> Result<(), CodecError> {
+    let Some(namespace) = target.native.namespace("f3d") else {
+        return Ok(());
+    };
+    let stored_count = |arena: &str| namespace.arenas.get(arena).map_or(0, Vec::len);
+    for arena in [
+        "asm_histories",
+        "asm_delta_states",
+        "asm_bulletin_boards",
+        "asm_entity_changes",
+        "asm_history_records",
+    ] {
+        if let Some(records) = namespace.arenas.get(arena) {
+            let unique = records
+                .iter()
+                .map(|record| record.id.as_str())
+                .collect::<BTreeSet<_>>();
+            if unique.len() != records.len() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D {arena} contains duplicate record ids"
+                )));
+            }
+        }
+    }
+    let states = native
+        .asm_histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .collect::<Vec<_>>();
+    let boards = states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .collect::<Vec<_>>();
+    let changes = boards.iter().flat_map(|board| &board.changes).count();
+    let records = states.iter().flat_map(|state| &state.records).count();
+    let reconstructed = [
+        ("asm_histories", native.asm_histories.len()),
+        ("asm_delta_states", states.len()),
+        ("asm_bulletin_boards", boards.len()),
+        ("asm_entity_changes", changes),
+        ("asm_history_records", records),
+    ];
+    if reconstructed
+        .iter()
+        .any(|(arena, count)| stored_count(arena) != *count)
+    {
+        return Err(CodecError::Malformed(
+            "F3D ASM history graph contains orphaned or ambiguously parented records".into(),
+        ));
+    }
+    for state in states {
+        for record in &state.records {
+            if record.raw_bytes.is_empty() {
+                return Err(CodecError::Malformed(format!(
+                    "F3D ASM history record {} has an empty native payload",
+                    record.id
+                )));
+            }
+        }
+    }
     Ok(())
 }
 
@@ -8265,37 +8332,41 @@ fn native_history_tail(bytes: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecE
         ));
     }
     let history = &histories[0];
-    if let Some(stream_size) = history.stream_size {
-        if history
-            .states
-            .first()
-            .is_none_or(|state| state.state_id != stream_size)
-            || history
-                .high_water_mark
-                .is_none_or(|high_water_mark| high_water_mark < stream_size)
-        {
+    match (history.stream_size, history.high_water_mark) {
+        (Some(stream_size), Some(high_water_mark)) => {
+            if history
+                .states
+                .first()
+                .is_none_or(|state| state.state_id != stream_size)
+                || high_water_mark < stream_size
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                    history.id
+                )));
+            }
+            for name in ["Begin", "of", "ASM", "History"] {
+                native_subident(bytes, name)?;
+            }
+            native_ident(bytes, "Data")?;
+            native_ident(bytes, "history_stream")?;
+            native_i64(bytes, stream_size);
+            native_i64(bytes, stream_size);
+            native_i64(bytes, 0);
+            native_i64(bytes, high_water_mark);
+            for reference in [-1, 0, 1, -1] {
+                native_ref(bytes, reference);
+            }
+            bytes.push(0x11);
+        }
+        (None, None) => {}
+        _ => {
             return Err(CodecError::Malformed(format!(
-                "F3D history {} requires head state_id == stream_size <= high_water_mark",
+                "F3D history {} has an incomplete history-stream preamble",
                 history.id
             )));
         }
     }
-    for name in ["Begin", "of", "ASM", "History"] {
-        native_subident(bytes, name)?;
-    }
-    native_ident(bytes, "Data")?;
-    native_ident(bytes, "history_stream")?;
-    native_i64(
-        bytes,
-        history.states.first().map_or(0, |state| state.state_id),
-    );
-    native_i64(bytes, history.stream_size.unwrap_or(0));
-    native_i64(bytes, 0);
-    native_i64(bytes, history.high_water_mark.unwrap_or(0));
-    for reference in [-1, 0, 1, -1] {
-        native_ref(bytes, reference);
-    }
-    bytes.push(0x11);
     for state in &history.states {
         native_ident(bytes, "delta_state")?;
         native_i64(bytes, state.state_id);
