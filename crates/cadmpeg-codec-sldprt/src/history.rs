@@ -278,23 +278,38 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
         .iter()
         .flat_map(|history| &history.features)
         .flat_map(|feature| {
-            feature
-                .parameters
+            let mut names = feature
+                .content
                 .iter()
-                .enumerate()
-                .map(move |(ordinal, (name, expression))| {
-                    let key = feature
-                        .id
-                        .strip_prefix("sldprt:history:feature#")
-                        .unwrap_or(&feature.id);
-                    DesignParameter {
-                        id: ParameterId(format!("sldprt:model:parameter#{key}:{ordinal}")),
-                        owner: neutral_feature_id(&feature.id),
-                        name: name.clone(),
-                        expression: expression.clone(),
-                        value: parse_parameter_literal(expression),
+                .filter_map(|content| match content {
+                    FeatureContent::Dimension(name) if feature.parameters.contains_key(name) => {
+                        Some(name.clone())
                     }
+                    _ => None,
                 })
+                .collect::<Vec<_>>();
+            let missing = feature
+                .parameters
+                .keys()
+                .filter(|name| !names.contains(name))
+                .cloned()
+                .collect::<Vec<_>>();
+            names.extend(missing);
+            names.into_iter().enumerate().map(move |(ordinal, name)| {
+                let expression = &feature.parameters[&name];
+                let key = feature
+                    .id
+                    .strip_prefix("sldprt:history:feature#")
+                    .unwrap_or(&feature.id);
+                DesignParameter {
+                    id: ParameterId(format!("sldprt:model:parameter#{key}:{ordinal}")),
+                    owner: neutral_feature_id(&feature.id),
+                    ordinal: ordinal as u32,
+                    name,
+                    expression: expression.clone(),
+                    value: parse_parameter_literal(expression),
+                }
+            })
         })
         .collect()
 }

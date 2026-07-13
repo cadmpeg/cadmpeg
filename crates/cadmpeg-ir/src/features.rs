@@ -76,6 +76,9 @@ pub struct DesignParameter {
     pub id: ParameterId,
     /// Feature that consumes this parameter.
     pub owner: FeatureId,
+    /// Position among parameters owned by the feature.
+    #[serde(default)]
+    pub ordinal: u32,
     /// Source parameter name.
     pub name: String,
     /// Literal or expression text used by the source system.

@@ -2644,6 +2644,7 @@ fn encoder_writes_source_less_neutral_parameters() {
     ir.model.parameters.push(DesignParameter {
         id: ParameterId("sldprt:model:parameter#generated:equation:0".into()),
         owner: feature_id,
+        ordinal: 0,
         name: "Pitch".into(),
         expression: "D1@Sketch1 * 2".into(),
         value: None,
@@ -4293,6 +4294,20 @@ fn decode_projects_every_dimension_as_a_neutral_parameter() {
         .unwrap();
     let parameters = &decoded.ir.model.parameters;
     assert_eq!(parameters.len(), 6);
+    assert_eq!(
+        parameters
+            .iter()
+            .map(|parameter| (parameter.ordinal, parameter.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (0, "Angle"),
+            (1, "Count"),
+            (2, "Enabled"),
+            (3, "Expression"),
+            (4, "Length"),
+            (5, "Ratio"),
+        ]
+    );
     let value = |name: &str| {
         parameters
             .iter()
