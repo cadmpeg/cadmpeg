@@ -537,7 +537,7 @@ pub(crate) fn format_native_scalar(feature: &Feature, name: &str, value: f64) ->
     if native_parameter_is_length(feature, name, None) {
         format_length_mm(value * 1000.0)
     } else {
-        value.to_string()
+        format_f64_literal(value)
     }
 }
 
@@ -2770,7 +2770,7 @@ fn format_length_like(value: f64, previous: Option<&str>) -> String {
     } else if previous.starts_with(['\u{2300}', '\u{00d8}']) {
         format!("\u{2300}{value}")
     } else if previous.parse::<f64>().is_ok() {
-        value.to_string()
+        format_f64_literal(value)
     } else {
         format_length_mm(value)
     }
@@ -2795,7 +2795,7 @@ fn format_angle_like(value: f64, previous: Option<&str>) -> String {
 }
 
 pub(crate) fn format_length_mm(value: f64) -> String {
-    format!("{value}mm")
+    format!("{}mm", format_f64_literal(value))
 }
 
 fn parse_angle_rad(value: &str) -> Option<f64> {
@@ -2826,7 +2826,42 @@ fn parse_bounded_angle_rad(value: &str) -> Option<f64> {
 }
 
 fn format_angle_rad(value: f64) -> String {
-    format!("{value}rad")
+    format!("{}rad", format_f64_literal(value))
+}
+
+fn format_f64_literal(value: f64) -> String {
+    let magnitude = value.abs();
+    if magnitude != 0.0 && !(1.0e-6..1.0e15).contains(&magnitude) {
+        format!("{value:e}")
+    } else {
+        value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod literal_tests {
+    use super::format_f64_literal;
+
+    #[test]
+    fn native_scalar_literals_are_compact_and_bit_exact() {
+        for value in [
+            0.0,
+            -0.0,
+            0.125,
+            -42.5,
+            7.745_183_829_698_638e-127,
+            -5.486_124_068_793_69e307,
+        ] {
+            let literal = format_f64_literal(value);
+            let parsed = literal.parse::<f64>().unwrap();
+            assert_eq!(parsed.to_bits(), value.to_bits(), "{literal}");
+        }
+        assert_eq!(format_f64_literal(0.125), "0.125");
+        assert_eq!(
+            format_f64_literal(7.745_183_829_698_638e-127),
+            "7.745183829698638e-127"
+        );
+    }
 }
 
 fn parse_point3_mm(value: &str) -> Option<Point3> {
@@ -3048,7 +3083,7 @@ fn format_parameter_value(value: &ParameterValue) -> String {
     match value {
         ParameterValue::Length(Length(value)) => format_length_mm(*value),
         ParameterValue::Angle(Angle(value)) => format_angle_rad(*value),
-        ParameterValue::Real(value) => value.to_string(),
+        ParameterValue::Real(value) => format_f64_literal(*value),
         ParameterValue::Integer(value) => value.to_string(),
         ParameterValue::Boolean(value) => value.to_string(),
     }
