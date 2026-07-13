@@ -4751,7 +4751,16 @@ fn native_law_expression(
         }
         LawExpression::Edge { curve, parameters } => {
             native_string(bytes, "EDGE")?;
-            native_nurbs_curve(bytes, native_loft_curve(target, curve)?)?;
+            let curve = target
+                .model
+                .curves
+                .iter()
+                .find(|candidate| candidate.id == *curve)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!("law edge curve {curve} is missing"))
+                })?;
+            let curve = native_interval_curve(&curve.geometry, *parameters)?;
+            native_nurbs_curve(bytes, &curve)?;
             for parameter in parameters {
                 native_f64(bytes, *parameter);
             }

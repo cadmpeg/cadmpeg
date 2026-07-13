@@ -10414,10 +10414,24 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
             }
         ]
     ));
+    let LawExpression::Edge { curve, .. } = &construction.formula.variables[2] else {
+        unreachable!()
+    };
+    let law_edge = curve.clone();
 
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == law_edge)
+        .expect("law edge curve")
+        .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point3::new(1.0, -2.0, 3.0),
+        direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0),
+    };
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -10431,6 +10445,21 @@ fn generated_skin_surface_round_trips_structural_law_nodes() {
         panic!("expected round-trip skin surface")
     };
     assert_eq!(construction.formula.variables.len(), 3);
+    let LawExpression::Edge { curve, .. } = &construction.formula.variables[2] else {
+        panic!("expected round-trip edge law")
+    };
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|candidate| candidate.id == *curve)
+            .map(|curve| &curve.geometry),
+        Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+            if curve.degree == 1
+                && curve.knots == [-0.25, -0.25, 1.25, 1.25]
+    ));
 }
 
 #[test]
