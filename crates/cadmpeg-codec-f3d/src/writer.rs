@@ -3774,11 +3774,7 @@ fn native_procedural_surface(
                         procedural.id
                     ))
                 })?;
-            let CurveGeometry::Nurbs(directrix) = &directrix.geometry else {
-                return Err(CodecError::NotImplemented(
-                    "source-less F3D rot_spl_sur requires a NURBS directrix".into(),
-                ));
-            };
+            let directrix = native_interval_curve(&directrix.geometry, *parameter_interval)?;
             let native_parameter_interval = [
                 directrix.knots.first().copied().unwrap_or(0.0),
                 directrix.knots.last().copied().unwrap_or(0.0),
@@ -3798,7 +3794,7 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "rot_spl_sur")?;
-            native_nurbs_curve(bytes, directrix)?;
+            native_nurbs_curve(bytes, &directrix)?;
             native_point(
                 bytes,
                 [
