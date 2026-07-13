@@ -63,6 +63,7 @@ pub(crate) enum NativeClassKind {
     Helix,
     LinearPattern,
     CurvePattern,
+    Combine,
     DeleteBody,
     TreeNode(FeatureTreeNodeRole),
     Sketch,
@@ -91,7 +92,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
     };
 
     let (kind, role, feature, tree_node) = match name {
-        "moExtrusion_c" => (
+        "moExtrusion_c" | "moICE_c" => (
             NativeClassKind::Extrusion,
             Feature,
             Some(FeatureClass::Extrude),
@@ -115,7 +116,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Sketch),
             None,
         ),
-        "moProfileFeature_c" => (
+        "moProfileFeature_c" | "mo3DProfileFeature_c" => (
             NativeClassKind::ProfileFeature,
             Feature,
             Some(FeatureClass::Sketch),
@@ -163,6 +164,12 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Pattern),
             None,
         ),
+        "moCombineBodies_c" => (
+            NativeClassKind::Combine,
+            Feature,
+            Some(FeatureClass::Combine),
+            None,
+        ),
         "moDeleteBody_c" => (
             NativeClassKind::DeleteBody,
             Feature,
@@ -176,6 +183,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moEqnFolder_c" => tree_node_class(FeatureTreeNodeRole::Equations),
         "moFavoriteFolder_c" => tree_node_class(FeatureTreeNodeRole::Favorites),
         "moHistoryFolder_c" => tree_node_class(FeatureTreeNodeRole::History),
+        "moInkMarkupFolder_c" => tree_node_class(FeatureTreeNodeRole::Markups),
         "moMaterialFolder_c" => tree_node_class(FeatureTreeNodeRole::Materials),
         "moNotesAreaFtrFolder_c" => tree_node_class(FeatureTreeNodeRole::Notes),
         "moSelectionSetFolder_c" => tree_node_class(FeatureTreeNodeRole::SelectionSets),
@@ -222,11 +230,19 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moCompFace_c"
         | "moCompFeature_c"
         | "moCompRefPlane_c"
+        | "moCompReferenceCurve_c"
         | "moCompSketchEntHandle_c"
         | "moCompSolidBody_c"
+        | "moCompSurfaceBody_c"
         | "moCompVertex_c"
+        | "moConstSurfRef_w"
         | "moEdgeRef_c"
+        | "moEndPointRef_w"
         | "moFaceRef_c"
+        | "moGeneralCurveRef_w"
+        | "moLineRef_w"
+        | "moSingleFaceRef_w"
+        | "moSolidRef_w"
         | "moVertexRef_c" => (NativeClassKind::Reference, Reference, None, None),
         "moBBoxCenterData_c"
         | "moDefaultRefPlnData_c"
@@ -454,6 +470,25 @@ mod tests {
         assert_eq!(folder.feature, None);
         assert_eq!(folder.tree_node, Some(FeatureTreeNodeRole::SolidBodies));
 
+        let markup = native_object_class("moInkMarkupFolder_c");
+        assert_eq!(markup.role, FeatureInputClassRole::Auxiliary);
+        assert_eq!(markup.tree_node, Some(FeatureTreeNodeRole::Markups));
+
+        for name in [
+            "moCompReferenceCurve_c",
+            "moCompSurfaceBody_c",
+            "moConstSurfRef_w",
+            "moEndPointRef_w",
+            "moGeneralCurveRef_w",
+            "moLineRef_w",
+            "moSingleFaceRef_w",
+            "moSolidRef_w",
+        ] {
+            let reference = native_object_class(name);
+            assert_eq!(reference.kind, NativeClassKind::Reference, "{name}");
+            assert_eq!(reference.role, FeatureInputClassRole::Reference, "{name}");
+        }
+
         let relation = native_object_class("sgPntPntDist");
         assert_eq!(
             relation.kind,
@@ -507,10 +542,12 @@ mod tests {
     fn every_known_feature_class_has_feature_input_role() {
         for name in [
             "moExtrusion_c",
+            "moICE_c",
             "Fillet_c",
             "Chamfer_c",
             "moOriginProfileFeature_c",
             "moProfileFeature_c",
+            "mo3DProfileFeature_c",
             "moRefPlane_c",
             "moThicken_c",
             "moSweep_c",
@@ -518,6 +555,7 @@ mod tests {
             "moHelix_c",
             "moLPattern_c",
             "moCurvePattern_c",
+            "moCombineBodies_c",
             "moDeleteBody_c",
         ] {
             let class = native_object_class(name);
