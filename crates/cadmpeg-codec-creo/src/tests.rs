@@ -550,6 +550,32 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
 }
 
 #[test]
+fn decode_types_schema_datum_from_its_unique_plane_carrier() {
+    let mut geometry = visibgeom_payload(1, 0);
+    push_generated_plane_row(
+        &mut geometry,
+        7,
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+    );
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x9b, 0xe1,
+    ];
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert_eq!(result.ir.model.features.len(), 1);
+    assert!(matches!(
+        &result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumPlane { origin, normal, u_axis }
+            if *origin == cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0)
+                && *normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && *u_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+    ));
+}
+
+#[test]
 fn scan_resolves_allfeatur_walker_order_entity_references() {
     let allfeatur = b"\xe0\x22first\0\xf7\x01\xe3\xe0\x24second\0\xf7\x00\xe3".to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("AllFeatur", allfeatur)]));

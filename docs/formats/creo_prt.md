@@ -365,6 +365,8 @@ The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The com
 
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
+A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
+
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
 `strong_parents` is the ordered set of earlier modeling features consumed to

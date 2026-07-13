@@ -1214,6 +1214,47 @@ fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Ve
         })
 }
 
+fn schema_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    schema_class: u32,
+    kind: &str,
+) -> IrFeatureDefinition {
+    if schema_class == 923 {
+        let planes = scan
+            .surface_rows
+            .iter()
+            .filter(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+            })
+            .filter_map(|row| {
+                let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+                ir.model.surfaces.iter().find(|surface| surface.id == id)
+            })
+            .collect::<Vec<_>>();
+        if let [plane] = planes.as_slice() {
+            if let SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            } = &plane.geometry
+            {
+                return IrFeatureDefinition::DatumPlane {
+                    origin: *origin,
+                    normal: *normal,
+                    u_axis: *u_axis,
+                };
+            }
+        }
+    }
+    IrFeatureDefinition::Native {
+        kind: kind.to_string(),
+        parameters: feature_parameters(scan, feature_id),
+        properties: BTreeMap::new(),
+    }
+}
+
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
@@ -2367,11 +2408,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_text: None,
             source_content: Vec::new(),
             outputs: feature_output_bodies(scan, &ir, row.feature_id),
-            definition: IrFeatureDefinition::Native {
-                kind: kind.to_string(),
-                parameters: feature_parameters(scan, row.feature_id),
-                properties: BTreeMap::new(),
-            },
+            definition: schema_feature_definition(scan, &ir, row.feature_id, schema_class, kind),
             native_ref: None,
         });
     }
