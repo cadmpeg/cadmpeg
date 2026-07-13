@@ -1,0 +1,200 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Global delimiters, count-driven Hollerith values, units, and metadata.
+
+use crate::card::{CardScan, Section};
+use cadmpeg_ir::codec::CodecError;
+
+#[derive(Debug, Clone, PartialEq)]
+enum Value {
+    Omitted,
+    String(Vec<u8>),
+    Atom(Vec<u8>),
+}
+
+impl Value {
+    fn string(&self) -> Option<String> {
+        match self {
+            Self::String(bytes) => String::from_utf8(bytes.clone()).ok(),
+            Self::Omitted | Self::Atom(_) => None,
+        }
+    }
+
+    fn integer(&self) -> Option<i64> {
+        let Self::Atom(bytes) = self else {
+            return None;
+        };
+        std::str::from_utf8(bytes).ok()?.trim().parse::<i64>().ok()
+    }
+}
+
+/// Parsed Global metadata required by inspection and projection.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Global {
+    pub(crate) parameter_delimiter: u8,
+    pub(crate) record_delimiter: u8,
+    values: Vec<Value>,
+}
+
+fn malformed(message: impl Into<String>) -> CodecError {
+    CodecError::Malformed(format!("IGES Global: {}", message.into()))
+}
+
+fn hollerith(bytes: &[u8], start: usize) -> Result<Option<(Vec<u8>, usize)>, CodecError> {
+    let mut cursor = start;
+    while bytes.get(cursor).is_some_and(u8::is_ascii_digit) {
+        cursor += 1;
+    }
+    if cursor == start || !matches!(bytes.get(cursor), Some(b'H' | b'h')) {
+        return Ok(None);
+    }
+    let count = std::str::from_utf8(&bytes[start..cursor])
+        .map_err(|_| malformed("Hollerith count is not ASCII"))?
+        .parse::<usize>()
+        .map_err(|_| malformed("Hollerith count is out of range"))?;
+    let payload_start = cursor
+        .checked_add(1)
+        .ok_or_else(|| malformed("Hollerith payload offset overflow"))?;
+    let payload_end = payload_start
+        .checked_add(count)
+        .ok_or_else(|| malformed("Hollerith payload length overflow"))?;
+    let payload = bytes
+        .get(payload_start..payload_end)
+        .ok_or_else(|| malformed("Hollerith payload is truncated"))?;
+    Ok(Some((payload.to_vec(), payload_end)))
+}
+
+fn first_delimiter(bytes: &[u8]) -> Result<(u8, usize), CodecError> {
+    if bytes.first() == Some(&b',') {
+        return Ok((b',', 1));
+    }
+    let Some((payload, cursor)) = hollerith(bytes, 0)? else {
+        return Err(malformed("parameter delimiter is not a Hollerith string"));
+    };
+    if payload.len() != 1 {
+        return Err(malformed("parameter delimiter must contain one byte"));
+    }
+    let delimiter = payload[0];
+    if bytes.get(cursor) != Some(&delimiter) {
+        return Err(malformed(
+            "parameter delimiter does not terminate its Global field",
+        ));
+    }
+    Ok((delimiter, cursor + 1))
+}
+
+fn delimited_value(
+    bytes: &[u8],
+    start: usize,
+    parameter_delimiter: u8,
+    record_delimiter: Option<u8>,
+) -> Result<(Value, usize, bool), CodecError> {
+    if bytes.get(start) == Some(&parameter_delimiter) {
+        return Ok((Value::Omitted, start + 1, false));
+    }
+    if record_delimiter.is_some_and(|delimiter| bytes.get(start) == Some(&delimiter)) {
+        return Ok((Value::Omitted, start + 1, true));
+    }
+    let (value, end) = if let Some((payload, end)) = hollerith(bytes, start)? {
+        (Value::String(payload), end)
+    } else {
+        let end = bytes[start..]
+            .iter()
+            .position(|byte| *byte == parameter_delimiter || record_delimiter == Some(*byte))
+            .and_then(|relative| start.checked_add(relative))
+            .ok_or_else(|| malformed("record delimiter is missing"))?;
+        (Value::Atom(bytes[start..end].to_vec()), end)
+    };
+    match bytes.get(end).copied() {
+        Some(separator) if separator == parameter_delimiter => Ok((value, end + 1, false)),
+        Some(separator) if record_delimiter == Some(separator) => Ok((value, end + 1, true)),
+        _ => Err(malformed("value is not followed by a delimiter")),
+    }
+}
+
+pub(crate) fn parse(scan: &CardScan) -> Result<Global, CodecError> {
+    let bytes = scan
+        .lines
+        .iter()
+        .filter(|line| line.section == Some(Section::Global))
+        .flat_map(|line| line.payload.iter().take(72).copied())
+        .collect::<Vec<_>>();
+    if bytes.is_empty() {
+        return Err(malformed("section is missing"));
+    }
+    let (parameter_delimiter, mut cursor) = first_delimiter(&bytes)?;
+    let (record_value, next, ended) = delimited_value(&bytes, cursor, parameter_delimiter, None)?;
+    if ended {
+        return Err(malformed("record ends before the record delimiter field"));
+    }
+    cursor = next;
+    let record_delimiter = match record_value {
+        Value::Omitted => b';',
+        Value::String(value) if value.len() == 1 => value[0],
+        Value::String(_) | Value::Atom(_) => {
+            return Err(malformed("record delimiter must contain one byte"));
+        }
+    };
+
+    let mut values = vec![
+        Value::String(vec![parameter_delimiter]),
+        Value::String(vec![record_delimiter]),
+    ];
+    loop {
+        let (value, next, ended) =
+            delimited_value(&bytes, cursor, parameter_delimiter, Some(record_delimiter))?;
+        values.push(value);
+        cursor = next;
+        if ended {
+            break;
+        }
+    }
+    Ok(Global {
+        parameter_delimiter,
+        record_delimiter,
+        values,
+    })
+}
+
+fn version_name(flag: i64) -> Option<&'static str> {
+    match flag {
+        1 => Some("1.0"),
+        2 => Some("ANSI-Y14.26M-1981"),
+        3 => Some("2.0"),
+        4 => Some("3.0"),
+        5 => Some("ASME-ANSI-Y14.26M-1987"),
+        6 => Some("4.0"),
+        7 => Some("ASME-Y14.26M-1989"),
+        8 => Some("5.0"),
+        9 => Some("5.1"),
+        10 => Some("5.2"),
+        11 => Some("5.3"),
+        _ => None,
+    }
+}
+
+impl Global {
+    pub(crate) fn summary_notes(&self) -> Vec<String> {
+        let mut notes = vec![
+            format!(
+                "parameter_delimiter={}",
+                char::from(self.parameter_delimiter)
+            ),
+            format!("record_delimiter={}", char::from(self.record_delimiter)),
+        ];
+        if let Some(product) = self.values.get(2).and_then(Value::string) {
+            notes.push(format!("sender_product={product}"));
+        }
+        if let Some(units) = self.values.get(14).and_then(Value::string) {
+            notes.push(format!("units={units}"));
+        }
+        if let Some(version) = self
+            .values
+            .get(22)
+            .and_then(Value::integer)
+            .and_then(version_name)
+        {
+            notes.push(format!("iges_version={version}"));
+        }
+        notes
+    }
+}
