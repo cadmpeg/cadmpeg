@@ -5,11 +5,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::{
@@ -17,7 +18,20 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use crate::b5::{B5Graph, B5Loop, B5Surface};
+use crate::b5::{B5Graph, B5Loop, B5Profile, B5Surface};
+
+struct RevolutionPlan {
+    directrix: NurbsCurve,
+    axis_origin: Point3,
+    axis_direction: Vector3,
+    angular_interval: [f64; 2],
+    parameter_interval: [f64; 2],
+}
+
+struct SurfacePlan {
+    geometry: SurfaceGeometry,
+    revolution: Option<RevolutionPlan>,
+}
 
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
@@ -91,7 +105,10 @@ pub(crate) fn transfer(
         let Some(surface) = graph.surfaces.get(&surface_id) else {
             return false;
         };
-        surface_plan.insert(surface_id, neutral_surface(surface, payload));
+        surface_plan.insert(
+            surface_id,
+            neutral_surface(surface, graph, surface_id, payload),
+        );
     }
 
     let mut pcurve_plan = BTreeMap::new();
@@ -186,25 +203,69 @@ pub(crate) fn transfer(
     }
 
     let mut surface_ids = HashMap::new();
-    for (object_id, geometry) in surface_plan {
+    for (object_id, plan) in surface_plan {
         let id = SurfaceId(format!("catia:b5:surface#{object_id}"));
+        let revolution_cache = plan.revolution.is_some();
         annotate(
             annotations,
             &id,
             "object_stream_b5_03",
             "face_surface",
-            if matches!(geometry, SurfaceGeometry::Unknown { .. }) {
+            if matches!(plan.geometry, SurfaceGeometry::Unknown { .. }) {
                 Exactness::Unknown
+            } else if revolution_cache {
+                Exactness::Derived
             } else {
                 Exactness::ByteExact
             },
         );
+        if revolution_cache {
+            annotations.derived(&id, "geometry");
+        }
         surface_ids.insert(object_id, id.clone());
         ir.model.surfaces.push(Surface {
-            id,
-            geometry,
+            id: id.clone(),
+            geometry: plan.geometry,
             source_object: None,
         });
+        if let Some(revolution) = plan.revolution {
+            let directrix_id = CurveId(format!("catia:b5:profile#{object_id}"));
+            annotate(
+                annotations,
+                &directrix_id,
+                "object_stream_b5_03",
+                "2d_profile_curve",
+                Exactness::Derived,
+            );
+            annotations.derived(&directrix_id, "geometry");
+            ir.model.curves.push(Curve {
+                id: directrix_id.clone(),
+                geometry: CurveGeometry::Nurbs(revolution.directrix),
+                source_object: None,
+            });
+            let procedural_id =
+                ProceduralSurfaceId(format!("catia:b5:procedural-surface#{object_id}"));
+            annotate(
+                annotations,
+                &procedural_id,
+                "object_stream_b5_03",
+                "2d_surface_of_revolution",
+                Exactness::Derived,
+            );
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: procedural_id,
+                surface: id,
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: directrix_id,
+                    axis_origin: revolution.axis_origin,
+                    axis_direction: revolution.axis_direction,
+                    angular_interval: revolution.angular_interval,
+                    parameter_interval: revolution.parameter_interval,
+                    transposed: false,
+                },
+                cache_fit_tolerance: None,
+            });
+        }
     }
 
     let mut pcurve_ids = HashMap::new();
@@ -444,8 +505,14 @@ fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
     }
 }
 
-fn neutral_surface(surface: &B5Surface, payload: &UnknownId) -> SurfaceGeometry {
-    match surface {
+fn neutral_surface(
+    surface: &B5Surface,
+    graph: &B5Graph,
+    surface_id: u32,
+    payload: &UnknownId,
+) -> SurfacePlan {
+    let mut revolution = None;
+    let geometry = match surface {
         B5Surface::Plane {
             origin,
             direction_u,
@@ -467,10 +534,307 @@ fn neutral_surface(surface: &B5Surface, payload: &UnknownId) -> SurfaceGeometry 
             radius: *radius,
         },
         B5Surface::Nurbs(surface) => SurfaceGeometry::Nurbs(surface.clone()),
-        B5Surface::Revolution { .. } => SurfaceGeometry::Unknown {
-            record: Some(payload.clone()),
-        },
+        B5Surface::Revolution {
+            profile_curve,
+            axis_origin,
+            axis_direction,
+            gauge_radius,
+        } => revolution_surface(
+            graph.profiles.get(profile_curve),
+            *axis_origin,
+            *axis_direction,
+            *gauge_radius,
+            surface_parameter_bounds(graph, surface_id),
+        )
+        .map_or_else(
+            || SurfaceGeometry::Unknown {
+                record: Some(payload.clone()),
+            },
+            |(surface, plan)| {
+                revolution = Some(plan);
+                SurfaceGeometry::Nurbs(surface)
+            },
+        ),
+    };
+    SurfacePlan {
+        geometry,
+        revolution,
     }
+}
+
+fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2]; 2]> {
+    let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
+    for point in graph
+        .pcurves
+        .values()
+        .filter(|pcurve| pcurve.surface == surface_id)
+        .flat_map(|pcurve| &pcurve.control_points)
+    {
+        for dimension in 0..2 {
+            bounds[dimension][0] = bounds[dimension][0].min(point[dimension]);
+            bounds[dimension][1] = bounds[dimension][1].max(point[dimension]);
+        }
+    }
+    bounds
+        .iter()
+        .all(|range| range[0].is_finite() && range[0] < range[1])
+        .then_some(bounds)
+}
+
+fn revolution_surface(
+    profile: Option<&B5Profile>,
+    axis_origin: [f64; 3],
+    axis_direction: [f64; 3],
+    gauge_radius: f64,
+    bounds: Option<[[f64; 2]; 2]>,
+) -> Option<(NurbsSurface, RevolutionPlan)> {
+    let profile = profile?;
+    let [parameter_interval, native_angular_interval] = bounds?;
+    let directrix = profile_nurbs(profile, parameter_interval)?;
+    let sign = gauge_radius.signum();
+    if sign == 0.0 {
+        return None;
+    }
+    let effective_axis = scale(axis_direction, sign);
+    let angular_interval = [
+        native_angular_interval[0] / gauge_radius.abs(),
+        native_angular_interval[1] / gauge_radius.abs(),
+    ];
+    let surface = revolve_nurbs(
+        &directrix,
+        axis_origin,
+        effective_axis,
+        angular_interval,
+        native_angular_interval,
+    )?;
+    Some((
+        surface,
+        RevolutionPlan {
+            directrix,
+            axis_origin: point(axis_origin),
+            axis_direction: vector(effective_axis),
+            angular_interval,
+            parameter_interval,
+        },
+    ))
+}
+
+fn profile_nurbs(profile: &B5Profile, interval: [f64; 2]) -> Option<NurbsCurve> {
+    match profile {
+        B5Profile::Line { point, direction } => Some(NurbsCurve {
+            degree: 1,
+            knots: vec![interval[0], interval[0], interval[1], interval[1]],
+            control_points: interval
+                .map(|parameter| point3(add(*point, scale(*direction, parameter))))
+                .to_vec(),
+            weights: None,
+            periodic: false,
+        }),
+        B5Profile::Arc {
+            center,
+            direction_x,
+            direction_y,
+            radius,
+        } => rational_arc(*center, *direction_x, *direction_y, *radius, interval),
+    }
+}
+
+fn rational_arc(
+    center: [f64; 3],
+    direction_x: [f64; 3],
+    direction_y: [f64; 3],
+    radius: f64,
+    interval: [f64; 2],
+) -> Option<NurbsCurve> {
+    let angles = [interval[0] / radius, interval[1] / radius];
+    let span_count = ((angles[1] - angles[0]).abs() / std::f64::consts::FRAC_PI_2)
+        .ceil()
+        .max(1.0) as usize;
+    let mut control_points = Vec::with_capacity(span_count * 2 + 1);
+    let mut weights = Vec::with_capacity(control_points.capacity());
+    let mut knots = Vec::with_capacity(control_points.capacity() + 3);
+    for span in 0..span_count {
+        let fraction0 = span as f64 / span_count as f64;
+        let fraction1 = (span + 1) as f64 / span_count as f64;
+        let angle0 = angles[0] + (angles[1] - angles[0]) * fraction0;
+        let angle1 = angles[0] + (angles[1] - angles[0]) * fraction1;
+        let middle = (angle0 + angle1) * 0.5;
+        let middle_weight = ((angle1 - angle0) * 0.5).cos();
+        if middle_weight <= f64::EPSILON {
+            return None;
+        }
+        if span == 0 {
+            control_points.push(point3(circle_point(
+                center,
+                direction_x,
+                direction_y,
+                radius,
+                angle0,
+            )));
+            weights.push(1.0);
+        }
+        control_points.push(point3(circle_point(
+            center,
+            direction_x,
+            direction_y,
+            radius / middle_weight,
+            middle,
+        )));
+        weights.push(middle_weight);
+        control_points.push(point3(circle_point(
+            center,
+            direction_x,
+            direction_y,
+            radius,
+            angle1,
+        )));
+        weights.push(1.0);
+        append_quadratic_span_knots(&mut knots, interval, span, span_count);
+    }
+    Some(NurbsCurve {
+        degree: 2,
+        knots,
+        control_points,
+        weights: Some(weights),
+        periodic: false,
+    })
+}
+
+fn revolve_nurbs(
+    profile: &NurbsCurve,
+    axis_origin: [f64; 3],
+    axis_direction: [f64; 3],
+    angular_interval: [f64; 2],
+    native_interval: [f64; 2],
+) -> Option<NurbsSurface> {
+    let span_count = ((angular_interval[1] - angular_interval[0]).abs()
+        / std::f64::consts::FRAC_PI_2)
+        .ceil()
+        .max(1.0) as usize;
+    let angular_count = span_count.checked_mul(2)?.checked_add(1)?;
+    let mut angles = Vec::with_capacity(angular_count);
+    let mut angular_weights = Vec::with_capacity(angular_count);
+    let mut v_knots = Vec::with_capacity(angular_count + 3);
+    for span in 0..span_count {
+        let fraction0 = span as f64 / span_count as f64;
+        let fraction1 = (span + 1) as f64 / span_count as f64;
+        let angle0 = angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction0;
+        let angle1 = angular_interval[0] + (angular_interval[1] - angular_interval[0]) * fraction1;
+        let middle = (angle0 + angle1) * 0.5;
+        let middle_weight = ((angle1 - angle0) * 0.5).cos();
+        if middle_weight <= f64::EPSILON {
+            return None;
+        }
+        if span == 0 {
+            angles.push((angle0, 1.0));
+            angular_weights.push(1.0);
+        }
+        angles.push((middle, 1.0 / middle_weight));
+        angular_weights.push(middle_weight);
+        angles.push((angle1, 1.0));
+        angular_weights.push(1.0);
+        append_quadratic_span_knots(&mut v_knots, native_interval, span, span_count);
+    }
+    let profile_weights = profile
+        .weights
+        .clone()
+        .unwrap_or_else(|| vec![1.0; profile.control_points.len()]);
+    let mut control_points = Vec::with_capacity(profile.control_points.len() * angular_count);
+    let mut weights = Vec::with_capacity(control_points.capacity());
+    for (profile_point, profile_weight) in profile.control_points.iter().zip(profile_weights) {
+        let relative = [
+            profile_point.x - axis_origin[0],
+            profile_point.y - axis_origin[1],
+            profile_point.z - axis_origin[2],
+        ];
+        let axial = scale(axis_direction, dot(relative, axis_direction));
+        let radial = subtract(relative, axial);
+        for ((angle, radial_scale), angular_weight) in
+            angles.iter().copied().zip(angular_weights.iter().copied())
+        {
+            let rotated = rotate_vector(radial, axis_direction, angle);
+            control_points.push(point3(add(
+                axis_origin,
+                add(axial, scale(rotated, radial_scale)),
+            )));
+            weights.push(profile_weight * angular_weight);
+        }
+    }
+    Some(NurbsSurface {
+        u_degree: profile.degree,
+        v_degree: 2,
+        u_knots: profile.knots.clone(),
+        v_knots,
+        u_count: u32::try_from(profile.control_points.len()).ok()?,
+        v_count: u32::try_from(angular_count).ok()?,
+        control_points,
+        weights: Some(weights),
+        u_periodic: false,
+        v_periodic: false,
+    })
+}
+
+fn append_quadratic_span_knots(
+    knots: &mut Vec<f64>,
+    interval: [f64; 2],
+    span: usize,
+    span_count: usize,
+) {
+    let start = interval[0] + (interval[1] - interval[0]) * span as f64 / span_count as f64;
+    let end = interval[0] + (interval[1] - interval[0]) * (span + 1) as f64 / span_count as f64;
+    if span == 0 {
+        knots.extend([start, start, start]);
+    } else {
+        knots.extend([start, start]);
+    }
+    if span + 1 == span_count {
+        knots.extend([end, end, end]);
+    }
+}
+
+fn circle_point(
+    center: [f64; 3],
+    direction_x: [f64; 3],
+    direction_y: [f64; 3],
+    radius: f64,
+    angle: f64,
+) -> [f64; 3] {
+    add(
+        center,
+        scale(
+            add(
+                scale(direction_x, angle.cos()),
+                scale(direction_y, angle.sin()),
+            ),
+            radius,
+        ),
+    )
+}
+
+fn rotate_vector(value: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
+    add(
+        add(
+            scale(value, angle.cos()),
+            scale(cross(axis, value), angle.sin()),
+        ),
+        scale(axis, dot(axis, value) * (1.0 - angle.cos())),
+    )
+}
+
+fn add(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
+    [left[0] + right[0], left[1] + right[1], left[2] + right[2]]
+}
+
+fn subtract(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
+    [left[0] - right[0], left[1] - right[1], left[2] - right[2]]
+}
+
+fn scale(value: [f64; 3], scalar: f64) -> [f64; 3] {
+    [value[0] * scalar, value[1] * scalar, value[2] * scalar]
+}
+
+fn point3(value: [f64; 3]) -> Point3 {
+    Point3::new(value[0], value[1], value[2])
 }
 
 fn orthonormal_plane(
@@ -599,8 +963,10 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 
 #[cfg(test)]
 mod tests {
-    use super::neutral_pcurve_point;
-    use crate::b5::B5Surface;
+    use super::{neutral_pcurve_point, revolution_surface};
+    use crate::b5::{B5Profile, B5Surface};
+    use cadmpeg_ir::eval::surface_point;
+    use cadmpeg_ir::geometry::SurfaceGeometry;
 
     #[test]
     fn cylinder_pcurve_arc_length_normalizes_to_neutral_angle() {
@@ -613,5 +979,32 @@ mod tests {
         let point = neutral_pcurve_point([std::f64::consts::PI, 3.0], &surface);
         assert_eq!(point.u, std::f64::consts::FRAC_PI_2);
         assert_eq!(point.v, 3.0);
+    }
+
+    #[test]
+    fn revolution_cache_preserves_native_profile_and_arc_length_chart() {
+        let profile = B5Profile::Line {
+            point: [2.0, 0.0, 0.0],
+            direction: [0.0, 0.0, 1.0],
+        };
+        let (surface, plan) = revolution_surface(
+            Some(&profile),
+            [0.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            1.0,
+            Some([[-1.0, 1.0], [0.0, std::f64::consts::PI]]),
+        )
+        .expect("exact revolution cache");
+        assert_eq!(plan.parameter_interval, [-1.0, 1.0]);
+        assert_eq!(plan.angular_interval, [0.0, std::f64::consts::PI]);
+        let evaluated = surface_point(
+            &SurfaceGeometry::Nurbs(surface),
+            0.5,
+            std::f64::consts::FRAC_PI_2,
+        )
+        .expect("surface point");
+        assert!(evaluated.x.abs() < 1e-12);
+        assert!((evaluated.y - 2.0).abs() < 1e-12);
+        assert!((evaluated.z - 0.5).abs() < 1e-12);
     }
 }

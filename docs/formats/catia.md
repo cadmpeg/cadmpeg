@@ -331,6 +331,8 @@ typed records with the same object id are one object.
 - `b5 03 5f` (face node): dominant payload `<0x80 + n_refs> surface_ref loop_ref... <05-tail>`; the first reference is the carrier and the remaining references are owned loops.
 - `b5 03 27/28/2d` analytic surfaces: plane origin+normal, cylinder origin+axis+radius, revolution axis origin+direction.
 
+For `b5 03 2d`, surface U is the referenced `0e` line or `0f` arc profile parameter and surface V is stored revolution arc length. The revolution angle is `V/gauge_radius`. Reversing a negative gauge together with the axis leaves the surface invariant and gives an increasing angular interval. An exact rational NURBS representation uses degree-2 angular spans of at most π/2 with middle weight `cos(Δθ/2)`; its U knots are the profile knots and its V knots remain in the stored arc-length coordinate.
+
 **Object-stream topology:** `b5 03 5f` nodes are faces in native ordinal order. Distinct `b5 03 5e` identifiers referenced by loop nodes are physical edges. Each `b5 03 62` node defines one loop and stores its ordered edge occurrences. A paired pcurve lifted through its carrier defines the edge curve, and its endpoints coincide with `05 08 01` vertex loci. The fixed serialized loop sequence has exactly one head-to-tail endpoint-sense assignment when it represents a closed boundary. Pcurve degree and carrier identify lines, circles, and B-splines. An object-stream file contains one body. The 3D edge geometry uses f32 endpoint coordinates, and native pcurves have degree 1 or 2.
 
 Coincident `05 08 01` rows share an endpoint locus. For topology subsets whose
