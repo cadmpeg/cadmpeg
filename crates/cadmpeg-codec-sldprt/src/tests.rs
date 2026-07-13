@@ -1438,6 +1438,17 @@ fn encoder_writes_source_less_line_sketches() {
             },
         });
     }
+    ir.model.sketch_entities.push(SketchEntity {
+        id: SketchEntityId("synthetic:test:sketch-entity#point".into()),
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Point {
+            position: Point2::new(4.0, 5.0),
+        },
+    });
     ir.model.sketches.push(Sketch {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
@@ -1541,20 +1552,35 @@ fn encoder_writes_source_less_line_sketches() {
             .as_deref()
             .is_some_and(|section| section == "Contents/Config-0-ResolvedFeatures")
     }));
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
     assert_eq!(decoded.ir.model.sketches[0].profiles.len(), 2);
     assert_eq!(decoded.ir.model.sketches[0].profiles[0].len(), 2);
     assert_eq!(decoded.ir.model.sketches[0].profiles[1].len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 3);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 4);
+    assert!(
+        decoded
+            .ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            .count()
+            == 3
+    );
     assert!(decoded
         .ir
         .model
         .sketch_entities
         .iter()
-        .all(|entity| matches!(entity.geometry, SketchGeometry::Line { .. })));
+        .any(|entity| matches!(
+            entity.geometry,
+            SketchGeometry::Point { position }
+                if (position.u - 4.0).abs() < 1.0e-12
+                    && (position.v - 5.0).abs() < 1.0e-12
+        )));
     assert!(decoded.ir.model.features.iter().any(|feature| matches!(
         feature.definition,
         FeatureDefinition::Sketch { sketch: Some(_) }
@@ -1594,6 +1620,36 @@ fn encoder_writes_source_less_line_sketches() {
         .features
         .iter()
         .any(|feature| matches!(feature.definition, FeatureDefinition::Rib { .. })));
+    let point = decoded
+        .ir
+        .model
+        .sketch_entities
+        .iter_mut()
+        .find_map(|entity| match &mut entity.geometry {
+            SketchGeometry::Point { position } => Some(position),
+            _ => None,
+        })
+        .unwrap();
+    point.u = 7.0;
+    point.v = 8.0;
+    let mut rewritten = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut rewritten)
+        .unwrap();
+    let rewritten = SldprtCodec
+        .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
+        .unwrap();
+    assert!(rewritten
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .any(|entity| matches!(
+            entity.geometry,
+            SketchGeometry::Point { position }
+                if (position.u - 7.0).abs() < 1.0e-12
+                    && (position.v - 8.0).abs() < 1.0e-12
+        )));
 }
 
 #[test]

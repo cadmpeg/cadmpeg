@@ -202,6 +202,7 @@ fn project_brep(
         ));
         let v_axis = cross(*normal, *u_axis);
         let mut edge_entities = HashMap::<&cadmpeg_ir::ids::EdgeId, SketchEntityId>::new();
+        let mut used_vertices = HashSet::new();
         let mut profiles = Vec::new();
         for loop_id in &face.loops {
             let Some(loop_) = loops.get(loop_id) else {
@@ -215,6 +216,8 @@ fn project_brep(
                 let Some(edge) = edges.get(&coedge.edge) else {
                     continue;
                 };
+                used_vertices.insert(edge.start.clone());
+                used_vertices.insert(edge.end.clone());
                 let entity_id = if let Some(id) = edge_entities.get(&edge.id) {
                     id.clone()
                 } else {
@@ -259,16 +262,53 @@ fn project_brep(
                     edge_entities.insert(&edge.id, id.clone());
                     id
                 };
-                profile.push(SketchEntityUse {
-                    entity: entity_id,
-                    reversed: coedge.sense == Sense::Reversed,
-                });
+                if edge.curve.is_some() || edge.start != edge.end {
+                    profile.push(SketchEntityUse {
+                        entity: entity_id,
+                        reversed: coedge.sense == Sense::Reversed,
+                    });
+                }
             }
             if !profile.is_empty() {
                 profiles.push(profile);
             }
         }
-        if profiles.is_empty() {
+        for vertex in &brep.vertices {
+            if used_vertices.contains(&vertex.id) {
+                continue;
+            }
+            let Some(position) = points.get(&vertex.point) else {
+                continue;
+            };
+            let id = SketchEntityId(format!(
+                "sldprt:model:sketch-entity#{block_offset}:{stream_ordinal}:{face_ordinal}:{}",
+                edge_entities.len()
+                    + entities
+                        .iter()
+                        .filter(|entity| entity.sketch == sketch_id)
+                        .count()
+            ));
+            crate::annotations::note(
+                annotations,
+                id.0.clone(),
+                section,
+                0,
+                "feature_input_profile_point",
+                Exactness::Derived,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: Some(format!("{stream_ordinal}:{}", vertex.id.0)),
+                geometry_ref: None,
+                endpoint_refs: vec![format!("{stream_ordinal}:{}", vertex.point.0)],
+                geometry: SketchGeometry::Point {
+                    position: project_point(*position, *origin, *u_axis, v_axis),
+                },
+            });
+        }
+        if profiles.is_empty() && !entities.iter().any(|entity| entity.sketch == sketch_id) {
             continue;
         }
         crate::annotations::note(
@@ -373,6 +413,7 @@ fn project_edge(
             weights: nurbs.weights.clone(),
             periodic: nurbs.periodic,
         }),
+        None if edge.start == edge.end => Some(SketchGeometry::Point { position: start }),
         Some(CurveGeometry::Line { .. }) | None => Some(SketchGeometry::Line { start, end }),
         Some(other) => Some(SketchGeometry::Native {
             native_kind: format!("{other:?}"),
@@ -539,12 +580,14 @@ fn sketch_brep(
     let mut profiles = sketch.profiles.clone();
     profiles.extend(
         entities
-            .keys()
-            .filter(|id| !referenced.contains(*id))
-            .cloned()
-            .map(|entity| {
+            .iter()
+            .filter(|(id, entity)| {
+                !referenced.contains(*id)
+                    && !matches!(entity.geometry, SketchGeometry::Point { .. })
+            })
+            .map(|(id, _)| {
                 vec![SketchEntityUse {
-                    entity,
+                    entity: id.clone(),
                     reversed: false,
                 }]
             }),
@@ -646,6 +689,49 @@ fn sketch_brep(
             face: face_id.clone(),
             coedges: coedge_ids,
         });
+    }
+    for (ordinal, entity) in entities.values().enumerate() {
+        let SketchGeometry::Point { position } = entity.geometry else {
+            continue;
+        };
+        let point_id = PointId(format!("{prefix}:free-point:{ordinal}"));
+        let vertex_id = VertexId(format!("{prefix}:free-vertex:{ordinal}"));
+        ir.model.points.push(Point {
+            id: point_id.clone(),
+            position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+        });
+        ir.model.vertices.push(Vertex {
+            id: vertex_id.clone(),
+            point: point_id,
+            tolerance: None,
+        });
+        let edge_id = EdgeId(format!("{prefix}:point-edge:{ordinal}"));
+        let loop_id = LoopId(format!("{prefix}:point-loop:{ordinal}"));
+        let coedge_id = CoedgeId(format!("{prefix}:point-coedge:{ordinal}"));
+        ir.model.edges.push(Edge {
+            id: edge_id.clone(),
+            curve: None,
+            start: vertex_id.clone(),
+            end: vertex_id,
+            param_range: None,
+            tolerance: None,
+        });
+        ir.model.coedges.push(Coedge {
+            id: coedge_id.clone(),
+            owner_loop: loop_id.clone(),
+            edge: edge_id,
+            next: coedge_id.clone(),
+            previous: coedge_id.clone(),
+            radial_next: coedge_id.clone(),
+            sense: Sense::Forward,
+            pcurve: None,
+        });
+        ir.model.loops.push(Loop {
+            id: loop_id.clone(),
+            face: face_id.clone(),
+            coedges: vec![coedge_id],
+        });
+        face_loops.push(loop_id);
     }
     if face_loops.is_empty() {
         return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
@@ -894,6 +980,12 @@ fn patch_line_profiles(
                 )));
             }
             match &entity.geometry {
+                SketchGeometry::Point { position } => {
+                    let reference = &entity.endpoint_refs[0];
+                    let (stream, attr) = parse_point_ref(reference)?;
+                    let point = lift_point(*position, sketch.origin, sketch.u_axis, v_axis);
+                    requested.insert((lane_id.clone(), stream, attr), point);
+                }
                 SketchGeometry::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
                         let (stream, attr) = parse_point_ref(reference)?;
