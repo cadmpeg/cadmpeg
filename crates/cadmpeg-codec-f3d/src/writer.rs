@@ -5966,7 +5966,9 @@ fn encode_complete_native_rolling_ball(
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;
     }
-    native_nurbs_curve(bytes, native_loft_curve(target, &construction.slice)?)?;
+    let slice =
+        native_loft_curve_in_range(target, &construction.slice, Some(construction.u_range))?;
+    native_nurbs_curve(bytes, &slice)?;
     for offset in construction.offsets {
         native_f64(bytes, offset / 10.0);
     }

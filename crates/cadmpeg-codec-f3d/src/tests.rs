@@ -10960,6 +10960,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             .map(|side| side.curve.clone())
             .collect::<Vec<_>>();
         let third_curve = native.third.as_ref().map(|third| third.curve.clone());
+        let slice_curve = native.slice.clone();
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -10987,6 +10988,16 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 direction: cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0),
             };
         }
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == slice_curve)
+            .expect("rolling-ball slice curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(2.0, -3.0, 1.0),
+            direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -1.0),
+        };
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -11028,6 +11039,17 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
             ));
         }
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == actual.slice)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1 && curve.knots == [-1.0, -1.0, 2.0, 2.0]
+        ));
     }
 }
 
