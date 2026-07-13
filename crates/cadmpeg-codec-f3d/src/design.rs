@@ -218,6 +218,80 @@ pub fn project_configurations(
     projected
 }
 
+/// Project document-owned user parameters into the neutral parameter arena.
+/// Owned dimension and feature-input records remain native until their indexed
+/// owner records have neutral constraint or feature identities.
+pub fn project_user_parameters(
+    native: &[DesignParameter],
+) -> Vec<cadmpeg_ir::features::DesignParameter> {
+    use cadmpeg_ir::features::{
+        Angle, DesignParameter as NeutralParameter, Length, ParameterId, ParameterValue,
+    };
+    use std::collections::BTreeMap;
+
+    let mut parameters = native
+        .iter()
+        .filter(|parameter| parameter.kind == DesignParameterKind::User)
+        .map(|parameter| {
+            let mut properties = BTreeMap::new();
+            let value = match parameter.unit.as_deref() {
+                Some("mm") => Some(ParameterValue::Length(Length(
+                    parameter.evaluated_value * 10.0,
+                ))),
+                Some("deg") => Some(ParameterValue::Angle(Angle(parameter.evaluated_value))),
+                None => Some(ParameterValue::Real(parameter.evaluated_value)),
+                Some(unit) => {
+                    properties.insert("unit".into(), unit.into());
+                    None
+                }
+            };
+            NeutralParameter {
+                id: ParameterId(format!("f3d:model:parameter#{}", parameter.record_index)),
+                owner: None,
+                ordinal: parameter.source_ordinal,
+                name: parameter.name.clone(),
+                expression: parameter.expression.clone(),
+                display: None,
+                value,
+                dependencies: Vec::new(),
+                properties,
+                pmi: None,
+                native_ref: Some(parameter.id.clone()),
+            }
+        })
+        .collect::<Vec<_>>();
+    parameters.sort_by_key(|parameter| parameter.ordinal);
+
+    let mut aliases = HashMap::<String, Option<ParameterId>>::new();
+    for parameter in &parameters {
+        aliases
+            .entry(parameter.name.clone())
+            .and_modify(|candidate| *candidate = None)
+            .or_insert_with(|| Some(parameter.id.clone()));
+    }
+    for parameter in &mut parameters {
+        let mut seen = HashSet::new();
+        parameter.dependencies = expression_identifiers(&parameter.expression)
+            .filter_map(|identifier| aliases.get(&identifier).and_then(Clone::clone))
+            .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
+            .collect();
+    }
+    parameters
+}
+
+fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
+    expression
+        .split(|character: char| !(character.is_alphanumeric() || character == '_'))
+        .filter(|token| {
+            !token.is_empty()
+                && token
+                    .chars()
+                    .next()
+                    .is_some_and(|character| character.is_alphabetic() || character == '_')
+        })
+        .map(str::to_owned)
+}
+
 fn json_scalar_text(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(value) => value.clone(),
@@ -1935,8 +2009,12 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 
 #[cfg(test)]
 mod relation_tests {
-    use super::{next_indexed_record_offset, parse_design_parameter, parse_sketch_relation};
+    use super::{
+        next_indexed_record_offset, parse_design_parameter, parse_sketch_relation,
+        project_user_parameters,
+    };
     use crate::records::DesignParameterKind;
+    use cadmpeg_ir::features::{Length, ParameterValue};
     use std::collections::HashSet;
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
@@ -2040,6 +2118,47 @@ mod relation_tests {
         );
         *record.last_mut().unwrap() = 1;
         assert!(parse_design_parameter(&record).is_none());
+    }
+
+    #[test]
+    fn user_parameters_project_in_source_order_with_units_and_dependencies() {
+        let mut width = parse_design_parameter(&parameter_record(
+            None,
+            "60 mm",
+            "User Parameter",
+            Some("mm"),
+            "Width",
+            6.0,
+        ))
+        .unwrap();
+        width.id = "f3d:native:parameter#width".into();
+        width.record_index = 20;
+        width.source_ordinal = 4;
+        let mut half = parse_design_parameter(&parameter_record(
+            None,
+            "Width / 2",
+            "User Parameter",
+            Some("mm"),
+            "HalfWidth",
+            3.0,
+        ))
+        .unwrap();
+        half.id = "f3d:native:parameter#half".into();
+        half.record_index = 21;
+        half.source_ordinal = 5;
+
+        let projected = project_user_parameters(&[half, width]);
+        assert_eq!(projected[0].name, "Width");
+        assert_eq!(projected[0].owner, None);
+        assert_eq!(
+            projected[0].value,
+            Some(ParameterValue::Length(Length(60.0)))
+        );
+        assert_eq!(projected[1].dependencies, [projected[0].id.clone()]);
+        assert_eq!(
+            projected[1].native_ref.as_deref(),
+            Some("f3d:native:parameter#half")
+        );
     }
 
     #[test]

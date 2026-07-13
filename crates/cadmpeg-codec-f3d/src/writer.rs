@@ -1145,7 +1145,7 @@ fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
 
 fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
     let native = f3d_native(target)?.unwrap_or_default();
-    if !native.design_parameters.is_empty() {
+    if !target.model.parameters.is_empty() || !native.design_parameters.is_empty() {
         return Err(CodecError::NotImplemented(
             "source-less F3D Design parameter records are not writable".into(),
         ));

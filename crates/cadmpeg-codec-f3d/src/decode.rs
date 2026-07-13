@@ -109,6 +109,7 @@ pub fn decode(
             native.design_configurations = crate::design::decode_configurations(&scan)?;
             ir.model.configurations =
                 crate::design::project_configurations(&native.design_configurations);
+            ir.model.parameters = crate::design::project_user_parameters(&native.design_parameters);
             let act = crate::act::decode(reader, &scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
@@ -197,6 +198,7 @@ pub fn decode(
     native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
     native.design_configurations = crate::design::decode_configurations(&scan)?;
     ir.model.configurations = crate::design::project_configurations(&native.design_configurations);
+    ir.model.parameters = crate::design::project_user_parameters(&native.design_parameters);
     let act = crate::act::decode(reader, &scan)?;
     native.act_entities = act.entities;
     native.act_guids = act.guids;

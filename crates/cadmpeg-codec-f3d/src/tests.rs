@@ -4208,6 +4208,42 @@ fn generated_source_less_f3d_rejects_subds() {
 }
 
 #[test]
+fn generated_source_less_f3d_rejects_design_parameters() {
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            id: cadmpeg_ir::features::ParameterId("test:f3d:parameter#0".into()),
+            owner: None,
+            ordinal: 0,
+            name: "Width".into(),
+            expression: "60 mm".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length(60.0),
+            )),
+            dependencies: Vec::new(),
+            properties: std::collections::BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+
+    let error = F3dCodec.encode(&source_less, &mut Vec::new()).unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            if message.contains("Design parameter records are not writable")
+    ));
+}
+
+#[test]
 fn generated_source_less_writes_document_tolerance_contract() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec
