@@ -238,7 +238,7 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 
 #[cfg(test)]
 mod marker_tests {
-    use super::{marker_coordinates, marker_local_id, marker_local_links};
+    use super::{marker_coordinates, marker_local_id, marker_local_links, unique_marker_candidate};
 
     #[test]
     fn marker_local_id_is_the_trailing_u32() {
@@ -292,6 +292,14 @@ mod marker_tests {
         payload[70] = 0;
         payload[72..80].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(marker_local_links(&payload, 0), None);
+    }
+
+    #[test]
+    fn coordinate_namespace_disambiguates_reused_local_id() {
+        let candidates = vec![("relation".into(), false), ("geometry".into(), true)];
+        assert_eq!(unique_marker_candidate(&candidates), Some("geometry"));
+        let ambiguous = vec![("first".into(), true), ("second".into(), true)];
+        assert_eq!(unique_marker_candidate(&ambiguous), None);
     }
 }
 
@@ -524,13 +532,13 @@ pub(crate) fn bind_scalar_operands(
                 }
             }
         }
-        let mut marker_ids = HashMap::<(String, u32), Vec<String>>::new();
+        let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
         for entity in &lane.sketch_entities {
             if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
                 marker_ids
                     .entry((feature.clone(), local_id))
                     .or_default()
-                    .push(entity.id.clone());
+                    .push((entity.id.clone(), entity.coordinates_m.is_some()));
             }
         }
         for entity in &mut lane.sketch_entities {
@@ -547,15 +555,12 @@ pub(crate) fn bind_scalar_operands(
             let links = local_ids
                 .into_iter()
                 .filter_map(|local_id| {
-                    let [entity_ref] = marker_ids
-                        .get(&(owner.clone(), u32::from(local_id)))?
-                        .as_slice()
-                    else {
-                        return None;
-                    };
+                    let entity_ref = unique_marker_candidate(
+                        marker_ids.get(&(owner.clone(), u32::from(local_id)))?,
+                    )?;
                     Some(SketchInputLink {
                         local_id,
-                        entity_ref: entity_ref.clone(),
+                        entity_ref: entity_ref.to_string(),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -577,6 +582,20 @@ pub(crate) fn bind_scalar_operands(
         }
         lane.relation_instances = relation_instances(histories, lane);
     }
+}
+
+fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
+    let mut coordinate = candidates
+        .iter()
+        .filter(|(_, coordinate)| *coordinate)
+        .map(|(id, _)| id.as_str());
+    if let Some(first) = coordinate.next() {
+        return coordinate.next().is_none().then_some(first);
+    }
+    let [(id, _)] = candidates else {
+        return None;
+    };
+    Some(id)
 }
 
 fn operand_accepts_marker(kind: FeatureInputOperandKind, marker: SketchInputKind) -> bool {
