@@ -1052,6 +1052,7 @@ fn reference(bytes: &[u8], position: &mut usize, _anchor: u32) -> Option<u32> {
         ),
         0x10 => (u32::from(*bytes.get(*position + 1)?) << 8, 2),
         0x08 => (u32::from(*bytes.get(*position + 1)?), 2),
+        0x80..=0xff => (u32::from(lead - 0x80), 1),
         _ => return None,
     };
     *position += width;
@@ -1073,5 +1074,8 @@ mod tests {
         position = 0;
         assert_eq!(reference(&[0x20, 0x07], &mut position, 0), Some(0x07_0000));
         assert_eq!(position, 2);
+        position = 0;
+        assert_eq!(reference(&[0x8b], &mut position, 0), Some(11));
+        assert_eq!(position, 1);
     }
 }
