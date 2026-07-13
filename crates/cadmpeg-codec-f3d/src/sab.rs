@@ -95,6 +95,19 @@ pub(crate) fn payload_subtype_span<'a>(
     ref_width: usize,
     expected: &str,
 ) -> Option<&'a [u8]> {
+    let range = payload_subtype_range(bytes, record, token_index, ref_width, expected)?;
+    bytes.get(range)
+}
+
+/// Return the absolute byte range inside payload subtype `token_index` when
+/// its immediately following identifier is `expected`.
+pub(crate) fn payload_subtype_range(
+    bytes: &[u8],
+    record: &Record,
+    token_index: usize,
+    ref_width: usize,
+    expected: &str,
+) -> Option<std::ops::Range<usize>> {
     let limit = record.offset.checked_add(record.len)?;
     let mut pos = record.offset;
     let mut name_done = false;
@@ -134,7 +147,7 @@ pub(crate) fn payload_subtype_span<'a>(
                             Lexed::Value(Token::SubtypeClose) => {
                                 depth -= 1;
                                 if depth == 0 {
-                                    return bytes.get(start..token_start);
+                                    return Some(start..token_start);
                                 }
                             }
                             _ => {}

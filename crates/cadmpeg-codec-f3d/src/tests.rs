@@ -15519,6 +15519,33 @@ fn generated_f3d_rewrites_nurbs_pcurve_control_points() {
 }
 
 #[test]
+fn generated_f3d_scopes_inline_pcurve_edits() {
+    let source =
+        f3d_with_smbh(&synthetic_geometry_with_additional_out_of_scope_pcurve_cache_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated scoped pcurve decode");
+    let mut edited = decoded.ir;
+    let pcurve = &mut edited.model.pcurves[0];
+    let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } = &mut pcurve.geometry
+    else {
+        panic!("expected NURBS pcurve")
+    };
+    control_points[0].u = -0.75;
+    pcurve.fit_tolerance = Some(0.0025);
+    let expected = pcurve.clone();
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("scoped pcurve regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated scoped pcurve decode");
+    assert_eq!(round_trip.ir.model.pcurves, [expected]);
+}
+
+#[test]
 fn generated_f3d_rewrites_rational_pcurve_weights() {
     let source = f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh());
     let decoded = F3dCodec

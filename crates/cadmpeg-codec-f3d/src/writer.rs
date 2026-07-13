@@ -15841,20 +15841,34 @@ fn patch_nurbs_pcurve_record(
             record.index
         )));
     };
-    let end = record.offset.checked_add(record.len).ok_or_else(|| {
-        CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
-    })?;
-    let layout = crate::nurbs::final_pcurve_patch_layout(
-        bytes
-            .get(record.offset..end)
-            .ok_or_else(|| CodecError::Malformed("NURBS pcurve record is truncated".into()))?,
-    )
-    .ok_or_else(|| {
-        CodecError::Malformed(format!(
-            "pcurve record {} has no writable UV cache",
+    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let scope = if record.head == "pcurve" {
+        sab::payload_subtype_range(bytes, record, 5, ref_width, "exp_par_cur").ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "pcurve record {} has no exp_par_cur payload",
+                record.index
+            ))
+        })?
+    } else if record.head == "intcurve" {
+        record.offset..record.offset.checked_add(record.len).ok_or_else(|| {
+            CodecError::Malformed("NURBS pcurve record extent overflows address space".into())
+        })?
+    } else {
+        return Err(CodecError::Malformed(format!(
+            "record {} is not a pcurve carrier",
             record.index
-        ))
-    })?;
+        )));
+    };
+    let layout =
+        crate::nurbs::final_pcurve_patch_layout(bytes.get(scope.clone()).ok_or_else(|| {
+            CodecError::Malformed("NURBS pcurve subtype extent is truncated".into())
+        })?)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "pcurve record {} has no writable UV cache",
+                record.index
+            ))
+        })?;
     if layout.control_count != control_points.len()
         || layout.control_value_offsets.len() != control_points.len() * 2
         || layout.weight_value_offsets.len() != weights.as_ref().map_or(0, Vec::len)
@@ -15867,12 +15881,12 @@ fn patch_nurbs_pcurve_record(
     let PcurveGeometry::Nurbs { knots, .. } = geometry else {
         unreachable!()
     };
-    patch_knot_structure(bytes, record.offset, &layout.knots, knots)?;
-    let at = record.offset + layout.degree_value_offset;
+    patch_knot_structure(bytes, scope.start, &layout.knots, knots)?;
+    let at = scope.start + layout.degree_value_offset;
     bytes[at..at + 8].copy_from_slice(&i64::from(*degree).to_le_bytes());
     if let Some(periodic) = edit.periodic {
         let value = if periodic { 2i64 } else { 0i64 };
-        let at = record.offset + layout.periodic_value_offset;
+        let at = scope.start + layout.periodic_value_offset;
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     if let Some(reversed) = edit.wrapper_reversed {
@@ -15939,13 +15953,13 @@ fn patch_nurbs_pcurve_record(
         }
     }
     if let Some(tolerance) = edit.fit_tolerance {
-        if bytes.get(record.offset + layout.control_end) != Some(&0x06) {
+        if bytes.get(scope.start + layout.control_end) != Some(&0x06) {
             return Err(CodecError::NotImplemented(format!(
                 "pcurve record {} has no writable fit-tolerance carrier",
                 record.index
             )));
         }
-        let at = record.offset + layout.control_end + 1;
+        let at = scope.start + layout.control_end + 1;
         bytes[at..at + 8].copy_from_slice(&tolerance.to_le_bytes());
     }
     for (point, offsets) in control_points
@@ -15953,13 +15967,13 @@ fn patch_nurbs_pcurve_record(
         .zip(layout.control_value_offsets.chunks_exact(2))
     {
         for (value, offset) in [point.u, point.v].into_iter().zip(offsets) {
-            let at = record.offset + offset;
+            let at = scope.start + offset;
             bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
         }
     }
     if let Some(weights) = weights {
         for (weight, offset) in weights.iter().zip(&layout.weight_value_offsets) {
-            let at = record.offset + offset;
+            let at = scope.start + offset;
             bytes[at..at + 8].copy_from_slice(&weight.to_le_bytes());
         }
     }
