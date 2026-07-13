@@ -203,7 +203,7 @@ mod tests {
             feature_id: id.saturating_sub(1),
             normal,
             offset,
-            corners: [[0.0; 3]; 2],
+            corners: [[Some(0.0); 3]; 2],
             offset_in_payload: usize::try_from(id).expect("fixture id fits usize"),
         }
     }

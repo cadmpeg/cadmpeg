@@ -459,6 +459,8 @@ In plane `local_sys` rows, `18 e5` encodes `[0, 1, 0]`. `18 10`, `18 e4`, `18 e6
 Positional `ActDatums` plane rows contain flat `envlp(2x2)` and `outline(2x3)` scalar sequences without `f9` array openers. Their outlines use the held-coordinate plane rule of named rows. The datum-plane set includes the named datum row and positional `geom_type = 0x22` rows.
 
 In a named datum outline, paired standalone-zero slots at positions `k` and `k+3` identify coordinate axis `k` and plane offset zero. Other outline slots do not affect this rule.
+The `41` scalar form in this named outline lane occupies eight bytes: the
+prefix followed by seven payload bytes.
 
 `ref_planes` stores an outer reference followed by a nested `plane_id`. The nested identifier is the geometric datum identifier and joins `ActDatums.srf_array.geom_id`. A referenced datum normal orients a sketch in-plane axis only when it is perpendicular to the sketch-plane normal.
 

@@ -21,7 +21,7 @@ pub struct DatumPlane {
     /// `normal`: the constant coordinate shared by both `outline` corners.
     pub offset: f64,
     /// The row's two `outline` corner points, in model-space XYZ.
-    pub corners: [[f64; 3]; 2],
+    pub corners: [[Option<f64>; 3]; 2],
     /// Byte offset of the row's `outline` field in the original stream.
     pub offset_in_payload: usize,
 }
@@ -42,33 +42,36 @@ pub fn planes(payload: &[u8]) -> Vec<DatumPlane> {
         if !matches!(payload.get(offset + 4), Some(0 | 1 | 6 | 0xf6)) {
             continue;
         }
-        let Some(values) = scalars(payload, offset + 6, 10) else {
+        let Some(values) = datum_slots(payload, offset + 6, 10) else {
             continue;
         };
         let outline = &values[4..];
-        let differences = [
-            (outline[0] - outline[3]).abs(),
-            (outline[1] - outline[4]).abs(),
-            (outline[2] - outline[5]).abs(),
+        let equal = [
+            slot_equal(&outline[0], &outline[3]),
+            slot_equal(&outline[1], &outline[4]),
+            slot_equal(&outline[2], &outline[5]),
         ];
-        let (axis, difference) = differences
+        let held = equal
             .iter()
             .enumerate()
-            .min_by(|a, b| a.1.total_cmp(b.1))
-            .expect("invariant: `differences` is a fixed-size [f64; 3] array, so it is never empty and `min_by` always yields an element");
-        if *difference > 1e-5 {
+            .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis))
+            .collect::<Vec<_>>();
+        let Some(axis) = held.first() else {
             continue;
-        }
+        };
+        let Some(plane_offset) = outline[*axis].value else {
+            continue;
+        };
         let mut normal = [0.0; 3];
-        normal[axis] = 1.0;
+        normal[*axis] = 1.0;
         result.push(DatumPlane {
             id: id as u32,
             feature_id: payload[offset + 2] as u32,
             normal,
-            offset: outline[axis],
+            offset: plane_offset,
             corners: [
-                [outline[0], outline[1], outline[2]],
-                [outline[3], outline[4], outline[5]],
+                [outline[0].value, outline[1].value, outline[2].value],
+                [outline[3].value, outline[4].value, outline[5].value],
             ],
             offset_in_payload: offset,
         });
@@ -100,7 +103,7 @@ pub fn named_zero_plane(payload: &[u8]) -> Option<DatumPlane> {
                 *zero = true;
                 cursor += 1;
             }
-            0x46 | 0x2d => cursor += 8,
+            0x41 | 0x46 | 0x2d => cursor += 8,
             0x40..=0xbf | 0xd3 | 0xd7 | 0xdf => cursor += 7,
             _ => return None,
         }
@@ -113,7 +116,7 @@ pub fn named_zero_plane(payload: &[u8]) -> Option<DatumPlane> {
         feature_id,
         normal,
         offset: 0.0,
-        corners: [[0.0; 3]; 2],
+        corners: [[Some(0.0); 3]; 2],
         offset_in_payload: outline,
     })
 }
@@ -125,20 +128,58 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
         .map(|relative| from + relative)
 }
 
-fn scalars(data: &[u8], mut offset: usize, count: usize) -> Option<Vec<f64>> {
-    let mut values = Vec::with_capacity(count);
-    while values.len() < count {
+#[derive(Debug)]
+struct DatumSlot {
+    value: Option<f64>,
+    token: Vec<u8>,
+}
+
+fn datum_slots(data: &[u8], mut offset: usize, count: usize) -> Option<Vec<DatumSlot>> {
+    let mut slots = Vec::with_capacity(count);
+    while slots.len() < count {
+        let start = offset;
         let head = *data.get(offset)?;
-        if head == 0x18 || head == 0x0f {
-            values.push(0.0);
-            offset += 1;
-            continue;
-        }
-        let (value, next) = scalar::decode(data, offset)?;
-        values.push(value);
-        offset = next;
+        let value = match head {
+            0x18 | 0x0f | 0xe6 => {
+                offset += 1;
+                Some(0.0)
+            }
+            0x41 => {
+                let tail = data.get(offset + 1..offset + 8)?;
+                let mut raw = [0; 8];
+                raw[0] = 0x3f;
+                raw[1..].copy_from_slice(tail);
+                offset += 8;
+                Some(f64::from_be_bytes(raw))
+            }
+            0x73 | 0xbb => {
+                offset += 7;
+                data.get(start..offset)?;
+                None
+            }
+            _ => {
+                let (value, next) = scalar::decode(data, offset)?;
+                offset = next;
+                Some(value)
+            }
+        };
+        slots.push(DatumSlot {
+            value,
+            token: data.get(start..offset)?.to_vec(),
+        });
     }
-    Some(values)
+    Some(slots)
+}
+
+fn slot_equal(first: &DatumSlot, second: &DatumSlot) -> Option<bool> {
+    match (first.value, second.value) {
+        (Some(first), Some(second)) => {
+            let scale = first.abs().max(second.abs()).max(1.0);
+            Some((first - second).abs() <= 1e-9 * scale)
+        }
+        (None, None) => Some(first.token == second.token),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -167,7 +208,10 @@ mod tests {
                 feature_id: 1,
                 normal: [0.0, 1.0, 0.0],
                 offset: 0.0,
-                corners: [[2.0, 0.0, 3.0], [-2.0, 0.0, -3.0]],
+                corners: [
+                    [Some(2.0), Some(0.0), Some(3.0)],
+                    [Some(-2.0), Some(0.0), Some(-3.0)]
+                ],
                 offset_in_payload: 0
             }]
         );
@@ -181,5 +225,12 @@ mod tests {
         assert_eq!(plane.feature_id, 1);
         assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
         assert_eq!(plane.offset, 0.0);
+    }
+
+    #[test]
+    fn named_outline_41_form_occupies_eight_bytes() {
+        let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\xe9\x12\xa5\x83";
+        let plane = named_zero_plane(data).expect("named plane");
+        assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
     }
 }
