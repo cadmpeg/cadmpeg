@@ -486,6 +486,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                             charted.supports[0],
                             charted.support_uv[0]
                                 .as_deref()
+                                .filter(|uv| uv.len() == charted.parameters.len())
                                 .map(|uv| (uv, charted.parameters.as_slice())),
                         );
                         let second = intersection_side(
@@ -494,6 +495,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                             charted.supports[1],
                             charted.support_uv[1]
                                 .as_deref()
+                                .filter(|uv| uv.len() == charted.parameters.len())
                                 .map(|uv| (uv, charted.parameters.as_slice())),
                         );
                         ProceduralCurveDefinition::Intersection {

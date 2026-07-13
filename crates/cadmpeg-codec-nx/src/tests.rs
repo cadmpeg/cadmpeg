@@ -1146,6 +1146,16 @@ fn charted_intersection_curve_topology_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn charted_intersection_without_uv_stream() -> Vec<u8> {
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 29, 1);
+    stream
+}
+
 fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let chart = stream
@@ -3520,6 +3530,29 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(context.sides[0].pcurve.is_some());
     assert!(context.sides[1].surface.is_none());
     assert_eq!(context.parameter_range, [0.0, 0.01]);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_retains_charted_intersection_without_uv_values() {
+    let stream = charted_intersection_without_uv_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let carrier = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == result.ir.model.procedural_curves[0].curve)
+        .expect("intersection carrier");
+    assert!(matches!(carrier.geometry, CurveGeometry::Nurbs(_)));
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("intersection definition");
+    };
+    assert!(context.sides[0].pcurve.is_none());
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

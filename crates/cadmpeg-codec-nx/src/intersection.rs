@@ -72,7 +72,10 @@ fn enrich(
     {
         return None;
     }
-    let support_uv = uv.get(&construction.references[5])?.clone();
+    let support_uv = uv
+        .get(&construction.references[5])
+        .cloned()
+        .unwrap_or([None, None]);
     let first_is_surface = is_surface(graph, construction.references[0]);
     let second_is_surface = is_surface(graph, construction.references[1]);
     let (primary, bridge) = if first_is_surface {
@@ -80,7 +83,7 @@ fn enrich(
     } else if second_is_surface {
         (construction.references[1], construction.references[0])
     } else {
-        return None;
+        (1, 1)
     };
     let secondary = bridges
         .get(&bridge)
@@ -88,7 +91,7 @@ fn enrich(
         .or_else(|| is_surface(graph, bridge).then_some(bridge))
         .filter(|secondary| *secondary != primary)
         .unwrap_or(1);
-    (support_uv[0].as_ref()?.len() == chart.points.len()).then_some(IntersectionCurve {
+    Some(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
         supports: [primary, secondary],
