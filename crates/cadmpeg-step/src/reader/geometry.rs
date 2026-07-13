@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, Curve, CurveGeometry, Surface, SurfaceGeometry,
+    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -137,6 +138,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
+            Some("B_SPLINE_CURVE_WITH_KNOTS") => {
+                nurbs_curve(record, &points).map(CurveGeometry::Nurbs)
+            }
             _ => continue,
         };
         if let Some(geometry) = geometry {
@@ -150,6 +154,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             warnings.push(format!(
                 "{} #{id} has invalid geometry",
                 record.simple_name().unwrap()
+            ));
+        }
+    }
+    for (&id, record) in &exchange.records {
+        if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_none()
+            || record.simple_name() == Some("B_SPLINE_CURVE_WITH_KNOTS")
+        {
+            continue;
+        }
+        if let Some(nurbs) = nurbs_curve(record, &points) {
+            ir.model.curves.push(Curve {
+                id: CurveId(format!("step:curve:#{id}")),
+                geometry: CurveGeometry::Nurbs(nurbs),
+                source_object: None,
+            });
+            typed.insert(id);
+        } else {
+            warnings.push(format!(
+                "B_SPLINE_CURVE_WITH_KNOTS #{id} has invalid geometry"
             ));
         }
     }
@@ -209,6 +232,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
+            Some("B_SPLINE_SURFACE_WITH_KNOTS") => {
+                nurbs_surface(record, &points).map(SurfaceGeometry::Nurbs)
+            }
             _ => continue,
         };
         if let Some(geometry) = geometry {
@@ -222,6 +248,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             warnings.push(format!(
                 "{} #{id} has invalid geometry",
                 record.simple_name().unwrap()
+            ));
+        }
+    }
+    for (&id, record) in &exchange.records {
+        if record.partial("B_SPLINE_SURFACE_WITH_KNOTS").is_none()
+            || record.simple_name() == Some("B_SPLINE_SURFACE_WITH_KNOTS")
+        {
+            continue;
+        }
+        if let Some(nurbs) = nurbs_surface(record, &points) {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("step:surface:#{id}")),
+                geometry: SurfaceGeometry::Nurbs(nurbs),
+                source_object: None,
+            });
+            typed.insert(id);
+        } else {
+            warnings.push(format!(
+                "B_SPLINE_SURFACE_WITH_KNOTS #{id} has invalid geometry"
             ));
         }
     }
@@ -311,6 +356,147 @@ fn positive(value: Option<&Value>) -> Option<f64> {
         .filter(|value| value.is_finite() && *value > 0.0)
 }
 
+fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsCurve> {
+    let complex = record.partials.len() > 1;
+    let base = if complex {
+        record.partial("B_SPLINE_CURVE")?
+    } else {
+        record.partial("B_SPLINE_CURVE_WITH_KNOTS")?
+    };
+    let offset = usize::from(!complex);
+    let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
+    let control_points = references(base.parameters.get(offset + 1)?)?
+        .into_iter()
+        .map(|id| points.get(&id).copied())
+        .collect::<Option<Vec<_>>>()?;
+    let periodic = base.parameters.get(offset + 3)?.logical()?;
+    let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
+    let tail = knot_leaf.parameters.len().checked_sub(3)?;
+    let knots = expand_knots(
+        knot_leaf.parameters.get(tail)?,
+        knot_leaf.parameters.get(tail + 1)?,
+    )?;
+    if knots.len() != control_points.len() + degree as usize + 1 {
+        return None;
+    }
+    let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
+        let values = numbers(leaf.parameters.first()?)?;
+        (values.len() == control_points.len())
+            .then_some(values)
+            .map(Some)?
+    } else {
+        None
+    };
+    Some(NurbsCurve {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    })
+}
+
+fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsSurface> {
+    let complex = record.partials.len() > 1;
+    let base = if complex {
+        record.partial("B_SPLINE_SURFACE")?
+    } else {
+        record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?
+    };
+    let offset = usize::from(!complex);
+    let u_degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
+    let v_degree = u32::try_from(base.parameters.get(offset + 1)?.integer()?).ok()?;
+    let rows = base.parameters.get(offset + 2)?.list()?;
+    let u_count = u32::try_from(rows.len()).ok()?;
+    let v_count = u32::try_from(rows.first()?.list()?.len()).ok()?;
+    if u_count == 0
+        || v_count == 0
+        || rows.iter().any(|row| {
+            row.list()
+                .map_or(true, |values| values.len() != v_count as usize)
+        })
+    {
+        return None;
+    }
+    let control_points = rows
+        .iter()
+        .flat_map(|row| row.list().unwrap())
+        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
+        .collect::<Option<Vec<_>>>()?;
+    let u_periodic = base.parameters.get(offset + 4)?.logical()?;
+    let v_periodic = base.parameters.get(offset + 5)?.logical()?;
+    let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
+    let tail = knot_leaf.parameters.len().checked_sub(5)?;
+    let u_knots = expand_knots(&knot_leaf.parameters[tail], &knot_leaf.parameters[tail + 2])?;
+    let v_knots = expand_knots(
+        &knot_leaf.parameters[tail + 1],
+        &knot_leaf.parameters[tail + 3],
+    )?;
+    if u_knots.len() != u_count as usize + u_degree as usize + 1
+        || v_knots.len() != v_count as usize + v_degree as usize + 1
+    {
+        return None;
+    }
+    let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
+        let rows = leaf.parameters.first()?.list()?;
+        let mut values = Vec::new();
+        for row in rows {
+            values.extend(
+                row.list()?
+                    .iter()
+                    .map(Value::number)
+                    .collect::<Option<Vec<_>>>()?,
+            );
+        }
+        (values.len() == control_points.len())
+            .then_some(values)
+            .map(Some)?
+    } else {
+        None
+    };
+    Some(NurbsSurface {
+        u_degree,
+        v_degree,
+        u_knots,
+        v_knots,
+        u_count,
+        v_count,
+        control_points,
+        weights,
+        u_periodic,
+        v_periodic,
+    })
+}
+
+fn expand_knots(multiplicities: &Value, distinct: &Value) -> Option<Vec<f64>> {
+    let multiplicities = multiplicities.list()?;
+    let distinct = distinct.list()?;
+    if multiplicities.len() != distinct.len() {
+        return None;
+    }
+    let mut knots = Vec::new();
+    for (multiplicity, knot) in multiplicities.iter().zip(distinct) {
+        let count = usize::try_from(multiplicity.integer()?).ok()?;
+        let knot = knot.number()?;
+        if count == 0 || !knot.is_finite() {
+            return None;
+        }
+        knots.extend(std::iter::repeat_n(knot, count));
+    }
+    knots
+        .windows(2)
+        .all(|pair| pair[0] <= pair[1])
+        .then_some(knots)
+}
+
+fn references(value: &Value) -> Option<Vec<u64>> {
+    value.list()?.iter().map(Value::reference).collect()
+}
+
+fn numbers(value: &Value) -> Option<Vec<f64>> {
+    value.list()?.iter().map(Value::number).collect()
+}
+
 fn normalize(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
     (norm.is_finite() && norm > 0.0).then(|| scale_vector(vector, 1.0 / norm))
@@ -354,6 +540,8 @@ trait ValueExt {
     fn reference(&self) -> Option<u64>;
     fn list(&self) -> Option<&[Value]>;
     fn enumeration(&self) -> Option<&str>;
+    fn integer(&self) -> Option<i64>;
+    fn logical(&self) -> Option<bool>;
 }
 
 impl ValueExt for Value {
@@ -379,6 +567,19 @@ impl ValueExt for Value {
     fn enumeration(&self) -> Option<&str> {
         match self {
             Value::Enumeration(value) => Some(value),
+            _ => None,
+        }
+    }
+    fn integer(&self) -> Option<i64> {
+        match self {
+            Value::Integer(value) => Some(*value),
+            _ => None,
+        }
+    }
+    fn logical(&self) -> Option<bool> {
+        match self {
+            Value::Enumeration(value) if value == "T" => Some(true),
+            Value::Enumeration(value) if value == "F" => Some(false),
             _ => None,
         }
     }

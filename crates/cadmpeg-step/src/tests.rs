@@ -131,11 +131,18 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode typed STEP geometry");
 
-    assert_eq!(result.ir.model.points.len(), 1);
-    assert_eq!(result.ir.model.points[0].position.x, 1.0);
-    assert_eq!(result.ir.model.points[0].position.y, 2.0);
-    assert_eq!(result.ir.model.points[0].position.z, 3.0);
-    assert_eq!(result.ir.model.curves.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 5);
+    let placed = result
+        .ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id.0 == "step:point:#3")
+        .unwrap();
+    assert_eq!(placed.position.x, 1.0);
+    assert_eq!(placed.position.y, 2.0);
+    assert_eq!(placed.position.z, 3.0);
+    assert_eq!(result.ir.model.curves.len(), 4);
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Line { origin, direction }
@@ -147,11 +154,29 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         CurveGeometry::Ellipse { major_radius, minor_radius, .. }
             if major_radius == 6.0 && minor_radius == 2.0
     )));
-    assert_eq!(result.ir.model.surfaces.len(), 5);
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        &curve.geometry,
+        CurveGeometry::Nurbs(nurbs)
+            if nurbs.degree == 2
+                && nurbs.knots == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+                && nurbs.weights.as_deref() == Some(&[1.0, 0.5, 1.0][..])
+    )));
+    assert_eq!(result.ir.model.surfaces.len(), 6);
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, normal, .. }
             if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0 && normal.z == 1.0
+    )));
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+        &surface.geometry,
+        SurfaceGeometry::Nurbs(nurbs)
+            if nurbs.u_degree == 1
+                && nurbs.v_degree == 1
+                && nurbs.u_count == 2
+                && nurbs.v_count == 2
+                && nurbs.u_knots == [0.0, 0.0, 1.0, 1.0]
+                && nurbs.v_knots == [0.0, 0.0, 1.0, 1.0]
+                && nurbs.weights.as_deref() == Some(&[1.0, 1.0, 1.0, 0.75][..])
     )));
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
