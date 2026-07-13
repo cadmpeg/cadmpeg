@@ -230,6 +230,16 @@ const TORUS: &[Token] = &[
     Token::Scalar,
     Token::Vector,
 ];
+const COMPACT_TWO_REFS: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Ref,
+    Token::Ref,
+];
 
 /// Walk all accepted full records and compact tombstones in an inflated
 /// deltas stream.
@@ -298,7 +308,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=19 | 29..=32 | 50..=54)
+        if matches!(kind, 12..=19 | 29..=32 | 50..=54 | 124 | 134)
             && crate::topology::Graph::parse(&record.canonical_bytes)
                 .get(kind, record.xmt)
                 .is_some()
@@ -461,6 +471,8 @@ fn family_name(kind: u16) -> Option<&'static str> {
         52 => "CONE",
         53 => "SPHERE",
         54 => "TORUS",
+        124 => "B_SURFACE",
+        134 => "B_CURVE",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",
@@ -485,6 +497,8 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         52 => CONE,
         53 => SPHERE,
         54 => TORUS,
+        124 => COMPACT_TWO_REFS,
+        134 => COMPACT_TWO_REFS,
         19 => REGION,
         _ => return None,
     })

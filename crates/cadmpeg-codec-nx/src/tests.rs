@@ -1060,6 +1060,101 @@ fn bspline_partition_stream() -> Vec<u8> {
     s
 }
 
+fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
+    let mut stream = bspline_partition_stream();
+    let mut descriptor = record(126, 48);
+    put_ref(&mut descriptor, 2, 60);
+    put_ref(&mut descriptor, 6, 1);
+    put_ref(&mut descriptor, 8, 1);
+    put_ref(&mut descriptor, 12, 2);
+    put_ref(&mut descriptor, 16, 2);
+    descriptor[18] = 5;
+    descriptor[19] = 5;
+    descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
+    descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
+    put_ref(&mut descriptor, 36, 30);
+    put_ref(&mut descriptor, 38, 31);
+    put_ref(&mut descriptor, 40, 32);
+    put_ref(&mut descriptor, 42, 33);
+    put_ref(&mut descriptor, 44, 125);
+    put_ref(&mut descriptor, 46, 61);
+    stream.extend(descriptor);
+
+    let mut data = record(125, 97 + 12 * 8);
+    put_ref(&mut data, 2, 61);
+    data[90] = b'+';
+    data[91..95].copy_from_slice(&12u32.to_be_bytes());
+    for (index, value) in [
+        0.0, 0.0, 0.0, 0.0, 0.03, 0.0, 0.015, 0.0, 0.0, 0.015, 0.03, 0.0,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        put_f64(&mut data, 97 + index * 8, value);
+    }
+    stream.extend(data);
+    stream
+}
+
+fn deltas_bspline_surface_wrapper_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&124u16.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&914u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for reference in [60u16, 61] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream
+}
+
+fn bspline_curve_replacement_partition_stream() -> Vec<u8> {
+    let mut stream = bspline_partition_stream();
+    let mut descriptor = record(136, 27);
+    put_ref(&mut descriptor, 2, 70);
+    put_ref(&mut descriptor, 4, 1);
+    put_ref(&mut descriptor, 8, 2);
+    put_ref(&mut descriptor, 10, 3);
+    put_ref(&mut descriptor, 14, 2);
+    descriptor[16] = 5;
+    put_ref(&mut descriptor, 23, 42);
+    put_ref(&mut descriptor, 25, 43);
+    stream.extend(descriptor);
+
+    let mut data = record(135, 15 + 6 * 8);
+    put_ref(&mut data, 2, 71);
+    data[9..13].copy_from_slice(&6u32.to_be_bytes());
+    for (index, value) in [0.0, 0.0, 0.0, 0.02, 0.01, 0.0].into_iter().enumerate() {
+        put_f64(&mut data, 15 + index * 8, value);
+    }
+    stream.extend(data);
+    stream
+}
+
+fn deltas_bspline_curve_wrapper_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&134u16.to_be_bytes());
+    stream.extend_from_slice(&50u16.to_be_bytes());
+    stream.extend_from_slice(&915u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for reference in [70u16, 71] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream
+}
+
 fn trimmed_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     let edge = stream
@@ -2531,6 +2626,38 @@ fn decode_transfers_bspline_surface_and_curve() {
     assert_eq!(curve.knots, vec![0.0, 0.0, 1.0, 1.0]);
     assert_eq!(curve.control_points.len(), 2);
     assert!((curve.control_points[1].x - 20.0).abs() < 1e-9);
+}
+
+#[test]
+fn decode_replaces_partition_bspline_surface_wrapper_from_deltas() {
+    let partition = bspline_surface_replacement_partition_stream();
+    let deltas = deltas_bspline_surface_wrapper_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+        &surface.geometry,
+        SurfaceGeometry::Nurbs(nurbs)
+            if nurbs.control_points.iter().any(|point| point.y == 30.0)
+    )));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_bspline_curve_wrapper_from_deltas() {
+    let partition = bspline_curve_replacement_partition_stream();
+    let deltas = deltas_bspline_curve_wrapper_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        &curve.geometry,
+        CurveGeometry::Nurbs(nurbs)
+            if nurbs.control_points.iter().any(|point| point.y == 10.0)
+    )));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
