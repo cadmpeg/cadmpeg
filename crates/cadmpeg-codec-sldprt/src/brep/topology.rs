@@ -227,24 +227,25 @@ fn parse_vertex_use(buf: &[u8], off: usize) -> Option<Record> {
 
 /// World point `00 1d`: 38-byte body, no magic, `refs[4]` at body+6, xyz as
 /// three big-endian f64 (metres) at body+14.
-fn parse_point(buf: &[u8], off: usize) -> Option<Record> {
+fn parse_point(buf: &[u8], off: usize, prefixed: bool) -> Option<Record> {
     let p = body_start(buf, off, 0x1d)?;
     if p + 38 > buf.len() {
         return None;
     }
     let attr = attr_at(buf, p)?;
-    let mut xyz_at = p + 14;
-    let mut tripled = Vec::new();
-    let mut cursor = p + 6;
-    while buf.get(cursor + 2) == Some(&1) && tripled.len() < 16 {
-        tripled.push(u16_be(buf, cursor)?);
-        cursor += 3;
-    }
-    let refs = if tripled.is_empty() {
-        refs_be(buf, p + 6, 4)?
+    let (refs, xyz_at) = if prefixed {
+        let mut refs = Vec::new();
+        let mut cursor = p + 6;
+        while buf.get(cursor + 2) == Some(&1) && refs.len() < 16 {
+            refs.push(u16_be(buf, cursor)?);
+            cursor += 3;
+        }
+        if refs.is_empty() {
+            return None;
+        }
+        (refs, cursor)
     } else {
-        xyz_at = cursor;
-        tripled
+        (refs_be(buf, p + 6, 4)?, p + 14)
     };
     let x = f64_be(buf, xyz_at)?;
     let y = f64_be(buf, xyz_at + 8)?;
@@ -328,6 +329,15 @@ pub(crate) fn patch_point(buf: &mut [u8], attr: u16, xyz_m: [f64; 3]) -> bool {
 /// Later full records replace earlier records with the same `attr`, matching
 /// partition-base plus deltas-override merge order.
 pub fn scan(body: &[u8]) -> Tables {
+    scan_with_point_framing(body, false)
+}
+
+/// Scan a deltas stream whose world-point reference lanes use prefixed triples.
+pub fn scan_deltas(body: &[u8]) -> Tables {
+    scan_with_point_framing(body, true)
+}
+
+fn scan_with_point_framing(body: &[u8], prefixed_points: bool) -> Tables {
     let mut t = Tables::default();
     let mut loop_candidates = Vec::new();
     let mut i = 0usize;
@@ -347,7 +357,14 @@ pub fn scan(body: &[u8]) -> Tables {
             0x10 => (parse_edge_use(body, i), Some(&mut t.edge_uses)),
             0x11 => (parse_coedge(body, i), Some(&mut t.coedges)),
             0x12 => (parse_vertex_use(body, i), Some(&mut t.vertex_uses)),
-            0x1d => (parse_point(body, i), Some(&mut t.points)),
+            0x1d => (
+                if prefixed_points {
+                    parse_point(body, i, true).or_else(|| parse_point(body, i, false))
+                } else {
+                    parse_point(body, i, false)
+                },
+                Some(&mut t.points),
+            ),
             _ => (None, None),
         };
         match (rec, table) {

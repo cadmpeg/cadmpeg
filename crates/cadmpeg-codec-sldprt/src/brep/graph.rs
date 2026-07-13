@@ -300,7 +300,11 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
     for (payload, header) in bodies {
         let body = &payload[header.body_offset.min(payload.len())..];
         let is_deltas = header.description.to_ascii_lowercase().contains("deltas");
-        let scanned_tables = topology::scan(body);
+        let scanned_tables = if is_deltas {
+            topology::scan_deltas(body)
+        } else {
+            topology::scan(body)
+        };
         let mut scanned_facts = entity::scan(body);
         if !initialized || !is_deltas {
             carriers.merge_missing(scan_carriers(body));

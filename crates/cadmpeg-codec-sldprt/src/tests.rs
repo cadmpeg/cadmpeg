@@ -4935,6 +4935,31 @@ fn decode_removes_edges_and_vertices_from_a_rejected_loop() {
 }
 
 #[test]
+fn partition_point_refs_do_not_select_deltas_framing() {
+    let mut body = triangle_body();
+    let point = body
+        .windows(4)
+        .position(|window| window == [0x00, 0x1d, 0x00, 0x3c])
+        .expect("point 60");
+    for (index, reference) in [1u16, 378, 379, 373].into_iter().enumerate() {
+        let at = point + 8 + index * 2;
+        body[at..at + 2].copy_from_slice(&reference.to_be_bytes());
+    }
+
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
+    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
+}
+
+#[test]
 fn semantic_writer_preserves_face_appearance() {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
