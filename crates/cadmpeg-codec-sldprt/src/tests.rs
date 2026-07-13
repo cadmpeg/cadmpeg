@@ -2285,6 +2285,9 @@ fn encoder_writes_source_less_neutral_configurations() {
 #[test]
 fn encoder_partitions_source_less_bodies_by_configuration() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::tessellation::Tessellation;
+    use cadmpeg_ir::transform::Transform;
     use std::collections::BTreeMap;
 
     let mut body = Vec::new();
@@ -2310,6 +2313,34 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .iter()
         .map(|body| body.id.clone())
         .collect::<Vec<_>>();
+    for (index, body) in ir.model.bodies.iter_mut().enumerate() {
+        body.transform = Some(Transform {
+            rows: [
+                [1.0, 0.0, 0.0, (index as f64 + 1.0) * 10.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        });
+    }
+    ir.model.tessellations = body_ids
+        .iter()
+        .enumerate()
+        .map(|(index, body)| Tessellation {
+            id: format!("synthetic:test:tessellation#{index}"),
+            body: Some(body.clone()),
+            source_object: None,
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+            strip_lengths: vec![3],
+            normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            channels: Vec::new(),
+        })
+        .collect();
     ir.model.configurations = body_ids
         .iter()
         .enumerate()
@@ -2344,6 +2375,15 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         decoded.ir.model.configurations[0].bodies,
         decoded.ir.model.configurations[1].bodies
     );
+    let mesh_x = decoded
+        .ir
+        .model
+        .tessellations
+        .iter()
+        .flat_map(|mesh| mesh.vertices.iter().map(|point| point.x))
+        .collect::<Vec<_>>();
+    assert!(mesh_x.iter().any(|value| (*value - 10.0).abs() < 1.0e-6));
+    assert!(mesh_x.iter().any(|value| (*value - 20.0).abs() < 1.0e-6));
 }
 
 #[test]

@@ -330,6 +330,7 @@ fn decode_inner(
     Ok(DecodedMesh {
         tessellation: Tessellation {
             id,
+            body: None,
             source_object: association,
             vertices,
             triangles,

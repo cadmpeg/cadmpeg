@@ -28,6 +28,19 @@ pub(super) fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
+        if mesh.body.as_ref().is_some_and(|body| {
+            !ir.model
+                .bodies
+                .iter()
+                .any(|candidate| candidate.id == *body)
+        }) {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "references a missing tessellation body".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
         if mesh
             .vertices
             .iter()

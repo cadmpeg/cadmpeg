@@ -421,6 +421,7 @@ fn build_geometry_ir(
                 .tessellations
                 .push(cadmpeg_ir::tessellation::Tessellation {
                     id,
+                    body: None,
                     source_object: None,
                     vertices: mesh.vertices,
                     triangles: mesh.triangles,
