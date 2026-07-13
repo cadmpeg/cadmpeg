@@ -2039,6 +2039,67 @@ fn mismatched_trimmed_topology_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn partnered_trimmed_topology_partition_stream() -> Vec<u8> {
+    let mut stream = trimmed_topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("first face");
+    put_ref(&mut stream, face + 18, 20);
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("first fin");
+    put_ref(&mut stream, fin + 14, 22);
+    let first_point = stream
+        .windows(4)
+        .position(|window| window == [0, 29, 0, 11])
+        .expect("first point");
+    put_vec3(&mut stream, first_point + 16, [0.000_25, 0.0, 0.0]);
+
+    let mut second_face = record(14, 39);
+    put_ref(&mut second_face, 2, 20);
+    put_f64(&mut second_face, 10, 0.000_2);
+    put_ref(&mut second_face, 18, 1);
+    put_ref(&mut second_face, 20, 4);
+    put_ref(&mut second_face, 22, 21);
+    put_ref(&mut second_face, 24, 3);
+    put_ref(&mut second_face, 26, 6);
+    second_face[28] = b'+';
+    stream.extend(second_face);
+
+    let mut second_loop = record(15, 16);
+    put_ref(&mut second_loop, 2, 21);
+    put_ref(&mut second_loop, 10, 22);
+    put_ref(&mut second_loop, 12, 20);
+    put_ref(&mut second_loop, 14, 1);
+    stream.extend(second_loop);
+
+    let mut second_fin = record(17, 23);
+    put_ref(&mut second_fin, 2, 22);
+    put_ref(&mut second_fin, 6, 21);
+    put_ref(&mut second_fin, 8, 22);
+    put_ref(&mut second_fin, 10, 22);
+    put_ref(&mut second_fin, 12, 23);
+    put_ref(&mut second_fin, 14, 7);
+    put_ref(&mut second_fin, 16, 8);
+    put_ref(&mut second_fin, 18, 1);
+    second_fin[22] = b'-';
+    stream.extend(second_fin);
+
+    let mut second_vertex = record(18, 28);
+    put_ref(&mut second_vertex, 2, 23);
+    put_ref(&mut second_vertex, 16, 24);
+    put_f64(&mut second_vertex, 18, 0.000_1);
+    stream.extend(second_vertex);
+
+    let mut second_point = record(29, 40);
+    put_ref(&mut second_point, 2, 24);
+    put_vec3(&mut second_point, 16, [0.000_75, 0.0, 0.0]);
+    stream.extend(second_point);
+    stream
+}
+
 fn forward_trimmed_curve_chain_stream() -> Vec<u8> {
     let mut stream = trimmed_topology_partition_stream();
     let first = stream
@@ -3840,6 +3901,19 @@ fn decode_resolves_trimmed_edge_to_its_basis_curve_and_range() {
     let edge = result.ir.model.edges.first().expect("edge");
     assert_eq!(edge.curve.as_ref(), Some(&result.ir.model.curves[0].id));
     assert_eq!(edge.param_range, Some([0.25, 0.75]));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_uses_partner_fin_vertex_for_edge_endpoint() {
+    let mut cur = Cursor::new(prt_with_partition(
+        &partnered_trimmed_topology_partition_stream(),
+    ));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let edge = result.ir.model.edges.first().expect("edge");
+    assert_ne!(edge.start, edge.end);
+    assert_eq!(edge.param_range, Some([0.25, 0.75]));
+    assert_eq!(result.ir.model.coedges.len(), 2);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 

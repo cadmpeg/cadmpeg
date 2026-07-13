@@ -1293,11 +1293,16 @@ fn emit_topology(
         .collect();
     let valid_vertex_xmts: BTreeSet<u32> = valid_fin_xmts
         .iter()
-        .filter_map(|xmt| {
-            graph
-                .get(17, *xmt)?
-                .fin_fields()
-                .map(|fields| fields.vertex)
+        .flat_map(|xmt| {
+            let fields = graph.get(17, *xmt).and_then(Node::fin_fields);
+            let partner_vertex = fields
+                .filter(|fields| fields.other > 1)
+                .and_then(|fields| graph.get(17, fields.other))
+                .and_then(Node::fin_fields)
+                .map(|fields| fields.vertex);
+            [fields.map(|fields| fields.vertex), partner_vertex]
+                .into_iter()
+                .flatten()
         })
         .filter(|xmt| *xmt > 1)
         .collect();
@@ -1456,12 +1461,18 @@ fn emit_topology(
         let Some(start) = start else {
             continue;
         };
+        let end_fin = if fin_fields.other > 1 {
+            fin_fields.other
+        } else {
+            fin_fields.forward
+        };
         let end = graph
-            .get(17, fin_fields.forward)
+            .get(17, end_fin)
             .and_then(Node::fin_fields)
             .and_then(|next| vertices.get(&next.vertex))
             .cloned()
             .unwrap_or_else(|| start.clone());
+        let (mut start, mut end) = (start, end);
         let id = EdgeId(format!("{prefix}:edge#{}", node.xmt));
         annotate_node(annotations, &id, source_stream, node, "EDGE");
         if decoded_tolerance(fields.tolerance).is_some() {
@@ -1489,7 +1500,12 @@ fn emit_topology(
                 &end,
                 decoded_tolerance(fields.tolerance),
             ) {
-                Some(oriented) => param_range = Some(oriented),
+                Some((oriented, reverse_edge)) => {
+                    param_range = Some(oriented);
+                    if reverse_edge {
+                        std::mem::swap(&mut start, &mut end);
+                    }
+                }
                 None => {
                     let unresolved = CurveId(format!("{prefix}:edge-curve#unknown-{}", node.xmt));
                     push_unknown_edge_curve(
@@ -1869,13 +1885,27 @@ fn orient_edge_range(
     start: &VertexId,
     end: &VertexId,
     edge_tolerance: Option<f64>,
-) -> Option<[f64; 2]> {
+) -> Option<([f64; 2], bool)> {
     let geometry = &ir
         .model
         .curves
         .iter()
         .find(|candidate| candidate.id == *curve)?
         .geometry;
+    let range = match geometry {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            let sweep = range[1] - range[0];
+            (0.0..=std::f64::consts::TAU)
+                .contains(&sweep)
+                .then_some(())?;
+            let start = range[0].rem_euclid(std::f64::consts::TAU);
+            [start, start + sweep]
+        }
+        _ => {
+            (range[0] <= range[1]).then_some(())?;
+            range
+        }
+    };
     let at = [
         curve_point(geometry, range[0])?,
         curve_point(geometry, range[1])?,
@@ -1903,11 +1933,11 @@ fn orient_edge_range(
         ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
     };
     if distance(at[0], start_position) <= allowance && distance(at[1], end_position) <= allowance {
-        Some(range)
+        Some((range, false))
     } else if distance(at[1], start_position) <= allowance
         && distance(at[0], end_position) <= allowance
     {
-        Some([range[1], range[0]])
+        Some((range, true))
     } else {
         None
     }

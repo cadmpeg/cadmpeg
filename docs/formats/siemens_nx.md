@@ -206,13 +206,14 @@ A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`,
 | Entity   | Rule                                                                  |
 | -------- | --------------------------------------------------------------------- |
 | vertices | FIN-referenced VERTEX nodes; coordinates from same-stream POINT nodes |
-| edges    | one per EDGE node, with resolved curve when available                 |
+| edges    | one per EDGE node; native endpoint incidence is `EDGE.fin → FIN.vertex` and `FIN.other_fin → FIN.vertex`, with null `other_fin` falling back to `FIN.forward_fin → FIN.vertex`; canonical start/end order follows increasing curve parameter; the curve resolves through `EDGE.curve` |
 | loops    | walked from `FACE.loop` through the null-terminated LOOP chain; each FIN ring closes at its first FIN with reciprocal forward/backward links; non-null partner FINs reciprocally reference one another and carry the same EDGE |
 | faces    | one per FACE node, with resolved surface when available               |
 | bodies   | one per validated body-shape SHELL                                    |
 
 POINT is a geometric carrier. It becomes a topological vertex only through a validated `FIN.vertex → VERTEX.point` path. An unreferenced POINT is not a free vertex of an existing body.
 An EDGE belongs to the assembled B-rep only when a FIN in a fully resolved owned LOOP references it.
+A periodic edge interval is normalized by reducing its start modulo `2π` and preserving its nonnegative sweep; a seam-crossing interval therefore ends above `2π`.
 A body is solid when every assembled EDGE has exactly two FIN uses in that body. A body with faces and any edge-use count other than two is a sheet body.
 
 BODY, REGION, and SHELL records contain no placement reference. POINT coordinates and the origins and axes stored by curve and surface carriers are part-model coordinates. An inline Parasolid body's part placement is therefore the identity transform.
