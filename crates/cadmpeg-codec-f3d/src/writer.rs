@@ -14207,13 +14207,30 @@ fn patch_framed_geometry(
             }
         } else if record.head == "degenerate_curve" {
             if let Some(point) = degenerate_curves.get(&id) {
-                patch_vec3_token(
+                let field_index = match record.name.as_str() {
+                    "degenerate_curve" => 0,
+                    "degenerate_curve-curve" => 3,
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "degenerate-curve record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let offset = required_payload_field(
                     bytes,
                     record,
+                    active_ref_width(bytes),
+                    field_index,
                     0x13,
-                    0,
-                    [point.x / 10.0, point.y / 10.0, point.z / 10.0],
                 )?;
+                for (component, value) in [point.x / 10.0, point.y / 10.0, point.z / 10.0]
+                    .into_iter()
+                    .enumerate()
+                {
+                    let at = offset + 1 + component * 8;
+                    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                }
             }
         } else if record.head == "ellipse" {
             if let Some((center, axis, direction, major_radius, minor_radius)) = conics.get(&id) {
