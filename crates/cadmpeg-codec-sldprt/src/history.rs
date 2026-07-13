@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` Keywords XML feature history.
 
-use crate::classification::{classify, native_object_class, FeatureClass};
+use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
@@ -515,7 +515,7 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
                 || feature_family(feature, "Shell")
                 || feature_family(feature, "Thicken")
                 || feature_family(feature, "Thickness")
-                || feature_input_class(feature, "moThicken_c")
+                || feature_input_class(feature, NativeClassKind::Thicken)
                 || is_offset_plane(feature)
         }
         "D2" if is_chamfer(feature) => {
@@ -1210,8 +1210,13 @@ fn feature_family(feature: &Feature, family: &str) -> bool {
     feature.xml_tag.eq_ignore_ascii_case(family)
 }
 
-fn feature_input_class(feature: &Feature, class: &str) -> bool {
-    feature.input_class.as_deref() == Some(class)
+fn feature_input_class(feature: &Feature, class: NativeClassKind) -> bool {
+    feature
+        .input_class
+        .as_deref()
+        .map(native_object_class)
+        .map(|class| class.kind)
+        == Some(class)
 }
 
 fn is_fillet(feature: &Feature) -> bool {
@@ -1841,10 +1846,10 @@ fn pattern_form(feature: &Feature) -> Option<PatternForm> {
         "mirror" => Some(PatternForm::Mirror),
         _ => None,
     };
-    if feature_input_class(feature, "moLPattern_c") {
+    if feature_input_class(feature, NativeClassKind::LinearPattern) {
         return Some(PatternForm::Linear);
     }
-    if feature_input_class(feature, "moCurvePattern_c") {
+    if feature_input_class(feature, NativeClassKind::CurvePattern) {
         return Some(PatternForm::CurveDriven);
     }
     if let Some(form) = parse(&feature.kind) {
@@ -5001,7 +5006,7 @@ pub fn sync_neutral_features(
                     || existing.as_deref().is_some_and(|record| {
                         !feature_family(record, "Thicken")
                             && !feature_family(record, "Thickness")
-                            && !feature_input_class(record, "moThicken_c")
+                            && !feature_input_class(record, NativeClassKind::Thicken)
                     })
                 {
                     return Err(CodecError::NotImplemented(format!(

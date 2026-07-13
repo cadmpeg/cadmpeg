@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
-use crate::classification::native_object_class;
+use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
@@ -534,13 +534,8 @@ fn relation_instances(
 }
 
 fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
-    match name {
-        "sgLLDist" => Some(FeatureInputRelationFamily::LineLineDistance),
-        "sgPntPntDist" => Some(FeatureInputRelationFamily::PointPointDistance),
-        "sgPntLineDist" => Some(FeatureInputRelationFamily::PointLineDistance),
-        "sgPntPntHorDist" => Some(FeatureInputRelationFamily::PointPointHorizontalDistance),
-        "sgPntPntVertDist" => Some(FeatureInputRelationFamily::PointPointVerticalDistance),
-        "sgAnglDim" => Some(FeatureInputRelationFamily::Angle),
+    match native_object_class(name).kind {
+        NativeClassKind::SketchRelation(family) => Some(family),
         _ => None,
     }
 }
