@@ -196,6 +196,18 @@ pub(super) fn check_native_links(
             }
         }
     }
+    for constraint in &ir.model.sketch_constraints {
+        if let Some(target) = &constraint.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
+    }
 
     let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
     for record in &native_unknowns {

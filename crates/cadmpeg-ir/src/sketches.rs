@@ -164,6 +164,9 @@ pub struct SketchConstraint {
     pub sketch: SketchId,
     /// Constraint semantics.
     pub definition: SketchConstraintDefinition,
+    /// Source-native relation record when decoded from one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
 }
 
 /// A geometric locus on a sketch entity.

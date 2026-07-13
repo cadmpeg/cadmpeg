@@ -301,6 +301,7 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         definition: SketchConstraintDefinition::Coincident {
             entities: vec![circle_id],
         },
+        native_ref: None,
     });
     ir.finalize();
 
@@ -422,6 +423,7 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 SketchLocus::Start(entity),
             ],
         },
+        native_ref: None,
     });
     ir.finalize();
     let report = validate(&ir, Vec::new());
@@ -508,6 +510,7 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
             first,
             second: foreign,
         },
+        native_ref: None,
     });
     ir.finalize();
     let report = validate(&ir, Vec::new());
@@ -1648,6 +1651,30 @@ fn parameter_native_ref_must_resolve() {
         finding.check == Check::NativeLinks
             && finding.message.contains("PMI native_ref")
             && finding.entity.as_deref() == Some(id.0.as_str())
+    }));
+}
+
+#[test]
+fn sketch_constraint_native_ref_must_resolve() {
+    let mut ir = unit_cube();
+    let id =
+        crate::sketches::SketchConstraintId("synthetic:test:sketch-constraint#native-ref".into());
+    ir.model
+        .sketch_constraints
+        .push(crate::sketches::SketchConstraint {
+            id: id.clone(),
+            sketch: crate::sketches::SketchId("synthetic:test:sketch#missing".into()),
+            definition: crate::sketches::SketchConstraintDefinition::Native {
+                native_kind: "test".into(),
+                entities: Vec::new(),
+            },
+            native_ref: Some("native:missing-relation#0".into()),
+        });
+
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::NativeLinks
+            && finding.entity.as_deref() == Some(id.0.as_str())
+            && finding.message.contains("native:missing-relation#0")
     }));
 }
 

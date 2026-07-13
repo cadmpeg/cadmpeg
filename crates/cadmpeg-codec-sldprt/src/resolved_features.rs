@@ -1020,6 +1020,7 @@ fn project_endpoint_constraints(
             id,
             sketch: sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci { loci },
+            native_ref: None,
         });
     }
 }

@@ -1588,6 +1588,7 @@ fn encoder_writes_source_less_line_sketches() {
                     SketchLocus::Start(entity_ids[(index + 1) % 3].clone()),
                 ],
             },
+            native_ref: None,
         });
     }
     ir.model.sketch_entities.push(SketchEntity {
@@ -1868,6 +1869,7 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
         sketch: sketch_id,
         definition: SketchConstraintDefinition::Horizontal { entity: entity_id },
+        native_ref: None,
     });
 
     let error = SldprtCodec.encode(&ir, &mut Vec::new()).unwrap_err();
@@ -11600,6 +11602,7 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
         sketch,
         definition: SketchConstraintDefinition::Horizontal { entity },
+        native_ref: None,
     });
     assert_ne!(
         decoded.ir.source.as_ref().unwrap().attributes["semantic_sha256"],
