@@ -111,6 +111,8 @@ pub enum E5Pcurve {
         radius: f64,
         /// `[param_lo, param_hi]` angular domain.
         range: [f64; 2],
+        /// Two trailing scalar fields following the parameter range.
+        tail: [f64; 2],
     },
     /// Class `0xa0`: a nonperiodic degree-5 C2 B-spline p-curve encoded as a
     /// per-knot position/first-derivative/second-derivative jet ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
@@ -197,7 +199,7 @@ pub struct E5Loop {
 /// A resolved class-`0xff` trimmed edge-use record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), grammar `85
 /// <curve_support_ref> <start_vertex> <end_vertex> <param_start>
 /// <param_end>`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Edge {
     /// This edge-use record's `record_id`.
     pub record_id: u32,
@@ -212,9 +214,8 @@ pub struct E5Edge {
     pub parameter_start: u32,
     /// Reference to the end-parameter representation on the curve support.
     pub parameter_end: u32,
-    /// Raw trailing reference token following the parameter pair; meaning
-    /// not decoded further.
-    pub terminator: u32,
+    /// Bytes following the five counted fields.
+    pub tail: Vec<u8>,
 }
 
 #[derive(Debug)]
@@ -482,8 +483,6 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
             if position != record.payload.len()
                 || center.iter().chain(&values).any(|value| !value.is_finite())
                 || values[0] <= 0.0
-                || values[3] != 1.0
-                || values[4] != 0.0
             {
                 return None;
             }
@@ -493,6 +492,7 @@ fn parse_pcurve(record: &Record<'_>) -> Option<E5Pcurve> {
                 codes,
                 radius: values[0],
                 range: [values[1], values[2]],
+                tail: [values[3], values[4]],
             })
         }
         0xa0 => parse_jet_pcurve(record.payload, position, surface),
@@ -834,7 +834,7 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
     let end_vertex = reference(record.payload, &mut position)?;
     let parameter_start = reference(record.payload, &mut position)?;
     let parameter_end = reference(record.payload, &mut position)?;
-    let terminator = reference(record.payload, &mut position)?;
+    let tail = record.payload[position..].to_vec();
     Some(E5Edge {
         record_id: record.id,
         support,
@@ -842,7 +842,7 @@ fn parse_edge(record: &Record<'_>) -> Option<E5Edge> {
         end_vertex,
         parameter_start,
         parameter_end,
-        terminator,
+        tail,
     })
 }
 

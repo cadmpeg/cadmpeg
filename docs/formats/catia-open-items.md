@@ -54,7 +54,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The E5 body and shell orientation equation remains incomplete because the two root `extra_orientation_signs` lack assigned roles.
 - Curve-support records: the mode byte following the pcurve reference lane and the bytes after the fixed header are carried raw; both are unresolved.
 - Bounds records: the trailing `u32` code after each bound parameter is unresolved.
-- Edge-use records: the trailing reference token after the parameter pair is unresolved.
+- Edge-use records: the bytes after the five counted reference fields are unresolved.
 
 ## FBB-only and float-packed variants
 

@@ -1893,7 +1893,7 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
             &mut bytes,
             0xff,
             u32::from(id),
-            &[0x85, 0x08, 200, 0x08, start, 0x08, end, 0x80, 0x80, 0x80],
+            &[0x85, 0x08, 200, 0x08, start, 0x08, end, 0x80, 0x80],
         );
     }
     for (id, surface, offset) in [
