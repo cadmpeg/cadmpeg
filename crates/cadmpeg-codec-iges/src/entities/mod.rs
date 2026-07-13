@@ -3,4 +3,5 @@
 
 pub(crate) mod conics;
 pub(crate) mod geometry;
+pub(crate) mod splines;
 pub(crate) mod surfaces;

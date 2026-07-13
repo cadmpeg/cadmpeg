@@ -349,6 +349,81 @@ fn nurbs_curve_file() -> Vec<u8> {
     bytes
 }
 
+fn parametric_spline_curve_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let values = [
+        "112", "3", "1", "3", "2", "0", "1", "2", // Header and breakpoints.
+        "0", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", // Segment 1.
+        "1", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", // Segment 2.
+        "2", "1", "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", // Terminal block.
+    ];
+    let parameters = format!("{};", values.join(","));
+    let parameter_count = parameters.len().div_ceil(64);
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["112", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        [
+            "112",
+            "0",
+            "0",
+            &parameter_count.to_string(),
+            "0",
+            "",
+            "",
+            "SPLINE",
+            "0",
+        ],
+        2,
+    ));
+    bytes.extend(parameter_cards(parameters.as_bytes(), 1, 1));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a cubic NURBS carrier");
+    };
+    assert_eq!(nurbs.degree, 3);
+    assert_eq!(
+        nurbs.knots,
+        vec![0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0]
+    );
+    assert_eq!(nurbs.control_points.len(), 7);
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            None,
+            1.5,
+        ),
+        Some(cadmpeg_ir::math::Point3::new(1.5, 0.0, 0.0))
+    );
+    assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 2.0]));
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn rational_nurbs_curve_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);

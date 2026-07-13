@@ -810,6 +810,11 @@ pub(crate) fn project_geometry(
     decoded.extend(conics.decoded);
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
+    let splines = super::splines::project(ir, directory, parameters, global);
+    handled.extend(splines.handled);
+    decoded.extend(splines.decoded);
+    losses.extend(splines.losses);
+    wire_edges.extend(splines.wire_edges);
     let surfaces = super::surfaces::project(ir, directory, parameters, global);
     handled.extend(surfaces.handled);
     decoded.extend(surfaces.decoded);
