@@ -2454,7 +2454,7 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Materials, appearances, part attributes, feature history, and assembly \
+        message: "Materials, appearances, feature history, and assembly \
                   occurrence placements were not transferred: they live in the NX object-model \
                   per-class field serialization, which is not decoded."
             .to_string(),
@@ -2503,6 +2503,7 @@ fn attach_native_object_model(
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
+    let part_attributes = crate::native::part_attributes(&scan.container);
     let external_references = crate::native::external_references(&scan.container);
     let external_reference_records = crate::native::external_reference_records(&scan.container);
     let persistent_handles =
@@ -2516,6 +2517,7 @@ fn attach_native_object_model(
         && object_references.is_empty()
         && persistent_handles.is_empty()
         && configurations.is_empty()
+        && part_attributes.is_empty()
         && external_references.is_empty()
         && external_reference_records.is_empty()
         && object_sections.is_empty()
@@ -2528,6 +2530,12 @@ fn attach_native_object_model(
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("EXTREFSTREAM_STRING");
         annotations.exactness(&reference.id, Exactness::ByteExact);
+    }
+    for attribute in &part_attributes {
+        annotations
+            .note(&attribute.id, annotation_stream, attribute.source_offset)
+            .tag("Attribute");
+        annotations.exactness(&attribute.id, Exactness::ByteExact);
     }
     for record in &external_reference_records {
         annotations
@@ -2584,7 +2592,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(5);
+    namespace.version = namespace.version.max(6);
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
     }
@@ -2608,6 +2616,9 @@ fn attach_native_object_model(
     }
     if !configurations.is_empty() {
         namespace.set_arena("configurations", &configurations)?;
+    }
+    if !part_attributes.is_empty() {
+        namespace.set_arena("part_attributes", &part_attributes)?;
     }
     if !external_references.is_empty() {
         namespace.set_arena("external_references", &external_references)?;

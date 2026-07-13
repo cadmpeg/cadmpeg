@@ -233,6 +233,29 @@ pub struct Configuration {
     pub source_offset: u64,
 }
 
+/// One typed part-level attribute from `/Root/part/attrs`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PartAttribute {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Attribute owner token.
+    pub owner: String,
+    /// UTF-8 attribute title.
+    pub title: String,
+    /// UTF-8 attribute value.
+    pub value: String,
+    /// XML schema type token.
+    pub value_type: String,
+    /// Whether product-data management owns the value.
+    pub pdm_based: bool,
+    /// Attribute record schema version.
+    pub version: u32,
+    /// Directory entry containing the attribute XML.
+    pub source_entry: String,
+    /// Absolute file offset of the attribute element.
+    pub source_offset: u64,
+}
+
 /// End-anchored child-part string from an NX external-reference stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalReference {
@@ -372,6 +395,69 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
             (!configurations.is_empty() && active_count <= 1).then_some(configurations)
         })
         .flatten()
+        .collect()
+}
+
+/// Decode the typed part-attribute XML stream atomically.
+pub fn part_attributes(container: &Container) -> Vec<PartAttribute> {
+    container
+        .entries
+        .iter()
+        .enumerate()
+        .find(|(_, entry)| entry.name == "/Root/part/attrs")
+        .and_then(|(entry_index, entry)| {
+            let (offset, size) = entry.file_span?;
+            let start = usize::try_from(offset).ok()?;
+            let payload = container
+                .data
+                .get(start..start.checked_add(usize::try_from(size).ok()?)?)?;
+            parse_part_attributes(payload, entry_index, &entry.name, offset)
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn parse_part_attributes(
+    payload: &[u8],
+    entry_index: usize,
+    source_entry: &str,
+    entry_offset: u64,
+) -> Option<Vec<PartAttribute>> {
+    let document = roxmltree::Document::parse(std::str::from_utf8(payload).ok()?).ok()?;
+    let root = document.root_element();
+    if root.tag_name().name() != "UgAttributes"
+        || root.attribute("version")?.parse::<u32>().ok()? < 4
+    {
+        return None;
+    }
+    root.children()
+        .filter(roxmltree::Node::is_element)
+        .enumerate()
+        .map(|(ordinal, node)| {
+            if node.tag_name().name() != "Attribute" {
+                return None;
+            }
+            Some(PartAttribute {
+                id: format!("nx:part-attributes-{entry_index}:attribute#{ordinal}"),
+                owner: node.attribute("owner")?.to_string(),
+                title: node
+                    .attribute("utf8title")
+                    .or_else(|| node.attribute("title"))?
+                    .to_string(),
+                value: node
+                    .attribute("utf8value")
+                    .or_else(|| node.attribute("value"))?
+                    .to_string(),
+                value_type: node.attribute("type")?.to_string(),
+                pdm_based: match node.attribute("pdmBased")? {
+                    "true" => true,
+                    "false" => false,
+                    _ => return None,
+                },
+                version: node.attribute("version")?.parse().ok()?,
+                source_entry: source_entry.to_string(),
+                source_offset: entry_offset + node.range().start as u64,
+            })
+        })
         .collect()
 }
 

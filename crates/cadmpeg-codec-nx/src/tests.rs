@@ -2851,7 +2851,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 5);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 6);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -2970,6 +2970,36 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(parameter.native_ref.as_ref(), Some(&expressions[0].id));
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn nx_part_attributes_require_typed_atomic_xml() {
+    let xml = br#"<?xml version="1.0" encoding="UTF-8"?>
+<UgAttributes version="4" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Attribute owner="part" pdmBased="false" title="legacy" utf8title="Material"
+    value="legacy-value" utf8value="Steel" version="3" xsi:type="StringAttributeType"/>
+</UgAttributes>"#;
+    let attributes = crate::native::parse_part_attributes(xml, 7, "/Root/part/attrs", 100)
+        .expect("typed attributes");
+    assert_eq!(attributes.len(), 1);
+    assert_eq!(attributes[0].id, "nx:part-attributes-7:attribute#0");
+    assert_eq!(attributes[0].title, "Material");
+    assert_eq!(attributes[0].value, "Steel");
+    assert_eq!(attributes[0].value_type, "StringAttributeType");
+    assert!(!attributes[0].pdm_based);
+    assert!(attributes[0].source_offset > 100);
+
+    let malformed = xml
+        .windows(b"pdmBased=\"false\"".len())
+        .position(|window| window == b"pdmBased=\"false\"")
+        .map(|at| {
+            let mut malformed = xml.to_vec();
+            malformed[at + b"pdmBased=\"".len()..at + b"pdmBased=\"false".len()]
+                .copy_from_slice(b"maybe");
+            malformed
+        })
+        .unwrap();
+    assert!(crate::native::parse_part_attributes(&malformed, 7, "/Root/part/attrs", 100).is_none());
 }
 
 #[test]

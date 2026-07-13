@@ -51,7 +51,10 @@ FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, t
 | `/Root/qafmetadata`          | UTF-8 XML preview-folder metadata                                              |
 | `/Root/part/arrangements`    | (assemblies) UTF-8 XML arrangement config                                      |
 
-`part/attrs` carries flags such as `NX_MaterialMissingAssignments=TRUE`. JT and LWPA payloads are preview meshes.
+`part/attrs` has an `UgAttributes` root. Each `Attribute` supplies `owner`,
+`pdmBased`, `title`/`utf8title`, `value`/`utf8value`, `version`, and an XML schema
+type. UTF-8 title and value fields take precedence over their compatibility
+duplicates. JT and LWPA payloads are preview meshes.
 
 `EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
 
