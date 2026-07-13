@@ -979,9 +979,20 @@ buffer invalid.
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
 | `ON_3dmObjectAttributes` | `A828C015-09F5-477C-8665-F0482F5D6996` |
 
-The legacy `TL_RevSurface` UUID `0A8401B6-4D34-4B99-8615-1B4E723DC4E5` is an
-accepted alias for the native revolution payload. `ON_Circle` and `ON_Arc` are
-value types; their object wrapper is `ON_ArcCurve`.
+These registered legacy identities use the current class payload layout:
+
+| Payload family     | Alias UUIDs                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| NURBS curve        | `5EAF1119-0B51-11D4-BFFE-0010830122F0`, `76A709D5-1550-11D4-8000-0010830122F0`                          |
+| NURBS surface      | `4760C817-0BE3-11D4-BFFE-0010830122F0`, `FA4FD4B5-1613-11D4-8000-0010830122F0`                          |
+| polycurve          | `EF638317-154B-11D4-8000-0010830122F0`                                                                  |
+| Brep               | `0705FDEF-3E2A-11D4-800E-0010830122F0`, `2D4CFEDB-3E2A-11D4-800E-0010830122F0`, `F06FC243-A32A-4608-9DD8-A7D2C4CE2A36` |
+| revolution surface | `0A8401B6-4D34-4B99-8615-1B4E723DC4E5`                                                                  |
+
+Alias identity does not add a payload prefix or suffix. It participates in
+the same curve/surface base-class checks used by polymorphic Brep arrays.
+`ON_Circle` and `ON_Arc` are value types; their object wrapper is
+`ON_ArcCurve`.
 
 ## 12. Curves and points
 

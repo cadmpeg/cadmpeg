@@ -23,6 +23,12 @@ const POINT: Uuid = Uuid::from_canonical([
 const POINT_CLOUD: Uuid = Uuid::from_canonical([
     0x24, 0x88, 0xf3, 0x47, 0xf8, 0xfa, 0x11, 0xd3, 0xbf, 0xec, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
+const CURVE_PROXY: Uuid = Uuid::from_canonical([
+    0x4e, 0xd7, 0xd4, 0xd9, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+const CURVE_ON_SURFACE: Uuid = Uuid::from_canonical([
+    0x4e, 0xd7, 0xd4, 0xd8, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
 const LINE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xdb, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
@@ -35,8 +41,19 @@ const POLYLINE: Uuid = Uuid::from_canonical([
 const POLYCURVE: Uuid = Uuid::from_canonical([
     0x4e, 0xd7, 0xd4, 0xe0, 0xe9, 0x47, 0x11, 0xd3, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
+const POLYCURVE_LEGACY: Uuid = Uuid::from_canonical([
+    0xef, 0x63, 0x83, 0x17, 0x15, 0x4b, 0x11, 0xd4, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
 const NURBS_CURVE: Uuid = crate::surfaces::NURBS_CURVE;
+const NURBS_CURVE_TL: Uuid = Uuid::from_canonical([
+    0x5e, 0xaf, 0x11, 0x19, 0x0b, 0x51, 0x11, 0xd4, 0xbf, 0xfe, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+const NURBS_CURVE_LEGACY: Uuid = Uuid::from_canonical([
+    0x76, 0xa7, 0x09, 0xd5, 0x15, 0x50, 0x11, 0xd4, 0x80, 0x00, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
 const NURBS_SURFACE: Uuid = crate::surfaces::NURBS_SURFACE;
+const NURBS_SURFACE_TL: Uuid = crate::surfaces::NURBS_SURFACE_TL;
+const NURBS_SURFACE_LEGACY: Uuid = crate::surfaces::NURBS_SURFACE_LEGACY;
 const PLANE_SURFACE: Uuid = crate::surfaces::PLANE_SURFACE;
 const CLIPPING_PLANE_SURFACE: Uuid = crate::surfaces::CLIPPING_PLANE_SURFACE;
 const REV_SURFACE: Uuid = crate::surfaces::REV_SURFACE;
@@ -132,14 +149,68 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
             | ARC
             | POLYLINE
             | POLYCURVE
+            | POLYCURVE_LEGACY
             | NURBS_CURVE
+            | NURBS_CURVE_TL
+            | NURBS_CURVE_LEGACY
             | NURBS_SURFACE
+            | NURBS_SURFACE_TL
+            | NURBS_SURFACE_LEGACY
             | PLANE_SURFACE
             | CLIPPING_PLANE_SURFACE
             | REV_SURFACE
             | REV_SURFACE_LEGACY
             | SUM_SURFACE
     )
+}
+
+/// Returns whether a class derives from the curve carrier family.
+pub(crate) fn curve_class(uuid: Uuid) -> bool {
+    matches!(
+        uuid,
+        CURVE_PROXY
+            | CURVE_ON_SURFACE
+            | LINE
+            | ARC
+            | POLYLINE
+            | POLYCURVE
+            | POLYCURVE_LEGACY
+            | NURBS_CURVE
+            | NURBS_CURVE_TL
+            | NURBS_CURVE_LEGACY
+    )
+}
+
+/// Returns whether a class derives from the surface carrier family.
+pub(crate) fn surface_class(uuid: Uuid) -> bool {
+    matches!(
+        uuid,
+        NURBS_SURFACE
+            | NURBS_SURFACE_TL
+            | NURBS_SURFACE_LEGACY
+            | PLANE_SURFACE
+            | CLIPPING_PLANE_SURFACE
+            | REV_SURFACE
+            | REV_SURFACE_LEGACY
+            | SUM_SURFACE
+    )
+}
+
+#[cfg(test)]
+mod alias_tests {
+    use super::*;
+
+    #[test]
+    fn registered_aliases_keep_their_base_and_dispatch_families() {
+        for class in [POLYCURVE_LEGACY, NURBS_CURVE_TL, NURBS_CURVE_LEGACY] {
+            assert!(supported_class(class));
+            assert!(curve_class(class));
+        }
+        for class in [NURBS_SURFACE_TL, NURBS_SURFACE_LEGACY] {
+            assert!(supported_class(class));
+            assert!(surface_class(class));
+        }
+    }
 }
 
 /// Decode one top-level class-data payload.
@@ -177,6 +248,8 @@ fn decode_inner(
     if matches!(
         class_uuid,
         NURBS_SURFACE
+            | NURBS_SURFACE_TL
+            | NURBS_SURFACE_LEGACY
             | PLANE_SURFACE
             | CLIPPING_PLANE_SURFACE
             | REV_SURFACE
@@ -221,11 +294,11 @@ fn decode_inner(
                 warnings: Vec::new(),
             },
         },
-        POLYCURVE => {
+        POLYCURVE | POLYCURVE_LEGACY => {
             let curve = read_polycurve(data, &mut reader, scale, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }
-        NURBS_CURVE => DecodedGeometry::Curve {
+        NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve {
                 geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve(
                     &mut reader,
@@ -272,7 +345,13 @@ pub(crate) fn decode_embedded_curve(
     reader.skip(wrapper.next_offset - start)?;
     if !matches!(
         class.class_uuid,
-        LINE | ARC | POLYLINE | POLYCURVE | NURBS_CURVE
+        LINE | ARC
+            | POLYLINE
+            | POLYCURVE
+            | POLYCURVE_LEGACY
+            | NURBS_CURVE
+            | NURBS_CURVE_TL
+            | NURBS_CURVE_LEGACY
     ) {
         return Err(malformed(
             start,
@@ -470,7 +549,7 @@ fn decode_inner_2d(
     }
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let result = match class_uuid {
-        NURBS_CURVE => DecodedGeometry::Curve {
+        NURBS_CURVE | NURBS_CURVE_TL | NURBS_CURVE_LEGACY => DecodedGeometry::Curve {
             curve: DecodedCurve {
                 geometry: CurveGeometry::Nurbs(crate::surfaces::read_nurbs_curve_2d(&mut reader)?),
                 compound: None,
@@ -501,7 +580,7 @@ fn decode_inner_2d(
                 },
             }
         }
-        POLYCURVE => {
+        POLYCURVE | POLYCURVE_LEGACY => {
             let curve = read_polycurve_2d(data, &mut reader, archive, depth)?;
             DecodedGeometry::Curve { curve }
         }

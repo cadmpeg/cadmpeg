@@ -19,6 +19,15 @@ use crate::wire::Uuid;
 pub(crate) const ON_BREP: Uuid = Uuid::from_canonical([
     0x60, 0xb5, 0xdb, 0xc5, 0xe6, 0x60, 0x11, 0xd3, 0xbf, 0xe4, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ]);
+const LEGACY_TRIMMED_SURFACE: Uuid = Uuid::from_canonical([
+    0x07, 0x05, 0xfd, 0xef, 0x3e, 0x2a, 0x11, 0xd4, 0x80, 0x0e, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+const LEGACY_BREP: Uuid = Uuid::from_canonical([
+    0x2d, 0x4c, 0xfe, 0xdb, 0x3e, 0x2a, 0x11, 0xd4, 0x80, 0x0e, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+const TL_BREP: Uuid = Uuid::from_canonical([
+    0xf0, 0x6f, 0xc2, 0x43, 0xa3, 0x2a, 0x46, 0x08, 0x9d, 0xd8, 0xa7, 0xd2, 0xc4, 0xce, 0x2a, 0x36,
+]);
 /// Maximum number of records in one Brep array.
 pub(crate) const MAX_BREP_ITEMS: usize = 1 << 20;
 /// Maximum nesting depth used while reading polymorphic children.
@@ -418,7 +427,10 @@ pub(crate) fn parse(
 
 /// Returns whether a UUID is `ON_Brep`.
 pub(crate) fn supported_class(uuid: Uuid) -> bool {
-    uuid == ON_BREP
+    matches!(
+        uuid,
+        ON_BREP | LEGACY_TRIMMED_SURFACE | LEGACY_BREP | TL_BREP
+    )
 }
 
 fn read_children(
@@ -1459,25 +1471,9 @@ fn finish_anonymous(
 }
 
 fn classify_base_type(uuid: Uuid) -> RawBrepBaseType {
-    let name = uuid.to_string();
-    if matches!(
-        name.as_str(),
-        "4ed7d4d9-e947-11d3-bfe5-0010830122f0"
-            | "4ed7d4d8-e947-11d3-bfe5-0010830122f0"
-            | "4ed7d4dd-e947-11d3-bfe5-0010830122f0"
-            | "4ed7d4db-e947-11d3-bfe5-0010830122f0"
-            | "cf33be2a-09b4-11d4-bffb-0010830122f0"
-            | "4ed7d4e6-e947-11d3-bfe5-0010830122f0"
-            | "4ed7d4e0-e947-11d3-bfe5-0010830122f0"
-    ) {
+    if crate::curves::curve_class(uuid) {
         RawBrepBaseType::Curve
-    } else if matches!(
-        name.as_str(),
-        "4ed7d4de-e947-11d3-bfe5-0010830122f0"
-            | "4ed7d4df-e947-11d3-bfe5-0010830122f0"
-            | "a16220d3-163b-11d4-8000-0010830122f0"
-            | "c4cd5359-446d-4690-9ff5-29059732472b"
-    ) {
+    } else if crate::curves::surface_class(uuid) {
         RawBrepBaseType::Surface
     } else {
         RawBrepBaseType::Other
@@ -1487,6 +1483,14 @@ fn classify_base_type(uuid: Uuid) -> RawBrepBaseType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registered_brep_aliases_share_the_brep_payload_reader() {
+        assert!(supported_class(ON_BREP));
+        assert!(supported_class(LEGACY_TRIMMED_SURFACE));
+        assert!(supported_class(LEGACY_BREP));
+        assert!(supported_class(TL_BREP));
+    }
 
     fn anonymous(body: &[u8]) -> Vec<u8> {
         let mut bytes = 0x4000_8000_u32.to_le_bytes().to_vec();
