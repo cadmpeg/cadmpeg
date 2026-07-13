@@ -387,22 +387,15 @@ fn configuration_partitions(
         }
     }
     let mut next = 0u32;
-    let configurations = configurations
-        .into_iter()
-        .map(|configuration| {
-            let index = configuration.source_index.unwrap_or_else(|| {
-                while used.contains(&next) {
-                    next = next.saturating_add(1);
-                }
-                let index = next;
-                used.insert(index);
-                next = next.saturating_add(1);
-                index
-            });
-            (index, configuration)
-        })
-        .collect::<Vec<_>>();
-    configurations
+    let mut assigned = Vec::with_capacity(configurations.len());
+    for configuration in configurations {
+        let index = match configuration.source_index {
+            Some(index) => index,
+            None => reserve_configuration_index(&mut used, &mut next)?,
+        };
+        assigned.push((index, configuration));
+    }
+    assigned
         .into_iter()
         .filter(|(_, configuration)| !configuration.bodies.is_empty())
         .map(|(index, configuration)| {
@@ -424,6 +417,24 @@ fn configuration_partitions(
             ))
         })
         .collect()
+}
+
+pub(super) fn reserve_configuration_index(
+    used: &mut HashSet<u32>,
+    next: &mut u32,
+) -> Result<u32, CodecError> {
+    loop {
+        let index = *next;
+        if used.insert(index) {
+            if let Some(successor) = index.checked_add(1) {
+                *next = successor;
+            }
+            return Ok(index);
+        }
+        *next = index.checked_add(1).ok_or_else(|| {
+            CodecError::Malformed("SLDPRT configuration source index space is exhausted".into())
+        })?;
+    }
 }
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
