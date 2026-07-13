@@ -2646,6 +2646,20 @@ mod profile_join_tests {
                 entity: first.clone(),
             })
         );
+        let mut coordinate_horizontal = marker("coordinate-horizontal", Some([0.0, 0.0]));
+        coordinate_horizontal.kind = SketchInputKind::from_native_code_and_layout(4, true);
+        let mut coordinate_loci = joins.clone();
+        coordinate_loci.insert(
+            coordinate_horizontal.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
+        );
+        markers.insert(coordinate_horizontal.id.as_str(), &coordinate_horizontal);
+        assert_eq!(
+            typed_marker_relation_definition(&coordinate_horizontal, &markers, &coordinate_loci,),
+            Some(SketchConstraintDefinition::Horizontal {
+                entity: first.clone(),
+            })
+        );
         let mut parallel = marker("parallel", None);
         parallel.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
         parallel.links = vec![
