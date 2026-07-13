@@ -10926,6 +10926,12 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
         .expect("projected D1 parameter");
     assert_eq!(parameter.expression, "25mm");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(25.0)
+        ))
+    );
     assert!(parameter
         .native_ref
         .as_deref()
@@ -10984,6 +10990,62 @@ fn semantic_writer_updates_linked_resolved_feature_scalar() {
         .find(|scalar| scalar.id == native_ref)
         .expect("regenerated scalar");
     assert_eq!(scalar.value, 0.05);
+}
+
+#[test]
+fn semantic_writer_updates_untyped_resolved_feature_scalar() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names(&[0], &["Sketch1", "D1"]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "D1")
+        .expect("projected D1 parameter");
+    parameter.expression = "0.5".into();
+    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Real(0.5));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let parameter = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .expect("regenerated D1 parameter");
+    assert_eq!(parameter.expression, "0.5");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(0.5))
+    );
+    let native_ref = parameter.native_ref.as_deref().expect("linked scalar");
+    let native = sldprt_native(&regenerated.ir);
+    let scalar = native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.scalars)
+        .find(|scalar| scalar.id == native_ref)
+        .expect("regenerated scalar");
+    assert_eq!(scalar.value, 0.5);
 }
 
 #[test]
@@ -11058,7 +11120,11 @@ fn decode_projects_unambiguous_resolved_sketch_parameter() {
         .iter()
         .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
         .expect("projected sketch D1 parameter");
-    assert_eq!(parameter.expression, "25mm");
+    assert_eq!(parameter.expression, "0.025");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(0.025))
+    );
     assert!(parameter
         .native_ref
         .as_deref()

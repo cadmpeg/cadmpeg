@@ -3225,13 +3225,17 @@ fn sync_neutral_parameters(
                 parameter.id.0
             )));
         }
-        let Some(ParameterValue::Length(length)) = parameter.value else {
-            return Err(CodecError::NotImplemented(format!(
-                "SLDPRT scalar {} requires a length-valued parameter",
-                scalar.id
-            )));
+        let value = match parameter.value {
+            Some(ParameterValue::Length(length)) => length.0 / 1000.0,
+            Some(ParameterValue::Angle(angle)) => angle.0,
+            Some(ParameterValue::Real(value)) => value,
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT scalar {} requires a real-valued parameter",
+                    scalar.id
+                )));
+            }
         };
-        let value = length.0 / 1000.0;
         let offset = usize::try_from(scalar.offset).map_err(|_| {
             CodecError::Malformed("SLDPRT scalar offset exceeds address space".into())
         })?;
