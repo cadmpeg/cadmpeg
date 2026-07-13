@@ -141,6 +141,7 @@ dependencies = [
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-f3d",
+ "cadmpeg-codec-iges",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
  "cadmpeg-codec-sldprt",
@@ -183,6 +184,15 @@ dependencies = [
  "sha2",
  "thiserror",
  "zip",
+]
+
+[[package]]
+name = "cadmpeg-codec-iges"
+version = "0.2.0"
+dependencies = [
+ "cadmpeg-ir",
+ "serde",
+ "sha2",
 ]
 
 [[package]]

@@ -360,7 +360,7 @@ fn garbage_reports_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES",
         ));
 }
 
@@ -593,7 +593,7 @@ fn inspect_garbage_reports_rhino_among_supported_formats() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains(
-            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM",
+            "supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES",
         ));
 }
 

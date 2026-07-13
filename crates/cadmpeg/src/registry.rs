@@ -4,6 +4,7 @@
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
+use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
@@ -27,6 +28,7 @@ impl Registry {
                 Box::new(CreoCodec),
                 Box::new(NxCodec),
                 Box::new(RhinoCodec),
+                Box::new(IgesCodec),
             ],
             encoders: vec![
                 Box::new(F3dCodec),

@@ -82,7 +82,7 @@ pub fn inspect(
         Some(ForcedInput::Cadir) => bail!("inspect requires a container input, not cadir"),
         None => {
             let (codec, confidence) = registry.detect(&prefix).ok_or_else(|| {
-                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM; use --input-format to override detection", path.display())
+                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES; use --input-format to override detection", path.display())
             })?;
             (codec, Some(confidence))
         }

@@ -90,6 +90,9 @@ enum InputFormat {
     /// Rhino `.3dm`.
     #[value(alias = "3dm")]
     Rhino,
+    /// IGES `.igs` or `.iges`.
+    #[value(alias = "igs")]
+    Iges,
     /// Canonical CADIR JSON.
     Cadir,
 }
@@ -109,6 +112,7 @@ impl InputFormat {
             Self::Nx => ForcedInput::Codec("nx"),
             Self::Creo => ForcedInput::Codec("creo"),
             Self::Rhino => ForcedInput::Codec("rhino"),
+            Self::Iges => ForcedInput::Codec("iges"),
             Self::Cadir => ForcedInput::Cadir,
         }
     }
