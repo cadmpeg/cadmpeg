@@ -373,6 +373,10 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             second: SketchLocus::End(entity.clone()),
             axis: entity.clone(),
         },
+        SketchConstraintDefinition::ArcAngle {
+            entity: entity.clone(),
+            angle: crate::features::Angle(std::f64::consts::FRAC_PI_2),
+        },
         SketchConstraintDefinition::Radius {
             entity: entity.clone(),
             parameter: parameter.clone(),

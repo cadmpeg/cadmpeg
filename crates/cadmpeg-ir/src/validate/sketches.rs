@@ -218,6 +218,27 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "invalid sketch constraint arity",
             );
         }
+        if let Constraint::ArcAngle { entity, angle } = &constraint.definition {
+            if !angle.0.is_finite() || angle.0 <= 0.0 {
+                finding(
+                    findings,
+                    Check::ParameterDomain,
+                    &constraint.id.0,
+                    "invalid sketch arc angle",
+                );
+            }
+            if geometry
+                .get(entity)
+                .is_some_and(|geometry| !matches!(geometry, SketchGeometry::Arc { .. }))
+            {
+                finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &constraint.id.0,
+                    "sketch arc-angle constraint references a non-arc entity",
+                );
+            }
+        }
         for locus in constraint_loci(&constraint.definition) {
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
                 continue;

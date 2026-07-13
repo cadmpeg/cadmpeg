@@ -305,6 +305,13 @@ pub enum SketchConstraintDefinition {
         /// Fixed entity.
         entity: SketchEntityId,
     },
+    /// Circular arc angle fixed by the relation kind.
+    ArcAngle {
+        /// Constrained circular arc.
+        entity: SketchEntityId,
+        /// Fixed positive arc angle in radians.
+        angle: Angle,
+    },
     /// Distance controlled by a design parameter.
     Distance {
         /// Measured entities.

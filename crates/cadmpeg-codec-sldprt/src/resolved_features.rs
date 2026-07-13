@@ -1704,9 +1704,9 @@ fn typed_marker_relation_definition(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        AtIntersection, Coincident, Collinear, Concentric, Equal, Fixed, Horizontal,
-        HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent, Vertical,
-        VerticalPoints,
+        ArcAngle180, ArcAngle270, ArcAngle90, AtIntersection, Coincident, Collinear, Concentric,
+        Equal, Fixed, Horizontal, HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric,
+        Tangent, Vertical, VerticalPoints,
     };
     let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
@@ -1728,6 +1728,19 @@ fn typed_marker_relation_definition(
                     entity: entity.clone(),
                 },
                 _ => unreachable!("relation kind was filtered above"),
+            }
+        }
+        ArcAngle90 | ArcAngle180 | ArcAngle270 => {
+            let entity = linked_single_arc_entity(marker, markers_by_id, loci_by_marker)?;
+            let angle = match kind {
+                ArcAngle90 => std::f64::consts::FRAC_PI_2,
+                ArcAngle180 => std::f64::consts::PI,
+                ArcAngle270 => 3.0 * std::f64::consts::FRAC_PI_2,
+                _ => unreachable!("relation kind was filtered above"),
+            };
+            SketchConstraintDefinition::ArcAngle {
+                entity,
+                angle: cadmpeg_ir::features::Angle(angle),
             }
         }
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric => {
@@ -1811,6 +1824,30 @@ fn typed_marker_relation_definition(
         }
         _ => return None,
     })
+}
+
+fn linked_single_arc_entity(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchEntityId> {
+    if marker.links.is_empty()
+        || marker.links.iter().any(|link| {
+            !matches!(
+                markers_by_id
+                    .get(link.entity_ref.as_str())
+                    .map(|marker| marker.kind),
+                Some(SketchInputKind::Arc)
+            )
+        })
+    {
+        return None;
+    }
+    let entities = linked_single_entities(marker, loci_by_marker)?;
+    let [entity] = entities.as_slice() else {
+        return None;
+    };
+    Some(entity.clone())
 }
 
 fn linked_point_symmetry_operands(
@@ -2687,6 +2724,33 @@ mod profile_join_tests {
             typed_marker_relation_definition(&symmetry, &markers, &symmetry_loci),
             None
         );
+        for (kind, angle) in [
+            (SketchRelationKind::ArcAngle90, std::f64::consts::FRAC_PI_2),
+            (SketchRelationKind::ArcAngle180, std::f64::consts::PI),
+            (
+                SketchRelationKind::ArcAngle270,
+                3.0 * std::f64::consts::FRAC_PI_2,
+            ),
+        ] {
+            let mut arc_angle = marker("arc-angle", None);
+            arc_angle.kind = SketchInputKind::Relation(kind);
+            arc_angle.links = vec![SketchInputLink {
+                local_id: 1,
+                entity_ref: second_curve.id.clone(),
+            }];
+            assert_eq!(
+                typed_marker_relation_definition(&arc_angle, &markers, &intersection_loci),
+                Some(SketchConstraintDefinition::ArcAngle {
+                    entity: SketchEntityId("second".into()),
+                    angle: cadmpeg_ir::features::Angle(angle),
+                })
+            );
+            arc_angle.links[0].entity_ref.clone_from(&first_curve.id);
+            assert_eq!(
+                typed_marker_relation_definition(&arc_angle, &markers, &intersection_loci),
+                None
+            );
+        }
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),
             parent: "lane".into(),

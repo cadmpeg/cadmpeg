@@ -1112,7 +1112,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             } => (entities.clone(), Some(parameter.0.as_str())),
             Definition::Horizontal { entity }
             | Definition::Vertical { entity }
-            | Definition::Fixed { entity } => (vec![entity.clone()], None),
+            | Definition::Fixed { entity }
+            | Definition::ArcAngle { entity, .. } => (vec![entity.clone()], None),
             Definition::Parallel { first, second }
             | Definition::Perpendicular { first, second }
             | Definition::Tangent { first, second }
