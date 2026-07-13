@@ -11493,7 +11493,8 @@ fn patch_body_native_keys(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let records = sab::frame(bytes, start, limit, 8)
+    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     for (record_index, key) in edits {
         let record = records
@@ -13846,7 +13847,8 @@ fn patch_geometry(
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
     let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
-    let records = sab::frame(bytes, start, limit, 8)
+    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let records = sab::frame(bytes, start, limit, ref_width)
         .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
     let header_scale = asm_header::parse(bytes)
         .and_then(|header| header.scale)
@@ -14556,7 +14558,8 @@ fn patch_vec3_token(
     ordinal: usize,
     values: [f64; 3],
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, tag)
+    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let offset = *sab::payload_token_offsets(bytes, record, ref_width, tag)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .get(ordinal)
         .ok_or_else(|| {

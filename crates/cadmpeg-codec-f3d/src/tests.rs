@@ -8356,6 +8356,26 @@ fn decodes_binaryfile4_geometry_with_lump_topology() {
 }
 
 #[test]
+fn generated_f3d_rewrites_binaryfile4_geometry() {
+    let source = f3d_with_smbh(&synthetic_geometry_bf4_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated BinaryFile4 decode");
+    let mut edited = decoded.ir;
+    edited.model.points[0].position.x += 2.5;
+    let expected = edited.model.points[0].position;
+
+    let mut regenerated = Vec::new();
+    F3dCodec
+        .write_preserved(&edited, &mut regenerated)
+        .expect("generated BinaryFile4 regeneration");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
+        .expect("regenerated BinaryFile4 decode");
+    assert_eq!(round_trip.ir.model.points[0].position, expected);
+}
+
+#[test]
 fn reversed_edge_sense_reverses_its_conic_carrier() {
     let f3d = f3d_with_smbh(&synthetic_geometry_bf4_smbh_with_arc_sense(0x0a));
     let result = F3dCodec
