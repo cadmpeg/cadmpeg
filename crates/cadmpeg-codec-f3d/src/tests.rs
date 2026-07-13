@@ -455,6 +455,9 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     );
 
     decoded.ir.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
+    update_f3d_native(&mut decoded.ir, |native| {
+        native.tolerant_coedge_parameters[0].parameter_range = [-1.5, 2.25];
+    });
     let mut edited = Vec::new();
     F3dCodec
         .write_preserved(&decoded.ir, &mut edited)
@@ -465,6 +468,10 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     assert_eq!(
         round_trip.ir.model.coedges[0].sense,
         cadmpeg_ir::topology::Sense::Reversed
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
+        [-1.5, 2.25]
     );
 }
 

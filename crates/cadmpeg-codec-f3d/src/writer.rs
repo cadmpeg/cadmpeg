@@ -8156,6 +8156,7 @@ pub fn write_semantic(
     let vertex_ownership_edits = validate_vertex_ownership_edits(&baseline.ir, target)?;
     let face_sidedness_edits = validate_face_sidedness_edits(&baseline.ir, target)?;
     let tolerant_vertex_edits = validate_tolerant_vertex_edits(&baseline.ir, target)?;
+    let tolerant_coedge_edits = validate_tolerant_coedge_edits(&baseline.ir, target)?;
     let mut supported_target = baseline.ir.clone();
     supported_target
         .model
@@ -8272,6 +8273,9 @@ pub fn write_semantic(
         supported
             .face_sidedness
             .clone_from(&target_native.face_sidedness);
+        supported
+            .tolerant_coedge_parameters
+            .clone_from(&target_native.tolerant_coedge_parameters);
         supported
             .tolerant_vertex_tails
             .clone_from(&target_native.tolerant_vertex_tails);
@@ -8487,6 +8491,7 @@ pub fn write_semantic(
                 &tolerant_vertex_edits,
             )?;
             patch_transform_hints(&mut bytes, &transform_hint_edits)?;
+            patch_tolerant_coedge_parameters(&mut bytes, &tolerant_coedge_edits)?;
             patch_body_native_keys(&mut bytes, &body_native_key_edits.asm)?;
             if let Some(edits) = history_state_edits.get(&name) {
                 patch_history_states(&mut bytes, edits)?;
@@ -8890,6 +8895,51 @@ fn validate_tolerant_vertex_edits(
                 after.record_index as usize,
                 (tolerance / 10.0, after.trailing_floats),
             );
+        }
+    }
+    Ok(edits)
+}
+
+fn validate_tolerant_coedge_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<usize, [f64; 2]>, CodecError> {
+    let baseline_parameters = f3d_native(baseline)?
+        .map(|native| native.tolerant_coedge_parameters)
+        .unwrap_or_default();
+    let target_parameters = f3d_native(target)?
+        .map(|native| native.tolerant_coedge_parameters)
+        .unwrap_or_default();
+    let baseline_by_id = baseline_parameters
+        .iter()
+        .map(|parameters| (parameters.id.as_str(), parameters))
+        .collect::<BTreeMap<_, _>>();
+    let target_by_id = target_parameters
+        .iter()
+        .map(|parameters| (parameters.id.as_str(), parameters))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_by_id.keys().ne(target_by_id.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D tolerant-coedge regeneration requires the unchanged metadata-id set".into(),
+        ));
+    }
+    let mut edits = BTreeMap::new();
+    for (id, before) in baseline_by_id {
+        let after = target_by_id[id];
+        let mut normalized = after.clone();
+        normalized.parameter_range = before.parameter_range;
+        if &normalized != before {
+            return Err(CodecError::NotImplemented(format!(
+                "F3D tolerant-coedge edit changes structural fields: {id}"
+            )));
+        }
+        if after.parameter_range.iter().any(|value| !value.is_finite()) {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant coedge {id} has non-finite parameters"
+            )));
+        }
+        if after.parameter_range != before.parameter_range {
+            edits.insert(after.record_index as usize, after.parameter_range);
         }
     }
     Ok(edits)
@@ -10408,6 +10458,40 @@ fn patch_transform_hints(
     }
     Ok(())
 }
+
+fn patch_tolerant_coedge_parameters(
+    bytes: &mut [u8],
+    edits: &BTreeMap<usize, [f64; 2]>,
+) -> Result<(), CodecError> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+    let start = asm_header::record_stream_start(bytes)
+        .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
+    let limit = asm_header::first_delta_state_offset(bytes).unwrap_or(bytes.len());
+    let records = sab::frame(bytes, start, limit, 8)
+        .map_err(|error| CodecError::Malformed(format!("cannot frame active BREP: {error}")))?;
+    for (record_index, range) in edits {
+        let record = records
+            .iter()
+            .find(|record| record.index == *record_index)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "F3D tolerant-coedge record {record_index} is missing"
+                ))
+            })?;
+        if record.head != "tcoedge" {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-coedge record {record_index} is {}",
+                record.head
+            )));
+        }
+        patch_double_token(bytes, record, 0, range[0])?;
+        patch_double_token(bytes, record, 1, range[1])?;
+    }
+    Ok(())
+}
+
 struct ConstructionRecipeEdit {
     record_index: Option<(u64, i32)>,
     design_id: Option<(u64, Vec<u8>)>,
