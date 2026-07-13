@@ -156,6 +156,11 @@ fn codec_inspects_edition3_sections_and_external_references() {
         references.attributes["external_uris"],
         "https://example.invalid/external-part"
     );
+    assert_eq!(summary.entries[3].attributes["unknown_entities"], "");
+    assert_eq!(
+        summary.entries[4].attributes["unknown_entities"],
+        "EXAMPLE_RECORD:1"
+    );
     let exchange = crate::parse::parse(bytes).expect("parse opaque signature payload");
     let signature = exchange.signature.expect("signature byte span");
     assert!(bytes[signature].windows(2).any(|bytes| bytes == b"@%"));
@@ -179,6 +184,16 @@ fn decode_reports_data_section_external_dependencies() {
         .report
         .notes
         .contains(&"external source https://example.invalid/library item fastener-table".into()));
+
+    let summary = StepCodec::default()
+        .inspect(&mut Cursor::new(bytes))
+        .expect("inspect external document dependencies");
+    let dependencies = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "EXTERNAL_DEPENDENCIES")
+        .expect("external dependency inventory");
+    assert_eq!(dependencies.attributes["dependency_count"], "2");
 }
 
 #[test]

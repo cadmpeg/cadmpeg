@@ -1171,6 +1171,13 @@ impl Codec for StepCodec {
         }
         let exchange =
             parse::parse(&bytes).map_err(|error| CodecError::Malformed(error.to_string()))?;
+        let decoded = reader::decode(&bytes, &DecodeOptions::default())?;
+        let opaque_offsets = decoded
+            .ir
+            .native_unknowns("step")?
+            .iter()
+            .map(|record| record.offset as usize)
+            .collect::<std::collections::BTreeSet<_>>();
         let mut entries = vec![ContainerEntry {
             name: "HEADER".into(),
             role: "metadata".into(),
@@ -1218,6 +1225,9 @@ impl Codec for StepCodec {
         for (index, section) in exchange.data.iter().enumerate() {
             let mut counts = std::collections::BTreeMap::<String, usize>::new();
             for id in &section.records {
+                if !opaque_offsets.contains(&exchange.records[id].span.start) {
+                    continue;
+                }
                 for partial in &exchange.records[id].partials {
                     *counts.entry(partial.name.clone()).or_default() += 1;
                 }
@@ -1233,6 +1243,31 @@ impl Codec for StepCodec {
             entries.push(ContainerEntry {
                 name: format!("DATA[{index}]"),
                 role: "entity_records".into(),
+                compression: "none".into(),
+                compressed_size: 0,
+                uncompressed_size: 0,
+                attributes,
+            });
+        }
+        let external_dependencies = decoded
+            .report
+            .notes
+            .iter()
+            .filter(|note| {
+                note.starts_with("external document ") || note.starts_with("external source ")
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if !external_dependencies.is_empty() {
+            let mut attributes = std::collections::BTreeMap::new();
+            attributes.insert(
+                "dependency_count".into(),
+                external_dependencies.len().to_string(),
+            );
+            attributes.insert("dependencies".into(), external_dependencies.join(","));
+            entries.push(ContainerEntry {
+                name: "EXTERNAL_DEPENDENCIES".into(),
+                role: "external_references".into(),
                 compression: "none".into(),
                 compressed_size: 0,
                 uncompressed_size: 0,
@@ -1257,7 +1292,9 @@ impl Codec for StepCodec {
                 fn strings(value: &parse::Value, out: &mut Vec<String>) {
                     match value {
                         parse::Value::String(bytes) => {
-                            out.push(String::from_utf8_lossy(bytes).into_owned())
+                            if let Ok(value) = strings::decode(bytes) {
+                                out.push(value);
+                            }
                         }
                         parse::Value::List(values) => {
                             values.iter().for_each(|value| strings(value, out));
