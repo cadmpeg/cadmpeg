@@ -1013,7 +1013,7 @@ pub(crate) fn reconstruct_knots(
     Ok(result)
 }
 
-fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bool {
+pub(crate) fn periodic_knots(knots: &[f64], order: usize, cv_count: usize) -> bool {
     // This is ON_IsKnotVectorPeriodic over the stored, zero-based knot array.
     if order < 3 || cv_count < order || (order <= 4 && cv_count < order + 2) {
         return false;

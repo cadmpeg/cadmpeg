@@ -501,6 +501,22 @@ fn check_nurbs_surface(
             "surface {id} has invalid NURBS data"
         )));
     }
+    check_knot_roundtrip(
+        id,
+        "surface U",
+        &surface.u_knots,
+        u_order,
+        u_count,
+        surface.u_periodic,
+    )?;
+    check_knot_roundtrip(
+        id,
+        "surface V",
+        &surface.v_knots,
+        v_order,
+        v_count,
+        surface.v_periodic,
+    )?;
     Ok(())
 }
 
@@ -530,6 +546,32 @@ fn check_nurbs_curve(id: &str, curve: &cadmpeg_ir::geometry::NurbsCurve) -> Resu
     {
         return Err(CodecError::Malformed(format!(
             "curve {id} has invalid NURBS data"
+        )));
+    }
+    check_knot_roundtrip(id, "curve", &curve.knots, order, count, curve.periodic)?;
+    Ok(())
+}
+
+fn check_knot_roundtrip(
+    id: &str,
+    direction: &str,
+    full: &[f64],
+    order: usize,
+    count: usize,
+    declared_periodic: bool,
+) -> Result<(), CodecError> {
+    let stored = &full[1..full.len() - 1];
+    if stored[order - 2] >= stored[count - 1] {
+        return Err(CodecError::Malformed(format!(
+            "{direction} {id} has a non-increasing native NURBS domain"
+        )));
+    }
+    let reconstructed = crate::surfaces::reconstruct_knots(stored, order, count)
+        .map_err(|error| CodecError::Malformed(format!("{direction} {id}: {error}")))?;
+    let periodic = crate::surfaces::periodic_knots(stored, order, count);
+    if reconstructed != full || periodic != declared_periodic {
+        return Err(CodecError::Malformed(format!(
+            "{direction} {id} knot endpoints or periodic flag are not native-canonical"
         )));
     }
     Ok(())
@@ -1283,6 +1325,33 @@ mod tests {
             .encode(&decoded.ir, &mut output)
             .unwrap_err();
         assert!(error.to_string().contains("survival handling"));
+        assert_eq!(output, [0xaa]);
+    }
+
+    #[test]
+    fn noncanonical_nurbs_periodicity_is_rejected_atomically() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+            id: cadmpeg_ir::ids::CurveId("cadir:model:curve#periodic".into()),
+            geometry: cadmpeg_ir::geometry::CurveGeometry::Nurbs(
+                cadmpeg_ir::geometry::NurbsCurve {
+                    degree: 2,
+                    knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    control_points: vec![
+                        Point3::new(0.0, 0.0, 0.0),
+                        Point3::new(1.0, 1.0, 0.0),
+                        Point3::new(2.0, 0.0, 0.0),
+                    ],
+                    weights: None,
+                    periodic: true,
+                },
+            ),
+            source_object: None,
+        });
+        let mut output = vec![0xaa];
+        assert!(RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut output)
+            .is_err());
         assert_eq!(output, [0xaa]);
     }
 }
