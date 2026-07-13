@@ -1777,6 +1777,46 @@ fn feature_extents_round_trip_through_json() {
 }
 
 #[test]
+fn feature_extent_magnitudes_are_validated() {
+    use crate::features::{
+        Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+
+    for extent in [
+        Extent::Blind {
+            length: Length(0.0),
+        },
+        Extent::TwoSided {
+            first: Length(1.0),
+            second: Length(f64::NAN),
+        },
+        Extent::Angle { angle: Angle(-1.0) },
+    ] {
+        let mut ir = unit_cube();
+        ir.model.features.push(Feature {
+            id: FeatureId("synthetic:test:feature#invalid-extent".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Extrude {
+                profile: ProfileRef::Native("profile".into()),
+                direction: None,
+                extent,
+                op: BooleanOp::NewBody,
+                draft: None,
+            },
+            native_ref: None,
+        });
+        assert!(validate(&ir, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.message == "feature extent magnitude is invalid"));
+    }
+}
+
+#[test]
 fn flex_modes_round_trip_and_validate() {
     use crate::features::{Angle, Feature, FeatureDefinition, FeatureId, FlexMode, Length};
 

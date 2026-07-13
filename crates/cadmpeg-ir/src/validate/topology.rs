@@ -1106,6 +1106,29 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for extent in extents {
+            let valid_magnitude = match extent {
+                Extent::Blind { length } | Extent::Symmetric { length } => {
+                    length.0.is_finite() && length.0 > 0.0
+                }
+                Extent::TwoSided { first, second } => {
+                    first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
+                }
+                Extent::Angle { angle } | Extent::SymmetricAngle { angle } => {
+                    angle.0.is_finite() && angle.0 > 0.0
+                }
+                Extent::TwoSidedAngles { first, second } => {
+                    first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
+                }
+                Extent::ThroughAll | Extent::ToFace { .. } => true,
+            };
+            if !valid_magnitude {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: "feature extent magnitude is invalid".into(),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
             if let Extent::ToFace {
                 face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
             } = extent
