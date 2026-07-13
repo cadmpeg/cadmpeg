@@ -508,6 +508,106 @@ pub fn propagate_edge_port_points(
     Some(resolved)
 }
 
+struct PortCandidateSearch<'a> {
+    ports: &'a [[u32; 2]],
+    candidates: &'a [Vec<[usize; 2]>],
+    port_points: HashMap<u32, usize>,
+    point_ports: HashMap<usize, u32>,
+    edge_pairs: Vec<Option<[usize; 2]>>,
+    solution: Option<Vec<[usize; 2]>>,
+    states: usize,
+}
+
+impl PortCandidateSearch<'_> {
+    fn compatible(&self, edge: usize, pair: [usize; 2]) -> Vec<[usize; 2]> {
+        let mut oriented = vec![pair];
+        if pair[0] != pair[1] {
+            oriented.push([pair[1], pair[0]]);
+        }
+        oriented.retain(|points| {
+            self.ports[edge].iter().zip(points).all(|(&port, point)| {
+                self.port_points
+                    .get(&port)
+                    .is_none_or(|stored| *stored == *point)
+                    && self
+                        .point_ports
+                        .get(point)
+                        .is_none_or(|stored| *stored == port)
+            })
+        });
+        oriented
+    }
+
+    fn search(&mut self) {
+        const MAX_STATES: usize = 65_536;
+        if self.solution.is_some() || self.states >= MAX_STATES {
+            return;
+        }
+        self.states += 1;
+        let next = (0..self.ports.len())
+            .filter(|edge| self.edge_pairs[*edge].is_none())
+            .map(|edge| {
+                let count = self.candidates[edge]
+                    .iter()
+                    .map(|pair| self.compatible(edge, *pair).len())
+                    .sum::<usize>();
+                (count, edge)
+            })
+            .min();
+        let Some((count, edge)) = next else {
+            self.solution = self.edge_pairs.iter().copied().collect();
+            return;
+        };
+        if count == 0 {
+            return;
+        }
+        for candidate in 0..self.candidates[edge].len() {
+            for points in self.compatible(edge, self.candidates[edge][candidate]) {
+                let mut inserted = Vec::new();
+                for (&port, point) in self.ports[edge].iter().zip(points) {
+                    if let std::collections::hash_map::Entry::Vacant(entry) =
+                        self.port_points.entry(port)
+                    {
+                        entry.insert(point);
+                        self.point_ports.insert(point, port);
+                        inserted.push((port, point));
+                    }
+                }
+                self.edge_pairs[edge] = Some(points);
+                self.search();
+                self.edge_pairs[edge] = None;
+                for (port, point) in inserted {
+                    self.port_points.remove(&port);
+                    self.point_ports.remove(&point);
+                }
+            }
+        }
+    }
+}
+
+/// Bind native edge endpoint identities to coordinate rows while respecting
+/// every edge's geometrically admissible unordered endpoint pairs.
+#[must_use]
+pub fn bind_edge_port_candidates(
+    ports: &[[u32; 2]],
+    candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<[usize; 2]>> {
+    if ports.len() != candidates.len() || candidates.iter().any(Vec::is_empty) {
+        return None;
+    }
+    let mut search = PortCandidateSearch {
+        ports,
+        candidates,
+        port_points: HashMap::new(),
+        point_ports: HashMap::new(),
+        edge_pairs: vec![None; ports.len()],
+        solution: None,
+        states: 0,
+    };
+    search.search();
+    search.solution
+}
+
 fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
     left == right || left == [right[1], right[0]]
 }
@@ -1313,8 +1413,8 @@ impl UnionFind {
 #[cfg(test)]
 mod motif_tests {
     use super::{
-        motif_port_points, propagate_edge_port_points, reconstruct_incidence,
-        reconstruct_incidence_candidates, EdgeRow, TrimRecord,
+        bind_edge_port_candidates, motif_port_points, propagate_edge_port_points,
+        reconstruct_incidence, reconstruct_incidence_candidates, EdgeRow, TrimRecord,
     };
 
     fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
@@ -1490,5 +1590,20 @@ mod motif_tests {
         let ports = [[10, 11], [11, 12], [12, 10]];
         let pairs = [Some([0, 1]), Some([1, 2]), Some([0, 3])];
         assert_eq!(propagate_edge_port_points(&ports, &pairs), None);
+    }
+
+    #[test]
+    fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
+        let ports = [[10, 11], [12, 13], [10, 12], [11, 13]];
+        let candidates = [
+            vec![[0, 1]],
+            vec![[2, 3]],
+            vec![[0, 2], [1, 3]],
+            vec![[1, 3], [0, 2]],
+        ];
+        assert_eq!(
+            bind_edge_port_candidates(&ports, &candidates),
+            Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
+        );
     }
 }

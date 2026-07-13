@@ -2064,7 +2064,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     ir.model.surfaces = surfaces;
     attach_standard_faces(&mut ir, &mut annotations, &face_bindings, brep);
     let topology_attached =
-        attach_standard_topology(&mut ir, &mut annotations, &face_bindings, brep);
+        attach_standard_topology(&mut ir, &mut annotations, &face_bindings, brep, &scan.data);
     if !topology_attached {
         attach_standard_circles(&mut ir, &mut annotations, &face_bindings, brep);
         attach_standard_lines(&mut ir, &mut annotations, &face_bindings, brep);
@@ -2224,6 +2224,7 @@ fn attach_standard_topology(
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
+    source: &[u8],
 ) -> bool {
     let face_count = ir.model.faces.len();
     let supports = geometry::standard_curve_supports(brep, face_count);
@@ -2270,13 +2271,29 @@ fn attach_standard_topology(
         endpoint_candidates.push(candidates);
     }
     let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
-    let endpoint_options = resolve_standard_endpoint_pairs(
+    let mut endpoint_options = resolve_standard_endpoint_pairs(
         ir,
         bindings,
         &surface_indices,
         &supports,
         &endpoint_candidates,
     );
+    if let Some(options) = endpoint_options.as_mut() {
+        let native_edges = crate::b5::edge_vertex_references(source);
+        let native_ports = supports
+            .iter()
+            .map(|support| native_edges.get(&support.tag).copied())
+            .collect::<Option<Vec<_>>>();
+        if let Some(bound) = native_ports
+            .as_ref()
+            .and_then(|ports| topology::bind_edge_port_candidates(ports, options))
+        {
+            for (pairs, pair) in options.iter_mut().zip(bound) {
+                pairs.clear();
+                pairs.push(pair);
+            }
+        }
+    }
     let resolved_endpoint_pairs = endpoint_options
         .as_ref()
         .and_then(|options| {
@@ -2521,6 +2538,25 @@ fn resolve_standard_endpoint_pairs(
                 .unwrap_or_default()
         })
         .collect();
+    for (edge, support) in supports.iter().enumerate() {
+        if resolved[edge].is_empty()
+            && matches!(
+                support.geometry,
+                geometry::StandardCurveGeometry::Circle { .. }
+                    | geometry::StandardCurveGeometry::Bspline
+            )
+        {
+            resolved[edge] = candidates[edge]
+                .iter()
+                .enumerate()
+                .flat_map(|(left, &start)| {
+                    candidates[edge][left + 1..]
+                        .iter()
+                        .map(move |&end| [start, end])
+                })
+                .collect();
+        }
+    }
     let mut line_groups = HashMap::<[usize; 2], Vec<usize>>::new();
     for (edge, support) in supports.iter().enumerate() {
         if resolved[edge].is_empty()
@@ -2581,10 +2617,7 @@ fn resolve_standard_endpoint_pairs(
             resolved[edge].rotate_left(rank % pairs.len());
         }
     }
-    resolved
-        .iter()
-        .all(|pairs| !pairs.is_empty())
-        .then_some(resolved)
+    Some(resolved)
 }
 
 fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {

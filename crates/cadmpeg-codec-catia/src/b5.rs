@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Object-id topology in the CATIA `b5 03` short-frame family.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::{f32_at, f64_at};
@@ -328,13 +328,43 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     })
 }
 
+/// Return native start/end vertex identities for every framed `b5 03 5e`
+/// edge, keyed by the edge object id.
+#[must_use]
+pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
+    let mut edges = BTreeMap::new();
+    let mut ambiguous = HashSet::new();
+    for offset in 0..bytes.len().saturating_sub(8) {
+        let Some((end, 0xb5, 0x5e, object_id)) = object_frame(bytes, offset) else {
+            continue;
+        };
+        let record = B5Record {
+            offset,
+            class: 0x5e,
+            object_id,
+            payload: bytes[offset + 8..end].to_vec(),
+        };
+        let Some(vertices) = parse_edge_vertex_refs(&record) else {
+            continue;
+        };
+        if edges
+            .insert(object_id, vertices)
+            .is_some_and(|existing| existing != vertices)
+        {
+            ambiguous.insert(object_id);
+        }
+    }
+    edges.retain(|object_id, _| !ambiguous.contains(object_id));
+    edges
+}
+
 fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
     (record.class == 0x5e && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
     let references = (0..5)
         .map(|_| reference(&record.payload, &mut position, record.object_id))
         .collect::<Option<Vec<_>>>()?;
-    matches!(record.payload.get(position), Some(0x21 | 0x22))
+    matches!(record.payload.get(position), Some(0x01 | 0x21 | 0x22))
         .then_some([references[1], references[2]])
 }
 
@@ -1557,5 +1587,17 @@ mod tests {
             payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
         };
         assert_eq!(parse_edge_vertex_refs(&record), Some([15, 21]));
+
+        let mut standard = record;
+        *standard.payload.last_mut().expect("tail") = 0x01;
+        assert_eq!(parse_edge_vertex_refs(&standard), Some([15, 21]));
+
+        let mut bytes = vec![0xb5, 0x03, 0x5e, 7];
+        bytes.extend_from_slice(&standard.object_id.to_le_bytes());
+        bytes.extend_from_slice(&standard.payload);
+        assert_eq!(
+            edge_vertex_references(&bytes),
+            BTreeMap::from([(17, [15, 21])])
+        );
     }
 }
