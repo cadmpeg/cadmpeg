@@ -5266,12 +5266,31 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
         .expect("source-less unit cube round trip");
     assert_eq!(round_trip.ir.model.bodies.len(), 1);
     assert_eq!(
+        round_trip.ir.model.bodies[0].name.as_deref(),
+        source_less.model.bodies[0].name.as_deref()
+    );
+    assert_eq!(
         round_trip.ir.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Solid
     );
     assert_eq!(round_trip.ir.model.regions.len(), 1);
     assert_eq!(round_trip.ir.model.shells.len(), 1);
     assert_eq!(round_trip.ir.model.faces.len(), 6);
+    assert_eq!(
+        round_trip
+            .ir
+            .model
+            .faces
+            .iter()
+            .map(|face| face.name.as_deref())
+            .collect::<Vec<_>>(),
+        source_less
+            .model
+            .faces
+            .iter()
+            .map(|face| face.name.as_deref())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(round_trip.ir.model.loops.len(), 6);
     assert_eq!(round_trip.ir.model.coedges.len(), 24);
     assert_eq!(round_trip.ir.model.edges.len(), 12);

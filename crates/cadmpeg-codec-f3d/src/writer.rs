@@ -3669,6 +3669,7 @@ fn timestamp_attribute_ordinal(
 
 fn existing_source_less_attribute_count(target: &CadIr) -> usize {
     source_less_color_count(target)
+        + source_less_name_count(target)
         + persistent_body_group_count(target)
         + persistent_face_group_count(target)
         + persistent_edge_group_count(target)
@@ -3785,7 +3786,29 @@ fn body_persistent_attribute_ref(
             .iter()
             .filter(|face| face.color.is_some())
             .count();
-    native_record_index(attribute_start, color_count + ordinal).map(Some)
+    native_record_index(
+        attribute_start,
+        color_count + source_less_name_count(target) + ordinal,
+    )
+    .map(Some)
+}
+
+fn body_name_attribute_ref(
+    target: &CadIr,
+    body: &Body,
+    attribute_start: i64,
+) -> Result<Option<i64>, CodecError> {
+    if body.name.is_none() {
+        return Ok(None);
+    }
+    let ordinal = target
+        .model
+        .bodies
+        .iter()
+        .take_while(|candidate| candidate.id != body.id)
+        .filter(|candidate| candidate.name.is_some())
+        .count();
+    native_record_index(attribute_start, source_less_color_count(target) + ordinal).map(Some)
 }
 
 fn owner_color_or_body_tag_ref(
@@ -3802,6 +3825,9 @@ fn owner_color_or_body_tag_ref(
             true,
             attribute_start,
         );
+    }
+    if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)? {
+        return Ok(reference);
     }
     if let Some(reference) = body_persistent_attribute_ref(target, body, attribute_start)? {
         return Ok(reference);
@@ -3831,7 +3857,38 @@ fn face_persistent_attribute_ref(
         .count();
     native_record_index(
         attribute_start,
-        source_less_color_count(target) + persistent_body_group_count(target) + ordinal,
+        source_less_color_count(target)
+            + source_less_name_count(target)
+            + persistent_body_group_count(target)
+            + ordinal,
+    )
+    .map(Some)
+}
+
+fn face_name_attribute_ref(
+    target: &CadIr,
+    face: &Face,
+    attribute_start: i64,
+) -> Result<Option<i64>, CodecError> {
+    if face.name.is_none() {
+        return Ok(None);
+    }
+    let ordinal = target
+        .model
+        .faces
+        .iter()
+        .take_while(|candidate| candidate.id != face.id)
+        .filter(|candidate| candidate.name.is_some())
+        .count();
+    let body_name_count = target
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.name.is_some())
+        .count();
+    native_record_index(
+        attribute_start,
+        source_less_color_count(target) + body_name_count + ordinal,
     )
     .map(Some)
 }
@@ -3850,6 +3907,9 @@ fn owner_color_or_face_tag_ref(
             false,
             attribute_start,
         );
+    }
+    if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)? {
+        return Ok(reference);
     }
     if let Some(reference) = face_persistent_attribute_ref(target, face, attribute_start)? {
         return Ok(reference);
@@ -3878,6 +3938,7 @@ fn edge_persistent_attribute_ref(
     native_record_index(
         attribute_start,
         source_less_color_count(target)
+            + source_less_name_count(target)
             + persistent_body_group_count(target)
             + persistent_face_group_count(target)
             + ordinal,
@@ -3897,6 +3958,21 @@ fn source_less_color_count(target: &CadIr) -> usize {
             .faces
             .iter()
             .filter(|face| face.color.is_some())
+            .count()
+}
+
+fn source_less_name_count(target: &CadIr) -> usize {
+    target
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.name.is_some())
+        .count()
+        + target
+            .model
+            .faces
+            .iter()
+            .filter(|face| face.name.is_some())
             .count()
 }
 
@@ -3931,6 +4007,7 @@ fn sketch_link_attribute_ref(
     native_record_index(
         attribute_start,
         color_count
+            + source_less_name_count(target)
             + persistent_body_group_count(target)
             + persistent_face_group_count(target)
             + persistent_edge_group_count(target)
@@ -4030,7 +4107,10 @@ fn encode_source_less_attributes(
     }
     for body in model.bodies.iter().filter(|body| body.color.is_some()) {
         let color = body.color.expect("filtered colored body");
-        let next = if let Some(reference) =
+        let next = if let Some(reference) = body_name_attribute_ref(target, body, attribute_start)?
+        {
+            reference
+        } else if let Some(reference) =
             body_persistent_attribute_ref(target, body, attribute_start)?
         {
             reference
@@ -4046,7 +4126,10 @@ fn encode_source_less_attributes(
         records.push(0x11);
     }
     for face in model.faces.iter().filter(|face| face.color.is_some()) {
-        let next = if let Some(reference) =
+        let next = if let Some(reference) = face_name_attribute_ref(target, face, attribute_start)?
+        {
+            reference
+        } else if let Some(reference) =
             face_persistent_attribute_ref(target, face, attribute_start)?
         {
             reference
@@ -4059,6 +4142,46 @@ fn encode_source_less_attributes(
             .unwrap_or(-1)
         };
         native_color_attribute(records, face.color.expect("filtered colored face"), next)?;
+        records.push(0x11);
+    }
+    for body in model.bodies.iter().filter(|body| body.name.is_some()) {
+        let next = if let Some(reference) =
+            body_persistent_attribute_ref(target, body, attribute_start)?
+        {
+            reference
+        } else {
+            timestamp_attribute_ref(
+                target,
+                &cadmpeg_ir::attributes::AttributeTarget::Body(body.id.clone()),
+                attribute_start,
+            )?
+            .unwrap_or(-1)
+        };
+        native_name_attribute(
+            records,
+            body.name.as_deref().expect("filtered named body"),
+            next,
+        )?;
+        records.push(0x11);
+    }
+    for face in model.faces.iter().filter(|face| face.name.is_some()) {
+        let next = if let Some(reference) =
+            face_persistent_attribute_ref(target, face, attribute_start)?
+        {
+            reference
+        } else {
+            timestamp_attribute_ref(
+                target,
+                &cadmpeg_ir::attributes::AttributeTarget::Face(face.id.clone()),
+                attribute_start,
+            )?
+            .unwrap_or(-1)
+        };
+        native_name_attribute(
+            records,
+            face.name.as_deref().expect("filtered named face"),
+            next,
+        )?;
         records.push(0x11);
     }
     for body in &model.bodies {
@@ -4157,6 +4280,24 @@ fn encode_source_less_attributes(
         records.push(0x11);
     }
     Ok(())
+}
+
+fn native_name_attribute(records: &mut Vec<u8>, name: &str, next: i64) -> Result<(), CodecError> {
+    if name.is_empty() {
+        return Err(CodecError::Malformed(
+            "source-less F3D display name must not be empty".into(),
+        ));
+    }
+    native_subident(records, "string_attrib")?;
+    native_subident(records, "name_attrib")?;
+    native_subident(records, "gen")?;
+    native_ident(records, "attrib")?;
+    native_ref(records, next);
+    for flag in [1, 1, 1, 1] {
+        native_i64(records, flag);
+    }
+    native_string(records, "name")?;
+    native_string(records, name)
 }
 
 fn native_color_attribute(

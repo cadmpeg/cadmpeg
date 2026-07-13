@@ -610,6 +610,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let attribute_color = |entity: &Record| attribute_chain_color(entity, &by_index);
+    let attribute_name = |entity: &Record| attribute_chain_name(entity, &by_index);
 
     // Pass 1: classify carriers and decode analytic geometry.
     let mut surface_geo: HashMap<i64, (SurfaceGeometry, bool)> = HashMap::new();
@@ -3942,7 +3943,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 surface: SurfaceId(id(surface)),
                 sense,
                 loops,
-                name: None,
+                name: attribute_name(r),
                 color: attribute_color(r),
                 tolerance: None,
             });
@@ -4036,7 +4037,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     regions,
                     transform: transform_record
                         .and_then(|transform| decode_transform(transform, header_scale)),
-                    name: None,
+                    name: attribute_name(r),
                     color: attribute_color(r),
                     visible: None,
                 });
@@ -4703,6 +4704,31 @@ pub(crate) fn attribute_chain_color(
                 b: (packed & 0xff) as f32 / 255.0,
                 a: ((packed >> 24) & 0xff) as f32 / 255.0,
             });
+        }
+        current = record.ref_at(0)?;
+    }
+    None
+}
+
+fn attribute_chain_name(entity: &Record, by_index: &HashMap<i64, &Record>) -> Option<String> {
+    let mut current = entity.ref_at(0)?;
+    let mut seen = HashSet::new();
+    while seen.insert(current) {
+        let record = by_index.get(&current)?;
+        if record.name == "string_attrib-name_attrib-gen-attrib" {
+            let values = record
+                .tokens
+                .iter()
+                .filter_map(|token| match token {
+                    Token::Str(value) => Some(value.as_str()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            if let [.., "name", value] = values.as_slice() {
+                if !value.is_empty() {
+                    return Some((*value).to_owned());
+                }
+            }
         }
         current = record.ref_at(0)?;
     }
