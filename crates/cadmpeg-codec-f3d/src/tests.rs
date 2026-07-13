@@ -10759,6 +10759,7 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
             .iter()
             .map(|side| side.curve.clone())
             .collect::<Vec<_>>();
+        let third_curve = native.third.as_ref().map(|third| third.curve.clone());
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
@@ -10772,6 +10773,18 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                 .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
                 origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 3.0, -2.0),
                 direction: cadmpeg_ir::math::Vector3::new(4.0, -1.0, 2.0),
+            };
+        }
+        if let Some(third) = &third_curve {
+            source_less
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| curve.id == *third)
+                .expect("rolling-ball third-side curve")
+                .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point3::new(-1.0, 2.0, 3.0),
+                direction: cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0),
             };
         }
         let mut encoded = Vec::new();
@@ -10797,6 +10810,19 @@ fn generated_rolling_ball_and_sss_blends_decode_full_native_graphs() {
                     .curves
                     .iter()
                     .find(|curve| curve.id == side.curve)
+                    .map(|curve| &curve.geometry),
+                Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                    if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]
+            ));
+        }
+        if let Some(third) = &actual.third {
+            assert!(matches!(
+                round_trip
+                    .ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|curve| curve.id == third.curve)
                     .map(|curve| &curve.geometry),
                 Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
                     if curve.degree == 1 && curve.knots == [0.0, 0.0, 1.0, 1.0]

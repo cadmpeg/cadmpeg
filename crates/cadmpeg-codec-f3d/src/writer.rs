@@ -5864,7 +5864,61 @@ fn native_rolling_ball_third_side(
             ))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
-    native_nurbs_curve(bytes, native_loft_curve(target, &side.curve)?)?;
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == side.curve)
+        .ok_or_else(|| {
+            CodecError::Malformed(format!(
+                "rolling-ball third-side curve {} is missing",
+                side.curve
+            ))
+        })?;
+    let curve = match &curve.geometry {
+        CurveGeometry::Nurbs(curve) => curve.clone(),
+        CurveGeometry::Line { .. } => {
+            let knots = [
+                side.pcurve.as_ref(),
+                side.secondary_pcurve.as_ref(),
+                side.tertiary_pcurve.as_ref(),
+            ]
+            .into_iter()
+            .flatten()
+            .find_map(|pcurve| match pcurve {
+                PcurveGeometry::Nurbs { knots, .. } => Some(knots),
+                PcurveGeometry::Line { .. } => None,
+            })
+            .ok_or_else(|| {
+                CodecError::NotImplemented(
+                    "source-less F3D rolling-ball third-side line requires a bounded NURBS pcurve"
+                        .into(),
+                )
+            })?;
+            native_interval_curve(
+                &curve.geometry,
+                [
+                    knots.first().copied().ok_or_else(|| {
+                        CodecError::Malformed(
+                            "rolling-ball third-side pcurve has no knot domain".into(),
+                        )
+                    })?,
+                    knots.last().copied().ok_or_else(|| {
+                        CodecError::Malformed(
+                            "rolling-ball third-side pcurve has no knot domain".into(),
+                        )
+                    })?,
+                ],
+            )?
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D rolling-ball third side requires a NURBS or bounded line curve"
+                    .into(),
+            ));
+        }
+    };
+    native_nurbs_curve(bytes, &curve)?;
     native_optional_pcurve(bytes, side.pcurve.as_ref())?;
     native_vector(
         bytes,
