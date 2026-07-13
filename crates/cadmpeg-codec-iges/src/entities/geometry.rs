@@ -810,6 +810,11 @@ pub(crate) fn project_geometry(
     decoded.extend(conics.decoded);
     losses.extend(conics.losses);
     wire_edges.extend(conics.wire_edges);
+    let composites = super::composite::project(ir, directory, parameters);
+    handled.extend(composites.handled);
+    decoded.extend(composites.decoded);
+    losses.extend(composites.losses);
+    wire_edges.extend(composites.wire_edges);
     let copious = super::copious::project(ir, directory, parameters, global);
     handled.extend(copious.handled);
     decoded.extend(copious.decoded);
