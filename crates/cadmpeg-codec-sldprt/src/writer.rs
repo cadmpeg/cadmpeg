@@ -710,6 +710,28 @@ fn metadata_payloads(
                 };
                 unit_code = Some(*code);
             }
+            "source_linear_unit_name" => {
+                let [AttributeValue::String(name)] = attribute.values.as_slice() else {
+                    return Err(CodecError::Malformed(
+                        "invalid source linear unit name".into(),
+                    ));
+                };
+                let bytes = name
+                    .encode_utf16()
+                    .flat_map(u16::to_le_bytes)
+                    .collect::<Vec<_>>();
+                let length = u8::try_from(bytes.len()).map_err(|_| {
+                    CodecError::Malformed("source linear unit name is too long".into())
+                })?;
+                if bytes.is_empty() {
+                    return Err(CodecError::Malformed(
+                        "source linear unit name is empty".into(),
+                    ));
+                }
+                objects.extend_from_slice(b"moLengthUserUnits_c");
+                objects.extend_from_slice(&[0xff, 0xfe, 0xff, length]);
+                objects.extend_from_slice(&bytes);
+            }
             _ => {
                 return Err(CodecError::NotImplemented(format!(
                     "unsupported SLDPRT attribute {}",

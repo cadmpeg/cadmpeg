@@ -34,8 +34,61 @@ pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<So
         scan_part(block, &mut out, annotations);
         scan_configuration_manager(block, &mut out, annotations);
         scan_units_xml(block, &mut out, annotations);
+        scan_length_user_units(block, &mut out, annotations);
     }
     out
+}
+
+fn scan_length_user_units(
+    block: &crate::container::Block,
+    out: &mut Vec<SourceAttribute>,
+    annotations: &mut Annotations,
+) {
+    const TOKEN: &[u8] = b"moLengthUserUnits_c";
+    const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
+    for offset in block
+        .payload
+        .windows(TOKEN.len())
+        .enumerate()
+        .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
+    {
+        let search = offset + TOKEN.len();
+        let limit = search.saturating_add(200).min(block.payload.len());
+        let Some(relative) = block.payload[search..limit]
+            .windows(STRING_MARKER.len())
+            .position(|bytes| bytes == STRING_MARKER)
+        else {
+            continue;
+        };
+        let marker = search + relative;
+        let Some(length) = block.payload.get(marker + 3).copied().map(usize::from) else {
+            continue;
+        };
+        let start = marker + 4;
+        let Some(bytes) = block.payload.get(start..start.saturating_add(length)) else {
+            continue;
+        };
+        if bytes.is_empty() || bytes.len() % 2 != 0 {
+            continue;
+        }
+        let value = String::from_utf16_lossy(
+            &bytes
+                .chunks_exact(2)
+                .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+                .collect::<Vec<_>>(),
+        );
+        if value.trim().is_empty() {
+            continue;
+        }
+        out.push(attribute(
+            block,
+            offset,
+            "source_linear_unit_name",
+            TOKEN,
+            vec![AttributeValue::String(value)],
+            annotations,
+        ));
+    }
 }
 
 fn scan_units_xml(

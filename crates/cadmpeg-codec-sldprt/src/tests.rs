@@ -1102,6 +1102,8 @@ fn sldprt_with_body_and_envelope(body: &[u8]) -> Vec<u8> {
     configuration[107] = 3;
     configuration[117..125].copy_from_slice(&132_537_600_000_000_000u64.to_le_bytes());
     payload.extend_from_slice(&configuration);
+    payload.extend_from_slice(b"moLengthUserUnits_c");
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff, 4, b'I', 0, b'N', 0]);
     f.extend(make_block(0x43, "SWObjects", &payload));
     f.extend(make_block(
         0x44,
@@ -7247,6 +7249,14 @@ fn decode_extracts_document_envelope() {
         .find(|attribute| attribute.name == "source_linear_unit_code")
         .unwrap();
     assert_eq!(units.values, vec![AttributeValue::Integer(0)]);
+    let unit_name = result
+        .ir
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "source_linear_unit_name")
+        .unwrap();
+    assert_eq!(unit_name.values, vec![AttributeValue::String("IN".into())]);
 }
 
 #[test]
