@@ -11,7 +11,7 @@
 //! finite numeric payloads, structural counts, and family-specific invariants
 //! before returning a carrier.
 
-use std::ops::Range;
+use std::{collections::BTreeMap, ops::Range};
 
 use cadmpeg_ir::be::f32_at as f32_be;
 use cadmpeg_ir::eval::surface_point;
@@ -55,6 +55,109 @@ pub struct SurfacePrefix {
     pub target: u32,
     /// The kind byte (`0x32`..=`0x38`).
     pub kind: u8,
+}
+
+/// One face-local record in the standard `SurfacicReps` surface roster.
+#[derive(Debug, Clone)]
+pub enum StandardSurfaceRecord {
+    /// Fixed-length analytic carrier record.
+    Analytic(SurfacePrefix),
+    /// Face bounds and orientation for a carrier linked through an outer alias.
+    Freeform {
+        /// Record byte offset.
+        pos: usize,
+        /// Little-endian u24 carrier tag.
+        tag: u32,
+        /// Face orientation relative to the linked carrier.
+        forward: bool,
+    },
+}
+
+impl StandardSurfaceRecord {
+    fn pos(&self) -> usize {
+        match self {
+            Self::Analytic(prefix) => prefix.pos - 5,
+            Self::Freeform { pos, .. } => *pos,
+        }
+    }
+
+    fn end(&self) -> usize {
+        match self {
+            Self::Analytic(prefix) => {
+                self.pos()
+                    + match prefix.kind {
+                        0x32 => 49,
+                        0x33 | 0x34 => 73,
+                        0x35 => 65,
+                        0x38 => 77,
+                        _ => unreachable!("analytic roster kinds are filtered"),
+                    }
+            }
+            Self::Freeform { pos, .. } => pos + 47,
+        }
+    }
+}
+
+/// Walk the complete face-local surface roster. Records are accepted only as a
+/// unique contiguous chain of `face_count` entries terminated by the first
+/// curve-support row.
+#[must_use]
+pub fn standard_surface_records(
+    brep: &[u8],
+    face_count: usize,
+) -> Option<Vec<StandardSurfaceRecord>> {
+    if face_count == 0 {
+        return None;
+    }
+    let mut records = BTreeMap::<usize, StandardSurfaceRecord>::new();
+    for prefix in surface_prefixes(brep) {
+        if face_sense(brep, &prefix).is_some() {
+            records.insert(prefix.pos - 5, StandardSurfaceRecord::Analytic(prefix));
+        }
+    }
+    for pos in 0..brep.len().saturating_sub(46) {
+        if brep.get(pos + 3..pos + 6) != Some(&[0, 0, 0]) {
+            continue;
+        }
+        let tag = u24_le(brep, pos);
+        let forward = match brep[pos + 46] {
+            0x01 => true,
+            0xff => false,
+            _ => continue,
+        };
+        let values = (0..10)
+            .map(|index| f32_le(brep, pos + 6 + 4 * index))
+            .collect::<Vec<_>>();
+        if tag == 0
+            || values.iter().any(|value| !value.is_finite())
+            || values[3..6].iter().any(|extent| *extent < 0.0)
+            || values[9] < 0.0
+            || (0..3)
+                .any(|axis| (values[axis] - values[6 + axis]).abs() + values[3 + axis] > values[9])
+        {
+            continue;
+        }
+        records.insert(pos, StandardSurfaceRecord::Freeform { pos, tag, forward });
+    }
+
+    let mut solutions = Vec::new();
+    for &start in records.keys() {
+        let mut at = start;
+        let mut chain = Vec::with_capacity(face_count);
+        for _ in 0..face_count {
+            let Some(record) = records.get(&at) else {
+                break;
+            };
+            chain.push(record.clone());
+            at = record.end();
+        }
+        if chain.len() == face_count && brep.get(at) == Some(&0x60) {
+            solutions.push(chain);
+        }
+    }
+    <[Vec<StandardSurfaceRecord>; 1]>::try_from(solutions)
+        .ok()
+        .map(|[records]| records)
 }
 
 /// Read the trailing per-face orientation byte from a complete analytic

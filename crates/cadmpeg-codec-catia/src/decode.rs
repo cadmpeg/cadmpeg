@@ -1973,7 +1973,18 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
 fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let brep = scan.brep.as_ref()?;
     let points = geometry::vertices(brep);
-    let prefixes = geometry::surface_prefixes(brep);
+    let face_count: usize = fbb_groups(brep).into_iter().sum();
+    let records = geometry::standard_surface_records(brep, face_count).unwrap_or_else(|| {
+        geometry::surface_prefixes(brep)
+            .into_iter()
+            .map(geometry::StandardSurfaceRecord::Analytic)
+            .collect()
+    });
+    let analytic_record_count = records
+        .iter()
+        .filter(|record| matches!(record, geometry::StandardSurfaceRecord::Analytic(_)))
+        .count();
+    let freeform_record_count = records.len() - analytic_record_count;
     let plane_normals = topology::standard_plane_normals(brep);
     let planes: HashMap<u32, geometry::PlaneParams> = geometry::plane_params(brep, &plane_normals)
         .into_iter()
@@ -1986,7 +1997,21 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let mut decoded_plane_targets = HashSet::new();
     let mut plane_faces = 0usize;
     let mut typed = TypedCounts::default();
-    for (i, prefix) in prefixes.iter().enumerate() {
+    for (i, record) in records.iter().enumerate() {
+        let geometry::StandardSurfaceRecord::Analytic(prefix) = record else {
+            let geometry::StandardSurfaceRecord::Freeform { pos, forward, .. } = record else {
+                unreachable!()
+            };
+            let id = SurfaceId(format!("catia:standard:surf#{i}"));
+            face_bindings.push((id.clone(), *forward, *pos));
+            surface_annotations.push((id.clone(), *pos, None));
+            surfaces.push(Surface {
+                id,
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            });
+            continue;
+        };
         // A bridged plane parameter record contains the same `00 33 32`
         // marker as its SurfacicReps carrier.  One carrier exists per tag.
         if prefix.kind == 0x32 && !decoded_plane_targets.insert(prefix.target) {
@@ -2004,7 +2029,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                 if let Some(forward) = geometry::face_sense(brep, prefix) {
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
-                surface_annotations.push((id.clone(), prefix.pos, prefix.kind));
+                surface_annotations.push((id.clone(), prefix.pos, Some(prefix.kind)));
                 surfaces.push(Surface {
                     id,
                     geometry: geom,
@@ -2067,8 +2092,15 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             &id,
             "MainDataStream+SurfacicReps",
             offset as u64,
-            format!("surfacic_reps_{kind:02x}"),
-            Exactness::ByteExact,
+            kind.map_or_else(
+                || "surfacic_reps_freeform_alias".to_string(),
+                |kind| format!("surfacic_reps_{kind:02x}"),
+            ),
+            if kind.is_some() {
+                Exactness::ByteExact
+            } else {
+                Exactness::Unknown
+            },
         );
     }
     ir.model.surfaces = surfaces;
@@ -2097,7 +2129,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         points.len(),
         &typed,
         plane_faces,
-        prefixes.len(),
+        analytic_record_count,
+        freeform_record_count,
         topology_attached,
     );
     Some((ir, report))
@@ -3331,7 +3364,8 @@ fn build_geometry_report(
     vertex_count: usize,
     typed: &TypedCounts,
     plane_faces: usize,
-    prefix_count: usize,
+    analytic_record_count: usize,
+    freeform_record_count: usize,
     topology_attached: bool,
 ) -> DecodeReport {
     let mut losses = Vec::new();
@@ -3380,18 +3414,26 @@ fn build_geometry_report(
         });
     }
 
-    // `00 33 32` also appears inside a plane parameter record, so raw marker
-    // counts cannot distinguish free-form records from bridged-plane data.
-    let freeform = prefix_count.saturating_sub(typed.total() + plane_faces + typed.plane);
-    if freeform > 0 {
+    let invalid_analytic = analytic_record_count.saturating_sub(typed.total() + plane_faces);
+    if invalid_analytic > 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Warning,
             message: format!(
-                "{freeform} analytic surface record(s) had a non-finite or out-of-range inline \
-                 payload and were not decoded. Free-form NURBS surface cores (the 47-byte \
-                 `SurfacicReps` freeform records and the consolidated/object-stream pole grids) are \
-                 not decoded on this path."
+                "{invalid_analytic} analytic surface record(s) had a non-finite or out-of-range \
+                 inline payload and were not decoded."
+            ),
+            provenance: None,
+        });
+    }
+    if freeform_record_count > 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{freeform_record_count} face-local free-form carrier record(s) retain their \
+                 tag, bounds, and orientation, but their aliased surface geometry is not yet \
+                 transferred."
             ),
             provenance: None,
         });

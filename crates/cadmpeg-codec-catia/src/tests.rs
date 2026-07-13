@@ -2026,6 +2026,37 @@ fn standard_circle_parser_rejects_non_support_marker() {
     assert!(crate::geometry::standard_circles(&bytes, 1).is_empty());
 }
 
+#[test]
+fn standard_surface_roster_walks_freeform_and_analytic_records() {
+    use crate::geometry::StandardSurfaceRecord;
+
+    let mut bytes = vec![0x34, 0x12, 0, 0, 0, 0];
+    for value in [0.0f32, 0.0, 0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 2.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes.push(0x01);
+    let analytic = bytes.len();
+    bytes.extend_from_slice(&[0x78, 0x56, 0, 0, 0x1a, 0, 0x33, 0x33]);
+    bytes.resize(analytic + 72, 0);
+    bytes.push(0xff);
+    bytes.push(0x60);
+
+    let records = crate::geometry::standard_surface_records(&bytes, 2).expect("surface roster");
+    assert!(matches!(
+        records[0],
+        StandardSurfaceRecord::Freeform {
+            pos: 0,
+            tag: 0x1234,
+            forward: true
+        }
+    ));
+    assert!(matches!(
+        &records[1],
+        StandardSurfaceRecord::Analytic(prefix)
+            if prefix.pos == analytic + 5 && prefix.target == 0x5678 && prefix.kind == 0x33
+    ));
+}
+
 fn zero_entity_record(kind: u8, mut tail: Vec<u8>) -> Vec<u8> {
     let length = 12 + tail.len();
     let mut record = vec![

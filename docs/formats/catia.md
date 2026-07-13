@@ -253,7 +253,7 @@ Interleaved in face order with the 47-byte freeform cores. Grammar: `tag:u24le 0
 
 Cylinder and cone share prebyte and length; the kind byte distinguishes them. The last byte stores a per-face orientation sign: `+1=0x01`, `−1=0xff`. For curved surface kinds, the sign defines face sense relative to the canonical normal.
 
-A sequential walker over the SURFACE section terminates on the `0x60` marker. Parse a freeform 47-byte core before an analytic record.
+A sequential walker over the SURFACE section consumes exactly one fixed-length analytic record or 47-byte freeform core per face and terminates on the first `0x60` curve-support row. The unique contiguous chain fixes face-carrier order; raw `00 33` signature order does not, because identical signatures also occur inside parameter payloads.
 
 **Standard analytic parameter records** (BE f32 unless noted): sphere `00 12 00 33 35 [cx cy cz radius]`; torus `00 1e 00 33 38 [cx cy cz ax ay major minor]` (`az` from unit norm); cone `00 1a 00 33 34 [apex_x apex_y apex_z ax ay semi_angle]` (`apex` is where radius=0, `az = sign(semi_angle)·sqrt(1−ax²−ay²)`, half-angle `|semi_angle|`); cylinder `00 1a 00 33 33 [px py pz ax ay radius]` (`az` sign carried by the sign of `radius`, radius `|radius|`). Sphere, torus, and cone parameters are inline in the kind record. Plane parameters use a tag-bridged record. Cylinder and torus records carry an LE-f32 witness point at cylinder `+24..+35` and torus `+28..+39`. The witness selects the angular interval containing that point.
 
