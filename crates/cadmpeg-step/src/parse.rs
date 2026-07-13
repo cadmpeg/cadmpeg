@@ -6,76 +6,123 @@ use std::ops::Range;
 
 use crate::lex::{lex, LexError, Token, TokenKind};
 
+/// One parsed Part 21 parameter value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    /// Reference to a DATA entity instance.
     Reference(u64),
+    /// Signed integer value.
     Integer(i64),
+    /// Real value.
     Real(f64),
+    /// Enumeration or logical name without delimiter dots.
     Enumeration(String),
+    /// Raw string-token bytes before Part 21 escape decoding.
     String(Vec<u8>),
+    /// Decoded binary-literal bytes.
     Binary(Vec<u8>),
+    /// Edition-3 resource value.
     Resource(String),
+    /// Omitted optional value `$`.
     Omitted,
+    /// Derived value `*`.
     Derived,
+    /// Ordered aggregate values.
     List(Vec<Value>),
+    /// Type name and its single wrapped parameter.
     Typed(String, Box<Value>),
 }
 
+/// One simple entity leaf within an entity instance.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PartialRecord {
+    /// Uppercase entity name.
     pub name: String,
+    /// Explicit external-mapping parameters.
     pub parameters: Vec<Value>,
 }
 
+/// One DATA entity instance with its exact source extent.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RawRecord {
+    /// Numeric entity-instance name without `#`.
     pub id: u64,
+    /// One leaf for a simple instance or all leaves for a complex instance.
     pub partials: Vec<PartialRecord>,
+    /// Half-open byte range from instance name through semicolon.
     pub span: Range<usize>,
 }
 
+/// One entity-like record in the HEADER section.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeaderRecord {
+    /// Header record name.
     pub name: String,
+    /// Header record parameters.
     pub parameters: Vec<Value>,
 }
 
+/// One DATA section and its ordered population.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataSection {
+    /// Edition-3 DATA section parameters.
     pub parameters: Vec<Value>,
+    /// Entity-instance names in source order.
     pub records: Vec<u64>,
 }
 
+/// One edition-3 ANCHOR binding.
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnchorEntry {
+    /// Local resource name.
     pub name: String,
+    /// Value bound to the resource name.
     pub value: Value,
 }
 
+/// One edition-3 external REFERENCE binding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReferenceEntry {
+    /// Local resource name.
     pub name: String,
+    /// External resource URI.
     pub uri: String,
 }
 
+/// Parsed exchange structure and global DATA record graph.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Exchange {
+    /// HEADER records in source order.
     pub header: Vec<HeaderRecord>,
+    /// ANCHOR bindings in source order.
     pub anchors: Vec<AnchorEntry>,
+    /// REFERENCE bindings in source order.
     pub references: Vec<ReferenceEntry>,
+    /// DATA sections in source order.
     pub data: Vec<DataSection>,
+    /// Complete SIGNATURE section byte range when present.
     pub signature: Option<Range<usize>>,
+    /// DATA instances indexed across every DATA section.
     pub records: BTreeMap<u64, RawRecord>,
 }
 
+/// Structural or lexical exchange failure.
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
+    /// Tokenization failed.
     #[error(transparent)]
     Lex(#[from] LexError),
+    /// Token sequence violates the exchange grammar.
     #[error("{message} at byte {offset}")]
-    Syntax { offset: usize, message: String },
+    Syntax {
+        /// Byte offset of the unexpected token or end of input.
+        offset: usize,
+        /// Violated grammar invariant.
+        message: String,
+    },
 }
 
+/// Parse one complete clear-text exchange structure and resolve DATA references.
 pub fn parse(input: &[u8]) -> Result<Exchange, ParseError> {
     Parser {
         tokens: lex(input)?,

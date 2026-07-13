@@ -15,21 +15,37 @@ pub struct Token {
 /// Part 21 token categories.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
+    /// Standard keyword or entity name.
     Name(String),
+    /// User-defined `!`-prefixed keyword.
     UserName(String),
+    /// Numeric `#`-prefixed entity-instance name.
     Instance(u64),
+    /// Signed decimal integer.
     Integer(i64),
+    /// Decimal real, including an optional exponent.
     Real(f64),
+    /// Dot-delimited enumeration or logical literal.
     Enumeration(String),
+    /// Bytes between apostrophe delimiters, before escape decoding.
     String(Vec<u8>),
+    /// Bytes decoded from a quoted hexadecimal binary literal.
     Binary(Vec<u8>),
+    /// Edition-3 resource token.
     Resource(String),
+    /// Opening parenthesis.
     LParen,
+    /// Closing parenthesis.
     RParen,
+    /// Parameter separator.
     Comma,
+    /// Statement terminator.
     Semicolon,
+    /// Assignment operator.
     Equals,
+    /// Omitted-value marker `$`.
     Omitted,
+    /// Derived-value marker `*`.
     Derived,
 }
 
@@ -37,7 +53,9 @@ pub enum TokenKind {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{message} at byte {offset}")]
 pub struct LexError {
+    /// Byte offset at which tokenization failed.
     pub offset: usize,
+    /// Violated lexical invariant.
     pub message: String,
 }
 
