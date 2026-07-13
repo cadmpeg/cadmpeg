@@ -6355,6 +6355,64 @@ fn generated_source_less_writes_act_table_channels_and_root_component() {
 }
 
 #[test]
+fn generated_source_less_rejects_lossy_act_layouts() {
+    use std::collections::BTreeMap;
+
+    use crate::records::{ActEntity, ActGuid};
+
+    let channel_guid = "aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb";
+    let standalone_guid = "eeeeeeee-1111-2222-3333-ffffffffffff";
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.act_entities = vec![ActEntity {
+            id: "generated:act-entity#0".into(),
+            record_index: 7,
+            table_record_index_offset: None,
+            channel_record_index_offset: None,
+            entity_id: "0_985".into(),
+            table_entity_id_offset: None,
+            channel_entity_id_offset: None,
+            in_table: true,
+            channel_class_tag: Some("261".into()),
+            channels: BTreeMap::from([("Appearance".into(), channel_guid.into())]),
+            channel_guid_offsets: BTreeMap::new(),
+        }];
+        native.act_guids = [channel_guid, standalone_guid]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, guid)| ActGuid {
+                id: format!("generated:act-guid#{ordinal}"),
+                byte_offset: 0,
+                guid_offset: 0,
+                ordinal: ordinal as u32,
+                guid: guid.into(),
+            })
+            .collect();
+    }
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("ACT GUID order must not be normalized");
+    assert!(error
+        .to_string()
+        .contains("cannot preserve this ACT GUID pool ordering"));
+
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.act_guids.clear();
+        native.act_entities[0].in_table = false;
+        native.act_entities[0].channels.clear();
+        native.act_entities[0].channel_class_tag = None;
+    }
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("unemitted ACT entities must not disappear");
+    assert!(error
+        .to_string()
+        .contains("has neither a table row nor channels"));
+}
+
+#[test]
 fn generated_source_less_writes_protein_appearance_and_body_binding() {
     use std::collections::BTreeMap;
 

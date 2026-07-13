@@ -55,6 +55,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     }
     if let Some(native) = &native {
         validate_source_less_history_graph(target, native)?;
+        validate_source_less_act(native)?;
         validate_source_less_design_links(target, native)?;
     }
     let smbh = encode_planar_triangle_smbh(target)?;
@@ -164,6 +165,67 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
         .into_inner();
     writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn validate_source_less_act(native: &F3dNative) -> Result<(), CodecError> {
+    let mut entity_keys = BTreeSet::new();
+    for entity in &native.act_entities {
+        if !entity_keys.insert((entity.record_index, entity.entity_id.as_str())) {
+            return Err(CodecError::Malformed(format!(
+                "duplicate F3D ACT entity identity: {}:{}",
+                entity.record_index, entity.entity_id
+            )));
+        }
+        if !entity.in_table && entity.channels.is_empty() {
+            return Err(CodecError::Malformed(format!(
+                "F3D ACT entity {} has neither a table row nor channels",
+                entity.id
+            )));
+        }
+        if entity.channels.is_empty() != entity.channel_class_tag.is_none() {
+            return Err(CodecError::Malformed(format!(
+                "F3D ACT entity {} requires a class tag exactly when channels are present",
+                entity.id
+            )));
+        }
+    }
+    let mut channel_counts = BTreeMap::<&str, usize>::new();
+    for guid in native
+        .act_entities
+        .iter()
+        .flat_map(|entity| entity.channels.values())
+    {
+        *channel_counts.entry(guid).or_default() += 1;
+    }
+    let mut predicted = Vec::new();
+    for (ordinal, guid) in native.act_guids.iter().enumerate() {
+        if guid.ordinal != ordinal as u32 {
+            return Err(CodecError::Malformed(
+                "F3D ACT GUID ordinals must be contiguous in stream order".into(),
+            ));
+        }
+        let remaining = channel_counts.entry(guid.guid.as_str()).or_default();
+        if *remaining > 0 {
+            *remaining -= 1;
+        } else {
+            predicted.push(guid.guid.as_str());
+        }
+    }
+    predicted.extend(
+        native
+            .act_entities
+            .iter()
+            .flat_map(|entity| entity.channels.values().map(String::as_str)),
+    );
+    if predicted
+        .into_iter()
+        .ne(native.act_guids.iter().map(|guid| guid.guid.as_str()))
+    {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D generation cannot preserve this ACT GUID pool ordering".into(),
+        ));
+    }
     Ok(())
 }
 
