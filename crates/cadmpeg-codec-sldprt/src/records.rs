@@ -221,6 +221,9 @@ pub struct FeatureInputRelationBinding {
     pub family: FeatureInputRelationFamily,
     /// Scalar record attached to the declaration.
     pub scalar_ref: String,
+    /// Native history feature owning the relation, when unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_ref: Option<String>,
 }
 
 /// Native sketch-relation family.

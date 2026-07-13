@@ -10920,6 +10920,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     );
     assert_eq!(lane.relation_bindings[0].class_ref, lane.classes[3].id);
     assert_eq!(lane.relation_bindings[0].scalar_ref, lane.scalars[0].id);
+    assert_eq!(lane.relation_bindings[0].feature_ref, None);
     assert_eq!(
         lane.scalars[0].role,
         crate::records::FeatureInputScalarRole::Driving
@@ -11223,6 +11224,12 @@ fn decode_projects_unambiguous_resolved_feature_parameter() {
         native.feature_input_lanes[0].relation_bindings[0].scalar_ref,
         scalar.id
     );
+    assert_eq!(
+        native.feature_input_lanes[0].relation_bindings[0]
+            .feature_ref
+            .as_deref(),
+        feature.native_ref.as_deref()
+    );
 }
 
 #[test]
@@ -11486,6 +11493,30 @@ fn decode_projects_owned_native_sketch_relation() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap();
+}
+
+#[test]
+fn native_store_rejects_relation_scalar_owner_disagreement() {
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    assert!(native.feature_input_lanes[0].relation_bindings[0]
+        .feature_ref
+        .is_some());
+    native.feature_input_lanes[0].relation_bindings[0].feature_ref = None;
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("disagrees with its scalar owner"));
 }
 
 #[test]

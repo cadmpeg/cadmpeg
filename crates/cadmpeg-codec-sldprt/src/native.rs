@@ -201,6 +201,10 @@ impl SldprtNative {
         if let Some(record) = relation_bindings.iter().find(|record| {
             !class_ids.contains(record.class_ref.as_str())
                 || !scalar_ids.contains(record.scalar_ref.as_str())
+                || record
+                    .feature_ref
+                    .as_deref()
+                    .is_some_and(|feature| !feature_ids.contains(feature))
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input relation binding {} has an unresolved class or scalar",
@@ -378,9 +382,24 @@ impl SldprtNative {
                 record.parent != lane.id
                     || !class_ids.contains(record.class_ref.as_str())
                     || !scalar_ids.contains(record.scalar_ref.as_str())
+                    || record
+                        .feature_ref
+                        .as_deref()
+                        .is_some_and(|feature| !feature_ids.contains(feature))
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input relation binding {} has inconsistent ownership",
+                    record.id
+                )));
+            }
+            if let Some(record) = lane.relation_bindings.iter().find(|record| {
+                lane.scalars
+                    .iter()
+                    .find(|scalar| scalar.id == record.scalar_ref)
+                    .is_some_and(|scalar| scalar.feature_ref != record.feature_ref)
+            }) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature-input relation binding {} disagrees with its scalar owner",
                     record.id
                 )));
             }

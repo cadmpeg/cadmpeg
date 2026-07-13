@@ -149,6 +149,7 @@ pub(crate) fn relation_bindings(
                 class_ref: class.id.clone(),
                 family,
                 scalar_ref: scalar.id.clone(),
+                feature_ref: scalar.feature_ref.clone(),
             },
         )
         .collect()
@@ -382,6 +383,17 @@ pub(crate) fn bind_scalar_operands(
                     }
                 }
             }
+        }
+        let scalar_owners = lane
+            .scalars
+            .iter()
+            .map(|scalar| (scalar.id.as_str(), scalar.feature_ref.clone()))
+            .collect::<HashMap<_, _>>();
+        for binding in &mut lane.relation_bindings {
+            binding.feature_ref = scalar_owners
+                .get(binding.scalar_ref.as_str())
+                .cloned()
+                .flatten();
         }
     }
 }
@@ -667,7 +679,7 @@ pub(crate) fn project_relation_bindings(
             let Some(scalar) = scalars.get(binding.scalar_ref.as_str()) else {
                 continue;
             };
-            let Some(sketch) = scalar
+            let Some(sketch) = binding
                 .feature_ref
                 .as_deref()
                 .and_then(|feature| sketches_by_feature.get(feature))
