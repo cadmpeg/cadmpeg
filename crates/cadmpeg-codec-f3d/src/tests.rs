@@ -4141,6 +4141,75 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 }
 
 #[test]
+fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::tessellation::Tessellation;
+    use cadmpeg_ir::SourceObjectAssociation;
+
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated planar triangle decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let association = SourceObjectAssociation {
+        format: "generated".into(),
+        object_id: "object-1".into(),
+        name: Some("exact carrier".into()),
+        color: None,
+        visible: Some(true),
+        layer: None,
+        instance_path: Vec::new(),
+    };
+
+    source_less.model.surfaces[0].source_object = Some(association.clone());
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("surface source identity must not disappear");
+    assert!(error
+        .to_string()
+        .contains("source-object association on surface"));
+
+    source_less.model.surfaces[0].source_object = None;
+    source_less.model.curves.push(cadmpeg_ir::geometry::Curve {
+        id: "generated:associated-curve#0".into(),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: Some(association),
+    });
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("curve source identity must not disappear");
+    assert!(error
+        .to_string()
+        .contains("source-object association on curve"));
+
+    source_less.model.curves.pop();
+    source_less.model.tessellations.push(Tessellation {
+        id: "generated:tessellation#0".into(),
+        source_object: None,
+        vertices: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+        ],
+        triangles: vec![[0, 1, 2]],
+        strip_lengths: Vec::new(),
+        normals: Vec::new(),
+        channels: Vec::new(),
+    });
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("neutral tessellation must not disappear");
+    assert!(error
+        .to_string()
+        .contains("cannot serialize neutral tessellation"));
+}
+
+#[test]
 fn generated_source_less_rejects_body_kind_that_conflicts_with_incidence() {
     let source = f3d_with_smbh(&synthetic_geometry_smbh());
     let decoded = F3dCodec

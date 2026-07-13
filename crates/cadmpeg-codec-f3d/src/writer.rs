@@ -130,6 +130,38 @@ fn validate_source_less_topology_tolerances(target: &CadIr) -> Result<(), CodecE
     Ok(())
 }
 
+fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<(), CodecError> {
+    if let Some(tessellation) = target.model.tessellations.first() {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize neutral tessellation {} losslessly",
+            tessellation.id
+        )));
+    }
+    if let Some(surface) = target
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.source_object.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize source-object association on surface {} losslessly",
+            surface.id
+        )));
+    }
+    if let Some(curve) = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.source_object.is_some())
+    {
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize source-object association on curve {} losslessly",
+            curve.id
+        )));
+    }
+    Ok(())
+}
+
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile.
 pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
@@ -141,6 +173,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     }
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target)?;
+    validate_source_less_auxiliary_geometry(target)?;
     if let Some(native) = &native {
         validate_source_less_history_graph(target, native)?;
         validate_source_less_act(native)?;
