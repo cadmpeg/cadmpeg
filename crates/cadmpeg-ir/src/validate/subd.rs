@@ -127,8 +127,9 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
             ..
         } = &procedural.definition
         {
-            let valid = [angular_interval, parameter_interval]
+            let valid = [Some(angular_interval), parameter_interval.as_ref()]
                 .into_iter()
+                .flatten()
                 .all(|interval| {
                     interval[0].is_finite() && interval[1].is_finite() && interval[0] < interval[1]
                 });

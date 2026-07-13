@@ -1469,7 +1469,7 @@ impl<'a> DecodeContext<'a> {
                 axis_origin,
                 axis_direction,
                 angular_interval,
-                parameter_interval,
+                parameter_interval: Some(parameter_interval),
                 transposed,
             },
             crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
@@ -2842,7 +2842,7 @@ fn stage_brep_procedural_surface(
             axis_origin,
             axis_direction,
             angular_interval,
-            parameter_interval,
+            parameter_interval: Some(parameter_interval),
             transposed,
         },
         crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {

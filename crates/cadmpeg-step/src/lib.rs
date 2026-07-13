@@ -1031,6 +1031,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Deformable { .. }
                 | ProceduralSurfaceDefinition::TSpline { .. }
                 | ProceduralSurfaceDefinition::Offset { .. }
+                | ProceduralSurfaceDefinition::Subset { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }
                 | ProceduralSurfaceDefinition::Unknown { .. } => true,

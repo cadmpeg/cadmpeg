@@ -264,8 +264,8 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 definition: ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
-                    u_sense: 0,
-                    v_sense: 0,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
                     extension_flags: Vec::new(),
                 },
                 cache_fit_tolerance: None,

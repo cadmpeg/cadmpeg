@@ -138,7 +138,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ("Payload.bin", b"payload"),
         (
             "Shape.brp",
-            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 4\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\n8 0 5 1 0 0 0 1 0 0\n9 2 0 0 1 1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n9 0 0 0 0 1 1 2 2 2 2 0 0 0 0 1 0 1 0 0 1 1 0 0 2 1 2 0 2 1 2\nTriangulations 0\nTShapes 0\n*",
+            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 4\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\n8 0 5 1 0 0 0 1 0 0\n9 2 0 0 1 1 0 0 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 5\n1 0 0 0 0 0 1 1 0 0 0 1 0\n9 0 0 0 0 1 1 2 2 2 2 0 0 0 0 1 0 1 0 0 1 1 0 0 2 1 2 0 2 1 2\n6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 0\n*",
         ),
     ]);
     let result = FcstdCodec
@@ -217,7 +217,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         Some(1)
     );
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.curves.len(), 6);
+    assert_eq!(result.ir.model.curves.len(), 8);
     match &result.ir.model.curves[0].geometry {
         cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
             assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
@@ -253,7 +253,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected offset construction {other:?}"),
     }
-    assert_eq!(result.ir.model.surfaces.len(), 2);
+    assert_eq!(result.ir.model.surfaces.len(), 7);
     match &result.ir.model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin,
@@ -266,6 +266,30 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected surface {other:?}"),
     }
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 4);
+    assert!(matches!(
+        result.ir.model.procedural_surfaces[0].definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.procedural_surfaces[1].definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Revolution {
+            parameter_interval: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.procedural_surfaces[2].definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
+            u_sense: None,
+            v_sense: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.procedural_surfaces[3].definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Subset { .. }
+    ));
     match &result.ir.model.surfaces[1].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {
             assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));

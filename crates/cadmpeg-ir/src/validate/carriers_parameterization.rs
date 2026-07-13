@@ -323,6 +323,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
             }
+            ProceduralSurfaceDefinition::Subset { support, .. } => {
+                surfaces.insert(&support.0);
+            }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 curves.extend([first.0.as_str(), second.0.as_str()]);
             }

@@ -63,7 +63,7 @@ pub use codec::{
     DecodeResult, Encoder, ReadSeek,
 };
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
-pub use document::{CadIr, SourceMeta, IR_VERSION};
+pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,

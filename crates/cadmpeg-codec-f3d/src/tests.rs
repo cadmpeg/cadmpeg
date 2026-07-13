@@ -10118,7 +10118,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert_eq!(*angular_interval, [0.0, 1.0]);
-        assert_eq!(*parameter_interval, [0.0, 1.0]);
+        assert_eq!(*parameter_interval, Some([0.0, 1.0]));
         assert!(!transposed);
         assert!(result
             .ir
@@ -10202,7 +10202,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             panic!("expected offset surface construction")
         };
         assert_eq!(*distance, -12.5);
-        assert_eq!((*u_sense, *v_sense), (3, -4));
+        assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
         assert_eq!(*extension_flags, expected_flags);
         assert!(result
             .ir
@@ -10231,7 +10231,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         else {
             panic!("expected round-trip offset surface")
         };
-        assert_eq!((*distance, *u_sense, *v_sense), (-12.5, 3, -4));
+        assert_eq!((*distance, *u_sense, *v_sense), (-12.5, Some(3), Some(-4)));
         assert_eq!(*extension_flags, expected_flags);
     }
 }

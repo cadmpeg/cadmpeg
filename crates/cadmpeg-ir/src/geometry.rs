@@ -388,8 +388,10 @@ pub enum ProceduralSurfaceDefinition {
         axis_direction: Vector3,
         /// Angular start and end parameters, in radians.
         angular_interval: [f64; 2],
-        /// Directrix surface-parameter start and end values.
-        parameter_interval: [f64; 2],
+        /// Directrix surface-parameter start and end values, when carried by
+        /// the source representation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_interval: Option<[f64; 2]>,
         /// Whether the source parameter directions are transposed.
         transposed: bool,
     },
@@ -433,12 +435,21 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Signed offset distance, in document length units.
         distance: f64,
-        /// Native U parameter-direction sense enum.
-        u_sense: i64,
-        /// Native V parameter-direction sense enum.
-        v_sense: i64,
+        /// Native U parameter-direction sense enum, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        u_sense: Option<i64>,
+        /// Native V parameter-direction sense enum, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        v_sense: Option<i64>,
         /// Ordered conditional ASM extension flags.
         extension_flags: Vec<bool>,
+    },
+    /// Rectangular parameter sub-range of a support surface.
+    Subset {
+        /// Surface being restricted.
+        support: SurfaceId,
+        /// Ordered U and V parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
     },
     /// Ruled surface joining two directrices.
     Ruled {

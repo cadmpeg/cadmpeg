@@ -14,10 +14,11 @@ use cadmpeg_ir::codec::{
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -379,12 +380,17 @@ impl Codec for FcstdCodec {
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("logical_ledger", &logical_ledger)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
-            let curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
-            let surfaces = transfer_text_surfaces(&shape_payloads, &graph.properties);
-            geometry_transferred = !curve_transfer.curves.is_empty() || !surfaces.is_empty();
+            let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
+            let surface_transfer =
+                transfer_text_surfaces(&shape_payloads, &graph.properties, &mut curve_transfer);
+            geometry_transferred =
+                !curve_transfer.curves.is_empty() || !surface_transfer.surfaces.is_empty();
             ir.model.curves.extend(curve_transfer.curves);
             ir.model.procedural_curves.extend(curve_transfer.procedural);
-            ir.model.surfaces.extend(surfaces);
+            ir.model.surfaces.extend(surface_transfer.surfaces);
+            ir.model
+                .procedural_surfaces
+                .extend(surface_transfer.procedural);
         }
         let losses = if options.container_only {
             Vec::new()
@@ -555,108 +561,212 @@ fn append_text_curve(
     geometry
 }
 
+#[derive(Default)]
+struct SurfaceTransfer {
+    surfaces: Vec<Surface>,
+    procedural: Vec<ProceduralSurface>,
+}
+
 fn transfer_text_surfaces(
     payloads: &[brep::ShapePayloadRecord],
     properties: &[native::PropertyRecord],
-) -> Vec<Surface> {
-    payloads
+    curve_transfer: &mut CurveTransfer,
+) -> SurfaceTransfer {
+    let mut transfer = SurfaceTransfer::default();
+    for (payload, text) in payloads
         .iter()
         .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
-        .flat_map(|(payload, text)| {
-            let object_id = properties
-                .iter()
-                .find(|property| property.id == payload.property)
-                .map_or_else(
-                    || payload.property.clone(),
-                    |property| property.owner.clone(),
-                );
-            text.surfaces
-                .iter()
-                .enumerate()
-                .map(move |(index, surface)| {
-                    let geometry = match surface {
-                        brep::TextSurface::Plane {
-                            origin,
-                            axis,
-                            u_axis,
-                        } => SurfaceGeometry::Plane {
-                            origin: *origin,
-                            normal: *axis,
-                            u_axis: *u_axis,
-                        },
-                        brep::TextSurface::Cylinder {
-                            origin,
-                            axis,
-                            ref_direction,
-                            radius,
-                        } => SurfaceGeometry::Cylinder {
-                            origin: *origin,
-                            axis: *axis,
-                            ref_direction: *ref_direction,
-                            radius: *radius,
-                        },
-                        brep::TextSurface::Cone {
-                            origin,
-                            axis,
-                            ref_direction,
-                            radius,
-                            half_angle,
-                        } => SurfaceGeometry::Cone {
-                            origin: *origin,
-                            axis: *axis,
-                            ref_direction: *ref_direction,
-                            radius: *radius,
-                            ratio: 1.0,
-                            half_angle: *half_angle,
-                        },
-                        brep::TextSurface::Sphere {
-                            center,
-                            axis,
-                            ref_direction,
-                            radius,
-                        } => SurfaceGeometry::Sphere {
-                            center: *center,
-                            axis: *axis,
-                            ref_direction: *ref_direction,
-                            radius: *radius,
-                        },
-                        brep::TextSurface::Torus {
-                            center,
-                            axis,
-                            ref_direction,
-                            major_radius,
-                            minor_radius,
-                        } => SurfaceGeometry::Torus {
-                            center: *center,
-                            axis: *axis,
-                            ref_direction: *ref_direction,
-                            major_radius: *major_radius,
-                            minor_radius: *minor_radius,
-                        },
-                        brep::TextSurface::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs.clone()),
-                        brep::TextSurface::Extrusion { .. }
-                        | brep::TextSurface::Revolution { .. }
-                        | brep::TextSurface::Trimmed { .. }
-                        | brep::TextSurface::Offset { .. } => {
-                            SurfaceGeometry::Unknown { record: None }
-                        }
-                    };
-                    Surface {
-                        id: SurfaceId(format!("{}:surface#{}", payload.id, index + 1)),
-                        geometry,
-                        source_object: Some(SourceObjectAssociation {
-                            format: "fcstd".into(),
-                            object_id: object_id.clone(),
-                            name: None,
-                            color: None,
-                            visible: None,
-                            layer: None,
-                            instance_path: Vec::new(),
-                        }),
-                    }
-                })
-        })
-        .collect()
+    {
+        let object_id = properties
+            .iter()
+            .find(|property| property.id == payload.property)
+            .map_or_else(
+                || payload.property.clone(),
+                |property| property.owner.clone(),
+            );
+        let association = SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id,
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
+        };
+        for (index, surface) in text.surfaces.iter().enumerate() {
+            append_text_surface(
+                surface,
+                SurfaceId(format!("{}:surface#{}", payload.id, index + 1)),
+                &association,
+                curve_transfer,
+                &mut transfer,
+            );
+        }
+    }
+    transfer
+}
+
+fn append_text_surface(
+    surface: &brep::TextSurface,
+    id: SurfaceId,
+    association: &SourceObjectAssociation,
+    curve_transfer: &mut CurveTransfer,
+    transfer: &mut SurfaceTransfer,
+) -> SurfaceGeometry {
+    let geometry = match surface {
+        brep::TextSurface::Plane {
+            origin,
+            axis,
+            u_axis,
+        } => SurfaceGeometry::Plane {
+            origin: *origin,
+            normal: *axis,
+            u_axis: *u_axis,
+        },
+        brep::TextSurface::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => SurfaceGeometry::Cylinder {
+            origin: *origin,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+        },
+        brep::TextSurface::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            half_angle,
+        } => SurfaceGeometry::Cone {
+            origin: *origin,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+            ratio: 1.0,
+            half_angle: *half_angle,
+        },
+        brep::TextSurface::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => SurfaceGeometry::Sphere {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            radius: *radius,
+        },
+        brep::TextSurface::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => SurfaceGeometry::Torus {
+            center: *center,
+            axis: *axis,
+            ref_direction: *ref_direction,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        brep::TextSurface::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs.clone()),
+        brep::TextSurface::Extrusion {
+            direction,
+            directrix,
+        } => {
+            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Extrusion {
+                    directrix: directrix_id,
+                    parameter_interval: None,
+                    direction: *direction,
+                    native_position: None,
+                },
+                cache_fit_tolerance: None,
+            });
+            SurfaceGeometry::Unknown { record: None }
+        }
+        brep::TextSurface::Revolution {
+            axis_origin,
+            axis_direction,
+            directrix,
+        } => {
+            let directrix_id = CurveId(format!("{}:directrix", id.0));
+            append_text_curve(directrix, directrix_id.clone(), association, curve_transfer);
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: directrix_id,
+                    axis_origin: *axis_origin,
+                    axis_direction: *axis_direction,
+                    angular_interval: [0.0, std::f64::consts::TAU],
+                    parameter_interval: None,
+                    transposed: false,
+                },
+                cache_fit_tolerance: None,
+            });
+            SurfaceGeometry::Unknown { record: None }
+        }
+        brep::TextSurface::Trimmed {
+            parameter_ranges,
+            basis,
+        } => {
+            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            let basis_geometry = append_text_surface(
+                basis,
+                basis_id.clone(),
+                association,
+                curve_transfer,
+                transfer,
+            );
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Subset {
+                    support: basis_id,
+                    parameter_ranges: *parameter_ranges,
+                },
+                cache_fit_tolerance: None,
+            });
+            basis_geometry
+        }
+        brep::TextSurface::Offset { distance, basis } => {
+            let basis_id = SurfaceId(format!("{}:basis", id.0));
+            append_text_surface(
+                basis,
+                basis_id.clone(),
+                association,
+                curve_transfer,
+                transfer,
+            );
+            transfer.procedural.push(ProceduralSurface {
+                id: ProceduralSurfaceId(format!("{}:construction", id.0)),
+                surface: id.clone(),
+                definition: ProceduralSurfaceDefinition::Offset {
+                    support: basis_id,
+                    distance: *distance,
+                    u_sense: None,
+                    v_sense: None,
+                    extension_flags: Vec::new(),
+                },
+                cache_fit_tolerance: None,
+            });
+            SurfaceGeometry::Unknown { record: None }
+        }
+    };
+    transfer.surfaces.push(Surface {
+        id,
+        geometry: geometry.clone(),
+        source_object: Some(association.clone()),
+    });
+    geometry
 }
 
 fn logical_ledger(

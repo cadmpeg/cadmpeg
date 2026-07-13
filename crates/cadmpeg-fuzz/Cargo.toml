@@ -86,6 +86,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "ir_migrate_json"
+path = "fuzz_targets/ir_migrate_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ir_validate"
 path = "fuzz_targets/ir_validate.rs"
 test = false

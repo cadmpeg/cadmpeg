@@ -79,7 +79,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "3";
+pub const IR_VERSION: &str = "4";
+
+/// Immediately preceding IR version supported by the explicit JSON migration.
+pub const PREVIOUS_IR_VERSION: &str = "3";
 
 arena_registry!(declare_model);
 
@@ -212,6 +215,29 @@ impl CadIr {
             )));
         }
         serde_json::from_value(value)
+    }
+
+    /// Migrate JSON from the immediately preceding IR version and parse it.
+    ///
+    /// Version 4 adds only optional construction fields and a new procedural
+    /// surface variant, so every valid version 3 document migrates by updating
+    /// its version discriminator. Other legacy versions remain unsupported.
+    pub fn migrate_json(s: &str) -> Result<Self, serde_json::Error> {
+        let mut value: serde_json::Value = serde_json::from_str(s)?;
+        let version = value.get("ir_version").and_then(serde_json::Value::as_str);
+        match version {
+            Some(IR_VERSION) => serde_json::from_value(value),
+            Some(PREVIOUS_IR_VERSION) => {
+                value
+                    .as_object_mut()
+                    .expect("a versioned CADIR document is a JSON object")
+                    .insert("ir_version".into(), IR_VERSION.into());
+                serde_json::from_value(value)
+            }
+            _ => Err(<serde_json::Error as serde::de::Error>::custom(format!(
+                "cannot migrate ir_version {version:?}; expected {PREVIOUS_IR_VERSION} or {IR_VERSION}"
+            ))),
+        }
     }
 
     /// Sort model, native, and unknown-record arenas by identity.

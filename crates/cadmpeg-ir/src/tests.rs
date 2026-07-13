@@ -1229,6 +1229,18 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
+fn explicit_migration_upgrades_version_three_without_semantic_changes() {
+    let current = unit_cube();
+    let mut legacy = serde_json::to_value(&current).unwrap();
+    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
+    let legacy = serde_json::to_string(&legacy).unwrap();
+
+    assert!(CadIr::from_json(&legacy).is_err());
+    let migrated = CadIr::migrate_json(&legacy).expect("version 3 migration");
+    assert_eq!(migrated, current);
+}
+
+#[test]
 fn schema_constrains_version_and_requires_subd_arena() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
     assert_eq!(
@@ -1382,7 +1394,7 @@ fn revolution_rejects_equal_intervals() {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 1.0),
             angular_interval: [1.0, 1.0],
-            parameter_interval: [0.0, 1.0],
+            parameter_interval: Some([0.0, 1.0]),
             transposed: false,
         },
         cache_fit_tolerance: None,

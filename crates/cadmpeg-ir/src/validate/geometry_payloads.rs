@@ -1375,6 +1375,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Subset {
+            parameter_ranges, ..
+        } = &procedural.definition
+        {
+            if !parameter_ranges
+                .iter()
+                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1])
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "surface subset ranges are not finite and ordered",
+                );
+            }
+        }
     }
     for c in &ir.model.curves {
         match &c.geometry {

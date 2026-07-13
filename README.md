@@ -86,7 +86,7 @@ input file ──▶ container decoder ──▶ format decoder ──▶ IR ─
 
 The IR connects the pipeline. Decoders produce it, validators check it, and exporters consume it. Version 2 serializes a format-neutral model, the required `subds` control-cage arena, free-carrier source associations, sparse source annotations, independently versioned native namespaces, and opaque records as canonical JSON. Arena entries are ordered by ID after finalization, and carrier reachability follows topology links, procedural references, and source associations.
 
-- [CAD IR version 3](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
+- [CAD IR version 4](docs/cad-ir.md) defines byte semantics, canonical units and parameterization, identity, topology, directed SubD control cages, bounded procedural constructions, annotations, native opacity, and versioning.
 - [Architecture](docs/architecture.md) describes the pipeline, codec interface, and crate map.
 - [Format support](docs/format-support.md) records current capability by format.
 - [Roadmap](docs/roadmap.md) defines milestones and contributor entry points.
@@ -104,7 +104,7 @@ cadmpeg diff     a.cadir.json b.cadir.json
 
 Output formats are `cadir`, `step`, `f3d`, and `sldprt`; `json` aliases `cadir`. `export` and `convert` infer omitted formats from the output extension. Use `--input-format` to override source detection.
 
-Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 3`. This command-envelope version is independent of the CAD IR's `ir_version: "3"`.
+Machine-readable output from `inspect --json`, `validate --json`, and `diff --json`, plus command report files, uses CLI `schema_version: 3`. This command-envelope version is independent of the CAD IR's `ir_version: "4"`.
 
 ## Contributing
 
