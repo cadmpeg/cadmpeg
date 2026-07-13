@@ -6478,7 +6478,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         visual_guid_offset: 0,
         physical_token: Some("PrismMaterial-Generated".into()),
         physical_token_offset: None,
-        visual_preset: Some("Prism-Generated".into()),
+        visual_preset: None,
         visual_preset_offset: None,
     }];
 
@@ -6519,6 +6519,49 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
         f3d_native(&round_trip.ir).design_material_assignments[0].asm_body_key,
         42
     );
+    assert_eq!(
+        f3d_native(&round_trip.ir).design_material_assignments[0].visual_guid,
+        visual_guid
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).design_material_assignments[0].visual_preset,
+        None
+    );
+}
+
+#[test]
+fn generated_source_less_rejects_collapsed_design_body_bindings() {
+    use crate::records::DesignMaterialAssignment;
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    f3d_native_mut(&mut source_less).design_material_assignments = [("0_985", 985), ("0_986", 986)]
+        .into_iter()
+        .enumerate()
+        .map(
+            |(ordinal, (entity_id, entity_suffix))| DesignMaterialAssignment {
+                id: format!("generated:material-assignment#{ordinal}"),
+                asm_body_key: 42,
+                asm_body_key_offset: 0,
+                entity_suffix,
+                entity_suffix_offset: 0,
+                entity_id: entity_id.into(),
+                entity_id_offset: 0,
+                visual_guid: "11111111-2222-3333-4444-555555555555".into(),
+                visual_guid_offset: 0,
+                physical_token: Some("PrismMaterial-Generated".into()),
+                physical_token_offset: None,
+                visual_preset: None,
+                visual_preset_offset: None,
+            },
+        )
+        .collect();
+
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("conflicting body-map rows must not collapse");
+    assert!(error
+        .to_string()
+        .contains("conflicts with the body-map key/suffix bijection"));
 }
 
 #[test]

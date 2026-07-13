@@ -56,6 +56,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     if let Some(native) = &native {
         validate_source_less_history_graph(target, native)?;
         validate_source_less_act(native)?;
+        validate_source_less_design_bindings(native)?;
         validate_source_less_design_links(target, native)?;
     }
     let smbh = encode_planar_triangle_smbh(target)?;
@@ -165,6 +166,57 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
         .into_inner();
     writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn validate_source_less_design_bindings(native: &F3dNative) -> Result<(), CodecError> {
+    let mut by_key = BTreeMap::new();
+    let mut by_suffix = BTreeMap::new();
+    let mut insert = |key: u64, suffix: u64, id: &str| -> Result<(), CodecError> {
+        if by_key
+            .insert(key, suffix)
+            .is_some_and(|before| before != suffix)
+            || by_suffix
+                .insert(suffix, key)
+                .is_some_and(|before| before != key)
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design body binding {id} conflicts with the body-map key/suffix bijection"
+            )));
+        }
+        Ok(())
+    };
+    for assignment in &native.design_material_assignments {
+        if assignment.physical_token.is_none() {
+            return Err(CodecError::Malformed(format!(
+                "F3D material assignment {} requires its physical-material token",
+                assignment.id
+            )));
+        }
+        let parsed_suffix = assignment
+            .entity_id
+            .rsplit('_')
+            .next()
+            .and_then(|suffix| suffix.parse::<u64>().ok());
+        if parsed_suffix != Some(assignment.entity_suffix) {
+            return Err(CodecError::Malformed(format!(
+                "F3D material assignment {} entity id conflicts with suffix {}",
+                assignment.id, assignment.entity_suffix
+            )));
+        }
+        insert(
+            assignment.asm_body_key,
+            assignment.entity_suffix,
+            &assignment.id,
+        )?;
+    }
+    for visibility in &native.body_visibilities {
+        insert(
+            visibility.asm_body_key,
+            visibility.entity_suffix,
+            &visibility.id,
+        )?;
+    }
     Ok(())
 }
 
@@ -685,24 +737,20 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     }
     for assignment in &native.design_material_assignments {
         native_lp_utf16(&mut out, &assignment.entity_id)?;
-        native_lp_utf16(&mut out, &assignment.visual_guid)?;
         native_lp_utf16(
             &mut out,
             assignment
                 .physical_token
                 .as_deref()
-                .unwrap_or("PrismMaterial-Generated"),
+                .expect("validated source-less material token"),
         )?;
         native_lp_utf16(&mut out, "Body")?;
         native_lp_utf16(&mut out, "00000000-0000-0000-0000-000000000000")?;
+        native_lp_utf16(&mut out, &assignment.visual_guid)?;
         native_lp_utf16(&mut out, "BA5EE55E-9982-449B-9D66-9F036540E140")?;
-        native_lp_utf16(
-            &mut out,
-            assignment
-                .visual_preset
-                .as_deref()
-                .unwrap_or("Prism-Generated"),
-        )?;
+        if let Some(visual_preset) = &assignment.visual_preset {
+            native_lp_utf16(&mut out, visual_preset)?;
+        }
     }
     for (ordinal, (entity_suffix, visible)) in visibility_rows.into_iter().enumerate() {
         native_lp_utf16(
