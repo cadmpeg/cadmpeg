@@ -14341,7 +14341,8 @@ fn patch_double_token(
     ordinal: usize,
     value: f64,
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x06)
+    let ref_width = active_ref_width(bytes);
+    let offset = *sab::payload_token_offsets(bytes, record, ref_width, 0x06)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .get(ordinal)
         .ok_or_else(|| {
@@ -14360,7 +14361,8 @@ fn patch_float_token(
     ordinal: usize,
     value: f32,
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x05)
+    let ref_width = active_ref_width(bytes);
+    let offset = *sab::payload_token_offsets(bytes, record, ref_width, 0x05)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .get(ordinal)
         .ok_or_else(|| {
@@ -14379,7 +14381,8 @@ fn patch_string_token(
     ordinal: usize,
     value: &str,
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, 0x07)
+    let ref_width = active_ref_width(bytes);
+    let offset = *sab::payload_token_offsets(bytes, record, ref_width, 0x07)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .get(ordinal)
         .ok_or_else(|| {
@@ -14408,7 +14411,8 @@ fn patch_integer_token(
     ordinal: usize,
     value: i64,
 ) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, 8, tag)
+    let ref_width = active_ref_width(bytes);
+    let offset = *sab::payload_token_offsets(bytes, record, ref_width, tag)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .get(ordinal)
         .ok_or_else(|| {
@@ -14417,7 +14421,13 @@ fn patch_integer_token(
                 record.head, record.index
             ))
         })?;
-    bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
+    if ref_width == 4 && i64::from(value as i32) != value {
+        return Err(CodecError::NotImplemented(format!(
+            "{} record {} integer edit exceeds BinaryFile4 range",
+            record.head, record.index
+        )));
+    }
+    bytes[offset + 1..offset + 1 + ref_width].copy_from_slice(&value.to_le_bytes()[..ref_width]);
     Ok(())
 }
 
@@ -14531,10 +14541,11 @@ fn patch_sense_token(
     ordinal: usize,
     sense: Sense,
 ) -> Result<(), CodecError> {
-    let mut offsets = sab::payload_token_offsets(bytes, record, 8, 0x0a)
+    let ref_width = active_ref_width(bytes);
+    let mut offsets = sab::payload_token_offsets(bytes, record, ref_width, 0x0a)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     offsets.extend(
-        sab::payload_token_offsets(bytes, record, 8, 0x0b)
+        sab::payload_token_offsets(bytes, record, ref_width, 0x0b)
             .map_err(|error| CodecError::Malformed(error.to_string()))?,
     );
     offsets.sort_unstable();
@@ -14558,7 +14569,7 @@ fn patch_vec3_token(
     ordinal: usize,
     values: [f64; 3],
 ) -> Result<(), CodecError> {
-    let ref_width = asm_header::parse(bytes).map_or(8, |header| usize::from(header.width));
+    let ref_width = active_ref_width(bytes);
     let offset = *sab::payload_token_offsets(bytes, record, ref_width, tag)
         .map_err(|error| CodecError::Malformed(error.to_string()))?
         .get(ordinal)
@@ -14573,6 +14584,10 @@ fn patch_vec3_token(
         bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     Ok(())
+}
+
+fn active_ref_width(bytes: &[u8]) -> usize {
+    asm_header::parse(bytes).map_or(8, |header| usize::from(header.width))
 }
 
 fn patch_blend_radius_tokens(

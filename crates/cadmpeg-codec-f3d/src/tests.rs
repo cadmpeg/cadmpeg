@@ -8364,6 +8364,16 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
     let mut edited = decoded.ir;
     edited.model.points[0].position.x += 2.5;
     let expected = edited.model.points[0].position;
+    let edge = edited
+        .model
+        .edges
+        .iter_mut()
+        .find(|edge| edge.curve.is_some())
+        .expect("generated BinaryFile4 arc edge");
+    let range = edge.param_range.as_mut().expect("generated arc range");
+    range[0] += 0.125;
+    range[1] -= 0.125;
+    let expected_range = *range;
 
     let mut regenerated = Vec::new();
     F3dCodec
@@ -8373,6 +8383,16 @@ fn generated_f3d_rewrites_binaryfile4_geometry() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated BinaryFile4 decode");
     assert_eq!(round_trip.ir.model.points[0].position, expected);
+    assert_eq!(
+        round_trip
+            .ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.curve.is_some())
+            .and_then(|edge| edge.param_range),
+        Some(expected_range)
+    );
 }
 
 #[test]
