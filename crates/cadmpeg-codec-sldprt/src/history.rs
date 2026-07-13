@@ -1236,7 +1236,24 @@ fn project_definition(
 }
 
 fn feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    native_object_class(feature.input_class.as_deref()?).tree_node
+    reserved_feature_tree_node_role(feature)
+        .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node)
+}
+
+fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
+    if !feature.xml_tag.eq_ignore_ascii_case("Feature")
+        || !feature.parameters.is_empty()
+        || !feature.properties.is_empty()
+    {
+        return None;
+    }
+    match feature.source_id.as_deref()? {
+        "6" => Some(FeatureTreeNodeRole::LightsAndCameras),
+        "12" => Some(FeatureTreeNodeRole::AmbientLight),
+        "13" | "14" | "15" => Some(FeatureTreeNodeRole::DirectionalLight),
+        "19" => Some(FeatureTreeNodeRole::ExplodedViews),
+        _ => None,
+    }
 }
 
 fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {

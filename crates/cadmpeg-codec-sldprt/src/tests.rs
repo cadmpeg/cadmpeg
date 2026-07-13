@@ -6072,6 +6072,75 @@ fn decode_types_non_modeling_feature_tree_nodes() {
 }
 
 #[test]
+fn decode_types_reserved_tree_nodes_independently_of_localized_names() {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Luces y camaras" Type="Localized" id="6"/>
+            <Feature Name="Ambiental" Type="Localized" id="12"/>
+            <Feature Name="Direccional uno" Type="Localized" id="13"/>
+            <Feature Name="Direccional dos" Type="Localized" id="14"/>
+            <Feature Name="Direccional tres" Type="Localized" id="15"/>
+            <Feature Name="Vistas" Type="Localized" id="19"/>
+        </Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let roles = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .map(|feature| match feature.definition {
+            FeatureDefinition::TreeNode { role } => role,
+            ref definition => panic!("expected tree node, got {definition:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        roles,
+        [
+            FeatureTreeNodeRole::LightsAndCameras,
+            FeatureTreeNodeRole::AmbientLight,
+            FeatureTreeNodeRole::DirectionalLight,
+            FeatureTreeNodeRole::DirectionalLight,
+            FeatureTreeNodeRole::DirectionalLight,
+            FeatureTreeNodeRole::ExplodedViews,
+        ]
+    );
+}
+
+#[test]
+fn reserved_tree_node_ids_require_builtin_record_shape() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Extrusion Name="Operation" Type="Localized" id="12"/>
+            <Feature Name="Attributed" Type="Localized" id="19" State="custom"/>
+        </Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
+}
+
+#[test]
 fn decode_binds_duplicate_feature_names_by_native_object_id() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
 

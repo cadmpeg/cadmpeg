@@ -117,6 +117,8 @@ Point-distance operands select explicit profile loci. Line-distance and angular 
 
 Built-in reference-plane history records have no dimensions or extra attributes. Source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes. Names, element tags, and type strings do not affect the role.
 
+Dimensionless, attribute-free `Feature` history records use reserved source IDs for non-modeling tree roles. Source ID `6` is the lights-and-cameras container, `12` is the ambient light, `13`, `14`, and `15` are the built-in directional lights, and `19` is the exploded-views container. Display names and type strings do not affect these roles.
+
 ---
 
 ## 3. Parasolid stream
