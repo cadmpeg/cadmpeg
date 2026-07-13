@@ -276,7 +276,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let mut pending_composites = exchange
         .records
         .iter()
-        .filter_map(|(&id, record)| (record.simple_name() == Some("COMPOSITE_CURVE")).then_some(id))
+        .filter_map(|(&id, record)| record.partial("COMPOSITE_CURVE").map(|_| id))
         .collect::<BTreeSet<_>>();
     loop {
         let decoded_curve_ids = ir
@@ -578,6 +578,73 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
+    let base_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (surface.id.clone(), surface.geometry.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let decoded_curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| curve.id.clone())
+        .collect::<BTreeSet<_>>();
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("CURVE_BOUNDED_SURFACE") {
+            continue;
+        }
+        let support = record
+            .parameter(1)
+            .and_then(Value::reference)
+            .map(|support| SurfaceId(format!("step:data:surface#{support}")));
+        let boundaries = record.parameter(2).and_then(references).map(|boundaries| {
+            boundaries
+                .into_iter()
+                .map(|boundary| CurveId(format!("step:data:curve#{boundary}")))
+                .collect::<Vec<_>>()
+        });
+        let implicit_outer = record.parameter(3).and_then(Value::logical);
+        let Some((support, boundaries, implicit_outer, geometry)) = support
+            .as_ref()
+            .and_then(|support| base_surfaces.get(support).cloned())
+            .zip(support)
+            .zip(boundaries)
+            .zip(implicit_outer)
+            .map(|(((geometry, support), boundaries), implicit_outer)| {
+                (support, boundaries, implicit_outer, geometry)
+            })
+            .filter(|(_, boundaries, _, _)| {
+                !boundaries.is_empty()
+                    && boundaries
+                        .iter()
+                        .all(|curve| decoded_curves.contains(curve))
+            })
+        else {
+            warnings.push(format!(
+                "CURVE_BOUNDED_SURFACE #{id} has unresolved support or boundaries"
+            ));
+            continue;
+        };
+        let surface = SurfaceId(format!("step:data:surface#{id}"));
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry,
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("step:construction:curve_bounded_surface#{id}")),
+            surface,
+            definition: ProceduralSurfaceDefinition::CurveBounded {
+                support,
+                boundaries,
+                implicit_outer,
+            },
+            cache_fit_tolerance: None,
+        });
+        typed.insert(id);
+    }
+
     let surface_ids = ir
         .model
         .surfaces
@@ -854,8 +921,12 @@ fn composite_curve(
     exchange: &Exchange,
     decoded: &BTreeSet<CurveId>,
 ) -> Option<(Vec<(u64, CompositeCurveSegment)>, Option<bool>)> {
-    let segments = record
-        .parameter(1)?
+    let complex = record.partials.len() > 1;
+    let composite = record.partial("COMPOSITE_CURVE")?;
+    let offset = usize::from(!complex);
+    let segments = composite
+        .parameters
+        .get(offset)?
         .list()?
         .iter()
         .map(|value| {
@@ -887,7 +958,13 @@ fn composite_curve(
             ))
         })
         .collect::<Option<Vec<_>>>()?;
-    (!segments.is_empty()).then_some((segments, record.parameter(2).and_then(logical_value)?))
+    (!segments.is_empty()).then_some((
+        segments,
+        composite
+            .parameters
+            .get(offset + 1)
+            .and_then(logical_value)?,
+    ))
 }
 
 fn logical_value(value: &Value) -> Option<Option<bool>> {

@@ -497,6 +497,20 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
             && segments[0].transition
                 == cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradient
     ));
+    assert!(result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            &surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded {
+                support,
+                boundaries,
+                implicit_outer: false
+            } if support.as_str() == "step:data:surface#28"
+                && boundaries.as_slice() == [cadmpeg_ir::ids::CurveId("step:data:curve#34".into())]
+        )));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 
