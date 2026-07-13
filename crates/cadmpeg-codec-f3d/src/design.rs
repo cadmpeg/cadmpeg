@@ -226,6 +226,7 @@ pub fn project_parameter_design(
     native: &[DesignParameter],
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
+    placements: &[DesignSketchPlacement],
 ) -> (
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
@@ -242,6 +243,15 @@ pub fn project_parameter_design(
             (
                 scope.record_index,
                 FeatureId(format!("f3d:model:feature#scope-{}", scope.record_index)),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let sketches_by_scope = placements
+        .iter()
+        .map(|placement| {
+            (
+                placement.scope_record_index,
+                neutral_sketch_id(placement.entity_suffix),
             )
         })
         .collect::<HashMap<_, _>>();
@@ -271,7 +281,7 @@ pub fn project_parameter_design(
             let definition = if scope.kind == "Sketch" {
                 FeatureDefinition::Sketch {
                     space: SketchSpace::Planar,
-                    sketch: None,
+                    sketch: sketches_by_scope.get(&scope.record_index).cloned(),
                 }
             } else {
                 FeatureDefinition::Native {
@@ -365,6 +375,171 @@ pub fn project_parameter_design(
             .collect();
     }
     (features, parameters)
+}
+
+pub(crate) fn neutral_sketch_id(entity_suffix: u64) -> cadmpeg_ir::sketches::SketchId {
+    cadmpeg_ir::sketches::SketchId(format!("f3d:model:sketch#{entity_suffix}"))
+}
+
+pub(crate) fn neutral_sketch_entity_id(record_index: u32) -> cadmpeg_ir::sketches::SketchEntityId {
+    cadmpeg_ir::sketches::SketchEntityId(format!("f3d:model:sketch-entity#{record_index}"))
+}
+
+/// Project placed Design sketches and their exact planar point/curve records.
+pub fn project_sketch_design(
+    placements: &[DesignSketchPlacement],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+) -> (
+    Vec<cadmpeg_ir::sketches::Sketch>,
+    Vec<cadmpeg_ir::sketches::SketchEntity>,
+) {
+    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchGeometry};
+
+    let placements_by_suffix = placements
+        .iter()
+        .filter_map(|placement| {
+            u32::try_from(placement.entity_suffix)
+                .ok()
+                .map(|suffix| (suffix, placement))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut sketches = placements
+        .iter()
+        .map(|placement| Sketch {
+            id: neutral_sketch_id(placement.entity_suffix),
+            name: Some(placement.entity_id.clone()),
+            configuration: None,
+            origin: Point3::new(
+                placement.transform[0][3],
+                placement.transform[1][3],
+                placement.transform[2][3],
+            ),
+            normal: Vector3::new(
+                placement.transform[0][2],
+                placement.transform[1][2],
+                placement.transform[2][2],
+            ),
+            u_axis: Vector3::new(
+                placement.transform[0][0],
+                placement.transform[1][0],
+                placement.transform[2][0],
+            ),
+            profiles: Vec::new(),
+            native_ref: Some(placement.id.clone()),
+        })
+        .collect::<Vec<_>>();
+    sketches.sort_by_key(|sketch| sketch.id.clone());
+
+    let mut entities = points
+        .iter()
+        .filter_map(|point| {
+            let placement = placements_by_suffix.get(&point.owner_reference?)?;
+            Some(SketchEntity {
+                id: neutral_sketch_entity_id(point.record_index),
+                sketch: neutral_sketch_id(placement.entity_suffix),
+                construction: false,
+                native_ref: Some(point.id.clone()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: point.coordinates,
+                },
+            })
+        })
+        .collect::<Vec<_>>();
+    entities.extend(curves.iter().filter_map(|curve| {
+        let placement = placements_by_suffix.get(&curve.owner_reference?)?;
+        let geometry = match curve.geometry.as_ref()? {
+            SketchCurveGeometry::Line {
+                start, end, normal, ..
+            } if planar_point(start) && planar_point(end) && positive_sketch_normal(normal) => {
+                SketchGeometry::Line {
+                    start: Point2::new(start.x, start.y),
+                    end: Point2::new(end.x, end.y),
+                }
+            }
+            SketchCurveGeometry::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                start_angle,
+                end_angle,
+            } if planar_point(center)
+                && positive_sketch_normal(normal)
+                && reference_direction.z.abs() <= 1.0e-9
+                && *radius > 0.0 =>
+            {
+                let phase = reference_direction.y.atan2(reference_direction.x);
+                let start_angle = phase + start_angle;
+                let end_angle = phase + end_angle;
+                if (end_angle - start_angle).abs() >= std::f64::consts::TAU - 1.0e-9 {
+                    SketchGeometry::Circle {
+                        center: Point2::new(center.x, center.y),
+                        radius: Length(*radius),
+                    }
+                } else {
+                    SketchGeometry::Arc {
+                        center: Point2::new(center.x, center.y),
+                        radius: Length(*radius),
+                        start_angle: Angle(start_angle),
+                        end_angle: Angle(end_angle),
+                    }
+                }
+            }
+            SketchCurveGeometry::Nurbs {
+                degree,
+                knots,
+                weights,
+                control_points,
+                ..
+            } if control_points.iter().all(planar_point) && clamped_nurbs(*degree, knots) => {
+                SketchGeometry::Nurbs {
+                    degree: *degree,
+                    knots: knots.clone(),
+                    control_points: control_points
+                        .iter()
+                        .map(|point| Point2::new(point.x, point.y))
+                        .collect(),
+                    weights: (!weights.is_empty()).then(|| weights.clone()),
+                    periodic: false,
+                }
+            }
+            _ => return None,
+        };
+        Some(SketchEntity {
+            id: neutral_sketch_entity_id(curve.record_index),
+            sketch: neutral_sketch_id(placement.entity_suffix),
+            construction: false,
+            native_ref: Some(curve.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        })
+    }));
+    entities.sort_by_key(|entity| entity.id.clone());
+    (sketches, entities)
+}
+
+fn planar_point(point: &Point3) -> bool {
+    point.x.is_finite() && point.y.is_finite() && point.z.is_finite() && point.z.abs() <= 1.0e-9
+}
+
+fn positive_sketch_normal(normal: &Vector3) -> bool {
+    normal.x.abs() <= 1.0e-9 && normal.y.abs() <= 1.0e-9 && (normal.z - 1.0).abs() <= 1.0e-9
+}
+
+fn clamped_nurbs(degree: u32, knots: &[f64]) -> bool {
+    let multiplicity = degree as usize + 1;
+    knots.len() >= multiplicity.saturating_mul(2)
+        && knots[..multiplicity]
+            .iter()
+            .all(|knot| knot.to_bits() == knots[0].to_bits())
+        && knots[knots.len() - multiplicity..]
+            .iter()
+            .all(|knot| knot.to_bits() == knots[knots.len() - 1].to_bits())
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
@@ -2871,10 +3046,15 @@ mod relation_tests {
         identity_matrix, next_indexed_record_offset, parse_design_parameter,
         parse_dimension_locus_group, parse_dimension_locus_pair, parse_parameter_companion,
         parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
-        parse_sketch_relation, project_parameter_design,
+        parse_sketch_relation, project_parameter_design, project_sketch_design,
     };
-    use crate::records::{DesignParameterKind, DesignParameterScope, DesignRecordHeader};
+    use crate::records::{
+        DesignParameterKind, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+    };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::SketchGeometry;
     use std::collections::HashSet;
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
@@ -3212,6 +3392,75 @@ mod relation_tests {
     }
 
     #[test]
+    fn placed_sketch_projects_point_and_line_in_local_coordinates() {
+        let placement = DesignSketchPlacement {
+            id: "f3d:native:placement#0".into(),
+            scope_record_index: 177,
+            entity_id: "0_172".into(),
+            entity_suffix: 172,
+            byte_offset: 100,
+            class_tag: "356".into(),
+            record_index: 185,
+            frame_length: 329,
+            transform: [
+                [0.0, 0.0, 1.0, 10.0],
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 1.0, 0.0, 30.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: Some(155),
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 429,
+        };
+        let point = SketchPoint {
+            id: "f3d:native:point#175".into(),
+            record_index: 175,
+            owner_reference: Some(172),
+            class_tag: "300".into(),
+            byte_offset: 400,
+            coordinate_offset: 89,
+            entity_genesis: None,
+            persistent_id: 10,
+            paired_reference: 0,
+            coordinates: Point2::new(2.0, 3.0),
+            raw_bytes: Vec::new(),
+        };
+        let line = SketchCurveIdentity {
+            id: "f3d:native:curve#217".into(),
+            record_index: 217,
+            owner_reference: Some(172),
+            class_tag: "301".into(),
+            byte_offset: 500,
+            geometry_offset: 100,
+            entity_genesis: None,
+            primary_id: 20,
+            secondary_id: 0,
+            geometry: Some(SketchCurveGeometry::Line {
+                start: Point3::new(1.0, 2.0, 0.0),
+                end: Point3::new(4.0, 6.0, 0.0),
+                direction: Vector3::new(0.6, 0.8, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            }),
+        };
+
+        let (sketches, entities) = project_sketch_design(&[placement], &[point], &[line]);
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(sketches[0].origin, Point3::new(10.0, 20.0, 30.0));
+        assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
+        assert_eq!(sketches[0].normal, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(entities.len(), 2);
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SketchGeometry::Point { position } if position == Point2::new(2.0, 3.0)
+        )));
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SketchGeometry::Line { start, end }
+                if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
+        )));
+    }
+
+    #[test]
     fn user_parameters_project_in_source_order_with_units_and_dependencies() {
         let mut width = parse_design_parameter(&parameter_record(
             None,
@@ -3238,7 +3487,7 @@ mod relation_tests {
         half.record_index = 21;
         half.source_ordinal = 5;
 
-        let (features, projected) = project_parameter_design(&[half, width], &[], &[]);
+        let (features, projected) = project_parameter_design(&[half, width], &[], &[], &[]);
         assert!(features.is_empty());
         assert_eq!(projected[0].name, "Width");
         assert_eq!(projected[0].owner, None);
@@ -3283,7 +3532,8 @@ mod relation_tests {
             paired_byte_offset: 300,
         };
 
-        let (features, parameters) = project_parameter_design(&[parameter], &[owner], &[scope]);
+        let (features, parameters) =
+            project_parameter_design(&[parameter], &[owner], &[scope], &[]);
         assert_eq!(features.len(), 1);
         assert!(matches!(
             &features[0].definition,

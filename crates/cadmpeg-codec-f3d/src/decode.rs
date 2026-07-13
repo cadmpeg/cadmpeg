@@ -130,6 +130,12 @@ pub fn decode(
                 &native.design_parameters,
                 &native.design_parameter_owners,
                 &native.design_parameter_scopes,
+                &native.design_sketch_placements,
+            );
+            (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
+                &native.design_sketch_placements,
+                &native.sketch_points,
+                &native.sketch_curve_identities,
             );
             let act = crate::act::decode(reader, &scan)?;
             native.act_entities = act.entities;
@@ -240,6 +246,12 @@ pub fn decode(
         &native.design_parameters,
         &native.design_parameter_owners,
         &native.design_parameter_scopes,
+        &native.design_sketch_placements,
+    );
+    (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
+        &native.design_sketch_placements,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
     );
     let act = crate::act::decode(reader, &scan)?;
     native.act_entities = act.entities;
@@ -360,6 +372,10 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
+            note(
+                &crate::design::neutral_sketch_id(entity.entity_suffix).0,
+                "sketch",
+            );
         }
         for entity in &native.design_entity_headers {
             note(&entity.id, "design_entity_header");
@@ -378,9 +394,31 @@ fn populate_annotations(
         }
         for entity in &native.sketch_points {
             note(&entity.id, "sketch_point");
+            if ir
+                .model
+                .sketch_entities
+                .iter()
+                .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+            {
+                note(
+                    &crate::design::neutral_sketch_entity_id(entity.record_index).0,
+                    "sketch_entity",
+                );
+            }
         }
         for entity in &native.sketch_curve_identities {
             note(&entity.id, "sketch_curve");
+            if ir
+                .model
+                .sketch_entities
+                .iter()
+                .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+            {
+                note(
+                    &crate::design::neutral_sketch_entity_id(entity.record_index).0,
+                    "sketch_entity",
+                );
+            }
         }
         for entity in &native.sketch_curve_links {
             note(&entity.id, "sketch_curve_link");
