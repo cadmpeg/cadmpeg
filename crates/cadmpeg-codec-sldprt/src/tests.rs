@@ -926,18 +926,22 @@ fn sldprt_with_body_and_history(body: &[u8]) -> Vec<u8> {
 }
 
 fn resolved_features_payload(codes: &[u32]) -> Vec<u8> {
+    resolved_features_payload_with_names(codes, &["Sketch1", "Boss-Extrude1", "D1"])
+}
+
+fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8> {
     let mut payload = Vec::new();
     for name in ["sgPointHandle", "sgLineHandle", "sgArcHandle"] {
         payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
         payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
         payload.extend_from_slice(name.as_bytes());
     }
-    for name in ["Sketch1", "Boss-Extrude1", "D1"] {
+    for name in names {
         payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, name.len() as u8]);
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
-        if name == "D1" {
+        if *name == "D1" {
             payload.extend_from_slice(&[
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
                 0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
@@ -10924,6 +10928,44 @@ fn decode_does_not_project_ambiguous_resolved_feature_parameter() {
         .parameters
         .iter()
         .any(|parameter| parameter.name == "D1"));
+}
+
+#[test]
+fn decode_projects_unambiguous_resolved_sketch_parameter() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names(&[0], &["Sketch1", "D1"]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("projected sketch feature");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
+    ));
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .expect("projected sketch D1 parameter");
+    assert_eq!(parameter.expression, "25mm");
 }
 
 #[test]
