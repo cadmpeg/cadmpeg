@@ -7,13 +7,13 @@ use serde::{Deserialize, Serialize};
 use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
-    CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignEntityHeader,
-    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, EdgeContinuity, EdgeOwnership,
-    FaceSidedness, LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink,
-    PersistentReference, PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation, TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership,
-    WireTopology,
+    CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignDimensionLocusPair,
+    DesignEntityHeader, DesignMaterialAssignment, DesignObject, DesignParameter,
+    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
+    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
+    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
+    TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -34,6 +34,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "creation_timestamps",
     "design_body_members",
     "design_configurations",
+    "design_dimension_locus_pairs",
     "design_entity_headers",
     "design_material_assignments",
     "design_objects",
@@ -70,6 +71,7 @@ macro_rules! f3d_arenas {
             body_native_keys: BodyNativeKey;
             body_visibilities: BodyVisibility;
             design_objects: DesignObject;
+            design_dimension_locus_pairs: DesignDimensionLocusPair;
             design_parameter_companions: DesignParameterCompanion;
             design_parameter_owners: DesignParameterOwner;
             design_parameter_scopes: DesignParameterScope;
@@ -169,6 +171,9 @@ pub struct F3dNative {
     /// Design `MetaStream` object-table records.
     #[serde(default)]
     pub design_objects: Vec<DesignObject>,
+    /// Typed paired loci recovered from dimensional companion graphs.
+    #[serde(default)]
+    pub design_dimension_locus_pairs: Vec<DesignDimensionLocusPair>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub design_parameter_companions: Vec<DesignParameterCompanion>,
@@ -268,6 +273,7 @@ impl Default for F3dNative {
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
             design_objects: Vec::new(),
+            design_dimension_locus_pairs: Vec::new(),
             design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),

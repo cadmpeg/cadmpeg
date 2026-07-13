@@ -358,6 +358,47 @@ pub struct DesignParameterCompanion {
     pub opaque_value_offset: u64,
 }
 
+/// Paired-locus frame nested under a dimensional parameter companion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionLocusPair {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame.
+    pub companion_record_index: u32,
+    /// Byte offset of the primary indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Shared logical record identity.
+    pub record_index: u32,
+    /// Byte length from the primary header to the paired header.
+    pub frame_length: u64,
+    /// Opaque u32 preceding the two locus references.
+    pub opaque_index: u32,
+    /// Byte offset of `opaque_index`.
+    pub opaque_index_offset: u64,
+    /// First typed sketch-geometry record.
+    pub first_geometry_record_index: u32,
+    /// Byte offset of the first geometry record index.
+    pub first_geometry_reference_offset: u64,
+    /// Source role code following the first geometry reference.
+    pub first_role: u32,
+    /// Byte offset of `first_role`.
+    pub first_role_offset: u64,
+    /// Second typed sketch-geometry record.
+    pub second_geometry_record_index: u32,
+    /// Byte offset of the second geometry record index.
+    pub second_geometry_reference_offset: u64,
+    /// Source role code following the second geometry reference.
+    pub second_role: u32,
+    /// Byte offset of `second_role`.
+    pub second_role_offset: u64,
+    /// Per-file dynamic class tag of the paired header.
+    pub paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {

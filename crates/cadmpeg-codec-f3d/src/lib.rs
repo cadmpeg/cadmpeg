@@ -155,6 +155,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|entity| (entity.entity_suffix, entity))
         .collect::<std::collections::HashMap<_, _>>();
+    let sketch_geometry_indices = native
+        .sketch_points
+        .iter()
+        .map(|point| point.record_index)
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|curve| curve.record_index),
+        )
+        .collect::<HashSet<_>>();
     let mut scope_indices = HashSet::new();
     for scope in &native.design_parameter_scopes {
         let unique_index = scope_indices.insert(scope.record_index);
@@ -262,6 +273,48 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 message: "Fusion Design parameter companion has an invalid prefix or owner link"
                     .into(),
                 entity: Some(companion.id.clone()),
+            });
+        }
+    }
+    let mut locus_pair_indices = HashSet::new();
+    let mut locus_pair_companions = HashSet::new();
+    for pair in &native.design_dimension_locus_pairs {
+        let unique_index = locus_pair_indices.insert(pair.record_index);
+        let unique_companion = locus_pair_companions.insert(pair.companion_record_index);
+        let companion = companions_by_index.get(&pair.companion_record_index);
+        let dimension_companion = companion.is_some_and(|companion| {
+            owners_by_index
+                .get(&companion.owner_record_index)
+                .and_then(|owner| parameters_by_index.get(&owner.parameter_record_index))
+                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+        });
+        let valid = pair.class_tag.len() == 3
+            && pair.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && pair.paired_class_tag.len() == 3
+            && pair
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && companion.is_some_and(|companion| pair.byte_offset == companion.byte_offset + 58)
+            && dimension_companion
+            && pair.frame_length > 69
+            && pair.paired_byte_offset == pair.byte_offset.saturating_add(pair.frame_length)
+            && pair.opaque_index_offset == pair.byte_offset.saturating_add(35)
+            && pair.first_geometry_reference_offset == pair.byte_offset.saturating_add(40)
+            && pair.first_role_offset == pair.byte_offset.saturating_add(50)
+            && pair.second_geometry_reference_offset == pair.byte_offset.saturating_add(55)
+            && pair.second_role_offset == pair.byte_offset.saturating_add(65)
+            && sketch_geometry_indices.contains(&pair.first_geometry_record_index)
+            && sketch_geometry_indices.contains(&pair.second_geometry_record_index)
+            && unique_index
+            && unique_companion;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design dimension locus pair has an invalid frame or geometry link"
+                    .into(),
+                entity: Some(pair.id.clone()),
             });
         }
     }

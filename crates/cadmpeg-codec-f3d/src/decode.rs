@@ -105,6 +105,14 @@ pub fn decode(
                 &mut native.sketch_curve_identities,
                 &mut native.sketch_relations,
             )?;
+            native.design_dimension_locus_pairs = crate::design::decode_dimension_locus_pairs(
+                &scan,
+                &native.design_parameters,
+                &native.design_parameter_owners,
+                &native.design_parameter_companions,
+                &native.sketch_points,
+                &native.sketch_curve_identities,
+            )?;
             native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
             native.design_configurations = crate::design::decode_configurations(&scan)?;
             ir.model.configurations =
@@ -198,6 +206,14 @@ pub fn decode(
         &mut native.sketch_points,
         &mut native.sketch_curve_identities,
         &mut native.sketch_relations,
+    )?;
+    native.design_dimension_locus_pairs = crate::design::decode_dimension_locus_pairs(
+        &scan,
+        &native.design_parameters,
+        &native.design_parameter_owners,
+        &native.design_parameter_companions,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
     )?;
     native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
     native.design_configurations = crate::design::decode_configurations(&scan)?;
@@ -311,6 +327,9 @@ fn populate_annotations(
         }
         for entity in &native.design_parameter_companions {
             note(&entity.id, "design_parameter_companion");
+        }
+        for entity in &native.design_dimension_locus_pairs {
+            note(&entity.id, "design_dimension_locus_pair");
         }
         for entity in &native.design_parameter_owners {
             note(&entity.id, "design_parameter_owner");
