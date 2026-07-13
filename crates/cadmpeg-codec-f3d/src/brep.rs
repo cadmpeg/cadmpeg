@@ -400,7 +400,16 @@ fn is_coedge_record(record: &Record) -> bool {
 fn is_known_record_head(head: &str) -> bool {
     matches!(
         head,
-        "body" | "region" | "lump" | "shell" | "face" | "loop" | "point" | "asmheader"
+        "body"
+            | "region"
+            | "lump"
+            | "shell"
+            | "subshell"
+            | "wire"
+            | "face"
+            | "loop"
+            | "point"
+            | "asmheader"
     ) || matches!(
         head,
         "coedge" | "tcoedge" | "edge" | "tedge" | "vertex" | "tvertex"
@@ -4982,8 +4991,8 @@ mod topology_tests {
     use super::*;
 
     #[test]
-    fn tolerant_topology_heads_are_native_topology_not_other_records() {
-        for head in ["tcoedge", "tedge", "tvertex"] {
+    fn normalized_topology_heads_are_not_other_records() {
+        for head in ["subshell", "wire", "tcoedge", "tedge", "tvertex"] {
             assert!(is_known_record_head(head), "{head}");
         }
     }

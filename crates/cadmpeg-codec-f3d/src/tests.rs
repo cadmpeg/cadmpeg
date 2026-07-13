@@ -9073,6 +9073,11 @@ fn decode_transfers_generated_wire_body_topology() {
         result.ir.model.shells[0].wire_edges[0],
         result.ir.model.edges[0].id
     );
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("wire=")));
     update_f3d_native(&mut result.ir, |native| {
         native.wire_topologies[0].side = crate::records::WireSide::In;
     });
