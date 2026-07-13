@@ -66,6 +66,7 @@ fn indexed_om_section() -> Vec<u8> {
     expression.extend_from_slice(text);
     expression.push(0);
     expression.extend_from_slice(b"\x66\x32\x03\x0cSKETCH_001\0");
+    expression.extend_from_slice(b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0");
     let records = [root.as_slice(), expression.as_slice()];
     let table = bytes.len() + 4 * 4;
     let table_end = table + 4 + 3 * 4;
@@ -153,7 +154,7 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     assert_eq!(sections[0].records[1].object_id, Some(0x102));
     assert_eq!(
         sections[0].records[1].bytes,
-        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0"
+        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0"
     );
 }
 
@@ -253,6 +254,39 @@ fn om_string_value_requires_marker_length_printability_and_terminator() {
     assert_eq!(values[0].offset, 100);
     assert_eq!(values[0].value, "SKETCH_001");
     assert_eq!(values[1].value, "A");
+}
+
+#[test]
+fn om_tagged_references_preserve_family_value_order_and_bounds() {
+    let bytes = b"\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\xe0\x01";
+    let references = crate::om::references(bytes, 20);
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].offset, 20);
+    assert_eq!(
+        references[0].kind,
+        crate::om::ReferenceKind::PersistentHandle
+    );
+    assert_eq!(references[0].value, 0x1234_5678);
+    assert_eq!(references[1].offset, 25);
+    assert_eq!(references[1].kind, crate::om::ReferenceKind::Tagged28);
+    assert_eq!(references[1].value, 0x0abc_def0);
+}
+
+#[test]
+fn om_record_reference_stream_requires_dense_suffix() {
+    let mut dense = b"ordinary-prefix".to_vec();
+    for value in 1..=8u32 {
+        dense.push(0xe0);
+        dense.extend_from_slice(&value.to_be_bytes());
+        dense.extend_from_slice(&(0xc000_0000 | value).to_be_bytes());
+    }
+    let references = crate::om::dense_reference_suffix(&dense, 100);
+    assert_eq!(references.len(), 16);
+    assert_eq!(references[0].offset, 115);
+
+    let mut sparse = dense;
+    sparse.extend_from_slice(&[0x55; 9]);
+    assert!(crate::om::dense_reference_suffix(&sparse, 0).is_empty());
 }
 
 #[test]
@@ -2366,6 +2400,17 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(strings[0].record, object_records[1].id);
     assert_eq!(strings[0].object_id, Some(0x102));
     assert_eq!(strings[0].value, "SKETCH_001");
+    let references = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::ObjectReference>("object_references")
+        .unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].record, object_records[1].id);
+    assert_eq!(references[0].object_id, Some(0x102));
+    assert_eq!(references[0].value, 0x1234_5678);
     assert_eq!(result.ir.model.features.len(), 1);
     assert!(matches!(
         result.ir.model.features[0].definition,

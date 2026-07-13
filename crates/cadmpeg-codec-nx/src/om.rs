@@ -48,6 +48,26 @@ pub struct StringValue<'a> {
     pub value: &'a str,
 }
 
+/// Tagged NX OM cross-record reference family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReferenceKind {
+    /// `e0` marker followed by a 32-bit big-endian persistent handle.
+    PersistentHandle,
+    /// Four-byte word whose high nibble is `c` and low 28 bits are the value.
+    Tagged28,
+}
+
+/// One tagged reference occurrence in an externally bounded OM record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReferenceValue {
+    /// Absolute byte offset of the reference marker.
+    pub offset: usize,
+    /// Reference family.
+    pub kind: ReferenceKind,
+    /// Unsigned reference value without its marker/tag bits.
+    pub value: u32,
+}
+
 /// Unit declared by an NX numeric-expression serialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExpressionUnit {
@@ -134,6 +154,113 @@ impl<'a> IndexedSection<'a> {
             })
             .collect()
     }
+
+    /// Decode tagged cross-record references from every bounded record.
+    pub fn references(&self) -> Vec<(usize, usize, Option<u32>, ReferenceValue)> {
+        self.records
+            .iter()
+            .enumerate()
+            .flat_map(|(record_ordinal, record)| {
+                record_references(record.bytes, record.offset)
+                    .into_iter()
+                    .enumerate()
+                    .map(move |(reference_ordinal, reference)| {
+                        (
+                            record_ordinal,
+                            reference_ordinal,
+                            record.object_id,
+                            reference,
+                        )
+                    })
+            })
+            .collect()
+    }
+}
+
+/// Decode self-identifying persistent handles plus context-gated tagged refs.
+pub fn record_references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
+    let mut out = references(bytes, base_offset)
+        .into_iter()
+        .filter(|reference| reference.kind == ReferenceKind::PersistentHandle)
+        .collect::<Vec<_>>();
+    out.extend(
+        dense_reference_suffix(bytes, base_offset)
+            .into_iter()
+            .filter(|reference| reference.kind == ReferenceKind::Tagged28),
+    );
+    out.sort_by_key(|reference| reference.offset);
+    out
+}
+
+/// Decode tagged references wholly contained in `bytes`.
+pub fn references(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
+    let mut out = Vec::new();
+    let mut at = 0usize;
+    while at < bytes.len() {
+        if bytes[at] == 0xe0 {
+            if let Some(raw) = bytes
+                .get(at + 1..at + 5)
+                .and_then(|raw| raw.try_into().ok())
+            {
+                out.push(ReferenceValue {
+                    offset: base_offset + at,
+                    kind: ReferenceKind::PersistentHandle,
+                    value: u32::from_be_bytes(raw),
+                });
+                at += 5;
+                continue;
+            }
+        } else if bytes[at] & 0xf0 == 0xc0 {
+            if let Some(raw) = bytes.get(at..at + 4).and_then(|raw| raw.try_into().ok()) {
+                out.push(ReferenceValue {
+                    offset: base_offset + at,
+                    kind: ReferenceKind::Tagged28,
+                    value: u32::from_be_bytes(raw) & 0x0fff_ffff,
+                });
+                at += 4;
+                continue;
+            }
+        }
+        at += 1;
+    }
+    out
+}
+
+/// Decode a dense tagged-reference suffix from one bounded OM record.
+///
+/// Sparse marker-shaped words can be ordinary per-class field data. A suffix
+/// is a reference stream only when it contains at least eight persistent
+/// handles and complete reference tokens cover at least 90% of its bytes.
+pub fn dense_reference_suffix(bytes: &[u8], base_offset: usize) -> Vec<ReferenceValue> {
+    let references = references(bytes, 0);
+    for (index, first) in references.iter().enumerate() {
+        let suffix = &references[index..];
+        let persistent = suffix
+            .iter()
+            .filter(|reference| reference.kind == ReferenceKind::PersistentHandle)
+            .count();
+        if persistent < 8 {
+            continue;
+        }
+        let covered = suffix
+            .iter()
+            .map(|reference| match reference.kind {
+                ReferenceKind::PersistentHandle => 5,
+                ReferenceKind::Tagged28 => 4,
+            })
+            .sum::<usize>();
+        let span = bytes.len().saturating_sub(first.offset);
+        if covered * 10 >= span * 9 {
+            return suffix
+                .iter()
+                .map(|reference| ReferenceValue {
+                    offset: base_offset + reference.offset,
+                    ..*reference
+                })
+                .collect();
+        }
+    }
+    Vec::new()
 }
 
 /// Decode `66 32 03` printable-string values wholly contained in `bytes`.

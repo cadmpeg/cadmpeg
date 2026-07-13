@@ -110,6 +110,37 @@ pub struct StringValue {
     pub source_offset: u64,
 }
 
+/// Tagged reference family serialized in an NX OM record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObjectReferenceKind {
+    /// `e0` marker followed by a 32-bit persistent handle.
+    PersistentHandle,
+    /// Four-byte `0xC?` tagged 28-bit reference.
+    Tagged28,
+}
+
+/// Ordered tagged-reference occurrence owned by one NX OM record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObjectReference {
+    /// Globally unique occurrence identity.
+    pub id: String,
+    /// Owning entry in the native OM record directory.
+    pub record: String,
+    /// Persistent OM object identifier when the section carries an ID table.
+    pub object_id: Option<u32>,
+    /// Zero-based occurrence ordinal within the owning record.
+    pub ordinal: u32,
+    /// Tagged reference family.
+    pub kind: ObjectReferenceKind,
+    /// Reference value without marker/tag bits.
+    pub value: u32,
+    /// Directory entry containing the OM section.
+    pub source_entry: String,
+    /// Absolute file offset of the reference marker.
+    pub source_offset: u64,
+}
+
 /// Named NX arrangement from `/Root/part/arrangements`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Configuration {
@@ -303,6 +334,42 @@ pub fn string_values(container: &Container) -> Vec<StringValue> {
                         value: value.value.to_string(),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset + value.offset as u64,
+                    }
+                },
+            )
+        })
+        .collect()
+}
+
+/// Decode ordered tagged references from bounded NX OM records.
+pub fn object_references(container: &Container) -> Vec<ObjectReference> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            section.references().into_iter().map(
+                move |(record_ordinal, reference_ordinal, object_id, reference)| {
+                    let record =
+                        format!("nx:om-record-directory-{section_ordinal}:entry#{record_ordinal}");
+                    ObjectReference {
+                        id: format!(
+                            "nx:om-references-{section_ordinal}-{record_ordinal}:reference#{}",
+                            reference.offset
+                        ),
+                        record,
+                        object_id,
+                        ordinal: reference_ordinal as u32,
+                        kind: match reference.kind {
+                            crate::om::ReferenceKind::PersistentHandle => {
+                                ObjectReferenceKind::PersistentHandle
+                            }
+                            crate::om::ReferenceKind::Tagged28 => ObjectReferenceKind::Tagged28,
+                        },
+                        value: reference.value,
+                        source_entry: entry.name.clone(),
+                        source_offset: entry_offset + reference.offset as u64,
                     }
                 },
             )
