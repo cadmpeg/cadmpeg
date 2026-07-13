@@ -413,6 +413,15 @@ pub enum FeatureDefinition {
         /// Region retained after trimming.
         keep: TrimRegion,
     },
+    /// Extends selected surface boundaries by a fixed distance.
+    ExtendSurface {
+        /// Surface faces whose boundaries are extended.
+        faces: FaceSelection,
+        /// Positive extension distance in canonical millimeters.
+        distance: Length,
+        /// Geometric continuation law.
+        method: SurfaceExtension,
+    },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
         /// Faces whose angle is modified.
@@ -592,6 +601,16 @@ pub enum TrimRegion {
     Inside,
     /// Retain the region outside the trimming path.
     Outside,
+}
+
+/// Geometric law used to extend a surface boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceExtension {
+    /// Continue the source surface parameterization.
+    Natural,
+    /// Extend boundary tangents as ruled linear strips.
+    Linear,
 }
 
 /// Fixed locus of a body-scale transform.

@@ -2041,6 +2041,11 @@ fn feature_operation_geometry_is_validated() {
             create_solid: false,
             gap_tolerance: Some(Length(-1.0)),
         },
+        FeatureDefinition::ExtendSurface {
+            faces: FaceSelection::Unresolved,
+            distance: Length(0.0),
+            method: crate::features::SurfaceExtension::Natural,
+        },
         FeatureDefinition::Scale {
             bodies: crate::features::BodySelection::Unresolved,
             center: ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0)),
@@ -2100,6 +2105,7 @@ fn feature_operation_geometry_is_validated() {
         "thicken thickness is invalid",
         "surface offset is invalid",
         "knit tolerance is invalid",
+        "surface extension is invalid",
         "scale transform is invalid",
         "coordinate-system frame is invalid",
         "equation curve is invalid",

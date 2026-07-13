@@ -8084,6 +8084,70 @@ fn semantic_writer_round_trips_trim_surface() {
 }
 
 #[test]
+fn semantic_writer_round_trips_extend_surface() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, SurfaceExtension};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><ExtendSurface Name="Extend" Type="SurfaceExtend" id="38" Faces="{face}" Method="Natural" CornerMode="Merge"><Dimension Name="Distance">2mm</Dimension></ExtendSurface></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::ExtendSurface {
+            faces: FaceSelection::Resolved { faces, native },
+            distance: Length(2.0),
+            method: SurfaceExtension::Natural,
+        } if faces == &[face_id.clone()] && native == &face
+    ));
+
+    let FeatureDefinition::ExtendSurface {
+        faces,
+        distance,
+        method,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed extended surface");
+    };
+    *faces = FaceSelection::Faces(vec![face_id.clone()]);
+    *distance = Length(4.5);
+    *method = SurfaceExtension::Linear;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Faces"], face_id.0);
+    assert_eq!(native.properties["Method"], "Linear");
+    assert_eq!(native.properties["CornerMode"], "Merge");
+    assert_eq!(native.parameters["Distance"], "4.5mm");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::ExtendSurface {
+            distance: Length(4.5),
+            method: SurfaceExtension::Linear,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

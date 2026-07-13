@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, SurfaceContinuity,
-    TrimRegion, VariableRadius, WrapMode,
+    SurfaceExtension, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -731,6 +731,9 @@ pub fn bind_topology_selections(
                 resolve_face_selection(faces, &face_ids);
                 resolve_path_ref(tool, &edge_ids, &curve_ids);
             }
+            FeatureDefinition::ExtendSurface { faces, .. } => {
+                resolve_face_selection(faces, &face_ids);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
@@ -971,6 +974,8 @@ fn project_definition(
     } else if feature_family(feature, "TrimSurface") || feature_family(feature, "SurfaceTrim") {
         project_trim_surface(feature, native_by_source)
             .unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "ExtendSurface") || feature_family(feature, "SurfaceExtend") {
+        project_extend_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
@@ -1785,6 +1790,26 @@ fn project_trim_surface(
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
         tool: PathRef::Native(tool),
         keep,
+    })
+}
+
+fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
+    let method = match feature
+        .properties
+        .get("Method")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "natural" => SurfaceExtension::Natural,
+        "linear" => SurfaceExtension::Linear,
+        _ => return None,
+    };
+    Some(FeatureDefinition::ExtendSurface {
+        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        distance: Length(parse_positive_length_mm(
+            feature.parameters.get("Distance")?,
+        )?),
+        method,
     })
 }
 
@@ -3036,6 +3061,55 @@ pub fn sync_neutral_features(
                         .as_deref()
                         .map(|record| record.parameters.clone())
                         .unwrap_or_default(),
+                    properties,
+                )
+            }
+            FeatureDefinition::ExtendSurface {
+                faces,
+                distance,
+                method,
+            } => {
+                let faces = face_selection_value(faces).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no extend-surface input faces",
+                        feature.id
+                    ))
+                })?;
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "ExtendSurface")
+                        && !feature_family(record, "SurfaceExtend")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                if !distance.0.is_finite() || distance.0 <= 0.0 {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid surface extension",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.insert("Distance".into(), format_length_mm(distance.0));
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Faces".into(), faces);
+                properties.insert(
+                    "Method".into(),
+                    match method {
+                        SurfaceExtension::Natural => "Natural",
+                        SurfaceExtension::Linear => "Linear",
+                    }
+                    .into(),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "ExtendSurface".into(), |record| record.kind.clone()),
+                    parameters,
                     properties,
                 )
             }
@@ -5248,6 +5322,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
         FeatureDefinition::TrimSurface { .. } => "TrimSurface",
+        FeatureDefinition::ExtendSurface { .. } => "ExtendSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",

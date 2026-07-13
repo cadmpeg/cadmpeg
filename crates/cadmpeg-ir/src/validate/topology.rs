@@ -1254,6 +1254,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 face_selections.push(faces);
                 paths.push(tool);
             }
+            FeatureDefinition::ExtendSurface {
+                faces, distance, ..
+            } => {
+                face_selections.push(faces);
+                if !positive_feature_length(*distance) {
+                    feature_geometry_error(findings, feature, "surface extension is invalid");
+                }
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
