@@ -49,6 +49,7 @@
 mod geometry;
 pub mod lex;
 pub mod parse;
+pub mod strings;
 mod writer;
 
 use std::collections::{BTreeSet, HashMap};

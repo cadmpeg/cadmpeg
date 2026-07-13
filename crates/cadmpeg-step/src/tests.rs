@@ -18,6 +18,23 @@ use std::io::Cursor;
 use crate::{write_step, StepCodec, StepWriteOptions};
 
 #[test]
+fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
+    use crate::strings::{decode, encode};
+
+    assert_eq!(decode(b"it''s").unwrap(), "it's");
+    assert_eq!(decode(b"a\\\\b").unwrap(), "a\\b");
+    assert_eq!(decode(b"\\X\\E9").unwrap(), "é");
+    assert_eq!(decode(b"\\X2\\03A9\\X0\\").unwrap(), "Ω");
+    assert_eq!(decode(b"\\X4\\0001F642\\X0\\").unwrap(), "🙂");
+    assert_eq!(decode(b"\\S\\D").unwrap(), "Ä");
+    assert_eq!(decode(b"\\PA\\\\S\\D").unwrap(), "Ä");
+
+    for text in ["ASCII", "it's \\ quoted", "café Ω 🙂"] {
+        assert_eq!(decode(encode(text).as_bytes()).unwrap(), text);
+    }
+}
+
+#[test]
 fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
