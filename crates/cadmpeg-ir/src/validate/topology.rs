@@ -1379,7 +1379,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Flex { axis, mode } => {
-                if !axis.norm().is_finite() || axis.norm() <= 0.0 {
+                if axis.is_some_and(|axis| !axis.norm().is_finite() || axis.norm() <= 0.0) {
                     findings.push(Finding {
                         check: Check::GeometricConsistency,
                         severity: Severity::Error,
@@ -1388,6 +1388,16 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     });
                 }
                 let valid = match mode {
+                    FlexMode::Unresolved {
+                        angle,
+                        factor,
+                        distance,
+                        ..
+                    } => {
+                        angle.is_none_or(|value| value.0.is_finite())
+                            && factor.is_none_or(|value| value.is_finite() && value > 0.0)
+                            && distance.is_none_or(|value| value.0.is_finite())
+                    }
                     FlexMode::Bending { angle } | FlexMode::Twisting { angle } => {
                         angle.0.is_finite()
                     }

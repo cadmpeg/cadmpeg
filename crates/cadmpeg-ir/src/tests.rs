@@ -2344,7 +2344,7 @@ fn flex_modes_round_trip_and_validate() {
         source_content: Vec::new(),
         outputs: Vec::new(),
         definition: FeatureDefinition::Flex {
-            axis: Vector3::new(0.0, 0.0, 0.0),
+            axis: Some(Vector3::new(0.0, 0.0, 0.0)),
             mode: FlexMode::Tapering { factor: 0.0 },
         },
         native_ref: None,

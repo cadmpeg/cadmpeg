@@ -619,8 +619,9 @@ pub enum FeatureDefinition {
     },
     /// Deformation of existing geometry about a feature axis.
     Flex {
-        /// Flex axis direction in model space.
-        axis: Vector3,
+        /// Flex axis direction in model space, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        axis: Option<Vector3>,
         /// Applied deformation mode and magnitude.
         mode: FlexMode,
     },
@@ -1244,6 +1245,21 @@ pub enum HoleForm {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum FlexMode {
+    /// Mode fields whose complete deformation is unresolved.
+    Unresolved {
+        /// Deformation family, when established.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<FlexForm>,
+        /// Resolved bending or twisting magnitude.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<Angle>,
+        /// Resolved taper factor.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        factor: Option<f64>,
+        /// Resolved stretching distance.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<Length>,
+    },
     /// Bend through a signed angle.
     Bending {
         /// Total bend angle.
@@ -1264,6 +1280,20 @@ pub enum FlexMode {
         /// Signed change in length.
         distance: Length,
     },
+}
+
+/// Structural form of a flex deformation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum FlexForm {
+    /// Angular bending.
+    Bending,
+    /// Angular twisting.
+    Twisting,
+    /// Transverse tapering.
+    Tapering,
+    /// Axial stretching.
+    Stretching,
 }
 
 /// Spatial transform used to repeat or reflect seed features.

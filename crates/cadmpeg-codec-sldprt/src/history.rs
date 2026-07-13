@@ -10,11 +10,11 @@ use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
     ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, FlexMode, HoleForm, HoleKind, Length, ParameterId, ParameterValue,
-    PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter,
-    SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius,
-    WrapMode,
+    FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
+    ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
+    RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
+    ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion,
+    VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1160,7 +1160,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Dome) {
         project_dome(feature)
     } else if class == Some(FeatureClass::Flex) {
-        project_flex(feature).unwrap_or_else(|| native_definition(feature))
+        project_flex(feature)
     } else if class == Some(FeatureClass::Scale) {
         project_scale(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Hole) {
@@ -2464,60 +2464,59 @@ fn project_dome(feature: &Feature) -> FeatureDefinition {
     }
 }
 
-fn project_flex(feature: &Feature) -> Option<FeatureDefinition> {
-    let axis = parse_vector3(
-        feature
-            .properties
-            .get("Axis")
-            .or_else(|| feature.properties.get("AxisDirection"))?,
-    )?;
-    if !(axis.norm().is_finite() && axis.norm() > 0.0) {
-        return None;
-    }
-    let mode = match feature
+fn project_flex(feature: &Feature) -> FeatureDefinition {
+    let axis = feature
         .properties
-        .get("Mode")?
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "bending" | "bend" => FlexMode::Bending {
-            angle: Angle(
-                feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_angle_rad(value))?,
-            ),
+        .get("Axis")
+        .or_else(|| feature.properties.get("AxisDirection"))
+        .and_then(|value| parse_valid_direction(value));
+    let angle = feature
+        .parameters
+        .get("Angle")
+        .and_then(|value| parse_angle_rad(value))
+        .filter(|value| value.is_finite())
+        .map(Angle);
+    let factor = feature
+        .parameters
+        .get("Factor")
+        .and_then(|value| value.trim().parse::<f64>().ok())
+        .filter(|value| value.is_finite() && *value > 0.0);
+    let distance = feature
+        .parameters
+        .get("Distance")
+        .and_then(|value| parse_length_mm(value))
+        .filter(|value| value.is_finite())
+        .map(Length);
+    let form = feature.properties.get("Mode").and_then(|value| {
+        match value.to_ascii_lowercase().as_str() {
+            "bending" | "bend" => Some(FlexForm::Bending),
+            "twisting" | "twist" => Some(FlexForm::Twisting),
+            "tapering" | "taper" => Some(FlexForm::Tapering),
+            "stretching" | "stretch" => Some(FlexForm::Stretching),
+            _ => None,
+        }
+    });
+    let mode = match form {
+        Some(FlexForm::Bending) if angle.is_some() => FlexMode::Bending {
+            angle: angle.expect("guarded above"),
         },
-        "twisting" | "twist" => FlexMode::Twisting {
-            angle: Angle(
-                feature
-                    .parameters
-                    .get("Angle")
-                    .and_then(|value| parse_angle_rad(value))?,
-            ),
+        Some(FlexForm::Twisting) if angle.is_some() => FlexMode::Twisting {
+            angle: angle.expect("guarded above"),
         },
-        "tapering" | "taper" => FlexMode::Tapering {
-            factor: feature.parameters.get("Factor")?.trim().parse().ok()?,
+        Some(FlexForm::Tapering) if factor.is_some() => FlexMode::Tapering {
+            factor: factor.expect("guarded above"),
         },
-        "stretching" | "stretch" => FlexMode::Stretching {
-            distance: Length(
-                feature
-                    .parameters
-                    .get("Distance")
-                    .and_then(|value| parse_length_mm(value))?,
-            ),
+        Some(FlexForm::Stretching) if distance.is_some() => FlexMode::Stretching {
+            distance: distance.expect("guarded above"),
         },
-        _ => return None,
+        _ => FlexMode::Unresolved {
+            form,
+            angle,
+            factor,
+            distance,
+        },
     };
-    let valid = match mode {
-        FlexMode::Bending { angle } | FlexMode::Twisting { angle } => angle.0.is_finite(),
-        FlexMode::Tapering { factor } => factor.is_finite() && factor > 0.0,
-        FlexMode::Stretching { distance } => distance.0.is_finite(),
-    };
-    if !valid {
-        return None;
-    }
-    Some(FeatureDefinition::Flex { axis, mode })
+    FeatureDefinition::Flex { axis, mode }
 }
 
 fn project_scale(feature: &Feature) -> Option<FeatureDefinition> {
@@ -5689,18 +5688,28 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                require_direction(*axis, &feature.id, "flex axis")?;
+                if existing.is_none()
+                    && (axis.is_none() || matches!(mode, FlexMode::Unresolved { .. }))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved flex construction",
+                        feature.id
+                    )));
+                }
+                if let Some(axis) = axis {
+                    require_direction(*axis, &feature.id, "flex axis")?;
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.remove("Angle");
-                parameters.remove("Factor");
-                parameters.remove("Distance");
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Axis".into(), format_vector3(*axis));
-                properties.remove("AxisDirection");
+                if let Some(axis) = axis {
+                    properties.insert("Axis".into(), format_vector3(*axis));
+                    properties.remove("AxisDirection");
+                }
                 match mode {
+                    FlexMode::Unresolved { .. } => {}
                     FlexMode::Bending { angle } => {
                         if !angle.0.is_finite() {
                             return Err(CodecError::Malformed(format!(
@@ -5708,6 +5717,8 @@ pub fn sync_neutral_features(
                                 feature.id
                             )));
                         }
+                        parameters.remove("Factor");
+                        parameters.remove("Distance");
                         properties.insert("Mode".into(), "Bending".into());
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
@@ -5718,6 +5729,8 @@ pub fn sync_neutral_features(
                                 feature.id
                             )));
                         }
+                        parameters.remove("Factor");
+                        parameters.remove("Distance");
                         properties.insert("Mode".into(), "Twisting".into());
                         parameters.insert("Angle".into(), format_angle_rad(angle.0));
                     }
@@ -5728,6 +5741,8 @@ pub fn sync_neutral_features(
                                 feature.id
                             )));
                         }
+                        parameters.remove("Angle");
+                        parameters.remove("Distance");
                         properties.insert("Mode".into(), "Tapering".into());
                         parameters.insert("Factor".into(), factor.to_string());
                     }
@@ -5738,6 +5753,8 @@ pub fn sync_neutral_features(
                                 feature.id
                             )));
                         }
+                        parameters.remove("Angle");
+                        parameters.remove("Factor");
                         properties.insert("Mode".into(), "Stretching".into());
                         parameters.insert("Distance".into(), format_length_mm(distance.0));
                     }

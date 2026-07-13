@@ -2459,7 +2459,7 @@ fn semantic_writer_round_trips_flex_operations() {
     else {
         panic!("typed flex feature");
     };
-    assert_eq!(*axis, cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0));
+    assert_eq!(*axis, Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)));
     assert!(matches!(
         mode,
         FlexMode::Bending { angle }
@@ -2483,7 +2483,7 @@ fn semantic_writer_round_trips_flex_operations() {
         FeatureDefinition::Flex {
             axis,
             mode: FlexMode::Twisting { angle },
-        } if *axis == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+        } if *axis == Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
             && (angle.0 - 0.75).abs() < 1e-12
     ));
 }
@@ -2551,8 +2551,8 @@ fn semantic_writer_round_trips_all_flex_modes() {
 }
 
 #[test]
-fn decode_retains_invalid_flex_operations_as_native() {
-    use cadmpeg_ir::features::FeatureDefinition;
+fn semantic_writer_retains_partial_native_flex_construction() {
+    use cadmpeg_ir::features::{FeatureDefinition, FlexForm, FlexMode};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -2565,19 +2565,59 @@ fn decode_retains_invalid_flex_operations_as_native() {
             <Flex Name="Stretch" Type="Flex" id="4" Mode="Stretching" Axis="1,0,0"><Dimension Name="Distance">infmm</Dimension></Flex>
         </Keywords>"#,
     ));
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.features.len(), 4);
-    let typed = decoded
-        .ir
-        .model
-        .features
-        .iter()
-        .filter(|feature| !matches!(feature.definition, FeatureDefinition::Native { .. }))
-        .map(|feature| (feature.name.as_deref(), &feature.definition))
-        .collect::<Vec<_>>();
-    assert!(typed.is_empty(), "unexpected typed features: {typed:?}");
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Flex {
+            axis: None,
+            mode: FlexMode::Bending { .. },
+        }
+    ));
+    for (index, form) in [FlexForm::Twisting, FlexForm::Tapering, FlexForm::Stretching]
+        .into_iter()
+        .enumerate()
+    {
+        assert!(matches!(
+            decoded.ir.model.features[index + 1].definition,
+            FeatureDefinition::Flex {
+                axis: Some(_),
+                mode: FlexMode::Unresolved {
+                    form: Some(actual),
+                    angle: None,
+                    factor: None,
+                    distance: None,
+                },
+            } if actual == form
+        ));
+    }
+
+    for index in 0..4 {
+        let mut detached = decoded.ir.clone();
+        detached.model.features[index].native_ref = None;
+        let error = SldprtCodec
+            .write_preserved(&detached, &mut Vec::new())
+            .unwrap_err();
+        assert!(error.to_string().contains("unresolved flex construction"));
+    }
+
+    for (index, feature) in decoded.ir.model.features.iter_mut().enumerate() {
+        feature.name = Some(format!("Renamed flex {}", index + 1));
+    }
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].properties["Axis"], "0,0,0");
+    assert_eq!(native[1].parameters["Angle"], "NaNrad");
+    assert_eq!(native[2].parameters["Factor"], "0");
+    assert_eq!(native[3].parameters["Distance"], "infmm");
 }
 
 #[test]
