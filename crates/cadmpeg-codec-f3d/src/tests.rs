@@ -11467,10 +11467,6 @@ fn generated_procedural_curve_optional_tolerance_absence_round_trips() {
         ),
         (synthetic_geometry_with_compound_curve_smbh(), "compound"),
         (
-            synthetic_geometry_with_procedural_curve_smbh(),
-            "intersection",
-        ),
-        (
             synthetic_geometry_with_surface_curve_smbh("surf_int_cur"),
             "surface curve",
         ),
@@ -15472,7 +15468,16 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         .expect_err("typed intersection must not degrade to a cache-only curve");
     assert!(error
         .to_string()
-        .contains("does not support procedural curve definition"));
+        .contains("lacks its native blend construction"));
+
+    source_less.model.procedural_curves[0].definition =
+        ProceduralCurveDefinition::Unknown { record: None };
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("unknown construction must not degrade to a cache-only curve");
+    assert!(error
+        .to_string()
+        .contains("cannot be regenerated losslessly"));
 }
 
 #[test]

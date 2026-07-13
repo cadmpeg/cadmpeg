@@ -7755,7 +7755,10 @@ fn native_procedural_curve(
         procedural.definition,
         cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
     ) {
-        return Ok(false);
+        return Err(CodecError::NotImplemented(format!(
+            "source-less F3D unknown procedural curve {} cannot be regenerated losslessly",
+            procedural.id
+        )));
     }
     let write_cache_fit_tolerance = |bytes: &mut Vec<u8>| {
         if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
@@ -8274,20 +8277,46 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
-        angle_range,
-        center,
-        major,
-        minor,
-        pitch,
-        apex_factor,
-        axis,
-    } = &procedural.definition
-    else {
-        return Err(CodecError::NotImplemented(format!(
-            "source-less F3D does not support procedural curve definition {}",
-            procedural.id
-        )));
+    let (angle_range, center, major, minor, pitch, apex_factor, axis) = match &procedural.definition
+    {
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+            angle_range,
+            center,
+            major,
+            minor,
+            pitch,
+            apex_factor,
+            axis,
+        } => (angle_range, center, major, minor, pitch, apex_factor, axis),
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D offset curve {} lacks a defined native offset-law grammar",
+                procedural.id
+            )))
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::BlendSpine { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D blend-spine curve {} lacks its native blend construction",
+                procedural.id
+            )))
+        }
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Law { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::ThreeSurfaceIntersection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Silhouette { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceOffset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Spring { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Deformable { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Projection { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::TwoSidedOffset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::VectorOffset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset { .. }
+        | cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. } => {
+            unreachable!("procedural curve variant returned from its native writer")
+        }
     };
     native_curve_base(bytes, "intcurve")?;
     bytes.push(0x0f);
