@@ -12,6 +12,7 @@ use cadmpeg_ir::features::{
     ProfileRef, RadiusSpec, VariableRadius,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
@@ -436,6 +437,134 @@ pub fn bind_unique_sketch_feature(
     for feature in features {
         for (_, native_ref, sketch) in &bindings {
             bind_definition_sketch(&mut feature.definition, native_ref, sketch);
+        }
+    }
+}
+
+/// Resolve native topology selections against decoded B-rep identities.
+pub fn bind_topology_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    bodies: &[Body],
+    faces: &[Face],
+    edges: &[Edge],
+) {
+    let body_ids = selection_ids(
+        bodies
+            .iter()
+            .map(|body| (body.id.0.as_str(), body.name.as_deref(), body.id.clone())),
+    );
+    let face_ids = selection_ids(
+        faces
+            .iter()
+            .map(|face| (face.id.0.as_str(), face.name.as_deref(), face.id.clone())),
+    );
+    let edge_ids = selection_ids(
+        edges
+            .iter()
+            .map(|edge| (edge.id.0.as_str(), None, edge.id.clone())),
+    );
+    for feature in features {
+        match &mut feature.definition {
+            FeatureDefinition::Extrude {
+                extent: Extent::ToFace { face },
+                ..
+            } => resolve_face_selection(face, &face_ids),
+            FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
+                resolve_edge_selection(edges, &edge_ids);
+            }
+            FeatureDefinition::Shell { removed_faces, .. } => {
+                resolve_face_selection(removed_faces, &face_ids);
+            }
+            FeatureDefinition::Draft {
+                faces,
+                neutral_plane,
+                ..
+            } => {
+                resolve_face_selection(faces, &face_ids);
+                resolve_face_selection(neutral_plane, &face_ids);
+            }
+            FeatureDefinition::Combine { target, tools, .. } => {
+                resolve_body_selection(target, &body_ids);
+                resolve_body_selection(tools, &body_ids);
+            }
+            FeatureDefinition::DeleteFace { faces, .. }
+            | FeatureDefinition::MoveFace { faces, .. }
+            | FeatureDefinition::Dome { faces, .. } => {
+                resolve_face_selection(faces, &face_ids);
+            }
+            FeatureDefinition::Hole {
+                face: Some(face), ..
+            } => {
+                resolve_face_selection(face, &face_ids);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn selection_ids<'a, Id: Clone + 'a>(
+    values: impl Iterator<Item = (&'a str, Option<&'a str>, Id)>,
+) -> HashMap<String, Option<Id>> {
+    let mut ids = HashMap::new();
+    for (id, name, value) in values {
+        ids.insert(id.to_string(), Some(value.clone()));
+        if let Some(name) = name.filter(|name| !name.is_empty()) {
+            ids.entry(name.to_string())
+                .and_modify(|candidate| *candidate = None)
+                .or_insert(Some(value));
+        }
+    }
+    ids
+}
+
+fn resolve_ids<Id: Clone>(native: &str, ids: &HashMap<String, Option<Id>>) -> Option<Vec<Id>> {
+    let resolved = native
+        .split(',')
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(|token| ids.get(token).and_then(Clone::clone))
+        .collect::<Option<Vec<_>>>()?;
+    (!resolved.is_empty()).then_some(resolved)
+}
+
+fn resolve_face_selection(
+    selection: &mut FaceSelection,
+    ids: &HashMap<String, Option<cadmpeg_ir::ids::FaceId>>,
+) {
+    if let FaceSelection::Native(native) = selection {
+        if let Some(faces) = resolve_ids(native, ids) {
+            *selection = FaceSelection::Resolved {
+                faces,
+                native: native.clone(),
+            };
+        }
+    }
+}
+
+fn resolve_edge_selection(
+    selection: &mut EdgeSelection,
+    ids: &HashMap<String, Option<cadmpeg_ir::ids::EdgeId>>,
+) {
+    if let EdgeSelection::Native(native) = selection {
+        if let Some(edges) = resolve_ids(native, ids) {
+            *selection = EdgeSelection::Resolved {
+                edges,
+                native: native.clone(),
+            };
+        }
+    }
+}
+
+fn resolve_body_selection(
+    selection: &mut BodySelection,
+    ids: &HashMap<String, Option<cadmpeg_ir::ids::BodyId>>,
+) {
+    if let BodySelection::Native(native) = selection {
+        if let Some(bodies) = resolve_ids(native, ids) {
+            *selection = BodySelection::Resolved {
+                bodies,
+                native: native.clone(),
+            };
         }
     }
 }

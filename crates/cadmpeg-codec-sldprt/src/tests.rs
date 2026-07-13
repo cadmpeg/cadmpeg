@@ -5430,6 +5430,77 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 }
 
 #[test]
+fn decode_resolves_feature_topology_selections() {
+    use cadmpeg_ir::features::{
+        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition,
+    };
+
+    let body_bytes = triangle_body();
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body_bytes)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let body = &base.ir.model.bodies[0].id.0;
+    let face = &base.ir.model.faces[0].id.0;
+    let edge = &base.ir.model.edges[0].id.0;
+    let keywords = format!(
+        r#"<Keywords>
+            <Fillet Name="Round" Type="Fillet" id="1" Edges="{edge}"><Dimension Name="Radius">1mm</Dimension></Fillet>
+            <DeleteFace Name="Delete" Type="DeleteFace" id="2" Faces="{face}" Heal="true"/>
+            <Combine Name="Union" Type="Combine" id="3" Target="{body}" Tools="{body}" Operation="Join"/>
+            <Extrusion Name="UpTo" Type="BossExtrude" id="4" EndCondition="ToFace" Face="{face}" Operation="Join"/>
+            <Hole Name="Drill" Type="Hole" id="5" Face="{face}" EndCondition="ThroughAll"><Dimension Name="Diameter">2mm</Dimension></Hole>
+        </Keywords>"#
+    );
+    let mut source = sldprt_with_body(&body_bytes);
+    source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Fillet {
+            edges: EdgeSelection::Resolved { edges, native },
+            ..
+        } if edges == &[base.ir.model.edges[0].id.clone()] && native == edge
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[1].definition,
+        FeatureDefinition::DeleteFace {
+            faces: FaceSelection::Resolved { faces, native },
+            ..
+        } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[2].definition,
+        FeatureDefinition::Combine {
+            target: BodySelection::Resolved { bodies, native },
+            tools: BodySelection::Resolved { .. },
+            ..
+        } if bodies == &[base.ir.model.bodies[0].id.clone()] && native == body
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[3].definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::ToFace {
+                face: FaceSelection::Resolved { faces, native },
+            },
+            ..
+        } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[4].definition,
+        FeatureDefinition::Hole {
+            face: Some(FaceSelection::Resolved { faces, native }),
+            ..
+        } if faces == &[base.ir.model.faces[0].id.clone()] && native == face
+    ));
+}
+
+#[test]
 fn decode_projects_generic_extrusion_with_explicit_operation() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length};
 

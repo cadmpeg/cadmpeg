@@ -307,6 +307,13 @@ fn build_geometry_ir(
     ir.model.surfaces = brep.surfaces;
     ir.model.curves = brep.curves;
     ir.model.pcurves = brep.pcurves;
+    crate::history::bind_topology_selections(
+        &mut ir.model.features,
+        &ir.model.bodies,
+        &ir.model.faces,
+        &ir.model.edges,
+    );
+    stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
