@@ -13003,6 +13003,42 @@ fn decode_projects_hyphenated_extrusion_operations() {
 }
 
 #[test]
+fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Extrude1" Type="Extrusion" id="8" DissectableChildren="3"><Dimension Name="D1">25</Dimension></Extrusion><Sketch Name="Sketch1" Type="Sketch" id="3"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let extrusion = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrude1"))
+        .expect("projected extrusion feature");
+    let sketch = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("projected sketch feature");
+    assert_eq!(extrusion.dependencies, vec![sketch.id.clone()]);
+    assert!(matches!(
+        &extrusion.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            ..
+        } if Some(profile.as_str()) == sketch.native_ref.as_deref()
+    ));
+}
+
+#[test]
 fn semantic_writer_updates_linked_resolved_feature_scalar() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

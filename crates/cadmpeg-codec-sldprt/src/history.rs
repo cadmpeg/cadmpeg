@@ -396,6 +396,7 @@ fn project_feature_dependencies(
         "Dependency",
         "Dependencies",
         "ParentFeatures",
+        "DissectableChildren",
     ];
     let owner = neutral_feature_id(&feature.id);
     let mut seen = std::collections::HashSet::new();
@@ -1320,16 +1321,19 @@ fn project_extrude(
         Some(value) => Some(Angle(parse_angle_rad(value)?)),
         None => None,
     };
-    let profile = feature.properties.get("Profile").map_or_else(
-        || Some(feature.id.clone()),
-        |source| {
-            Some(
-                native_by_source
-                    .get(source.as_str())
-                    .map_or_else(|| source.clone(), |id| (*id).to_string()),
-            )
-        },
-    )?;
+    let profile = if let Some(source) = feature.properties.get("Profile") {
+        native_by_source
+            .get(source.as_str())
+            .map_or_else(|| source.clone(), |id| (*id).to_string())
+    } else if let Some(children) = feature.properties.get("DissectableChildren") {
+        let profiles = resolve_native_refs(children, native_by_source)?;
+        let [profile] = profiles.as_slice() else {
+            return None;
+        };
+        profile.clone()
+    } else {
+        feature.id.clone()
+    };
     Some(FeatureDefinition::Extrude {
         profile: ProfileRef::Native(profile),
         direction,
