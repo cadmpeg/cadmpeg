@@ -1062,8 +1062,8 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        fit_rank_one_e5_plane_axes, ordered_range, quintic_jet_pcurve, rational_pcurve_arc,
-        standard_pcurve_geometry,
+        fit_rank_one_e5_plane_axes, intersection_line_direction, ordered_range, quintic_jet_pcurve,
+        rational_pcurve_arc, standard_pcurve_geometry,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::eval::pcurve_uv;
@@ -1131,6 +1131,16 @@ mod chart_tests {
         assert!(residual < 1e-12);
         assert!((v_axis.x - 1.0).abs() < 1e-12);
         assert!((u_axis.z - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn coincident_planes_do_not_impose_a_line_direction() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert!(intersection_line_direction(&plane, &plane).is_none());
     }
 
     #[test]
@@ -2625,7 +2635,10 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
         (
             SurfaceGeometry::Plane { normal: left, .. },
             SurfaceGeometry::Plane { normal: right, .. },
-        ) => Some(cross_vector(*left, *right)),
+        ) => {
+            let direction = cross_vector(*left, *right);
+            (axis_dot(direction, direction) > f64::EPSILON).then_some(direction)
+        }
         (SurfaceGeometry::Plane { .. }, SurfaceGeometry::Cylinder { axis, .. })
         | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Plane { .. })
         | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Cylinder { .. }) => Some(*axis),
