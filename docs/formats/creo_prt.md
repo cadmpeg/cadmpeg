@@ -264,6 +264,7 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 | `order_table` | Generated-entity ordering table.                                                                                                       |
 | `ent_tab`     | Trimmed profile entity chain.                                                                                                          |
 | `vert_tab`    | Trim vertices and their two incident `segtab` entities.                                                                                |
+| `relat_ptr`   | Counted sketch-constraint relations. The `f8` allocation count includes two structural entries; exactly `count - 2` positional rows follow the schema close. Each row ends at `e2` and begins with `id`, `used`. |
 
 An arc radius is the distance from its center to an endpoint in `var_arr`. A trim-vertex identifier is distinct from a `segtab` point identifier.
 

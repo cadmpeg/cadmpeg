@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::topology::Graph;
 use cadmpeg_ir::be::{u16_at as be_u16, u32_at as be_u32};
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::math::Point3;
@@ -38,11 +39,12 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
     let arrays = arrays(bytes);
     let payloads = surface_payloads(bytes);
     let descriptors = surface_descriptors(bytes);
-    records(bytes, 124, 23)
-        .into_iter()
-        .filter_map(|(pos, _)| {
-            let descriptor = be_u16(bytes, pos + 19)?;
-            let payload = be_u16(bytes, pos + 21)?;
+    Graph::parse(bytes)
+        .of_kind(124)
+        .filter_map(|node| {
+            let refs = node.compact_tail_references(2)?;
+            let descriptor = u16::try_from(refs[0]).ok()?;
+            let payload = u16::try_from(refs[1]).ok()?;
             let descriptor = descriptors.get(&descriptor)?;
             let payload = payloads.get(&payload)?;
             let u_mult = arrays.u16s.get(&descriptor.u_mult)?;
@@ -77,7 +79,7 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
                 }
             }
             Some(Surface {
-                pos,
+                pos: node.pos,
                 geometry: SurfaceGeometry::Nurbs(NurbsSurface {
                     u_degree: descriptor.u_degree as u32,
                     v_degree: descriptor.v_degree as u32,
@@ -103,11 +105,12 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
     let arrays = arrays(bytes);
     let controls = curve_payloads(bytes);
     let descriptors = curve_descriptors(bytes);
-    records(bytes, 134, 23)
-        .into_iter()
-        .filter_map(|(pos, _)| {
-            let descriptor = be_u16(bytes, pos + 19)?;
-            let control = be_u16(bytes, pos + 21)?;
+    Graph::parse(bytes)
+        .of_kind(134)
+        .filter_map(|node| {
+            let refs = node.compact_tail_references(2)?;
+            let descriptor = u16::try_from(refs[0]).ok()?;
+            let control = u16::try_from(refs[1]).ok()?;
             let descriptor = descriptors.get(&descriptor)?;
             let control = controls.get(&control)?;
             let mult = arrays
@@ -140,7 +143,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
                 }
             }
             Some(Curve {
-                pos,
+                pos: node.pos,
                 geometry: CurveGeometry::Nurbs(NurbsCurve {
                     degree: descriptor.degree as u32,
                     knots,

@@ -5,7 +5,7 @@
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
 //! parameters. Prototype values do not locate a surface instance in model space.
 
-use crate::psb::compact_int;
+use crate::psb::{self, compact_int};
 use crate::scalar;
 
 /// Surface family encoded by an `srf_array` row's `geom_type` byte.
@@ -88,6 +88,197 @@ pub struct SurfacePrototype {
     pub offset: usize,
 }
 
+/// Named `srf_prim_ptr(<kind>)` prototype family.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SurfacePrototypeFamily {
+    /// Plane prototype.
+    Plane,
+    /// Cylinder prototype.
+    Cylinder,
+    /// Cone prototype.
+    Cone,
+    /// Torus or sphere prototype.
+    Torus,
+    /// Spline or fillet prototype.
+    Spline,
+    /// Surface-of-extrusion prototype.
+    Extrusion,
+    /// Structurally valid family name outside the defined set.
+    Other(String),
+}
+
+impl SurfacePrototypeFamily {
+    fn from_name(name: &str) -> Self {
+        match name {
+            "plane" => Self::Plane,
+            "cylinder" => Self::Cylinder,
+            "cone" => Self::Cone,
+            "torus" | "sphere" => Self::Torus,
+            "spline" | "fillet" => Self::Spline,
+            "surface_of_extrusion" | "extrusion" => Self::Extrusion,
+            other => Self::Other(other.to_string()),
+        }
+    }
+}
+
+/// Typed wrapper carried by a named surface-prototype parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SurfaceNamedValue {
+    /// One compact integer.
+    CompactInt(u32),
+    /// Count-bounded compact-integer array.
+    CompactIntArray(Vec<u32>),
+    /// Count consecutive entity IDs beginning at one stored reference.
+    ContiguousEntityReferences {
+        /// First entity identifier.
+        start_id: u32,
+        /// Expanded consecutive identifiers.
+        entity_ids: Vec<u32>,
+    },
+    /// Dimensioned `f9` scalar body.
+    ScalarArray {
+        /// Stored dimension value.
+        dimensions: u8,
+        /// Stored element count.
+        count: u8,
+        /// Decoded slots with unresolved values retained.
+        values: Vec<Option<f64>>,
+    },
+    /// One or more consecutive scalar tokens.
+    ScalarSequence(Vec<f64>),
+    /// Exact bytes of a wrapper that is not structurally defined.
+    Opaque(Vec<u8>),
+}
+
+/// One selected named parameter inside a surface prototype.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceNamedParameter {
+    /// Named-record field name.
+    pub name: String,
+    /// Typed interpretation of the field body.
+    pub value: SurfaceNamedValue,
+    /// Exact field body bytes.
+    pub body: Vec<u8>,
+    /// Byte offset of the named-record header.
+    pub offset: usize,
+    /// Byte offset of the first value byte.
+    pub value_offset: usize,
+}
+
+/// Bounded `srf_prim_ptr(<kind>)` prototype and its named parameters.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfacePrototypeRecord {
+    /// Surface family named by the prototype label.
+    pub family: SurfacePrototypeFamily,
+    /// Selected named parameters in byte order.
+    pub parameters: Vec<SurfaceNamedParameter>,
+    /// Byte offset of the prototype label.
+    pub offset: usize,
+}
+
+impl SurfacePrototypeRecord {
+    /// Return the first selected parameter with `name`.
+    pub fn field(&self, name: &str) -> Option<&SurfaceNamedParameter> {
+        self.parameters.iter().find(|field| field.name == name)
+    }
+}
+
+/// Structural boundary that terminates a positional surface parameter body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceBodyBoundary {
+    /// `e3` compound-close byte.
+    CompoundClose,
+    /// Start of the next validated positional surface row.
+    NextRow,
+    /// Start of the next named record.
+    NamedRecord,
+    /// End of the containing section.
+    SectionEnd,
+}
+
+/// Bounded analytic parameter body from one positional `srf_array` row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceParameterRecord {
+    /// Owning `srf_array` geometry identifier.
+    pub surface_id: u32,
+    /// Exact bytes after `next_geom_ptr` and before the structural boundary.
+    pub body: Vec<u8>,
+    /// Context-independent scalar values decoded from the body in byte order.
+    pub scalar_values: Vec<f64>,
+    /// Structural form that bounded the body.
+    pub boundary: SurfaceBodyBoundary,
+    /// Byte offset of the positional surface row in the original stream.
+    pub offset: usize,
+    /// Byte offset of the first parameter-body byte in the original stream.
+    pub body_offset: usize,
+}
+
+/// Structural classification of a plane-row local-system chunk.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalSystemClassification {
+    /// Compact byte-characterised local-system form.
+    Simple,
+    /// Structurally bounded chunk outside the compact form.
+    Unclassified,
+}
+
+/// Inherited twelve-slot support frame following a plane-row envelope.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlaneLocalSystem {
+    /// Owning plane surface identifier.
+    pub surface_id: u32,
+    /// Exact bytes between the envelope close and local-system close.
+    pub body: Vec<u8>,
+    /// Twelve inherited `f9 04 03` scalar slots; unresolved slots remain `None`.
+    pub slots: Vec<Option<f64>>,
+    /// Slots 9 through 11 when all three decode.
+    pub origin: Option<[f64; 3]>,
+    /// Normalized first in-plane direction from slots 0 through 2.
+    pub u_axis: Option<[f64; 3]>,
+    /// Normalized cross product of valid equal-scale in-plane directions.
+    pub normal: Option<[f64; 3]>,
+    /// Compact versus raw-preserved chunk classification.
+    pub classification: LocalSystemClassification,
+    /// Byte offset of the plane row in the original stream.
+    pub row_offset: usize,
+    /// Byte offset of the local-system chunk in the original stream.
+    pub offset: usize,
+}
+
+/// Plane-specific positional envelope layout.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlaneEnvelope {
+    /// Four 2D bound values followed by two 3D corner triples.
+    Standard {
+        /// Two parameter-space bound pairs.
+        bounds_2d: [[Option<f64>; 2]; 2],
+        /// Two surface-space corner triples.
+        corners_3d: [[Option<f64>; 3]; 2],
+    },
+    /// `0x0e` variant with three prefix values and two 3D corner triples.
+    Compact {
+        /// Three envelope-prefix values.
+        prefix: [Option<f64>; 3],
+        /// Two surface-space corner triples.
+        corners_3d: [[Option<f64>; 3]; 2],
+    },
+}
+
+/// Decoded positional envelope for one plane row.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PlaneEnvelopeRecord {
+    /// Owning plane surface identifier.
+    pub surface_id: u32,
+    /// Exact envelope bytes, including a compact-variant marker.
+    pub body: Vec<u8>,
+    /// Plane-specific envelope layout.
+    pub envelope: PlaneEnvelope,
+    /// Byte offset of the plane row in the original stream.
+    pub row_offset: usize,
+    /// Byte offset of the envelope body in the original stream.
+    pub offset: usize,
+}
+
 const BOUNDARY_TYPES: &[u8] = &[0x00, 0x01, 0x06, 0xf6];
 
 /// Discover positional rows from every `srf_array` namespace in `payload`.
@@ -96,6 +287,46 @@ const BOUNDARY_TYPES: &[u8] = &[0x00, 0x01, 0x06, 0xf6];
 /// retains only byte-backed rows; a link target never inherits a kind.
 pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     let mut result = Vec::new();
+    let mut namespace_start = 0;
+    while let Some(array) = find(payload, b"srf_array\0", namespace_start) {
+        let start = array + b"srf_array\0".len();
+        let end = find(payload, b"srf_array\0", start).unwrap_or(payload.len());
+        namespace_start = start;
+        let value = |label: &[u8]| {
+            find_in(payload, label, start, end).and_then(|at| {
+                let value_start = at + label.len();
+                let (value, after) = compact_int(payload, value_start);
+                (after > value_start).then_some((value, at))
+            })
+        };
+        let kind = find_in(payload, b"geom_type\0", start, end)
+            .and_then(|at| payload.get(at + b"geom_type\0".len()))
+            .and_then(|byte| SurfaceKind::from_byte(*byte));
+        if let (Some((id, id_offset)), Some(kind), Some((feature_id, _)), Some((next_surface, _))) = (
+            value(b"geom_id\0"),
+            kind,
+            value(b"feat_id\0"),
+            value(b"next_geom_ptr\0"),
+        ) {
+            let reversed = find_in(payload, b"orient\0", start, end)
+                .and_then(|at| payload.get(at + b"orient\0".len()))
+                == Some(&0xf6);
+            let boundary_type = find_in(payload, b"boundary_type\0", start, end)
+                .and_then(|at| payload.get(at + b"boundary_type\0".len()))
+                .copied()
+                .filter(|byte| BOUNDARY_TYPES.contains(byte))
+                .unwrap_or(0);
+            result.push(SurfaceRow {
+                id,
+                kind,
+                feature_id,
+                reversed,
+                boundary_type,
+                next_surface,
+                offset: id_offset,
+            });
+        }
+    }
     for type_offset in 1..payload.len() {
         let Some(kind) = SurfaceKind::from_byte(payload[type_offset]) else {
             continue;
@@ -139,6 +370,413 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     result.sort_by_key(|row| row.offset);
     result.dedup_by_key(|row| row.offset);
     result
+}
+
+const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
+    "local_sys",
+    "radius",
+    "radius1",
+    "radius2",
+    "half_angle",
+    "i_pnts",
+    "c_pnts",
+    "parent_feats",
+    "frst_cntr_crv_hdr_ptr",
+];
+
+fn named_surface_value(body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
+    if body.first() == Some(&psb::token::ARRAY_OPEN) {
+        let (count, mut cursor) = compact_int(body, 1);
+        if cursor > 1 {
+            if body.get(cursor) == Some(&psb::token::ENTITY_REF) {
+                if let Ok((start_id, next)) = psb::reference_id(body, cursor + 1) {
+                    if body.get(next) == Some(&psb::token::ARRAY_CLOSE) {
+                        if let Some(end_id) = start_id.checked_add(count) {
+                            return SurfaceNamedValue::ContiguousEntityReferences {
+                                start_id,
+                                entity_ids: (start_id..end_id).collect(),
+                            };
+                        }
+                    }
+                }
+            }
+            let mut values = Vec::new();
+            for _ in 0..count {
+                let (value, next) = compact_int(body, cursor);
+                if next == cursor {
+                    break;
+                }
+                values.push(value);
+                cursor = next;
+            }
+            if values.len() == usize::try_from(count).unwrap_or(usize::MAX) {
+                return SurfaceNamedValue::CompactIntArray(values);
+            }
+        }
+    }
+    if body.first() == Some(&psb::token::SCALAR_BODY) && body.len() >= 3 {
+        let dimensions = body[1];
+        let count = body[2];
+        let slot_count = usize::from(dimensions) * usize::from(count);
+        return SurfaceNamedValue::ScalarArray {
+            dimensions,
+            count,
+            values: scalar_slots(&body[3..], slot_count, cache),
+        };
+    }
+    let mut values = Vec::new();
+    let mut cursor = 0;
+    while cursor < body.len() {
+        if matches!(body[cursor], 0xe0..=0xe3 | 0xf1 | 0xf7 | 0xfb) {
+            break;
+        }
+        let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) else {
+            values.clear();
+            break;
+        };
+        values.push(value);
+        cursor = next;
+    }
+    if !values.is_empty() {
+        return SurfaceNamedValue::ScalarSequence(values);
+    }
+    let (value, end) = compact_int(body, 0);
+    if end == body.len() && end != 0 {
+        SurfaceNamedValue::CompactInt(value)
+    } else {
+        SurfaceNamedValue::Opaque(body.to_vec())
+    }
+}
+
+/// Decode bounded named surface-prototype parameter records.
+pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
+    let cache = scalar::ScalarCache::from_section(payload);
+    let mut records = Vec::new();
+    let mut search = 0;
+    while let Some(record_start) = find(payload, b"srf_prim_ptr(", search) {
+        let family_start = record_start + b"srf_prim_ptr(".len();
+        let Some(close) = find(payload, b")\0", family_start) else {
+            break;
+        };
+        let family = String::from_utf8_lossy(&payload[family_start..close]);
+        let mut record_end = find(payload, b"srf_prim_ptr(", close + 2).unwrap_or(payload.len());
+        for marker in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
+            if let Some(at) = find(payload, marker, close + 2) {
+                record_end = record_end.min(at);
+            }
+        }
+        let tokens = psb::tokens(&payload[close + 2..record_end]);
+        let named = tokens
+            .iter()
+            .enumerate()
+            .filter(|(_, token)| token.kind == psb::TokenKind::NamedRecord)
+            .collect::<Vec<_>>();
+        let mut parameters = Vec::new();
+        for (position, (_, token)) in named.iter().enumerate() {
+            let token_offset = close + 2 + token.offset;
+            let name_start = token_offset + 2;
+            let name_end = token_offset + token.length - 1;
+            let name = String::from_utf8_lossy(&payload[name_start..name_end]);
+            if !PROTOTYPE_PARAMETER_NAMES.contains(&name.as_ref()) {
+                continue;
+            }
+            let value_offset = token_offset + token.length;
+            let value_end = named
+                .get(position + 1)
+                .map_or(record_end, |(_, next)| close + 2 + next.offset);
+            let body = payload[value_offset..value_end].to_vec();
+            parameters.push(SurfaceNamedParameter {
+                name: name.into_owned(),
+                value: named_surface_value(&body, &cache),
+                body,
+                offset: token_offset,
+                value_offset,
+            });
+        }
+        records.push(SurfacePrototypeRecord {
+            family: SurfacePrototypeFamily::from_name(&family),
+            parameters,
+            offset: record_start,
+        });
+        search = close + 2;
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
+    let (_, after_id) = compact_int(payload, row.offset);
+    (payload
+        .get(after_id)
+        .and_then(|byte| SurfaceKind::from_byte(*byte))
+        == Some(row.kind))
+    .then_some(())?;
+    let mut cursor = after_id + 1;
+    let (feature_id, next) = compact_int(payload, cursor);
+    (next > cursor && feature_id == row.feature_id).then_some(())?;
+    cursor = next;
+    let orientation = *payload.get(cursor)?;
+    let boundary = *payload.get(cursor + 1)?;
+    (matches!(orientation, 0x01 | 0xf6) && BOUNDARY_TYPES.contains(&boundary)).then_some(())?;
+    cursor += 2;
+    let (_, next) = compact_int(payload, cursor);
+    (next > cursor).then_some(next)
+}
+
+fn scalar_values(body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
+    let mut values = Vec::new();
+    let mut cursor = 0;
+    while cursor < body.len() {
+        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
+            values.push(value);
+            cursor = next;
+        } else {
+            cursor += 1;
+        }
+    }
+    values
+}
+
+/// Decode bounded parameter bodies for positional `srf_array` rows.
+pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
+    let cache = scalar::ScalarCache::from_section(payload);
+    let mut headers = Vec::<(SurfaceRow, usize)>::new();
+    for row in rows(payload) {
+        let Some(body_start) = positional_body_start(payload, &row) else {
+            continue;
+        };
+        if headers
+            .last()
+            .is_some_and(|(_, previous_body_start)| row.offset < *previous_body_start)
+        {
+            continue;
+        }
+        headers.push((row, body_start));
+    }
+    let mut records = Vec::new();
+    for (index, (row, body_start)) in headers.iter().enumerate() {
+        let next_row = headers
+            .get(index + 1)
+            .map_or(payload.len(), |(next, _)| next.offset);
+        let mut body_end = next_row;
+        let mut boundary = if next_row < payload.len() {
+            SurfaceBodyBoundary::NextRow
+        } else {
+            SurfaceBodyBoundary::SectionEnd
+        };
+        if let Some(relative) = payload[*body_start..body_end]
+            .iter()
+            .position(|byte| *byte == 0xe3)
+        {
+            body_end = body_start + relative;
+            boundary = SurfaceBodyBoundary::CompoundClose;
+        }
+        if let Some(relative) = payload[*body_start..body_end]
+            .iter()
+            .position(|byte| *byte == psb::token::NAMED_RECORD)
+        {
+            let candidate = body_start + relative;
+            if payload
+                .get(candidate + 2..body_end)
+                .is_some_and(|bytes| bytes.contains(&0))
+            {
+                body_end = candidate;
+                boundary = SurfaceBodyBoundary::NamedRecord;
+            }
+        }
+        let body = payload[*body_start..body_end].to_vec();
+        records.push(SurfaceParameterRecord {
+            surface_id: row.id,
+            scalar_values: scalar_values(&body, &cache),
+            body,
+            boundary,
+            offset: row.offset,
+            body_offset: *body_start,
+        });
+    }
+    records
+}
+
+fn first_compound_close(payload: &[u8], start: usize, end: usize) -> Option<usize> {
+    for token in psb::tokens(payload.get(start..end)?) {
+        match token.kind {
+            psb::TokenKind::CompoundClose => return Some(start + token.offset),
+            psb::TokenKind::NamedRecord => return None,
+            _ => {}
+        }
+    }
+    None
+}
+
+fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<Option<f64>> {
+    let mut slots = Vec::with_capacity(count);
+    let mut cursor = 0;
+    while cursor < body.len() && slots.len() < count {
+        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
+            slots.push(Some(value));
+            cursor = next;
+        } else {
+            cursor += 1;
+        }
+    }
+    slots.resize(count, None);
+    slots
+}
+
+struct PlaneFrame {
+    origin: Option<[f64; 3]>,
+    u_axis: Option<[f64; 3]>,
+    normal: Option<[f64; 3]>,
+}
+
+fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
+    let triple = |indices: [usize; 3]| {
+        Some([
+            slots.get(indices[0]).copied()??,
+            slots.get(indices[1]).copied()??,
+            slots.get(indices[2]).copied()??,
+        ])
+    };
+    let origin = triple([9, 10, 11]);
+    let (Some(first), Some(second)) = (triple([0, 1, 2]), triple([6, 7, 8])) else {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    };
+    let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let scale = first_magnitude.max(second_magnitude);
+    if (first_magnitude - second_magnitude).abs() > 0.05 * scale.max(1e-9) {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    }
+    let u_axis = (first_magnitude > 1e-6).then(|| {
+        [
+            first[0] / first_magnitude,
+            first[1] / first_magnitude,
+            first[2] / first_magnitude,
+        ]
+    });
+    let cross = [
+        first[1].mul_add(second[2], -(first[2] * second[1])),
+        first[2].mul_add(second[0], -(first[0] * second[2])),
+        first[0].mul_add(second[1], -(first[1] * second[0])),
+    ];
+    let magnitude = cross.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let normal = (magnitude > 1e-6).then(|| {
+        [
+            cross[0] / magnitude,
+            cross[1] / magnitude,
+            cross[2] / magnitude,
+        ]
+    });
+    PlaneFrame {
+        origin,
+        u_axis,
+        normal,
+    }
+}
+
+/// Decode the e3-bounded local-system chunk following each plane envelope.
+pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
+    let cache = scalar::ScalarCache::from_section(payload);
+    let headers = rows(payload)
+        .into_iter()
+        .filter(|row| row.kind == SurfaceKind::Plane && row.boundary_type == 0)
+        .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
+        .collect::<Vec<_>>();
+    let mut systems = Vec::new();
+    for (index, (row, envelope_start)) in headers.iter().enumerate() {
+        let row_end = headers
+            .get(index + 1)
+            .map_or(payload.len(), |(next, _)| next.offset);
+        let Some(envelope_close) = first_compound_close(payload, *envelope_start, row_end) else {
+            continue;
+        };
+        let chunk_start = envelope_close + 1;
+        let Some(chunk_end) = first_compound_close(payload, chunk_start, row_end) else {
+            continue;
+        };
+        if chunk_end <= chunk_start {
+            continue;
+        }
+        let body = payload[chunk_start..chunk_end].to_vec();
+        let slots = scalar_slots(&body, 12, &cache);
+        let frame = plane_frame(&slots);
+        let simple = matches!(body.first(), Some(0x0f | 0x10 | 0x18))
+            && body.len() <= 24
+            && !body
+                .iter()
+                .any(|byte| matches!(byte, 0xe0..=0xe2 | 0xf1 | 0xf2 | 0xf7 | 0xf8));
+        systems.push(PlaneLocalSystem {
+            surface_id: row.id,
+            body,
+            slots,
+            origin: frame.origin,
+            u_axis: frame.u_axis,
+            normal: frame.normal,
+            classification: if simple {
+                LocalSystemClassification::Simple
+            } else {
+                LocalSystemClassification::Unclassified
+            },
+            row_offset: row.offset,
+            offset: chunk_start,
+        });
+    }
+    systems
+}
+
+/// Decode plane positional envelope bodies into their two defined layouts.
+pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+    let cache = scalar::ScalarCache::from_section(payload);
+    let headers = rows(payload)
+        .into_iter()
+        .filter(|row| row.kind == SurfaceKind::Plane && row.boundary_type == 0)
+        .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
+        .collect::<Vec<_>>();
+    let mut envelopes = Vec::new();
+    for (index, (row, body_start)) in headers.iter().enumerate() {
+        let row_end = headers
+            .get(index + 1)
+            .map_or(payload.len(), |(next, _)| next.offset);
+        let Some(body_end) = first_compound_close(payload, *body_start, row_end) else {
+            continue;
+        };
+        let body = payload[*body_start..body_end].to_vec();
+        let envelope = if body.first() == Some(&0x0e) {
+            let slots = scalar_slots(&body[1..], 9, &cache);
+            PlaneEnvelope::Compact {
+                prefix: [slots[0], slots[1], slots[2]],
+                corners_3d: [
+                    [slots[3], slots[4], slots[5]],
+                    [slots[6], slots[7], slots[8]],
+                ],
+            }
+        } else {
+            let slots = scalar_slots(&body, 10, &cache);
+            PlaneEnvelope::Standard {
+                bounds_2d: [[slots[0], slots[1]], [slots[2], slots[3]]],
+                corners_3d: [
+                    [slots[4], slots[5], slots[6]],
+                    [slots[7], slots[8], slots[9]],
+                ],
+            }
+        };
+        envelopes.push(PlaneEnvelopeRecord {
+            surface_id: row.id,
+            body,
+            envelope,
+            row_offset: row.offset,
+            offset: *body_start,
+        });
+    }
+    envelopes
 }
 
 /// Decode fully specified scalar fields in labeled `srf_prim_ptr` prototype
