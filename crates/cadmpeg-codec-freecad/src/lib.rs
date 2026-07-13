@@ -14,12 +14,12 @@ use cadmpeg_ir::codec::{
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition,
+    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -896,6 +896,29 @@ fn transfer_text_topology(
                 tolerance: Some(*tolerance),
             });
             edges.insert(shape.index, edge_id);
+            for (representation_index, representation) in representations.iter().enumerate() {
+                if !matches!(representation.kind, 2 | 3) {
+                    continue;
+                }
+                ir.model.pcurves.push(Pcurve {
+                    id: text_pcurve_id(payload, shape.index, representation_index, false),
+                    geometry: text_pcurve_geometry(&text.curve2ds[representation.primary - 1]),
+                    wrapper_reversed: None,
+                    native_tail_flags: None,
+                    parameter_range: representation.parameter_range,
+                    fit_tolerance: None,
+                });
+                if let Some(secondary) = representation.secondary {
+                    ir.model.pcurves.push(Pcurve {
+                        id: text_pcurve_id(payload, shape.index, representation_index, true),
+                        geometry: text_pcurve_geometry(&text.curve2ds[secondary - 1]),
+                        wrapper_reversed: None,
+                        native_tail_flags: None,
+                        parameter_range: representation.parameter_range,
+                        fit_tolerance: None,
+                    });
+                }
+            }
         }
 
         let body_roots = collect_body_roots(text)?;
@@ -905,6 +928,96 @@ fn transfer_text_topology(
     }
     close_radial_rings(&mut ir.model.coedges);
     Ok(())
+}
+
+fn text_pcurve_id(
+    payload: &brep::ShapePayloadRecord,
+    edge: usize,
+    representation: usize,
+    secondary: bool,
+) -> PcurveId {
+    PcurveId(format!(
+        "{}:pcurve#{}:{}:{}",
+        payload.id,
+        edge,
+        representation + 1,
+        usize::from(secondary) + 1
+    ))
+}
+
+fn text_pcurve_geometry(curve: &brep::TextCurve2d) -> PcurveGeometry {
+    match curve {
+        brep::TextCurve2d::Line { origin, direction } => PcurveGeometry::Line {
+            origin: *origin,
+            direction: *direction,
+        },
+        brep::TextCurve2d::Circle {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        } => PcurveGeometry::Circle {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            radius: *radius,
+        },
+        brep::TextCurve2d::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => PcurveGeometry::Ellipse {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        brep::TextCurve2d::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } => PcurveGeometry::Parabola {
+            vertex: *vertex,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            focal_distance: *focal_distance,
+        },
+        brep::TextCurve2d::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => PcurveGeometry::Hyperbola {
+            center: *center,
+            x_axis: *x_axis,
+            y_axis: *y_axis,
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
+        brep::TextCurve2d::Nurbs(nurbs) => PcurveGeometry::Nurbs {
+            degree: nurbs.degree,
+            knots: nurbs.knots.clone(),
+            control_points: nurbs.control_points.clone(),
+            weights: nurbs.weights.clone(),
+            periodic: nurbs.periodic,
+        },
+        brep::TextCurve2d::Trimmed {
+            parameter_range,
+            basis,
+        } => PcurveGeometry::Trimmed {
+            parameter_range: *parameter_range,
+            basis: Box::new(text_pcurve_geometry(basis)),
+        },
+        brep::TextCurve2d::Offset { distance, basis } => PcurveGeometry::Offset {
+            distance: *distance,
+            basis: Box::new(text_pcurve_geometry(basis)),
+        },
+    }
 }
 
 fn collect_body_roots(text: &brep::TextFacts) -> Result<Vec<brep::TextShapeUse>, CodecError> {
@@ -1093,6 +1206,25 @@ fn append_face_topology(
             let id = coedge_ids[index].clone();
             let next = coedge_ids[(index + 1) % coedge_ids.len()].clone();
             let previous = coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone();
+            let edge_shape = &text.tshapes[edge_use.shape - 1];
+            let pcurve = match &edge_shape.geometry {
+                brep::TextTShapeGeometry::Edge {
+                    representations, ..
+                } => representations
+                    .iter()
+                    .enumerate()
+                    .find(|(_, representation)| {
+                        matches!(representation.kind, 2 | 3)
+                            && representation.surface == Some(*surface)
+                            && representation.location == *location
+                    })
+                    .map(|(representation_index, representation)| {
+                        let secondary = representation.secondary.is_some()
+                            && edge_use.orientation == brep::TextOrientation::Reversed;
+                        text_pcurve_id(payload, edge_use.shape, representation_index, secondary)
+                    }),
+                _ => None,
+            };
             ir.model.coedges.push(Coedge {
                 id: id.clone(),
                 owner_loop: loop_id.clone(),
@@ -1101,7 +1233,7 @@ fn append_face_topology(
                 previous,
                 radial_next: id,
                 sense: use_sense(edge_use.orientation),
-                pcurve: None,
+                pcurve,
             });
         }
         if !coedge_ids.is_empty() {

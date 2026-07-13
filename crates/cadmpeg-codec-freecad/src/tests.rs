@@ -5,6 +5,33 @@ use zip::write::SimpleFileOptions;
 
 use crate::FcstdCodec;
 
+#[test]
+fn transfers_recursive_exact_parameter_curve_geometry() {
+    let source = crate::brep::TextCurve2d::Offset {
+        distance: 0.25,
+        basis: Box::new(crate::brep::TextCurve2d::Trimmed {
+            parameter_range: [0.0, std::f64::consts::PI],
+            basis: Box::new(crate::brep::TextCurve2d::Circle {
+                center: cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                x_axis: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                y_axis: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                radius: 3.0,
+            }),
+        }),
+    };
+    let cadmpeg_ir::geometry::PcurveGeometry::Offset { distance, basis } =
+        crate::text_pcurve_geometry(&source)
+    else {
+        panic!("expected offset pcurve");
+    };
+    assert_eq!(distance, 0.25);
+    assert!(matches!(
+        basis.as_ref(),
+        cadmpeg_ir::geometry::PcurveGeometry::Trimmed { basis, .. }
+            if matches!(basis.as_ref(), cadmpeg_ir::geometry::PcurveGeometry::Circle { radius: 3.0, .. })
+    ));
+}
+
 fn archive(document: &str) -> Vec<u8> {
     archive_entries(&[("Document.xml", document.as_bytes())])
 }
@@ -89,7 +116,9 @@ fn transfers_connected_text_brep_topology() {
 </Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
-Curve2ds 0
+Curve2ds 2
+1 0 0 1 0
+1 1 0 -1 0
 Curves 2
 1 0 0 0 1 0 0
 1 1 0 0 -1 0 0
@@ -101,8 +130,8 @@ Triangulations 0
 TShapes 9
 Ve 0.001 0 0 0 0 0 1001000 *
 Ve 0.001 1 0 0 0 0 1001000 *
-Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +9 0 -8 0 *
-Ed 0.001 1 1 0 1 2 0 0 1 0 1001000 +8 0 -9 0 *
+Ed 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +9 0 -8 0 *
+Ed 0.001 1 1 0 1 2 0 0 1 2 2 1 0 0 1 0 1001000 +8 0 -9 0 *
 Wi 1001000 +7 0 +6 0 *
 Fa 0 0.001 1 0 1001000 +5 0 *
 Sh 1001000 +4 0 *
@@ -119,6 +148,13 @@ Co 1001000 +2 0 *
     assert_eq!(result.ir.model.coedges.len(), 2);
     assert_eq!(result.ir.model.edges.len(), 2);
     assert_eq!(result.ir.model.vertices.len(), 2);
+    assert_eq!(result.ir.model.pcurves.len(), 2);
+    assert!(result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurve.is_some()));
     let report = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(
         report
