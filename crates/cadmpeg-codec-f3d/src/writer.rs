@@ -5084,6 +5084,12 @@ fn native_procedural_surface(
             construction,
             solved_cache,
         )?,
+        ProceduralSurfaceDefinition::Sweep { native: None, .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less F3D sweep surface {} lacks its native construction graph",
+                procedural.id
+            )))
+        }
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -5341,9 +5347,15 @@ fn native_procedural_surface(
                 )?;
             }
         }
-        _ => {
+        ProceduralSurfaceDefinition::Helix { .. } => {
+            return Err(CodecError::Malformed(format!(
+                "source-less F3D helix surface {} must use its cacheless native carrier",
+                procedural.id
+            )))
+        }
+        ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
-                "source-less F3D procedural surface {} is not yet writable",
+                "source-less F3D unknown procedural surface {} cannot be regenerated losslessly",
                 procedural.id
             )))
         }

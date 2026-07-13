@@ -10977,6 +10977,36 @@ fn generated_explicit_formula_sweep_decodes_and_writes_full_graph() {
 }
 
 #[test]
+fn generated_source_less_sweep_refuses_missing_native_graph() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let mut decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_explicit_formula_sweep_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated native sweep decode")
+        .ir;
+    decoded.source = None;
+    decoded.set_native_unknowns("f3d", &[]).unwrap();
+    let ProceduralSurfaceDefinition::Sweep { native, .. } =
+        &mut decoded.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected generated sweep")
+    };
+    *native = None;
+
+    let error = F3dCodec
+        .encode(&decoded, &mut Vec::new())
+        .expect_err("a sweep without its native graph must not be guessed");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            if message.contains("lacks its native construction graph")
+    ));
+}
+
+#[test]
 fn generated_explicit_guide_sweep_decodes_and_writes_full_graph() {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SweepSurfaceLayout};
 
