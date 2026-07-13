@@ -13050,7 +13050,7 @@ fn decode_resolves_feature_input_operands_within_sketch() {
     source.extend(make_block(
         0x45,
         "Contents/Config-0-ResolvedFeatures",
-        &resolved_features_payload_with_names(&[0, 1, 2], &["Sketch1", "D1"]),
+        &resolved_features_payload_with_names(&[0, 0, 2], &["Sketch1", "D1"]),
     ));
 
     let decoded = SldprtCodec
@@ -13743,9 +13743,7 @@ fn decode_projects_owned_native_sketch_relation() {
             && operands[0].native_ref.is_none()
             && operands[1].native_kind == "d6"
             && operands[1].object_index == 2
-            && operands[1].native_ref.as_deref().is_some_and(|id| {
-                id.starts_with("sldprt:feature-input:sketch-entity#")
-            })
+            && operands[1].native_ref.is_none()
     ));
     let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");

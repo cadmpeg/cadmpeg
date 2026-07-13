@@ -604,13 +604,13 @@ fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
 
 fn operand_accepts_marker(kind: FeatureInputOperandKind, marker: SketchInputKind) -> bool {
     match kind {
-        FeatureInputOperandKind::Native(0x837b | 0xbc7c) => {
+        FeatureInputOperandKind::D6 | FeatureInputOperandKind::Native(0x837b | 0xbc7c) => {
             matches!(
                 marker,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         }
-        FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0xbc87) => {
+        FeatureInputOperandKind::E1 | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0xbc87) => {
             marker == SketchInputKind::LineOrCircle
         }
         _ => true,
