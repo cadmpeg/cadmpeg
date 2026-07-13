@@ -319,7 +319,9 @@ Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>
 ### 6.7 Object-stream topology (`b5 03`)
 
 Object records occur in length-closed runs containing both common-form A8 and
-B5 frames. Starting at a frame boundary, advance by the declared frame length;
+B5 frames. The flag byte is `03`, `13`, or `83`; topology-bearing frames use
+`03`, while alternate-flag records can bridge adjacent topology frames in the
+same run. Starting at a frame boundary, advance by the declared frame length;
 the next byte is either another A8/B5 frame or the run terminator. Marker bytes
 inside an accepted frame payload do not start records. Repeated byte-identical
 typed records with the same object id are one object.

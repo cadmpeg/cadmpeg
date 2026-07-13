@@ -887,7 +887,7 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
 }
 
 fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
-    if bytes.get(start + 1) != Some(&0x03) {
+    if !matches!(bytes.get(start + 1), Some(0x03 | 0x13 | 0x83)) {
         return None;
     }
     let family = *bytes.get(start)?;
@@ -1148,6 +1148,23 @@ mod tests {
                     payload: Vec::new(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn record_walk_crosses_alternate_flag_bridge_records() {
+        let mut bytes = vec![0xb5, 0x03, 0x27, 0x00];
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xb5, 0x13, 0x5b, 0x00]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x00]);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            records(&bytes)
+                .iter()
+                .map(|record| (record.object_id, record.class))
+                .collect::<Vec<_>>(),
+            vec![(1, 0x27), (3, 0x5e)]
         );
     }
 }
