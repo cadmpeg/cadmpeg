@@ -266,6 +266,14 @@ pub enum FeatureInputRelationFamily {
     LineLineDistance,
     /// Distance between two point loci.
     PointPointDistance,
+    /// Distance between a point locus and a line locus.
+    PointLineDistance,
+    /// Horizontal distance between two point loci.
+    PointPointHorizontalDistance,
+    /// Vertical distance between two point loci.
+    PointPointVerticalDistance,
+    /// Angle between two entity loci.
+    Angle,
 }
 
 /// One native entity-reference cell in a feature-input stream.
@@ -357,6 +365,8 @@ pub enum FeatureInputOperandKind {
     D6,
     /// `e1 80` reference cell.
     E1,
+    /// Other two-byte reference-cell tag, stored as a little-endian u16.
+    Native(u16),
 }
 
 /// Function of a named scalar in its dimension record.

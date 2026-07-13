@@ -973,6 +973,14 @@ fn pmi_semantic_payload() -> Vec<u8> {
 }
 
 fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8> {
+    resolved_features_payload_with_names_and_relation(codes, names, "sgPntPntDist")
+}
+
+fn resolved_features_payload_with_names_and_relation(
+    codes: &[u32],
+    names: &[&str],
+    relation_class: &str,
+) -> Vec<u8> {
     let mut payload = Vec::new();
     for name in ["sgPointHandle", "sgLineHandle", "sgArcHandle"] {
         payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
@@ -981,7 +989,7 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
     }
     for name in names {
         if *name == "D1" {
-            let class = "sgPntPntDist";
+            let class = relation_class;
             payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
             payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
             payload.extend_from_slice(class.as_bytes());
@@ -1053,8 +1061,28 @@ fn sldprt_with_nested_sketch_profile(body: &[u8]) -> Vec<u8> {
 }
 
 fn sldprt_with_compact_relation_pair(body: &[u8]) -> Vec<u8> {
+    sldprt_with_tagged_compact_relation(body, "sgPntPntDist", [[0xd6, 0x80]; 2])
+}
+
+fn sldprt_with_tagged_compact_relation(
+    body: &[u8],
+    relation_class: &str,
+    operand_tags: [[u8; 2]; 2],
+) -> Vec<u8> {
     let mut file = sldprt_with_body(body);
-    let mut payload = resolved_features_payload_with_names(&[0, 1, 1, 1], &["Sketch1", "D1", "D2"]);
+    let mut payload = resolved_features_payload_with_names_and_relation(
+        &[0, 1, 1, 1],
+        &["Sketch1", "D1", "D2"],
+        relation_class,
+    );
+    let operand_offsets = payload
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == [0xd6, 0x80]).then_some(offset))
+        .collect::<Vec<_>>();
+    for (ordinal, offset) in operand_offsets.into_iter().enumerate() {
+        payload[offset..offset + 2].copy_from_slice(&operand_tags[ordinal % 2]);
+    }
     let d1_marker = [0x04, 0x80, 0xff, 0xfe, 0xff, 2, b'D', 0, b'1', 0];
     let d1_offset = payload
         .windows(d1_marker.len())
@@ -11605,6 +11633,141 @@ fn decode_groups_compact_relation_scalar_pair() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap();
+}
+
+#[test]
+fn decode_groups_native_tagged_point_line_relations() {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+    let mut source = sldprt_with_tagged_compact_relation(
+        &triangle_body(),
+        "sgPntLineDist",
+        [[0x7b, 0x83], [0x86, 0x83]],
+    );
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let lane = &native.feature_input_lanes[0];
+    assert_eq!(lane.references.len(), 4);
+    assert!(lane
+        .references
+        .iter()
+        .enumerate()
+        .all(|(ordinal, reference)| {
+            reference.kind
+                == crate::records::FeatureInputOperandKind::Native(if ordinal % 2 == 0 {
+                    0x837b
+                } else {
+                    0x8386
+                })
+        }));
+    let [relation] = lane.relation_instances.as_slice() else {
+        panic!("one point-line relation instance");
+    };
+    assert_eq!(
+        relation.family,
+        crate::records::FeatureInputRelationFamily::PointLineDistance
+    );
+    let constraint = decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .find(|constraint| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
+        .expect("projected point-line relation");
+    assert!(matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::Native {
+            native_kind,
+            operands,
+            ..
+        } if native_kind == "sgPntLineDist"
+            && operands[0].native_kind == "7b83"
+            && operands[1].native_kind == "8683"
+    ));
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
+}
+
+#[test]
+fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
+    let cases = [
+        (
+            "sgPntPntDist",
+            [0x7b, 0x83],
+            crate::records::FeatureInputRelationFamily::PointPointDistance,
+        ),
+        (
+            "sgLLDist",
+            [0x86, 0x83],
+            crate::records::FeatureInputRelationFamily::LineLineDistance,
+        ),
+        (
+            "sgPntPntDist",
+            [0x7c, 0xbc],
+            crate::records::FeatureInputRelationFamily::PointPointDistance,
+        ),
+        (
+            "sgLLDist",
+            [0x87, 0xbc],
+            crate::records::FeatureInputRelationFamily::LineLineDistance,
+        ),
+        (
+            "sgPntPntHorDist",
+            [0xcb, 0x8d],
+            crate::records::FeatureInputRelationFamily::PointPointHorizontalDistance,
+        ),
+        (
+            "sgPntPntVertDist",
+            [0xcb, 0x8d],
+            crate::records::FeatureInputRelationFamily::PointPointVerticalDistance,
+        ),
+        (
+            "sgAnglDim",
+            [0xda, 0x8d],
+            crate::records::FeatureInputRelationFamily::Angle,
+        ),
+    ];
+    for (class, tag, family) in cases {
+        let mut source = sldprt_with_tagged_compact_relation(&triangle_body(), class, [tag; 2]);
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let native = sldprt_native(&decoded.ir);
+        let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
+            panic!("one native-tagged relation instance for {class}");
+        };
+        assert_eq!(relation.family, family);
+        assert!(relation.operands.iter().all(|operand| operand.kind
+            == crate::records::FeatureInputOperandKind::Native(u16::from_le_bytes(tag))));
+        assert!(decoded
+            .ir
+            .model
+            .sketch_constraints
+            .iter()
+            .any(|constraint| {
+                constraint.native_ref.as_deref() == Some(relation.id.as_str())
+                    && matches!(
+                        &constraint.definition,
+                        cadmpeg_ir::sketches::SketchConstraintDefinition::Native {
+                            native_kind,
+                            ..
+                        } if native_kind == class
+                    )
+            }));
+    }
 }
 
 #[test]

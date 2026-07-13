@@ -270,7 +270,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             &expected_lane.scalars,
         );
         expected_lane.references =
-            crate::resolved_features::reference_cells(&lane.native_payload, &lane.id);
+            crate::resolved_features::reference_cells(&expected_lane.scalars);
         crate::resolved_features::bind_scalar_operands(
             &native.feature_histories,
             std::slice::from_mut(&mut expected_lane),

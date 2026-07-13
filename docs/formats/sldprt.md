@@ -85,7 +85,7 @@ PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, h
 
 `ResolvedFeatures` sketch entities begin with `ff ff 1f 00 03`. A little-endian u32 at marker +17 is the entity type: `0` point, `1` curve, `2` arc, `3` constrained point. Marker +48 stores a finite little-endian f64 state value.
 
-Sketch distance relations use named scalar records with two reference cells. `d6 80` operand cells identify point-point distance operands; `e1 80` cells identify line-line distance operands. Scalar records with the same owning sketch, relation family, and ordered operand pair belong to one relation instance. Display-role and driving-role scalars are distinct. A unique driving scalar stores the target parameter.
+Sketch relations use named scalar records with two reference cells at fixed scalar-record slots. Point references use `d6 80`, `7b 83`, or `7c bc`; line references use `e1 80`, `86 83`, or `87 bc`. Point-point, line-line, and point-line distance relations follow from the operand pair. Two `cb 8d` cells carry horizontal or vertical point-point distance according to the relation declaration. Two `da 8d` cells carry an angular relation. Scalar records with the same owning sketch, relation family, and ordered operand pair belong to one relation instance. Display-role and driving-role scalars are distinct. A unique driving scalar stores the target parameter.
 
 ---
 

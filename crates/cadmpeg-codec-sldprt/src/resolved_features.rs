@@ -51,7 +51,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             let names = object_names(&block.payload, &parent);
             let scalars = named_scalars(&block.payload, &parent, &names);
             let relation_bindings = relation_bindings(&parent, &classes, &scalars);
-            let references = reference_cells(&block.payload, &parent);
+            let references = reference_cells(&scalars);
             let sketch_entities = block
                 .payload
                 .windows(SKETCH_MARKER.len())
@@ -129,6 +129,10 @@ pub(crate) fn relation_bindings(
             let family = match class.name.as_str() {
                 "sgLLDist" => FeatureInputRelationFamily::LineLineDistance,
                 "sgPntPntDist" => FeatureInputRelationFamily::PointPointDistance,
+                "sgPntLineDist" => FeatureInputRelationFamily::PointLineDistance,
+                "sgPntPntHorDist" => FeatureInputRelationFamily::PointPointHorizontalDistance,
+                "sgPntPntVertDist" => FeatureInputRelationFamily::PointPointVerticalDistance,
+                "sgAnglDim" => FeatureInputRelationFamily::Angle,
                 _ => return None,
             };
             let scalar = scalars
@@ -156,35 +160,27 @@ pub(crate) fn relation_bindings(
         .collect()
 }
 
-pub(crate) fn reference_cells(payload: &[u8], parent: &str) -> Vec<FeatureInputReference> {
-    let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    payload
-        .windows(12)
-        .enumerate()
-        .filter_map(|(offset, cell)| {
-            if cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
-                return None;
-            }
-            let kind = match cell[..2] {
-                [0xd6, 0x80] => FeatureInputOperandKind::D6,
-                [0xe1, 0x80] => FeatureInputOperandKind::E1,
-                _ => return None,
-            };
-            Some((offset, kind, u16::from_le_bytes([cell[2], cell[3]])))
+pub(crate) fn reference_cells(scalars: &[FeatureInputScalar]) -> Vec<FeatureInputReference> {
+    let mut cells = scalars
+        .iter()
+        .flat_map(|scalar| {
+            scalar.operands.iter().map(|operand| FeatureInputReference {
+                id: operand.reference_ref.clone(),
+                parent: scalar.parent.clone(),
+                feature_ref: scalar.feature_ref.clone(),
+                ordinal: 0,
+                offset: operand.offset,
+                kind: operand.kind,
+                object_index: operand.entity_index,
+            })
         })
-        .enumerate()
-        .map(
-            |(ordinal, (offset, kind, object_index))| FeatureInputReference {
-                id: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
-                parent: parent.to_string(),
-                feature_ref: None,
-                ordinal: ordinal as u32,
-                offset: offset as u64,
-                kind,
-                object_index,
-            },
-        )
-        .collect()
+        .collect::<Vec<_>>();
+    cells.sort_by_key(|cell| cell.offset);
+    cells.dedup_by_key(|cell| cell.offset);
+    for (ordinal, cell) in cells.iter_mut().enumerate() {
+        cell.ordinal = ordinal as u32;
+    }
+    cells
 }
 
 pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
@@ -309,11 +305,7 @@ fn scalar_operands(payload: &[u8], name_offset: usize, parent: &str) -> Vec<Feat
             if cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
                 return None;
             }
-            let kind = match cell[..2] {
-                [0xd6, 0x80] => FeatureInputOperandKind::D6,
-                [0xe1, 0x80] => FeatureInputOperandKind::E1,
-                _ => return None,
-            };
+            let kind = operand_kind([cell[0], cell[1]])?;
             Some(FeatureInputOperand {
                 offset: offset as u64,
                 reference_ref: format!("sldprt:feature-input:reference#{lane_key}:{offset}"),
@@ -323,6 +315,15 @@ fn scalar_operands(payload: &[u8], name_offset: usize, parent: &str) -> Vec<Feat
             })
         })
         .collect()
+}
+
+fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
+    match tag {
+        [0, 0] | [0xff, 0xff] => None,
+        [0xd6, 0x80] => Some(FeatureInputOperandKind::D6),
+        [0xe1, 0x80] => Some(FeatureInputOperandKind::E1),
+        bytes => Some(FeatureInputOperandKind::Native(u16::from_le_bytes(bytes))),
+    }
 }
 
 /// Resolve scalar operand indices within their owning feature-object interval.
@@ -410,24 +411,17 @@ fn relation_instances(
         .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
         .map(|feature| feature.id.as_str())
         .collect::<HashSet<_>>();
-    let class_by_family = lane
+    let declarations = lane
         .classes
         .iter()
-        .filter_map(|class| match class.name.as_str() {
-            "sgLLDist" => Some((
-                FeatureInputRelationFamily::LineLineDistance,
-                class.id.as_str(),
-            )),
-            "sgPntPntDist" => Some((
-                FeatureInputRelationFamily::PointPointDistance,
-                class.id.as_str(),
-            )),
-            _ => None,
+        .filter_map(|class| {
+            relation_family(&class.name).map(|family| (class.offset, family, class.id.as_str()))
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<Vec<_>>();
     let mut groups = Vec::<(
         String,
         FeatureInputRelationFamily,
+        String,
         Vec<FeatureInputOperand>,
         Vec<&FeatureInputScalar>,
     )>::new();
@@ -442,34 +436,36 @@ fn relation_instances(
         let [first, second] = scalar.operands.as_slice() else {
             continue;
         };
-        if first.kind != second.kind {
-            continue;
-        }
-        let family = match first.kind {
-            FeatureInputOperandKind::D6 => FeatureInputRelationFamily::PointPointDistance,
-            FeatureInputOperandKind::E1 => FeatureInputRelationFamily::LineLineDistance,
-        };
-        if !class_by_family.contains_key(&family) {
-            continue;
-        }
-        if let Some((_, _, _, scalars)) =
-            groups.iter_mut().find(|(owner, candidate, operands, _)| {
-                owner == feature_ref
-                    && *candidate == family
-                    && operands
-                        .iter()
-                        .map(|operand| (operand.kind, operand.entity_index))
-                        .eq(scalar
-                            .operands
-                            .iter()
-                            .map(|operand| (operand.kind, operand.entity_index)))
+        let Some((_, family, class_ref)) = declarations
+            .iter()
+            .filter(|(offset, family, _)| {
+                *offset < scalar.offset && relation_signature(*family, first.kind, second.kind)
             })
+            .max_by_key(|(offset, _, _)| offset)
+        else {
+            continue;
+        };
+        if let Some((_, _, _, _, scalars)) =
+            groups
+                .iter_mut()
+                .find(|(owner, candidate, _, operands, _)| {
+                    owner == feature_ref
+                        && candidate == family
+                        && operands
+                            .iter()
+                            .map(|operand| (operand.kind, operand.entity_index))
+                            .eq(scalar
+                                .operands
+                                .iter()
+                                .map(|operand| (operand.kind, operand.entity_index)))
+                })
         {
             scalars.push(scalar);
         } else {
             groups.push((
                 feature_ref.to_string(),
-                family,
+                *family,
+                (*class_ref).to_string(),
                 scalar.operands.clone(),
                 vec![scalar],
             ));
@@ -478,38 +474,85 @@ fn relation_instances(
     groups
         .into_iter()
         .enumerate()
-        .map(|(ordinal, (feature_ref, family, operands, scalars))| {
-            let driving = scalars
-                .iter()
-                .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
-                .copied()
-                .collect::<Vec<_>>();
-            let display = scalars
-                .iter()
-                .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
-                .copied()
-                .collect::<Vec<_>>();
-            let offset = scalars[0].offset;
-            FeatureInputRelationInstance {
-                id: format!(
-                    "sldprt:feature-input:relation-instance#{}:{offset}",
-                    lane.id
-                        .rsplit_once('#')
-                        .map_or(lane.id.as_str(), |(_, key)| key)
-                ),
-                parent: lane.id.clone(),
-                ordinal: ordinal as u32,
-                offset,
-                family,
-                class_ref: class_by_family[&family].to_string(),
-                feature_ref,
-                scalar_refs: scalars.iter().map(|scalar| scalar.id.clone()).collect(),
-                parameter_scalar_ref: (driving.len() == 1).then(|| driving[0].id.clone()),
-                display_scalar_ref: (display.len() == 1).then(|| display[0].id.clone()),
-                operands,
-            }
-        })
+        .map(
+            |(ordinal, (feature_ref, family, class_ref, operands, scalars))| {
+                let driving = scalars
+                    .iter()
+                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let display = scalars
+                    .iter()
+                    .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let offset = scalars[0].offset;
+                FeatureInputRelationInstance {
+                    id: format!(
+                        "sldprt:feature-input:relation-instance#{}:{offset}",
+                        lane.id
+                            .rsplit_once('#')
+                            .map_or(lane.id.as_str(), |(_, key)| key)
+                    ),
+                    parent: lane.id.clone(),
+                    ordinal: ordinal as u32,
+                    offset,
+                    family,
+                    class_ref,
+                    feature_ref,
+                    scalar_refs: scalars.iter().map(|scalar| scalar.id.clone()).collect(),
+                    parameter_scalar_ref: (driving.len() == 1).then(|| driving[0].id.clone()),
+                    display_scalar_ref: (display.len() == 1).then(|| display[0].id.clone()),
+                    operands,
+                }
+            },
+        )
         .collect()
+}
+
+fn relation_family(name: &str) -> Option<FeatureInputRelationFamily> {
+    match name {
+        "sgLLDist" => Some(FeatureInputRelationFamily::LineLineDistance),
+        "sgPntPntDist" => Some(FeatureInputRelationFamily::PointPointDistance),
+        "sgPntLineDist" => Some(FeatureInputRelationFamily::PointLineDistance),
+        "sgPntPntHorDist" => Some(FeatureInputRelationFamily::PointPointHorizontalDistance),
+        "sgPntPntVertDist" => Some(FeatureInputRelationFamily::PointPointVerticalDistance),
+        "sgAnglDim" => Some(FeatureInputRelationFamily::Angle),
+        _ => None,
+    }
+}
+
+fn relation_signature(
+    family: FeatureInputRelationFamily,
+    first: FeatureInputOperandKind,
+    second: FeatureInputOperandKind,
+) -> bool {
+    use FeatureInputOperandKind::{Native, D6, E1};
+    use FeatureInputRelationFamily::{
+        Angle, LineLineDistance, PointLineDistance, PointPointDistance,
+        PointPointHorizontalDistance, PointPointVerticalDistance,
+    };
+    match family {
+        PointPointDistance => {
+            (first == D6 && second == D6)
+                || (first == Native(0x837b) && second == Native(0x837b))
+                || (first == Native(0xbc7c) && second == Native(0xbc7c))
+        }
+        LineLineDistance => {
+            (first == E1 && second == E1)
+                || (first == Native(0x8386) && second == Native(0x8386))
+                || (first == Native(0xbc87) && second == Native(0xbc87))
+        }
+        PointLineDistance => {
+            (first == D6 && second == E1)
+                || (first == Native(0x837b) && second == Native(0x8386))
+                || (first == Native(0xbc7c) && second == Native(0xbc87))
+        }
+        PointPointHorizontalDistance | PointPointVerticalDistance => {
+            first == Native(0x8dcb) && second == Native(0x8dcb)
+        }
+        Angle => first == Native(0x8dda) && second == Native(0x8dda),
+    }
 }
 
 fn scalar_role(payload: &[u8], name_offset: usize) -> FeatureInputScalarRole {
@@ -796,6 +839,10 @@ pub(crate) fn project_relation_bindings(
             let native_kind = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
                 FeatureInputRelationFamily::PointPointDistance => "sgPntPntDist",
+                FeatureInputRelationFamily::PointLineDistance => "sgPntLineDist",
+                FeatureInputRelationFamily::PointPointHorizontalDistance => "sgPntPntHorDist",
+                FeatureInputRelationFamily::PointPointVerticalDistance => "sgPntPntVertDist",
+                FeatureInputRelationFamily::Angle => "sgAnglDim",
             };
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
@@ -811,17 +858,24 @@ pub(crate) fn project_relation_bindings(
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
-                            native_kind: match operand.kind {
-                                FeatureInputOperandKind::D6 => "d6",
-                                FeatureInputOperandKind::E1 => "e1",
-                            }
-                            .into(),
+                            native_kind: operand_kind_name(operand.kind),
                             object_index: u32::from(operand.entity_index),
                         })
                         .collect(),
                 },
                 native_ref: Some(relation.id.clone()),
             });
+        }
+    }
+}
+
+fn operand_kind_name(kind: FeatureInputOperandKind) -> String {
+    match kind {
+        FeatureInputOperandKind::D6 => "d6".into(),
+        FeatureInputOperandKind::E1 => "e1".into(),
+        FeatureInputOperandKind::Native(tag) => {
+            let [first, second] = tag.to_le_bytes();
+            format!("{first:02x}{second:02x}")
         }
     }
 }
@@ -905,7 +959,8 @@ fn class_role(name: &str) -> FeatureInputClassRole {
         "moExtrusion_c" | "Fillet_c" | "moOriginProfileFeature_c" | "moProfileFeature_c" => Feature,
         "sgSketch" => Sketch,
         "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" => SketchEntity,
-        "sgLLDist" | "sgPntPntDist" => SketchConstraint,
+        "sgAnglDim" | "sgLLDist" | "sgPntLineDist" | "sgPntPntDist" | "sgPntPntHorDist"
+        | "sgPntPntVertDist" => SketchConstraint,
         "ParallelPlaneDistanceDim_c"
         | "ThreeDRadiusDim_c"
         | "faceRadiusObject_c"

@@ -27,7 +27,7 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 
 ## Design intent
 
-- `ResolvedFeatures` relation families other than point-point and line-line distance, operand-to-profile-locus ownership, and relation expressions are unresolved.
+- `ResolvedFeatures` relation families other than point-point, line-line, point-line, horizontal, and vertical distances and angular relations; operand-to-profile-locus ownership; and relation expressions are unresolved.
 - Sketch marker type codes `4..27` are unresolved.
 - The ownership link from sketch markers to nested feature-input Parasolid profiles is unresolved.
 - Keywords operation families outside the typed neutral feature set are unresolved.
