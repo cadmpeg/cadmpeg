@@ -5811,6 +5811,14 @@ fn generated_source_less_writes_design_object_metastream() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less Design MetaStream encode");
+    f3d_native_mut(&mut source_less).design_objects[0].parent_guid =
+        Some("22222222-3333-4444-5555-666666666666".into());
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("cyclic Design ownership must not be emitted");
+    assert!(error
+        .to_string()
+        .contains("Design object hierarchy contains a cycle"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design MetaStream round trip");
@@ -6062,6 +6070,24 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less Design ownership encode");
+    f3d_native_mut(&mut source_less).design_entity_headers[0].declared_reference_count = Some(3);
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("mismatched sketch reference counts must not be normalized");
+    assert!(error
+        .to_string()
+        .contains("has an inconsistent reference list"));
+    {
+        let mut native = f3d_native_mut(&mut source_less);
+        native.design_entity_headers[0].declared_reference_count = Some(2);
+        native.design_entity_headers[0].object_kind = Some(DesignObjectKind::Body);
+    }
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("cross-stream object kinds must not diverge");
+    assert!(error
+        .to_string()
+        .contains("object kind conflicts with MetaStream ownership"));
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design ownership round trip");

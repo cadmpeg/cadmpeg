@@ -57,6 +57,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         validate_source_less_history_graph(target, native)?;
         validate_source_less_act(native)?;
         validate_source_less_design_bindings(native)?;
+        validate_source_less_design_ownership(native)?;
         validate_source_less_design_links(target, native)?;
     }
     let smbh = encode_planar_triangle_smbh(target)?;
@@ -166,6 +167,92 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
         .into_inner();
     writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
+    let mut objects_by_guid = BTreeMap::new();
+    let mut entity_kinds = BTreeMap::new();
+    for object in &native.design_objects {
+        if objects_by_guid
+            .insert(object.self_guid.as_str(), object)
+            .is_some()
+        {
+            return Err(CodecError::Malformed(format!(
+                "duplicate F3D Design object GUID: {}",
+                object.self_guid
+            )));
+        }
+        for entity_id in &object.entity_ids {
+            if entity_kinds
+                .insert(*entity_id, object.kind)
+                .is_some_and(|before| before != object.kind)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design entity {entity_id} is owned by conflicting object kinds"
+                )));
+            }
+        }
+    }
+    for object in &native.design_objects {
+        if object.parent_guid.as_deref().is_some_and(|parent| {
+            parent == object.self_guid || !objects_by_guid.contains_key(parent)
+        }) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design object {} has a missing or self parent",
+                object.id
+            )));
+        }
+        let mut ancestors = BTreeSet::new();
+        let mut cursor = object;
+        while let Some(parent) = cursor.parent_guid.as_deref() {
+            if !ancestors.insert(parent) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design object hierarchy contains a cycle at {parent}"
+                )));
+            }
+            cursor = objects_by_guid[parent];
+        }
+    }
+    for header in &native.design_entity_headers {
+        let suffix = header
+            .entity_id
+            .rsplit('_')
+            .next()
+            .and_then(|suffix| suffix.parse::<u64>().ok());
+        if suffix != Some(header.entity_suffix) {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design header {} entity id conflicts with suffix {}",
+                header.id, header.entity_suffix
+            )));
+        }
+        let owned_kind = entity_kinds.get(&header.entity_suffix).copied();
+        if header.object_kind != owned_kind {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design header {} object kind conflicts with MetaStream ownership",
+                header.id
+            )));
+        }
+        if header.object_kind == Some(DesignObjectKind::Sketch) {
+            if header.record_reference.is_none()
+                || header.declared_reference_count
+                    != u32::try_from(header.reference_indices.len()).ok()
+            {
+                return Err(CodecError::Malformed(format!(
+                    "F3D Design sketch header {} has an inconsistent reference list",
+                    header.id
+                )));
+            }
+        } else if header.record_reference.is_some()
+            || header.declared_reference_count.is_some()
+            || !header.reference_indices.is_empty()
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D non-sketch Design header {} carries discarded sketch references",
+                header.id
+            )));
+        }
+    }
     Ok(())
 }
 
