@@ -3,6 +3,8 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::features::{DesignConfiguration, DesignParameter};
+use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
 use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
@@ -145,6 +147,94 @@ pub(super) fn check_native_links(
                     message: format!("native_ref `{target}` does not resolve"),
                     entity: Some(feature.id.0.clone()),
                 });
+            }
+        }
+        if let crate::features::FeatureDefinition::HelixNativeAxis {
+            axis_native_ref: target,
+            ..
+        } = &feature.definition
+        {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("helix axis native_ref `{target}` does not resolve"),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+        }
+    }
+    for parameter in &ir.model.parameters {
+        if let Some(target) = &parameter.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(parameter.id.0.clone()),
+                });
+            }
+        }
+        if let Some(semantic) = &parameter.pmi {
+            if !native_ids.contains(semantic.native_ref.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("PMI native_ref `{}` does not resolve", semantic.native_ref),
+                    entity: Some(parameter.id.0.clone()),
+                });
+            }
+        }
+    }
+    for configuration in &ir.model.configurations {
+        if let Some(target) = &configuration.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
+    }
+    for sketch in &ir.model.sketches {
+        if let Some(target) = &sketch.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(sketch.id.0.clone()),
+                });
+            }
+        }
+    }
+    for constraint in &ir.model.sketch_constraints {
+        if let Some(target) = &constraint.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
+        if let crate::sketches::SketchConstraintDefinition::Native { operands, .. } =
+            &constraint.definition
+        {
+            for operand in operands {
+                if let Some(target) = &operand.native_ref {
+                    if !native_ids.contains(target.as_str()) {
+                        findings.push(Finding {
+                            check: Check::NativeLinks,
+                            severity: Severity::Error,
+                            message: format!("operand native_ref `{target}` does not resolve"),
+                            entity: Some(constraint.id.0.clone()),
+                        });
+                    }
+                }
             }
         }
     }

@@ -127,6 +127,8 @@ pub struct Block {
     pub ps_stream: Option<Vec<u8>>,
     /// Every Parasolid stream carried by this block.
     pub ps_streams: Vec<Vec<u8>>,
+    /// Outer-payload offset of each entry in `ps_streams`.
+    pub ps_stream_offsets: Vec<usize>,
 }
 
 /// One tail-directory entry naming a section.
@@ -249,6 +251,7 @@ struct RawBlock {
     payload: Vec<u8>,
     ps_stream: Option<Vec<u8>>,
     ps_streams: Vec<Vec<u8>>,
+    ps_stream_offsets: Vec<usize>,
 }
 
 impl RawBlock {
@@ -263,6 +266,7 @@ impl RawBlock {
             payload: self.payload,
             ps_stream: self.ps_stream,
             ps_streams: self.ps_streams,
+            ps_stream_offsets: self.ps_stream_offsets,
         }
     }
 }
@@ -298,7 +302,12 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
     // A Parasolid block is one from which a `PS\0\0` stream can be extracted (in
     // plain, wrapped, or nested form); otherwise fall back to a byte-signature
     // family label.
-    let ps_streams = crate::parasolid::extract_streams(&inflated);
+    let located_streams = crate::parasolid::extract_streams_with_offsets(&inflated);
+    let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
+    let ps_streams = located_streams
+        .into_iter()
+        .map(|(_, stream)| stream)
+        .collect::<Vec<_>>();
     let ps_stream = ps_streams.first().cloned();
     let family = if ps_streams.is_empty() {
         payload_family(&inflated)
@@ -317,6 +326,7 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
         payload: inflated,
         ps_stream,
         ps_streams,
+        ps_stream_offsets,
     })
 }
 
@@ -491,6 +501,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 pub fn select_active_parasolid(
     scan: &ContainerScan,
 ) -> Option<(&Block, crate::parasolid::StreamHeader)> {
+    let active_configuration = active_configuration_index(scan);
     let mut best: Option<(i64, &Block, crate::parasolid::StreamHeader)> = None;
     for b in &scan.blocks {
         let Some(ps) = &b.ps_stream else { continue };
@@ -511,6 +522,9 @@ pub fn select_active_parasolid(
         }
         if name.contains("partition") {
             score += 100_000;
+            if active_configuration.is_some_and(|index| configuration_index(&name) == Some(index)) {
+                score += 1_000_000;
+            }
         } else if name.contains("deltas") || desc.contains("deltas") {
             score += 50_000;
         }
@@ -520,4 +534,66 @@ pub fn select_active_parasolid(
         }
     }
     best.map(|(_, b, sch)| (b, sch))
+}
+
+pub(crate) fn configuration_index(section: &str) -> Option<usize> {
+    let start = section.to_ascii_lowercase().find("config-")? + "config-".len();
+    let digits = section[start..]
+        .chars()
+        .take_while(char::is_ascii_digit)
+        .collect::<String>();
+    (!digits.is_empty()).then(|| digits.parse().ok()).flatten()
+}
+
+pub(crate) fn active_configuration_index(scan: &ContainerScan) -> Option<usize> {
+    let active = scan.blocks.iter().find_map(|block| {
+        let text = std::str::from_utf8(&block.payload).ok()?;
+        let document = roxmltree::Document::parse(text).ok()?;
+        let root = document.root_element();
+        (root.tag_name().name() == "swSolidWorks")
+            .then(|| {
+                root.descendants()
+                    .find(|node| node.has_tag_name("swModel"))?
+                    .attribute("swConfigurationName")
+            })
+            .flatten()
+            .map(str::to_string)
+    })?;
+    let (position, explicit_index, configuration_count) = scan.blocks.iter().find_map(|block| {
+        let text = std::str::from_utf8(&block.payload).ok()?;
+        let document = roxmltree::Document::parse(text).ok()?;
+        let root = document.root_element();
+        root.tag_name().name().contains("Keywords").then_some(())?;
+        let configurations = root
+            .children()
+            .filter(|node| node.has_tag_name("Configuration"))
+            .collect::<Vec<_>>();
+        let position = configurations
+            .iter()
+            .position(|node| node.attribute("Name") == Some(active.as_str()))?;
+        let explicit_index = configurations[position]
+            .attribute("SourceIndex")
+            .and_then(|value| value.parse().ok());
+        Some((position, explicit_index, configurations.len()))
+    })?;
+    if explicit_index.is_some() {
+        return explicit_index;
+    }
+    let mut partitions = scan
+        .blocks
+        .iter()
+        .filter(|block| {
+            block
+                .section
+                .as_deref()
+                .is_some_and(|section| section.to_ascii_lowercase().ends_with("-partition"))
+        })
+        .filter_map(|block| configuration_index(block.section.as_deref()?))
+        .collect::<Vec<_>>();
+    partitions.sort_unstable();
+    partitions.dedup();
+    if partitions.len() == configuration_count {
+        return partitions.get(position).copied();
+    }
+    partitions.contains(&position).then_some(position)
 }

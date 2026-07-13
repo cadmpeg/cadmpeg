@@ -48,11 +48,16 @@
 //! format-level access.
 
 pub mod b5;
+mod b5_transfer;
+pub mod catalog;
 pub mod container;
 pub mod decode;
 pub mod e5;
 pub mod geometry;
+pub mod native;
+pub mod object_graph;
 pub mod topology;
+pub mod value_block;
 pub mod variant;
 pub mod zero_entity;
 

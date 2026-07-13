@@ -2,11 +2,8 @@
 
 ## Body classification
 
-The schema-33103 solid and sheet discriminator is unresolved. `0x1d/flo2` belongs to the face-connectivity web rather than a sheet region. The unresolved sheet discriminator must occur in the body-reachable `0x1b → 0x1f → 0x21 → 0x23` region chain.
+The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the face-connectivity web rather than a sheet region. The discriminator must occur in the body-reachable `0x1b → 0x1f → 0x21 → 0x23` region chain.
 
-- The complete disc17 body-to-face reference mapping for disc14 face families is unresolved.
-- In schema 32001, the slot semantics joining disc17 bodies, disc15/flo2 face-list heads, and face records are not fully defined.
-- In schema 33103, the body-to-face mapping through disc15/flo1 adjacency and the `0x1b → 0x1f → 0x21 → 0x23` hierarchy is not fully defined.
 - The class-root vector following `index_map_offset` and its relation to body, shell, and face-use heads is unresolved.
 
 ## Geometry carriers
@@ -26,4 +23,10 @@ The schema-33103 solid and sheet discriminator is unresolved. `0x1d/flo2` belong
 ## Auxiliary lanes
 
 - The mapping from B-rep face attributes to DisplayLists triangle ranges is unresolved.
-- Per-face color carriers can disagree. The precedence rule for appearance overrides is unresolved.
+
+## Design intent
+
+- `ResolvedFeatures` relation families other than point-point, line-line, point-line, horizontal, and vertical distances and angular relations; operand-to-profile-locus ownership; and relation expressions are unresolved.
+- Sketch marker type codes `4..27` are unresolved.
+- The ownership link from sketch markers to nested feature-input Parasolid profiles is unresolved.
+- Keywords operation families outside the typed neutral feature set are unresolved.

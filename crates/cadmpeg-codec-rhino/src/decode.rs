@@ -1696,6 +1696,7 @@ impl<'a> DecodeContext<'a> {
         let id = mesh.tessellation.id.clone();
         self.ir.model.tessellations.push(Tessellation {
             id: id.clone(),
+            body: None,
             source_object: Some(self.source_association(identity)),
             vertices: mesh.tessellation.vertices,
             triangles: mesh.tessellation.triangles,

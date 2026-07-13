@@ -30,6 +30,9 @@ pub enum NativeConvertError {
     /// JSON conversion failed.
     #[error("native record conversion failed: {0}")]
     Serde(#[from] serde_json::Error),
+    /// A typed child record references no record in its owning arena.
+    #[error("native record has an invalid owner: {0}")]
+    InvalidOwner(String),
 }
 
 /// One source-native record with a stable identity and codec-owned fields.

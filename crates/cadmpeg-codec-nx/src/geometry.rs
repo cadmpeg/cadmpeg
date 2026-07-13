@@ -17,7 +17,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 
 /// Candidate byte shifts applied to a record's fixed payload offsets, covering a
 /// record whose leading pointer slots each consumed the 4-byte large-index form.
-const SHIFTS: [usize; 4] = [0, 2, 4, 6];
+const SHIFTS: [usize; 6] = [0, 2, 4, 6, 8, 10];
 
 /// A decoded analytic surface and its source offset.
 #[derive(Debug, Clone)]
@@ -74,8 +74,10 @@ pub fn points(stream: &[u8]) -> Vec<DecodedPoint> {
         if stream[p] == 0x00 && stream[p + 1] == 0x1d && p >= occupied_end {
             if let Some((xyz, shift)) = SHIFTS.into_iter().find_map(|shift| {
                 read_vec3(stream, p + 16 + shift).and_then(|xyz| {
-                    (xyz.iter().all(|v| v.abs() < 1.0e6) && xyz.iter().any(|v| *v != 0.0))
-                        .then_some((xyz, shift))
+                    (xyz.iter().all(|v| {
+                        v.is_finite() && v.abs() < 1.0e3 && (*v == 0.0 || v.abs() >= 1.0e-100)
+                    }) && xyz.iter().any(|v| *v != 0.0))
+                    .then_some((xyz, shift))
                 })
             }) {
                 out.push(DecodedPoint {

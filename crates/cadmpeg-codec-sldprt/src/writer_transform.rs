@@ -127,13 +127,27 @@ pub fn bake(ir: &mut CadIr) -> Result<(), CodecError> {
         transform_curve(&mut curve.geometry, transform);
     }
     if !ir.model.tessellations.is_empty() {
-        if ir.model.bodies.len() != 1 {
-            return Err(CodecError::NotImplemented(
-                "SLDPRT cannot assign tessellation meshes to transformed bodies".into(),
-            ));
-        }
-        let transform = ir.model.bodies[0].transform.unwrap_or_default();
+        let transforms = ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| (body.id.clone(), body.transform.unwrap_or_default()))
+            .collect::<HashMap<_, _>>();
         for mesh in &mut ir.model.tessellations {
+            let transform = match &mesh.body {
+                Some(body) => transforms.get(body).copied().ok_or_else(|| {
+                    CodecError::Malformed("tessellation references missing body".into())
+                })?,
+                None if transforms.len() == 1 => *transforms
+                    .values()
+                    .next()
+                    .expect("one body transform exists"),
+                None => {
+                    return Err(CodecError::NotImplemented(
+                        "SLDPRT cannot assign an unowned tessellation to transformed bodies".into(),
+                    ))
+                }
+            };
             mesh.vertices
                 .iter_mut()
                 .for_each(|point| *point = transform_point(transform, *point));

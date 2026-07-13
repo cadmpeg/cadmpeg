@@ -43,6 +43,29 @@ impl Region {
 }
 
 impl Container {
+    /// Locate indexed NX object-model sections in catalogued file entries.
+    pub fn indexed_om_sections(&self) -> Vec<(&DirEntry, crate::om::IndexedSection<'_>)> {
+        let mut out = Vec::new();
+        let mut seen = std::collections::BTreeSet::new();
+        for entry in &self.entries {
+            let Some((offset, size)) = entry.file_span else {
+                continue;
+            };
+            let (Ok(offset), Ok(size)) = (usize::try_from(offset), usize::try_from(size)) else {
+                continue;
+            };
+            let Some(payload) = self.data.get(offset..offset.saturating_add(size)) else {
+                continue;
+            };
+            for section in crate::om::indexed_sections(payload) {
+                if seen.insert((offset, section.object_id_table_offset)) {
+                    out.push((entry, section));
+                }
+            }
+        }
+        out
+    }
+
     /// Extract child-part paths from catalogued external-reference payloads.
     pub fn external_reference_paths(&self) -> Vec<String> {
         self.entries

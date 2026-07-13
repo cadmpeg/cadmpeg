@@ -36,7 +36,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Codec                                      | Score          | Extras above score                                                                                    |
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
-| SolidWorks `.sldprt`                       | **L3 tested**  | feature metadata and input lanes, tessellation, native replay + bounded generation                    |
+| SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                       |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
 | Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
@@ -62,7 +62,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 ## At a glance
 
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
-- **SolidWorks `.sldprt` (L3 tested):** connected model reads, feature metadata, native writes, and round trips.
+- **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
 - **Rhino `.3dm` (L3 tested for archive 50/60/70/80):** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
@@ -99,22 +99,22 @@ See [`formats/rhino_3dm.md`](formats/rhino_3dm.md) and [`formats/rhino_3dm-open-
 
 **Role:** reference format for full semantic support
 
-**Ladder: L3 tested.** Feature records contain metadata and input lanes. L4 requires operation semantics.
+**Ladder: L4 tested.** Unknown geometry carriers and topology cases block L5. Incomplete sketch constraints and feature families block L6.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec validates CRC-framed blocks, enumerates cache cells and the tail directory, extracts active Parasolid partitions, and preserves the source image. Coverage across historical schemas remains incomplete.
 - **Geometry: Partial.** Analytic and NURBS surfaces and curves transfer into typed carriers. Offset, swept, blend, intersection, and other unsupported families remain opaque or produce unknown carriers.
-- **Topology: Partial.** The codec builds body, lump, shell, face, loop, coedge, edge, and vertex ownership for supported layouts. Periodic seams, orientation, and several pcurves are derived. Older body layouts, schema-specific sheet classification, deltas tombstones, and some multi-shell cases remain open.
+- **Topology: Partial.** The codec builds body, region, shell, face, loop, coedge, edge, and vertex ownership for supported layouts, including multiple regions and shells per body. Schema-32001 solid and sheet regions and schema-33103 solid regions follow their native region/lump/shell chains. Schema-33103 interleaved faces partition by native adjacency components rather than stream intervals. Disc14 faces partition through native region, shell, face-use, and face geometry rings. Partition face membership excludes superseded deltas geometry; deltas update referenced points and complete missing subordinate records. Periodic seams, orientation, and several pcurves are derived. Older body layouts and schema-33103 sheet classification remain open.
 - **Tessellation: Partial.** Display-list geometry transfers into tessellation arenas and can be regenerated. Stable face-to-triangle ownership remains open.
-- **Design intent: Partial.** Configuration names, feature-history metadata, and typed feature-input lanes transfer. Replayable SolidWorks feature trees and alternate-configuration solids remain open.
+- **Design intent: Partial.** Configurations transfer as neutral records with material and property overrides and retain their configuration-specific solids. Keywords history retains feature element tags, exact containment including id-less nodes, order, names, suppression, dimensions, expressions, and attributes. Unknown operation families retain their kind, dimensions, and non-parameter attributes in the neutral native-operation definition. Reference planes, axes, points, and coordinate systems retain complete model-space placement. Planar profile B-reps nested in feature-input lanes transfer as placed sketches with solved lines, circles, arcs, ellipses, and rational or non-rational NURBS, plus oriented profile loops. Boss and cut extrusions retain blind, symmetric, two-sided, through-all, and native-face termination, explicit direction, draft, profile, and Boolean operation. Explicit-axis revolutions retain one-sided, symmetric, and two-sided angular extents, profile, axis placement, and Boolean operation. Profile sweeps, lofts including boundary boss and cut forms, ribs, bending, twisting, tapering, and stretching flexes, drafts with selected faces and neutral planes, direct body Boolean combines, body deletion and isolation, body scaling about an explicit center, face deletion and replacement, face offset/translation/rotation, spherical and elliptical domes, linear and circular patterns, mirrors, constant and variable-radius fillets with selected edges, dimensional chamfers with selected edges, shells with removed faces, face thickening in either direction or both directions, and simple, counterbore, and countersink holes with explicit face, position, direction, and blind or through-all termination project to neutral operations and write edits through retained native records. Sketch constraints and other operation families remain open.
 - **Product structure: None.** `.sldprt` support covers parts only.
 - **Presentation and metadata: Partial.** Base colors, appearance bindings, previews, SolidWorks XML metadata, units, and selected attributes transfer. Full appearance precedence and all embedded metadata stores remain open.
 
 ### Write and round trip
 
 - **Native write: Partial.** Unchanged IR with a retained source image writes byte for byte. Modified or source-less supported IR regenerates native blocks and a section directory.
-- **Semantic write limits:** one lump per body, one shell per lump, no explicit face names, no stored edge parameter ranges, no periodic NURBS carriers, and bounded appearance data.
+- **Semantic write limits:** at most five regions per body and six shells per solid region; sheet regions require one shell. Explicit face names, stored edge parameter ranges, periodic NURBS carriers, and unbounded appearance data are not encoded.
 - **Round trip: Partial.** Byte-exact unchanged-file and semantic regeneration paths have generated-fixture tests. The public version and feature matrix remains to be built.
 
 See [`formats/sldprt.md`](formats/sldprt.md) and [`formats/sldprt-open-items.md`](formats/sldprt-open-items.md).
@@ -148,15 +148,15 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 
 **Kernel:** Parasolid in an SPLMSSTR container
 
-**Ladder: L2 claimed.** L3 requires topology across the band. Current topology depends on fixed-record framing and resolved references, while partition-to-deltas tombstones block live-face selection.
+**Ladder: L2 claimed.** L3 requires topology across the band. Supported adjacent equal-schema partition/deltas pairs apply exact-key replacements and tombstones; unmatched tombstones and remaining record families still prevent a band-wide topology claim.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec decodes the SPLMSSTR directory and extracts and classifies embedded Parasolid partition, deltas, and related streams.
 - **Geometry: Partial.** Points, analytic surfaces and curves, typed B-spline surfaces and curves, and supported type-133 trimmed curves transfer into IR.
-- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when fixed-record framing and references resolve. The active live-face set remains blocked on unresolved partition-to-deltas tombstones for other files.
+- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when framing and references resolve. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE deltas replacements and tombstones merge in source order for adjacent equal-schema pairs. Unmatched tombstone relations remain unresolved.
 - **Tessellation: None.**
-- **Design intent: None.**
+- **Design intent: Partial.** Typed numeric expressions retain object identity, name, declared millimeter or degree unit, and value. Named arrangements retain ordered configuration names and default state. Feature, sketch, constraint, and history operation semantics remain open.
 - **Product structure: Inspect.** The codec reports external part dependencies. Assembly graph instances, placements, and constraints remain open.
 - **Presentation and metadata: None.**
 
@@ -165,7 +165,7 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 - **Native write: None.**
 - **Round trip: None.**
 
-Open geometry gates include rolling-ball and procedural blends, type-137 surface curves, freeform NURBS-offset blend spines, and other unsupported record families. Open structural gates include tombstone-to-live-face selection, assembly records, and NX object-model serialization.
+Open geometry gates include unresolved procedural-intersection branches, freeform NURBS-offset blend spines, and other unsupported record families. Open structural gates include unmatched tombstones, multi-partition feature composition, assembly records, and NX object-model field serialization.
 
 See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-open-items.md`](formats/siemens_nx-open-items.md).
 

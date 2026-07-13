@@ -16,11 +16,24 @@ use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
-use crate::curve::{self, CurvePrototype, CurveTopologyRow};
+use crate::curve::{
+    self, BoundPrototypePcurve, CurveParameterRecord, CurvePrototype, CurvePrototypeTopology,
+    CurveTopologyRow, Fc05Circle, FcCurveControlPoints, PcurveEndpoints, PrototypePcurveEndpoints,
+};
 use crate::datum::{self, DatumPlane};
+use crate::feature::{
+    self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition,
+    FeatureDirectionByte, FeatureEntity, FeatureEntityReference, FeatureEntityTable,
+    FeatureGeometryTable, FeatureOperation, FeatureReplayAffectedIds, FeatureRow,
+};
 use crate::psb;
-use crate::surface::{self, SurfacePrototype, SurfaceRow};
-use crate::topology::{self, HalfEdge, Loop};
+use crate::surface::{
+    self, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord, SurfacePrototype,
+    SurfacePrototypeRecord, SurfaceRow,
+};
+use crate::topology::{
+    self, FaceComponent, HalfEdge, HalfEdgeVertexIncidence, Loop, TopologicalVertex,
+};
 
 /// The PSB magic: every Creo `.prt` opens with this ASCII framing line.
 pub const MAGIC: &[u8] = b"#UGC:2";
@@ -131,11 +144,33 @@ pub struct ContainerScan {
     /// Typed fixed-prefix surface rows from visible and invisible geometry
     /// sections. Parameter bodies are decoded separately.
     pub surface_rows: Vec<SurfaceRow>,
+    /// Bounded scalar parameter bodies from positional surface rows.
+    pub surface_parameters: Vec<SurfaceParameterRecord>,
+    /// Inherited support frames following positional plane envelopes.
+    pub plane_local_systems: Vec<PlaneLocalSystem>,
+    /// Plane-specific standard and compact positional envelopes.
+    pub plane_envelopes: Vec<PlaneEnvelopeRecord>,
     /// Labeled surface prototypes with fully decoded scalar fields.
     pub surface_prototypes: Vec<SurfacePrototype>,
+    /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
+    pub surface_prototype_records: Vec<SurfacePrototypeRecord>,
     /// Labeled curve prototypes from geometry sections. The curve body and
     /// its analytic interpretation are decoded separately.
     pub curve_prototypes: Vec<CurvePrototype>,
+    /// Bounded analytic parameter bodies from positional curve rows.
+    pub curve_parameters: Vec<CurveParameterRecord>,
+    /// Complete eight-slot pcurve endpoints in both adjacent face frames.
+    pub pcurves: Vec<PcurveEndpoints>,
+    /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
+    pub fc_curve_control_points: Vec<FcCurveControlPoints>,
+    /// FC05 records whose decoded points prove an exact circle.
+    pub fc05_circles: Vec<Fc05Circle>,
+    /// Complete pcurve UV endpoints from labeled curve prototypes.
+    pub prototype_pcurves: Vec<PrototypePcurveEndpoints>,
+    /// Labeled face and next-edge references from curve prototypes.
+    pub curve_prototype_topology: Vec<CurvePrototypeTopology>,
+    /// Prototype pcurve endpoints bound to their adjacent face identifiers.
+    pub bound_prototype_pcurves: Vec<BoundPrototypePcurve>,
     /// Curve rows with an unambiguous canonical four-reference topology
     /// suffix. These rows define the native half-edge adjacency graph.
     pub curve_topology_rows: Vec<CurveTopologyRow>,
@@ -143,10 +178,47 @@ pub struct ContainerScan {
     pub half_edges: Vec<HalfEdge>,
     /// Closed rings of half-edges, one per resolved face loop.
     pub loops: Vec<Loop>,
+    /// Connected components of non-null face references in native curve
+    /// topology. These are not emitted IR shells.
+    pub face_components: Vec<FaceComponent>,
+    /// Topological vertex identities derived from half-edge orbits.
+    pub topological_vertices: Vec<TopologicalVertex>,
+    /// Start/end vertex binding for each decoded half-edge.
+    pub half_edge_vertex_incidence: Vec<HalfEdgeVertexIncidence>,
     /// Model-space standard datum planes decoded from `ActDatums` outlines.
     pub datum_planes: Vec<DatumPlane>,
     /// Feature IDs that own decoded geometry rows.
     pub feature_ids: Vec<u32>,
+    /// Byte-bounded `AllFeatur` rows for known geometry-owning features.
+    pub feature_rows: Vec<FeatureRow>,
+    /// Labeled procedural-choice spans inside decoded feature rows.
+    pub feature_choices: Vec<FeatureChoice>,
+    /// Named fields and typed wrappers inside procedural-choice spans.
+    pub feature_choice_fields: Vec<FeatureChoiceField>,
+    /// Generated-geometry namespace headers owned by decoded features.
+    pub feature_geometry_tables: Vec<FeatureGeometryTable>,
+    /// Complete named affected-ID arrays owned by decoded features.
+    pub feature_affected_ids: Vec<FeatureAffectedIds>,
+    /// Affected-ID runs from unlabeled positional replay feature rows.
+    pub feature_replay_affected_ids: Vec<FeatureReplayAffectedIds>,
+    /// Named direction bytes from feature recipes.
+    pub feature_direction_bytes: Vec<FeatureDirectionByte>,
+    /// Byte-bounded `FeatDefs` records and definition-space parameter frames.
+    pub feature_definitions: Vec<FeatureDefinition>,
+    /// Ordered feature-operation names from `MdlStatus`.
+    pub feature_operations: Vec<FeatureOperation>,
+    /// Named records in the implicit `AllFeatur` walker-order entity table.
+    pub feature_entities: Vec<FeatureEntity>,
+    /// Canonical `f7` references between implicit `AllFeatur` entities.
+    pub feature_entity_references: Vec<FeatureEntityReference>,
+    /// Mixed generated-entity tables from `AllFeatur`, with owner bindings
+    /// retained only where their containing feature row is byte-bounded.
+    pub feature_entity_tables: Vec<FeatureEntityTable>,
+    /// Declared `Geomlists.n_bodies` cardinality, when present.
+    pub declared_body_count: Option<u32>,
+    /// `Geomlists.first_quilt_ptr`: zero denotes the single-quilt form;
+    /// nonzero is a multi-quilt discriminator rather than a body count.
+    pub first_quilt_ptr: Option<u32>,
 }
 
 /// Whether a byte prefix is a Creo PSB `.prt`: the `#UGC:2` ASCII magic is the
@@ -380,6 +452,93 @@ fn surface_prototypes(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototype
     prototypes
 }
 
+fn surface_prototype_records(data: &[u8], sections: &[Section]) -> Vec<SurfacePrototypeRecord> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| matches!(section.name.as_str(), "VisibGeom" | "NovisGeom"))
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            surface::named_prototype_records(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    for parameter in &mut record.parameters {
+                        parameter.offset += section.offset;
+                        parameter.value_offset += section.offset;
+                    }
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn surface_parameters(data: &[u8], sections: &[Section]) -> Vec<SurfaceParameterRecord> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| matches!(section.name.as_str(), "VisibGeom" | "NovisGeom"))
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            surface::parameter_records(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.body_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn plane_local_systems(data: &[u8], sections: &[Section]) -> Vec<PlaneLocalSystem> {
+    let mut systems = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.role == role::GEOMETRY)
+    {
+        let end = (section.offset + section.length).min(data.len());
+        systems.extend(
+            surface::plane_local_systems(&data[section.offset..end])
+                .into_iter()
+                .map(|mut system| {
+                    system.row_offset += section.offset;
+                    system.offset += section.offset;
+                    system
+                }),
+        );
+    }
+    systems.sort_by_key(|system| system.offset);
+    systems
+}
+
+fn plane_envelopes(data: &[u8], sections: &[Section]) -> Vec<PlaneEnvelopeRecord> {
+    let mut envelopes = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.role == role::GEOMETRY)
+    {
+        let end = (section.offset + section.length).min(data.len());
+        envelopes.extend(
+            surface::plane_envelopes(&data[section.offset..end])
+                .into_iter()
+                .map(|mut envelope| {
+                    envelope.row_offset += section.offset;
+                    envelope.offset += section.offset;
+                    envelope
+                }),
+        );
+    }
+    envelopes.sort_by_key(|envelope| envelope.offset);
+    envelopes
+}
+
 fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
     let mut prototypes = Vec::new();
     for section in sections
@@ -398,6 +557,68 @@ fn curve_prototypes(data: &[u8], sections: &[Section]) -> Vec<CurvePrototype> {
     }
     prototypes.sort_by_key(|prototype| prototype.offset);
     prototypes
+}
+
+fn curve_parameters(data: &[u8], sections: &[Section]) -> Vec<CurveParameterRecord> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| matches!(section.name.as_str(), "VisibGeom" | "NovisGeom"))
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            curve::parameter_records(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.body_offset += section.offset;
+                    record.suffix_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn prototype_pcurves(data: &[u8], sections: &[Section]) -> Vec<PrototypePcurveEndpoints> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| matches!(section.name.as_str(), "VisibGeom" | "NovisGeom"))
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            curve::prototype_pcurve_endpoints(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn curve_prototype_topology(data: &[u8], sections: &[Section]) -> Vec<CurvePrototypeTopology> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| matches!(section.name.as_str(), "VisibGeom" | "NovisGeom"))
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            curve::prototype_topology(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
 }
 
 fn curve_topology_rows(data: &[u8], sections: &[Section]) -> Vec<CurveTopologyRow> {
@@ -477,6 +698,194 @@ fn feature_ids(data: &[u8], sections: &[Section], rows: &[SurfaceRow]) -> Vec<u3
     ids.into_iter().collect()
 }
 
+fn feature_entity_tables(
+    data: &[u8],
+    sections: &[Section],
+    feature_ids: &[u32],
+    rows: &[SurfaceRow],
+) -> Vec<FeatureEntityTable> {
+    let feature_ids = feature_ids.iter().copied().collect();
+    let surface_ids = rows.iter().map(|row| row.id).collect();
+    let mut tables = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "AllFeatur")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        tables.extend(
+            feature::entity_tables(&data[section.offset..end], &feature_ids, &surface_ids)
+                .into_iter()
+                .map(|mut table| {
+                    table.offset += section.offset;
+                    table
+                }),
+        );
+    }
+    tables.sort_by_key(|table| table.offset);
+    tables
+}
+
+fn feature_rows(data: &[u8], sections: &[Section], feature_ids: &[u32]) -> Vec<FeatureRow> {
+    let feature_ids = feature_ids.iter().copied().collect();
+    let mut rows = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "AllFeatur")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        rows.extend(
+            feature::rows(&data[section.offset..end], &feature_ids)
+                .into_iter()
+                .map(|mut row| {
+                    row.offset += section.offset;
+                    row.body_offset += section.offset;
+                    row
+                }),
+        );
+    }
+    rows.sort_by_key(|row| row.offset);
+    rows
+}
+
+fn feature_entity_graph(
+    data: &[u8],
+    sections: &[Section],
+) -> (Vec<FeatureEntity>, Vec<FeatureEntityReference>) {
+    let Some(section) = sections.iter().find(|section| section.name == "AllFeatur") else {
+        return (Vec::new(), Vec::new());
+    };
+    let end = (section.offset + section.length).min(data.len());
+    let payload_start = find(data, b"\n", section.offset)
+        .map_or(section.offset, |newline| newline + 1)
+        .min(end);
+    let (mut entities, mut references) = feature::entity_graph(&data[payload_start..end]);
+    for entity in &mut entities {
+        entity.offset += payload_start;
+    }
+    for reference in &mut references {
+        reference.offset += payload_start;
+    }
+    (entities, references)
+}
+
+fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
+    let mut definitions = Vec::new();
+    for section in sections.iter().filter(|section| section.name == "FeatDefs") {
+        let end = (section.offset + section.length).min(data.len());
+        definitions.extend(
+            feature::definitions(&data[section.offset..end])
+                .into_iter()
+                .map(|mut definition| {
+                    definition.offset += section.offset;
+                    for frame in &mut definition.parameter_frames {
+                        frame.offset += section.offset;
+                    }
+                    for outline in &mut definition.outlines {
+                        outline.offset += section.offset;
+                    }
+                    if let Some(variables) = &mut definition.variables {
+                        variables.offset += section.offset;
+                        for row in &mut variables.rows {
+                            row.offset += section.offset;
+                        }
+                    }
+                    if let Some(segments) = &mut definition.segments {
+                        segments.offset += section.offset;
+                        for row in &mut segments.rows {
+                            row.offset += section.offset;
+                        }
+                    }
+                    if let Some(entities) = &mut definition.trim_entities {
+                        entities.offset += section.offset;
+                        for row in &mut entities.rows {
+                            row.offset += section.offset;
+                        }
+                    }
+                    if let Some(vertices) = &mut definition.trim_vertices {
+                        vertices.offset += section.offset;
+                        for row in &mut vertices.rows {
+                            row.offset += section.offset;
+                        }
+                    }
+                    if let Some(order) = &mut definition.order_table {
+                        order.offset += section.offset;
+                        for row in &mut order.rows {
+                            row.offset += section.offset;
+                        }
+                    }
+                    if let Some(section_3d) = &mut definition.section_3d {
+                        section_3d.offset += section.offset;
+                    }
+                    if let Some(dimensions) = &mut definition.dimensions {
+                        dimensions.offset += section.offset;
+                        for row in &mut dimensions.rows {
+                            row.offset += section.offset;
+                        }
+                    }
+                    if let Some(relations) = &mut definition.relations {
+                        relations.offset += section.offset;
+                        for row in &mut relations.rows {
+                            row.offset += section.offset;
+                        }
+                    }
+                    if let Some(saved) = &mut definition.saved_section {
+                        saved.offset += section.offset;
+                        for entity in &mut saved.entities {
+                            match entity {
+                                feature::FeatureSavedEntity::Line(line) => {
+                                    line.offset += section.offset;
+                                }
+                                feature::FeatureSavedEntity::Arc(arc) => {
+                                    arc.offset += section.offset;
+                                }
+                                feature::FeatureSavedEntity::Circle(circle) => {
+                                    circle.offset += section.offset;
+                                }
+                                feature::FeatureSavedEntity::Dummy(dummy) => {
+                                    dummy.offset += section.offset;
+                                }
+                            }
+                        }
+                    }
+                    definition
+                }),
+        );
+    }
+    definitions.sort_by_key(|definition| definition.offset);
+    definitions
+}
+
+fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "MdlStatus")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            feature::operations(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {
+    let section = sections
+        .iter()
+        .find(|section| section.name == "Geomlists")?;
+    let end = (section.offset + section.length).min(data.len());
+    let payload = &data[section.offset..end];
+    let value_offset = find(payload, label, 0)? + label.len();
+    let (count, after) = psb::compact_int(payload, value_offset);
+    (after > value_offset).then_some(count)
+}
+
 /// Read the whole file and parse its container framing.
 pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     reader
@@ -508,12 +917,40 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
     let surface_rows = surface_rows(&data, &sections);
+    let surface_parameters = surface_parameters(&data, &sections);
+    let plane_local_systems = plane_local_systems(&data, &sections);
+    let plane_envelopes = plane_envelopes(&data, &sections);
     let surface_prototypes = surface_prototypes(&data, &sections);
+    let surface_prototype_records = surface_prototype_records(&data, &sections);
     let curve_prototypes = curve_prototypes(&data, &sections);
+    let curve_parameters = curve_parameters(&data, &sections);
     let curve_topology_rows = curve_topology_rows(&data, &sections);
+    let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
+    let fc_curve_control_points = curve::fc_control_points(&curve_parameters);
+    let fc05_circles = curve::fc05_circles(&curve_parameters);
+    let prototype_pcurves = prototype_pcurves(&data, &sections);
+    let curve_prototype_topology = curve_prototype_topology(&data, &sections);
+    let bound_prototype_pcurves =
+        curve::bind_prototype_pcurves(&prototype_pcurves, &curve_prototype_topology);
     let (half_edges, loops) = topology::build(&curve_topology_rows);
+    let (topological_vertices, half_edge_vertex_incidence) = topology::vertex_orbits(&half_edges);
+    let face_components = topology::face_components(&curve_topology_rows);
     let datum_planes = datum_planes(&data, &sections);
     let feature_ids = feature_ids(&data, &sections, &surface_rows);
+    let feature_rows = feature_rows(&data, &sections, &feature_ids);
+    let feature_choices = feature::choices(&feature_rows);
+    let feature_choice_fields = feature::choice_fields(&feature_choices);
+    let feature_geometry_tables = feature::geometry_tables(&feature_rows);
+    let feature_affected_ids = feature::affected_ids(&feature_rows);
+    let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
+    let feature_direction_bytes = feature::direction_bytes(&feature_rows);
+    let feature_definitions = feature_definitions(&data, &sections);
+    let feature_operations = feature_operations(&data, &sections);
+    let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
+    let feature_entity_tables =
+        feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
+    let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
+    let first_quilt_ptr = geomlists_value(&data, &sections, b"first_quilt_ptr\0");
 
     ContainerScan {
         data,
@@ -523,13 +960,41 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         census,
         principal_unit,
         surface_rows,
+        surface_parameters,
+        plane_local_systems,
+        plane_envelopes,
         surface_prototypes,
+        surface_prototype_records,
         curve_prototypes,
+        curve_parameters,
+        pcurves,
+        fc_curve_control_points,
+        fc05_circles,
+        prototype_pcurves,
+        curve_prototype_topology,
+        bound_prototype_pcurves,
         curve_topology_rows,
         half_edges,
         loops,
+        face_components,
+        topological_vertices,
+        half_edge_vertex_incidence,
         datum_planes,
         feature_ids,
+        feature_rows,
+        feature_choices,
+        feature_choice_fields,
+        feature_geometry_tables,
+        feature_affected_ids,
+        feature_replay_affected_ids,
+        feature_direction_bytes,
+        feature_definitions,
+        feature_operations,
+        feature_entities,
+        feature_entity_references,
+        feature_entity_tables,
+        declared_body_count,
+        first_quilt_ptr,
     }
 }
 
@@ -594,9 +1059,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 
     notes.push(
-        "container-level enumeration; `decode` performs an honest structural decode only: PSB \
-         geometry is preserved as unknown records with counted loss notes, no geometry is \
-         transferred (per-instance model-space geometry is gated behind undecoded PSB layers)"
+        "container-level enumeration; `decode` preserves PSB geometry sections as unknown records \
+         and transfers only carriers whose model-space placement is complete"
             .to_string(),
     );
 

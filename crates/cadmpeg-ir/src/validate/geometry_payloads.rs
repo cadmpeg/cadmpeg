@@ -28,6 +28,19 @@ pub(super) fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {
 
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
+        if mesh.body.as_ref().is_some_and(|body| {
+            !ir.model
+                .bodies
+                .iter()
+                .any(|candidate| candidate.id == *body)
+        }) {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "references a missing tessellation body".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
         if mesh
             .vertices
             .iter()
@@ -64,6 +77,64 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
                 message: "contains a non-finite tessellation normal".into(),
                 entity: Some(mesh.id.clone()),
             });
+        }
+        if !mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len() {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "tessellation normals do not match vertex count".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if !mesh.strip_lengths.is_empty()
+            && mesh.strip_lengths.iter().try_fold(0usize, |total, length| {
+                usize::try_from(*length)
+                    .ok()
+                    .and_then(|length| total.checked_add(length))
+            }) != Some(mesh.vertices.len())
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "tessellation strips do not match vertex count".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if !mesh.strip_lengths.is_empty() {
+            let mut expected = Vec::new();
+            let mut base = 0u32;
+            let mut valid = true;
+            for length in &mesh.strip_lengths {
+                for index in 0..length.saturating_sub(2) {
+                    let Some(a) = base.checked_add(index) else {
+                        valid = false;
+                        break;
+                    };
+                    let Some(b) = a.checked_add(1) else {
+                        valid = false;
+                        break;
+                    };
+                    let Some(c) = a.checked_add(2) else {
+                        valid = false;
+                        break;
+                    };
+                    let triangle = if index % 2 == 0 { [a, b, c] } else { [a, c, b] };
+                    expected.push(triangle);
+                }
+                let Some(next) = base.checked_add(*length) else {
+                    valid = false;
+                    break;
+                };
+                base = next;
+            }
+            if !valid || expected != mesh.triangles {
+                findings.push(Finding {
+                    check: Check::Tessellation,
+                    severity: Severity::Error,
+                    message: "tessellation triangles do not match strips".into(),
+                    entity: Some(mesh.id.clone()),
+                });
+            }
         }
         if mesh.channels.iter().any(|channel| {
             channel.data.len() != channel.item_size as usize * channel.count as usize

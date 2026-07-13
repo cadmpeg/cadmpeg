@@ -3,6 +3,11 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::features::{
+    ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
+    RadiusSpec,
+};
+use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
 /// Presence sets for every arena, keyed by the string id.
 pub(super) struct IdSets {
@@ -951,6 +956,1267 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralCurveDefinition::Unknown { record: None } => {}
         }
+    }
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let feature_ordinals = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    let parameters = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal)))
+        .collect::<HashMap<_, _>>();
+    let mut parameter_names = HashSet::new();
+    let mut parameter_ordinals = HashSet::new();
+    for parameter in &ir.model.parameters {
+        if !features.contains(parameter.owner.0.as_str()) {
+            ref_error(findings, &parameter.id.0, "feature", &parameter.owner.0);
+        }
+        if !parameter_names.insert((&parameter.owner, parameter.name.as_str())) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!(
+                    "feature {} repeats parameter name `{}`",
+                    parameter.owner, parameter.name
+                ),
+                entity: Some(parameter.id.0.clone()),
+            });
+        }
+        if !parameter_ordinals.insert((&parameter.owner, parameter.ordinal)) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!(
+                    "feature {} repeats parameter ordinal {}",
+                    parameter.owner, parameter.ordinal
+                ),
+                entity: Some(parameter.id.0.clone()),
+            });
+        }
+        let mut dependencies = HashSet::new();
+        for dependency in &parameter.dependencies {
+            if !dependencies.insert(dependency) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!(
+                        "parameter {} repeats dependency `{}`",
+                        parameter.id.0, dependency.0
+                    ),
+                    entity: Some(parameter.id.0.clone()),
+                });
+                continue;
+            }
+            let Some((owner, ordinal)) = parameters.get(dependency) else {
+                ref_error(
+                    findings,
+                    &parameter.id.0,
+                    "parameter dependency",
+                    &dependency.0,
+                );
+                continue;
+            };
+            let precedes = if *owner == &parameter.owner {
+                *ordinal < parameter.ordinal
+            } else {
+                feature_ordinals
+                    .get(*owner)
+                    .zip(feature_ordinals.get(&parameter.owner))
+                    .is_some_and(|(dependency_owner, parameter_owner)| {
+                        dependency_owner < parameter_owner
+                    })
+            };
+            if !precedes {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "parameter dependency `{}` does not precede its consumer",
+                        dependency.0
+                    ),
+                    entity: Some(parameter.id.0.clone()),
+                });
+            }
+        }
+    }
+    let sketches = ir
+        .model
+        .sketches
+        .iter()
+        .map(|sketch| sketch.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let sketch_entities = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| entity.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let sketch_entity_owners = ir
+        .model
+        .sketch_entities
+        .iter()
+        .map(|entity| (entity.id.0.as_str(), entity.sketch.0.as_str()))
+        .collect::<HashMap<_, _>>();
+    let parameters = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0.as_str())
+        .collect::<HashSet<_>>();
+    for sketch in &ir.model.sketches {
+        for entity_use in sketch.profiles.iter().flatten() {
+            if !sketch_entities.contains(entity_use.entity.0.as_str()) {
+                ref_error(
+                    findings,
+                    &sketch.id.0,
+                    "sketch entity",
+                    &entity_use.entity.0,
+                );
+            }
+        }
+    }
+    for entity in &ir.model.sketch_entities {
+        if !sketches.contains(entity.sketch.0.as_str()) {
+            ref_error(findings, &entity.id.0, "sketch", &entity.sketch.0);
+        }
+    }
+    for constraint in &ir.model.sketch_constraints {
+        if !sketches.contains(constraint.sketch.0.as_str()) {
+            ref_error(findings, &constraint.id.0, "sketch", &constraint.sketch.0);
+        }
+        let (entities, parameter) = match &constraint.definition {
+            Definition::Coincident { entities }
+            | Definition::Distance {
+                entities,
+                parameter: _,
+            }
+            | Definition::Native {
+                entities,
+                parameter: None,
+                ..
+            } => (entities.clone(), None),
+            Definition::Native {
+                entities,
+                parameter: Some(parameter),
+                ..
+            } => (entities.clone(), Some(parameter.0.as_str())),
+            Definition::Horizontal { entity }
+            | Definition::Vertical { entity }
+            | Definition::Fixed { entity } => (vec![entity.clone()], None),
+            Definition::Parallel { first, second }
+            | Definition::Perpendicular { first, second }
+            | Definition::Tangent { first, second }
+            | Definition::Equal { first, second }
+            | Definition::Concentric { first, second }
+            | Definition::Collinear { first, second } => {
+                (vec![first.clone(), second.clone()], None)
+            }
+            Definition::CoincidentLoci { loci } => {
+                (loci.iter().map(locus_entity).cloned().collect(), None)
+            }
+            Definition::Midpoint { point, entity } => {
+                (vec![locus_entity(point).clone(), entity.clone()], None)
+            }
+            Definition::Symmetric {
+                first,
+                second,
+                axis,
+            } => (
+                vec![
+                    locus_entity(first).clone(),
+                    locus_entity(second).clone(),
+                    axis.clone(),
+                ],
+                None,
+            ),
+            Definition::DistanceLoci {
+                first,
+                second,
+                parameter,
+            }
+            | Definition::HorizontalDistance {
+                first,
+                second,
+                parameter,
+            }
+            | Definition::VerticalDistance {
+                first,
+                second,
+                parameter,
+            } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                Some(parameter.0.as_str()),
+            ),
+            Definition::Angle {
+                first,
+                second,
+                parameter,
+            } => (
+                vec![first.clone(), second.clone()],
+                Some(parameter.0.as_str()),
+            ),
+            Definition::Radius { entity, parameter }
+            | Definition::Diameter { entity, parameter } => {
+                (vec![entity.clone()], Some(parameter.0.as_str()))
+            }
+        };
+        let parameter = parameter.or(match &constraint.definition {
+            Definition::Distance { parameter, .. } => Some(parameter.0.as_str()),
+            _ => None,
+        });
+        for entity in entities {
+            if !sketch_entities.contains(entity.0.as_str()) {
+                ref_error(findings, &constraint.id.0, "sketch entity", &entity.0);
+            } else if sketch_entity_owners.get(entity.0.as_str()).copied()
+                != Some(constraint.sketch.0.as_str())
+            {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("sketch entity `{}` belongs to a different sketch", entity.0),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
+        if let Some(parameter) = parameter {
+            if !parameters.contains(parameter) {
+                ref_error(findings, &constraint.id.0, "parameter", parameter);
+            }
+        }
+    }
+    check_feature_sketch_references(ir, &sketches, findings);
+    check_feature_references(ir, ids, findings);
+}
+
+fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
+    use crate::features::{
+        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef,
+        ProfileRef, ScaleCenter,
+    };
+
+    let mut configuration_ordinals = HashSet::new();
+    let mut configuration_source_indices = HashSet::new();
+    let mut active_configurations = 0;
+    for configuration in &ir.model.configurations {
+        active_configurations += usize::from(configuration.active);
+        if !configuration_ordinals.insert(configuration.ordinal) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!(
+                    "design repeats configuration ordinal {}",
+                    configuration.ordinal
+                ),
+                entity: Some(configuration.id.0.clone()),
+            });
+        }
+        if let Some(source_index) = configuration.source_index {
+            if !configuration_source_indices.insert(source_index) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!("design repeats configuration source index {source_index}"),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
+        let mut seen = HashSet::new();
+        for body in &configuration.bodies {
+            if !ids.bodies.contains(&body.0) {
+                ref_error(findings, &configuration.id.0, "configuration body", &body.0);
+            }
+            if !seen.insert(body) {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: format!("configuration repeats body `{}`", body.0),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
+    }
+    if active_configurations > 1 {
+        findings.push(Finding {
+            check: Check::Counts,
+            severity: Severity::Error,
+            message: "design has multiple active configurations".into(),
+            entity: None,
+        });
+    }
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
+    let parameters_by_id = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, &parameter.owner))
+        .collect::<HashMap<_, _>>();
+    let mut feature_ordinals = HashSet::new();
+    for feature in &ir.model.features {
+        if !feature_ordinals.insert(feature.ordinal) {
+            findings.push(Finding {
+                check: Check::Counts,
+                severity: Severity::Error,
+                message: format!("design repeats feature ordinal {}", feature.ordinal),
+                entity: Some(feature.id.0.clone()),
+            });
+        }
+        if let Some(parent) = &feature.parent {
+            match features.get(parent.0.as_str()) {
+                None => ref_error(findings, &feature.id.0, "parent feature", &parent.0),
+                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("parent feature `{}` does not precede its child", parent.0),
+                    entity: Some(feature.id.0.clone()),
+                }),
+                Some(_) => {}
+            }
+        }
+        let mut dependencies = HashSet::new();
+        for dependency in &feature.dependencies {
+            if !dependencies.insert(dependency) {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("feature repeats dependency `{}`", dependency.0),
+                    entity: Some(feature.id.0.clone()),
+                });
+                continue;
+            }
+            match features.get(dependency.0.as_str()) {
+                None => ref_error(findings, &feature.id.0, "dependency feature", &dependency.0),
+                Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!(
+                        "dependency feature `{}` does not precede its consumer",
+                        dependency.0
+                    ),
+                    entity: Some(feature.id.0.clone()),
+                }),
+                Some(_) => {}
+            }
+        }
+        let mut content_parameters = HashSet::new();
+        let mut content_features = HashSet::new();
+        for item in &feature.source_content {
+            match item {
+                FeatureSourceContent::Text(_) => {}
+                FeatureSourceContent::Parameter(parameter) => {
+                    if !content_parameters.insert(parameter) {
+                        findings.push(Finding {
+                            check: Check::Counts,
+                            severity: Severity::Error,
+                            message: format!("feature repeats content parameter `{}`", parameter.0),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                    match parameters_by_id.get(parameter) {
+                        None => {
+                            ref_error(findings, &feature.id.0, "content parameter", &parameter.0);
+                        }
+                        Some(owner) if *owner != &feature.id => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "content parameter `{}` belongs to another feature",
+                                parameter.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+                FeatureSourceContent::Feature(child) => {
+                    if !content_features.insert(child) {
+                        findings.push(Finding {
+                            check: Check::Counts,
+                            severity: Severity::Error,
+                            message: format!("feature repeats content child `{}`", child.0),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                    match features.get(child.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "content child", &child.0),
+                        Some(ordinal) if *ordinal <= feature.ordinal => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "content child `{}` does not follow its parent",
+                                child.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+            }
+        }
+        for body in &feature.outputs {
+            if !ids.bodies.contains(&body.0) {
+                ref_error(findings, &feature.id.0, "output body", &body.0);
+            }
+        }
+
+        let mut profiles = Vec::new();
+        let mut paths = Vec::new();
+        let mut extents = Vec::new();
+        let mut edge_selections = Vec::new();
+        let mut face_selections = Vec::new();
+        let mut body_selections = Vec::new();
+        match &feature.definition {
+            FeatureDefinition::Extrude {
+                profile, extent, ..
+            } => {
+                profiles.push(profile);
+                extents.push(extent);
+            }
+            FeatureDefinition::Revolve { construction, .. } => {
+                profiles.extend(&construction.profile);
+                extents.extend(&construction.extent);
+                if construction.axis.as_ref().is_some_and(|axis| {
+                    !axis.origin.x.is_finite()
+                        || !axis.origin.y.is_finite()
+                        || !axis.origin.z.is_finite()
+                        || !valid_feature_direction(axis.direction)
+                }) {
+                    feature_geometry_error(findings, feature, "revolution axis is invalid");
+                }
+            }
+            FeatureDefinition::Sweep {
+                profile,
+                path,
+                twist,
+                scale,
+                ..
+            } => {
+                profiles.extend(profile);
+                paths.extend(path);
+                if twist.is_some_and(|value| !value.0.is_finite())
+                    || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
+                {
+                    feature_geometry_error(findings, feature, "sweep magnitude is invalid");
+                }
+            }
+            FeatureDefinition::Loft {
+                profiles: values,
+                guides,
+                ..
+            } => {
+                profiles.extend(values);
+                paths.extend(guides);
+            }
+            FeatureDefinition::Rib { construction, .. } => {
+                profiles.extend(&construction.profile);
+                if construction
+                    .direction
+                    .is_some_and(|value| !valid_feature_direction(value))
+                    || construction
+                        .thickness
+                        .is_some_and(|value| !positive_feature_length(value))
+                    || matches!(construction.draft, crate::features::RibDraft::Angle(value) if !value.0.is_finite())
+                {
+                    feature_geometry_error(findings, feature, "rib geometry is invalid");
+                }
+            }
+            FeatureDefinition::Fillet { edges, radius } => {
+                edge_selections.push(edges);
+                let valid = match radius {
+                    RadiusSpec::Unresolved { .. } => true,
+                    RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+                    RadiusSpec::Variable { points } => {
+                        points.len() >= 2
+                            && points.iter().all(|point| {
+                                point.parameter.is_finite()
+                                    && (0.0..=1.0).contains(&point.parameter)
+                                    && positive_feature_length(point.radius)
+                            })
+                            && points
+                                .windows(2)
+                                .all(|pair| pair[0].parameter < pair[1].parameter)
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "fillet radius is invalid");
+                }
+            }
+            FeatureDefinition::Chamfer { edges, spec } => {
+                edge_selections.push(edges);
+                let valid = match spec {
+                    ChamferSpec::Unresolved { .. } => true,
+                    ChamferSpec::Distance { distance } => positive_feature_length(*distance),
+                    ChamferSpec::TwoDistances { first, second } => {
+                        positive_feature_length(*first) && positive_feature_length(*second)
+                    }
+                    ChamferSpec::DistanceAngle { distance, angle } => {
+                        positive_feature_length(*distance)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "chamfer dimensions are invalid");
+                }
+            }
+            FeatureDefinition::Shell {
+                removed_faces,
+                thickness,
+                ..
+            } => {
+                face_selections.push(removed_faces);
+                if thickness.is_some_and(|value| !positive_feature_length(value)) {
+                    feature_geometry_error(findings, feature, "shell thickness is invalid");
+                }
+            }
+            FeatureDefinition::Thicken {
+                faces, thickness, ..
+            } => {
+                face_selections.push(faces);
+                if thickness.is_some_and(|value| !positive_feature_length(value)) {
+                    feature_geometry_error(findings, feature, "thicken thickness is invalid");
+                }
+            }
+            FeatureDefinition::OffsetSurface { faces, distance } => {
+                face_selections.push(faces);
+                if !distance.0.is_finite() {
+                    feature_geometry_error(findings, feature, "surface offset is invalid");
+                }
+            }
+            FeatureDefinition::KnitSurface {
+                faces,
+                gap_tolerance,
+                ..
+            } => {
+                face_selections.push(faces);
+                if gap_tolerance.is_some_and(|value| !value.0.is_finite() || value.0 < 0.0) {
+                    feature_geometry_error(findings, feature, "knit tolerance is invalid");
+                }
+            }
+            FeatureDefinition::FilledSurface {
+                boundary,
+                support_faces,
+                ..
+            } => {
+                edge_selections.push(boundary);
+                face_selections.push(support_faces);
+            }
+            FeatureDefinition::TrimSurface { faces, tool, .. } => {
+                face_selections.push(faces);
+                paths.push(tool);
+            }
+            FeatureDefinition::ExtendSurface {
+                faces, distance, ..
+            } => {
+                face_selections.push(faces);
+                if !positive_feature_length(*distance) {
+                    feature_geometry_error(findings, feature, "surface extension is invalid");
+                }
+            }
+            FeatureDefinition::RuledSurface {
+                edges,
+                support_faces,
+                mode,
+            } => {
+                edge_selections.push(edges);
+                face_selections.push(support_faces);
+                let valid = match mode {
+                    crate::features::RuledSurfaceMode::Normal { distance }
+                    | crate::features::RuledSurfaceMode::Tangent { distance } => {
+                        positive_feature_length(*distance)
+                    }
+                    crate::features::RuledSurfaceMode::Direction {
+                        direction,
+                        distance,
+                    } => valid_feature_direction(*direction) && positive_feature_length(*distance),
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "ruled surface is invalid");
+                }
+            }
+            FeatureDefinition::Draft {
+                faces,
+                neutral_plane,
+                pull_direction,
+                angle,
+                ..
+            } => {
+                face_selections.push(faces);
+                face_selections.push(neutral_plane);
+                if !valid_feature_direction(*pull_direction) || !angle.0.is_finite() {
+                    feature_geometry_error(findings, feature, "draft geometry is invalid");
+                }
+            }
+            FeatureDefinition::DeleteFace { faces, .. } => {
+                face_selections.push(faces);
+            }
+            FeatureDefinition::ReplaceFace {
+                targets,
+                replacements,
+            } => {
+                face_selections.push(targets);
+                face_selections.push(replacements);
+            }
+            FeatureDefinition::MoveFace { faces, motion } => {
+                face_selections.push(faces);
+                let valid = match motion {
+                    FaceMotion::Offset { distance } => distance.0.is_finite(),
+                    FaceMotion::Translate {
+                        direction,
+                        distance,
+                    } => valid_feature_direction(*direction) && distance.0.is_finite(),
+                    FaceMotion::Rotate {
+                        axis_origin,
+                        axis_dir,
+                        angle,
+                    } => {
+                        axis_origin.x.is_finite()
+                            && axis_origin.y.is_finite()
+                            && axis_origin.z.is_finite()
+                            && valid_feature_direction(*axis_dir)
+                            && angle.0.is_finite()
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "face motion is invalid");
+                }
+            }
+            FeatureDefinition::MoveBody {
+                bodies,
+                translation,
+                rotation,
+                ..
+            } => {
+                body_selections.push(bodies);
+                let valid_translation = [translation.x, translation.y, translation.z]
+                    .into_iter()
+                    .all(f64::is_finite);
+                let valid_rotation = rotation.as_ref().is_none_or(|rotation| {
+                    [
+                        rotation.origin.x,
+                        rotation.origin.y,
+                        rotation.origin.z,
+                        rotation.angle.0,
+                    ]
+                    .into_iter()
+                    .all(f64::is_finite)
+                        && valid_feature_direction(rotation.direction)
+                });
+                if !valid_translation || !valid_rotation {
+                    feature_geometry_error(findings, feature, "body motion is invalid");
+                }
+            }
+            FeatureDefinition::Dome { faces, height, .. } => {
+                face_selections.push(faces);
+                if height.is_some_and(|value| !positive_feature_length(value)) {
+                    feature_geometry_error(findings, feature, "dome height is invalid");
+                }
+            }
+            FeatureDefinition::Flex { axis, mode } => {
+                if axis.is_some_and(|axis| !axis.norm().is_finite() || axis.norm() <= 0.0) {
+                    findings.push(Finding {
+                        check: Check::GeometricConsistency,
+                        severity: Severity::Error,
+                        message: "flex axis is degenerate".into(),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+                let valid = match mode {
+                    FlexMode::Unresolved {
+                        angle,
+                        factor,
+                        distance,
+                        ..
+                    } => {
+                        angle.is_none_or(|value| value.0.is_finite())
+                            && factor.is_none_or(|value| value.is_finite() && value > 0.0)
+                            && distance.is_none_or(|value| value.0.is_finite())
+                    }
+                    FlexMode::Bending { angle } | FlexMode::Twisting { angle } => {
+                        angle.0.is_finite()
+                    }
+                    FlexMode::Tapering { factor } => factor.is_finite() && *factor > 0.0,
+                    FlexMode::Stretching { distance } => distance.0.is_finite(),
+                };
+                if !valid {
+                    findings.push(Finding {
+                        check: Check::GeometricConsistency,
+                        severity: Severity::Error,
+                        message: "flex magnitude is invalid".into(),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+            }
+            FeatureDefinition::Scale {
+                bodies,
+                center,
+                factors,
+            } => {
+                body_selections.push(bodies);
+                let center_valid = center.as_ref().is_none_or(|center| match center {
+                    ScaleCenter::Point(point) => {
+                        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                    }
+                    ScaleCenter::Native(reference) => !reference.is_empty(),
+                    ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
+                });
+                if !center_valid
+                    || ![factors.uniform, factors.x, factors.y, factors.z]
+                        .into_iter()
+                        .flatten()
+                        .all(|factor| factor.is_finite() && factor != 0.0)
+                {
+                    feature_geometry_error(findings, feature, "scale transform is invalid");
+                }
+            }
+            FeatureDefinition::Combine { target, tools, .. } => {
+                body_selections.push(target);
+                body_selections.push(tools);
+            }
+            FeatureDefinition::CutWithSurface { targets, tools, .. } => {
+                body_selections.push(targets);
+                face_selections.push(tools);
+            }
+            FeatureDefinition::DeleteBody { bodies, .. } => {
+                body_selections.push(bodies);
+            }
+            FeatureDefinition::Hole {
+                face,
+                kind,
+                diameter,
+                extent,
+                direction,
+                position,
+            } => {
+                face_selections.extend(face);
+                extents.extend(extent);
+                let kind_valid = match kind {
+                    HoleKind::Unresolved {
+                        counterbore_diameter,
+                        counterbore_depth,
+                        countersink_diameter,
+                        countersink_angle,
+                        ..
+                    } => {
+                        counterbore_diameter.is_none_or(positive_feature_length)
+                            && counterbore_depth.is_none_or(positive_feature_length)
+                            && countersink_diameter.is_none_or(positive_feature_length)
+                            && countersink_angle.is_none_or(|value| {
+                                value.0.is_finite()
+                                    && value.0 > 0.0
+                                    && value.0 < std::f64::consts::PI
+                            })
+                    }
+                    HoleKind::Simple => true,
+                    HoleKind::Counterbore { diameter, depth } => {
+                        positive_feature_length(*diameter) && positive_feature_length(*depth)
+                    }
+                    HoleKind::Countersink { diameter, angle } => {
+                        positive_feature_length(*diameter)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && angle.0 < std::f64::consts::PI
+                    }
+                };
+                let position_valid = position.is_none_or(|point| {
+                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                });
+                if diameter.is_some_and(|value| !positive_feature_length(value))
+                    || !kind_valid
+                    || !position_valid
+                    || direction.is_some_and(|value| !valid_feature_direction(value))
+                {
+                    feature_geometry_error(findings, feature, "hole geometry is invalid");
+                }
+            }
+            FeatureDefinition::Pattern { seeds, pattern } => {
+                if let PatternKind::CurveDriven {
+                    path: Some(path), ..
+                } = pattern
+                {
+                    paths.push(path);
+                }
+                for seed in seeds {
+                    match features.get(seed.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
+                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "seed feature `{}` does not precede its pattern",
+                                seed.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+                let valid = match pattern {
+                    PatternKind::Unresolved { .. } => true,
+                    PatternKind::Linear {
+                        direction,
+                        spacing,
+                        count,
+                    } => {
+                        direction.is_none_or(valid_feature_direction)
+                            && positive_feature_length(*spacing)
+                            && *count > 0
+                    }
+                    PatternKind::Circular {
+                        axis_origin,
+                        axis_dir,
+                        angle,
+                        count,
+                    } => {
+                        axis_origin.x.is_finite()
+                            && axis_origin.y.is_finite()
+                            && axis_origin.z.is_finite()
+                            && valid_feature_direction(*axis_dir)
+                            && angle.0.is_finite()
+                            && angle.0 > 0.0
+                            && *count > 0
+                    }
+                    PatternKind::CurveDriven { spacing, count, .. } => {
+                        positive_feature_length(*spacing) && *count > 0
+                    }
+                    PatternKind::Mirror {
+                        plane_origin,
+                        plane_normal,
+                    } => {
+                        plane_origin.x.is_finite()
+                            && plane_origin.y.is_finite()
+                            && plane_origin.z.is_finite()
+                            && valid_feature_direction(*plane_normal)
+                    }
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "pattern geometry is invalid");
+                }
+            }
+            FeatureDefinition::Sketch { space, sketch } => {
+                if matches!(space, crate::features::SketchSpace::Spatial) && sketch.is_some() {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "spatial sketch owns planar sketch geometry",
+                    );
+                }
+                if let Some(sketch) = sketch {
+                    if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
+                        ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
+                    }
+                }
+            }
+            FeatureDefinition::DatumCoordinateSystem {
+                origin,
+                x_axis,
+                y_axis,
+                z_axis,
+            } => {
+                let dot = |left: crate::math::Vector3, right: crate::math::Vector3| {
+                    left.x * right.x + left.y * right.y + left.z * right.z
+                };
+                let cross = crate::math::Vector3::new(
+                    x_axis.y * y_axis.z - x_axis.z * y_axis.y,
+                    x_axis.z * y_axis.x - x_axis.x * y_axis.z,
+                    x_axis.x * y_axis.y - x_axis.y * y_axis.x,
+                );
+                let valid = [origin.x, origin.y, origin.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && [x_axis, y_axis, z_axis]
+                        .into_iter()
+                        .all(|axis| (axis.norm() - 1.0).abs() <= 1.0e-9)
+                    && dot(*x_axis, *y_axis).abs() <= 1.0e-9
+                    && dot(*x_axis, *z_axis).abs() <= 1.0e-9
+                    && dot(*y_axis, *z_axis).abs() <= 1.0e-9
+                    && dot(cross, *z_axis) >= 1.0 - 1.0e-9;
+                if !valid {
+                    feature_geometry_error(findings, feature, "coordinate-system frame is invalid");
+                }
+            }
+            FeatureDefinition::EquationCurve {
+                parameter,
+                x_expression,
+                y_expression,
+                z_expression,
+                start,
+                end,
+            } => {
+                if parameter.trim().is_empty()
+                    || x_expression.trim().is_empty()
+                    || y_expression.trim().is_empty()
+                    || z_expression.trim().is_empty()
+                    || !start.is_finite()
+                    || !end.is_finite()
+                    || start >= end
+                {
+                    feature_geometry_error(findings, feature, "equation curve is invalid");
+                }
+            }
+            FeatureDefinition::ProjectedCurve {
+                source,
+                target_faces,
+                direction,
+                ..
+            } => {
+                paths.push(source);
+                face_selections.push(target_faces);
+                if direction.is_some_and(|value| !valid_feature_direction(value)) {
+                    feature_geometry_error(findings, feature, "projection direction is invalid");
+                }
+            }
+            FeatureDefinition::CompositeCurve { segments, .. } => {
+                paths.extend(segments);
+                if segments.is_empty() {
+                    feature_geometry_error(findings, feature, "composite curve is empty");
+                }
+            }
+            FeatureDefinition::Helix {
+                axis_origin,
+                axis_direction,
+                radius,
+                pitch,
+                revolutions,
+                ..
+            } => {
+                let valid = [axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && valid_feature_direction(*axis_direction)
+                    && radius.0.is_finite()
+                    && radius.0 > 0.0
+                    && revolutions.is_finite()
+                    && *revolutions > 0.0;
+                if !valid {
+                    feature_geometry_error(findings, feature, "helix geometry is invalid");
+                }
+            }
+            FeatureDefinition::HelixNativeAxis {
+                axis_native_ref,
+                radius,
+                height,
+                revolutions,
+                start_angle,
+                ..
+            } => {
+                let valid = !axis_native_ref.is_empty()
+                    && radius.0.is_finite()
+                    && radius.0 > 0.0
+                    && height.0.is_finite()
+                    && revolutions.is_finite()
+                    && *revolutions > 0.0
+                    && start_angle.0.is_finite();
+                if !valid {
+                    feature_geometry_error(findings, feature, "native-axis helix is invalid");
+                }
+            }
+            FeatureDefinition::Wrap {
+                profile,
+                face,
+                mode,
+                depth,
+            } => {
+                profiles.push(profile);
+                face_selections.push(face);
+                let valid = match mode {
+                    crate::features::WrapMode::Emboss | crate::features::WrapMode::Deboss => {
+                        depth.is_some_and(positive_feature_length)
+                    }
+                    crate::features::WrapMode::Scribe => depth.is_none(),
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "wrap depth is invalid");
+                }
+            }
+            FeatureDefinition::TreeNode { .. }
+            | FeatureDefinition::DatumPrincipalPlane { .. }
+            | FeatureDefinition::DatumPlane { .. }
+            | FeatureDefinition::DatumAxis { .. }
+            | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::Native { .. } => {}
+            FeatureDefinition::DatumOffsetPlane {
+                reference,
+                distance,
+            } => {
+                if let Some(reference) = reference {
+                    match features.get(reference.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "reference plane", &reference.0),
+                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "reference plane `{}` does not precede its offset plane",
+                                reference.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) => {}
+                    }
+                }
+                if !distance.0.is_finite() {
+                    feature_geometry_error(findings, feature, "datum-plane offset is invalid");
+                }
+            }
+        }
+        for profile in profiles {
+            if let ProfileRef::Faces(faces) = profile {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "profile face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
+            }
+        }
+        for path in paths {
+            match path {
+                PathRef::Edges(edges) => check_ids(
+                    findings,
+                    &feature.id.0,
+                    "path edge",
+                    edges.iter().map(|id| id.0.as_str()),
+                    &ids.edges,
+                ),
+                PathRef::Curves(curves) => check_ids(
+                    findings,
+                    &feature.id.0,
+                    "path curve",
+                    curves.iter().map(|id| id.0.as_str()),
+                    &ids.curves,
+                ),
+                PathRef::Native(_) | PathRef::Sketch(_) => {}
+            }
+        }
+        for extent in extents {
+            let valid_magnitude = match extent {
+                Extent::Blind { length } | Extent::Symmetric { length } => {
+                    length.0.is_finite() && length.0 > 0.0
+                }
+                Extent::TwoSided { first, second } => {
+                    first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
+                }
+                Extent::Angle { angle } | Extent::SymmetricAngle { angle } => {
+                    angle.0.is_finite() && angle.0 > 0.0
+                }
+                Extent::TwoSidedAngles { first, second } => {
+                    first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
+                }
+                Extent::ThroughAll | Extent::ToFace { .. } => true,
+            };
+            if !valid_magnitude {
+                findings.push(Finding {
+                    check: Check::GeometricConsistency,
+                    severity: Severity::Error,
+                    message: "feature extent magnitude is invalid".into(),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+            if let Extent::ToFace {
+                face: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
+            } = extent
+            {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "termination face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
+            }
+        }
+        for selection in edge_selections {
+            if let EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } = selection {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "selected edge",
+                    edges.iter().map(|id| id.0.as_str()),
+                    &ids.edges,
+                );
+            }
+        }
+        for selection in face_selections {
+            if let FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } = selection {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "selected face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
+            }
+        }
+        for selection in body_selections {
+            if let BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } =
+                selection
+            {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "selected body",
+                    bodies.iter().map(|id| id.0.as_str()),
+                    &ids.bodies,
+                );
+            }
+        }
+    }
+}
+
+fn positive_feature_length(value: Length) -> bool {
+    value.0.is_finite() && value.0 > 0.0
+}
+
+fn valid_feature_direction(value: Vector3) -> bool {
+    value.norm().is_finite() && value.norm() > 0.0
+}
+
+fn feature_geometry_error(findings: &mut Vec<Finding>, feature: &Feature, message: &str) {
+    findings.push(Finding {
+        check: Check::GeometricConsistency,
+        severity: Severity::Error,
+        message: message.into(),
+        entity: Some(feature.id.0.clone()),
+    });
+}
+
+fn check_ids<'a>(
+    findings: &mut Vec<Finding>,
+    owner: &str,
+    kind: &str,
+    values: impl Iterator<Item = &'a str>,
+    valid: &HashSet<String>,
+) {
+    for value in values {
+        if !valid.contains(value) {
+            ref_error(findings, owner, kind, value);
+        }
+    }
+}
+
+fn check_feature_sketch_references(
+    ir: &CadIr,
+    sketches: &HashSet<&str>,
+    findings: &mut Vec<Finding>,
+) {
+    use crate::features::{FeatureDefinition, PathRef, ProfileRef};
+
+    let mut owners = HashMap::new();
+    for feature in &ir.model.features {
+        if let FeatureDefinition::Sketch {
+            sketch: Some(sketch),
+            ..
+        } = &feature.definition
+        {
+            if owners
+                .insert(sketch.0.as_str(), (feature.id.0.as_str(), feature.ordinal))
+                .is_some()
+            {
+                findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: format!("sketch `{}` has multiple owning features", sketch.0),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+        }
+    }
+
+    for feature in &ir.model.features {
+        let mut profiles = Vec::new();
+        let mut paths = Vec::new();
+        match &feature.definition {
+            FeatureDefinition::Extrude { profile, .. } => {
+                profiles.push(profile);
+            }
+            FeatureDefinition::Rib { construction, .. } => {
+                profiles.extend(&construction.profile);
+            }
+            FeatureDefinition::Revolve { construction, .. } => {
+                profiles.extend(&construction.profile);
+            }
+            FeatureDefinition::Sweep { profile, path, .. } => {
+                profiles.extend(profile);
+                paths.extend(path);
+            }
+            FeatureDefinition::Loft {
+                profiles: sections,
+                guides,
+                ..
+            } => {
+                profiles.extend(sections);
+                paths.extend(guides);
+            }
+            FeatureDefinition::Pattern {
+                pattern:
+                    PatternKind::CurveDriven {
+                        path: Some(path), ..
+                    },
+                ..
+            } => paths.push(path),
+            _ => {}
+        }
+        for profile in profiles {
+            if let ProfileRef::Sketch(sketch) = profile {
+                if !sketches.contains(sketch.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
+                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+                    if *ordinal >= feature.ordinal {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "sketch owner `{owner}` does not precede its profile consumer"
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                }
+            }
+        }
+        for path in paths {
+            if let PathRef::Sketch(sketch) = path {
+                if !sketches.contains(sketch.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "sketch path", &sketch.0);
+                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+                    if *ordinal >= feature.ordinal {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "sketch owner `{owner}` does not precede its path consumer"
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
+    match locus {
+        SketchLocus::Entity(entity)
+        | SketchLocus::Start(entity)
+        | SketchLocus::End(entity)
+        | SketchLocus::Center(entity) => entity,
     }
 }
 
