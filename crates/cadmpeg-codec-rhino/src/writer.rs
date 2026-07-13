@@ -235,13 +235,14 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             "point arena exceeds native counts or contains non-finite coordinates".into(),
         ));
     }
-    if model
-        .bodies
-        .iter()
-        .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet)
-    {
+    if model.bodies.iter().any(|body| {
+        matches!(
+            body.kind,
+            cadmpeg_ir::topology::BodyKind::Sheet | cadmpeg_ir::topology::BodyKind::Solid
+        )
+    }) {
         planar_sheet_brep_payload(ir)?.ok_or_else(|| {
-            CodecError::NotImplemented("sheet topology is not a writable planar polygon".into())
+            CodecError::NotImplemented("body topology is not a writable planar Brep".into())
         })?;
         return Ok(());
     }
@@ -314,11 +315,11 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     let Some(body) = model
         .bodies
         .iter()
-        .find(|body| body.kind == BodyKind::Sheet)
+        .find(|body| matches!(body.kind, BodyKind::Sheet | BodyKind::Solid))
     else {
         return Ok(None);
     };
-    if model.faces.len() > 1 {
+    if model.faces.len() > 1 || body.kind == BodyKind::Solid {
         return planar_multi_face_brep_payload(ir, body).map(Some);
     }
     let edge_count = model.coedges.len();
@@ -663,7 +664,7 @@ fn planar_multi_face_brep_payload(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
 ) -> Result<Vec<u8>, CodecError> {
-    use cadmpeg_ir::topology::Sense;
+    use cadmpeg_ir::topology::{BodyKind, Sense};
     use std::collections::{BTreeMap, BTreeSet};
 
     let model = &ir.model;
@@ -937,9 +938,9 @@ fn planar_multi_face_brep_payload(
             .filter(|(_, coedge)| coedge.edge == edge.id)
             .map(|(index, _)| index)
             .collect::<Vec<_>>();
-        if uses.is_empty() || uses.len() > 2 {
+        if uses.is_empty() || uses.len() > 2 || body.kind == BodyKind::Solid && uses.len() != 2 {
             return Err(CodecError::NotImplemented(format!(
-                "edge {} does not have one or two sheet incidences",
+                "edge {} incidence is incompatible with the body kind",
                 edge.id.0
             )));
         }
@@ -1003,15 +1004,27 @@ fn planar_multi_face_brep_payload(
 
     for (loop_position, loop_) in model.loops.iter().enumerate() {
         let face_position = *face_index.get(&loop_.face.0).expect("owned face") as usize;
-        let (origin, normal, _, _) = plane_frames[face_position];
+        let (origin, normal, u_axis, v_axis) = plane_frames[face_position];
         let tolerance = model.faces[face_position]
             .tolerance
             .unwrap_or(ir.tolerances.linear)
             .max(1.0e-10);
+        let mut boundary = Vec::with_capacity(loop_.coedges.len());
         for coedge_id in &loop_.coedges {
             let coedge =
                 &model.coedges[*coedge_index.get(&coedge_id.0).expect("owned coedge") as usize];
             let edge = &model.edges[*edge_index.get(&coedge.edge.0).expect("owned edge") as usize];
+            let start = if coedge.sense == Sense::Forward {
+                &edge.start
+            } else {
+                &edge.end
+            };
+            boundary.push(plane_uv(
+                points[*vertex_index.get(&start.0).expect("owned vertex") as usize],
+                origin,
+                u_axis,
+                v_axis,
+            ));
             for vertex_id in [&edge.start, &edge.end] {
                 let point = points[*vertex_index.get(&vertex_id.0).expect("owned vertex") as usize];
                 let distance = (point.x - origin.x) * normal.x
@@ -1024,6 +1037,18 @@ fn planar_multi_face_brep_payload(
                     )));
                 }
             }
+        }
+        let twice_area = boundary
+            .iter()
+            .zip(boundary.iter().cycle().skip(1))
+            .take(boundary.len())
+            .map(|(from, to)| from[0] * to[1] - to[0] * from[1])
+            .sum::<f64>();
+        if !twice_area.is_finite() || twice_area.abs() <= tolerance * tolerance {
+            return Err(CodecError::Malformed(format!(
+                "loop {} has degenerate planar area",
+                loop_.id.0
+            )));
         }
     }
 
@@ -1235,7 +1260,7 @@ fn planar_multi_face_brep_payload(
     }
     payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
     payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
-    payload.extend(0_i32.to_le_bytes());
+    payload.extend(i32::from(body.kind == BodyKind::Solid).to_le_bytes());
     Ok(payload)
 }
 
@@ -2735,6 +2760,68 @@ mod tests {
         }
     }
 
+    #[test]
+    fn planar_tetrahedron_round_trips_as_closed_solid() {
+        let ir = planar_tetrahedron();
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
+            assert_eq!(
+                decoded.ir.model.bodies[0].kind,
+                cadmpeg_ir::topology::BodyKind::Solid,
+                "{version:?}"
+            );
+            assert_eq!(decoded.ir.model.shells.len(), 1, "{version:?}");
+            assert_eq!(decoded.ir.model.faces.len(), 4, "{version:?}");
+            assert_eq!(decoded.ir.model.loops.len(), 4, "{version:?}");
+            assert_eq!(decoded.ir.model.coedges.len(), 12, "{version:?}");
+            assert_eq!(decoded.ir.model.edges.len(), 6, "{version:?}");
+            assert_eq!(decoded.ir.model.vertices.len(), 4, "{version:?}");
+            for (actual, expected) in decoded.ir.model.edges.iter().zip(&ir.model.edges) {
+                assert_eq!(actual.param_range, expected.param_range, "{version:?}");
+                assert_eq!(
+                    decoded
+                        .ir
+                        .model
+                        .coedges
+                        .iter()
+                        .filter(|coedge| coedge.edge == actual.id)
+                        .count(),
+                    2,
+                    "{version:?}"
+                );
+            }
+            assert!(decoded
+                .ir
+                .model
+                .coedges
+                .iter()
+                .all(|coedge| coedge.radial_next != coedge.id));
+            assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
+        }
+    }
+
+    #[test]
+    fn open_planar_solid_is_rejected_before_output() {
+        let mut ir = adjacent_quad_sheet();
+        ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
+        let mut output = vec![0xaa];
+        let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut output)
+            .unwrap_err();
+        assert!(error.to_string().contains("incidence"));
+        assert_eq!(output, [0xaa]);
+    }
+
     fn assert_planar_sheet_round_trip(ir: &CadIr, loop_count: usize, edge_count: usize) {
         for version in [
             RhinoArchiveVersion::V5,
@@ -3131,6 +3218,197 @@ mod tests {
                 sense,
                 pcurve: None,
             });
+        }
+        ir.finalize();
+        ir
+    }
+
+    fn planar_tetrahedron() -> CadIr {
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+        use cadmpeg_ir::ids::*;
+        use cadmpeg_ir::math::Vector3;
+        use cadmpeg_ir::topology::*;
+
+        let mut ir = CadIr::empty(Units::default());
+        let body: BodyId = "cadir:model:body#tetrahedron".into();
+        let region: RegionId = "cadir:model:region#tetrahedron".into();
+        let shell: ShellId = "cadir:model:shell#tetrahedron".into();
+        let positions = [
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, 0.0, 1.0),
+        ];
+        let point_ids = (0..4)
+            .map(|index| PointId(format!("cadir:model:point#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        let vertex_ids = (0..4)
+            .map(|index| VertexId(format!("cadir:model:vertex#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        let edge_ids = (0..6)
+            .map(|index| EdgeId(format!("cadir:model:edge#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        let curve_ids = (0..6)
+            .map(|index| CurveId(format!("cadir:model:curve#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        let face_ids = (0..4)
+            .map(|index| FaceId(format!("cadir:model:face#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        let loop_ids = (0..4)
+            .map(|index| LoopId(format!("cadir:model:loop#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        let surface_ids = (0..4)
+            .map(|index| SurfaceId(format!("cadir:model:surface#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        let coedge_ids = (0..12)
+            .map(|index| CoedgeId(format!("cadir:model:coedge#tetrahedron.{index}")))
+            .collect::<Vec<_>>();
+        ir.model.bodies.push(Body {
+            id: body.clone(),
+            kind: BodyKind::Solid,
+            regions: vec![region.clone()],
+            transform: None,
+            name: Some("tetrahedron".into()),
+            color: None,
+            visible: Some(true),
+        });
+        ir.model.regions.push(Region {
+            id: region.clone(),
+            body,
+            shells: vec![shell.clone()],
+        });
+        ir.model.shells.push(Shell {
+            id: shell.clone(),
+            region,
+            faces: face_ids.clone(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        for index in 0..4 {
+            ir.model.points.push(Point {
+                id: point_ids[index].clone(),
+                position: positions[index],
+            });
+            ir.model.vertices.push(Vertex {
+                id: vertex_ids[index].clone(),
+                point: point_ids[index].clone(),
+                tolerance: None,
+            });
+        }
+        let endpoints = [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)];
+        for (index, (start, end)) in endpoints.into_iter().enumerate() {
+            let delta = Vector3::new(
+                positions[end].x - positions[start].x,
+                positions[end].y - positions[start].y,
+                positions[end].z - positions[start].z,
+            );
+            let length = delta.norm();
+            let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
+            ir.model.curves.push(Curve {
+                id: curve_ids[index].clone(),
+                geometry: CurveGeometry::Line {
+                    origin: Point3::new(
+                        positions[start].x - 2.0 * direction.x,
+                        positions[start].y - 2.0 * direction.y,
+                        positions[start].z - 2.0 * direction.z,
+                    ),
+                    direction,
+                },
+                source_object: None,
+            });
+            ir.model.edges.push(Edge {
+                id: edge_ids[index].clone(),
+                curve: Some(curve_ids[index].clone()),
+                start: vertex_ids[start].clone(),
+                end: vertex_ids[end].clone(),
+                param_range: Some([2.0, 2.0 + length]),
+                tolerance: None,
+            });
+        }
+        let inverse_sqrt_2 = 1.0 / 2.0_f64.sqrt();
+        let inverse_sqrt_3 = 1.0 / 3.0_f64.sqrt();
+        let planes = [
+            (Vector3::new(0.0, 0.0, -1.0), Vector3::new(1.0, 0.0, 0.0)),
+            (Vector3::new(0.0, -1.0, 0.0), Vector3::new(1.0, 0.0, 0.0)),
+            (
+                Vector3::new(inverse_sqrt_3, inverse_sqrt_3, inverse_sqrt_3),
+                Vector3::new(-inverse_sqrt_2, inverse_sqrt_2, 0.0),
+            ),
+            (Vector3::new(-1.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)),
+        ];
+        let face_uses = [
+            [
+                (2, Sense::Reversed),
+                (1, Sense::Reversed),
+                (0, Sense::Reversed),
+            ],
+            [
+                (0, Sense::Forward),
+                (4, Sense::Forward),
+                (3, Sense::Reversed),
+            ],
+            [
+                (1, Sense::Forward),
+                (5, Sense::Forward),
+                (4, Sense::Reversed),
+            ],
+            [
+                (3, Sense::Forward),
+                (5, Sense::Reversed),
+                (2, Sense::Forward),
+            ],
+        ];
+        for face in 0..4 {
+            let start = face * 3;
+            ir.model.faces.push(Face {
+                id: face_ids[face].clone(),
+                shell: shell.clone(),
+                surface: surface_ids[face].clone(),
+                sense: Sense::Forward,
+                loops: vec![loop_ids[face].clone()],
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            ir.model.loops.push(Loop {
+                id: loop_ids[face].clone(),
+                face: face_ids[face].clone(),
+                coedges: coedge_ids[start..start + 3].to_vec(),
+            });
+            ir.model.surfaces.push(Surface {
+                id: surface_ids[face].clone(),
+                geometry: SurfaceGeometry::Plane {
+                    origin: positions[face_uses[face][0].0],
+                    normal: planes[face].0,
+                    u_axis: planes[face].1,
+                },
+                source_object: None,
+            });
+            for offset in 0..3 {
+                let index = start + offset;
+                ir.model.coedges.push(Coedge {
+                    id: coedge_ids[index].clone(),
+                    owner_loop: loop_ids[face].clone(),
+                    edge: edge_ids[face_uses[face][offset].0].clone(),
+                    next: coedge_ids[start + (offset + 1) % 3].clone(),
+                    previous: coedge_ids[start + (offset + 2) % 3].clone(),
+                    radial_next: coedge_ids[index].clone(),
+                    sense: face_uses[face][offset].1,
+                    pcurve: None,
+                });
+            }
+        }
+        for edge in 0..6 {
+            let uses = ir
+                .model
+                .coedges
+                .iter()
+                .enumerate()
+                .filter(|(_, coedge)| coedge.edge == edge_ids[edge])
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            ir.model.coedges[uses[0]].radial_next = coedge_ids[uses[1]].clone();
+            ir.model.coedges[uses[1]].radial_next = coedge_ids[uses[0]].clone();
         }
         ir.finalize();
         ir
