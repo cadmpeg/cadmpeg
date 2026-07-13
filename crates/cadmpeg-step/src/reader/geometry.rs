@@ -5,9 +5,10 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve,
-    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    derive_reference_direction, CompositeCurveSegment, CompositeCurveTransition, Curve,
+    CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{
     CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
@@ -271,6 +272,47 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             continue;
         }
         typed.insert(id);
+    }
+    let mut pending_composites = exchange
+        .records
+        .iter()
+        .filter_map(|(&id, record)| (record.simple_name() == Some("COMPOSITE_CURVE")).then_some(id))
+        .collect::<BTreeSet<_>>();
+    loop {
+        let decoded_curve_ids = ir
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.id.clone())
+            .collect::<BTreeSet<_>>();
+        let ready = pending_composites
+            .iter()
+            .filter_map(|&id| {
+                composite_curve(exchange.records.get(&id)?, exchange, &decoded_curve_ids)
+                    .map(|definition| (id, definition))
+            })
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            break;
+        }
+        for (id, (segments, self_intersect)) in ready {
+            typed.extend(segments.iter().map(|(id, _)| *id));
+            ir.model.curves.push(Curve {
+                id: CurveId(format!("step:data:curve#{id}")),
+                geometry: CurveGeometry::Composite {
+                    segments: segments.into_iter().map(|(_, segment)| segment).collect(),
+                    self_intersect,
+                },
+                source_object: None,
+            });
+            typed.insert(id);
+            pending_composites.remove(&id);
+        }
+    }
+    for id in pending_composites {
+        warnings.push(format!(
+            "COMPOSITE_CURVE #{id} has invalid, cyclic, or unresolved segments"
+        ));
     }
     let curve_geometries = ir
         .model
@@ -801,6 +843,47 @@ fn trim_parameter(value: &Value) -> Option<f64> {
         Value::List(values) => values.iter().find_map(trim_parameter),
         _ => None,
     }
+}
+
+fn composite_curve(
+    record: &RawRecord,
+    exchange: &Exchange,
+    decoded: &BTreeSet<CurveId>,
+) -> Option<(Vec<(u64, CompositeCurveSegment)>, Option<bool>)> {
+    let segments = record
+        .parameter(1)?
+        .list()?
+        .iter()
+        .map(|value| {
+            let id = value.reference()?;
+            let record = exchange.records.get(&id)?;
+            if record.simple_name() != Some("COMPOSITE_CURVE_SEGMENT") {
+                return None;
+            }
+            let transition = match record.parameter(0)?.enumeration()? {
+                "DISCONTINUOUS" => CompositeCurveTransition::Discontinuous,
+                "CONTINUOUS" => CompositeCurveTransition::Continuous,
+                "CONTSAMEGRADIENT" => CompositeCurveTransition::ContSameGradient,
+                "CONTSAMEGRADIENTSAMECURVATURE" => {
+                    CompositeCurveTransition::ContSameGradientSameCurvature
+                }
+                _ => return None,
+            };
+            let curve = CurveId(format!(
+                "step:data:curve#{}",
+                record.parameter(2)?.reference()?
+            ));
+            decoded.contains(&curve).then_some((
+                id,
+                CompositeCurveSegment {
+                    curve,
+                    same_sense: record.parameter(1)?.logical()?,
+                    transition,
+                },
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    (!segments.is_empty()).then_some((segments, record.parameter(2).and_then(logical_value)?))
 }
 
 fn logical_value(value: &Value) -> Option<Option<bool>> {

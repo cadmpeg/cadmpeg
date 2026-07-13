@@ -479,8 +479,39 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
     assert_eq!(result.ir.model.faces.len(), 1);
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
+    let composite = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#34")
+        .expect("outer composite curve");
+    assert!(matches!(
+        &composite.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Composite {
+            segments,
+            self_intersect: Some(false)
+        } if segments.len() == 1
+            && segments[0].curve.as_str() == "step:data:curve#36"
+            && segments[0].same_sense
+            && segments[0].transition
+                == cadmpeg_ir::geometry::CompositeCurveTransition::ContSameGradient
+    ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut encoded = Vec::new();
+    write_step(&result.ir, &mut encoded, &StepWriteOptions::default())
+        .expect("write composite curve graph");
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("decode written composite curve graph");
+    assert!(roundtrip
+        .ir
+        .model
+        .curves
+        .iter()
+        .any(|curve| matches!(curve.geometry, CurveGeometry::Composite { .. })));
 }
 
 #[test]
