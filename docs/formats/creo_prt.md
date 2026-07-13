@@ -317,6 +317,8 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;
 positional replay rows follow the close.
+The `f8` count is the exact total row count; bytes following that many rows do
+not belong to `var_arr`.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
 

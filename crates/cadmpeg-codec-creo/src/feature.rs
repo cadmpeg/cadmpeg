@@ -1111,7 +1111,6 @@ fn variable_table(
     let mut rows = named_row.into_iter().collect::<Vec<_>>();
     let max_rows = usize::try_from(declared_count)
         .unwrap_or(usize::MAX)
-        .saturating_add(64)
         .min(end.saturating_sub(cursor));
     while cursor < end && rows.len() < max_rows {
         if payload[cursor] == 0xe2 {
