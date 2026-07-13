@@ -6,101 +6,14 @@
 //! semantics.
 
 use crate::history_records::{
-    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistoricalModel,
-    AsmHistory, AsmHistoryRecord,
+    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
+    AsmHistoryRecord,
 };
 use cadmpeg_ir::le::int_at;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
-
-pub(crate) fn reconstruct_models(
-    history: &AsmHistory,
-    active_records: &[crate::sab::Record],
-    bytes: &[u8],
-    width: usize,
-) -> Option<Vec<AsmHistoricalModel>> {
-    if !graph_is_coherent(history) {
-        return None;
-    }
-    let mut snapshots = BTreeMap::new();
-    for stored in history
-        .states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter(|record| record.table_index.is_some())
-    {
-        let table_index = usize::try_from(stored.table_index?).ok()?;
-        let mut framed =
-            crate::sab::frame(&stored.raw_bytes, 0, stored.raw_bytes.len(), width).ok()?;
-        if framed.len() != 1 {
-            return None;
-        }
-        let mut record = framed.pop()?;
-        record.index = table_index;
-        record.offset = usize::try_from(stored.byte_offset).ok()?;
-        snapshots.insert(table_index, record);
-    }
-    if snapshots.is_empty() {
-        return Some(Vec::new());
-    }
-
-    let by_node = history
-        .states
-        .iter()
-        .map(|state| (state.node_index, state))
-        .collect::<HashMap<_, _>>();
-    let mut state = history
-        .states
-        .iter()
-        .find(|state| state.previous_ref.is_none())?;
-    let mut table = active_records
-        .iter()
-        .cloned()
-        .map(|record| (record.index, record))
-        .collect::<BTreeMap<_, _>>();
-    let mut models = Vec::new();
-    while let Some(next_index) = state.next_ref {
-        for change in state
-            .bulletin_boards
-            .iter()
-            .flat_map(|board| &board.changes)
-        {
-            match change.kind {
-                AsmEntityChangeKind::Insert => {
-                    table.remove(&usize::try_from(change.new_ref?).ok()?);
-                }
-                AsmEntityChangeKind::Delete => {
-                    let old = usize::try_from(change.old_ref?).ok()?;
-                    if let Some(record) = snapshots.get(&old) {
-                        table.insert(old, record.clone());
-                    }
-                }
-                AsmEntityChangeKind::Update => {
-                    table.remove(&usize::try_from(change.new_ref?).ok()?);
-                    let old = usize::try_from(change.old_ref?).ok()?;
-                    if let Some(record) = snapshots.get(&old) {
-                        table.insert(old, record.clone());
-                    }
-                }
-            }
-        }
-        let next = *by_node.get(&next_index)?;
-        let records = table.values().cloned().collect::<Vec<_>>();
-        let mut model = crate::brep::into_model(crate::brep::decode(&records, bytes, "history"));
-        model.finalize();
-        models.push(AsmHistoricalModel {
-            id: format!("{}:model#{}", history.id, next.node_index),
-            history: history.id.clone(),
-            state_id: next.state_id,
-            node_index: next.node_index,
-            model,
-        });
-        state = next;
-    }
-    Some(models)
-}
 
 pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
     if history.states.is_empty()
@@ -177,93 +90,7 @@ pub(crate) fn graph_is_coherent(history: &AsmHistory) -> bool {
         previous = Some(index);
         current = state.next_ref;
     }
-    visited.len() == history.states.len() && snapshot_indices_are_coherent(history)
-}
-
-pub(crate) fn reconstructed_models_are_coherent(history: &AsmHistory) -> bool {
-    let has_snapshot = history.states.iter().any(|state| {
-        state
-            .records
-            .first()
-            .is_some_and(|record| record.name == "End-of-ASM-History-Section")
-    });
-    if !has_snapshot {
-        return history.historical_models.is_empty();
-    }
-    let Some(mut current) = history
-        .states
-        .iter()
-        .find(|state| state.previous_ref.is_none())
-    else {
-        return false;
-    };
-    let by_node = history
-        .states
-        .iter()
-        .map(|state| (state.node_index, state))
-        .collect::<HashMap<_, _>>();
-    let by_model = history
-        .historical_models
-        .iter()
-        .map(|model| (model.node_index, model))
-        .collect::<HashMap<_, _>>();
-    if by_model.len() != history.states.len().saturating_sub(1) {
-        return false;
-    }
-    while let Some(next_index) = current.next_ref {
-        let (Some(next), Some(model)) = (by_node.get(&next_index), by_model.get(&next_index))
-        else {
-            return false;
-        };
-        if model.history != history.id || model.state_id != next.state_id {
-            return false;
-        }
-        current = next;
-    }
-    true
-}
-
-fn snapshot_indices_are_coherent(history: &AsmHistory) -> bool {
-    let old_refs = history
-        .states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes)
-        .filter_map(|change| change.old_ref)
-        .collect::<Vec<_>>();
-    let Some(snapshot) = history.states.iter().find(|state| {
-        state
-            .records
-            .first()
-            .is_some_and(|record| record.name == "End-of-ASM-History-Section")
-    }) else {
-        return history
-            .states
-            .iter()
-            .flat_map(|state| &state.records)
-            .all(|record| record.table_index.is_none());
-    };
-    if snapshot
-        .records
-        .last()
-        .is_none_or(|record| record.name != "End-of-ASM-data")
-    {
-        return false;
-    }
-    let Some(base) = old_refs.iter().copied().min() else {
-        return false;
-    };
-    let semantic = &snapshot.records[1..snapshot.records.len() - 1];
-    semantic.iter().enumerate().all(|(ordinal, record)| {
-        i64::try_from(ordinal + 1)
-            .ok()
-            .and_then(|index| base.checked_add(index))
-            == record.table_index
-    }) && snapshot.records[0].table_index.is_none()
-        && snapshot.records.last().unwrap().table_index.is_none()
-        && old_refs
-            .iter()
-            .all(|reference| *reference >= base && *reference <= base + semantic.len() as i64)
+    visited.len() == history.states.len()
 }
 
 /// Decode the construction-history tail of an ASM stream: every `delta_state`
@@ -338,7 +165,6 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
     let (stream_size, history_entry_count) = preamble_offset
         .and_then(|offset| decode_preamble(bytes, offset + PREAMBLE.len(), width))
         .map_or((None, None), |(size, high)| (Some(size), Some(high)));
-    assign_snapshot_table_indices(&mut states);
     let offset = history_offset;
     Some(AsmHistory {
         id: history_id,
@@ -346,40 +172,7 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
         stream_size,
         history_entry_count,
         states,
-        historical_models: Vec::new(),
     })
-}
-
-fn assign_snapshot_table_indices(states: &mut [AsmDeltaState]) {
-    let Some(base) = states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes)
-        .filter_map(|change| change.old_ref)
-        .min()
-    else {
-        return;
-    };
-    let Some(snapshot) = states.iter_mut().find(|state| {
-        state
-            .records
-            .first()
-            .is_some_and(|record| record.name == "End-of-ASM-History-Section")
-            && state
-                .records
-                .last()
-                .is_some_and(|record| record.name == "End-of-ASM-data")
-    }) else {
-        return;
-    };
-    let last = snapshot.records.len().saturating_sub(1);
-    for (local_index, record) in snapshot.records.iter_mut().enumerate() {
-        if local_index != 0 && local_index != last {
-            record.table_index = i64::try_from(local_index)
-                .ok()
-                .and_then(|index| base.checked_add(index));
-        }
-    }
 }
 
 fn decode_bulletin_boards(
@@ -473,7 +266,6 @@ fn decode_history_records(
                 parent: state_id.to_string(),
                 index: record.index as u64,
                 byte_offset: record.offset as u64,
-                table_index: None,
                 name: record.name,
                 raw_bytes: bytes[record.offset..record.offset + record.len].to_vec(),
             })
@@ -484,7 +276,6 @@ fn decode_history_records(
                 parent: state_id.to_string(),
                 index: 0,
                 byte_offset: start as u64,
-                table_index: None,
                 name: "opaque_history_payload".into(),
                 raw_bytes: bytes[start..limit].to_vec(),
             }]
@@ -509,73 +300,4 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
     let value = int_at(bytes, *position + 1, width)?;
     *position += 1 + width;
     Some(value)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::assign_snapshot_table_indices;
-    use crate::history_records::{
-        AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistoryRecord,
-    };
-
-    fn record(index: u64, name: &str) -> AsmHistoryRecord {
-        AsmHistoryRecord {
-            id: format!("record-{index}"),
-            parent: "state".into(),
-            index,
-            byte_offset: 0,
-            table_index: None,
-            name: name.into(),
-            raw_bytes: vec![1],
-        }
-    }
-
-    #[test]
-    fn snapshot_local_indices_restore_record_table_identity() {
-        let mut states = vec![AsmDeltaState {
-            id: "state".into(),
-            parent: "history".into(),
-            byte_offset: 0,
-            state_id: 1,
-            version_flag: 1,
-            state_flag: 0,
-            previous_ref: None,
-            next_ref: None,
-            node_index: 0,
-            partner_ref: None,
-            owner_ref: 0,
-            bulletin_boards: vec![AsmBulletinBoard {
-                id: "board".into(),
-                parent: "state".into(),
-                byte_offset: 0,
-                owner_ref: 0,
-                number: 0,
-                changes: vec![AsmEntityChange {
-                    id: "change".into(),
-                    parent: "board".into(),
-                    byte_offset: 0,
-                    kind: AsmEntityChangeKind::Delete,
-                    old_ref: Some(40),
-                    new_ref: None,
-                }],
-            }],
-            records: vec![
-                record(0, "End-of-ASM-History-Section"),
-                record(1, "edge"),
-                record(2, "point"),
-                record(3, "End-of-ASM-data"),
-            ],
-        }];
-
-        assign_snapshot_table_indices(&mut states);
-
-        assert_eq!(
-            states[0]
-                .records
-                .iter()
-                .map(|record| record.table_index)
-                .collect::<Vec<_>>(),
-            vec![None, Some(41), Some(42), None]
-        );
-    }
 }

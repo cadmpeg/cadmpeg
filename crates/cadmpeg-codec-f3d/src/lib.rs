@@ -203,14 +203,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(history.id.clone()),
             });
         }
-        if !history::reconstructed_models_are_coherent(history) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion ASM history does not contain one reconstructed model for every older linked state".into(),
-                entity: Some(history.id.clone()),
-            });
-        }
     }
     findings
 }

@@ -94,10 +94,6 @@ Each `delta_state` body contains a BulletinBoard chain. A bulletin entry stores 
 
 The BulletinBoard chain closes with its tagged-zero terminator. A second `04 0 11` sequence separates the state body from the following record sequence. On a non-tail state, that `0x11` is the next `delta_state` record delimiter and the state owns no intervening entity records. The tail state is followed by `End-of-ASM-History-Section`, the retained history entity snapshot, and `End-of-ASM-data`. These records use the ordinary SAB name-chain and payload grammar. The final `End-of-ASM-data` record ends at the enclosing stream boundary without a trailing `0x11`; EOF terminates only that final history record.
 
-The history entity snapshot retains original `RecordTable` identity. Let `base` be the minimum non-null `old` reference in the history BulletinBoards. `End-of-ASM-History-Section` has local index zero and occupies the reserved `base` slot without defining an entity. Each following snapshot entity at local index `i` has `RecordTable` index `base + i`. `End-of-ASM-data` terminates the snapshot and has no entity index. Old references lie in the inclusive interval from `base` through the last snapshot entity index.
-
-The head state is the active model. Older models are reconstructed by following `next_state` from the head and reversing each current state's BulletinBoard changes against the current `RecordTable`: reverse an insertion by removing `new`, reverse a deletion by restoring `old` from the history entity snapshot, and reverse an update by removing `new` and restoring `old`. Removing an entity already absent from the current state is idempotent because the history snapshot is a global entity pool shared by all retained states. After each reversed state, the resulting table is the model named by the linked next state and uses the ordinary SAB B-rep decoder.
-
 ---
 
 ## 3. ASM binary header

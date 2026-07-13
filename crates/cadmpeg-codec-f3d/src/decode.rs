@@ -374,20 +374,7 @@ fn decode_asm_history(
 ) -> Result<Option<crate::history_records::AsmHistory>, CodecError> {
     let width = active.header.as_ref().map_or(8, |h| usize::from(h.width));
     let bytes = scan.entry_bytes(&active.name)?;
-    let Some(mut history) = crate::history::decode(bytes, &active.name, width) else {
-        return Ok(None);
-    };
-    if let Some(start) = asm_header::record_stream_start(bytes) {
-        let limit = active.delta_state_offset.unwrap_or(bytes.len());
-        if let Ok(records) = sab::frame(bytes, start, limit, width) {
-            if let Some(models) =
-                crate::history::reconstruct_models(&history, &records, bytes, width)
-            {
-                history.historical_models = models;
-            }
-        }
-    }
-    Ok(Some(history))
+    Ok(crate::history::decode(bytes, &active.name, width))
 }
 
 fn extend_related_design_records(

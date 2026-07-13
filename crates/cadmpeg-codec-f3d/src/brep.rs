@@ -4419,28 +4419,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     out
 }
 
-/// Move the format-neutral portion of a decoded B-rep into a standalone model.
-pub(crate) fn into_model(brep: Brep) -> cadmpeg_ir::document::Model {
-    cadmpeg_ir::document::Model {
-        bodies: brep.bodies,
-        regions: brep.regions,
-        shells: brep.shells,
-        faces: brep.faces,
-        loops: brep.loops,
-        coedges: brep.coedges,
-        edges: brep.edges,
-        vertices: brep.vertices,
-        points: brep.points,
-        surfaces: brep.surfaces,
-        curves: brep.curves,
-        pcurves: brep.pcurves,
-        procedural_surfaces: brep.procedural_surfaces,
-        procedural_curves: brep.procedural_curves,
-        attributes: brep.attributes,
-        ..Default::default()
-    }
-}
-
 /// Snap edge parameter ranges that overshoot their B-spline carrier's knot
 /// domain by floating-point noise back onto the domain boundary. Native edge
 /// ranges and cache knot vectors are stored independently and can disagree in
