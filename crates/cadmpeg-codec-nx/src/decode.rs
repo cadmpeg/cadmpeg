@@ -164,6 +164,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let mut curves_by_xmt = BTreeMap::new();
         let mut pcurves_by_xmt = BTreeMap::new();
         let mut trim_ranges = BTreeMap::new();
+        let mut pending_blend_supports = Vec::new();
         let mut pending_blend_spines = Vec::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
@@ -299,24 +300,6 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             .into_iter()
             .enumerate()
         {
-            let supports = blend.supports.map(|support_xmt| {
-                surfaces_by_xmt
-                    .get(&support_xmt)
-                    .cloned()
-                    .map(|surface| BlendSupport {
-                        surface,
-                        reversed: false,
-                    })
-            });
-            if supports.iter().all(Option::is_none) {
-                continue;
-            }
-            let mut supports = supports;
-            for (side, offset) in supports.iter_mut().zip(blend.offsets) {
-                if let Some(side) = side {
-                    side.reversed = offset.is_sign_negative();
-                }
-            }
             let surface_id = SurfaceId(format!("nx:s{si}:blend-surf#{bi}"));
             let procedural_id = ProceduralSurfaceId(format!("nx:s{si}:blend#{bi}"));
             annotations
@@ -339,7 +322,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 id: procedural_id,
                 surface: surface_id.clone(),
                 definition: ProceduralSurfaceDefinition::Blend {
-                    supports,
+                    supports: [None, None],
                     spine: None,
                     radius: BlendRadiusLaw::Constant {
                         signed_radius: blend.offsets[0].abs(),
@@ -349,11 +332,35 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 },
                 cache_fit_tolerance: None,
             });
+            pending_blend_supports.push((procedural_index, blend.supports, blend.offsets));
             if blend.spine > 1 {
                 pending_blend_spines.push((procedural_index, blend.spine));
             }
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;
+        }
+
+        for (procedural_index, support_xmts, offsets) in pending_blend_supports {
+            let supports = [0, 1].map(|side| {
+                surfaces_by_xmt
+                    .get(&support_xmts[side])
+                    .cloned()
+                    .map(|surface| BlendSupport {
+                        surface,
+                        reversed: offsets[side].is_sign_negative(),
+                    })
+            });
+            let Some(ProceduralSurface {
+                definition:
+                    ProceduralSurfaceDefinition::Blend {
+                        supports: slots, ..
+                    },
+                ..
+            }) = ir.model.procedural_surfaces.get_mut(procedural_index)
+            else {
+                continue;
+            };
+            *slots = supports;
         }
 
         for (ci, crv) in geometry::curves(semantic).into_iter().enumerate() {

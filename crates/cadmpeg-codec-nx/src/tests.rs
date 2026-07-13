@@ -1047,6 +1047,32 @@ fn blend_surface_with_intersection_spine() -> Vec<u8> {
     stream
 }
 
+fn blend_surface_with_forward_blend_support() -> Vec<u8> {
+    let mut stream = blend_surface_topology_partition_stream();
+    let first = stream
+        .windows(4)
+        .position(|window| window == [0, 56, 0, 12])
+        .expect("first blend record");
+    put_ref(&mut stream, first + 20, 20);
+
+    let mut second = record(56, 66);
+    put_ref(&mut second, 2, 20);
+    second[18] = b'+';
+    second[19] = b'R';
+    put_ref(&mut second, 20, 6);
+    put_ref(&mut second, 22, 6);
+    put_ref(&mut second, 24, 1);
+    put_f64(&mut second, 26, -0.003);
+    put_f64(&mut second, 34, 0.003);
+    put_f64(&mut second, 42, 1.0);
+    put_f64(&mut second, 50, 1.0);
+    for at in [58, 60, 62, 64] {
+        put_ref(&mut second, at, 1);
+    }
+    stream.extend(second);
+    stream
+}
+
 fn intersection_curve_topology_partition_stream() -> Vec<u8> {
     let mut stream = topology_partition_stream();
     for (tag, xmt, offset) in [(16, 8, 24), (17, 7, 18)] {
@@ -3018,6 +3044,25 @@ fn decode_binds_blend_ball_centre_spine() {
     assert_eq!(
         spine.as_ref(),
         Some(&result.ir.model.procedural_curves[0].curve)
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_resolves_forward_blend_support_reference() {
+    let stream = blend_surface_with_forward_blend_support();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 2);
+    let ProceduralSurfaceDefinition::Blend { supports, .. } =
+        &result.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("blend definition");
+    };
+    assert_eq!(
+        supports[0].as_ref().map(|support| &support.surface),
+        Some(&result.ir.model.procedural_surfaces[1].surface)
     );
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
