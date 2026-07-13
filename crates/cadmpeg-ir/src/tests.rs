@@ -2214,6 +2214,14 @@ fn feature_operation_geometry_is_validated() {
             revolutions: 0.0,
             clockwise: false,
         },
+        FeatureDefinition::HelixNativeAxis {
+            axis_native_ref: String::new(),
+            radius: Length(-1.0),
+            height: Length(f64::NAN),
+            revolutions: 0.0,
+            start_angle: crate::features::Angle(f64::NAN),
+            clockwise: false,
+        },
         FeatureDefinition::Wrap {
             profile: ProfileRef::Native("profile".into()),
             face: FaceSelection::Unresolved,

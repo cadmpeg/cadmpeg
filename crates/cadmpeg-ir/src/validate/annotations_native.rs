@@ -149,6 +149,20 @@ pub(super) fn check_native_links(
                 });
             }
         }
+        if let crate::features::FeatureDefinition::HelixNativeAxis {
+            axis_native_ref: target,
+            ..
+        } = &feature.definition
+        {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("helix axis native_ref `{target}` does not resolve"),
+                    entity: Some(feature.id.0.clone()),
+                });
+            }
+        }
     }
     for parameter in &ir.model.parameters {
         if let Some(target) = &parameter.native_ref {

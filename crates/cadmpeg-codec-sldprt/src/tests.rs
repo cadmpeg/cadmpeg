@@ -9026,6 +9026,80 @@ fn semantic_writer_round_trips_slash_named_helix() {
 }
 
 #[test]
+fn semantic_writer_round_trips_native_axis_helix() {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, Length};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        r#"<Keywords><Feature Name="Helix/Spiral1" Type="Helix/Spiral" id="30"><Dimension Name="D3">3200</Dimension><Dimension Name="D4">12800</Dimension><Dimension Name="D5">0.25</Dimension><Dimension Name="D7">0°</Dimension></Feature></Keywords>"#
+            .as_bytes(),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = &decoded.ir.model.features[0];
+    let native_ref = feature.native_ref.as_deref().unwrap();
+    assert!(matches!(
+        &feature.definition,
+        FeatureDefinition::HelixNativeAxis {
+            axis_native_ref,
+            radius: Length(3200.0),
+            height: Length(12800.0),
+            revolutions: 0.25,
+            start_angle: Angle(0.0),
+            clockwise: false,
+        } if axis_native_ref == native_ref
+    ));
+    let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
+    assert!(findings.is_empty(), "{findings:#?}");
+
+    let FeatureDefinition::HelixNativeAxis {
+        radius,
+        height,
+        revolutions,
+        start_angle,
+        clockwise,
+        ..
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed native-axis helix");
+    };
+    *radius = Length(4000.0);
+    *height = Length(16000.0);
+    *revolutions = 0.5;
+    *start_angle = Angle(std::f64::consts::FRAC_PI_2);
+    *clockwise = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.kind, "Helix/Spiral");
+    assert_eq!(native.parameters["D3"], "4000");
+    assert_eq!(native.parameters["D4"], "16000");
+    assert_eq!(native.parameters["D5"], "0.5");
+    assert_eq!(native.parameters["D7"], "90°");
+    assert_eq!(native.properties["Clockwise"], "true");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::HelixNativeAxis {
+            radius: Length(4000.0),
+            height: Length(16000.0),
+            revolutions: 0.5,
+            start_angle: Angle(value),
+            clockwise: true,
+            ..
+        } if (value - std::f64::consts::FRAC_PI_2).abs() < 1e-12
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_wrap() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ProfileRef, WrapMode};
 

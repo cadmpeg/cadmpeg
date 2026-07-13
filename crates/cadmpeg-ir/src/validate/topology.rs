@@ -1627,6 +1627,25 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "helix geometry is invalid");
                 }
             }
+            FeatureDefinition::HelixNativeAxis {
+                axis_native_ref,
+                radius,
+                height,
+                revolutions,
+                start_angle,
+                ..
+            } => {
+                let valid = !axis_native_ref.is_empty()
+                    && radius.0.is_finite()
+                    && radius.0 > 0.0
+                    && height.0.is_finite()
+                    && revolutions.is_finite()
+                    && *revolutions > 0.0
+                    && start_angle.0.is_finite();
+                if !valid {
+                    feature_geometry_error(findings, feature, "native-axis helix is invalid");
+                }
+            }
             FeatureDefinition::Wrap {
                 profile,
                 face,

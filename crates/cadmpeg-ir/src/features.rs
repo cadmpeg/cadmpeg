@@ -335,6 +335,21 @@ pub enum FeatureDefinition {
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
     },
+    /// Circular helix with retained native axis placement.
+    HelixNativeAxis {
+        /// Source-native record carrying the unresolved construction axis.
+        axis_native_ref: String,
+        /// Initial radial distance from the axis.
+        radius: Length,
+        /// Signed total rise along the axis.
+        height: Length,
+        /// Positive number of revolutions.
+        revolutions: f64,
+        /// Angular position at the curve start.
+        start_angle: Angle,
+        /// Whether angular travel is clockwise when viewed along the axis.
+        clockwise: bool,
+    },
     /// Profile mapped onto a target face.
     Wrap {
         /// Sketch or face profile mapped onto the target.

@@ -1091,7 +1091,9 @@ fn project_definition(
             .unwrap_or_else(|| native_definition(feature));
     }
     if is_helix(feature) {
-        return project_helix(feature).unwrap_or_else(|| native_definition(feature));
+        return project_helix(feature)
+            .or_else(|| project_native_axis_helix(feature))
+            .unwrap_or_else(|| native_definition(feature));
     }
     if feature_family(feature, "Wrap") {
         return project_wrap(feature, native_by_source)
@@ -1510,6 +1512,32 @@ fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         radius: Length(radius),
         pitch: Length(pitch),
         revolutions,
+        clockwise,
+    })
+}
+
+fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefinition> {
+    let radius = parse_positive_dimension_length_mm(feature.parameters.get("D3")?)?;
+    let height = parse_dimension_length_mm(feature.parameters.get("D4")?)?;
+    let revolutions = feature
+        .parameters
+        .get("D5")?
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite() && *value > 0.0)?;
+    let start_angle = Angle(parse_angle_rad(feature.parameters.get("D7")?)?);
+    let clockwise = feature
+        .properties
+        .get("Clockwise")
+        .and_then(|value| parse_bool(value))
+        .unwrap_or(false);
+    Some(FeatureDefinition::HelixNativeAxis {
+        axis_native_ref: feature.id.clone(),
+        radius: Length(radius),
+        height: Length(height),
+        revolutions,
+        start_angle,
         clockwise,
     })
 }
@@ -4179,6 +4207,62 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::HelixNativeAxis {
+                axis_native_ref,
+                radius,
+                height,
+                revolutions,
+                start_angle,
+                clockwise,
+            } => {
+                if axis_native_ref.is_empty()
+                    || !radius.0.is_finite()
+                    || radius.0 <= 0.0
+                    || !height.0.is_finite()
+                    || !revolutions.is_finite()
+                    || *revolutions <= 0.0
+                    || !start_angle.0.is_finite()
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has invalid native-axis helix geometry",
+                        feature.id
+                    )));
+                }
+                let record = existing.as_deref().ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained native helix axis",
+                        feature.id
+                    ))
+                })?;
+                if !is_helix(record) || axis_native_ref != &record.id {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes its native helix axis",
+                        feature.id
+                    )));
+                }
+                let mut parameters = record.parameters.clone();
+                parameters.insert(
+                    "D3".into(),
+                    format_length_like(radius.0, record.parameters.get("D3").map(String::as_str)),
+                );
+                parameters.insert(
+                    "D4".into(),
+                    format_length_like(height.0, record.parameters.get("D4").map(String::as_str)),
+                );
+                parameters.insert("D5".into(), revolutions.to_string());
+                parameters.insert(
+                    "D7".into(),
+                    format_angle_like(
+                        start_angle.0,
+                        record.parameters.get("D7").map(String::as_str),
+                    ),
+                );
+                let mut properties = feature.source_properties.clone();
+                if properties.contains_key("Clockwise") || *clockwise {
+                    properties.insert("Clockwise".into(), clockwise.to_string());
+                }
+                (record.kind.clone(), parameters, properties)
+            }
             FeatureDefinition::Wrap {
                 profile,
                 face,
@@ -6506,7 +6590,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
         FeatureDefinition::ProjectedCurve { .. } => "ProjectedCurve",
         FeatureDefinition::CompositeCurve { .. } => "CompositeCurve",
-        FeatureDefinition::Helix { .. } => "Helix",
+        FeatureDefinition::Helix { .. } | FeatureDefinition::HelixNativeAxis { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",

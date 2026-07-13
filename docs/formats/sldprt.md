@@ -89,6 +89,8 @@ Sketch relations use named scalar records with two reference cells at fixed scal
 
 Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.
 
+`Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
+
 ---
 
 ## 3. Parasolid stream
