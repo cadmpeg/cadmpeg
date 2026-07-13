@@ -4523,6 +4523,33 @@ fn native_validation_rejects_duplicate_sketch_marker_offsets() {
 }
 
 #[test]
+fn native_validation_requires_complete_ordered_sketch_markers() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1, 2],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].sketch_entities.remove(1);
+        native.feature_input_lanes[0].sketch_entities[1].ordinal = 4;
+    });
+    let messages = crate::validate_native(&decoded.ir)
+        .into_iter()
+        .map(|finding| finding.message)
+        .collect::<Vec<_>>();
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("expects entity ordinal")));
+    assert!(messages
+        .iter()
+        .any(|message| message.contains("omits marker at offset")));
+}
+
+#[test]
 fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(

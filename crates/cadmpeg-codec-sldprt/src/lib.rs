@@ -240,9 +240,36 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     for lane in &native.feature_input_lanes {
+        let expected_offsets = lane
+            .native_payload
+            .windows(MARKER.len())
+            .enumerate()
+            .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset as u64))
+            .collect::<std::collections::HashSet<_>>();
         let mut ordinals = std::collections::HashSet::new();
         let mut offsets = std::collections::HashSet::new();
-        for entity in &lane.sketch_entities {
+        let mut previous_offset = None;
+        for (index, entity) in lane.sketch_entities.iter().enumerate() {
+            if entity.ordinal != index as u32 {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!(
+                        "SolidWorks feature-input lane expects entity ordinal {index}, found {}",
+                        entity.ordinal
+                    ),
+                    entity: Some(entity.id.clone()),
+                });
+            }
+            if previous_offset.is_some_and(|offset| entity.offset <= offset) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "SolidWorks feature-input entities are not in stream order".into(),
+                    entity: Some(entity.id.clone()),
+                });
+            }
+            previous_offset = Some(entity.offset);
             if !ordinals.insert(entity.ordinal) {
                 findings.push(Finding {
                     check: Check::NativeLinks,
@@ -282,6 +309,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     entity: Some(lane.id.clone()),
                 });
             }
+        }
+        for offset in expected_offsets.difference(&offsets) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: format!("SolidWorks feature-input lane omits marker at offset {offset}"),
+                entity: Some(lane.id.clone()),
+            });
         }
     }
     findings
