@@ -318,6 +318,90 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut locus_group_indices = HashSet::new();
+    let mut locus_group_companions = HashSet::new();
+    for group in &native.design_dimension_locus_groups {
+        let unique_index = locus_group_indices.insert(group.record_index);
+        let unique_companion = locus_group_companions.insert(group.companion_record_index);
+        let companion = companions_by_index.get(&group.companion_record_index);
+        let dimension_companion = companion.is_some_and(|companion| {
+            owners_by_index
+                .get(&companion.owner_record_index)
+                .and_then(|owner| parameters_by_index.get(&owner.parameter_record_index))
+                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+        });
+        let count = group.loci.len();
+        let loci_start = group.byte_offset.saturating_add(24);
+        let loci_offsets_valid = group.loci.iter().enumerate().all(|(ordinal, locus)| {
+            let start = loci_start.saturating_add((ordinal as u64).saturating_mul(15));
+            locus.geometry_reference_offset == start.saturating_add(1)
+                && locus.role_offset == start.saturating_add(11)
+                && sketch_geometry_indices.contains(&locus.geometry_record_index)
+        });
+        let owner_start = loci_start.saturating_add((count as u64).saturating_mul(15));
+        let returns_start = owner_start.saturating_add(24);
+        let returns_valid = group.return_members.len() == count
+            && group.return_member_offsets.len() == count
+            && group
+                .return_members
+                .iter()
+                .zip(&group.return_member_offsets)
+                .enumerate()
+                .all(|(ordinal, (record_index, offset))| {
+                    *offset
+                        == returns_start
+                            .saturating_add((ordinal as u64).saturating_mul(11))
+                            .saturating_add(1)
+                        && sketch_geometry_indices.contains(record_index)
+                });
+        let mut locus_members = group
+            .loci
+            .iter()
+            .map(|locus| locus.geometry_record_index)
+            .collect::<Vec<_>>();
+        let mut return_members = group.return_members.clone();
+        locus_members.sort_unstable();
+        return_members.sort_unstable();
+        let (expected_kinds, expected_unknown) = design::decode_constraint_kinds(group.state);
+        let owner_is_sketch = entities_by_suffix
+            .get(&u64::from(group.owner_reference))
+            .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
+        let valid = group.class_tag.len() == 3
+            && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && group.next_class_tag.len() == 3
+            && group
+                .next_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && companion.is_some_and(|companion| group.byte_offset == companion.byte_offset + 58)
+            && dimension_companion
+            && (1..=64).contains(&count)
+            && loci_offsets_valid
+            && group.owner_reference_offset == owner_start.saturating_add(2)
+            && group.owner_role_offset == owner_start.saturating_add(12)
+            && group.state_offset == owner_start.saturating_add(16)
+            && owner_is_sketch
+            && returns_valid
+            && locus_members == return_members
+            && group.constraint_kinds == expected_kinds
+            && group.unknown_constraint_bits == expected_unknown
+            && group.next_byte_offset
+                == returns_start
+                    .saturating_add((count as u64).saturating_mul(11))
+                    .saturating_add(1)
+            && group.frame_length == group.next_byte_offset.saturating_sub(group.byte_offset)
+            && unique_index
+            && unique_companion;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design dimension locus group has an invalid counted frame or geometry link"
+                    .into(),
+                entity: Some(group.id.clone()),
+            });
+        }
+    }
     for parameter in &native.design_parameters {
         let unique_index = parameter_indices.insert(parameter.record_index);
         let unique_ordinal = parameter_ordinals.insert(parameter.source_ordinal);

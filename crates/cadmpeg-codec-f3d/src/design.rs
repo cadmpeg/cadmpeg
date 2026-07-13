@@ -9,11 +9,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
-    DesignConfigurationKind, DesignDimensionLocusPair, DesignEntityHeader, DesignObject,
-    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, LostEdgeReference,
-    PersistentReference, PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignEntityHeader, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -811,6 +812,192 @@ fn parse_dimension_locus_pair(
         second_role_offset: (start + 65) as u64,
         paired_class_tag,
         paired_byte_offset: paired_byte_offset as u64,
+    })
+}
+
+/// Decode counted typed sketch loci nested immediately after dimensional
+/// parameter-companion prefixes.
+pub fn decode_dimension_locus_groups(
+    scan: &ContainerScan,
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    companions: &[DesignParameterCompanion],
+    entities: &[DesignEntityHeader],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+) -> Result<Vec<DesignDimensionLocusGroup>, CodecError> {
+    let parameters = parameters
+        .iter()
+        .map(|parameter| (parameter.record_index, parameter))
+        .collect::<HashMap<_, _>>();
+    let dimension_companions = owners
+        .iter()
+        .filter(|owner| {
+            parameters
+                .get(&owner.parameter_record_index)
+                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+        })
+        .map(|owner| owner.companion_record_index)
+        .collect::<HashSet<_>>();
+    let geometry_indices = points
+        .iter()
+        .map(|point| point.record_index)
+        .chain(curves.iter().map(|curve| curve.record_index))
+        .collect::<HashSet<_>>();
+    let sketch_entities = entities
+        .iter()
+        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
+        .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+        .collect::<HashSet<_>>();
+    let mut out = Vec::new();
+    for companion in companions
+        .iter()
+        .filter(|companion| dimension_companions.contains(&companion.record_index))
+    {
+        let entry = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && companion.id.starts_with(&format!("f3d:{}:", entry.name))
+        });
+        let Some(entry) = entry else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let start = usize::try_from(companion.byte_offset)
+            .ok()
+            .and_then(|offset| offset.checked_add(58));
+        let Some(mut group) = start.and_then(|start| {
+            parse_dimension_locus_group(
+                bytes,
+                start,
+                companion.record_index,
+                &geometry_indices,
+                &sketch_entities,
+            )
+        }) else {
+            continue;
+        };
+        group.id = format!(
+            "f3d:{}:design-dimension-locus-group#{}",
+            entry.name, group.byte_offset
+        );
+        out.push(group);
+    }
+    out.sort_by_key(|group| group.byte_offset);
+    Ok(out)
+}
+
+fn parse_dimension_locus_group(
+    bytes: &[u8],
+    start: usize,
+    companion_record_index: u32,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+) -> Option<DesignDimensionLocusGroup> {
+    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+    if after_tag != start.checked_add(7)?
+        || class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || bytes.get(start + 11..start + 19) != Some(&[0; 8])
+        || bytes.get(start + 19) != Some(&1)
+    {
+        return None;
+    }
+    let record_index = u32_at(bytes, start + 7)?;
+    let count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    if !(1..=64).contains(&count) {
+        return None;
+    }
+    let mut position = start.checked_add(24)?;
+    let mut loci = Vec::with_capacity(count);
+    for _ in 0..count {
+        if bytes.get(position) != Some(&1)
+            || bytes.get(position + 5..position + 11) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let geometry_record_index = u32_at(bytes, position + 1)?;
+        if !geometry_indices.contains(&geometry_record_index) {
+            return None;
+        }
+        loci.push(DesignDimensionLocus {
+            geometry_record_index,
+            geometry_reference_offset: (position + 1) as u64,
+            role: u32_at(bytes, position + 11)?,
+            role_offset: (position + 11) as u64,
+        });
+        position = position.checked_add(15)?;
+    }
+    if bytes.get(position) != Some(&0)
+        || bytes.get(position + 1) != Some(&1)
+        || bytes.get(position + 6..position + 12) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let owner_reference = u32_at(bytes, position + 2)?;
+    if !sketch_entities.contains(&owner_reference) {
+        return None;
+    }
+    let owner_reference_offset = (position + 2) as u64;
+    let owner_role = u32_at(bytes, position + 12)?;
+    let owner_role_offset = (position + 12) as u64;
+    position = position.checked_add(16)?;
+    let state = u32_at(bytes, position)?;
+    let state_offset = position as u64;
+    let return_count = usize::try_from(u32_at(bytes, position + 4)?).ok()?;
+    if return_count != count {
+        return None;
+    }
+    position = position.checked_add(8)?;
+    let mut return_members = Vec::with_capacity(return_count);
+    let mut return_member_offsets = Vec::with_capacity(return_count);
+    for _ in 0..return_count {
+        if bytes.get(position) != Some(&1)
+            || bytes.get(position + 5..position + 11) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let record_index = u32_at(bytes, position + 1)?;
+        if !geometry_indices.contains(&record_index) {
+            return None;
+        }
+        return_members.push(record_index);
+        return_member_offsets.push((position + 1) as u64);
+        position = position.checked_add(11)?;
+    }
+    if bytes.get(position) != Some(&0) {
+        return None;
+    }
+    let next_byte_offset = position.checked_add(1)?;
+    let (next_class_tag, next_after_tag) = lp_ascii(bytes, next_byte_offset)?;
+    if next_after_tag != next_byte_offset.checked_add(7)?
+        || next_class_tag.len() != 3
+        || !next_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(state);
+    Some(DesignDimensionLocusGroup {
+        id: String::new(),
+        companion_record_index,
+        byte_offset: start as u64,
+        class_tag,
+        record_index,
+        frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
+        loci,
+        owner_reference,
+        owner_reference_offset,
+        owner_role,
+        owner_role_offset,
+        state,
+        state_offset,
+        constraint_kinds,
+        unknown_constraint_bits,
+        return_members,
+        return_member_offsets,
+        next_class_tag,
+        next_record_index: u32_at(bytes, next_after_tag)?,
+        next_byte_offset: next_byte_offset as u64,
     })
 }
 
@@ -2505,9 +2692,9 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_pair,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_relation, project_parameter_design,
+        next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_relation, project_parameter_design,
     };
     use crate::records::{DesignParameterKind, DesignParameterScope, DesignRecordHeader};
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
@@ -2715,6 +2902,55 @@ mod relation_tests {
         assert_eq!(pair.second_geometry_record_index, 194);
         assert_eq!(pair.second_role, 1);
         assert_eq!(pair.paired_class_tag, "273");
+    }
+
+    #[test]
+    fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
+        let mut bytes = vec![0; 101];
+        bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+        bytes[4..7].copy_from_slice(b"286");
+        bytes[7..11].copy_from_slice(&249u32.to_le_bytes());
+        bytes[19] = 1;
+        bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+        bytes[24] = 1;
+        bytes[25..29].copy_from_slice(&175u32.to_le_bytes());
+        bytes[35..39].copy_from_slice(&2u32.to_le_bytes());
+        bytes[39] = 1;
+        bytes[40..44].copy_from_slice(&217u32.to_le_bytes());
+        bytes[50..54].copy_from_slice(&1u32.to_le_bytes());
+        bytes[55] = 1;
+        bytes[56..60].copy_from_slice(&172u32.to_le_bytes());
+        bytes[66..70].copy_from_slice(&1u32.to_le_bytes());
+        bytes[74..78].copy_from_slice(&2u32.to_le_bytes());
+        bytes[78] = 1;
+        bytes[79..83].copy_from_slice(&217u32.to_le_bytes());
+        bytes[89] = 1;
+        bytes[90..94].copy_from_slice(&175u32.to_le_bytes());
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"314");
+        bytes.extend_from_slice(&250u32.to_le_bytes());
+
+        let group = parse_dimension_locus_group(
+            &bytes,
+            0,
+            240,
+            &HashSet::from([175, 217]),
+            &HashSet::from([172]),
+        )
+        .expect("counted dimension locus frame");
+        assert_eq!(group.companion_record_index, 240);
+        assert_eq!(group.record_index, 249);
+        assert_eq!(group.frame_length, 101);
+        assert_eq!(group.owner_reference, 172);
+        assert_eq!(group.owner_role, 1);
+        assert_eq!(group.state, 0);
+        assert_eq!(group.loci[0].geometry_record_index, 175);
+        assert_eq!(group.loci[0].role, 2);
+        assert_eq!(group.loci[1].geometry_record_index, 217);
+        assert_eq!(group.loci[1].role, 1);
+        assert_eq!(group.return_members, [217, 175]);
+        assert_eq!(group.next_class_tag, "314");
+        assert_eq!(group.next_record_index, 250);
     }
 
     #[test]

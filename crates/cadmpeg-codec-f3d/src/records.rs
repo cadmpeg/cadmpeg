@@ -399,6 +399,64 @@ pub struct DesignDimensionLocusPair {
     pub paired_byte_offset: u64,
 }
 
+/// One typed geometry locus and its dimension-role code.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionLocus {
+    /// Indexed sketch-point or sketch-curve record.
+    pub geometry_record_index: u32,
+    /// Byte offset of `geometry_record_index`.
+    pub geometry_reference_offset: u64,
+    /// Source role code following the geometry reference.
+    pub role: u32,
+    /// Byte offset of `role`.
+    pub role_offset: u64,
+}
+
+/// Counted-locus frame nested under a dimensional parameter companion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionLocusGroup {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame.
+    pub companion_record_index: u32,
+    /// Byte offset of the indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Byte length through the zero byte preceding the next indexed header.
+    pub frame_length: u64,
+    /// Ordered typed geometry loci.
+    pub loci: Vec<DesignDimensionLocus>,
+    /// Numeric design-entity suffix of the owning sketch.
+    pub owner_reference: u32,
+    /// Byte offset of `owner_reference`.
+    pub owner_reference_offset: u64,
+    /// Source role code following the owner reference.
+    pub owner_role: u32,
+    /// Byte offset of `owner_role`.
+    pub owner_role_offset: u64,
+    /// Source constraint-state mask.
+    pub state: u32,
+    /// Byte offset of `state`.
+    pub state_offset: u64,
+    /// Constraint kinds selected by `state`.
+    pub constraint_kinds: Vec<SketchConstraintKind>,
+    /// Bits in `state` outside the defined constraint mask.
+    pub unknown_constraint_bits: u32,
+    /// Ordered return geometry records.
+    pub return_members: Vec<u32>,
+    /// Byte offsets parallel to `return_members`.
+    pub return_member_offsets: Vec<u64>,
+    /// Dynamic class tag of the immediately following indexed record.
+    pub next_class_tag: String,
+    /// Identity of the immediately following indexed record.
+    pub next_record_index: u32,
+    /// Byte offset of the immediately following indexed record.
+    pub next_byte_offset: u64,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
