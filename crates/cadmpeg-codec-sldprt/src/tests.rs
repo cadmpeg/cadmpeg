@@ -537,6 +537,27 @@ fn linear_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8
     b
 }
 
+fn rational_linear_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<u8> {
+    let mut bytes = linear_nurbs_curve_carrier(wrapper_attr, descriptor_attr);
+    let descriptor = bytes
+        .windows(2)
+        .position(|window| window == [0x00, 0x88])
+        .unwrap();
+    bytes[descriptor + 10..descriptor + 12].copy_from_slice(&4u16.to_be_bytes());
+    let control = bytes
+        .windows(3)
+        .position(|window| window == [0x00, 0x2d, 0x2b])
+        .unwrap();
+    let old_end = control + 9 + 6 * 8;
+    let mut replacement = f64_array(
+        0x2d,
+        descriptor_attr + 1,
+        &[0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.0, 0.5],
+    );
+    bytes.splice(control..old_end, replacement.drain(..));
+    bytes
+}
+
 fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u16) -> Vec<u8> {
     let control_attr = descriptor_attr + 1;
     let u_mult_attr = descriptor_attr + 2;
@@ -574,6 +595,28 @@ fn nurbs_surface_carrier(wrapper_attr: u16, descriptor_attr: u16, bridge_attr: u
     b.extend(f64_array(0x80, u_knot_attr, &[0.0, 1.0]));
     b.extend(f64_array(0x80, v_knot_attr, &[0.0, 1.0]));
     b
+}
+
+fn rational_nurbs_surface_carrier(
+    wrapper_attr: u16,
+    descriptor_attr: u16,
+    bridge_attr: u16,
+) -> Vec<u8> {
+    let mut bytes = nurbs_surface_carrier(wrapper_attr, descriptor_attr, bridge_attr);
+    let control = bytes
+        .windows(3)
+        .position(|window| window == [0x00, 0x2d, 0x2b])
+        .unwrap();
+    let old_end = control + 9 + 12 * 8;
+    let mut replacement = f64_array(
+        0x2d,
+        descriptor_attr + 1,
+        &[
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.0, 0.5, 1.0, 0.0, 0.0, 1.0, 0.5, 0.5, 0.25, 0.5,
+        ],
+    );
+    bytes.splice(control..old_end, replacement.drain(..));
+    bytes
 }
 
 fn markerless_nurbs_surface_carrier(
@@ -5380,6 +5423,65 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
     let result = SldprtCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
+    assert!(result.ir.model.pcurves.iter().any(|pcurve| {
+        result
+            .ir
+            .annotations
+            .provenance
+            .get(&pcurve.id.0)
+            .and_then(|note| note.tag.as_deref())
+            == Some("derived_nurbs_boundary_pcurve")
+    }));
+}
+
+#[test]
+fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
+    let mut body = triangle_body();
+    let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&190u16.to_be_bytes());
+    body.extend(nurbs_surface_carrier(180, 181, 10));
+    body.extend(line_carrier(190, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert!(result.ir.model.pcurves.iter().any(|pcurve| {
+        result
+            .ir
+            .annotations
+            .provenance
+            .get(&pcurve.id.0)
+            .and_then(|note| note.tag.as_deref())
+            == Some("derived_nurbs_boundary_pcurve")
+            && matches!(
+                pcurve.geometry,
+                cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
+                    if direction.v == 0.0 && direction.u != 0.0
+            )
+    }));
+}
+
+#[test]
+fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
+    let mut body = triangle_body();
+    let bridge = body.windows(2).position(|w| w == [0x00, 0x0e]).unwrap();
+    body[bridge + 26..bridge + 28].copy_from_slice(&180u16.to_be_bytes());
+    let edge = body.windows(2).position(|w| w == [0x00, 0x10]).unwrap();
+    body[edge + 24..edge + 26].copy_from_slice(&190u16.to_be_bytes());
+    body.extend(rational_nurbs_surface_carrier(180, 181, 10));
+    body.extend(rational_linear_nurbs_curve_carrier(190, 191));
+    let result = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
     assert!(result.ir.model.pcurves.iter().any(|pcurve| {
         result
             .ir

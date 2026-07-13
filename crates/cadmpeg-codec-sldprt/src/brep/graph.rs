@@ -1733,6 +1733,13 @@ fn derive_nurbs_boundary_pcurves(
                 (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9 && (a.z - b.z).abs() < 1e-9
             })
     };
+    let same_weights = |a: Option<&[f64]>, b: Option<&[f64]>| match (a, b) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| (a - b).abs() < 1e-12)
+        }
+        _ => false,
+    };
     let mut derived = Vec::new();
     for coedge in &out.coedges {
         if coedge.pcurve.is_some() {
@@ -1752,7 +1759,7 @@ fn derive_nurbs_boundary_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        let Some(CurveGeometry::Nurbs(curve)) = edge
+        let Some(curve) = edge
             .curve
             .as_ref()
             .and_then(|id| curves.get(id).copied())
@@ -1760,9 +1767,6 @@ fn derive_nurbs_boundary_pcurves(
         else {
             continue;
         };
-        if surface.weights.is_some() || curve.weights.is_some() {
-            continue;
-        }
         let (u_min, u_max) = (
             *surface.u_knots.first().unwrap_or(&0.0),
             *surface.u_knots.last().unwrap_or(&1.0),
@@ -1785,40 +1789,117 @@ fn derive_nurbs_boundary_pcurves(
                 .map(|u| surface.control_points[u * vc + v])
                 .collect::<Vec<_>>()
         };
-        let geometry = if curve.degree == surface.v_degree
-            && curve.knots == surface.v_knots
-            && same_points(&curve.control_points, &row(0))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
-                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+        let row_weights = |u: usize| {
+            surface
+                .weights
+                .as_ref()
+                .map(|weights| &weights[u * vc..(u + 1) * vc])
+        };
+        let column_weights = |v: usize| {
+            surface
+                .weights
+                .as_ref()
+                .map(|weights| (0..uc).map(|u| weights[u * vc + v]).collect::<Vec<_>>())
+        };
+        let geometry = match curve {
+            CurveGeometry::Nurbs(curve) => {
+                if curve.degree == surface.v_degree
+                    && curve.knots == surface.v_knots
+                    && same_points(&curve.control_points, &row(0))
+                    && same_weights(curve.weights.as_deref(), row_weights(0))
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
+                        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    }
+                } else if curve.degree == surface.v_degree
+                    && curve.knots == surface.v_knots
+                    && same_points(&curve.control_points, &row(uc - 1))
+                    && same_weights(curve.weights.as_deref(), row_weights(uc - 1))
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_max, v_min),
+                        direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+                    }
+                } else if curve.degree == surface.u_degree
+                    && curve.knots == surface.u_knots
+                    && same_points(&curve.control_points, &column(0))
+                    && same_weights(curve.weights.as_deref(), column_weights(0).as_deref())
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
+                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    }
+                } else if curve.degree == surface.u_degree
+                    && curve.knots == surface.u_knots
+                    && same_points(&curve.control_points, &column(vc - 1))
+                    && same_weights(curve.weights.as_deref(), column_weights(vc - 1).as_deref())
+                {
+                    PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min, v_max),
+                        direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+                    }
+                } else {
+                    continue;
+                }
             }
-        } else if curve.degree == surface.v_degree
-            && curve.knots == surface.v_knots
-            && same_points(&curve.control_points, &row(uc - 1))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_max, v_min),
-                direction: cadmpeg_ir::math::Point2::new(0.0, 1.0),
+            CurveGeometry::Line { origin, direction }
+                if surface.u_degree == 1 && surface.u_knots == [u_min, u_min, u_max, u_max] =>
+            {
+                let line_pcurve = |v_index: usize, v: f64| {
+                    let points = column(v_index);
+                    let weights_equal = surface.weights.as_ref().is_none_or(|weights| {
+                        (weights[v_index] - weights[(uc - 1) * vc + v_index]).abs() < 1e-12
+                    });
+                    if points.len() != 2 || !weights_equal || u_min == u_max {
+                        return None;
+                    }
+                    let delta = [
+                        points[1].x - points[0].x,
+                        points[1].y - points[0].y,
+                        points[1].z - points[0].z,
+                    ];
+                    let squared = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
+                    if squared <= f64::EPSILON {
+                        return None;
+                    }
+                    let relative = [
+                        origin.x - points[0].x,
+                        origin.y - points[0].y,
+                        origin.z - points[0].z,
+                    ];
+                    let project = |value: [f64; 3]| {
+                        (value[0] * delta[0] + value[1] * delta[1] + value[2] * delta[2]) / squared
+                    };
+                    let offset = project(relative);
+                    let rate = project([direction.x, direction.y, direction.z]);
+                    let residual = |value: [f64; 3], factor: f64| {
+                        ((value[0] - factor * delta[0]).powi(2)
+                            + (value[1] - factor * delta[1]).powi(2)
+                            + (value[2] - factor * delta[2]).powi(2))
+                        .sqrt()
+                    };
+                    if residual(relative, offset) > 1e-6
+                        || residual([direction.x, direction.y, direction.z], rate) > 1e-9
+                        || rate == 0.0
+                    {
+                        return None;
+                    }
+                    let domain = u_max - u_min;
+                    Some(PcurveGeometry::Line {
+                        origin: cadmpeg_ir::math::Point2::new(u_min + offset * domain, v),
+                        direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
+                    })
+                };
+                if let Some(geometry) = line_pcurve(0, v_min) {
+                    geometry
+                } else if let Some(geometry) = line_pcurve(vc - 1, v_max) {
+                    geometry
+                } else {
+                    continue;
+                }
             }
-        } else if curve.degree == surface.u_degree
-            && curve.knots == surface.u_knots
-            && same_points(&curve.control_points, &column(0))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_min, v_min),
-                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            }
-        } else if curve.degree == surface.u_degree
-            && curve.knots == surface.u_knots
-            && same_points(&curve.control_points, &column(vc - 1))
-        {
-            PcurveGeometry::Line {
-                origin: cadmpeg_ir::math::Point2::new(u_min, v_max),
-                direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
-            }
-        } else {
-            continue;
+            _ => continue,
         };
         let id = PcurveId(format!(
             "sldprt:brep:pcurve#nurbs-boundary:{}",
