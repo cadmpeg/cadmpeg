@@ -24,6 +24,30 @@ fn archive_entries(entries: &[(&str, &[u8])]) -> Vec<u8> {
     bytes.into_inner()
 }
 
+fn streaming_archive(document: &str) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new_stream(Vec::new());
+    zip.start_file(
+        "Document.xml",
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated),
+    )
+    .expect("start streamed entry");
+    zip.write_all(document.as_bytes()).expect("write entry");
+    zip.finish().expect("finish ZIP").into_inner()
+}
+
+#[test]
+fn frames_streaming_data_descriptor_separately_from_padding() {
+    let bytes = streaming_archive("<Document SchemaVersion=\"4\" FileVersion=\"1\"/>");
+    let scan = crate::container::scan(&mut Cursor::new(bytes)).expect("streaming ZIP");
+    let descriptors = scan
+        .ledger
+        .iter()
+        .filter(|span| span.role == "data-descriptor")
+        .collect::<Vec<_>>();
+    assert_eq!(descriptors.len(), 1);
+    assert!(matches!(descriptors[0].end - descriptors[0].start, 16 | 24));
+}
+
 #[test]
 fn rejects_unsafe_names() {
     let xml = b"<Document SchemaVersion=\"4\" FileVersion=\"1\"/>";

@@ -116,6 +116,9 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<Scan, CodecError> {
             data_start,
             data_end,
             central_start,
+            crc32: file.crc32(),
+            compressed_size: file.compressed_size(),
+            uncompressed_size: file.size(),
         });
 
         let mut bytes = Vec::with_capacity(file.size() as usize);
@@ -291,6 +294,9 @@ struct RawEntry {
     data_start: u64,
     data_end: u64,
     central_start: u64,
+    crc32: u32,
+    compressed_size: u64,
+    uncompressed_size: u64,
 }
 
 #[derive(Debug)]
@@ -308,6 +314,26 @@ fn u16_at(bytes: &[u8], offset: u64) -> Result<u16, CodecError> {
         .get(start..start + 2)
         .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
     Ok(u16::from_le_bytes([raw[0], raw[1]]))
+}
+
+fn u32_at(bytes: &[u8], offset: u64) -> Result<u32, CodecError> {
+    let start = usize::try_from(offset)
+        .map_err(|_| CodecError::Malformed("ZIP offset does not fit memory".into()))?;
+    let raw = bytes
+        .get(start..start + 4)
+        .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
+    Ok(u32::from_le_bytes(raw.try_into().expect("four-byte slice")))
+}
+
+fn u64_at(bytes: &[u8], offset: u64) -> Result<u64, CodecError> {
+    let start = usize::try_from(offset)
+        .map_err(|_| CodecError::Malformed("ZIP offset does not fit memory".into()))?;
+    let raw = bytes
+        .get(start..start + 8)
+        .ok_or_else(|| CodecError::Malformed("truncated ZIP integer".into()))?;
+    Ok(u64::from_le_bytes(
+        raw.try_into().expect("eight-byte slice"),
+    ))
 }
 
 fn signature_at(bytes: &[u8], offset: u64) -> Option<[u8; 4]> {
@@ -410,12 +436,31 @@ fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan
         }
         if entry.data_end < next {
             let flags = u16_at(bytes, entry.header_start + 6)?;
-            let role = if flags & 0x0008 != 0 {
-                "data-descriptor"
+            if flags & 0x0008 != 0 {
+                let descriptor_end = parse_data_descriptor(bytes, entry, next)?;
+                push_region(
+                    &mut regions,
+                    entry.data_end,
+                    descriptor_end,
+                    "data-descriptor",
+                    Some(&entry.name),
+                );
+                push_region(
+                    &mut regions,
+                    descriptor_end,
+                    next,
+                    "archive-padding",
+                    Some(&entry.name),
+                );
             } else {
-                "archive-padding"
-            };
-            push_region(&mut regions, entry.data_end, next, role, Some(&entry.name));
+                push_region(
+                    &mut regions,
+                    entry.data_end,
+                    next,
+                    "archive-padding",
+                    Some(&entry.name),
+                );
+            }
         }
     }
 
@@ -482,6 +527,47 @@ fn physical_ledger(bytes: &[u8], entries: &[RawEntry]) -> Result<Vec<ArchiveSpan
 
     classify_end_records(bytes, central_end, len, &mut regions)?;
     partition(len, &regions)
+}
+
+fn parse_data_descriptor(
+    bytes: &[u8],
+    entry: &RawEntry,
+    record_end: u64,
+) -> Result<u64, CodecError> {
+    let start = entry.data_end;
+    let has_signature = signature_at(bytes, start) == Some(*b"PK\x07\x08");
+    let values_start = start + if has_signature { 4 } else { 0 };
+    let local_zip64 = u32_at(bytes, entry.header_start + 18)? == u32::MAX
+        || u32_at(bytes, entry.header_start + 22)? == u32::MAX;
+    let widths = if local_zip64 { [8_u64, 4] } else { [4_u64, 8] };
+    for width in widths {
+        let end = values_start + 4 + 2 * width;
+        if end > record_end {
+            continue;
+        }
+        let crc = u32_at(bytes, values_start)?;
+        let (compressed, uncompressed) = if width == 4 {
+            (
+                u64::from(u32_at(bytes, values_start + 4)?),
+                u64::from(u32_at(bytes, values_start + 8)?),
+            )
+        } else {
+            (
+                u64_at(bytes, values_start + 4)?,
+                u64_at(bytes, values_start + 12)?,
+            )
+        };
+        if crc == entry.crc32
+            && compressed == entry.compressed_size
+            && uncompressed == entry.uncompressed_size
+        {
+            return Ok(end);
+        }
+    }
+    Err(CodecError::Malformed(format!(
+        "invalid data descriptor for {}",
+        entry.name
+    )))
 }
 
 fn classify_end_records(
