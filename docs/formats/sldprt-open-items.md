@@ -24,3 +24,10 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 
 - The mapping from B-rep face attributes to DisplayLists triangle ranges is unresolved.
 - Per-face color carriers can disagree. The precedence rule for appearance overrides is unresolved.
+
+## Design intent
+
+- The `ResolvedFeatures` encoding of sketch-constraint relation kinds, operands, loci, dimensions, and expressions is unresolved.
+- Sketch marker type codes `4..27` are unresolved.
+- The ownership link from sketch markers to nested feature-input Parasolid profiles is unresolved.
+- Keywords operation families outside the typed neutral feature set are unresolved.
