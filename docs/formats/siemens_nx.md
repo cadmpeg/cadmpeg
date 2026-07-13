@@ -117,7 +117,7 @@ object identity. A block may split a string, fixed array, or field lane across
 adjacent boundaries, so marker-shaped bytes inside one block do not define an
 entity string or reference.
 
-Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Declaration order supplies class identity.
+Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Member definitions in the same indexed schema use the same framing with an `m_` name. Declaration order supplies section-local class and member identity.
 
 Class and member declaration ordinals are local to one OM section. The containing
 section base plus the declaration ordinal forms their identity; equal ordinals in

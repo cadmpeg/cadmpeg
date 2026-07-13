@@ -111,6 +111,8 @@ pub struct IndexedSection<'a> {
     pub object_id_table_offset: usize,
     /// Length-framed class definitions preceding the entity index.
     pub types: Vec<TypeDefinition<'a>>,
+    /// Length-framed member definitions preceding the entity index.
+    pub fields: Vec<FieldDefinition<'a>>,
     /// Store-level control block bounded by slot zero in an offset-only index.
     pub control: Option<EntityRecord<'a>>,
     /// Entity records following the reserved zero-offset slot.
@@ -518,11 +520,13 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         }
         if records.len() == count - 1 {
             let types = type_definitions(bytes, base, index_start);
+            let fields = all_field_definitions(bytes, base, index_start);
             out.push(IndexedSection {
                 base,
                 entity_index_offset: index_start,
                 object_id_table_offset: table,
                 types,
+                fields,
                 control: None,
                 records,
             });
@@ -586,6 +590,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             entity_index_offset: index_start,
             object_id_table_offset: offsets[0],
             types: type_definitions(bytes, 0, index_start),
+            fields: all_field_definitions(bytes, 0, index_start),
             control: Some(EntityRecord {
                 object_id: None,
                 offset: offsets[0],
@@ -665,6 +670,20 @@ fn field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinit
         search = next;
         limit = search.saturating_add(256).min(end);
         out.push(definition);
+    }
+    out
+}
+
+fn all_field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinition<'_>> {
+    let mut out = Vec::new();
+    let mut at = start;
+    while at < end {
+        if let Some(definition) = field_definition_at(bytes, at, end) {
+            at += definition.name.len() + 2;
+            out.push(definition);
+        } else {
+            at += 1;
+        }
     }
     out
 }

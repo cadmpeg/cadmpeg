@@ -174,6 +174,10 @@ fn indexed_om_section() -> Vec<u8> {
     bytes[base] = (class_name.len() + 1) as u8;
     bytes[base + 1..base + 1 + class_name.len()].copy_from_slice(class_name);
     bytes[base + 1 + class_name.len()] = 0x81;
+    let field_name = b"m_target";
+    bytes.push((field_name.len() + 1) as u8);
+    bytes.extend_from_slice(field_name);
+    bytes.push(0x80);
     let root = b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables";
     let text = b"(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; ";
     let mut expression = vec![0x99, 0x04, (text.len() + 2) as u8];
@@ -267,6 +271,8 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
         b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables"
     );
     assert_eq!(sections[0].records[1].object_id, Some(0x102));
+    assert_eq!(sections[0].fields.len(), 1);
+    assert_eq!(sections[0].fields[0].name, "m_target");
     assert_eq!(
         sections[0].records[1].bytes,
         b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00\x66\x32\x03\x0cSKETCH_001\0\xe0\x12\x34\x56\x78\xca\xbc\xde\xf0\x01\x02\x90\x00\x00"
@@ -2929,7 +2935,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 8);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 9);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

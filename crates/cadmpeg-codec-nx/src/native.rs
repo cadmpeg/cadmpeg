@@ -546,7 +546,7 @@ pub fn class_definitions(container: &Container) -> Vec<ClassDefinition> {
 
 /// Decode member definitions from every framed OM section.
 pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
-    let mut definitions = Vec::new();
+    let mut definitions = BTreeMap::new();
     for (entry, section) in container.om_sections() {
         let entry_index = container
             .entries
@@ -554,12 +554,10 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
             .position(|candidate| std::ptr::eq(candidate, entry))
             .expect("OM entry belongs to container");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        definitions.extend(
-            section
-                .fields
-                .into_iter()
-                .enumerate()
-                .map(|(ordinal, definition)| FieldDefinition {
+        for (ordinal, definition) in section.fields.into_iter().enumerate() {
+            definitions.insert(
+                (entry_index, definition.offset),
+                FieldDefinition {
                     id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
@@ -567,10 +565,33 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
-                }),
-        );
+                },
+            );
+        }
     }
-    definitions
+    for (entry, section) in container.indexed_om_sections() {
+        let entry_index = container
+            .entries
+            .iter()
+            .position(|candidate| std::ptr::eq(candidate, entry))
+            .expect("indexed entry belongs to container");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let section_offset = entry_offset + section.base_offset() as u64;
+        for (ordinal, definition) in section.fields.into_iter().enumerate() {
+            definitions
+                .entry((entry_index, definition.offset))
+                .or_insert_with(|| FieldDefinition {
+                    id: format!("nx:om-entry-{entry_index}:field#{}", definition.offset),
+                    name: definition.name.to_string(),
+                    ordinal: ordinal as u32,
+                    trailing_code: definition.trailing_code,
+                    section_offset,
+                    source_entry: entry.name.clone(),
+                    source_offset: entry_offset + definition.offset as u64,
+                });
+        }
+    }
+    definitions.into_values().collect()
 }
 
 /// Catalog every externally bounded NX OM entity record.
