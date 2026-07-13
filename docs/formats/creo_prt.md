@@ -346,6 +346,10 @@ name is a state prefix, not part of the family name. Multiple operation names
 with the same feature identifier are stored states; the last occurrence is the
 current state.
 
+Within one current-state record, `protextrude` identifies a linear section
+sweep and `protrevolve` identifies a rotational section sweep. The recipe name
+precedes the `<Kind> id <N>` operation name and applies to that feature state.
+
 A `FeatDefs` record-name identifier belongs to the feature-definition record
 namespace. A unique named `feat_id` inside the bounded record is the owning
 modeling feature identifier and joins `MdlStatus` and `AllFeatur`. The two

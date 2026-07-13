@@ -11,6 +11,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::psb;
 use crate::scalar;
 
+/// Procedural recipe discriminator stored in an `MdlStatus` state record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FeatureRecipeKind {
+    /// Linear section sweep named `protextrude`.
+    Extrude,
+    /// Rotational section sweep named `protrevolve`.
+    Revolve,
+}
+
 /// Feature-operation family named by an `MdlStatus` record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOperation {
@@ -20,6 +29,8 @@ pub struct FeatureOperation {
     pub kind: String,
     /// Optional one-byte state prefix immediately preceding the family name.
     pub status_prefix: Option<u8>,
+    /// Procedural recipe name stored in the same current-state record.
+    pub recipe: Option<FeatureRecipeKind>,
     /// Byte offset of the operation name in the original stream.
     pub offset: usize,
 }
@@ -61,10 +72,29 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         let Ok(feature_id) = String::from_utf8_lossy(&digits[..end]).parse::<u32>() else {
             continue;
         };
+        let record_start = payload[..offset]
+            .iter()
+            .rposition(|byte| *byte == 0xe3)
+            .map_or(0, |position| position + 1);
+        let record = &payload[record_start..offset];
+        let recipe = if record
+            .windows(b"protextrude\0".len())
+            .any(|window| window == b"protextrude\0")
+        {
+            Some(FeatureRecipeKind::Extrude)
+        } else if record
+            .windows(b"protrevolve\0".len())
+            .any(|window| window == b"protrevolve\0")
+        {
+            Some(FeatureRecipeKind::Revolve)
+        } else {
+            None
+        };
         result.push(FeatureOperation {
             feature_id,
             kind: String::from_utf8_lossy(family).into_owned(),
             status_prefix,
+            recipe,
             offset,
         });
     }
@@ -2734,5 +2764,16 @@ mod tests {
             assert_eq!(next, bytes.len());
             assert!(!dimension_driven);
         }
+    }
+
+    #[test]
+    fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
+        let payload = b"\xe3icon\0protextrude\0Protrusion id 40\0\xe2\xe3\
+            icon\0protrevolve\0Revolve id 41\0\xe2\xe3Datum Plane id 42\0";
+        let operations = operations(payload);
+        assert_eq!(operations.len(), 3);
+        assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Extrude));
+        assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Revolve));
+        assert_eq!(operations[2].recipe, None);
     }
 }

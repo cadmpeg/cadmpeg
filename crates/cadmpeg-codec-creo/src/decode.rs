@@ -462,20 +462,25 @@ fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> usize {
+    let mut transferred = 0;
     for transform in &scan.feature_section_transforms {
-        let Some(definition) = scan.feature_definitions.iter().find(|definition| {
-            definition.id == transform.definition_id
-                && definition
-                    .body
-                    .windows(b"protextrude\0".len())
-                    .any(|window| window == b"protextrude\0")
-        }) else {
+        let Some(definition) = scan
+            .feature_definitions
+            .iter()
+            .find(|definition| definition.id == transform.definition_id)
+        else {
             continue;
         };
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
+        if !scan.feature_operations.iter().any(|operation| {
+            operation.feature_id == feature_id
+                && operation.recipe == Some(crate::feature::FeatureRecipeKind::Extrude)
+        }) {
+            continue;
+        }
         let (Some(variables), Some(segments), Some(order_table), Some(trim_entities)) = (
             &definition.variables,
             &definition.segments,
@@ -579,8 +584,10 @@ fn transfer_feature_extrusion_surfaces(
                     instance_path: Vec::new(),
                 }),
             });
+            transferred += 1;
         }
     }
+    transferred
 }
 
 fn line_orientation_definition(
@@ -1945,7 +1952,14 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_plane_intersection_vertices(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
-    transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
+    let feature_extrusion_surface_count =
+        transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
+    if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "transferred_feature_extrusion_surface_count".to_string(),
+            feature_extrusion_surface_count.to_string(),
+        );
+    }
     for datum in &scan.datum_planes {
         let id = IrFeatureId(format!("creo:model:feature#{}", datum.feature_id));
         if ir.model.features.iter().any(|feature| feature.id == id) {
@@ -1995,6 +2009,16 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_properties.insert(
                 "mdl_status_prefix".to_string(),
                 char::from(prefix).to_string(),
+            );
+        }
+        if let Some(recipe) = operation.recipe {
+            source_properties.insert(
+                "recipe".to_string(),
+                match recipe {
+                    crate::feature::FeatureRecipeKind::Extrude => "protextrude",
+                    crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
+                }
+                .to_string(),
             );
         }
         let mut parameters = BTreeMap::new();
