@@ -999,6 +999,58 @@ fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> V
     outputs
 }
 
+fn feature_field_text(value: &crate::feature::FeatureFieldValue) -> Option<String> {
+    match value {
+        crate::feature::FeatureFieldValue::Empty => Some("empty".to_string()),
+        crate::feature::FeatureFieldValue::CompactInt(value) => Some(value.to_string()),
+        crate::feature::FeatureFieldValue::CompactIntArray(values) => Some(
+            values
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        crate::feature::FeatureFieldValue::EntityReference {
+            entity_id,
+            terminated,
+        } => Some(format!(
+            "entity:{entity_id}{}",
+            if *terminated { ":terminated" } else { "" }
+        )),
+        crate::feature::FeatureFieldValue::ScalarArray {
+            decoded_values: Some(values),
+            ..
+        } => Some(
+            values
+                .iter()
+                .map(f64::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        crate::feature::FeatureFieldValue::ScalarArray {
+            decoded_values: None,
+            ..
+        }
+        | crate::feature::FeatureFieldValue::Raw(_) => None,
+    }
+}
+
+fn insert_feature_parameter(parameters: &mut BTreeMap<String, String>, base: &str, value: String) {
+    if let std::collections::btree_map::Entry::Vacant(entry) = parameters.entry(base.to_string()) {
+        entry.insert(value);
+        return;
+    }
+    let mut occurrence = 2;
+    loop {
+        let name = format!("{base}#{occurrence}");
+        if let std::collections::btree_map::Entry::Vacant(entry) = parameters.entry(name) {
+            entry.insert(value);
+            return;
+        }
+        occurrence += 1;
+    }
+}
+
 #[cfg(test)]
 mod resolved_sketch_tests {
     use super::*;
@@ -2108,6 +2160,20 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             );
         }
         let mut parameters = BTreeMap::new();
+        for field in scan
+            .feature_choice_fields
+            .iter()
+            .filter(|field| field.feature_id == operation.feature_id)
+        {
+            let Some(value) = feature_field_text(&field.value) else {
+                continue;
+            };
+            insert_feature_parameter(
+                &mut parameters,
+                &format!("choice.{}.{}", field.choice_label, field.name),
+                value,
+            );
+        }
         for affected in scan
             .feature_affected_ids
             .iter()

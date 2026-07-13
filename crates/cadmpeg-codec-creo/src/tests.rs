@@ -557,12 +557,17 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur =
-        b"\x04\xeb\x04\xe0\x22blend_choice\0\xe0\x21count\0\x07\xe0\x22refs\0\xf8\x02\x03\x04"
+        b"\x04\xeb\x04\xe0\x22blend_choice\0\xe0\x21count\0\x07\xe0\x22refs\0\xf8\x02\x03\x04\xe0\x24depth_choice\0"
             .to_vec();
-    let scan = container::scan_bytes(build_prt(
+    let data = build_prt(
         "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_choice_fields.len(), 2);
     assert_eq!(scan.feature_choice_fields[0].name, "count");
@@ -575,6 +580,14 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         scan.feature_choice_fields[1].value,
         crate::feature::FeatureFieldValue::CompactIntArray(vec![3, 4])
     );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
+        &result.ir.model.features[0].definition
+    else {
+        panic!("native round feature");
+    };
+    assert_eq!(parameters["choice.blend_choice.count"], "7");
+    assert_eq!(parameters["choice.blend_choice.refs"], "3,4");
 }
 
 #[test]
