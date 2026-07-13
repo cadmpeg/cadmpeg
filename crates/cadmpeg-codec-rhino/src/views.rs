@@ -58,6 +58,8 @@ struct ViewRecord {
     attributes: Option<ViewAttributes>,
     construction_plane: Option<ConstructionPlane>,
     viewport: Option<Viewport>,
+    trace_image: Option<TraceImage>,
+    wallpaper: Option<Wallpaper>,
     children: Vec<ViewChild>,
 }
 
@@ -112,6 +114,36 @@ struct Viewport {
     target_millimeters: Option<[f64; 3]>,
     camera_frame_valid: Option<bool>,
     view_scale: Option<[f64; 3]>,
+}
+
+#[derive(Debug, Serialize)]
+struct ImageReference {
+    full_path: String,
+    relative_path: String,
+    content_sha1: String,
+    embedded_file_uuid: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TraceImage {
+    legacy_file_path: String,
+    width_mm: f64,
+    height_mm: f64,
+    plane_origin_mm: [f64; 3],
+    plane_x_axis: [f64; 3],
+    plane_y_axis: [f64; 3],
+    grayscale: bool,
+    hidden: bool,
+    filtered: bool,
+    file_reference: Option<ImageReference>,
+}
+
+#[derive(Debug, Serialize)]
+struct Wallpaper {
+    legacy_file_path: String,
+    grayscale: bool,
+    hidden: bool,
+    file_reference: Option<ImageReference>,
 }
 
 #[derive(Debug, Serialize)]
@@ -188,6 +220,109 @@ fn scaled_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, Fr
     value.equation[3] = scaled_coordinate(value.equation[3], scale)
         .ok_or_else(|| structural(offset, "scaled plane equation is invalid"))?;
     Ok(value)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut value, byte| {
+            write!(value, "{byte:02x}").expect("writing to String cannot fail");
+            value
+        })
+}
+
+fn image_reference<'a>(
+    data: &'a [u8],
+    reader: &mut BoundedReader<'a>,
+    archive: ArchiveVersion,
+) -> Result<ImageReference, FramingError> {
+    let value = crate::instances::file_reference(data, reader, archive, &mut Vec::new())?;
+    Ok(ImageReference {
+        full_path: value.full_path,
+        relative_path: value.relative_path,
+        content_sha1: hex(&value.content_hash.content_sha1),
+        embedded_file_uuid: value.embedded_file_id.map(|id| id.to_string()),
+    })
+}
+
+fn parse_trace_image(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    scale: f64,
+) -> Result<TraceImage, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let packed = reader.u8()?;
+    let minor = packed & 0x0f;
+    if packed >> 4 != 1 || minor > 4 {
+        return Err(structural(body.start, "trace-image version is unsupported"));
+    }
+    let legacy_file_path = utf16(&mut reader)?;
+    let width_mm = scaled_coordinate(reader.f64()?, scale)
+        .ok_or_else(|| structural(reader.position() - 8, "trace width is invalid"))?;
+    let height_mm = scaled_coordinate(reader.f64()?, scale)
+        .ok_or_else(|| structural(reader.position() - 8, "trace height is invalid"))?;
+    let plane = scaled_plane(plane(&mut reader)?, scale, body.start)?;
+    let grayscale = minor < 1 || reader.bool()?;
+    let hidden = minor >= 2 && reader.bool()?;
+    let filtered = minor >= 3 && reader.bool()?;
+    let file_reference = if minor >= 4 {
+        Some(image_reference(data, &mut reader, archive)?)
+    } else {
+        None
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "trace image has trailing bytes",
+        ));
+    }
+    Ok(TraceImage {
+        legacy_file_path,
+        width_mm,
+        height_mm,
+        plane_origin_mm: plane.origin.0,
+        plane_x_axis: plane.xaxis.0,
+        plane_y_axis: plane.yaxis.0,
+        grayscale,
+        hidden,
+        filtered,
+        file_reference,
+    })
+}
+
+fn parse_wallpaper(
+    data: &[u8],
+    body: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+) -> Result<Wallpaper, FramingError> {
+    let mut reader = BoundedReader::new(data, body.start, body.end)?;
+    let packed = reader.u8()?;
+    let minor = packed & 0x0f;
+    if packed >> 4 != 1 || minor > 2 {
+        return Err(structural(body.start, "wallpaper version is unsupported"));
+    }
+    let legacy_file_path = utf16(&mut reader)?;
+    let grayscale = reader.bool()?;
+    let hidden = minor >= 1 && reader.bool()?;
+    let file_reference = if minor >= 2 {
+        Some(image_reference(data, &mut reader, archive)?)
+    } else {
+        None
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "wallpaper has trailing bytes",
+        ));
+    }
+    Ok(Wallpaper {
+        legacy_file_path,
+        grayscale,
+        hidden,
+        file_reference,
+    })
 }
 
 fn parse_cplane(
@@ -574,6 +709,8 @@ fn parse_view(
     let mut attributes_detail = None;
     let mut construction_plane = None;
     let mut viewport = None;
+    let mut trace_image = None;
+    let mut wallpaper = None;
     let mut children = Vec::new();
     let mut terminated = false;
     while offset < record.body.end {
@@ -591,6 +728,28 @@ fn parse_view(
             }
             VIEW_VIEWPORT if !child.short => {
                 viewport = Some(parse_viewport(data, child.body.clone(), scale)?);
+            }
+            VIEW_TRACE_IMAGE if !child.short => {
+                trace_image = Some(parse_trace_image(data, child.body.clone(), archive, scale)?);
+            }
+            VIEW_WALLPAPER if !child.short => {
+                let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
+                let path = utf16(&mut reader)?;
+                if reader.remaining() != 0 {
+                    return Err(structural(
+                        reader.position(),
+                        "wallpaper path has trailing bytes",
+                    ));
+                }
+                wallpaper = Some(Wallpaper {
+                    legacy_file_path: path,
+                    grayscale: true,
+                    hidden: false,
+                    file_reference: None,
+                });
+            }
+            VIEW_WALLPAPER_V3 if !child.short => {
+                wallpaper = Some(parse_wallpaper(data, child.body.clone(), archive)?);
             }
             VIEW_NAME if !child.short => {
                 let mut reader = BoundedReader::new(data, child.body.start, child.body.end)?;
@@ -660,6 +819,8 @@ fn parse_view(
         attributes: attributes_detail,
         construction_plane,
         viewport,
+        trace_image,
+        wallpaper,
         children,
     })
 }

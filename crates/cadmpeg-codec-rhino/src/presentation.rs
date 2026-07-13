@@ -45,6 +45,12 @@ const DIMSTYLE: Uuid = Uuid::from_canonical([
 const EMBEDDED_BITMAP: Uuid = Uuid::from_canonical([
     0x77, 0x2e, 0x6f, 0xc1, 0xb1, 0x7b, 0x4f, 0xc4, 0x8f, 0x54, 0x5f, 0xda, 0x51, 0x1d, 0x76, 0xd2,
 ]);
+const WINDOWS_BITMAP: Uuid = Uuid::from_canonical([
+    0x39, 0x04, 0x65, 0xeb, 0x37, 0x21, 0x11, 0xd4, 0x80, 0x0b, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+]);
+const WINDOWS_BITMAP_EX: Uuid = Uuid::from_canonical([
+    0x20, 0x3a, 0xfc, 0x17, 0xbc, 0xc9, 0x44, 0xfb, 0xa0, 0x7b, 0x7f, 0x5c, 0x31, 0xbd, 0x5e, 0xd9,
+]);
 const TEXTURE_MAPPING: Uuid = Uuid::from_canonical([
     0x32, 0xec, 0x99, 0x7a, 0xc3, 0xbf, 0x4a, 0xe5, 0xab, 0x19, 0xfd, 0x57, 0x2b, 0x8a, 0xd5, 0x54,
 ]);
@@ -295,6 +301,27 @@ struct EmbeddedImageRecord {
     buffer_offset: u64,
     buffer_byte_len: u64,
     buffer_sha256: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WindowsBitmapRecord {
+    id: String,
+    source_offset: u64,
+    class_uuid: String,
+    file_path: String,
+    header_size: i32,
+    width_pixels: i32,
+    height_pixels: i32,
+    planes: u16,
+    bits_per_pixel: u16,
+    compression: i32,
+    image_byte_len: i32,
+    pixels_per_meter: [i32; 2],
+    colors_used: i32,
+    important_colors: i32,
+    pixel_buffer_offset: u64,
+    pixel_buffer_byte_len: u64,
+    pixel_buffer_sha256: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -1739,6 +1766,63 @@ fn parse_embedded_image(
     })
 }
 
+fn parse_windows_bitmap(
+    data: &[u8],
+    range: Range<usize>,
+    class_uuid: Uuid,
+    source_offset: usize,
+) -> Result<WindowsBitmapRecord, FramingError> {
+    let mut reader = BoundedReader::new(data, range.start, range.end)?;
+    let file_path = if class_uuid == WINDOWS_BITMAP_EX {
+        if reader.u8()? != 0x10 {
+            return Err(structural(
+                reader.position() - 1,
+                "Windows bitmap version is unsupported",
+            ));
+        }
+        utf16(&mut reader)?
+    } else {
+        String::new()
+    };
+    let header_size = reader.i32()?;
+    let width_pixels = reader.i32()?;
+    let height_pixels = reader.i32()?;
+    let planes = reader.u16()?;
+    let bits_per_pixel = reader.u16()?;
+    let compression = reader.i32()?;
+    let image_byte_len = reader.i32()?;
+    let pixels_per_meter = [reader.i32()?, reader.i32()?];
+    let colors_used = reader.i32()?;
+    let important_colors = reader.i32()?;
+    if image_byte_len < 0 || colors_used < 0 {
+        return Err(structural(
+            reader.position(),
+            "Windows bitmap header is invalid",
+        ));
+    }
+    let pixel_buffer_offset = reader.position();
+    let buffer = reader.take(reader.remaining())?;
+    Ok(WindowsBitmapRecord {
+        id: format!("rhino:presentation:windows_bitmap#offset-{source_offset}"),
+        source_offset: source_offset as u64,
+        class_uuid: class_uuid.to_string(),
+        file_path,
+        header_size,
+        width_pixels,
+        height_pixels,
+        planes,
+        bits_per_pixel,
+        compression,
+        image_byte_len,
+        pixels_per_meter,
+        colors_used,
+        important_colors,
+        pixel_buffer_offset: pixel_buffer_offset as u64,
+        pixel_buffer_byte_len: buffer.len() as u64,
+        pixel_buffer_sha256: cadmpeg_ir::hash::sha256_hex(buffer),
+    })
+}
+
 fn parse_texture_mapping(
     data: &[u8],
     range: Range<usize>,
@@ -2070,6 +2154,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let mut hatch_patterns = Vec::new();
     let mut dimension_styles = Vec::new();
     let mut images = Vec::new();
+    let mut windows_bitmaps = Vec::new();
     let mut texture_mappings = Vec::new();
     let mut text_styles = Vec::new();
     let mut layers = Vec::new();
@@ -2143,6 +2228,22 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                         parse_embedded_image(&scan.data, range, scan.archive, record.range.start)
                     {
                         images.push(value);
+                    }
+                } else if let Ok(class) = parse_class_wrapper(
+                    &scan.data,
+                    record.body.clone(),
+                    scan.archive,
+                    &mut Vec::new(),
+                ) {
+                    if matches!(class.class_uuid, WINDOWS_BITMAP | WINDOWS_BITMAP_EX) {
+                        if let Ok(value) = parse_windows_bitmap(
+                            &scan.data,
+                            class.class_data_range,
+                            class.class_uuid,
+                            record.range.start,
+                        ) {
+                            windows_bitmaps.push(value);
+                        }
                     }
                 }
             } else if table_type == TEXTURE_MAPPING_TABLE {
@@ -2321,6 +2422,9 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     namespace
         .set_arena("embedded_images", &images)
         .expect("Rhino images serialize");
+    namespace
+        .set_arena("windows_bitmaps", &windows_bitmaps)
+        .expect("Rhino Windows bitmaps serialize");
     namespace
         .set_arena("texture_mappings", &texture_mappings)
         .expect("Rhino texture mappings serialize");
