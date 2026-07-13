@@ -125,12 +125,7 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
     scan.curve_expressions
         .iter()
         .map(|record| CreoCurveExpressionRecord {
-            id: format!(
-                "creo:curve_expression#{}:{}@{}",
-                if record.backup { "backup" } else { "active" },
-                record.entity_id,
-                record.offset
-            ),
+            id: curve_expression_record_id(record),
             entity_id: record.entity_id,
             backup: record.backup,
             lines: record
@@ -154,6 +149,128 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                 .collect(),
         })
         .collect()
+}
+
+fn curve_expression_record_id(record: &crate::curve::CurveExpressionRecord) -> String {
+    format!(
+        "creo:depdb:curve_expression#{}-{}-{}",
+        if record.backup { "backup" } else { "active" },
+        record.entity_id,
+        record.offset
+    )
+}
+
+fn transfer_curve_expression_features(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) {
+    let ordinal_base = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.ordinal)
+        .max()
+        .map_or(0, |value| value + 1);
+    for (expression_ordinal, record) in scan
+        .curve_expressions
+        .iter()
+        .filter(|record| !record.backup)
+        .enumerate()
+    {
+        let ordinal = ordinal_base + expression_ordinal as u64;
+        let feature_id = IrFeatureId(format!(
+            "creo:depdb:curve_expression_feature#{}-{}",
+            record.entity_id, record.offset
+        ));
+        let mut parameters_by_name = BTreeMap::<String, ParameterId>::new();
+        for (assignment_ordinal, assignment) in record.assignments.iter().enumerate() {
+            let parameter_id = ParameterId(format!(
+                "creo:depdb:curve_expression_parameter#{}-{}-{}",
+                record.entity_id, record.offset, assignment_ordinal
+            ));
+            let dependencies = assignment
+                .dependencies
+                .iter()
+                .filter_map(|name| parameters_by_name.get(name).cloned())
+                .collect::<Vec<_>>();
+            let external_dependencies = assignment
+                .dependencies
+                .iter()
+                .filter(|name| !parameters_by_name.contains_key(*name))
+                .cloned()
+                .collect::<Vec<_>>();
+            let mut properties = BTreeMap::new();
+            if !external_dependencies.is_empty() {
+                properties.insert(
+                    "external_dependencies".to_string(),
+                    external_dependencies.join(","),
+                );
+            }
+            annotate(
+                annotations,
+                &parameter_id.0,
+                "DEPDB_DATA",
+                assignment.offset as u64,
+                "curve_expression_assignment",
+                Exactness::Derived,
+            );
+            ir.model.parameters.push(DesignParameter {
+                id: parameter_id.clone(),
+                owner: feature_id.clone(),
+                ordinal: assignment_ordinal as u32,
+                name: assignment.name.clone(),
+                expression: assignment.expression.clone(),
+                display: None,
+                value: assignment.value.map(ParameterValue::Real),
+                dependencies,
+                properties,
+                pmi: None,
+                native_ref: Some(curve_expression_record_id(record)),
+            });
+            parameters_by_name.insert(assignment.name.clone(), parameter_id);
+        }
+        annotate(
+            annotations,
+            &feature_id.0,
+            "DEPDB_DATA",
+            record.expression_offset as u64,
+            "curve_expression_feature",
+            Exactness::Derived,
+        );
+        ir.model.features.push(Feature {
+            id: feature_id,
+            ordinal,
+            name: Some(format!("Curve Equation {}", record.entity_id)),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("crv_fr_eqn".to_string()),
+            source_text: Some(
+                record
+                    .lines
+                    .iter()
+                    .map(|line| line.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            ),
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: IrFeatureDefinition::Native {
+                kind: "CurveFromEquation".to_string(),
+                parameters: BTreeMap::from([
+                    ("entity_id".to_string(), record.entity_id.to_string()),
+                    (
+                        "assignment_count".to_string(),
+                        record.assignments.len().to_string(),
+                    ),
+                ]),
+                properties: BTreeMap::new(),
+            },
+            native_ref: Some(curve_expression_record_id(record)),
+        });
+    }
 }
 
 fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
@@ -1739,6 +1856,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             native_ref: None,
         });
     }
+    transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
@@ -2183,8 +2301,10 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Named feature operations and their decoded dependency/input tables transfer as \
-                  native design records. Full neutral operation semantics, configurations, \
-                  expressions, materials, and display data remain untransferred."
+                  native design records. Curve-equation assignments transfer with their source, \
+                  dependencies, and closed arithmetic values. Full neutral operation semantics, \
+                  configurations, remaining expression families, materials, and display data \
+                  remain untransferred."
             .to_string(),
         provenance: None,
     });
