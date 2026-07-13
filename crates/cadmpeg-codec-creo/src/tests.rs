@@ -71,7 +71,24 @@ fn push_generated_plane_row(
     origin: [f64; 3],
 ) {
     payload.extend_from_slice(&[surface_id, 0x22, 4, 0x01, 0, 0]);
-    payload.extend_from_slice(&[0x0f; 10]);
+    let normal = [
+        u_axis[1] * v_axis[2] - u_axis[2] * v_axis[1],
+        u_axis[2] * v_axis[0] - u_axis[0] * v_axis[2],
+        u_axis[0] * v_axis[1] - u_axis[1] * v_axis[0],
+    ];
+    let held_axis = (0..3).find(|axis| {
+        normal[*axis].abs() > 1e-9
+            && (0..3).all(|other| other == *axis || normal[other].abs() <= 1e-9)
+    });
+    let corners = held_axis.map_or([[0.0; 3]; 2], |axis| {
+        let mut corners = [[-1.0, -1.0, -1.0], [1.0, 2.0, 2.0]];
+        corners[0][axis] = origin[axis];
+        corners[1][axis] = origin[axis];
+        corners
+    });
+    for value in [0.0; 4].into_iter().chain(corners.into_iter().flatten()) {
+        push_generated_scalar(payload, value);
+    }
     payload.push(0xe3);
     for value in u_axis
         .into_iter()
@@ -260,16 +277,18 @@ fn scan_resolves_section_scalar_cache_in_surface_rows() {
 }
 
 #[test]
-fn decode_transfers_complete_plane_local_system() {
+fn decode_transfers_axis_aligned_plane_from_outline() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    payload.extend_from_slice(&[0x0f; 10]);
+    for value in [0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, 1.0] {
+        push_generated_scalar(&mut payload, value);
+    }
     payload.push(0xe3);
     payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let expected_offset = container::scan_bytes(data.clone()).plane_local_systems[0].offset as u64;
+    let expected_offset = container::scan_bytes(data.clone()).outline_planes[0].offset as u64;
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
 
     assert_eq!(result.ir.model.surfaces.len(), 1);
@@ -278,9 +297,9 @@ fn decode_transfers_complete_plane_local_system() {
     assert_eq!(
         surface.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(3.0, 0.0, 1.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         }
     );
     assert_annotation(
@@ -288,7 +307,7 @@ fn decode_transfers_complete_plane_local_system() {
         surface.id.as_str(),
         "creo:VisibGeom",
         expected_offset,
-        "plane_local_system",
+        "plane_outline_held_coordinate",
         Exactness::Derived,
     );
     assert!(result.report.geometry_transferred);

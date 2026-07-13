@@ -3,7 +3,7 @@
 
 use crate::datum::DatumPlane;
 use crate::feature::{BinaryFlag, FeatureDefinition};
-use crate::surface::PlaneLocalSystem;
+use crate::surface::{OutlinePlane, PlaneLocalSystem};
 
 /// A feature's right-handed section-to-model rigid frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +49,7 @@ pub fn resolve(
     definitions: &[FeatureDefinition],
     datums: &[DatumPlane],
     model_planes: &[PlaneLocalSystem],
+    outline_planes: &[OutlinePlane],
 ) -> Vec<FeatureSectionTransform> {
     let mut result = Vec::new();
     for definition in definitions {
@@ -78,6 +79,12 @@ pub fn resolve(
                 let normal = plane.normal?;
                 let origin = plane.origin?;
                 Some((normal, dot(normal, origin)))
+            })
+            .or_else(|| {
+                let plane = outline_planes
+                    .iter()
+                    .find(|plane| plane.surface_id == sketch_id)?;
+                Some((plane.normal, dot(plane.normal, plane.origin)))
             });
         let Some((sketch_normal, sketch_offset)) = sketch else {
             continue;
@@ -158,6 +165,7 @@ mod tests {
                     datum(2, [1.0, 0.0, 0.0], 2.0),
                     datum(4, [0.0, 0.0, 1.0], 3.0),
                 ],
+                &[],
                 &[],
             ),
             vec![FeatureSectionTransform {

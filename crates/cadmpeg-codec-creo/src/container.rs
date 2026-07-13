@@ -30,8 +30,8 @@ use crate::feature::{
 use crate::placement::{self, FeatureSectionTransform};
 use crate::psb;
 use crate::surface::{
-    self, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord, SurfacePrototype,
-    SurfacePrototypeRecord, SurfaceRow,
+    self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
+    SurfacePrototype, SurfacePrototypeRecord, SurfaceRow,
 };
 use crate::topology::{
     self, FaceComponent, HalfEdge, HalfEdgeVertexIncidence, Loop, TopologicalVertex,
@@ -152,6 +152,8 @@ pub struct ContainerScan {
     pub plane_local_systems: Vec<PlaneLocalSystem>,
     /// Plane-specific standard and compact positional envelopes.
     pub plane_envelopes: Vec<PlaneEnvelopeRecord>,
+    /// Axis-aligned placed planes derived from unambiguous outline corners.
+    pub outline_planes: Vec<OutlinePlane>,
     /// Labeled surface prototypes with fully decoded scalar fields.
     pub surface_prototypes: Vec<SurfacePrototype>,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
@@ -927,6 +929,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let surface_parameters = surface_parameters(&data, &sections);
     let plane_local_systems = plane_local_systems(&data, &sections);
     let plane_envelopes = plane_envelopes(&data, &sections);
+    let outline_planes = surface::outline_planes(&plane_envelopes);
     let surface_prototypes = surface_prototypes(&data, &sections);
     let surface_prototype_records = surface_prototype_records(&data, &sections);
     let curve_prototypes = curve_prototypes(&data, &sections);
@@ -954,8 +957,12 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
     let feature_definitions = feature_definitions(&data, &sections);
-    let feature_section_transforms =
-        placement::resolve(&feature_definitions, &datum_planes, &plane_local_systems);
+    let feature_section_transforms = placement::resolve(
+        &feature_definitions,
+        &datum_planes,
+        &plane_local_systems,
+        &outline_planes,
+    );
     let feature_operations = feature_operations(&data, &sections);
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
     let feature_entity_tables =
@@ -974,6 +981,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         surface_parameters,
         plane_local_systems,
         plane_envelopes,
+        outline_planes,
         surface_prototypes,
         surface_prototype_records,
         curve_prototypes,

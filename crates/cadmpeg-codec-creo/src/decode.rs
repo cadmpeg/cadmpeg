@@ -217,20 +217,35 @@ fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
     None
 }
 
-fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    let planes = scan
+fn is_axis_aligned(vector: [f64; 3]) -> bool {
+    vector.iter().filter(|value| value.abs() > 1e-9).count() == 1
+}
+
+fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
+    let mut planes = scan
         .plane_local_systems
         .iter()
         .filter_map(|frame| {
-            Some((
-                frame.surface_id,
-                PlaneEquation {
-                    origin: frame.origin?,
-                    normal: frame.normal?,
-                },
-            ))
+            let origin = frame.origin?;
+            let normal = frame.normal?;
+            (!is_axis_aligned(normal))
+                .then_some((frame.surface_id, PlaneEquation { origin, normal }))
         })
         .collect::<BTreeMap<_, _>>();
+    for plane in &scan.outline_planes {
+        planes.insert(
+            plane.surface_id,
+            PlaneEquation {
+                origin: plane.origin,
+                normal: plane.normal,
+            },
+        );
+    }
+    planes
+}
+
+fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let planes = placed_planes(scan);
     let half_edges = scan
         .half_edges
         .iter()
@@ -634,6 +649,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         else {
             continue;
         };
+        if is_axis_aligned(normal) {
+            continue;
+        }
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", frame.surface_id));
         annotate(
             &mut annotations,
@@ -653,6 +671,37 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("VisibGeom:{}", frame.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+    }
+    for plane in &scan.outline_planes {
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", plane.surface_id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            &mut annotations,
+            &id,
+            "VisibGeom",
+            plane.offset as u64,
+            "plane_outline_held_coordinate",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
+                normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
+                u_axis: Vector3::new(plane.u_axis[0], plane.u_axis[1], plane.u_axis[2]),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", plane.surface_id),
                 name: None,
                 color: None,
                 visible: None,
@@ -833,6 +882,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_plane_envelope_count".to_string(),
         scan.plane_envelopes.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_outline_plane_count".to_string(),
+        scan.outline_planes.len().to_string(),
     );
     attributes.insert(
         "decoded_surface_prototype_count".to_string(),
@@ -1058,11 +1111,18 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         .iter()
         .filter(|s| s.role == role::GEOMETRY)
         .count();
-    let placed_plane_count = scan
+    let mut placed_plane_ids = scan
         .plane_local_systems
         .iter()
-        .filter(|frame| frame.origin.is_some() && frame.normal.is_some() && frame.u_axis.is_some())
-        .count();
+        .filter(|frame| {
+            frame.origin.is_some()
+                && frame.u_axis.is_some()
+                && frame.normal.is_some_and(|normal| !is_axis_aligned(normal))
+        })
+        .map(|frame| frame.surface_id)
+        .collect::<BTreeSet<_>>();
+    placed_plane_ids.extend(scan.outline_planes.iter().map(|plane| plane.surface_id));
+    let placed_plane_count = placed_plane_ids.len();
 
     let mut losses = Vec::new();
 

@@ -279,6 +279,78 @@ pub struct PlaneEnvelopeRecord {
     pub offset: usize,
 }
 
+/// Axis-aligned model-space plane established by two outline corners with one
+/// and only one held coordinate.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutlinePlane {
+    /// Owning `srf_array` surface identifier.
+    pub surface_id: u32,
+    /// Model-space plane origin with only the held coordinate populated.
+    pub origin: [f64; 3],
+    /// Positive model-space basis normal of the held coordinate.
+    pub normal: [f64; 3],
+    /// Deterministic positive in-plane reference direction.
+    pub u_axis: [f64; 3],
+    /// Byte offset of the outline body.
+    pub offset: usize,
+}
+
+/// Derive axis-aligned plane equations from complete, non-degenerate outline
+/// corner pairs. Ambiguous pairs with zero or multiple held axes are withheld.
+pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
+    let mut result = Vec::new();
+    for record in envelopes {
+        let corners = match &record.envelope {
+            PlaneEnvelope::Standard { corners_3d, .. }
+            | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+        };
+        let Some(first) = corners[0]
+            .map(|value| value)
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some(second) = corners[1]
+            .map(|value| value)
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let scale = first
+            .iter()
+            .chain(&second)
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        let held = (0..3)
+            .filter(|axis| (first[*axis] - second[*axis]).abs() <= 1e-9 * scale)
+            .collect::<Vec<_>>();
+        if held.len() != 1 {
+            continue;
+        }
+        let axis = held[0];
+        let mut origin = [0.0; 3];
+        origin[axis] = first[axis];
+        let mut normal = [0.0; 3];
+        normal[axis] = 1.0;
+        let u_axis = if axis == 0 {
+            [0.0, 1.0, 0.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        result.push(OutlinePlane {
+            surface_id: record.surface_id,
+            origin,
+            normal,
+            u_axis,
+            offset: record.offset,
+        });
+    }
+    result.sort_by_key(|plane| plane.offset);
+    result
+}
+
 const BOUNDARY_TYPES: &[u8] = &[0x00, 0x01, 0x06, 0xf6];
 
 /// Discover positional rows from every `srf_array` namespace in `payload`.
@@ -900,5 +972,50 @@ mod tests {
                 },
             ]
         );
+    }
+
+    #[test]
+    fn derives_one_held_coordinate_outline_plane() {
+        let records = [PlaneEnvelopeRecord {
+            surface_id: 42,
+            body: Vec::new(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[Some(0.0), Some(1.0)], [Some(0.0), Some(1.0)]],
+                corners_3d: [
+                    [Some(3.0), Some(-2.0), Some(4.0)],
+                    [Some(3.0), Some(5.0), Some(9.0)],
+                ],
+            },
+            row_offset: 10,
+            offset: 20,
+        }];
+        assert_eq!(
+            outline_planes(&records),
+            vec![OutlinePlane {
+                surface_id: 42,
+                origin: [3.0, 0.0, 0.0],
+                normal: [1.0, 0.0, 0.0],
+                u_axis: [0.0, 1.0, 0.0],
+                offset: 20,
+            }]
+        );
+    }
+
+    #[test]
+    fn withholds_ambiguous_outline_plane() {
+        let records = [PlaneEnvelopeRecord {
+            surface_id: 42,
+            body: Vec::new(),
+            envelope: PlaneEnvelope::Compact {
+                prefix: [None; 3],
+                corners_3d: [
+                    [Some(3.0), Some(2.0), Some(4.0)],
+                    [Some(3.0), Some(2.0), Some(9.0)],
+                ],
+            },
+            row_offset: 10,
+            offset: 20,
+        }];
+        assert!(outline_planes(&records).is_empty());
     }
 }
