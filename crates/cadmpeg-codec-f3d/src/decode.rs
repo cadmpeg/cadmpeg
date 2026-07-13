@@ -46,17 +46,30 @@ pub fn decode(
             let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
             let body_visibility =
                 crate::design::decode_body_visibility(reader, &scan, &active.name)?;
+            let mut body_visibilities = Vec::new();
             for body in &mut brep.bodies {
-                if let Some(visible) = brep
-                    .body_keys
-                    .get(&body.id)
-                    .and_then(|key| body_visibility.get(key))
+                if let Some((asm_body_key, visibility)) =
+                    brep.body_keys.get(&body.id).and_then(|key| {
+                        body_visibility
+                            .get(key)
+                            .map(|visibility| (*key, visibility))
+                    })
                 {
-                    body.visible = Some(*visible);
+                    body.visible = Some(visibility.visible);
+                    body_visibilities.push(crate::records::BodyVisibility {
+                        id: format!("f3d:{}:body-visibility#{}", visibility.stream, body.id),
+                        body: body.id.clone(),
+                        stream: visibility.stream.clone(),
+                        byte_offset: visibility.byte_offset,
+                        asm_body_key,
+                        entity_suffix: visibility.entity_suffix,
+                        visible: visibility.visible,
+                    });
                 }
             }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let (mut ir, mut native) = build_geometry_ir(&scan, &active, brep)?;
+            native.body_visibilities = body_visibilities;
             if let Some(history) = decode_asm_history(&scan, &active)? {
                 native.asm_histories.push(history);
             }

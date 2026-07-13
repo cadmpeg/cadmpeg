@@ -65,7 +65,7 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
     archive.write_all(&0u32.to_le_bytes())?;
     archive
         .start_file(
-            "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh",
             options,
         )
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D BREP entry: {error}")))?;
@@ -259,9 +259,12 @@ fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
 }
 
 fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
-    let Some(native) = f3d_native(target)? else {
-        return Ok(None);
-    };
+    let native = f3d_native(target)?.unwrap_or_default();
+    let has_body_visibility = target
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.visible.is_some());
     if native.construction_recipes.is_empty()
         && native.persistent_references.is_empty()
         && native.lost_edge_references.is_empty()
@@ -272,48 +275,80 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         && native.sketch_points.is_empty()
         && native.sketch_curve_identities.is_empty()
         && native.sketch_relations.is_empty()
+        && !has_body_visibility
     {
         return Ok(None);
     }
 
     let mut out = Vec::new();
-    if !native.design_material_assignments.is_empty() {
-        let unique = native
-            .design_material_assignments
+    let mut body_map = native
+        .design_material_assignments
+        .iter()
+        .map(|assignment| (assignment.asm_body_key, assignment.entity_suffix))
+        .collect::<BTreeMap<_, _>>();
+    let mut visibility_rows = Vec::new();
+    for (ordinal, body) in target.model.bodies.iter().enumerate() {
+        let Some(visible) = body.visible else {
+            continue;
+        };
+        let metadata = native
+            .body_visibilities
             .iter()
-            .map(|assignment| (assignment.asm_body_key, assignment.entity_suffix))
-            .collect::<BTreeSet<_>>();
-        let count = u32::try_from(unique.len())
+            .find(|metadata| metadata.body == body.id);
+        let asm_body_key = match metadata {
+            Some(metadata) => metadata.asm_body_key,
+            None => u64::try_from(source_less_body_key(target, body, ordinal)?).map_err(|_| {
+                CodecError::Malformed("source-less ASM body key is negative".into())
+            })?,
+        };
+        let entity_suffix = metadata
+            .map(|metadata| metadata.entity_suffix)
+            .or_else(|| body_map.get(&asm_body_key).copied())
+            .unwrap_or(asm_body_key);
+        body_map.insert(asm_body_key, entity_suffix);
+        visibility_rows.push((entity_suffix, visible));
+    }
+    if !body_map.is_empty() {
+        let count = u32::try_from(body_map.len())
             .map_err(|_| CodecError::Malformed("Design body map exceeds u32::MAX".into()))?;
         out.extend_from_slice(&count.to_le_bytes());
-        for (body_key, entity_suffix) in unique {
+        for (body_key, entity_suffix) in body_map {
             out.extend_from_slice(&body_key.to_le_bytes());
             out.extend_from_slice(&entity_suffix.to_le_bytes());
         }
         out.extend_from_slice(&0u64.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
         native_lp_utf16(&mut out, "BREP.generated.smbh")?;
-        for assignment in &native.design_material_assignments {
-            native_lp_utf16(&mut out, &assignment.entity_id)?;
-            native_lp_utf16(&mut out, &assignment.visual_guid)?;
-            native_lp_utf16(
-                &mut out,
-                assignment
-                    .physical_token
-                    .as_deref()
-                    .unwrap_or("PrismMaterial-Generated"),
-            )?;
-            native_lp_utf16(&mut out, "Body")?;
-            native_lp_utf16(&mut out, "00000000-0000-0000-0000-000000000000")?;
-            native_lp_utf16(&mut out, "BA5EE55E-9982-449B-9D66-9F036540E140")?;
-            native_lp_utf16(
-                &mut out,
-                assignment
-                    .visual_preset
-                    .as_deref()
-                    .unwrap_or("Prism-Generated"),
-            )?;
-        }
+    }
+    for assignment in &native.design_material_assignments {
+        native_lp_utf16(&mut out, &assignment.entity_id)?;
+        native_lp_utf16(&mut out, &assignment.visual_guid)?;
+        native_lp_utf16(
+            &mut out,
+            assignment
+                .physical_token
+                .as_deref()
+                .unwrap_or("PrismMaterial-Generated"),
+        )?;
+        native_lp_utf16(&mut out, "Body")?;
+        native_lp_utf16(&mut out, "00000000-0000-0000-0000-000000000000")?;
+        native_lp_utf16(&mut out, "BA5EE55E-9982-449B-9D66-9F036540E140")?;
+        native_lp_utf16(
+            &mut out,
+            assignment
+                .visual_preset
+                .as_deref()
+                .unwrap_or("Prism-Generated"),
+        )?;
+    }
+    for (ordinal, (entity_suffix, visible)) in visibility_rows.into_iter().enumerate() {
+        native_lp_utf16(
+            &mut out,
+            &format!("00000000-0000-0000-0000-{:012X}", ordinal + 1),
+        )?;
+        out.push(u8::from(!visible));
+        out.extend_from_slice(&[0x01, 0x01]);
+        out.extend_from_slice(&entity_suffix.to_le_bytes());
     }
     for recipe in &native.construction_recipes {
         let name = construction_recipe_name(recipe.kind);
@@ -8013,6 +8048,7 @@ pub fn write_semantic(
     validate_act_appearance_bindings(&baseline.ir, target)?;
     let body_transform_edits =
         validate_body_transform_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
+    let body_visibility_edits = validate_body_visibility_edits(&baseline.ir, target)?;
     let mut entity_color_edits =
         validate_body_color_edits(&baseline.ir.model.bodies, &target.model.bodies)?;
     entity_color_edits.extend(validate_face_color_edits(
@@ -8075,6 +8111,7 @@ pub fn write_semantic(
         {
             body.transform = candidate.transform;
             body.color = candidate.color;
+            body.visible = candidate.visible;
         }
     }
     supported_target.model.edges.clone_from(&target.model.edges);
@@ -8399,6 +8436,9 @@ pub fn write_semantic(
             }
             if let Some(edits) = body_member_edits.get(&name) {
                 patch_body_members(&mut bytes, edits)?;
+            }
+            if let Some(edits) = body_visibility_edits.get(&name) {
+                patch_body_visibilities(&mut bytes, edits)?;
             }
             if let Some(edits) = entity_header_edits.get(&name) {
                 patch_entity_headers(&mut bytes, edits)?;
@@ -9998,6 +10038,74 @@ fn patch_body_members(bytes: &mut [u8], edits: &[BodyMemberEdit]) -> Result<(), 
     }
     Ok(())
 }
+
+fn validate_body_visibility_edits(
+    baseline: &CadIr,
+    target: &CadIr,
+) -> Result<BTreeMap<String, Vec<(u64, bool)>>, CodecError> {
+    let baseline_bodies = baseline
+        .model
+        .bodies
+        .iter()
+        .map(|body| (&body.id, body))
+        .collect::<BTreeMap<_, _>>();
+    let target_bodies = target
+        .model
+        .bodies
+        .iter()
+        .map(|body| (&body.id, body))
+        .collect::<BTreeMap<_, _>>();
+    if baseline_bodies.keys().ne(target_bodies.keys()) {
+        return Err(CodecError::NotImplemented(
+            "F3D body-visibility regeneration requires the unchanged body-id set".into(),
+        ));
+    }
+    let metadata = f3d_native(baseline)?
+        .map(|native| {
+            native
+                .body_visibilities
+                .into_iter()
+                .map(|item| (item.body.clone(), item))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let mut edits = BTreeMap::<String, Vec<(u64, bool)>>::new();
+    for (id, before) in baseline_bodies {
+        let after = target_bodies[id];
+        if after.visible == before.visible {
+            continue;
+        }
+        let visible = after.visible.ok_or_else(|| {
+            CodecError::NotImplemented(format!("cannot remove F3D body visibility: {id}"))
+        })?;
+        let record = metadata.get(id).ok_or_else(|| {
+            CodecError::NotImplemented(format!(
+                "F3D body visibility {id} has no joined Design browser node"
+            ))
+        })?;
+        edits
+            .entry(record.stream.clone())
+            .or_default()
+            .push((record.byte_offset, visible));
+    }
+    Ok(edits)
+}
+
+fn patch_body_visibilities(bytes: &mut [u8], edits: &[(u64, bool)]) -> Result<(), CodecError> {
+    for &(offset, visible) in edits {
+        let at = usize::try_from(offset).map_err(|_| {
+            CodecError::Malformed("body-visibility offset exceeds address space".into())
+        })?;
+        let flag = bytes
+            .get_mut(at)
+            .filter(|flag| **flag <= 1)
+            .ok_or_else(|| {
+                CodecError::Malformed("body-visibility flag is missing or invalid".into())
+            })?;
+        *flag = u8::from(!visible);
+    }
+    Ok(())
+}
 struct ConstructionRecipeEdit {
     record_index: Option<(u64, i32)>,
     design_id: Option<(u64, Vec<u8>)>,
@@ -11027,9 +11135,10 @@ fn validate_body_transform_edits(
         let mut normalized = after.clone();
         normalized.transform = before.transform;
         normalized.color = before.color;
+        normalized.visible = before.visible;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D body edit changes fields other than transform: {id}"
+                "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
         if after.transform == before.transform {
@@ -11071,9 +11180,10 @@ fn validate_body_color_edits(
         let mut normalized = after.clone();
         normalized.color = before.color;
         normalized.transform = before.transform;
+        normalized.visible = before.visible;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
-                "F3D body edit changes fields other than transform or color: {id}"
+                "F3D body edit changes fields other than transform, color, or visibility: {id}"
             )));
         }
         if after.color == before.color {

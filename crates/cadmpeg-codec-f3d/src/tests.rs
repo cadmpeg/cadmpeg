@@ -3666,6 +3666,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less.model.bodies[0].visible = Some(false);
     source_less.model.vertices[0].tolerance = Some(0.025);
     let tangent_edge = source_less.model.edges[0].id.clone();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
@@ -3704,6 +3705,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         .expect("source-less F3D round trip");
 
     assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(round_trip.ir.model.bodies[0].visible, Some(false));
+    assert_eq!(f3d_native(&round_trip.ir).body_visibilities.len(), 1);
+    assert!(!f3d_native(&round_trip.ir).body_visibilities[0].visible);
     assert_eq!(
         round_trip.ir.model.bodies[0].kind,
         cadmpeg_ir::topology::BodyKind::Sheet
@@ -3742,6 +3746,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.surfaces, source_less.model.surfaces);
 
     let mut edited = round_trip.ir;
+    edited.model.bodies[0].visible = Some(true);
     edited.model.vertices[0].tolerance = Some(0.05);
     {
         let mut native = f3d_native_mut(&mut edited);
@@ -3760,6 +3765,8 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         Some(crate::records::FaceContainment::Out)
     );
     assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
+    assert_eq!(retained.ir.model.bodies[0].visible, Some(true));
+    assert!(f3d_native(&retained.ir).body_visibilities[0].visible);
     assert_eq!(
         f3d_native(&retained.ir).tolerant_vertex_tails[0].trailing_floats,
         [3.5, -4.5]
@@ -14960,8 +14967,16 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
         "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
     )
     .unwrap();
-    assert_eq!(visibility.get(&3), Some(&true), "flag 0 decodes visible");
-    assert_eq!(visibility.get(&6), Some(&false), "flag 1 decodes hidden");
+    assert_eq!(
+        visibility.get(&3).map(|item| item.visible),
+        Some(true),
+        "flag 0 decodes visible"
+    );
+    assert_eq!(
+        visibility.get(&6).map(|item| item.visible),
+        Some(false),
+        "flag 1 decodes hidden"
+    );
 
     let other = crate::design::decode_body_visibility(
         &mut cursor,

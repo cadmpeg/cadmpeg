@@ -1436,11 +1436,19 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
 /// The result maps each ASM body key to its display visibility; bodies
 /// without records are absent.
-pub fn decode_body_visibility(
+#[derive(Debug, Clone)]
+pub(crate) struct DecodedBodyVisibility {
+    pub stream: String,
+    pub byte_offset: u64,
+    pub entity_suffix: u64,
+    pub visible: bool,
+}
+
+pub(crate) fn decode_body_visibility(
     _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active_brep_entry: &str,
-) -> Result<HashMap<u64, bool>, CodecError> {
+) -> Result<HashMap<u64, DecodedBodyVisibility>, CodecError> {
     let Some(basename) = active_brep_entry
         .rsplit('/')
         .next()
@@ -1460,8 +1468,16 @@ pub fn decode_body_visibility(
             if binding.blob_name != basename {
                 continue;
             }
-            if let Some(hidden) = hidden_by_entity.get(&binding.entity_suffix) {
-                out.insert(binding.asm_key, !hidden);
+            if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
+                out.insert(
+                    binding.asm_key,
+                    DecodedBodyVisibility {
+                        stream: entry.name.clone(),
+                        byte_offset: node.byte_offset,
+                        entity_suffix: binding.entity_suffix,
+                        visible: !node.hidden,
+                    },
+                );
             }
         }
     }
@@ -1471,7 +1487,13 @@ pub fn decode_body_visibility(
 /// Scan for browser-node records: a length-prefixed 36-character UTF-16 GUID,
 /// one hidden-flag byte, the `01 01` marker, and the `u64` design-entity
 /// suffix.
-fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, bool> {
+#[derive(Debug, Clone, Copy)]
+struct BrowserNodeVisibility {
+    byte_offset: u64,
+    hidden: bool,
+}
+
+fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, BrowserNodeVisibility> {
     const GUID_CHARS: usize = 36;
     const GUID_BYTES: usize = GUID_CHARS * 2;
     let mut out = HashMap::new();
@@ -1486,7 +1508,13 @@ fn browser_node_hidden_flags(bytes: &[u8]) -> HashMap<u64, bool> {
         let flag_at = at + 4 + GUID_BYTES;
         if bytes.get(flag_at + 1..flag_at + 3) == Some(&[0x01, 0x01]) {
             if let (flag @ (0 | 1), Some(member)) = (bytes[flag_at], read_u64(bytes, flag_at + 3)) {
-                out.insert(member, flag == 1);
+                out.insert(
+                    member,
+                    BrowserNodeVisibility {
+                        byte_offset: flag_at as u64,
+                        hidden: flag == 1,
+                    },
+                );
             }
         }
         at += 1;

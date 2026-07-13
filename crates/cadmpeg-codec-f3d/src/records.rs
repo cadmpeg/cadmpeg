@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::attributes::AttributeTarget;
-use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, VertexId};
+use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, VertexId};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 /// Provenance link from a solved B-rep coedge to its source sketch curve.
@@ -592,6 +592,25 @@ pub struct DesignBodyMember {
     pub entity_suffix: u64,
     /// Source per-member flag word from the `BodiesRoot` list entry.
     pub flags: u16,
+}
+
+/// Design browser-node visibility joined to one solved ASM body.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BodyVisibility {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep body controlled by the browser node.
+    pub body: BodyId,
+    /// Design `BulkStream` ZIP entry containing the browser node.
+    pub stream: String,
+    /// Byte offset of the browser node's hidden flag within `stream`.
+    pub byte_offset: u64,
+    /// ASM body key used by the BREP body-map join.
+    pub asm_body_key: u64,
+    /// Numeric Design entity suffix stored by both joined records.
+    pub entity_suffix: u64,
+    /// Display visibility after inverting the native hidden flag.
+    pub visible: bool,
 }
 
 /// One entity in the Fusion ACT change-tracking table.
