@@ -8941,6 +8941,9 @@ fn native_pcurve_geometry(
                 periodic: false,
             })
         }
+        PcurveGeometry::Circle { .. } | PcurveGeometry::Ellipse { .. } => Err(
+            CodecError::NotImplemented("F3D analytic pcurve writing is not supported".into()),
+        ),
         PcurveGeometry::Nurbs {
             degree,
             knots,

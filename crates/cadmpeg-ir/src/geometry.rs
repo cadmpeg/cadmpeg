@@ -2188,6 +2188,32 @@ pub enum PcurveGeometry {
         /// Parameter-space direction.
         direction: Point2,
     },
+    /// A circle in parameter space, evaluated by angle in radians.
+    Circle {
+        /// Circle center.
+        center: Point2,
+        /// Unit direction at parameter zero.
+        ref_direction: Point2,
+        /// Positive parameter-space radius.
+        radius: f64,
+        /// Parameter increases clockwise in the parameter plane.
+        #[serde(default)]
+        clockwise: bool,
+    },
+    /// An ellipse in parameter space, evaluated by angle in radians.
+    Ellipse {
+        /// Ellipse center.
+        center: Point2,
+        /// Unit major-axis direction at parameter zero.
+        major_direction: Point2,
+        /// Positive major radius.
+        major_radius: f64,
+        /// Positive minor radius.
+        minor_radius: f64,
+        /// Parameter increases clockwise in the parameter plane.
+        #[serde(default)]
+        clockwise: bool,
+    },
     /// A free-form NURBS curve in parameter space (control points are (u, v)).
     Nurbs {
         /// Curve degree.

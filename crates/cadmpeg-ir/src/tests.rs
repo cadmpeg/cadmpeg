@@ -7,10 +7,11 @@ use crate::annotations::{ExactnessNote, Provenance};
 use crate::document::Model;
 use crate::examples::unit_cube;
 use crate::geometry::{
-    Curve, CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
+    SurfaceGeometry,
 };
-use crate::ids::{CoedgeId, CurveId, EdgeId, ProceduralSurfaceId, SubdId, UnknownId};
-use crate::math::{Point3, Vector3};
+use crate::ids::{CoedgeId, CurveId, EdgeId, PcurveId, ProceduralSurfaceId, SubdId, UnknownId};
+use crate::math::{Point2, Point3, Vector3};
 use crate::native::NativeRecord;
 use crate::provenance::{Exactness, SourceObjectAssociation};
 use crate::report::{Check, LossCategory, LossNote, Severity};
@@ -1144,7 +1145,22 @@ fn new_topology_references_are_validated() {
 fn topology_tolerance_and_new_conics_are_bounds_checked() {
     let mut ir = unit_cube();
     let edge_id = ir.model.edges[0].id.0.clone();
+    let pcurve_id = "synthetic:test:pcurve#bad-circle".to_string();
     ir.model.edges[0].tolerance = Some(-1.0);
+    ir.model.pcurves.push(Pcurve {
+        id: PcurveId(pcurve_id.clone()),
+        geometry: PcurveGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            ref_direction: Point2::new(1.0, 0.0),
+            radius: -1.0,
+            clockwise: false,
+        },
+        wrapper_reversed: None,
+        native_tail_flags: None,
+        parameter_range: None,
+        fit_tolerance: None,
+    });
+    ir.model.coedges[0].pcurve = Some(PcurveId(pcurve_id.clone()));
     ir.model.curves.push(Curve {
         id: CurveId("synthetic:test:curve#bad-parabola".into()),
         geometry: CurveGeometry::Parabola {
@@ -1170,6 +1186,7 @@ fn topology_tolerance_and_new_conics_are_bounds_checked() {
     let report = validate(&ir, Vec::new());
     for entity in [
         edge_id.as_str(),
+        pcurve_id.as_str(),
         "synthetic:test:curve#bad-parabola",
         "synthetic:test:curve#bad-hyperbola",
     ] {

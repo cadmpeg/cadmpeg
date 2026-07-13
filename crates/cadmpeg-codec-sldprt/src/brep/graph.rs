@@ -1043,18 +1043,11 @@ fn derive_planar_pcurves(
         let Some(edge) = edges.get(&coedge.edge) else {
             continue;
         };
-        if !edge.curve.as_ref().is_some_and(|curve_id| {
-            curves
-                .get(curve_id)
-                .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Line { .. }))
-        }) {
-            continue;
-        }
-        let position =
-            |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
-        let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+        let Some(curve) = edge.curve.as_ref().and_then(|id| curves.get(id).copied()) else {
             continue;
         };
+        let position =
+            |vertex_id: &VertexId| vertex_points.get(vertex_id).map(|point| point.position);
         let uv = |point: cadmpeg_ir::math::Point3| {
             let d = [point.x - origin.x, point.y - origin.y, point.z - origin.z];
             cadmpeg_ir::math::Point2::new(
@@ -1062,23 +1055,99 @@ fn derive_planar_pcurves(
                 d[0] * v_reference.x + d[1] * v_reference.y + d[2] * v_reference.z,
             )
         };
-        let start = uv(start);
-        let end = uv(end);
-        let (du, dv) = (end.u - start.u, end.v - start.v);
-        let norm = (du * du + dv * dv).sqrt();
-        if norm == 0.0 {
-            continue;
-        }
+        let project_direction = |direction: cadmpeg_ir::math::Vector3| {
+            let projected = cadmpeg_ir::math::Point2::new(
+                direction.x * u_reference.x
+                    + direction.y * u_reference.y
+                    + direction.z * u_reference.z,
+                direction.x * v_reference.x
+                    + direction.y * v_reference.y
+                    + direction.z * v_reference.z,
+            );
+            let norm = (projected.u * projected.u + projected.v * projected.v).sqrt();
+            (norm > 1e-12)
+                .then(|| cadmpeg_ir::math::Point2::new(projected.u / norm, projected.v / norm))
+        };
+        let plane_distance = |point: cadmpeg_ir::math::Point3| {
+            (point.x - origin.x) * normal.x
+                + (point.y - origin.y) * normal.y
+                + (point.z - origin.z) * normal.z
+        };
+        let geometry = match &curve.geometry {
+            CurveGeometry::Line { .. } => {
+                let (Some(start), Some(end)) = (position(&edge.start), position(&edge.end)) else {
+                    continue;
+                };
+                let start = uv(start);
+                let end = uv(end);
+                let (du, dv) = (end.u - start.u, end.v - start.v);
+                let norm = (du * du + dv * dv).sqrt();
+                if norm == 0.0 {
+                    continue;
+                }
+                PcurveGeometry::Line {
+                    origin: start,
+                    direction: cadmpeg_ir::math::Point2::new(du / norm, dv / norm),
+                }
+            }
+            CurveGeometry::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius,
+            } => {
+                let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
+                if axis_dot.abs() < 1.0 - 1e-9
+                    || plane_distance(*center).abs() > 1e-6
+                    || *radius <= 0.0
+                {
+                    continue;
+                }
+                let Some(ref_direction) = project_direction(*ref_direction) else {
+                    continue;
+                };
+                PcurveGeometry::Circle {
+                    center: uv(*center),
+                    ref_direction,
+                    radius: *radius,
+                    clockwise: axis_dot < 0.0,
+                }
+            }
+            CurveGeometry::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+            } => {
+                let axis_dot = axis.x * normal.x + axis.y * normal.y + axis.z * normal.z;
+                if axis_dot.abs() < 1.0 - 1e-9
+                    || plane_distance(*center).abs() > 1e-6
+                    || *major_radius <= 0.0
+                    || *minor_radius <= 0.0
+                {
+                    continue;
+                }
+                let Some(major_direction) = project_direction(*major_direction) else {
+                    continue;
+                };
+                PcurveGeometry::Ellipse {
+                    center: uv(*center),
+                    major_direction,
+                    major_radius: *major_radius,
+                    minor_radius: *minor_radius,
+                    clockwise: axis_dot < 0.0,
+                }
+            }
+            _ => continue,
+        };
         let id = PcurveId(format!(
             "sldprt:brep:pcurve#{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
         let pcurve = Pcurve {
             id: id.clone(),
-            geometry: PcurveGeometry::Line {
-                origin: start,
-                direction: cadmpeg_ir::math::Point2::new(du / norm, dv / norm),
-            },
+            geometry,
             wrapper_reversed: None,
             native_tail_flags: None,
             parameter_range: None,

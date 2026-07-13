@@ -305,6 +305,34 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             origin.u + t * direction.u,
             origin.v + t * direction.v,
         )),
+        PcurveGeometry::Circle {
+            center,
+            ref_direction,
+            radius,
+            clockwise,
+        } => {
+            let sin = if *clockwise { -t.sin() } else { t.sin() };
+            Some(Point2::new(
+                center.u + radius * (t.cos() * ref_direction.u - sin * ref_direction.v),
+                center.v + radius * (t.cos() * ref_direction.v + sin * ref_direction.u),
+            ))
+        }
+        PcurveGeometry::Ellipse {
+            center,
+            major_direction,
+            major_radius,
+            minor_radius,
+            clockwise,
+        } => {
+            let sin = if *clockwise { -t.sin() } else { t.sin() };
+            Some(Point2::new(
+                center.u + major_radius * t.cos() * major_direction.u
+                    - minor_radius * sin * major_direction.v,
+                center.v
+                    + major_radius * t.cos() * major_direction.v
+                    + minor_radius * sin * major_direction.u,
+            ))
+        }
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -312,5 +340,34 @@ pub fn pcurve_uv(geometry: &PcurveGeometry, t: f64) -> Option<Point2> {
             weights,
             ..
         } => nurbs_pcurve_uv(*degree, knots, control_points, weights.as_deref(), t),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pcurve_uv;
+    use crate::geometry::PcurveGeometry;
+    use crate::math::Point2;
+
+    #[test]
+    fn analytic_pcurves_preserve_angular_parameterization() {
+        let circle = PcurveGeometry::Circle {
+            center: Point2::new(2.0, 3.0),
+            ref_direction: Point2::new(1.0, 0.0),
+            radius: 4.0,
+            clockwise: true,
+        };
+        let ellipse = PcurveGeometry::Ellipse {
+            center: Point2::new(2.0, 3.0),
+            major_direction: Point2::new(0.0, 1.0),
+            major_radius: 4.0,
+            minor_radius: 2.0,
+            clockwise: false,
+        };
+
+        let circle = pcurve_uv(&circle, std::f64::consts::FRAC_PI_2).unwrap();
+        let ellipse = pcurve_uv(&ellipse, std::f64::consts::FRAC_PI_2).unwrap();
+        assert!((circle.u - 2.0).abs() < 1e-12 && (circle.v + 1.0).abs() < 1e-12);
+        assert!(ellipse.u.abs() < 1e-12 && (ellipse.v - 3.0).abs() < 1e-12);
     }
 }

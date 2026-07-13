@@ -4332,7 +4332,7 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         [0.0, 0.0, 1.0],
         [1.0, 0.0, 0.0],
     ));
-    body.extend(circle_carrier(200, [1.0, 2.0, 3.0], [0.0, 0.0, 1.0], 0.5));
+    body.extend(circle_carrier(200, [1.0, 2.0, 0.0], [0.0, 0.0, 1.0], 0.5));
     body.extend(bridge(10, 20, 100));
     body.extend(loop_head(20, 30, 10));
     body.extend(coedge(30, 20, 30, 1, 0, 40, false));
@@ -4365,8 +4365,17 @@ fn closed_circle_edge_gets_a_derived_seam_vertex() {
         .unwrap();
     assert_eq!(
         [point.position.x, point.position.y, point.position.z],
-        [1500.0, 2000.0, 3000.0]
+        [1500.0, 2000.0, 0.0]
     );
+    assert!(matches!(
+        decoded.ir.model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Circle {
+            center,
+            radius: 500.0,
+            clockwise: false,
+            ..
+        } if center == cadmpeg_ir::math::Point2::new(1000.0, 2000.0)
+    ));
     assert!(cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok());
 }
 

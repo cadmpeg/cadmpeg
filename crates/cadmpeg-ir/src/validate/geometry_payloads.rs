@@ -1445,6 +1445,58 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             CurveGeometry::Unknown { .. } => {}
         }
     }
+    for pcurve in &ir.model.pcurves {
+        let point_finite = |point: &crate::math::Point2| point.u.is_finite() && point.v.is_finite();
+        let direction_valid = |direction: &crate::math::Point2| {
+            point_finite(direction) && direction.u.hypot(direction.v) > f64::EPSILON
+        };
+        let valid = match &pcurve.geometry {
+            crate::geometry::PcurveGeometry::Line { origin, direction } => {
+                point_finite(origin) && direction_valid(direction)
+            }
+            crate::geometry::PcurveGeometry::Circle {
+                center,
+                ref_direction,
+                radius,
+                ..
+            } => point_finite(center) && direction_valid(ref_direction) && !nonpositive(*radius),
+            crate::geometry::PcurveGeometry::Ellipse {
+                center,
+                major_direction,
+                major_radius,
+                minor_radius,
+                ..
+            } => {
+                point_finite(center)
+                    && direction_valid(major_direction)
+                    && !nonpositive(*major_radius)
+                    && !nonpositive(*minor_radius)
+            }
+            crate::geometry::PcurveGeometry::Nurbs {
+                degree,
+                knots,
+                control_points,
+                weights,
+                ..
+            } => {
+                control_points.len() >= *degree as usize + 1
+                    && knots.len() == control_points.len() + *degree as usize + 1
+                    && control_points.iter().all(point_finite)
+                    && weights.as_ref().is_none_or(|weights| {
+                        weights.len() == control_points.len()
+                            && weights
+                                .iter()
+                                .all(|weight| weight.is_finite() && *weight > 0.0)
+                    })
+            }
+        };
+        if !valid {
+            bounds_err(findings, &pcurve.id.0, "pcurve geometry is invalid");
+        }
+        if let crate::geometry::PcurveGeometry::Nurbs { knots, .. } = &pcurve.geometry {
+            check_knots(findings, &pcurve.id.0, knots, "");
+        }
+    }
     for procedural in &ir.model.procedural_curves {
         if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
             if let crate::geometry::DeformableCurveData::VectorField {

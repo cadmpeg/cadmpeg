@@ -190,6 +190,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 fn pcurve_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
     match geometry {
         PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
-        PcurveGeometry::Line { .. } => None,
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. } => None,
     }
 }
