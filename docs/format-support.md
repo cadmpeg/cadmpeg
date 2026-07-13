@@ -37,7 +37,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
-| Rhino `.3dm` (archive 50/60/70/80)         | **L8 claimed** | read-only exact-record retention                                                                        |
+| Rhino `.3dm` (archive 50/60/70/80)         | **L8 claimed** | exact-record retention; bounded semantic native writing                                                 |
 | CATIA V5 `.CATPart` (standard-nested band) | **L2 claimed** | conditionally connected B-rep                                                                         |
 | Siemens NX `.prt`                          | **L2 claimed** | conditional connected B-rep, external-dependency inspection                                           |
 | CATIA V5 `.CATPart` (other layout bands)   | **L1 claimed** |                                                                                                       |
@@ -63,7 +63,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
 - **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
-- **Rhino `.3dm` (L8 claimed for archive 50/60/70/80):** complete built-in model, product, presentation, annotation, metadata, application-data retention, and byte accounting. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.
+- **Rhino `.3dm` (L8 claimed for archive 50/60/70/80):** complete built-in model, product, presentation, annotation, metadata, application-data retention, and byte accounting, plus bounded semantic native writing. V3/V4 score L1; V1/V2 and archive 5 score L0.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
@@ -88,8 +88,8 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 ### Write and round trip
 
-- **Native write: None.**
-- **Round trip: None.**
+- **Native write: Bounded.** Explicit archive 50, 60, 70, and 80 targets write source-less point objects, grouped point clouds as free-vertex bodies, circles, native-canonical rational and non-rational NURBS curves, planes, native-canonical rational and non-rational NURBS surfaces, and standalone triangle meshes. Mesh normals, UV values, colors, surface parameters, and curvature channels retain their native scalar encodings. Archive 60, 70, and 80 use the double-vertex mesh extension; archive 50 uses float vertices and reports quantization. Unsupported arenas, topology shapes, display state, native records, shared free-vertex points, strip topology, unknown mesh channels, and noncanonical NURBS contracts are rejected before output.
+- **Round trip: Bounded.** Generated archives decode through the native reader for every supported target. Exact geometry and grouping are retained for the writable families except explicitly reported archive-50 mesh quantization. Documents carrying retained Rhino native records are refused rather than silently dropping or replaying records against edited semantics.
 
 See [`formats/rhino_3dm.md`](formats/rhino_3dm.md) and [`formats/rhino_3dm-open-items.md`](formats/rhino_3dm-open-items.md).
 

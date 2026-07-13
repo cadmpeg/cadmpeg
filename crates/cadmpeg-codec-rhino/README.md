@@ -1,8 +1,8 @@
 # cadmpeg-codec-rhino
 
-`cadmpeg-codec-rhino` is the read-only Rhino `.3dm` codec for cadmpeg. It
-detects 3DM input, inspects chunk and table structure, decodes document
-metadata, and transfers supported model data into CADIR version 3.
+`cadmpeg-codec-rhino` is the Rhino `.3dm` codec for cadmpeg. It detects 3DM
+input, inspects chunk and table structure, transfers supported model data into
+CADIR version 3, and writes selected neutral model families as native 3DM.
 
 Support level: [L8](../../docs/format-support.md#support-ladder) for archive
 versions 50, 60, 70, and 80.
@@ -42,9 +42,19 @@ V3 and V4 archives support full container inspection and metadata decoding;
 their object geometry remains unknown. V1, V2, and archive version 5 support
 header-only inspection, and normal decode reports `NotImplemented`.
 
+The native writer targets archive 50, 60, 70, or 80 explicitly. Source-less
+generation supports point objects, grouped point clouds represented as
+free-vertex bodies, circles, canonical rational or non-rational NURBS curves,
+planes, canonical rational or non-rational NURBS surfaces, and standalone
+triangle meshes with normals and recognized native auxiliary channels. Archive
+60, 70, and 80 meshes preserve double vertices; archive 50 reports any vertex
+quantization. Unsupported topology, geometry, presentation state, native
+records, and noncanonical NURBS contracts are rejected before output.
+
 ```sh
 cadmpeg inspect model.3dm
 cadmpeg decode model.3dm -o model.cadir.json
+cadmpeg convert model.cadir.json -o model.3dm
 ```
 
 Requires Rust 1.88 or later. Licensed under Apache-2.0.
