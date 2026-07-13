@@ -1250,6 +1250,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 edge_selections.push(boundary);
                 face_selections.push(support_faces);
             }
+            FeatureDefinition::TrimSurface { faces, tool, .. } => {
+                face_selections.push(faces);
+                paths.push(tool);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,

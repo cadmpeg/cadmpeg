@@ -404,6 +404,15 @@ pub enum FeatureDefinition {
         /// Whether the generated patch is merged into adjacent surface bodies.
         merge_result: bool,
     },
+    /// Restricts selected surface faces to one side of a trimming path.
+    TrimSurface {
+        /// Surface faces modified by the operation.
+        faces: FaceSelection,
+        /// Sketch or model-space path defining the trim boundary.
+        tool: PathRef,
+        /// Region retained after trimming.
+        keep: TrimRegion,
+    },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
         /// Faces whose angle is modified.
@@ -573,6 +582,16 @@ pub enum SurfaceContinuity {
     Tangent,
     /// Second-derivative continuity.
     Curvature,
+}
+
+/// Region retained by a trim-surface operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TrimRegion {
+    /// Retain the region enclosed by the trimming path.
+    Inside,
+    /// Retain the region outside the trimming path.
+    Outside,
 }
 
 /// Fixed locus of a body-scale transform.

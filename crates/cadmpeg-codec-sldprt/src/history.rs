@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, SurfaceContinuity,
-    VariableRadius, WrapMode,
+    TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -727,6 +727,10 @@ pub fn bind_topology_selections(
                 resolve_edge_selection(boundary, &edge_ids);
                 resolve_face_selection(support_faces, &face_ids);
             }
+            FeatureDefinition::TrimSurface { faces, tool, .. } => {
+                resolve_face_selection(faces, &face_ids);
+                resolve_path_ref(tool, &edge_ids, &curve_ids);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
@@ -897,6 +901,7 @@ fn bind_definition_sketch(
         | FeatureDefinition::Rib { profile, .. }
         | FeatureDefinition::Wrap { profile, .. } => bind_profile(profile),
         FeatureDefinition::Sweep { profile, path, .. } => bind_profile(profile) | bind_path(path),
+        FeatureDefinition::TrimSurface { tool, .. } => bind_path(tool),
         FeatureDefinition::Loft {
             profiles, guides, ..
         } => {
@@ -963,6 +968,9 @@ fn project_definition(
         project_knit_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "FilledSurface") || feature_family(feature, "FillSurface") {
         project_filled_surface(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "TrimSurface") || feature_family(feature, "SurfaceTrim") {
+        project_trim_surface(feature, native_by_source)
+            .unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
@@ -1752,6 +1760,31 @@ fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
             .get("MergeResult")
             .and_then(|value| parse_bool(value))
             .unwrap_or(false),
+    })
+}
+
+fn project_trim_surface(
+    feature: &Feature,
+    native_by_source: &HashMap<&str, &str>,
+) -> Option<FeatureDefinition> {
+    let tool = feature.properties.get("Tool")?;
+    let tool = native_by_source
+        .get(tool.as_str())
+        .map_or_else(|| tool.clone(), |id| (*id).to_string());
+    let keep = match feature
+        .properties
+        .get("Keep")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "inside" => TrimRegion::Inside,
+        "outside" => TrimRegion::Outside,
+        _ => return None,
+    };
+    Some(FeatureDefinition::TrimSurface {
+        faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
+        tool: PathRef::Native(tool),
+        keep,
     })
 }
 
@@ -2955,6 +2988,50 @@ pub fn sync_neutral_features(
                     existing
                         .as_deref()
                         .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
+            FeatureDefinition::TrimSurface { faces, tool, keep } => {
+                let faces = face_selection_value(faces).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no trim-surface input faces",
+                        feature.id
+                    ))
+                })?;
+                let tool =
+                    path_source(tool, &record_sources, &sketch_sources).ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing trim path",
+                            feature.id
+                        ))
+                    })?;
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "TrimSurface") && !feature_family(record, "SurfaceTrim")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Faces".into(), faces);
+                properties.insert("Tool".into(), tool);
+                properties.insert(
+                    "Keep".into(),
+                    match keep {
+                        TrimRegion::Inside => "Inside",
+                        TrimRegion::Outside => "Outside",
+                    }
+                    .into(),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "TrimSurface".into(), |record| record.kind.clone()),
                     existing
                         .as_deref()
                         .map(|record| record.parameters.clone())
@@ -5170,6 +5247,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
+        FeatureDefinition::TrimSurface { .. } => "TrimSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",

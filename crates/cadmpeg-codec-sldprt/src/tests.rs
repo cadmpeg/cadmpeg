@@ -8022,6 +8022,68 @@ fn semantic_writer_round_trips_filled_surface() {
 }
 
 #[test]
+fn semantic_writer_round_trips_trim_surface() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, TrimRegion};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let edge = base.ir.model.edges[0].id.0.clone();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><TrimSurface Name="Trim" Type="SurfaceTrim" id="37" Faces="{face}" Tool="{edge}" Keep="Inside" Split="false"/></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let edge_id = decoded.ir.model.edges[0].id.clone();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::TrimSurface {
+            faces: FaceSelection::Resolved { faces, native },
+            tool: PathRef::Edges(edges),
+            keep: TrimRegion::Inside,
+        } if faces == &[face_id.clone()] && native == &face && edges == &[edge_id.clone()]
+    ));
+
+    let FeatureDefinition::TrimSurface { faces, tool, keep } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed trim surface");
+    };
+    *faces = FaceSelection::Faces(vec![face_id.clone()]);
+    *tool = PathRef::Edges(vec![edge_id.clone()]);
+    *keep = TrimRegion::Outside;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Faces"], face_id.0);
+    assert_eq!(native.properties["Tool"], edge_id.0);
+    assert_eq!(native.properties["Keep"], "Outside");
+    assert_eq!(native.properties["Split"], "false");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::TrimSurface {
+            keep: TrimRegion::Outside,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 
