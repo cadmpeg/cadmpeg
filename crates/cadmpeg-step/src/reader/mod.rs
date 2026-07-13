@@ -13,6 +13,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::parse::{self, Exchange, Value};
 
+mod dependencies;
 mod geometry;
 mod pmi;
 mod presentation;
@@ -52,11 +53,13 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
     }
 
     let geometry = geometry::decode(&exchange, &mut ir);
+    let dependencies = dependencies::decode(&exchange);
     let topology = topology::decode(&exchange, &mut ir);
     let presentation = presentation::decode(&exchange, &mut ir);
     let product = product::decode(&exchange, &geometry, &mut ir);
     let tessellation = tessellation::decode(&exchange, &geometry, &mut ir);
     let pmi = pmi::decode(&exchange, &geometry, &mut ir);
+    report.notes.extend(dependencies.notes);
     report.geometry_transferred =
         !ir.model.points.is_empty() || !ir.model.curves.is_empty() || !ir.model.surfaces.is_empty();
     report
@@ -113,6 +116,7 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
     typed_records.extend(product.typed_records);
     typed_records.extend(tessellation.typed_records);
     typed_records.extend(pmi.typed_records);
+    typed_records.extend(dependencies.typed_records);
 
     let mut opaque = Vec::with_capacity(exchange.records.len());
     let mut counts = BTreeMap::<String, usize>::new();

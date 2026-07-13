@@ -166,6 +166,22 @@ fn codec_inspects_edition3_sections_and_external_references() {
 }
 
 #[test]
+fn decode_reports_data_section_external_dependencies() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_external_documents.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode external document dependencies");
+
+    assert!(result.report.notes.contains(
+        &"external document SPEC-42 (Interface control drawing) from supplier vault".into()
+    ));
+    assert!(result
+        .report
+        .notes
+        .contains(&"external source https://example.invalid/library item fastener-table".into()));
+}
+
+#[test]
 fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let result = StepCodec::default()
