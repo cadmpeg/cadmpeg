@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::math::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
 use crate::native::{EntryRecord, PropertyFamily, PropertyRecord};
@@ -19,7 +20,7 @@ pub enum ShapePayloadForm {
 }
 
 /// One exact-shape property bound to its side entry.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShapePayloadRecord {
     /// Stable payload identity.
     pub id: String,
@@ -34,7 +35,7 @@ pub struct ShapePayloadRecord {
 }
 
 /// Framing facts from a text shape set.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct TextFacts {
     /// Topology grammar version.
     pub topology_version: u8,
@@ -42,6 +43,46 @@ pub struct TextFacts {
     pub section_counts: BTreeMap<String, usize>,
     /// Shape-type token census.
     pub shape_types: BTreeMap<String, usize>,
+    /// Ordered 3D curve table.
+    pub curves: Vec<TextCurve>,
+}
+
+/// Supported byte-exact 3D curve records from the text carrier table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TextCurve {
+    /// Infinite line.
+    Line { origin: Point3, direction: Vector3 },
+    /// Full circle.
+    Circle {
+        center: Point3,
+        axis: Vector3,
+        ref_direction: Vector3,
+        radius: f64,
+    },
+    /// Full ellipse.
+    Ellipse {
+        center: Point3,
+        axis: Vector3,
+        major_direction: Vector3,
+        major_radius: f64,
+        minor_radius: f64,
+    },
+    /// Parabola.
+    Parabola {
+        vertex: Point3,
+        axis: Vector3,
+        major_direction: Vector3,
+        focal_distance: f64,
+    },
+    /// Hyperbola.
+    Hyperbola {
+        center: Point3,
+        axis: Vector3,
+        major_direction: Vector3,
+        major_radius: f64,
+        minor_radius: f64,
+    },
 }
 
 /// Bind every exact-shape property to and frame its payload.
@@ -154,9 +195,158 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
             shape_types.values().sum::<usize>()
         )));
     }
+    let curves = parse_curves(&tokens, &section_counts)?;
     Ok(TextFacts {
         topology_version,
         section_counts,
         shape_types,
+        curves,
     })
+}
+
+fn parse_curves(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+) -> Result<Vec<TextCurve>, CodecError> {
+    let start = tokens
+        .iter()
+        .position(|token| *token == "Curves")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Curves table".into()))?
+        + 2;
+    let end = tokens
+        .iter()
+        .position(|token| *token == "Polygon3D")
+        .ok_or_else(|| CodecError::Malformed("text B-rep has no Polygon3D table".into()))?;
+    let count = section_counts.get("Curves").copied().unwrap_or(0);
+    let mut cursor = TokenCursor::new(&tokens[start..end]);
+    let mut curves = Vec::with_capacity(count);
+    for index in 0..count {
+        let kind = cursor.integer("curve type")?;
+        let curve = match kind {
+            1 => TextCurve::Line {
+                origin: cursor.point("line origin")?,
+                direction: cursor.vector("line direction")?,
+            },
+            2 => {
+                let center = cursor.point("circle center")?;
+                let axis = cursor.vector("circle axis")?;
+                let ref_direction = cursor.vector("circle reference direction")?;
+                let _y_direction = cursor.vector("circle y direction")?;
+                TextCurve::Circle {
+                    center,
+                    axis,
+                    ref_direction,
+                    radius: cursor.real("circle radius")?,
+                }
+            }
+            3 => {
+                let center = cursor.point("ellipse center")?;
+                let axis = cursor.vector("ellipse axis")?;
+                let major_direction = cursor.vector("ellipse major direction")?;
+                let _y_direction = cursor.vector("ellipse y direction")?;
+                TextCurve::Ellipse {
+                    center,
+                    axis,
+                    major_direction,
+                    major_radius: cursor.real("ellipse major radius")?,
+                    minor_radius: cursor.real("ellipse minor radius")?,
+                }
+            }
+            4 => {
+                let vertex = cursor.point("parabola vertex")?;
+                let axis = cursor.vector("parabola axis")?;
+                let major_direction = cursor.vector("parabola major direction")?;
+                let _y_direction = cursor.vector("parabola y direction")?;
+                TextCurve::Parabola {
+                    vertex,
+                    axis,
+                    major_direction,
+                    focal_distance: cursor.real("parabola focal distance")?,
+                }
+            }
+            5 => {
+                let center = cursor.point("hyperbola center")?;
+                let axis = cursor.vector("hyperbola axis")?;
+                let major_direction = cursor.vector("hyperbola major direction")?;
+                let _y_direction = cursor.vector("hyperbola y direction")?;
+                TextCurve::Hyperbola {
+                    center,
+                    axis,
+                    major_direction,
+                    major_radius: cursor.real("hyperbola major radius")?,
+                    minor_radius: cursor.real("hyperbola minor radius")?,
+                }
+            }
+            other => {
+                return Err(CodecError::NotImplemented(format!(
+                    "text B-rep 3D curve family {other} at table index {}",
+                    index + 1
+                )))
+            }
+        };
+        curves.push(curve);
+    }
+    if !cursor.is_empty() {
+        return Err(CodecError::Malformed(
+            "text B-rep Curves table contains trailing tokens".into(),
+        ));
+    }
+    Ok(curves)
+}
+
+struct TokenCursor<'a> {
+    tokens: &'a [&'a str],
+    index: usize,
+}
+
+impl<'a> TokenCursor<'a> {
+    fn new(tokens: &'a [&'a str]) -> Self {
+        Self { tokens, index: 0 }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.index == self.tokens.len()
+    }
+
+    fn integer(&mut self, label: &str) -> Result<i64, CodecError> {
+        self.next(label)?.parse().map_err(|_| {
+            CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
+        })
+    }
+
+    fn real(&mut self, label: &str) -> Result<f64, CodecError> {
+        let value = self.next(label)?.parse::<f64>().map_err(|_| {
+            CodecError::Malformed(format!("invalid {label} in text B-rep Curves table"))
+        })?;
+        if !value.is_finite() {
+            return Err(CodecError::Malformed(format!(
+                "non-finite {label} in text B-rep Curves table"
+            )));
+        }
+        Ok(value)
+    }
+
+    fn point(&mut self, label: &str) -> Result<Point3, CodecError> {
+        Ok(Point3::new(
+            self.real(label)?,
+            self.real(label)?,
+            self.real(label)?,
+        ))
+    }
+
+    fn vector(&mut self, label: &str) -> Result<Vector3, CodecError> {
+        Ok(Vector3::new(
+            self.real(label)?,
+            self.real(label)?,
+            self.real(label)?,
+        ))
+    }
+
+    fn next(&mut self, label: &str) -> Result<&'a str, CodecError> {
+        let token = self.tokens.get(self.index).copied().ok_or_else(|| {
+            CodecError::Malformed(format!("truncated {label} in text B-rep Curves table"))
+        })?;
+        self.index += 1;
+        Ok(token)
+    }
 }

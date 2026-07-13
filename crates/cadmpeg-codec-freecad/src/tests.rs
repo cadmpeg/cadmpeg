@@ -91,7 +91,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ("Payload.bin", b"payload"),
         (
             "Shape.brp",
-            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*",
+            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 1\n1 10 20 30 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 0\nTShapes 0\n*",
         ),
     ]);
     let result = FcstdCodec
@@ -169,6 +169,15 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             .map(|facts| facts.topology_version),
         Some(1)
     );
+    assert!(result.report.geometry_transferred);
+    assert_eq!(result.ir.model.curves.len(), 1);
+    match &result.ir.model.curves[0].geometry {
+        cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } => {
+            assert_eq!([origin.x, origin.y, origin.z], [10.0, 20.0, 30.0]);
+            assert_eq!([direction.x, direction.y, direction.z], [1.0, 0.0, 0.0]);
+        }
+        other => panic!("unexpected curve {other:?}"),
+    }
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");

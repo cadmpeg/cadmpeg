@@ -13,12 +13,13 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry};
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::UnknownId;
+use cadmpeg_ir::ids::{CurveId, UnknownId};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
-use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity};
+use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
 
 /// Input-only `FCStd` codec.
 #[derive(Debug, Default, Clone, Copy)]
@@ -304,6 +305,7 @@ impl Codec for FcstdCodec {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
         }
         let mut ir = CadIr::empty(Units::default());
+        let mut geometry_transferred = false;
         ir.source = Some(SourceMeta {
             format: "fcstd".into(),
             attributes,
@@ -375,6 +377,9 @@ impl Codec for FcstdCodec {
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("logical_ledger", &logical_ledger)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
+            let curves = transfer_text_curves(&shape_payloads, &graph.properties);
+            geometry_transferred = !curves.is_empty();
+            ir.model.curves.extend(curves);
         }
         let losses = if options.container_only {
             Vec::new()
@@ -392,12 +397,100 @@ impl Codec for FcstdCodec {
             DecodeReport {
                 format: "fcstd".into(),
                 container_only: options.container_only,
-                geometry_transferred: false,
+                geometry_transferred,
                 losses,
                 notes: container::summarize(&scan).notes,
             },
         ))
     }
+}
+
+fn transfer_text_curves(
+    payloads: &[brep::ShapePayloadRecord],
+    properties: &[native::PropertyRecord],
+) -> Vec<Curve> {
+    payloads
+        .iter()
+        .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
+        .flat_map(|(payload, text)| {
+            let object_id = properties
+                .iter()
+                .find(|property| property.id == payload.property)
+                .map_or_else(
+                    || payload.property.clone(),
+                    |property| property.owner.clone(),
+                );
+            text.curves.iter().enumerate().map(move |(index, curve)| {
+                let geometry = match curve {
+                    brep::TextCurve::Line { origin, direction } => CurveGeometry::Line {
+                        origin: *origin,
+                        direction: *direction,
+                    },
+                    brep::TextCurve::Circle {
+                        center,
+                        axis,
+                        ref_direction,
+                        radius,
+                    } => CurveGeometry::Circle {
+                        center: *center,
+                        axis: *axis,
+                        ref_direction: *ref_direction,
+                        radius: *radius,
+                    },
+                    brep::TextCurve::Ellipse {
+                        center,
+                        axis,
+                        major_direction,
+                        major_radius,
+                        minor_radius,
+                    } => CurveGeometry::Ellipse {
+                        center: *center,
+                        axis: *axis,
+                        major_direction: *major_direction,
+                        major_radius: *major_radius,
+                        minor_radius: *minor_radius,
+                    },
+                    brep::TextCurve::Parabola {
+                        vertex,
+                        axis,
+                        major_direction,
+                        focal_distance,
+                    } => CurveGeometry::Parabola {
+                        vertex: *vertex,
+                        axis: *axis,
+                        major_direction: *major_direction,
+                        focal_distance: *focal_distance,
+                    },
+                    brep::TextCurve::Hyperbola {
+                        center,
+                        axis,
+                        major_direction,
+                        major_radius,
+                        minor_radius,
+                    } => CurveGeometry::Hyperbola {
+                        center: *center,
+                        axis: *axis,
+                        major_direction: *major_direction,
+                        major_radius: *major_radius,
+                        minor_radius: *minor_radius,
+                    },
+                };
+                Curve {
+                    id: CurveId(format!("{}:curve#{}", payload.id, index + 1)),
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "fcstd".into(),
+                        object_id: object_id.clone(),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                }
+            })
+        })
+        .collect()
 }
 
 fn logical_ledger(
