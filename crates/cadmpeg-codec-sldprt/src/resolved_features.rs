@@ -1705,7 +1705,8 @@ fn typed_marker_relation_definition(
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
         AtIntersection, Coincident, Collinear, Concentric, Equal, Fixed, Horizontal,
-        HorizontalPoints, Midpoint, Parallel, Perpendicular, Tangent, Vertical, VerticalPoints,
+        HorizontalPoints, Midpoint, Parallel, Perpendicular, Symmetric, Tangent, Vertical,
+        VerticalPoints,
     };
     let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
@@ -1799,8 +1800,46 @@ fn typed_marker_relation_definition(
                 second,
             }
         }
+        Symmetric => {
+            let (first, second, axis) =
+                linked_point_symmetry_operands(marker, markers_by_id, loci_by_marker)?;
+            SketchConstraintDefinition::Symmetric {
+                first,
+                second,
+                axis,
+            }
+        }
         _ => return None,
     })
+}
+
+fn linked_point_symmetry_operands(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<(SketchLocus, SketchLocus, SketchEntityId)> {
+    if marker.links.len() != 3 {
+        return None;
+    }
+    let mut points = Vec::new();
+    let mut axis = None;
+    for link in &marker.links {
+        let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
+        let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
+        match linked_marker.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                if !points.contains(&locus) {
+                    points.push(locus);
+                }
+            }
+            SketchInputKind::LineOrCircle if axis.is_none() => axis = Some(locus_entity(&locus)),
+            _ => return None,
+        }
+    }
+    let [first, second] = points.as_slice() else {
+        return None;
+    };
+    Some((first.clone(), second.clone(), axis?.clone()))
 }
 
 fn linked_intersection_operands(
@@ -2597,6 +2636,55 @@ mod profile_join_tests {
         intersection.links.pop();
         assert_eq!(
             typed_marker_relation_definition(&intersection, &markers, &intersection_loci),
+            None
+        );
+        let second_point = marker("symmetry-second-point", None);
+        let mut symmetry = marker("symmetry", None);
+        symmetry.kind = SketchInputKind::Relation(SketchRelationKind::Symmetric);
+        symmetry.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: first_curve.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: point_marker.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: second_point.id.clone(),
+            },
+        ];
+        let mut symmetry_loci = midpoint_loci.clone();
+        symmetry_loci.insert(
+            first_curve.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Entity(first.clone())],
+        );
+        symmetry_loci.insert(
+            point_marker.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
+        );
+        symmetry_loci.insert(
+            second_point.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId(
+                "second".into(),
+            ))],
+        );
+        markers.insert(second_point.id.as_str(), &second_point);
+        assert_eq!(
+            typed_marker_relation_definition(&symmetry, &markers, &symmetry_loci),
+            Some(SketchConstraintDefinition::Symmetric {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+                axis: first.clone(),
+            })
+        );
+        symmetry_loci.insert(
+            second_point.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::Start(first.clone())],
+        );
+        assert_eq!(
+            typed_marker_relation_definition(&symmetry, &markers, &symmetry_loci),
             None
         );
         let relation = FeatureInputRelationInstance {
