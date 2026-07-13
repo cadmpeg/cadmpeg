@@ -61,6 +61,40 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
         .any(|note| note.contains("AP242") && note.contains("edition 3")));
 }
 
+#[test]
+fn codec_inspects_edition3_sections_and_external_references() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_ed3_sections.p21");
+    let summary = StepCodec::default()
+        .inspect(&mut Cursor::new(bytes))
+        .expect("inspect edition 3 sections");
+
+    assert_eq!(
+        summary
+            .entries
+            .iter()
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "HEADER",
+            "ANCHOR",
+            "REFERENCE",
+            "DATA[0]",
+            "DATA[1]",
+            "SIGNATURE"
+        ]
+    );
+    let references = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "REFERENCE")
+        .unwrap();
+    assert_eq!(references.attributes["external_count"], "1");
+    assert_eq!(
+        references.attributes["external_uris"],
+        "https://example.invalid/external-part"
+    );
+}
+
 fn export(ir: &CadIr) -> String {
     let mut buf = Vec::new();
     write_step(ir, &mut buf, &StepWriteOptions::default()).expect("write");

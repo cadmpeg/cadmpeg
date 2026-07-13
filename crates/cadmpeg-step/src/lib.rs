@@ -1128,6 +1128,42 @@ impl Codec for StepCodec {
             uncompressed_size: 0,
             attributes: Default::default(),
         }];
+        if !exchange.anchors.is_empty() {
+            let mut attributes = std::collections::BTreeMap::new();
+            attributes.insert("anchor_count".into(), exchange.anchors.len().to_string());
+            entries.push(ContainerEntry {
+                name: "ANCHOR".into(),
+                role: "in_file_anchors".into(),
+                compression: "none".into(),
+                compressed_size: 0,
+                uncompressed_size: 0,
+                attributes,
+            });
+        }
+        if !exchange.references.is_empty() {
+            let mut attributes = std::collections::BTreeMap::new();
+            attributes.insert(
+                "external_count".into(),
+                exchange.references.len().to_string(),
+            );
+            attributes.insert(
+                "external_uris".into(),
+                exchange
+                    .references
+                    .iter()
+                    .map(|entry| entry.uri.as_str())
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            entries.push(ContainerEntry {
+                name: "REFERENCE".into(),
+                role: "external_references".into(),
+                compression: "none".into(),
+                compressed_size: 0,
+                uncompressed_size: 0,
+                attributes,
+            });
+        }
         for (index, section) in exchange.data.iter().enumerate() {
             let mut counts = std::collections::BTreeMap::<String, usize>::new();
             for id in &section.records {
@@ -1150,6 +1186,16 @@ impl Codec for StepCodec {
                 compressed_size: 0,
                 uncompressed_size: 0,
                 attributes,
+            });
+        }
+        if exchange.signature.is_some() {
+            entries.push(ContainerEntry {
+                name: "SIGNATURE".into(),
+                role: "signature".into(),
+                compression: "none".into(),
+                compressed_size: 0,
+                uncompressed_size: 0,
+                attributes: Default::default(),
             });
         }
         let schema = exchange

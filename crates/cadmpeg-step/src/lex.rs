@@ -23,6 +23,7 @@ pub enum TokenKind {
     Enumeration(String),
     String(Vec<u8>),
     Binary(Vec<u8>),
+    Resource(String),
     LParen,
     RParen,
     Comma,
@@ -91,6 +92,7 @@ impl Lexer<'_> {
             b'#' => self.instance()?,
             b'\'' => self.string()?,
             b'"' => self.binary()?,
+            b'<' => self.resource()?,
             b'.' if self
                 .input
                 .get(self.at + 1)
@@ -253,6 +255,22 @@ impl Lexer<'_> {
         let bytes = self.input[content..self.at].to_vec();
         self.at += 1;
         Ok(TokenKind::Binary(bytes))
+    }
+
+    fn resource(&mut self) -> Result<TokenKind, LexError> {
+        let start = self.at;
+        self.at += 1;
+        let content = self.at;
+        while self.input.get(self.at).is_some_and(|byte| *byte != b'>') {
+            self.at += 1;
+        }
+        if self.input.get(self.at) != Some(&b'>') {
+            return Err(self.error(start, "unterminated resource token"));
+        }
+        let value = String::from_utf8(self.input[content..self.at].to_vec())
+            .map_err(|_| self.error(start, "resource token is not UTF-8"))?;
+        self.at += 1;
+        Ok(TokenKind::Resource(value))
     }
 
     fn error(&self, offset: usize, message: &str) -> LexError {

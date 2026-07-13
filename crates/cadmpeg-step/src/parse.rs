@@ -14,6 +14,7 @@ pub enum Value {
     Enumeration(String),
     String(Vec<u8>),
     Binary(Vec<u8>),
+    Resource(String),
     Omitted,
     Derived,
     List(Vec<Value>),
@@ -46,9 +47,24 @@ pub struct DataSection {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct AnchorEntry {
+    pub name: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReferenceEntry {
+    pub name: String,
+    pub uri: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Exchange {
     pub header: Vec<HeaderRecord>,
+    pub anchors: Vec<AnchorEntry>,
+    pub references: Vec<ReferenceEntry>,
     pub data: Vec<DataSection>,
+    pub signature: Option<Range<usize>>,
     pub records: BTreeMap<u64, RawRecord>,
 }
 
@@ -88,6 +104,43 @@ impl Parser {
         }
         self.name("ENDSEC")?;
         self.punct(TokenKind::Semicolon)?;
+        let mut anchors = Vec::new();
+        if self.peek_name("ANCHOR") {
+            self.at += 1;
+            self.punct(TokenKind::Semicolon)?;
+            while !self.peek_name("ENDSEC") {
+                let name = match self.next_kind()? {
+                    TokenKind::Resource(name) => name,
+                    _ => return self.err("expected anchor name"),
+                };
+                self.punct(TokenKind::Equals)?;
+                let value = self.value()?;
+                self.punct(TokenKind::Semicolon)?;
+                anchors.push(AnchorEntry { name, value });
+            }
+            self.at += 1;
+            self.punct(TokenKind::Semicolon)?;
+        }
+        let mut reference_entries = Vec::new();
+        if self.peek_name("REFERENCE") {
+            self.at += 1;
+            self.punct(TokenKind::Semicolon)?;
+            while !self.peek_name("ENDSEC") {
+                let name = match self.next_kind()? {
+                    TokenKind::Resource(name) => name,
+                    _ => return self.err("expected reference name"),
+                };
+                self.punct(TokenKind::Equals)?;
+                let uri = match self.next_kind()? {
+                    TokenKind::Resource(uri) => uri,
+                    _ => return self.err("expected reference URI"),
+                };
+                self.punct(TokenKind::Semicolon)?;
+                reference_entries.push(ReferenceEntry { name, uri });
+            }
+            self.at += 1;
+            self.punct(TokenKind::Semicolon)?;
+        }
         let mut data = Vec::new();
         let mut records = BTreeMap::new();
         while self.peek_name("DATA") {
@@ -113,6 +166,22 @@ impl Parser {
                 records: ids,
             });
         }
+        let signature = if self.peek_name("SIGNATURE") {
+            let start = self.current_offset();
+            self.at += 1;
+            self.punct(TokenKind::Semicolon)?;
+            while !self.peek_name("ENDSEC") {
+                self.at += 1;
+                if self.at >= self.tokens.len() {
+                    return self.err("unterminated SIGNATURE section");
+                }
+            }
+            self.at += 1;
+            self.punct(TokenKind::Semicolon)?;
+            Some(start..self.previous_end())
+        } else {
+            None
+        };
         self.name("END-ISO-10303-21")?;
         self.punct(TokenKind::Semicolon)?;
         if self.at != self.tokens.len() {
@@ -131,7 +200,10 @@ impl Parser {
         }
         Ok(Exchange {
             header,
+            anchors,
+            references: reference_entries,
             data,
+            signature,
             records,
         })
     }
@@ -198,6 +270,7 @@ impl Parser {
             TokenKind::Enumeration(v) => Ok(Value::Enumeration(v)),
             TokenKind::String(v) => Ok(Value::String(v)),
             TokenKind::Binary(v) => Ok(Value::Binary(v)),
+            TokenKind::Resource(v) => Ok(Value::Resource(v)),
             TokenKind::Omitted => Ok(Value::Omitted),
             TokenKind::Derived => Ok(Value::Derived),
             TokenKind::LParen => {
