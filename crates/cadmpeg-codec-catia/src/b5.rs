@@ -30,12 +30,16 @@ pub struct B5Graph {
     pub surfaces: BTreeMap<u32, B5Surface>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
-    /// Per-edge pair of indices into `vertex_points`, resolved by lifting
-    /// each edge's pcurve endpoints through its surface and matching them
-    /// to a unique vertex point.
+    /// Logical vertex coordinates resolved from native `5d` identity. Their
+    /// edge indices follow the raw `vertex_points` indices.
+    pub logical_vertex_points: Vec<[f64; 3]>,
+    /// Native `5d` object ids aligned with `logical_vertex_points`.
+    pub logical_vertex_refs: Vec<u32>,
+    /// Per-edge pair of vertex indices. Raw `vertex_points` occupy the first
+    /// index range; native `5d` logical vertices occupy the following range.
     pub edge_vertices: BTreeMap<u32, [usize; 2]>,
-    /// Tolerance of each representative logical vertex formed by a
-    /// noncoincident serialized loop join, keyed by `vertex_points` index.
+    /// Maximum incident endpoint residual for each logical vertex, keyed by
+    /// the combined vertex index used by `edge_vertices`.
     pub vertex_tolerances: BTreeMap<usize, f64>,
     /// `b5 03 0e`/`0f` line and arc profile curves, keyed by `object_id`;
     /// referenced by `B5Surface::Revolution::profile_curve`.
@@ -239,8 +243,25 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         return None;
     }
     let vertex_points = vertex_points(bytes);
-    let mut edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points)?;
-    let vertex_tolerances = collapse_loop_vertices(&loops, &mut edge_vertices, &vertex_points);
+    let geometric_edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points)?;
+    let native_edge_vertices: BTreeMap<u32, [u32; 2]> = records
+        .iter()
+        .filter(|record| record.class == 0x5e)
+        .filter_map(|record| {
+            parse_edge_vertex_refs(record).map(|vertices| (record.object_id, vertices))
+        })
+        .collect();
+    let bound_vertices = bind_native_vertices(
+        &loops,
+        &pcurves,
+        &native_edge_vertices,
+        &geometric_edge_vertices,
+        &vertex_points,
+    );
+    let edge_vertices = bound_vertices.edges;
+    let logical_vertex_refs = bound_vertices.refs;
+    let logical_vertex_points = bound_vertices.points;
+    let vertex_tolerances = bound_vertices.tolerances;
     let referenced_loops: std::collections::HashSet<u32> = faces
         .iter()
         .flat_map(|face| face.loops.iter().copied())
@@ -269,128 +290,273 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         pcurves,
         surfaces,
         vertex_points,
+        logical_vertex_points,
+        logical_vertex_refs,
         edge_vertices,
         vertex_tolerances,
         profiles,
     })
 }
 
-const LOOP_VERTEX_TOLERANCE: f64 = 5e-3;
-
-fn collapse_loop_vertices(
-    loops: &BTreeMap<u32, B5Loop>,
-    edge_vertices: &mut BTreeMap<u32, [usize; 2]>,
-    points: &[[f64; 3]],
-) -> BTreeMap<usize, f64> {
-    let mut parent: Vec<usize> = (0..points.len()).collect();
-    let mut joined = Vec::new();
-    for loop_ in loops.values() {
-        if unique_loop_chain(loop_, edge_vertices) {
-            continue;
-        }
-        let solutions = tolerant_loop_solutions(loop_, edge_vertices, points);
-        if solutions.len() == 1 {
-            joined.extend(solutions.into_iter().next().unwrap_or_default());
-        }
-    }
-    let mut accepted = Vec::new();
-    for [left, right] in joined {
-        if left == right {
-            continue;
-        }
-        let left_root = representative(&mut parent, left);
-        let right_root = representative(&mut parent, right);
-        if left_root == right_root
-            || edge_vertices.values().any(|endpoints| {
-                let start = representative(&mut parent, endpoints[0]);
-                let end = representative(&mut parent, endpoints[1]);
-                (start == left_root && end == right_root)
-                    || (start == right_root && end == left_root)
-            })
-        {
-            continue;
-        }
-        union(&mut parent, left_root, right_root);
-        accepted.push(left);
-    }
-    for index in 0..parent.len() {
-        parent[index] = representative(&mut parent, index);
-    }
-    for endpoints in edge_vertices.values_mut() {
-        *endpoints = endpoints.map(|endpoint| parent[endpoint]);
-    }
-    accepted
-        .into_iter()
-        .map(|left| (parent[left], LOOP_VERTEX_TOLERANCE))
-        .collect()
+fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
+    (record.class == 0x5e && record.payload.first() == Some(&0x85)).then_some(())?;
+    let mut position = 1;
+    let references = (0..5)
+        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .collect::<Option<Vec<_>>>()?;
+    matches!(record.payload.get(position), Some(0x21 | 0x22))
+        .then_some([references[1], references[2]])
 }
 
-fn tolerant_loop_solutions(
-    loop_: &B5Loop,
-    edge_vertices: &BTreeMap<u32, [usize; 2]>,
+struct BoundNativeVertices {
+    edges: BTreeMap<u32, [usize; 2]>,
+    refs: Vec<u32>,
+    points: Vec<[f64; 3]>,
+    tolerances: BTreeMap<usize, f64>,
+}
+
+fn bind_native_vertices(
+    loops: &BTreeMap<u32, B5Loop>,
+    pcurves: &BTreeMap<u32, B5Pcurve>,
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    geometric_edges: &BTreeMap<u32, [usize; 2]>,
     points: &[[f64; 3]],
-) -> Vec<Vec<[usize; 2]>> {
-    let Some(first) = loop_.edges.first().and_then(|edge| edge_vertices.get(edge)) else {
-        return Vec::new();
-    };
-    let within = |left: usize, right: usize| {
-        distance_squared(points[left], points[right])
-            <= (LOOP_VERTEX_TOLERANCE + 1e-12) * (LOOP_VERTEX_TOLERANCE + 1e-12)
-    };
-    let mut solutions = Vec::new();
-    for first_reversed in [false, true] {
-        let initial = first[usize::from(first_reversed)];
-        let mut current = first[usize::from(!first_reversed)];
-        let mut joins = Vec::new();
-        let mut valid = true;
-        for edge_id in &loop_.edges[1..] {
-            let Some(endpoints) = edge_vertices.get(edge_id) else {
-                valid = false;
-                break;
+) -> BoundNativeVertices {
+    let constraints: Vec<([u32; 2], [usize; 2])> = native_edges
+        .iter()
+        .filter_map(|(edge, vertices)| geometric_edges.get(edge).map(|points| (*vertices, *points)))
+        .collect();
+    let mut adjacency = HashMap::<u32, Vec<usize>>::new();
+    for (index, (vertices, _)) in constraints.iter().enumerate() {
+        adjacency.entry(vertices[0]).or_default().push(index);
+        adjacency.entry(vertices[1]).or_default().push(index);
+    }
+    let vertex_points = propagate_vertex_points(&constraints, &adjacency, points);
+    let mut logical_coordinates: HashMap<u32, [f64; 3]> = vertex_points
+        .into_iter()
+        .map(|(vertex, point)| (vertex, points[point]))
+        .collect();
+    for loop_ in loops.values() {
+        for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
+            let (Some(vertices), Some(lifted)) = (
+                native_edges.get(&edge),
+                pcurves
+                    .get(&pcurve)
+                    .and_then(|pcurve| pcurve.lifted_endpoints),
+            ) else {
+                continue;
             };
-            let matches = if current == endpoints[0] {
-                [true, false]
-            } else if current == endpoints[1] {
-                [false, true]
+            if lifted
+                .iter()
+                .flatten()
+                .any(|coordinate| coordinate.abs() >= 1e7)
+            {
+                continue;
+            }
+            match (
+                logical_coordinates.get(&vertices[0]).copied(),
+                logical_coordinates.get(&vertices[1]).copied(),
+            ) {
+                (Some(start), None) => {
+                    let start_lane = usize::from(
+                        distance_squared(start, lifted[1]) < distance_squared(start, lifted[0]),
+                    );
+                    logical_coordinates.insert(vertices[1], lifted[1 - start_lane]);
+                }
+                (None, Some(end)) => {
+                    let end_lane = usize::from(
+                        distance_squared(end, lifted[1]) < distance_squared(end, lifted[0]),
+                    );
+                    logical_coordinates.insert(vertices[0], lifted[1 - end_lane]);
+                }
+                (None, None) => {
+                    logical_coordinates.insert(vertices[0], lifted[0]);
+                    logical_coordinates.insert(vertices[1], lifted[1]);
+                }
+                (Some(_), Some(_)) => {}
+            }
+        }
+    }
+    let mut logical_vertices: Vec<_> = logical_coordinates.into_iter().collect();
+    logical_vertices.sort_unstable_by_key(|(vertex, _)| *vertex);
+    let logical_vertex_indices: HashMap<u32, usize> = logical_vertices
+        .iter()
+        .enumerate()
+        .map(|(rank, (vertex, _))| (*vertex, points.len() + rank))
+        .collect();
+    let logical_vertex_points: Vec<[f64; 3]> =
+        logical_vertices.iter().map(|(_, point)| *point).collect();
+    let logical_vertex_refs = logical_vertices.iter().map(|(vertex, _)| *vertex).collect();
+    let mut edge_vertices = geometric_edges.clone();
+    for (&edge, vertices) in native_edges {
+        if let (Some(&start), Some(&end)) = (
+            logical_vertex_indices.get(&vertices[0]),
+            logical_vertex_indices.get(&vertices[1]),
+        ) {
+            edge_vertices.insert(edge, [start, end]);
+        }
+    }
+    let mut tolerances = BTreeMap::<usize, f64>::new();
+    for loop_ in loops.values() {
+        for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
+            let Some(lifted) = pcurves
+                .get(&pcurve)
+                .and_then(|pcurve| pcurve.lifted_endpoints)
+            else {
+                continue;
+            };
+            let Some(&loci) = edge_vertices.get(&edge) else {
+                continue;
+            };
+            let forward = [
+                distance_squared(
+                    vertex_coordinate(points, &logical_vertex_points, loci[0]),
+                    lifted[0],
+                )
+                .sqrt(),
+                distance_squared(
+                    vertex_coordinate(points, &logical_vertex_points, loci[1]),
+                    lifted[1],
+                )
+                .sqrt(),
+            ];
+            let reverse = [
+                distance_squared(
+                    vertex_coordinate(points, &logical_vertex_points, loci[1]),
+                    lifted[0],
+                )
+                .sqrt(),
+                distance_squared(
+                    vertex_coordinate(points, &logical_vertex_points, loci[0]),
+                    lifted[1],
+                )
+                .sqrt(),
+            ];
+            let residuals = if forward[0].max(forward[1]) <= reverse[0].max(reverse[1]) {
+                [(loci[0], forward[0]), (loci[1], forward[1])]
             } else {
-                [within(current, endpoints[0]), within(current, endpoints[1])]
+                [(loci[1], reverse[0]), (loci[0], reverse[1])]
             };
-            match matches {
-                [true, false] => {
-                    joins.push([current, endpoints[0]]);
-                    current = endpoints[1];
-                }
-                [false, true] => {
-                    joins.push([current, endpoints[1]]);
-                    current = endpoints[0];
-                }
-                _ => {
-                    valid = false;
-                    break;
+            for (locus, residual) in residuals {
+                if residual > POINT_TOLERANCE && residual.is_finite() {
+                    tolerances
+                        .entry(locus)
+                        .and_modify(|tolerance| *tolerance = tolerance.max(residual + 1e-9))
+                        .or_insert(residual + 1e-9);
                 }
             }
         }
-        if valid && within(current, initial) {
-            joins.push([current, initial]);
-            solutions.push(joins);
+    }
+    BoundNativeVertices {
+        edges: edge_vertices,
+        refs: logical_vertex_refs,
+        points: logical_vertex_points,
+        tolerances,
+    }
+}
+
+fn propagate_vertex_points(
+    constraints: &[([u32; 2], [usize; 2])],
+    adjacency: &HashMap<u32, Vec<usize>>,
+    points: &[[f64; 3]],
+) -> HashMap<u32, usize> {
+    let mut mapping = HashMap::<u32, usize>::new();
+    let mut completed = std::collections::HashSet::new();
+    for seed in 0..constraints.len() {
+        if completed.contains(&seed) {
+            continue;
+        }
+        let candidates = [false, true].map(|reverse| {
+            propagate_vertex_component(seed, reverse, constraints, adjacency, points)
+        });
+        let score = |(candidate, members): &(HashMap<u32, usize>, Vec<usize>)| {
+            members
+                .iter()
+                .map(|&index| {
+                    let (vertices, loci) = constraints[index];
+                    let assigned = [candidate[&vertices[0]], candidate[&vertices[1]]];
+                    let forward = distance_squared(points[assigned[0]], points[loci[0]])
+                        + distance_squared(points[assigned[1]], points[loci[1]]);
+                    let reverse = distance_squared(points[assigned[0]], points[loci[1]])
+                        + distance_squared(points[assigned[1]], points[loci[0]]);
+                    forward.min(reverse)
+                })
+                .sum::<f64>()
+        };
+        let selected = if score(&candidates[0]) <= score(&candidates[1]) {
+            candidates.into_iter().next().unwrap_or_default()
+        } else {
+            candidates.into_iter().nth(1).unwrap_or_default()
+        };
+        mapping.extend(selected.0);
+        completed.extend(selected.1);
+    }
+    mapping
+}
+
+fn propagate_vertex_component(
+    seed: usize,
+    reverse: bool,
+    constraints: &[([u32; 2], [usize; 2])],
+    adjacency: &HashMap<u32, Vec<usize>>,
+    points: &[[f64; 3]],
+) -> (HashMap<u32, usize>, Vec<usize>) {
+    let (seed_vertices, seed_loci) = constraints[seed];
+    let mut mapping = HashMap::from([
+        (seed_vertices[0], seed_loci[usize::from(reverse)]),
+        (seed_vertices[1], seed_loci[usize::from(!reverse)]),
+    ]);
+    let mut members = Vec::new();
+    let mut pending = std::collections::VecDeque::from([seed_vertices[0], seed_vertices[1]]);
+    let mut visited = std::collections::HashSet::new();
+    while let Some(vertex) = pending.pop_front() {
+        for &index in adjacency.get(&vertex).into_iter().flatten() {
+            if !visited.insert(index) {
+                continue;
+            }
+            members.push(index);
+            let (vertices, loci) = constraints[index];
+            let forward = assignment_residual(vertices, loci, &mapping, points);
+            let reverse = assignment_residual(vertices, [loci[1], loci[0]], &mapping, points);
+            let assigned = if forward <= reverse {
+                loci
+            } else {
+                [loci[1], loci[0]]
+            };
+            for lane in 0..2 {
+                if let std::collections::hash_map::Entry::Vacant(entry) =
+                    mapping.entry(vertices[lane])
+                {
+                    entry.insert(assigned[lane]);
+                    pending.push_back(vertices[lane]);
+                }
+            }
         }
     }
-    solutions
+    (mapping, members)
 }
 
-fn representative(parent: &mut [usize], index: usize) -> usize {
-    if parent[index] != index {
-        parent[index] = representative(parent, parent[index]);
+fn assignment_residual(
+    vertices: [u32; 2],
+    loci: [usize; 2],
+    mapping: &HashMap<u32, usize>,
+    points: &[[f64; 3]],
+) -> f64 {
+    (0..2)
+        .filter_map(|lane| {
+            mapping
+                .get(&vertices[lane])
+                .map(|mapped| distance_squared(points[*mapped], points[loci[lane]]))
+        })
+        .sum()
+}
+
+fn vertex_coordinate(points: &[[f64; 3]], logical_points: &[[f64; 3]], index: usize) -> [f64; 3] {
+    if index < points.len() {
+        points[index]
+    } else {
+        logical_points[index - points.len()]
     }
-    parent[index]
-}
-
-fn union(parent: &mut [usize], left: usize, right: usize) {
-    let left = representative(parent, left);
-    let right = representative(parent, right);
-    let root = left.min(right);
-    parent[left] = root;
-    parent[right] = root;
 }
 
 fn unique_loop_chain(loop_: &B5Loop, edge_vertices: &BTreeMap<u32, [usize; 2]>) -> bool {
@@ -1292,78 +1458,30 @@ mod tests {
     }
 
     #[test]
-    fn loop_local_tolerance_identifies_only_the_required_join() {
-        let loop_ = B5Loop {
-            object_id: 10,
-            pcurves: vec![20, 21, 22],
-            edges: vec![30, 31, 32],
-            surface: 40,
-        };
-        let loops = BTreeMap::from([(10, loop_)]);
+    fn native_vertex_graph_accepts_distinct_loci_for_one_tolerant_vertex() {
         let points = [
             [0.0, 0.0, 0.0],
             [1.0, 0.0, 0.0],
-            [1.0, LOOP_VERTEX_TOLERANCE, 0.0],
-            [0.0, LOOP_VERTEX_TOLERANCE, 0.0],
+            [1.0, 5e-3, 0.0],
+            [0.0, 5e-3, 0.0],
         ];
-        let mut edges = BTreeMap::from([(30, [0, 1]), (31, [2, 3]), (32, [3, 0])]);
-
-        let tolerances = collapse_loop_vertices(&loops, &mut edges, &points);
-
-        assert_eq!(edges[&30], [0, 1]);
-        assert_eq!(edges[&31], [1, 3]);
-        assert_eq!(edges[&32], [3, 0]);
-        assert_eq!(tolerances, BTreeMap::from([(1, LOOP_VERTEX_TOLERANCE)]));
-        assert!(unique_loop_chain(&loops[&10], &edges));
+        let constraints = [([10, 11], [0, 1]), ([11, 12], [2, 3]), ([12, 10], [3, 0])];
+        let adjacency = HashMap::from([(10, vec![0, 2]), (11, vec![0, 1]), (12, vec![1, 2])]);
+        let mapping = propagate_vertex_points(&constraints, &adjacency, &points);
+        assert_eq!(
+            mapping,
+            HashMap::from([(10, 0usize), (11, 1usize), (12, 3usize)])
+        );
     }
 
     #[test]
-    fn loop_local_tolerance_rejects_out_of_range_and_ambiguous_joins() {
-        let triangle = B5Loop {
-            object_id: 10,
-            pcurves: vec![20, 21, 22],
-            edges: vec![30, 31, 32],
-            surface: 40,
+    fn edge_record_exposes_native_start_and_end_vertex_refs() {
+        let record = B5Record {
+            offset: 0,
+            class: 0x5e,
+            object_id: 17,
+            payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
         };
-        let points = [
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [1.0, LOOP_VERTEX_TOLERANCE + 1e-6, 0.0],
-            [0.0, LOOP_VERTEX_TOLERANCE + 1e-6, 0.0],
-        ];
-        let edges = BTreeMap::from([(30, [0, 1]), (31, [2, 3]), (32, [3, 0])]);
-        assert!(tolerant_loop_solutions(&triangle, &edges, &points).is_empty());
-
-        let digon = B5Loop {
-            object_id: 11,
-            pcurves: vec![23, 24],
-            edges: vec![30, 30],
-            surface: 40,
-        };
-        assert_eq!(tolerant_loop_solutions(&digon, &edges, &points).len(), 2);
-    }
-
-    #[test]
-    fn loop_local_tolerance_does_not_collapse_a_physical_edge() {
-        let loop_ = B5Loop {
-            object_id: 10,
-            pcurves: vec![20, 21, 22],
-            edges: vec![30, 31, 32],
-            surface: 40,
-        };
-        let loops = BTreeMap::from([(10, loop_)]);
-        let points = [
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [1.0, LOOP_VERTEX_TOLERANCE, 0.0],
-            [0.0, LOOP_VERTEX_TOLERANCE, 0.0],
-        ];
-        let original = BTreeMap::from([(30, [0, 1]), (31, [2, 3]), (32, [3, 0]), (33, [1, 2])]);
-        let mut edges = original.clone();
-
-        let tolerances = collapse_loop_vertices(&loops, &mut edges, &points);
-
-        assert_eq!(edges, original);
-        assert!(tolerances.is_empty());
+        assert_eq!(parse_edge_vertex_refs(&record), Some([15, 21]));
     }
 }

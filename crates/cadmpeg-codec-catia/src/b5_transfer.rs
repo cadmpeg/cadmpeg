@@ -189,6 +189,9 @@ pub(crate) fn transfer(
         .collect();
 
     for (index, coordinates) in graph.vertex_points.iter().enumerate() {
+        if !used_vertices.contains(&index) {
+            continue;
+        }
         let point_id = PointId(format!("catia:b5:point#{index}"));
         annotate(
             annotations,
@@ -207,6 +210,38 @@ pub(crate) fn transfer(
             &vertex_id,
             "object_stream_b5_03",
             "05_08_01_vertex",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&vertex_id, "point");
+        ir.model.vertices.push(Vertex {
+            id: vertex_id,
+            point: point_id,
+            tolerance: graph.vertex_tolerances.get(&index).copied(),
+        });
+    }
+    for (rank, coordinates) in graph.logical_vertex_points.iter().enumerate() {
+        let index = graph.vertex_points.len() + rank;
+        if !used_vertices.contains(&index) {
+            continue;
+        }
+        let point_id = PointId(format!("catia:b5:point#{index}"));
+        annotate(
+            annotations,
+            &point_id,
+            "object_stream_b5_03",
+            "5d_logical_vertex",
+            Exactness::Derived,
+        );
+        ir.model.points.push(Point {
+            id: point_id.clone(),
+            position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+        });
+        let vertex_id = VertexId(format!("catia:b5:vertex#{index}"));
+        annotate(
+            annotations,
+            &vertex_id,
+            "object_stream_b5_03",
+            "5d_logical_vertex",
             Exactness::ByteExact,
         );
         annotations.derived(&vertex_id, "point");
@@ -414,8 +449,7 @@ pub(crate) fn transfer(
     );
     annotations
         .derived(&shell_id, "region")
-        .derived(&shell_id, "faces")
-        .derived(&shell_id, "free_vertices");
+        .derived(&shell_id, "faces");
     ir.model.shells.push(Shell {
         id: shell_id.clone(),
         region: region_id,
@@ -425,13 +459,7 @@ pub(crate) fn transfer(
             .map(|face| FaceId(format!("catia:b5:face#{}", face.object_id)))
             .collect(),
         wire_edges: Vec::new(),
-        free_vertices: graph
-            .vertex_points
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| !used_vertices.contains(index))
-            .map(|(index, _)| VertexId(format!("catia:b5:vertex#{index}")))
-            .collect(),
+        free_vertices: Vec::new(),
     });
 
     let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
