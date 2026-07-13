@@ -437,16 +437,56 @@ fn saved_section_line_geometry(
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
-    let internal_id = definition
-        .order_table
-        .as_ref()?
+    let order_table = definition.order_table.as_ref()?;
+    let saved_section = definition.saved_section.as_ref()?;
+    let internal_id = order_table
         .rows
         .iter()
-        .find(|row| row.external_id == segment.external_id)?
-        .internal_id;
-    let line = definition
-        .saved_section
-        .as_ref()?
+        .find(|row| row.external_id == segment.external_id)
+        .map(|row| row.internal_id)
+        .or_else(|| {
+            let trimmed = definition.trim_entities.as_ref()?;
+            let segment_ids = definition
+                .segments
+                .as_ref()?
+                .rows
+                .iter()
+                .filter(|candidate| {
+                    candidate.kind == crate::feature::FeatureSegmentKind::Line
+                        && trimmed
+                            .rows
+                            .iter()
+                            .any(|row| row.external_id == candidate.external_id)
+                        && !order_table
+                            .rows
+                            .iter()
+                            .any(|row| row.external_id == candidate.external_id)
+                })
+                .map(|candidate| candidate.external_id)
+                .collect::<Vec<_>>();
+            let saved_ids = saved_section
+                .entities
+                .iter()
+                .filter_map(|entity| match entity {
+                    crate::feature::FeatureSavedEntity::Line(line)
+                        if !order_table
+                            .rows
+                            .iter()
+                            .any(|row| row.internal_id == line.entity_id) =>
+                    {
+                        Some(line.entity_id)
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            match (segment_ids.as_slice(), saved_ids.as_slice()) {
+                ([external_id], [internal_id]) if *external_id == segment.external_id => {
+                    Some(*internal_id)
+                }
+                _ => None,
+            }
+        })?;
+    let line = saved_section
         .entities
         .iter()
         .find_map(|entity| match entity {
@@ -471,6 +511,194 @@ fn resolved_section_segment_geometry(
 ) -> Option<SketchGeometry> {
     section_segment_geometry(points, segment)
         .or_else(|| saved_section_line_geometry(definition, segment))
+}
+
+fn intersect_section_lines(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
+    let (
+        SketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        return None;
+    };
+    let denominator = (first_start.u - first_end.u).mul_add(
+        second_start.v - second_end.v,
+        -(first_start.v - first_end.v) * (second_start.u - second_end.u),
+    );
+    let scale = (first_start.u - first_end.u)
+        .abs()
+        .max((first_start.v - first_end.v).abs())
+        .max((second_start.u - second_end.u).abs())
+        .max((second_start.v - second_end.v).abs())
+        .max(1.0);
+    if denominator.abs() <= 1e-12 * scale * scale {
+        return None;
+    }
+    let first_cross = first_start
+        .u
+        .mul_add(first_end.v, -(first_start.v * first_end.u));
+    let second_cross = second_start
+        .u
+        .mul_add(second_end.v, -(second_start.v * second_end.u));
+    Some([
+        first_cross.mul_add(
+            second_start.u - second_end.u,
+            -(first_start.u - first_end.u) * second_cross,
+        ) / denominator,
+        first_cross.mul_add(
+            second_start.v - second_end.v,
+            -(first_start.v - first_end.v) * second_cross,
+        ) / denominator,
+    ])
+}
+
+fn intersect_section_line_arc(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
+    let (
+        (line @ SketchGeometry::Line { .. }, arc @ SketchGeometry::Arc { .. })
+        | (arc @ SketchGeometry::Arc { .. }, line @ SketchGeometry::Line { .. }),
+    ) = ((first, second),)
+    else {
+        return None;
+    };
+    let SketchGeometry::Line { start, end } = line else {
+        return None;
+    };
+    let SketchGeometry::Arc { center, radius, .. } = arc else {
+        return None;
+    };
+    let direction = [end.u - start.u, end.v - start.v];
+    let length = direction[0].hypot(direction[1]);
+    if length <= 1e-12 || radius.0 <= 1e-12 {
+        return None;
+    }
+    let direction = direction.map(|value| value / length);
+    let relative = [start.u - center.u, start.v - center.v];
+    let projection = -(relative[0] * direction[0] + relative[1] * direction[1]);
+    let closest = [
+        start.u + projection * direction[0],
+        start.v + projection * direction[1],
+    ];
+    let distance_squared = (closest[0] - center.u).mul_add(
+        closest[0] - center.u,
+        (closest[1] - center.v) * (closest[1] - center.v),
+    );
+    let radial_squared = radius.0 * radius.0;
+    let scale = radial_squared.max(1.0);
+    if distance_squared > radial_squared + 1e-10 * scale {
+        return None;
+    }
+    let travel = (radial_squared - distance_squared).max(0.0).sqrt();
+    let candidates = [
+        [
+            closest[0] + travel * direction[0],
+            closest[1] + travel * direction[1],
+        ],
+        [
+            closest[0] - travel * direction[0],
+            closest[1] - travel * direction[1],
+        ],
+    ];
+    if travel <= 1e-10 * radius.0.max(1.0) {
+        return Some(candidates[0]);
+    }
+    let endpoint_distance = |candidate: [f64; 2]| {
+        [start, end]
+            .iter()
+            .map(|endpoint| (candidate[0] - endpoint.u).hypot(candidate[1] - endpoint.v))
+            .fold(f64::INFINITY, f64::min)
+    };
+    let distances = candidates.map(endpoint_distance);
+    let distance_scale = distances[0].max(distances[1]).max(1.0);
+    if (distances[0] - distances[1]).abs() <= 1e-9 * distance_scale {
+        return None;
+    }
+    Some(candidates[usize::from(distances[1] < distances[0])])
+}
+
+fn resolved_trim_vertex_coordinates(
+    definition: &crate::feature::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+) -> BTreeMap<u32, [f64; 2]> {
+    let Some(segments) = &definition.segments else {
+        return BTreeMap::new();
+    };
+    let mut coordinates = definition
+        .trim_vertices
+        .iter()
+        .flat_map(|table| &table.rows)
+        .filter_map(|vertex| Some((vertex.vertex_id, vertex.section_coordinates?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut incident = BTreeMap::<u32, Vec<u32>>::new();
+    for entity in definition
+        .trim_entities
+        .iter()
+        .flat_map(|table| &table.rows)
+    {
+        if !segments
+            .rows
+            .iter()
+            .any(|segment| segment.external_id == entity.external_id)
+        {
+            continue;
+        }
+        for vertex in entity.vertices {
+            incident.entry(vertex).or_default().push(entity.external_id);
+        }
+    }
+    for (vertex, entities) in incident {
+        if coordinates.contains_key(&vertex) {
+            continue;
+        }
+        let [first_id, second_id] = entities.as_slice() else {
+            continue;
+        };
+        let geometry = |external_id| {
+            let segment = segments
+                .rows
+                .iter()
+                .find(|segment| segment.external_id == external_id)?;
+            resolved_section_segment_geometry(definition, points, segment)
+        };
+        let (Some(first), Some(second)) = (geometry(*first_id), geometry(*second_id)) else {
+            continue;
+        };
+        if let Some(coordinate) = intersect_section_lines(&first, &second)
+            .or_else(|| intersect_section_line_arc(&first, &second))
+        {
+            coordinates.insert(vertex, coordinate);
+        }
+    }
+    coordinates
+}
+
+fn trimmed_section_segment_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    trim_vertices: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    let geometry = resolved_section_segment_geometry(definition, points, segment)?;
+    if !matches!(geometry, SketchGeometry::Line { .. }) {
+        return Some(geometry);
+    }
+    let trim = definition
+        .trim_entities
+        .as_ref()?
+        .rows
+        .iter()
+        .find(|row| row.external_id == segment.external_id)?;
+    let start = trim_vertices.get(&trim.vertices[0])?;
+    let end = trim_vertices.get(&trim.vertices[1])?;
+    Some(SketchGeometry::Line {
+        start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+        end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+    })
 }
 
 fn section_point_in_model(
@@ -754,8 +982,24 @@ fn resolved_profile_chains(
     let Some(table) = &definition.trim_entities else {
         return Vec::new();
     };
+    let segment_ids = definition.segments.as_ref().map(|table| {
+        table
+            .rows
+            .iter()
+            .map(|segment| segment.external_id)
+            .collect::<BTreeSet<_>>()
+    });
+    let rows = table
+        .rows
+        .iter()
+        .filter(|row| {
+            segment_ids
+                .as_ref()
+                .is_none_or(|ids| ids.contains(&row.external_id))
+        })
+        .collect::<Vec<_>>();
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
-    for (index, row) in table.rows.iter().enumerate() {
+    for (index, row) in rows.iter().enumerate() {
         for vertex in row.vertices {
             incident.entry(vertex).or_default().push(index);
         }
@@ -763,13 +1007,13 @@ fn resolved_profile_chains(
     if incident.values().any(|rows| rows.len() > 2) {
         return Vec::new();
     }
-    let mut remaining = (0..table.rows.len()).collect::<BTreeSet<_>>();
+    let mut remaining = (0..rows.len()).collect::<BTreeSet<_>>();
     let mut profiles = Vec::new();
     while let Some(seed) = remaining.first().copied() {
         let mut component = BTreeSet::from([seed]);
         let mut frontier = vec![seed];
         while let Some(index) = frontier.pop() {
-            for vertex in table.rows[index].vertices {
+            for vertex in rows[index].vertices {
                 for adjacent in &incident[&vertex] {
                     if component.insert(*adjacent) {
                         frontier.push(*adjacent);
@@ -780,7 +1024,7 @@ fn resolved_profile_chains(
         remaining.retain(|index| !component.contains(index));
         if component
             .iter()
-            .any(|index| !emitted.contains(&table.rows[*index].external_id))
+            .any(|index| !emitted.contains(&rows[*index].external_id))
         {
             continue;
         }
@@ -794,14 +1038,14 @@ fn resolved_profile_chains(
         }
         let first_row = component
             .iter()
-            .min_by_key(|index| table.rows[**index].external_id)
+            .min_by_key(|index| rows[**index].external_id)
             .copied()
             .expect("component contains seed");
         let mut vertex = endpoints
             .iter()
             .min()
             .copied()
-            .unwrap_or(table.rows[first_row].vertices[0]);
+            .unwrap_or(rows[first_row].vertices[0]);
         let start_vertex = vertex;
         let mut unused = component;
         let mut profile = Vec::new();
@@ -822,7 +1066,7 @@ fn resolved_profile_chains(
             } else {
                 break;
             };
-            let row = &table.rows[index];
+            let row = rows[index];
             let reversed = row.vertices[1] == vertex;
             if !reversed && row.vertices[0] != vertex {
                 break;
@@ -881,12 +1125,22 @@ fn transfer_resolved_sketches(
             .flat_map(|table| &table.solved_external_ids)
             .copied()
             .collect::<BTreeSet<_>>();
+        let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
         let entities = segments
             .rows
             .iter()
             .filter_map(|segment| {
-                let geometry = resolved_section_segment_geometry(definition, &points, segment)?;
+                let geometry = if solved.contains(&segment.external_id) {
+                    trimmed_section_segment_geometry(
+                        definition,
+                        &points,
+                        &trim_vertex_coordinates,
+                        segment,
+                    )?
+                } else {
+                    resolved_section_segment_geometry(definition, &points, segment)?
+                };
                 let id = SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
                     definition.id, segment.external_id
@@ -971,7 +1225,17 @@ fn transfer_resolved_sketches(
             .rows
             .iter()
             .filter(|segment| {
-                resolved_section_segment_geometry(definition, &points, segment).is_some()
+                if solved.contains(&segment.external_id) {
+                    trimmed_section_segment_geometry(
+                        definition,
+                        &points,
+                        &trim_vertex_coordinates,
+                        segment,
+                    )
+                    .is_some()
+                } else {
+                    resolved_section_segment_geometry(definition, &points, segment).is_some()
+                }
             })
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
@@ -1615,6 +1879,37 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn intersects_evaluated_section_carriers() {
+        let horizontal = SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(-2.0, 1.0),
+            end: cadmpeg_ir::math::Point2::new(2.0, 1.0),
+        };
+        let vertical = SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(0.5, -3.0),
+            end: cadmpeg_ir::math::Point2::new(0.5, 3.0),
+        };
+        assert_eq!(
+            intersect_section_lines(&horizontal, &vertical),
+            Some([0.5, 1.0])
+        );
+
+        let circle_half = SketchGeometry::Arc {
+            center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        };
+        let endpoint_line = SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(2.0, 0.0),
+            end: cadmpeg_ir::math::Point2::new(3.0, 1.0),
+        };
+        let intersection = intersect_section_line_arc(&endpoint_line, &circle_half)
+            .expect("line has one endpoint on the arc");
+        assert!((intersection[0] - 2.0).abs() <= 1e-12);
+        assert!(intersection[1].abs() <= 1e-12);
+    }
+
+    #[test]
     fn saved_line_joins_through_order_table() {
         let segment = crate::feature::FeatureSegment {
             kind: crate::feature::FeatureSegmentKind::Line,
@@ -1672,6 +1967,39 @@ mod resolved_sketch_tests {
 
         assert_eq!(
             saved_section_line_geometry(&definition, &segment),
+            Some(SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+        );
+
+        let mut completed = definition;
+        completed
+            .order_table
+            .as_mut()
+            .expect("test definition has an order table")
+            .rows
+            .clear();
+        completed.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![segment.clone()],
+            offset: 4,
+        });
+        completed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
+            rows: vec![crate::feature::FeatureTrimEntity {
+                external_id: 42,
+                mode: Some(0),
+                vertices: [1, 2],
+                center_vertex: None,
+                kind: crate::feature::TrimEntityKind::Line,
+                offset: 6,
+            }],
+            solved_external_ids: vec![42],
+            offset: 5,
+        });
+        assert_eq!(
+            saved_section_line_geometry(&completed, &segment),
             Some(SketchGeometry::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),

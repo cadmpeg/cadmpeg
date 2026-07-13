@@ -1908,7 +1908,13 @@ fn saved_line_entities(
         let mut references = Vec::new();
         let mut attributes = Vec::new();
         loop {
-            if payload
+            if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+                let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
+                    break;
+                };
+                references.push(reference);
+                cursor = next;
+            } else if payload
                 .get(cursor..cursor + 2)
                 .is_some_and(|bytes| matches!(bytes, [0xf0 | 0xf1, 0xf7]))
             {
@@ -1940,6 +1946,14 @@ fn saved_line_entities(
         cursor = next + 1;
         let mut values = Vec::with_capacity(6);
         while cursor < segment_end && values.len() < 6 {
+            if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
+                let Ok((reference, next)) = psb::reference_id(payload, cursor + 1) else {
+                    break;
+                };
+                references.push(reference);
+                cursor = next;
+                continue;
+            }
             if payload
                 .get(cursor..cursor + 2)
                 .is_some_and(|bytes| matches!(bytes, [0xf0 | 0xf1, 0xf7]))
@@ -2793,6 +2807,23 @@ mod tests {
         assert_eq!(value, Some(-0.395_669_107_559_015_74));
         assert_eq!(next, bytes.len());
         assert!(!dimension_driven);
+    }
+
+    #[test]
+    fn saved_line_accepts_bare_entity_reference_before_coordinates() {
+        let payload = b"\xe0\0entity(line)\0\x05\xe2\xf7\x2a\
+            \x2f\x20\0\x2f\x20\0\x2f\x20\0\
+            \x2f\x20\0\x2f\x20\0\x2f\x20\0\xe3";
+        let entities =
+            saved_line_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+
+        assert_eq!(entities.len(), 1);
+        let FeatureSavedEntity::Line(line) = &entities[0] else {
+            panic!("expected saved line");
+        };
+        assert_eq!(line.entity_id, 5);
+        assert_eq!(line.references, [42]);
+        assert_eq!(line.endpoints, [[Some(8.0); 3]; 2]);
     }
 
     #[test]
