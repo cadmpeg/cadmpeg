@@ -219,7 +219,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
         if let Constraint::ArcAngle { entity, angle } = &constraint.definition {
-            if !angle.0.is_finite() || angle.0 <= 0.0 {
+            let valid_angle =
+                angle.0.is_finite() && angle.0 > 0.0 && angle.0 <= std::f64::consts::TAU;
+            if !valid_angle {
                 finding(
                     findings,
                     Check::ParameterDomain,
@@ -227,16 +229,33 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     "invalid sketch arc angle",
                 );
             }
-            if geometry
-                .get(entity)
-                .is_some_and(|geometry| !matches!(geometry, SketchGeometry::Arc { .. }))
-            {
-                finding(
+            match geometry.get(entity) {
+                Some(SketchGeometry::Arc {
+                    start_angle,
+                    end_angle,
+                    ..
+                }) if valid_angle && start_angle.0.is_finite() && end_angle.0.is_finite() => {
+                    let raw = end_angle.0 - start_angle.0;
+                    let mut sweep = raw.rem_euclid(std::f64::consts::TAU);
+                    if sweep <= 1.0e-12 && raw.abs() > 1.0e-12 {
+                        sweep = std::f64::consts::TAU;
+                    }
+                    if (sweep - angle.0).abs() > 1.0e-9 {
+                        finding(
+                            findings,
+                            Check::GeometricConsistency,
+                            &constraint.id.0,
+                            "sketch arc angle does not match solved geometry",
+                        );
+                    }
+                }
+                Some(SketchGeometry::Arc { .. }) | None => {}
+                Some(_) => finding(
                     findings,
                     Check::GeometricConsistency,
                     &constraint.id.0,
                     "sketch arc-angle constraint references a non-arc entity",
-                );
+                ),
             }
         }
         for locus in constraint_loci(&constraint.definition) {

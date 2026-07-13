@@ -452,6 +452,82 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
 }
 
 #[test]
+fn fixed_arc_angles_validate_against_solved_wraparound_geometry() {
+    use crate::features::{Angle, Length};
+    use crate::math::{Point2, Point3, Vector3};
+    use crate::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId,
+    };
+
+    let mut ir = unit_cube();
+    let sketch = SketchId("synthetic:test:sketch#arc-angle".into());
+    let arc = SketchEntityId("synthetic:test:entity#arc-angle".into());
+    let constraint = SketchConstraintId("synthetic:test:constraint#arc-angle".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch.clone(),
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    ir.model.sketch_entities.push(SketchEntity {
+        id: arc.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(1.0),
+            start_angle: Angle(5.5),
+            end_angle: Angle((5.5 + std::f64::consts::FRAC_PI_2) - std::f64::consts::TAU),
+        },
+    });
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: constraint.clone(),
+        sketch,
+        definition: SketchConstraintDefinition::ArcAngle {
+            entity: arc,
+            angle: Angle(std::f64::consts::FRAC_PI_2),
+        },
+        native_ref: None,
+    });
+    ir.finalize();
+    let report = validate(&ir, Vec::new());
+    assert!(!report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint.0.as_str())
+            && finding.message.contains("arc angle")
+    }));
+
+    if let SketchConstraintDefinition::ArcAngle { angle, .. } =
+        &mut ir.model.sketch_constraints[0].definition
+    {
+        *angle = Angle(std::f64::consts::PI);
+    }
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint.0.as_str())
+            && finding.message.contains("does not match solved geometry")
+    }));
+
+    if let SketchConstraintDefinition::ArcAngle { angle, .. } =
+        &mut ir.model.sketch_constraints[0].definition
+    {
+        *angle = Angle(0.0);
+    }
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(constraint.0.as_str())
+            && finding.check == Check::ParameterDomain
+    }));
+}
+
+#[test]
 fn sketch_profiles_and_constraints_enforce_local_connectivity() {
     use crate::math::{Point2, Point3, Vector3};
     use crate::sketches::{
