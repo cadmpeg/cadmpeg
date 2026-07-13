@@ -513,6 +513,44 @@ fn resolved_section_segment_geometry(
         .or_else(|| saved_section_line_geometry(definition, segment))
 }
 
+fn trim_segment_id(
+    definition: &crate::feature::FeatureDefinition,
+    row: &crate::feature::FeatureTrimEntity,
+) -> Option<u32> {
+    let Some(segment_table) = &definition.segments else {
+        return Some(row.external_id);
+    };
+    let segments = &segment_table.rows;
+    let trim_rows = &definition.trim_entities.as_ref()?.rows;
+    if segments
+        .iter()
+        .any(|segment| segment.external_id == row.external_id)
+    {
+        return Some(row.external_id);
+    }
+    let unmatched_segments = segments
+        .iter()
+        .filter(|segment| {
+            !trim_rows
+                .iter()
+                .any(|trim| trim.external_id == segment.external_id)
+        })
+        .map(|segment| segment.external_id)
+        .collect::<Vec<_>>();
+    let unmatched_rows = trim_rows
+        .iter()
+        .filter(|trim| {
+            !segments
+                .iter()
+                .any(|segment| segment.external_id == trim.external_id)
+        })
+        .collect::<Vec<_>>();
+    match (unmatched_segments.as_slice(), unmatched_rows.as_slice()) {
+        ([segment_id], [unmatched]) if std::ptr::eq(*unmatched, row) => Some(*segment_id),
+        _ => None,
+    }
+}
+
 fn intersect_section_lines(first: &SketchGeometry, second: &SketchGeometry) -> Option<[f64; 2]> {
     let (
         SketchGeometry::Line {
@@ -640,15 +678,11 @@ fn resolved_trim_vertex_coordinates(
         .iter()
         .flat_map(|table| &table.rows)
     {
-        if !segments
-            .rows
-            .iter()
-            .any(|segment| segment.external_id == entity.external_id)
-        {
+        let Some(external_id) = trim_segment_id(definition, entity) else {
             continue;
-        }
+        };
         for vertex in entity.vertices {
-            incident.entry(vertex).or_default().push(entity.external_id);
+            incident.entry(vertex).or_default().push(external_id);
         }
     }
     for (vertex, entities) in incident {
@@ -692,7 +726,7 @@ fn trimmed_section_segment_geometry(
         .as_ref()?
         .rows
         .iter()
-        .find(|row| row.external_id == segment.external_id)?;
+        .find(|row| trim_segment_id(definition, row) == Some(segment.external_id))?;
     let start = trim_vertices.get(&trim.vertices[0])?;
     let end = trim_vertices.get(&trim.vertices[1])?;
     Some(SketchGeometry::Line {
@@ -849,9 +883,9 @@ fn transfer_feature_extrusion_surfaces(
             .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
             .collect::<BTreeMap<_, _>>();
         let solved = trim_entities
-            .solved_external_ids
+            .rows
             .iter()
-            .copied()
+            .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
         let cylinder_entries = table
             .entry_ids
@@ -982,25 +1016,14 @@ fn resolved_profile_chains(
     let Some(table) = &definition.trim_entities else {
         return Vec::new();
     };
-    let segment_ids = definition.segments.as_ref().map(|table| {
-        table
-            .rows
-            .iter()
-            .map(|segment| segment.external_id)
-            .collect::<BTreeSet<_>>()
-    });
     let rows = table
         .rows
         .iter()
-        .filter(|row| {
-            segment_ids
-                .as_ref()
-                .is_none_or(|ids| ids.contains(&row.external_id))
-        })
+        .filter_map(|row| Some((row, trim_segment_id(definition, row)?)))
         .collect::<Vec<_>>();
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, row) in rows.iter().enumerate() {
-        for vertex in row.vertices {
+        for vertex in row.0.vertices {
             incident.entry(vertex).or_default().push(index);
         }
     }
@@ -1013,7 +1036,7 @@ fn resolved_profile_chains(
         let mut component = BTreeSet::from([seed]);
         let mut frontier = vec![seed];
         while let Some(index) = frontier.pop() {
-            for vertex in rows[index].vertices {
+            for vertex in rows[index].0.vertices {
                 for adjacent in &incident[&vertex] {
                     if component.insert(*adjacent) {
                         frontier.push(*adjacent);
@@ -1024,7 +1047,7 @@ fn resolved_profile_chains(
         remaining.retain(|index| !component.contains(index));
         if component
             .iter()
-            .any(|index| !emitted.contains(&rows[*index].external_id))
+            .any(|index| !emitted.contains(&rows[*index].1))
         {
             continue;
         }
@@ -1038,14 +1061,14 @@ fn resolved_profile_chains(
         }
         let first_row = component
             .iter()
-            .min_by_key(|index| rows[**index].external_id)
+            .min_by_key(|index| rows[**index].1)
             .copied()
             .expect("component contains seed");
         let mut vertex = endpoints
             .iter()
             .min()
             .copied()
-            .unwrap_or(rows[first_row].vertices[0]);
+            .unwrap_or(rows[first_row].0.vertices[0]);
         let start_vertex = vertex;
         let mut unused = component;
         let mut profile = Vec::new();
@@ -1066,7 +1089,7 @@ fn resolved_profile_chains(
             } else {
                 break;
             };
-            let row = rows[index];
+            let (row, external_id) = rows[index];
             let reversed = row.vertices[1] == vertex;
             if !reversed && row.vertices[0] != vertex {
                 break;
@@ -1074,7 +1097,7 @@ fn resolved_profile_chains(
             profile.push(SketchEntityUse {
                 entity: SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id, row.external_id
+                    definition.id, external_id
                 )),
                 reversed,
             });
@@ -1122,8 +1145,8 @@ fn transfer_resolved_sketches(
         let solved = definition
             .trim_entities
             .iter()
-            .flat_map(|table| &table.solved_external_ids)
-            .copied()
+            .flat_map(|table| &table.rows)
+            .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
         let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));

@@ -956,17 +956,18 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
 #[test]
 fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     let mut payload =
-        b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+        b"feat_defs_40\0segtab_ptr\0\xf8\x03\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2, 0xe3]);
+    payload.extend_from_slice(&[2, 0, 0, 0, 9, 10, 0xf6, 0, 0, 0xf6, 0xf6, 0x80, 0xe3, 0xe2]);
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
     let segments = scan.feature_definitions[0]
         .segments
         .as_ref()
         .expect("segtab");
-    assert_eq!(segments.declared_count, 2);
-    assert_eq!(segments.rows.len(), 2);
+    assert_eq!(segments.declared_count, 3);
+    assert_eq!(segments.rows.len(), 3);
     assert_eq!(
         segments.rows[0].kind,
         crate::feature::FeatureSegmentKind::Line
@@ -979,6 +980,7 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         crate::feature::FeatureSegmentKind::Arc
     );
     assert_eq!(segments.rows[1].center_id, Some(10));
+    assert_eq!(segments.rows[2].external_id, 227);
 }
 
 #[test]
@@ -987,6 +989,7 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
         b"feat_defs_40\0ent_tab\0\xe3entry_ptr(entity_entry)\0schema\xf2\xf7\x01\xe3".to_vec();
     payload.extend_from_slice(&[42, 0, 100, 101, 0xf6, 0, 0xe3]);
     payload.extend_from_slice(&[43, 0, 101, 102, 103, 0, 0xe3]);
+    payload.extend_from_slice(&[0x80, 0xe3, 0, 102, 104, 0xf6, 0, 0xe3]);
     payload.extend_from_slice(b"vert_tab\0");
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
@@ -994,13 +997,14 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
         .trim_entities
         .as_ref()
         .expect("ent_tab");
-    assert_eq!(entities.rows.len(), 2);
+    assert_eq!(entities.rows.len(), 3);
     assert_eq!(entities.rows[0].external_id, 42);
     assert_eq!(entities.rows[0].vertices, [100, 101]);
     assert_eq!(entities.rows[0].center_vertex, None);
     assert_eq!(entities.rows[0].kind, crate::feature::TrimEntityKind::Line);
     assert_eq!(entities.rows[1].kind, crate::feature::TrimEntityKind::Arc);
-    assert_eq!(entities.solved_external_ids, vec![42, 43]);
+    assert_eq!(entities.rows[2].external_id, 227);
+    assert_eq!(entities.solved_external_ids, vec![42, 43, 227]);
 }
 
 #[test]

@@ -1229,53 +1229,54 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     }
     let region_end = find_bytes(payload, b"order_table", cursor, end).unwrap_or(end);
     let mut rows = Vec::new();
+    let first_row = cursor;
     while cursor < region_end {
-        let chunk_end = payload[cursor..region_end]
-            .iter()
-            .position(|&byte| byte == 0xe3)
-            .map_or(region_end, |relative| cursor + relative);
-        let chunk = &payload[cursor..chunk_end];
-        let Some(row_start) = chunk.iter().position(|byte| matches!(byte, 2 | 3)) else {
-            cursor = chunk_end.saturating_add(1);
+        if !matches!(payload[cursor], 2 | 3)
+            || (cursor != first_row
+                && payload.get(cursor.saturating_sub(1)) != Some(&0xe3)
+                && payload.get(cursor.saturating_sub(4)..cursor) != Some(&[0xe2, 0x00, 0xf6, 0xe2]))
+        {
+            cursor += 1;
             continue;
-        };
-        let mut p = row_start;
-        let (kind_raw, next) = segment_int(chunk, p);
+        }
+        let row_start = cursor;
+        let mut p = cursor;
+        let (kind_raw, next) = segment_int(payload, p);
         p = next;
         let kind = match kind_raw {
             Some(2) => FeatureSegmentKind::Line,
             Some(3) => FeatureSegmentKind::Arc,
             _ => {
-                cursor = chunk_end.saturating_add(1);
+                cursor += 1;
                 continue;
             }
         };
         let directions = [
-            next_segment_int(chunk, &mut p),
-            next_segment_int(chunk, &mut p),
-            next_segment_int(chunk, &mut p),
+            next_segment_int(payload, &mut p),
+            next_segment_int(payload, &mut p),
+            next_segment_int(payload, &mut p),
         ];
         let (Some(point0), Some(point1)) = (
-            next_segment_int(chunk, &mut p),
-            next_segment_int(chunk, &mut p),
+            next_segment_int(payload, &mut p),
+            next_segment_int(payload, &mut p),
         ) else {
-            cursor = chunk_end.saturating_add(1);
+            cursor += 1;
             continue;
         };
-        let center_id = next_segment_int(chunk, &mut p);
-        let arc_orientation = next_segment_int(chunk, &mut p);
-        let verhor_flag = chunk.get(p) == Some(&0xf5);
-        let vertical_horizontal = next_segment_int(chunk, &mut p);
+        let center_id = next_segment_int(payload, &mut p);
+        let arc_orientation = next_segment_int(payload, &mut p);
+        let verhor_flag = payload.get(p) == Some(&0xf5);
+        let vertical_horizontal = next_segment_int(payload, &mut p);
         if verhor_flag {
-            let _ = next_segment_int(chunk, &mut p);
+            let _ = next_segment_int(payload, &mut p);
         }
-        let radius_ref = next_segment_int(chunk, &mut p);
-        let radius2_ref = next_segment_int(chunk, &mut p);
-        let Some(external_id) = next_segment_int(chunk, &mut p).filter(|id| *id != 0) else {
-            cursor = chunk_end.saturating_add(1);
+        let radius_ref = next_segment_int(payload, &mut p);
+        let radius2_ref = next_segment_int(payload, &mut p);
+        let Some(external_id) = next_segment_int(payload, &mut p).filter(|id| *id != 0) else {
+            cursor += 1;
             continue;
         };
-        if chunk.get(p) == Some(&0xe2) && point0 < 256 && point1 < 256 {
+        if payload.get(p) == Some(&0xe2) && point0 < 256 && point1 < 256 {
             rows.push(FeatureSegment {
                 kind,
                 directions,
@@ -1286,10 +1287,12 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
                 radius_ref,
                 radius2_ref,
                 external_id,
-                offset: cursor + row_start,
+                offset: row_start,
             });
+            cursor = p + 1;
+        } else {
+            cursor += 1;
         }
-        cursor = chunk_end.saturating_add(1);
     }
     (!rows.is_empty()).then_some(FeatureSegmentTable {
         declared_count,
@@ -1299,7 +1302,12 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     })
 }
 
-fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureTrimEntityTable> {
+fn trim_entity_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    segments: Option<&FeatureSegmentTable>,
+) -> Option<FeatureTrimEntityTable> {
     let table = find_bytes(payload, b"ent_tab\0", start, end)?;
     let prototype = find_bytes(payload, b"entry_ptr(entity_entry)", table, end)?;
     let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], prototype, end)?;
@@ -1307,25 +1315,39 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
     if payload.get(cursor) == Some(&0xe3) {
         cursor += 1;
     }
+    let first_row = cursor;
     let region_end = find_bytes(payload, b"vert_tab", cursor, end).unwrap_or(end);
+    let valid_ids = segments.map(|table| {
+        table
+            .rows
+            .iter()
+            .map(|row| row.external_id)
+            .collect::<BTreeSet<_>>()
+    });
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     while cursor < region_end {
-        let chunk_end = payload[cursor..region_end]
-            .iter()
-            .position(|&byte| byte == 0xe3)
-            .map_or(region_end, |relative| cursor + relative);
-        let chunk = &payload[cursor..chunk_end];
-        let mut p = 0;
-        let external_id = next_segment_int(chunk, &mut p);
-        let mode = next_segment_int(chunk, &mut p);
-        let start_vertex = next_segment_int(chunk, &mut p);
-        let end_vertex = next_segment_int(chunk, &mut p);
-        let center_vertex = next_segment_int(chunk, &mut p);
+        if cursor != first_row && payload.get(cursor.saturating_sub(1)) != Some(&0xe3) {
+            cursor += 1;
+            continue;
+        }
+        let row_offset = cursor;
+        let mut p = row_offset;
+        let external_id = next_segment_int(payload, &mut p);
+        let mode = next_segment_int(payload, &mut p);
+        let start_vertex = next_segment_int(payload, &mut p);
+        let end_vertex = next_segment_int(payload, &mut p);
+        let center_vertex = next_segment_int(payload, &mut p);
         if let (Some(external_id), Some(start_vertex), Some(end_vertex)) =
             (external_id, start_vertex, end_vertex)
         {
-            if external_id != 0 && seen.insert(external_id) {
+            if external_id != 0
+                && payload.get(p) == Some(&0)
+                && valid_ids
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(&external_id))
+                && seen.insert(external_id)
+            {
                 rows.push(FeatureTrimEntity {
                     external_id,
                     mode,
@@ -1336,11 +1358,11 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
                     } else {
                         TrimEntityKind::Line
                     },
-                    offset: cursor,
+                    offset: row_offset,
                 });
             }
         }
-        cursor = chunk_end.saturating_add(1);
+        cursor += 1;
     }
     (!rows.is_empty()).then(|| FeatureTrimEntityTable {
         solved_external_ids: seen.into_iter().collect(),
@@ -2602,7 +2624,7 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         outlines.sort_by_key(|outline| outline.offset);
         let variables = variable_table(payload, start, end, &cache);
         let segments = segment_table(payload, start, end);
-        let trim_entities = trim_entity_table(payload, start, end);
+        let trim_entities = trim_entity_table(payload, start, end, segments.as_ref());
         let trim_vertices = trim_vertex_table(
             payload,
             start,
