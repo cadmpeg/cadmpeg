@@ -1939,6 +1939,33 @@ fn nested_offset_surface_carriers_evaluate_recursively() {
 }
 
 #[test]
+fn analytic_surface_normals_follow_parameter_orientation() {
+    let cylinder = SurfaceGeometry::Cylinder {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 5.0,
+    };
+    let normal = crate::eval::surface_normal(&cylinder, std::f64::consts::FRAC_PI_2, 3.0)
+        .expect("cylinder normal");
+    assert!(normal.x.abs() < 1e-12);
+    assert!((normal.y - 1.0).abs() < 1e-12);
+    assert!(normal.z.abs() < 1e-12);
+
+    let sphere = SurfaceGeometry::Sphere {
+        center: Point3::new(0.0, 0.0, 0.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 2.0,
+    };
+    let normal = crate::eval::surface_normal(&sphere, 0.0, std::f64::consts::FRAC_PI_2)
+        .expect("sphere normal");
+    assert!(normal.x.abs() < 1e-12);
+    assert!(normal.y.abs() < 1e-12);
+    assert!((normal.z - 1.0).abs() < 1e-12);
+}
+
+#[test]
 fn edge_endpoint_mismatch_is_flagged() {
     let mut ir = unit_cube();
     let report = validate(&ir, Vec::new());

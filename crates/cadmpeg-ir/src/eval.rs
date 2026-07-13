@@ -304,6 +304,116 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
     }
 }
 
+fn unit(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0)
+        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
+}
+
+/// Evaluate the oriented unit normal of an explicit surface carrier.
+pub fn surface_normal(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Vector3> {
+    match geometry {
+        SurfaceGeometry::Plane { normal, .. } => unit(*normal),
+        SurfaceGeometry::Cylinder {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => {
+            let transverse = cross(*axis, *ref_direction);
+            unit(Vector3::new(
+                radius.signum() * (u.cos() * ref_direction.x + u.sin() * transverse.x),
+                radius.signum() * (u.cos() * ref_direction.y + u.sin() * transverse.y),
+                radius.signum() * (u.cos() * ref_direction.z + u.sin() * transverse.z),
+            ))
+        }
+        SurfaceGeometry::Sphere {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => {
+            let transverse = cross(*axis, *ref_direction);
+            unit(Vector3::new(
+                radius.signum()
+                    * (v.cos() * u.cos() * ref_direction.x
+                        + v.cos() * u.sin() * transverse.x
+                        + v.sin() * axis.x),
+                radius.signum()
+                    * (v.cos() * u.cos() * ref_direction.y
+                        + v.cos() * u.sin() * transverse.y
+                        + v.sin() * axis.y),
+                radius.signum()
+                    * (v.cos() * u.cos() * ref_direction.z
+                        + v.cos() * u.sin() * transverse.z
+                        + v.sin() * axis.z),
+            ))
+        }
+        SurfaceGeometry::Torus {
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let transverse = cross(*axis, *ref_direction);
+            let orientation = (minor_radius * (major_radius + minor_radius * v.cos())).signum();
+            unit(Vector3::new(
+                orientation
+                    * (v.cos() * (u.cos() * ref_direction.x + u.sin() * transverse.x)
+                        + v.sin() * axis.x),
+                orientation
+                    * (v.cos() * (u.cos() * ref_direction.y + u.sin() * transverse.y)
+                        + v.sin() * axis.y),
+                orientation
+                    * (v.cos() * (u.cos() * ref_direction.z + u.sin() * transverse.z)
+                        + v.sin() * axis.z),
+            ))
+        }
+        SurfaceGeometry::Cone {
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+            ..
+        } => {
+            let transverse = cross(*axis, *ref_direction);
+            let local_radius = radius + v * half_angle.tan();
+            let tangent_u = Vector3::new(
+                -local_radius * u.sin() * ref_direction.x
+                    + local_radius * ratio * u.cos() * transverse.x,
+                -local_radius * u.sin() * ref_direction.y
+                    + local_radius * ratio * u.cos() * transverse.y,
+                -local_radius * u.sin() * ref_direction.z
+                    + local_radius * ratio * u.cos() * transverse.z,
+            );
+            let slope = half_angle.tan();
+            let tangent_v = Vector3::new(
+                slope * u.cos() * ref_direction.x + slope * ratio * u.sin() * transverse.x + axis.x,
+                slope * u.cos() * ref_direction.y + slope * ratio * u.sin() * transverse.y + axis.y,
+                slope * u.cos() * ref_direction.z + slope * ratio * u.sin() * transverse.z + axis.z,
+            );
+            unit(cross(tangent_u, tangent_v))
+        }
+        SurfaceGeometry::Nurbs(_) => {
+            let step = |parameter: f64| f64::EPSILON.sqrt() * parameter.abs().max(1.0);
+            let (du, dv) = (step(u), step(v));
+            let (u0, u1, v0, v1) = (
+                surface_point(geometry, u - du, v)?,
+                surface_point(geometry, u + du, v)?,
+                surface_point(geometry, u, v - dv)?,
+                surface_point(geometry, u, v + dv)?,
+            );
+            unit(cross(
+                Vector3::new(u1.x - u0.x, u1.y - u0.y, u1.z - u0.z),
+                Vector3::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z),
+            ))
+        }
+        SurfaceGeometry::Procedural { .. } | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
 /// Evaluate a model surface by identity, resolving exact procedural carriers.
 pub fn model_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
     model_surface_point_inner(ir, surface, u, v, &mut BTreeSet::new())
@@ -349,18 +459,26 @@ fn model_surface_normal(
     v: f64,
     visiting: &mut BTreeSet<SurfaceId>,
 ) -> Option<Vector3> {
-    let step = |parameter: f64| f64::EPSILON.sqrt() * parameter.abs().max(1.0);
-    let (du, dv) = (step(u), step(v));
-    let u0 = model_surface_point_inner(ir, surface, u - du, v, visiting)?;
-    let u1 = model_surface_point_inner(ir, surface, u + du, v, visiting)?;
-    let v0 = model_surface_point_inner(ir, surface, u, v - dv, visiting)?;
-    let v1 = model_surface_point_inner(ir, surface, u, v + dv, visiting)?;
-    let tangent_u = Vector3::new(u1.x - u0.x, u1.y - u0.y, u1.z - u0.z);
-    let tangent_v = Vector3::new(v1.x - v0.x, v1.y - v0.y, v1.z - v0.z);
-    let normal = cross(tangent_u, tangent_v);
-    let norm = normal.norm();
-    (norm.is_finite() && norm > 0.0)
-        .then(|| Vector3::new(normal.x / norm, normal.y / norm, normal.z / norm))
+    visiting.insert(surface.clone()).then_some(())?;
+    let carrier = ir.model.surfaces.iter().find(|item| &item.id == surface)?;
+    let result = match &carrier.geometry {
+        SurfaceGeometry::Procedural { construction } => {
+            let procedural = ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .find(|item| &item.id == construction && &item.surface == surface)?;
+            match &procedural.definition {
+                ProceduralSurfaceDefinition::Offset { support, .. } => {
+                    model_surface_normal(ir, support, u, v, visiting)
+                }
+                _ => None,
+            }
+        }
+        geometry => surface_normal(geometry, u, v),
+    };
+    visiting.remove(surface);
+    result
 }
 
 /// Evaluate a pcurve carrier at parameter `t`, yielding a surface `(u, v)`.
