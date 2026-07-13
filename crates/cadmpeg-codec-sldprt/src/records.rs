@@ -260,6 +260,9 @@ pub struct SketchInputEntity {
     pub ordinal: u32,
     /// Byte offset of this marker within `FeatureInputLane::native_payload`.
     pub offset: u64,
+    /// Sketch-local object identifier preceding the marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_id: Option<u32>,
     /// Sketch-entity kind this marker identifies.
     pub kind: SketchInputKind,
 }

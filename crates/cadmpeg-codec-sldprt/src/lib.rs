@@ -340,6 +340,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     entity: Some(lane.id.clone()),
                 });
             }
+            if usize::try_from(entity.offset).ok().is_some_and(|offset| {
+                entity.local_id
+                    != crate::resolved_features::marker_local_id(&lane.native_payload, offset)
+            }) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message:
+                        "SolidWorks feature-input local object id does not match its native payload"
+                            .into(),
+                    entity: Some(entity.id.clone()),
+                });
+            }
         }
         for offset in expected_offsets.difference(&offsets) {
             findings.push(Finding {

@@ -773,6 +773,8 @@ fn resolved_feature_payload(
     {
         if entity.ordinal != ordinal as u32
             || usize::try_from(entity.offset) != Ok(*expected_offset)
+            || entity.local_id
+                != crate::resolved_features::marker_local_id(&lane.native_payload, *expected_offset)
         {
             return Err(CodecError::Malformed(format!(
                 "feature-input lane {} has inconsistent marker order",

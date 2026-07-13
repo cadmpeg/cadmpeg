@@ -961,7 +961,8 @@ fn resolved_features_payload_with_names(codes: &[u32], names: &[&str]) -> Vec<u8
             }
         }
     }
-    for code in codes {
+    for (ordinal, code) in codes.iter().enumerate() {
+        payload.extend_from_slice(&((ordinal + 1) as u32).to_le_bytes());
         payload.extend_from_slice(&[0xff, 0xff, 0x1f, 0x00, 0x03]);
         payload.extend_from_slice(&[0; 12]);
         payload.extend_from_slice(&code.to_le_bytes());
@@ -10755,6 +10756,11 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         .iter()
         .enumerate()
         .all(|(ordinal, entity)| entity.ordinal == ordinal as u32));
+    assert!(lane
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .all(|(ordinal, entity)| entity.local_id == Some(ordinal as u32 + 1)));
     let by_ordinal = |ordinal| {
         lane.sketch_entities
             .iter()
@@ -10856,6 +10862,25 @@ fn semantic_writer_rejects_edited_feature_input_scalar_index() {
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("has edited named scalars"));
+}
+
+#[test]
+fn semantic_writer_rejects_edited_sketch_marker_local_id() {
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].sketch_entities[0].local_id = Some(7);
+    });
+    assert!(crate::validate_native(&decoded.ir)
+        .iter()
+        .any(|finding| finding.message.contains("local object id does not match")));
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("inconsistent marker order"));
 }
 
 #[test]
