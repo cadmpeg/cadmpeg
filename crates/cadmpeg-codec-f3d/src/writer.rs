@@ -20,7 +20,7 @@ use cadmpeg_ir::geometry::{
     BlendRadiusLaw, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry,
     ProceduralCurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::ShellId;
+use cadmpeg_ir::ids::{CoedgeId, ShellId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Coedge, Color, Edge, Face, Sense};
 use cadmpeg_ir::transform::Transform;
@@ -239,7 +239,52 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
             }
         }
     }
+
+    let coedge_ids = target
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| &coedge.id)
+        .collect::<BTreeSet<_>>();
+    let mut tolerant_coedges = BTreeSet::new();
+    for parameters in &native.tolerant_coedge_parameters {
+        if !coedge_ids.contains(&parameters.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-coedge metadata {} targets missing coedge {}",
+                parameters.id, parameters.coedge
+            )));
+        }
+        if !tolerant_coedges.insert(&parameters.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D tolerant-coedge records target {}",
+                parameters.coedge
+            )));
+        }
+        if parameters
+            .parameter_range
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return Err(CodecError::Malformed(format!(
+                "F3D tolerant-coedge metadata {} has non-finite parameters",
+                parameters.id
+            )));
+        }
+    }
     Ok(())
+}
+
+fn tolerant_coedge_range(
+    target: &CadIr,
+    coedge: &CoedgeId,
+) -> Result<Option<[f64; 2]>, CodecError> {
+    Ok(f3d_native(target)?.and_then(|native| {
+        native
+            .tolerant_coedge_parameters
+            .into_iter()
+            .find(|parameters| parameters.coedge == *coedge)
+            .map(|parameters| parameters.parameter_range)
+    }))
 }
 
 fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
@@ -1324,7 +1369,15 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .ok_or_else(|| {
                 CodecError::Malformed(format!("coedge references missing edge {}", coedge.edge))
             })?;
-        native_ident(&mut records, "coedge")?;
+        let tolerant_range = tolerant_coedge_range(target, &coedge.id)?;
+        native_ident(
+            &mut records,
+            if tolerant_range.is_some() {
+                "tcoedge"
+            } else {
+                "coedge"
+            },
+        )?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
@@ -1359,6 +1412,10 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .transpose()?
             .unwrap_or(-1);
         native_ref(&mut records, pcurve_ref);
+        if let Some(range) = tolerant_range {
+            native_f64(&mut records, range[0]);
+            native_f64(&mut records, range[1]);
+        }
         records.push(0x11);
     }
 
@@ -2577,7 +2634,15 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 coedge.id
             )));
         };
-        native_ident(&mut records, "coedge")?;
+        let tolerant_range = tolerant_coedge_range(target, &coedge.id)?;
+        native_ident(
+            &mut records,
+            if tolerant_range.is_some() {
+                "tcoedge"
+            } else {
+                "coedge"
+            },
+        )?;
         native_ref(
             &mut records,
             sketch_link_attribute_ref(target, coedge, coedge_ordinal, attribute_start)?,
@@ -2615,6 +2680,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .transpose()?
             .unwrap_or(-1);
         native_ref(&mut records, pcurve_ref);
+        if let Some(range) = tolerant_range {
+            native_f64(&mut records, range[0]);
+            native_f64(&mut records, range[1]);
+        }
         records.push(0x11);
     }
 

@@ -3747,6 +3747,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let tangent_edge = source_less.model.edges[0].id.clone();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
     let owner_coedge = source_less.model.coedges[0].id.clone();
+    let tolerant_coedge = source_less.model.coedges[1].id.clone();
     {
         let mut native = f3d_native_mut(&mut source_less);
         let metadata = native
@@ -3763,6 +3764,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             vertex: tolerant_vertex,
             record_index: 0,
             trailing_floats: [1.25, -2.5],
+        }];
+        native.tolerant_coedge_parameters = vec![crate::records::TolerantCoedgeParameters {
+            id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
+            coedge: tolerant_coedge,
+            record_index: 0,
+            parameter_range: [0.25, 0.75],
         }];
     }
     let mut encoded = Vec::new();
@@ -3797,6 +3804,13 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert!(point_records
         .iter()
         .all(|record| record.len == 60 && record.tokens.len() == 4));
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.head == "tcoedge")
+            .count(),
+        1
+    );
     drop(archive);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -3823,6 +3837,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_floats,
         [1.25, -2.5]
+    );
+    assert_eq!(
+        f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
+        [0.25, 0.75]
     );
     let ownerships = f3d_native(&round_trip.ir).vertex_ownerships;
     assert_eq!(ownerships.len(), 3);
@@ -4947,7 +4965,15 @@ fn generated_source_less_multi_face_writes_nurbs_carriers_and_pcurve() {
 
 #[test]
 fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
-    let source_less = cadmpeg_ir::examples::unit_cube();
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let tolerant_coedge = source_less.model.coedges[7].id.clone();
+    f3d_native_mut(&mut source_less).tolerant_coedge_parameters =
+        vec![crate::records::TolerantCoedgeParameters {
+            id: "f3d:asm:tolerant-coedge-parameters#cube".into(),
+            coedge: tolerant_coedge,
+            record_index: 0,
+            parameter_range: [-1.5, 2.25],
+        }];
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -4968,6 +4994,10 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
     assert_eq!(round_trip.ir.model.edges.len(), 12);
     assert_eq!(round_trip.ir.model.vertices.len(), 8);
     assert_eq!(round_trip.ir.model.points.len(), 8);
+    assert_eq!(
+        f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
+        [-1.5, 2.25]
+    );
     assert!(round_trip.ir.model.edges.iter().all(|edge| {
         round_trip
             .ir
