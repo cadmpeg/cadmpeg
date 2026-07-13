@@ -14207,27 +14207,50 @@ fn patch_framed_geometry(
             }
         } else if record.head == "ellipse" {
             if let Some((center, axis, direction, major_radius, minor_radius)) = conics.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
-                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
-                )?;
-                patch_vec3_token(bytes, record, 0x14, 0, [axis.x, axis.y, axis.z])?;
+                let field_indices = match record.name.as_str() {
+                    "ellipse" => [0, 1, 2, 3],
+                    "ellipse-curve" => [3, 4, 5, 6],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "ellipse record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[2], 0x14)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[3], 0x06)?,
+                ];
                 let major = major_radius / 10.0;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    1,
+                for (offset, values) in fields[..3].iter().zip([
+                    [center.x / 10.0, center.y / 10.0, center.z / 10.0],
+                    [axis.x, axis.y, axis.z],
                     [
                         direction.x * major,
                         direction.y * major,
                         direction.z * major,
                     ],
-                )?;
-                patch_signed_ratio_token(bytes, record, minor_radius / major_radius)?;
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
+                let ratio = minor_radius / major_radius;
+                let old_ratio = f64::from_le_bytes(
+                    bytes[fields[3] + 1..fields[3] + 9]
+                        .try_into()
+                        .expect("framed ellipse ratio has eight payload bytes"),
+                );
+                let signed_ratio = if old_ratio.is_sign_negative() {
+                    -ratio
+                } else {
+                    ratio
+                };
+                bytes[fields[3] + 1..fields[3] + 9].copy_from_slice(&signed_ratio.to_le_bytes());
             }
         } else if record.head == "plane" {
             if let Some((origin, normal, u_axis)) = planes.get(&id) {
@@ -14559,34 +14582,6 @@ fn patch_integer_token(
         )));
     }
     bytes[offset + 1..offset + 1 + ref_width].copy_from_slice(&value.to_le_bytes()[..ref_width]);
-    Ok(())
-}
-
-fn patch_signed_ratio_token(
-    bytes: &mut [u8],
-    record: &sab::Record,
-    magnitude: f64,
-) -> Result<(), CodecError> {
-    let offset = *sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .first()
-        .ok_or_else(|| {
-            CodecError::Malformed(format!(
-                "{} record {} lacks ratio token",
-                record.head, record.index
-            ))
-        })?;
-    let raw = f64::from_le_bytes(
-        bytes[offset + 1..offset + 9]
-            .try_into()
-            .expect("framed double token contains eight payload bytes"),
-    );
-    let signed = if raw.is_sign_negative() {
-        -magnitude
-    } else {
-        magnitude
-    };
-    bytes[offset + 1..offset + 9].copy_from_slice(&signed.to_le_bytes());
     Ok(())
 }
 
