@@ -741,26 +741,27 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             // every candidate and keep the one whose endpoints
                             // land on the edge's vertices through the face
                             // surface.
-                            let candidates = match prec.chunk(3) {
-                                Some(Token::Long(0)) => {
+                            let candidates = match (prec.chunk(3), prec.chunk(4)) {
+                                (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
                                     nurbs::decode_pcurve_cache_candidates_resolving_refs(
                                         record_slice(prec, bytes),
                                         bytes,
                                         &subtype_tables,
                                     )
                                 }
-                                Some(Token::Long(1 | 2 | -1)) => prec
-                                    .ref_at(4)
-                                    .and_then(|reference| by_index.get(&reference))
-                                    .filter(|record| record.head == "intcurve")
-                                    .map(|intcurve| {
-                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
-                                            record_slice(intcurve, bytes),
-                                            bytes,
-                                            &subtype_tables,
-                                        )
-                                    })
-                                    .unwrap_or_default(),
+                                (Some(Token::Long(1 | 2 | -1)), Some(Token::Ref(reference))) => {
+                                    by_index
+                                        .get(reference)
+                                        .filter(|record| record.head == "intcurve")
+                                        .map(|intcurve| {
+                                            nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                                record_slice(intcurve, bytes),
+                                                bytes,
+                                                &subtype_tables,
+                                            )
+                                        })
+                                        .unwrap_or_default()
+                                }
                                 _ => Vec::new(),
                             };
                             let decoded = select_face_pcurve(

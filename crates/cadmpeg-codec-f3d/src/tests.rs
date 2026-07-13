@@ -730,6 +730,22 @@ fn with_pcurve_discriminator(mut bytes: Vec<u8>, discriminator: i64) -> Vec<u8> 
     bytes
 }
 
+fn with_inline_pcurve_non_boolean_wrapper(mut bytes: Vec<u8>) -> Vec<u8> {
+    let start = asm_header::record_stream_start(&bytes).unwrap();
+    let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
+    let records = crate::sab::frame(&bytes, start, limit, 8).unwrap();
+    let pcurve = records
+        .iter()
+        .find(|record| record.head == "pcurve")
+        .expect("generated pcurve record");
+    let integers = crate::sab::payload_token_offsets(&bytes, pcurve, 8, 0x04)
+        .expect("generated pcurve integer offsets");
+    let wrapper = integers[1] + 9;
+    assert_eq!(bytes[wrapper], 0x0b, "generated inline wrapper boolean");
+    bytes.splice(wrapper..=wrapper, [0x02, 0x00]);
+    bytes
+}
+
 fn with_ref_pcurve_companion_name(mut bytes: Vec<u8>, name: &[u8; 8]) -> Vec<u8> {
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -15389,6 +15405,7 @@ fn generated_inline_pcurve_tail_requires_four_adjacent_booleans() {
 fn generated_pcurve_geometry_dispatch_follows_discriminator() {
     for smbh in [
         with_pcurve_discriminator(synthetic_geometry_with_pcurve_smbh(), 2),
+        with_inline_pcurve_non_boolean_wrapper(synthetic_geometry_with_pcurve_smbh()),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 0),
         with_pcurve_discriminator(synthetic_geometry_with_ref_pcurve_smbh(), 7),
         with_ref_pcurve_companion_name(synthetic_geometry_with_ref_pcurve_smbh(), b"badcurve"),
