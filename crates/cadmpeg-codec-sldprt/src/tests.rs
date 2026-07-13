@@ -2662,6 +2662,19 @@ fn encoder_writes_source_less_neutral_configurations() {
             .collect::<Vec<_>>()
     );
     assert!(decoded.ir.model.configurations[1].bodies.is_empty());
+
+    let mut inactive = decoded.ir;
+    inactive
+        .model
+        .configurations
+        .iter_mut()
+        .for_each(|configuration| configuration.active = false);
+    let error = SldprtCodec
+        .write_preserved(&inactive, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("requires exactly one active configuration"));
 }
 
 #[test]
@@ -2830,6 +2843,7 @@ fn decode_assigns_selected_partition_bodies_to_configuration() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.configurations.len(), 1);
+    assert!(decoded.ir.model.configurations[0].active);
     assert_eq!(
         decoded.ir.model.configurations[0].bodies,
         decoded
@@ -2878,6 +2892,7 @@ fn decode_synthesizes_sparse_partition_configuration() {
     let configuration = &decoded.ir.model.configurations[0];
     assert_eq!(configuration.ordinal, 0);
     assert_eq!(configuration.source_index, Some(3));
+    assert!(configuration.active);
     assert_eq!(configuration.name, "Config-3");
     assert_eq!(
         configuration.bodies,

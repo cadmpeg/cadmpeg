@@ -369,6 +369,19 @@ fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u3
 }
 
 fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
+    if !ir.model.configurations.is_empty()
+        && ir
+            .model
+            .configurations
+            .iter()
+            .filter(|configuration| configuration.active)
+            .count()
+            != 1
+    {
+        return Err(CodecError::Malformed(
+            "SLDPRT writing requires exactly one active configuration".into(),
+        ));
+    }
     if !ir.model.subds.is_empty() {
         return Err(CodecError::NotImplemented(
             "SLDPRT semantic writer does not support SubD surfaces".into(),

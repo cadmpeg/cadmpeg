@@ -282,7 +282,6 @@ fn build_geometry_ir(
     ir.annotations = std::mem::take(&mut brep.annotations);
     let histories = crate::history::histories(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories);
-    mark_active_configuration(&mut ir);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     let (sketches, sketch_entities) = crate::resolved_features::sketches(scan, &mut ir.annotations);
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
@@ -320,6 +319,7 @@ fn build_geometry_ir(
     );
     stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
+    mark_active_configuration(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -783,6 +783,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         format!("0x{:08x}", scan.version),
     );
     attributes.insert("block_count".to_string(), scan.blocks.len().to_string());
+    add_solidworks_xml_metadata(scan, &mut attributes);
 
     if let Some((block, header)) = container::select_active_parasolid(scan) {
         attributes.insert(
@@ -824,6 +825,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     });
     stamp_sketch_baseline(&mut ir, &native);
     project_design_history(&mut ir, &histories);
+    mark_active_configuration(&mut ir);
     let mut unknowns = ir.native_unknowns("sldprt")?;
     preserve_source_image(scan, &mut ir, &mut unknowns);
     ir.set_native_unknowns("sldprt", &unknowns)?;
@@ -864,12 +866,24 @@ fn project_design_history(ir: &mut CadIr, histories: &[crate::records::FeatureHi
 }
 
 fn mark_active_configuration(ir: &mut CadIr) {
-    let active = ir
+    let active_name = ir
         .source
         .as_ref()
-        .and_then(|source| source.attributes.get("sw_configuration_name"));
+        .and_then(|source| source.attributes.get("sw_configuration_name"))
+        .cloned();
+    let active_index = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("active_parasolid_block"))
+        .and_then(|section| crate::container::configuration_index(section));
     for configuration in &mut ir.model.configurations {
-        configuration.active = active == Some(&configuration.name);
+        configuration.active = active_name.as_ref() == Some(&configuration.name)
+            || active_name.is_none()
+                && active_index.is_some_and(|index| {
+                    configuration.source_index == u32::try_from(index).ok()
+                        || configuration.source_index.is_none()
+                            && configuration.ordinal == u32::try_from(index).unwrap_or(u32::MAX)
+                });
     }
 }
 
