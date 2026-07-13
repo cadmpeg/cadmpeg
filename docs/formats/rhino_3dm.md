@@ -515,7 +515,11 @@ The fixed-layout value-type numbers are:
 |          7 | archive array of `ON_Xform`                  |
 |          8 | archive array of UTF-16 strings              |
 |          9 | archive array of object references           |
+|         10 | geometry-value anonymous chunk               |
 |         11 | archive array of UUIDs                       |
+|         12 | reserved; no value implementation            |
+|         13 | polyedge-value anonymous chunk               |
+|         14 | SubD-edge-chain-value anonymous chunk        |
 
 Every value is independently bounded by its anonymous chunk. The next value or
 record suffix begins at that chunk's declared end.
@@ -547,6 +551,46 @@ if minor >= 1:
   ON_ComponentIndex component
   object-evaluation anonymous version 1.0 chunk
 ```
+
+A geometry value is an anonymous version 1.0 chunk containing an `i32` count
+followed by that many polymorphic class wrappers. Every wrapper contains its
+geometry class UUID and class-data payload.
+
+A polyedge value is an anonymous version 1.0 chunk containing an `i32` count
+followed by that many polyedge anonymous version 1.0 chunks:
+
+```text
+i32 segment_count
+segment_count × curve-proxy-history anonymous chunk
+archive array of f64 polyedge_parameters
+i32 evaluation_mode
+```
+
+A curve-proxy-history chunk has version 1.0 or 1.1:
+
+```text
+object reference
+bool reversed
+ON_Interval full_real_curve_domain
+ON_Interval sub_real_curve_domain
+ON_Interval proxy_curve_domain
+if minor >= 1:
+  ON_Interval segment_edge_domain
+  ON_Interval segment_trim_domain
+```
+
+A SubD edge-chain value is an anonymous version 1.0 chunk containing an `i32`
+count followed by that many edge-chain anonymous version 1.0 chunks:
+
+```text
+ON_UUID persistent_subd_id
+u32 edge_count
+archive array of u32 persistent_edge_ids
+archive array of u8 persistent_edge_orientations
+```
+
+Both archive-array counts must equal `edge_count`. Orientations are 0 for
+forward and 1 for reversed traversal.
 
 The object-evaluation chunk contains `i32 evaluation_type`, an
 `ON_ComponentIndex`, four `f64` evaluation parameters, and three

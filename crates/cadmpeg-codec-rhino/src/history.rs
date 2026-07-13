@@ -44,8 +44,46 @@ pub(crate) enum Value {
     Transforms(Vec<Xform>),
     Strings(Vec<String>),
     ObjectReferences(Vec<ObjectReference>),
+    Geometries(Vec<EmbeddedGeometry>),
     Uuids(Vec<Uuid>),
+    PolyEdges(Vec<PolyEdge>),
+    SubdEdgeChains(Vec<SubdEdgeChain>),
     Opaque { type_code: i32, range: Range<usize> },
+}
+
+/// One polymorphic geometry object embedded in a history parameter.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct EmbeddedGeometry {
+    pub(crate) class_id: Uuid,
+    pub(crate) class_data_range: Range<usize>,
+}
+
+/// Persistent construction data for one polyedge.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct PolyEdge {
+    pub(crate) segments: Vec<CurveProxy>,
+    pub(crate) parameters: Vec<f64>,
+    pub(crate) evaluation_mode: i32,
+}
+
+/// Persistent construction data for one curve-proxy segment.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct CurveProxy {
+    pub(crate) curve: ObjectReference,
+    pub(crate) reversed: bool,
+    pub(crate) full_domain: [f64; 2],
+    pub(crate) sub_domain: [f64; 2],
+    pub(crate) proxy_domain: [f64; 2],
+    pub(crate) edge_domain: Option<[f64; 2]>,
+    pub(crate) trim_domain: Option<[f64; 2]>,
+}
+
+/// Persistent edge sequence on a `SubD` object.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SubdEdgeChain {
+    pub(crate) subd_id: Uuid,
+    pub(crate) edge_ids: Vec<u32>,
+    pub(crate) orientations: Vec<u8>,
 }
 
 /// Persistent object selection stored in a history value.
@@ -326,6 +364,238 @@ fn object_references(
     Ok(values)
 }
 
+fn geometries(
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Vec<EmbeddedGeometry>, FramingError> {
+    let (mut nested, next, minor) = anonymous(
+        reader.backing_bytes(),
+        reader.position(),
+        reader.end(),
+        archive,
+    )?;
+    if minor != 0 {
+        return Err(structural(
+            nested.position(),
+            "unsupported geometry-value version",
+        ));
+    }
+    let count = count(&mut nested, 1)?;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let start = nested.position();
+        let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
+        let mut warnings = Vec::new();
+        let class = parse_class_wrapper(
+            nested.backing_bytes(),
+            start..wrapper.next_offset,
+            archive,
+            &mut warnings,
+        )?;
+        nested.skip(wrapper.next_offset - start)?;
+        values.push(EmbeddedGeometry {
+            class_id: class.class_uuid,
+            class_data_range: class.class_data_range,
+        });
+    }
+    if nested.remaining() != 0 {
+        return Err(structural(
+            nested.position(),
+            "geometry value has trailing bytes",
+        ));
+    }
+    reader.skip(next - reader.position())?;
+    Ok(values)
+}
+
+fn curve_proxy(
+    bytes: &[u8],
+    offset: usize,
+    end: usize,
+    archive: ArchiveVersion,
+) -> Result<(CurveProxy, usize), FramingError> {
+    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
+    if !(0..=1).contains(&minor) {
+        return Err(structural(
+            reader.position(),
+            "unsupported curve-proxy version",
+        ));
+    }
+    let (curve, curve_next) = object_reference(bytes, reader.position(), reader.end(), archive)?;
+    reader.skip(curve_next - reader.position())?;
+    let reversed = reader.bool()?;
+    let full_domain = interval(&mut reader)?;
+    let sub_domain = interval(&mut reader)?;
+    let proxy_domain = interval(&mut reader)?;
+    let (edge_domain, trim_domain) = if minor >= 1 {
+        (Some(interval(&mut reader)?), Some(interval(&mut reader)?))
+    } else {
+        (None, None)
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "curve proxy has trailing bytes",
+        ));
+    }
+    Ok((
+        CurveProxy {
+            curve,
+            reversed,
+            full_domain,
+            sub_domain,
+            proxy_domain,
+            edge_domain,
+            trim_domain,
+        },
+        next,
+    ))
+}
+
+fn poly_edge(
+    bytes: &[u8],
+    offset: usize,
+    end: usize,
+    archive: ArchiveVersion,
+) -> Result<(PolyEdge, usize), FramingError> {
+    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
+    if minor != 0 {
+        return Err(structural(
+            reader.position(),
+            "unsupported polyedge version",
+        ));
+    }
+    let segment_count = count(&mut reader, 1)?;
+    let mut segments = Vec::with_capacity(segment_count);
+    for _ in 0..segment_count {
+        let (segment, segment_next) = curve_proxy(bytes, reader.position(), reader.end(), archive)?;
+        reader.skip(segment_next - reader.position())?;
+        segments.push(segment);
+    }
+    let parameters = array(&mut reader, 8, read_f64)?;
+    let evaluation_mode = reader.i32()?;
+    if reader.remaining() != 0 {
+        return Err(structural(reader.position(), "polyedge has trailing bytes"));
+    }
+    Ok((
+        PolyEdge {
+            segments,
+            parameters,
+            evaluation_mode,
+        },
+        next,
+    ))
+}
+
+fn poly_edges(
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Vec<PolyEdge>, FramingError> {
+    let (mut nested, next, minor) = anonymous(
+        reader.backing_bytes(),
+        reader.position(),
+        reader.end(),
+        archive,
+    )?;
+    if minor != 0 {
+        return Err(structural(
+            nested.position(),
+            "unsupported polyedge-value version",
+        ));
+    }
+    let count = count(&mut nested, 1)?;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (value, value_next) = poly_edge(
+            nested.backing_bytes(),
+            nested.position(),
+            nested.end(),
+            archive,
+        )?;
+        nested.skip(value_next - nested.position())?;
+        values.push(value);
+    }
+    if nested.remaining() != 0 {
+        return Err(structural(
+            nested.position(),
+            "polyedge value has trailing bytes",
+        ));
+    }
+    reader.skip(next - reader.position())?;
+    Ok(values)
+}
+
+fn subd_edge_chain(
+    bytes: &[u8],
+    offset: usize,
+    end: usize,
+    archive: ArchiveVersion,
+) -> Result<(SubdEdgeChain, usize), FramingError> {
+    let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
+    let subd_id = uuid(&mut reader)?;
+    let count = count(&mut reader, 1)?;
+    let edge_ids = array(&mut reader, 4, read_u32)?;
+    let orientations = array(&mut reader, 1, read_u8)?;
+    if edge_ids.len() != count || orientations.len() != count {
+        return Err(structural(
+            reader.position(),
+            "SubD edge-chain array counts disagree",
+        ));
+    }
+    if orientations.iter().any(|orientation| *orientation > 1) {
+        return Err(structural(
+            reader.position(),
+            "invalid SubD edge orientation",
+        ));
+    }
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "SubD edge chain has trailing bytes",
+        ));
+    }
+    Ok((
+        SubdEdgeChain {
+            subd_id,
+            edge_ids,
+            orientations,
+        },
+        next,
+    ))
+}
+
+fn subd_edge_chains(
+    reader: &mut BoundedReader<'_>,
+    archive: ArchiveVersion,
+) -> Result<Vec<SubdEdgeChain>, FramingError> {
+    let (mut nested, next, _) = anonymous(
+        reader.backing_bytes(),
+        reader.position(),
+        reader.end(),
+        archive,
+    )?;
+    let count = count(&mut nested, 1)?;
+    let mut values = Vec::with_capacity(count);
+    for _ in 0..count {
+        let (value, value_next) = subd_edge_chain(
+            nested.backing_bytes(),
+            nested.position(),
+            nested.end(),
+            archive,
+        )?;
+        nested.skip(value_next - nested.position())?;
+        values.push(value);
+    }
+    if nested.remaining() != 0 {
+        return Err(structural(
+            nested.position(),
+            "SubD edge-chain value has trailing bytes",
+        ));
+    }
+    reader.skip(next - reader.position())?;
+    Ok(values)
+}
+
 fn parse_value(
     bytes: &[u8],
     offset: usize,
@@ -347,7 +617,10 @@ fn parse_value(
         7 => Value::Transforms(array(&mut reader, 128, xform)?),
         8 => Value::Strings(array(&mut reader, 4, utf16)?),
         9 => Value::ObjectReferences(object_references(&mut reader, archive)?),
+        10 => Value::Geometries(geometries(&mut reader, archive)?),
         11 => Value::Uuids(array(&mut reader, 16, uuid)?),
+        13 => Value::PolyEdges(poly_edges(&mut reader, archive)?),
+        14 => Value::SubdEdgeChains(subd_edge_chains(&mut reader, archive)?),
         _ => {
             reader.skip(reader.remaining())?;
             Value::Opaque {
@@ -371,6 +644,14 @@ fn read_bool(reader: &mut BoundedReader<'_>) -> Result<bool, FramingError> {
 
 fn read_i32(reader: &mut BoundedReader<'_>) -> Result<i32, FramingError> {
     reader.i32()
+}
+
+fn read_u32(reader: &mut BoundedReader<'_>) -> Result<u32, FramingError> {
+    reader.u32()
+}
+
+fn read_u8(reader: &mut BoundedReader<'_>) -> Result<u8, FramingError> {
+    reader.u8()
 }
 
 fn read_f64(reader: &mut BoundedReader<'_>) -> Result<f64, FramingError> {
@@ -555,9 +836,156 @@ fn value_text(value: &Value) -> Option<String> {
             })
             .collect::<Vec<_>>()
             .join(","),
+        Value::Geometries(values) => values
+            .iter()
+            .map(|value| value.class_id.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
         Value::Uuids(values) => list(values),
+        Value::PolyEdges(_) | Value::SubdEdgeChains(_) => return None,
         Value::Opaque { .. } => return None,
     })
+}
+
+fn evaluation_properties(
+    prefix: &str,
+    value: &EvaluationParameter,
+    properties: &mut BTreeMap<String, String>,
+) {
+    properties.insert(format!("{prefix}.type"), value.parameter_type.to_string());
+    properties.insert(format!("{prefix}.component"), list(&value.component));
+    properties.insert(format!("{prefix}.parameters"), list(&value.parameters));
+    for (index, interval) in value.intervals.iter().enumerate() {
+        properties.insert(format!("{prefix}.interval_{index}"), list(interval));
+    }
+}
+
+fn object_reference_properties(
+    prefix: &str,
+    value: &ObjectReference,
+    properties: &mut BTreeMap<String, String>,
+) {
+    properties.insert(format!("{prefix}.object_id"), value.object_id.to_string());
+    properties.insert(format!("{prefix}.component"), list(&value.component));
+    properties.insert(
+        format!("{prefix}.geometry_type"),
+        value.geometry_type.to_string(),
+    );
+    properties.insert(format!("{prefix}.point"), list(&value.point.0));
+    properties.insert(format!("{prefix}.osnap_mode"), value.osnap_mode.to_string());
+    evaluation_properties(
+        &format!("{prefix}.evaluation"),
+        &value.evaluation,
+        properties,
+    );
+    properties.insert(
+        format!("{prefix}.instance_count"),
+        value.instance_path.len().to_string(),
+    );
+    for (index, instance) in value.instance_path.iter().enumerate() {
+        let path = format!("{prefix}.instance_{index}");
+        properties.insert(
+            format!("{path}.reference_id"),
+            instance.reference_id.to_string(),
+        );
+        properties.insert(format!("{path}.transform"), list(&instance.transform.0));
+        properties.insert(
+            format!("{path}.definition_id"),
+            instance.definition_id.to_string(),
+        );
+        properties.insert(
+            format!("{path}.geometry_index"),
+            instance.geometry_index.to_string(),
+        );
+        if let Some(component) = instance.component {
+            properties.insert(format!("{path}.component"), list(&component));
+        }
+        if let Some(evaluation) = &instance.evaluation {
+            evaluation_properties(&format!("{path}.evaluation"), evaluation, properties);
+        }
+    }
+}
+
+fn structured_value_properties(
+    key: &str,
+    value: &Value,
+    properties: &mut BTreeMap<String, String>,
+) {
+    match value {
+        Value::ObjectReferences(values) => {
+            properties.insert(format!("{key}.count"), values.len().to_string());
+            for (index, value) in values.iter().enumerate() {
+                object_reference_properties(&format!("{key}.{index}"), value, properties);
+            }
+        }
+        Value::Geometries(values) => {
+            properties.insert(format!("{key}.count"), values.len().to_string());
+            for (index, value) in values.iter().enumerate() {
+                properties.insert(
+                    format!("{key}.{index}.class_id"),
+                    value.class_id.to_string(),
+                );
+            }
+        }
+        Value::PolyEdges(values) => {
+            properties.insert(format!("{key}.count"), values.len().to_string());
+            for (edge_index, edge) in values.iter().enumerate() {
+                let edge_key = format!("{key}.{edge_index}");
+                properties.insert(format!("{edge_key}.parameters"), list(&edge.parameters));
+                properties.insert(
+                    format!("{edge_key}.evaluation_mode"),
+                    edge.evaluation_mode.to_string(),
+                );
+                properties.insert(
+                    format!("{edge_key}.segment_count"),
+                    edge.segments.len().to_string(),
+                );
+                for (segment_index, segment) in edge.segments.iter().enumerate() {
+                    let segment_key = format!("{edge_key}.segment_{segment_index}");
+                    object_reference_properties(
+                        &format!("{segment_key}.curve"),
+                        &segment.curve,
+                        properties,
+                    );
+                    properties.insert(
+                        format!("{segment_key}.reversed"),
+                        segment.reversed.to_string(),
+                    );
+                    properties.insert(
+                        format!("{segment_key}.full_domain"),
+                        list(&segment.full_domain),
+                    );
+                    properties.insert(
+                        format!("{segment_key}.sub_domain"),
+                        list(&segment.sub_domain),
+                    );
+                    properties.insert(
+                        format!("{segment_key}.proxy_domain"),
+                        list(&segment.proxy_domain),
+                    );
+                    if let Some(domain) = segment.edge_domain {
+                        properties.insert(format!("{segment_key}.edge_domain"), list(&domain));
+                    }
+                    if let Some(domain) = segment.trim_domain {
+                        properties.insert(format!("{segment_key}.trim_domain"), list(&domain));
+                    }
+                }
+            }
+        }
+        Value::SubdEdgeChains(values) => {
+            properties.insert(format!("{key}.count"), values.len().to_string());
+            for (index, chain) in values.iter().enumerate() {
+                let chain_key = format!("{key}.{index}");
+                properties.insert(format!("{chain_key}.subd_id"), chain.subd_id.to_string());
+                properties.insert(format!("{chain_key}.edge_ids"), list(&chain.edge_ids));
+                properties.insert(
+                    format!("{chain_key}.orientations"),
+                    list(&chain.orientations),
+                );
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Projects source history into ordered neutral native operations.
@@ -600,6 +1028,7 @@ pub(crate) fn project(records: &[HistoryRecord], ir: &mut cadmpeg_ir::document::
         let mut properties = BTreeMap::new();
         for value in &record.values {
             let key = format!("value_{}", value.id);
+            structured_value_properties(&key, &value.value, &mut properties);
             if let Some(text) = value_text(&value.value) {
                 parameters.insert(key, text);
             } else if let Value::Opaque { type_code, range } = &value.value {
@@ -651,6 +1080,20 @@ pub(crate) fn project(records: &[HistoryRecord], ir: &mut cadmpeg_ir::document::
 mod tests {
     use super::*;
 
+    fn anonymous_value(minor: i32, body: &[u8]) -> Vec<u8> {
+        let mut payload = 1_i32.to_le_bytes().to_vec();
+        payload.extend(minor.to_le_bytes());
+        payload.extend(body);
+        crate::archive_test_support::crc_chunk(ANONYMOUS, &payload)
+    }
+
+    fn value(type_code: i32, payload: &[u8]) -> Vec<u8> {
+        let mut body = type_code.to_le_bytes().to_vec();
+        body.extend(7_i32.to_le_bytes());
+        body.extend(payload);
+        anonymous_value(0, &body)
+    }
+
     fn id(value: u8) -> Uuid {
         let mut bytes = [0; 16];
         bytes[15] = value;
@@ -700,5 +1143,59 @@ mod tests {
             ir.model.features[1].native_ref.as_deref(),
             Some("rhino:history:record#00000000-0000-0000-0000-000000000002")
         );
+    }
+
+    #[test]
+    fn embedded_geometry_polyedge_and_subd_chain_values_are_typed() {
+        let geometry = crate::archive_test_support::class_wrapper(
+            crate::archive_test_support::POINT_CLASS,
+            &[0x10, 0, 0, 0],
+        );
+        let mut geometry_payload = 1_i32.to_le_bytes().to_vec();
+        geometry_payload.extend(geometry);
+        let geometry_value = value(10, &anonymous_value(0, &geometry_payload));
+        let (parsed, next) =
+            parse_value(&geometry_value, 0, geometry_value.len(), ArchiveVersion::V8)
+                .expect("embedded geometry");
+        assert_eq!(next, geometry_value.len());
+        assert!(matches!(parsed.value, Value::Geometries(values)
+            if values.len() == 1
+                && values[0].class_id == Uuid::from_wire(crate::archive_test_support::POINT_CLASS)));
+
+        let mut polyedge = 0_i32.to_le_bytes().to_vec();
+        polyedge.extend(2_i32.to_le_bytes());
+        polyedge.extend(0.25_f64.to_le_bytes());
+        polyedge.extend(0.75_f64.to_le_bytes());
+        polyedge.extend(3_i32.to_le_bytes());
+        let mut polyedges = 1_i32.to_le_bytes().to_vec();
+        polyedges.extend(anonymous_value(0, &polyedge));
+        let polyedge_value = value(13, &anonymous_value(0, &polyedges));
+        let (parsed, _) = parse_value(&polyedge_value, 0, polyedge_value.len(), ArchiveVersion::V8)
+            .expect("polyedge");
+        assert!(matches!(parsed.value, Value::PolyEdges(values)
+            if values.len() == 1
+                && values[0].segments.is_empty()
+                && values[0].parameters == [0.25, 0.75]
+                && values[0].evaluation_mode == 3));
+
+        let subd_id = id(42);
+        let mut chain = [0_u8; 16].to_vec();
+        chain[15] = 42;
+        chain.extend(2_i32.to_le_bytes());
+        chain.extend(2_i32.to_le_bytes());
+        chain.extend(11_u32.to_le_bytes());
+        chain.extend(12_u32.to_le_bytes());
+        chain.extend(2_i32.to_le_bytes());
+        chain.extend([0, 1]);
+        let mut chains = 1_i32.to_le_bytes().to_vec();
+        chains.extend(anonymous_value(0, &chain));
+        let chain_value = value(14, &anonymous_value(0, &chains));
+        let (parsed, _) = parse_value(&chain_value, 0, chain_value.len(), ArchiveVersion::V8)
+            .expect("SubD edge chain");
+        assert!(matches!(parsed.value, Value::SubdEdgeChains(values)
+            if values.len() == 1
+                && values[0].subd_id == subd_id
+                && values[0].edge_ids == [11, 12]
+                && values[0].orientations == [0, 1]));
     }
 }
