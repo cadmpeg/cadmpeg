@@ -1471,7 +1471,20 @@ fn encode_sketch_relation(
             relation.id
         )));
     }
-    let mut record = vec![0u8; 101];
+    let reference_count = relation
+        .members
+        .len()
+        .checked_add(relation.auxiliary_references.len())
+        .and_then(|count| count.checked_add(1))
+        .and_then(|count| count.checked_add(relation.return_members.len()))
+        .ok_or_else(|| CodecError::Malformed("sketch relation reference count overflow".into()))?;
+    let required_len =
+        33usize
+            .checked_add(reference_count.checked_mul(5).ok_or_else(|| {
+                CodecError::Malformed("sketch relation byte length overflow".into())
+            })?)
+            .ok_or_else(|| CodecError::Malformed("sketch relation byte length overflow".into()))?;
+    let mut record = vec![0u8; required_len.max(101)];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
     record[19] = 1;
     let member_count = u32::try_from(relation.members.len())
@@ -1502,7 +1515,7 @@ fn write_marked_u32(out: &mut [u8], cursor: &mut usize, value: u32) -> Result<()
         .checked_add(5)
         .ok_or_else(|| CodecError::Malformed("sketch relation record offset overflow".into()))?;
     let target = out.get_mut(*cursor..end).ok_or_else(|| {
-        CodecError::NotImplemented("sketch relation does not fit canonical 101-byte record".into())
+        CodecError::Malformed("sketch relation exceeds its planned record length".into())
     })?;
     target[0] = 1;
     target[1..5].copy_from_slice(&value.to_le_bytes());

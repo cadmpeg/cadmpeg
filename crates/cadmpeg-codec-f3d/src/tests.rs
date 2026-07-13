@@ -6586,6 +6586,36 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less sketch BulkStream encode");
+    {
+        let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
+        relation.members = vec![100, 600, 100, 600, 100, 600, 100, 600];
+        relation.return_members = relation.members.iter().rev().copied().collect();
+    }
+    let mut variable_relation = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut variable_relation)
+        .expect("source-less variable-width sketch relation encode");
+    let variable_round_trip = F3dCodec
+        .decode(
+            &mut Cursor::new(variable_relation),
+            &DecodeOptions::default(),
+        )
+        .expect("source-less variable-width sketch relation round trip");
+    assert_eq!(
+        f3d_native(&variable_round_trip.ir).sketch_relations[0].members,
+        [100, 600, 100, 600, 100, 600, 100, 600]
+    );
+    assert!(
+        f3d_native(&variable_round_trip.ir).sketch_relations[0]
+            .raw_bytes
+            .len()
+            > 101
+    );
+    {
+        let relation = &mut f3d_native_mut(&mut source_less).sketch_relations[0];
+        relation.members = vec![100, 600];
+        relation.return_members = vec![600, 100];
+    }
     f3d_native_mut(&mut source_less).sketch_relations[0].owner_reference = 999;
     let error = F3dCodec
         .encode(&source_less, &mut Vec::new())
