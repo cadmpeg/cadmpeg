@@ -306,6 +306,11 @@ type-2 `var_arr` values is the bounded segment between those two `[u, v]`
 points. It is construction geometry when its `ext_id` is absent from
 `ent_tab`.
 
+The `ent_tab` start and end vertex identifiers orient each trimmed entity.
+Connected components of this incidence graph are profile chains. A component
+is closed when every vertex has degree two and open when exactly two vertices
+have degree one; any other degree pattern is not a profile chain.
+
 In a round-feature generated-entity table, a rowless face-use entry is a cylinder only when the table's following materialized `srf_array` entry is a cylinder. The table class token alone does not identify the surface kind.
 
 ## 6. Features and datums

@@ -26,7 +26,9 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
-use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+use cadmpeg_ir::sketches::{
+    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
 };
@@ -176,6 +178,112 @@ fn section_line_geometry(
     })
 }
 
+fn resolved_profile_chains(
+    definition: &crate::feature::FeatureDefinition,
+    emitted: &BTreeSet<u32>,
+) -> Vec<Vec<SketchEntityUse>> {
+    let Some(table) = &definition.trim_entities else {
+        return Vec::new();
+    };
+    let mut incident = BTreeMap::<u32, Vec<usize>>::new();
+    for (index, row) in table.rows.iter().enumerate() {
+        for vertex in row.vertices {
+            incident.entry(vertex).or_default().push(index);
+        }
+    }
+    if incident.values().any(|rows| rows.len() > 2) {
+        return Vec::new();
+    }
+    let mut remaining = (0..table.rows.len()).collect::<BTreeSet<_>>();
+    let mut profiles = Vec::new();
+    while let Some(seed) = remaining.first().copied() {
+        let mut component = BTreeSet::from([seed]);
+        let mut frontier = vec![seed];
+        while let Some(index) = frontier.pop() {
+            for vertex in table.rows[index].vertices {
+                for adjacent in &incident[&vertex] {
+                    if component.insert(*adjacent) {
+                        frontier.push(*adjacent);
+                    }
+                }
+            }
+        }
+        remaining.retain(|index| !component.contains(index));
+        if component
+            .iter()
+            .any(|index| !emitted.contains(&table.rows[*index].external_id))
+        {
+            continue;
+        }
+        let endpoints = incident
+            .iter()
+            .filter(|(_, rows)| rows.iter().filter(|row| component.contains(row)).count() == 1)
+            .map(|(vertex, _)| *vertex)
+            .collect::<Vec<_>>();
+        if !matches!(endpoints.len(), 0 | 2) {
+            continue;
+        }
+        let first_row = component
+            .iter()
+            .min_by_key(|index| table.rows[**index].external_id)
+            .copied()
+            .expect("component contains seed");
+        let mut vertex = endpoints
+            .iter()
+            .min()
+            .copied()
+            .unwrap_or(table.rows[first_row].vertices[0]);
+        let start_vertex = vertex;
+        let mut unused = component;
+        let mut profile = Vec::new();
+        while !unused.is_empty() {
+            let candidates = incident[&vertex]
+                .iter()
+                .filter(|index| unused.contains(index))
+                .copied()
+                .collect::<Vec<_>>();
+            let index = if profile.is_empty() && endpoints.is_empty() {
+                if candidates.contains(&first_row) {
+                    first_row
+                } else {
+                    break;
+                }
+            } else if candidates.len() == 1 {
+                candidates[0]
+            } else {
+                break;
+            };
+            let row = &table.rows[index];
+            let reversed = row.vertices[1] == vertex;
+            if !reversed && row.vertices[0] != vertex {
+                break;
+            }
+            profile.push(SketchEntityUse {
+                entity: SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{}:{}",
+                    definition.id, row.external_id
+                )),
+                reversed,
+            });
+            vertex = if reversed {
+                row.vertices[0]
+            } else {
+                row.vertices[1]
+            };
+            unused.remove(&index);
+        }
+        let terminal_ok = if endpoints.is_empty() {
+            vertex == start_vertex
+        } else {
+            endpoints.contains(&vertex) && vertex != start_vertex
+        };
+        if unused.is_empty() && terminal_ok {
+            profiles.push(profile);
+        }
+    }
+    profiles
+}
+
 fn transfer_resolved_sketches(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -211,7 +319,7 @@ fn transfer_resolved_sketches(
             .filter_map(|segment| {
                 let geometry = section_line_geometry(&points, segment)?;
                 let id = SketchEntityId(format!(
-                    "creo:featdefs:sketch#{}:entity#{}",
+                    "creo:featdefs:sketch_entity#{}:{}",
                     definition.id, segment.external_id
                 ));
                 annotate(
@@ -226,10 +334,7 @@ fn transfer_resolved_sketches(
                     id,
                     sketch: sketch_id.clone(),
                     construction: !solved.contains(&segment.external_id),
-                    native_ref: Some(format!(
-                        "creo:featdefs:sketch#{}:segment#{}",
-                        definition.id, segment.external_id
-                    )),
+                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                     geometry_ref: None,
                     endpoint_refs: segment
                         .point_ids
@@ -245,6 +350,12 @@ fn transfer_resolved_sketches(
         if entities.is_empty() {
             continue;
         }
+        let emitted = segments
+            .rows
+            .iter()
+            .filter(|segment| section_line_geometry(&points, segment).is_some())
+            .map(|segment| segment.external_id)
+            .collect::<BTreeSet<_>>();
         ir.model.sketch_entities.extend(entities);
         annotate(
             annotations,
@@ -273,7 +384,7 @@ fn transfer_resolved_sketches(
                 transform.u_axis[1],
                 transform.u_axis[2],
             ),
-            profiles: Vec::new(),
+            profiles: resolved_profile_chains(definition, &emitted),
             native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
         });
     }
@@ -376,6 +487,56 @@ mod resolved_sketch_tests {
                 start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
             })
+        );
+    }
+
+    #[test]
+    fn profile_chain_follows_trim_vertex_incidence() {
+        let definition = crate::feature::FeatureDefinition {
+            id: 40,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+                rows: [(10, [1, 2]), (11, [3, 2]), (12, [3, 4]), (13, [4, 1])]
+                    .into_iter()
+                    .map(
+                        |(external_id, vertices)| crate::feature::FeatureTrimEntity {
+                            external_id,
+                            mode: None,
+                            vertices,
+                            center_vertex: None,
+                            kind: crate::feature::TrimEntityKind::Line,
+                            offset: external_id as usize,
+                        },
+                    )
+                    .collect(),
+                solved_external_ids: vec![10, 11, 12, 13],
+                offset: 5,
+            }),
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 1,
+        };
+        let profiles = resolved_profile_chains(
+            &definition,
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        );
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 4);
+        assert_eq!(profiles[0][0].entity.0, "creo:featdefs:sketch_entity#40:10");
+        assert!(!profiles[0][0].reversed);
+        assert!(profiles[0][1].reversed);
+
+        assert!(
+            resolved_profile_chains(&definition, &BTreeSet::from([10_u32, 11_u32, 12_u32]))
+                .is_empty()
         );
     }
 }
