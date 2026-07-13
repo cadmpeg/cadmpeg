@@ -9169,10 +9169,21 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             .iter()
             .flat_map(|section| &section.entries)
             .all(|entry| entry.path.auxiliaries.len() == 1));
+        let line_profile = sections[0].entries[0].profile[0].curve.clone();
 
         let mut source_less = result.ir;
         source_less.source = None;
         source_less.set_native_unknowns("f3d", &[]).unwrap();
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == line_profile)
+            .expect("loft line profile")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(4.0, -1.0, 2.0),
+            direction: cadmpeg_ir::math::Vector3::new(2.0, 3.0, -1.0),
+        };
         let mut encoded = Vec::new();
         F3dCodec
             .encode(&source_less, &mut encoded)
@@ -9204,6 +9215,23 @@ fn generated_loft_surface_decodes_full_nested_graph() {
             Some(cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0))
         );
         assert!(sections[1].entries[0].profile[0].data.direction.is_none());
+        let profile = &sections[0].entries[0].profile[0].curve;
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == *profile)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1
+                    && curve.knots == [-1.0, -1.0, 2.0, 2.0]
+                    && curve.control_points == [
+                        cadmpeg_ir::math::Point3::new(2.0, -4.0, 3.0),
+                        cadmpeg_ir::math::Point3::new(8.0, 5.0, 0.0),
+                    ]
+        ));
     }
 }
 

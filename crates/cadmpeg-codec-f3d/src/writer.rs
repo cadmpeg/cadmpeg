@@ -4209,6 +4209,7 @@ fn native_loft_section(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     section: &cadmpeg_ir::geometry::LoftSection,
+    parameter_range: Option<[f64; 2]>,
 ) -> Result<(), CodecError> {
     native_i64(
         bytes,
@@ -4224,7 +4225,8 @@ fn native_loft_section(
         );
         for member in &entry.profile {
             native_i64(bytes, member.type_code);
-            native_nurbs_curve(bytes, native_loft_curve(target, &member.curve)?)?;
+            let curve = native_loft_curve_in_range(target, &member.curve, parameter_range)?;
+            native_nurbs_curve(bytes, &curve)?;
             let surface = target
                 .model
                 .surfaces
@@ -4250,7 +4252,8 @@ fn native_loft_section(
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
         }
-        native_nurbs_curve(bytes, native_loft_curve(target, &entry.path.curve)?)?;
+        let path = native_loft_curve_in_range(target, &entry.path.curve, parameter_range)?;
+        native_nurbs_curve(bytes, &path)?;
         native_i64(
             bytes,
             i64::try_from(entry.path.auxiliaries.len()).map_err(|_| {
@@ -4258,11 +4261,32 @@ fn native_loft_section(
             })?,
         );
         for auxiliary in &entry.path.auxiliaries {
-            native_nurbs_curve(bytes, native_loft_curve(target, auxiliary)?)?;
+            let auxiliary = native_loft_curve_in_range(target, auxiliary, parameter_range)?;
+            native_nurbs_curve(bytes, &auxiliary)?;
         }
         native_i64(bytes, entry.path.flag);
     }
     Ok(())
+}
+
+fn native_loft_curve_in_range(
+    target: &CadIr,
+    id: &cadmpeg_ir::ids::CurveId,
+    parameter_range: Option<[f64; 2]>,
+) -> Result<NurbsCurve, CodecError> {
+    let curve = target
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *id)
+        .ok_or_else(|| CodecError::Malformed(format!("loft references missing curve {id}")))?;
+    match (&curve.geometry, parameter_range) {
+        (CurveGeometry::Nurbs(curve), _) => Ok(curve.clone()),
+        (_, Some(range)) => native_interval_curve(&curve.geometry, range),
+        _ => Err(CodecError::NotImplemented(format!(
+            "source-less F3D loft requires NURBS curve {id} without a section domain"
+        ))),
+    }
 }
 
 fn native_compound_loft_scale(
@@ -4876,7 +4900,7 @@ fn encode_native_net_surface(
     bytes.push(0x0f);
     native_ident(bytes, "net_spl_sur")?;
     for section in construction.sections.iter() {
-        native_loft_section(bytes, target, section)?;
+        native_loft_section(bytes, target, section, None)?;
     }
     for parameter in construction.frame_parameters {
         native_f64(bytes, parameter);
@@ -5164,8 +5188,8 @@ fn encode_native_loft(
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "loft_spl_sur")?;
-    for section in sections {
-        native_loft_section(bytes, target, section)?;
+    for (section, range) in sections.iter().zip(parameter_ranges) {
+        native_loft_section(bytes, target, section, Some(*range))?;
     }
     for range in parameter_ranges {
         native_f64(bytes, range[0]);
