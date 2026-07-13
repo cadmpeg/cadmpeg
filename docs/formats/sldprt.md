@@ -101,6 +101,8 @@ Point-reference object indices address sketch-marker local identifiers within th
 
 Feature-input marker coordinates and the nested Parasolid profile use parallel two-dimensional axes with a constant translation per sketch feature. A unique translation mapping at least two distinct marker coordinates onto profile loci binds the matching markers to those loci. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
 
+Point-distance operands select explicit profile loci. Line-distance and angular operands select the profile entity shared by their linked endpoint markers. A relation with resolved operands and one driving scalar maps to the corresponding neutral distance, horizontal-distance, vertical-distance, angle, or diameter constraint.
+
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
 
 Built-in reference-plane history records have no dimensions or extra attributes. Source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes. Names, element tags, and type strings do not affect the role.

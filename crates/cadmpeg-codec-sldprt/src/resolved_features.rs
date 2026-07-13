@@ -1183,30 +1183,125 @@ pub(crate) fn project_relation_bindings(
                 .collect::<Vec<_>>();
             entities.sort_by(|left, right| left.0.cmp(&right.0));
             entities.dedup();
+            let definition = typed_relation_definition(
+                relation,
+                parameter.clone(),
+                &markers_by_id,
+                &loci_by_marker,
+            )
+            .unwrap_or_else(|| SketchConstraintDefinition::Native {
+                native_kind: native_kind.into(),
+                entities,
+                parameter,
+                operands: relation
+                    .operands
+                    .iter()
+                    .map(|operand| SketchNativeOperand {
+                        native_kind: operand_kind_name(operand.kind),
+                        object_index: u32::from(operand.entity_index),
+                        native_ref: operand.entity_ref.clone(),
+                    })
+                    .collect(),
+            });
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
                     relation.offset
                 )),
                 sketch: (*sketch).clone(),
-                definition: SketchConstraintDefinition::Native {
-                    native_kind: native_kind.into(),
-                    entities,
-                    parameter,
-                    operands: relation
-                        .operands
-                        .iter()
-                        .map(|operand| SketchNativeOperand {
-                            native_kind: operand_kind_name(operand.kind),
-                            object_index: u32::from(operand.entity_index),
-                            native_ref: operand.entity_ref.clone(),
-                        })
-                        .collect(),
-                },
+                definition,
                 native_ref: Some(relation.id.clone()),
             });
         }
     }
+}
+
+fn typed_relation_definition(
+    relation: &FeatureInputRelationInstance,
+    parameter: Option<cadmpeg_ir::features::ParameterId>,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchConstraintDefinition> {
+    use FeatureInputRelationFamily::{
+        Angle, CircleDiameter, LineLineDistance, PointLineDistance, PointPointDistance,
+        PointPointHorizontalDistance, PointPointVerticalDistance,
+    };
+    let parameter = parameter?;
+    let marker = |index: usize| relation.operands.get(index)?.entity_ref.as_deref();
+    match relation.family {
+        PointPointDistance => Some(SketchConstraintDefinition::DistanceLoci {
+            first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
+            second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
+            parameter,
+        }),
+        PointPointHorizontalDistance => Some(SketchConstraintDefinition::HorizontalDistance {
+            first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
+            second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
+            parameter,
+        }),
+        PointPointVerticalDistance => Some(SketchConstraintDefinition::VerticalDistance {
+            first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
+            second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
+            parameter,
+        }),
+        PointLineDistance => Some(SketchConstraintDefinition::DistanceLoci {
+            first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
+            second: SketchLocus::Entity(single_marker_entity(
+                marker(1)?,
+                markers_by_id,
+                loci_by_marker,
+            )?),
+            parameter,
+        }),
+        LineLineDistance => Some(SketchConstraintDefinition::Distance {
+            entities: vec![
+                single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
+                single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?,
+            ],
+            parameter,
+        }),
+        Angle => Some(SketchConstraintDefinition::Angle {
+            first: single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
+            second: single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?,
+            parameter,
+        }),
+        CircleDiameter => Some(SketchConstraintDefinition::Diameter {
+            entity: single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
+            parameter,
+        }),
+    }
+}
+
+fn marker_point_locus(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchLocus> {
+    if let Some(loci) = loci_by_marker.get(marker_id) {
+        return loci.first().cloned();
+    }
+    let marker = markers_by_id.get(marker_id)?;
+    let mut linked = marker
+        .links
+        .iter()
+        .filter_map(|link| loci_by_marker.get(&link.entity_ref));
+    let loci = linked.next()?;
+    if linked.next().is_some() {
+        return None;
+    }
+    loci.first().cloned()
+}
+
+fn single_marker_entity(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchEntityId> {
+    let entities = marker_entities(marker_id, markers_by_id, loci_by_marker);
+    let [entity] = entities.as_slice() else {
+        return None;
+    };
+    Some(entity.clone())
 }
 
 fn profile_loci_by_marker(
@@ -1419,9 +1514,12 @@ fn marker_entities(
 
 #[cfg(test)]
 mod profile_join_tests {
-    use super::{marker_entities, profile_loci_by_marker};
-    use crate::records::{FeatureInputLane, SketchInputEntity, SketchInputKind, SketchInputLink};
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
+    use super::{marker_entities, profile_loci_by_marker, typed_relation_definition};
+    use crate::records::{
+        FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+        FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
+    };
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, ParameterId, SketchSpace};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
     use std::collections::{BTreeMap, HashMap};
@@ -1531,6 +1629,41 @@ mod profile_join_tests {
             .map(|marker| (marker.id.as_str(), marker))
             .collect::<HashMap<_, _>>();
         assert_eq!(marker_entities("reference", &markers, &joins), vec![first]);
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: None,
+            display_scalar_ref: None,
+            operands: ["marker-a", "marker-c"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, marker)| FeatureInputOperand {
+                    offset: index as u64,
+                    reference_ref: format!("reference-{index}"),
+                    kind: FeatureInputOperandKind::D6,
+                    entity_index: index as u16,
+                    entity_ref: Some(marker.into()),
+                })
+                .collect(),
+        };
+        assert!(matches!(
+            typed_relation_definition(
+                &relation,
+                Some(ParameterId("distance".into())),
+                &markers,
+                &joins,
+            ),
+            Some(cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci {
+                parameter,
+                ..
+            }) if parameter.0 == "distance"
+        ));
     }
 }
 
