@@ -5430,7 +5430,7 @@ fn nurbs_boundary_curve_gets_isoparametric_pcurve() {
             .provenance
             .get(&pcurve.id.0)
             .and_then(|note| note.tag.as_deref())
-            == Some("derived_nurbs_boundary_pcurve")
+            == Some("derived_nurbs_isoparametric_pcurve")
     }));
 }
 
@@ -5457,7 +5457,7 @@ fn linear_nurbs_surface_boundary_gets_affine_line_pcurve() {
             .provenance
             .get(&pcurve.id.0)
             .and_then(|note| note.tag.as_deref())
-            == Some("derived_nurbs_boundary_pcurve")
+            == Some("derived_nurbs_isoparametric_pcurve")
             && matches!(
                 pcurve.geometry,
                 cadmpeg_ir::geometry::PcurveGeometry::Line { direction, .. }
@@ -5489,7 +5489,7 @@ fn rational_nurbs_surface_row_gets_isoparametric_pcurve() {
             .provenance
             .get(&pcurve.id.0)
             .and_then(|note| note.tag.as_deref())
-            == Some("derived_nurbs_boundary_pcurve")
+            == Some("derived_nurbs_isoparametric_pcurve")
     }));
 }
 

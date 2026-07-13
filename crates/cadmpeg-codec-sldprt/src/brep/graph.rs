@@ -754,7 +754,7 @@ fn decode_graph(
     derive_cylindrical_pcurves(&mut out, &mut annotations, source_stream);
     derive_revolved_circle_pcurves(&mut out, &mut annotations, source_stream);
     derive_spherical_pcurves(&mut out, &mut annotations, source_stream);
-    derive_nurbs_boundary_pcurves(&mut out, &mut annotations, source_stream);
+    derive_nurbs_isoparametric_pcurves(&mut out, &mut annotations, source_stream);
     prune_rejected_topology(&mut out);
 
     if out.faces.is_empty() {
@@ -1888,7 +1888,7 @@ fn derive_spherical_pcurves(
     }
 }
 
-fn derive_nurbs_boundary_pcurves(
+fn derive_nurbs_isoparametric_pcurves(
     out: &mut Brep,
     annotations: &mut AnnotationBuilder,
     source_stream: cadmpeg_ir::annotations::StreamHandle,
@@ -2074,6 +2074,10 @@ fn derive_nurbs_boundary_pcurves(
                     geometry
                 } else if let Some(geometry) = line_pcurve(vc - 1, v_max) {
                     geometry
+                } else if let Some(geometry) =
+                    ruled_surface_line_pcurve(surface, *origin, *direction, u_min, u_max)
+                {
+                    geometry
                 } else {
                     continue;
                 }
@@ -2081,7 +2085,7 @@ fn derive_nurbs_boundary_pcurves(
             _ => continue,
         };
         let id = PcurveId(format!(
-            "sldprt:brep:pcurve#nurbs-boundary:{}",
+            "sldprt:brep:pcurve#nurbs-isoparametric:{}",
             coedge.id.0.rsplit('#').next().unwrap_or("0")
         ));
         derived.push((
@@ -2109,10 +2113,137 @@ fn derive_nurbs_boundary_pcurves(
         }
         annotations
             .note(&id, source_stream, 0)
-            .tag("derived_nurbs_boundary_pcurve");
+            .tag("derived_nurbs_isoparametric_pcurve");
         annotations.exactness(&id, Exactness::Derived);
         out.pcurves.push(pcurve);
     }
+}
+
+fn ruled_surface_line_pcurve(
+    surface: &cadmpeg_ir::geometry::NurbsSurface,
+    line_origin: cadmpeg_ir::math::Point3,
+    line_direction: cadmpeg_ir::math::Vector3,
+    u_min: f64,
+    u_max: f64,
+) -> Option<PcurveGeometry> {
+    let (uc, vc) = (surface.u_count as usize, surface.v_count as usize);
+    if uc != 2
+        || surface.u_degree != 1
+        || surface.u_knots != [u_min, u_min, u_max, u_max]
+        || u_min == u_max
+        || surface
+            .weights
+            .as_ref()
+            .is_some_and(|weights| (0..vc).any(|v| (weights[v] - weights[vc + v]).abs() > 1e-12))
+    {
+        return None;
+    }
+    let row = |u: usize| &surface.control_points[u * vc..(u + 1) * vc];
+    let row_weights = |u: usize| {
+        surface
+            .weights
+            .as_ref()
+            .map(|weights| &weights[u * vc..(u + 1) * vc])
+    };
+    let evaluate_rows = |parameter: f64| {
+        Some((
+            nurbs_curve_point(
+                surface.v_degree,
+                &surface.v_knots,
+                row(0),
+                row_weights(0),
+                parameter,
+            )?,
+            nurbs_curve_point(
+                surface.v_degree,
+                &surface.v_knots,
+                row(1),
+                row_weights(1),
+                parameter,
+            )?,
+        ))
+    };
+    let direction_squared = line_direction.x * line_direction.x
+        + line_direction.y * line_direction.y
+        + line_direction.z * line_direction.z;
+    if direction_squared <= f64::EPSILON {
+        return None;
+    }
+    let perpendicular_squared = |point: cadmpeg_ir::math::Point3| {
+        let relative = [
+            point.x - line_origin.x,
+            point.y - line_origin.y,
+            point.z - line_origin.z,
+        ];
+        let along = (relative[0] * line_direction.x
+            + relative[1] * line_direction.y
+            + relative[2] * line_direction.z)
+            / direction_squared;
+        (relative[0] - along * line_direction.x).powi(2)
+            + (relative[1] - along * line_direction.y).powi(2)
+            + (relative[2] - along * line_direction.z).powi(2)
+    };
+    let objective = |parameter: f64| {
+        let (a, b) = evaluate_rows(parameter)?;
+        Some(perpendicular_squared(a).max(perpendicular_squared(b)))
+    };
+    let mut best = None::<(f64, f64)>;
+    for span in surface.v_knots.windows(2).filter(|span| span[0] < span[1]) {
+        let (mut left, mut right) = (span[0], span[1]);
+        let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+        let mut a = right - ratio * (right - left);
+        let mut b = left + ratio * (right - left);
+        let mut da = objective(a)?;
+        let mut db = objective(b)?;
+        for _ in 0..80 {
+            if da <= db {
+                right = b;
+                b = a;
+                db = da;
+                a = right - ratio * (right - left);
+                da = objective(a)?;
+            } else {
+                left = a;
+                a = b;
+                da = db;
+                b = left + ratio * (right - left);
+                db = objective(b)?;
+            }
+        }
+        for parameter in [span[0], (left + right) * 0.5, span[1]] {
+            let error = objective(parameter)?;
+            if best.is_none_or(|(_, best_error)| error < best_error) {
+                best = Some((parameter, error));
+            }
+        }
+    }
+    let (v, error) = best?;
+    if error.sqrt() > 0.01 {
+        return None;
+    }
+    let (a, b) = evaluate_rows(v)?;
+    let delta = [b.x - a.x, b.y - a.y, b.z - a.z];
+    let delta_squared = delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
+    if delta_squared <= f64::EPSILON {
+        return None;
+    }
+    let project = |value: [f64; 3]| {
+        (value[0] * delta[0] + value[1] * delta[1] + value[2] * delta[2]) / delta_squared
+    };
+    let offset = project([
+        line_origin.x - a.x,
+        line_origin.y - a.y,
+        line_origin.z - a.z,
+    ]);
+    let rate = project([line_direction.x, line_direction.y, line_direction.z]);
+    if rate == 0.0 {
+        return None;
+    }
+    let domain = u_max - u_min;
+    Some(PcurveGeometry::Line {
+        origin: cadmpeg_ir::math::Point2::new(u_min + offset * domain, v),
+        direction: cadmpeg_ir::math::Point2::new(rate * domain, 0.0),
+    })
 }
 
 fn solve_face_orientation(out: &mut Brep) {
@@ -2540,5 +2671,41 @@ mod tests {
             &knots,
             radius,
         ));
+    }
+
+    #[test]
+    fn interior_ruled_surface_line_has_affine_isoparametric_inverse() {
+        let surface = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(2.0, 1.0, 0.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let geometry = super::ruled_surface_line_pcurve(
+            &surface,
+            cadmpeg_ir::math::Point3::new(0.0, 0.5, 0.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            0.0,
+            1.0,
+        )
+        .expect("interior ruling");
+        let cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction } = geometry else {
+            panic!("expected affine line pcurve");
+        };
+        assert!(origin.u.abs() < 1e-12);
+        assert!((origin.v - 0.5).abs() < 1e-12);
+        assert!((direction.u - 2.0 / 3.0).abs() < 1e-12);
+        assert!(direction.v.abs() < 1e-12);
     }
 }
