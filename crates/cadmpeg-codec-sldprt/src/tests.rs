@@ -4374,6 +4374,60 @@ fn semantic_writer_applies_neutral_parameter_edits() {
 }
 
 #[test]
+fn semantic_writer_applies_neutral_parameter_order() {
+    use crate::records::FeatureContent;
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Ordered" Type="EquationDriven" id="41"><Dimension Name="First">1</Dimension><Child Name="Nested" Type="Folder" id="42"/><Dimension Name="Second">2</Dimension></Feature></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for parameter in &mut decoded.ir.model.parameters {
+        parameter.ordinal = match parameter.name.as_str() {
+            "First" => 1,
+            "Second" => 0,
+            name => panic!("unexpected parameter {name}"),
+        };
+    }
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        regenerated
+            .ir
+            .model
+            .parameters
+            .iter()
+            .map(|parameter| (parameter.ordinal, parameter.name.as_str()))
+            .collect::<Vec<_>>(),
+        vec![(0, "Second"), (1, "First")]
+    );
+    let content = &sldprt_native(&regenerated.ir).feature_histories[0].features[0].content;
+    assert_eq!(
+        content
+            .iter()
+            .filter_map(|item| match item {
+                FeatureContent::Dimension(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec!["Second", "First"]
+    );
+    assert!(content
+        .iter()
+        .any(|item| matches!(item, FeatureContent::Feature(_))));
+}
+
+#[test]
 fn semantic_writer_rejects_conflicting_parameter_edits() {
     use cadmpeg_ir::features::{Length, ParameterValue};
 

@@ -1394,7 +1394,7 @@ fn sync_neutral_parameters(
         .iter()
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
-    let mut desired = HashMap::<FeatureId, BTreeMap<String, String>>::new();
+    let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
     for parameter in &ir.model.parameters {
         if parameter.value != parse_parameter_literal(&parameter.expression) {
             return Err(CodecError::Malformed(format!(
@@ -1408,17 +1408,26 @@ fn sync_neutral_parameters(
                 parameter.id.0
             )));
         }
-        if desired
-            .entry(parameter.owner.clone())
-            .or_default()
-            .insert(parameter.name.clone(), parameter.expression.clone())
-            .is_some()
+        let owner_parameters = desired.entry(parameter.owner.clone()).or_default();
+        if owner_parameters
+            .iter()
+            .any(|candidate| candidate.name == parameter.name)
         {
             return Err(CodecError::Malformed(format!(
                 "duplicate SLDPRT parameter {} on feature {}",
                 parameter.name, parameter.owner
             )));
         }
+        if owner_parameters
+            .iter()
+            .any(|candidate| candidate.ordinal == parameter.ordinal)
+        {
+            return Err(CodecError::Malformed(format!(
+                "duplicate SLDPRT parameter ordinal {} on feature {}",
+                parameter.ordinal, parameter.owner
+            )));
+        }
+        owner_parameters.push(parameter);
     }
     let Some(native) = native.as_mut() else {
         return Err(CodecError::NotImplemented(
@@ -1439,7 +1448,27 @@ fn sync_neutral_parameters(
                     "SLDPRT parameters for feature {feature_id} require a retained feature record"
                 ))
             })?;
-        record.parameters = desired.remove(feature_id).unwrap_or_default();
+        let mut parameters = desired.remove(feature_id).unwrap_or_default();
+        parameters.sort_by_key(|parameter| parameter.ordinal);
+        record.parameters = parameters
+            .iter()
+            .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
+            .collect();
+        let mut names = parameters
+            .iter()
+            .map(|parameter| parameter.name.clone())
+            .collect::<Vec<_>>()
+            .into_iter();
+        let mut content = record
+            .content
+            .iter()
+            .filter_map(|item| match item {
+                FeatureContent::Dimension(_) => names.next().map(FeatureContent::Dimension),
+                other => Some(other.clone()),
+            })
+            .collect::<Vec<_>>();
+        content.extend(names.map(FeatureContent::Dimension));
+        record.content = content;
     }
     Ok(())
 }
