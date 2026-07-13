@@ -1166,14 +1166,30 @@ fn attach_standard_topology(
             .iter()
             .enumerate()
             .filter_map(|(index, point)| {
-                (point_on_surface(point.position, &surface0.geometry)
-                    && point_on_surface(point.position, &surface1.geometry))
-                .then_some(index)
+                let incident = match &support.geometry {
+                    geometry::StandardCurveGeometry::Circle { center, radius } => {
+                        (point_distance_squared(point.position, *center).sqrt() - *radius).abs()
+                            <= 1e-3
+                    }
+                    geometry::StandardCurveGeometry::Line
+                    | geometry::StandardCurveGeometry::Bspline => {
+                        point_on_surface(point.position, &surface0.geometry)
+                            && point_on_surface(point.position, &surface1.geometry)
+                    }
+                };
+                incident.then_some(index)
             })
             .collect();
         endpoint_candidates.push(candidates);
     }
     let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
+    let resolved_endpoint_pairs = resolve_standard_endpoint_pairs(
+        ir,
+        bindings,
+        &surface_indices,
+        &supports,
+        &endpoint_candidates,
+    );
     let (topology, point_assignment) = if let Some(topology) = topology::parse_standard(brep) {
         let endpoint_pairs: Option<Vec<[usize; 2]>> = endpoint_candidates
             .iter()
@@ -1185,6 +1201,13 @@ fn attach_standard_topology(
         let Some(point_assignment) = topology.bind_vertex_points(&endpoint_pairs) else {
             return false;
         };
+        (topology, point_assignment)
+    } else if let Some(endpoint_pairs) = resolved_endpoint_pairs {
+        let Some(topology) = topology::parse_standard_endpoints(brep, &edge_faces, &endpoint_pairs)
+        else {
+            return false;
+        };
+        let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else {
         let circle_anchors: Vec<Option<[usize; 2]>> = supports
@@ -1259,9 +1282,10 @@ fn attach_standard_topology(
             "standard_spine_edge_row",
             Exactness::ByteExact,
         );
-        for field in ["curve", "start", "end"] {
-            annotations.derived(&id, field);
+        if curve.is_some() {
+            annotations.derived(&id, "curve");
         }
+        annotations.derived(&id, "start").derived(&id, "end");
         ir.model.edges.push(Edge {
             id,
             curve,
@@ -1347,6 +1371,82 @@ fn attach_standard_topology(
         }
     }
     true
+}
+
+fn resolve_standard_endpoint_pairs(
+    ir: &CadIr,
+    bindings: &[(SurfaceId, bool, usize)],
+    surface_indices: &HashMap<SurfaceId, usize>,
+    supports: &[geometry::StandardCurveSupport],
+    candidates: &[Vec<usize>],
+) -> Option<Vec<[usize; 2]>> {
+    let mut resolved: Vec<Option<[usize; 2]>> = candidates
+        .iter()
+        .map(|points| <[usize; 2]>::try_from(points.as_slice()).ok())
+        .collect();
+    let mut line_groups = HashMap::<[usize; 2], Vec<usize>>::new();
+    for (edge, support) in supports.iter().enumerate() {
+        if resolved[edge].is_none()
+            && matches!(support.geometry, geometry::StandardCurveGeometry::Line)
+        {
+            let mut faces = support.faces;
+            faces.sort_unstable();
+            line_groups.entry(faces).or_default().push(edge);
+        }
+    }
+    for (faces, edges) in line_groups {
+        let surface0 = face_surface(ir, bindings, surface_indices, faces[0])?;
+        let surface1 = face_surface(ir, bindings, surface_indices, faces[1])?;
+        let direction = intersection_line_direction(&surface0.geometry, &surface1.geometry)?;
+        let points = candidates.get(*edges.first()?)?;
+        let mut pairs = Vec::new();
+        for (left, &start) in points.iter().enumerate() {
+            for &end_index in &points[left + 1..] {
+                let start_point = ir.model.points.get(start)?.position;
+                let end_point = ir.model.points.get(end_index)?.position;
+                let segment = Vector3::new(
+                    end_point.x - start_point.x,
+                    end_point.y - start_point.y,
+                    end_point.z - start_point.z,
+                );
+                let segment_norm = axis_dot(segment, segment).sqrt();
+                let direction_norm = axis_dot(direction, direction).sqrt();
+                if segment_norm > f64::EPSILON
+                    && direction_norm > f64::EPSILON
+                    && axis_dot(
+                        cross_vector(segment, direction),
+                        cross_vector(segment, direction),
+                    )
+                    .sqrt()
+                        <= 1e-2 * segment_norm * direction_norm
+                {
+                    pairs.push([points[left], end_index]);
+                }
+            }
+        }
+        pairs.sort_unstable();
+        pairs.dedup();
+        if pairs.len() != edges.len() {
+            continue;
+        }
+        for (edge, pair) in edges.into_iter().zip(pairs) {
+            resolved[edge] = Some(pair);
+        }
+    }
+    resolved.into_iter().collect()
+}
+
+fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {
+    match (left, right) {
+        (
+            SurfaceGeometry::Plane { normal: left, .. },
+            SurfaceGeometry::Plane { normal: right, .. },
+        ) => Some(cross_vector(*left, *right)),
+        (SurfaceGeometry::Plane { .. }, SurfaceGeometry::Cylinder { axis, .. })
+        | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Plane { .. })
+        | (SurfaceGeometry::Cylinder { axis, .. }, SurfaceGeometry::Cylinder { .. }) => Some(*axis),
+        _ => None,
+    }
 }
 
 fn face_surface<'a>(

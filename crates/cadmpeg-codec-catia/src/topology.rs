@@ -307,6 +307,36 @@ pub fn parse_standard_motif(
     )
 }
 
+/// Reconstruct standard topology from byte-derived endpoint coordinate rows.
+/// The endpoint graph is accepted only when all face incidences close and the
+/// radial orientation constraints are consistent.
+#[must_use]
+pub fn parse_standard_endpoints(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[[usize; 2]],
+) -> Option<StandardTopology> {
+    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    if edge_rows.len() != edge_faces.len()
+        || edge_rows.len() != edge_points.len()
+        || edge_points
+            .iter()
+            .flatten()
+            .any(|point| *point >= vertex_points.len())
+    {
+        return None;
+    }
+    reconstruct_incidence(
+        edge_rows,
+        vertex_points,
+        edge_faces,
+        edge_points,
+        face_count,
+    )
+}
+
 fn motif_port_points(trims: &[TrimRecord], vertex_count: usize) -> Option<HashMap<u32, usize>> {
     fn columns(record: &TrimRecord) -> Option<([u32; 2], [u32; 2])> {
         Some((
@@ -1097,7 +1127,7 @@ impl UnionFind {
 
 #[cfg(test)]
 mod motif_tests {
-    use super::{motif_port_points, TrimRecord};
+    use super::{motif_port_points, reconstruct_incidence, EdgeRow, TrimRecord};
 
     fn trim(kind: u8, handles: [u32; 4]) -> TrimRecord {
         TrimRecord {
@@ -1127,5 +1157,39 @@ mod motif_tests {
         for (index, handle) in order.into_iter().enumerate() {
             assert_eq!(points[&handle], index);
         }
+    }
+
+    #[test]
+    fn endpoint_incidence_builds_oriented_tetrahedron_cycles() {
+        let rows = (0..6)
+            .map(|edge| EdgeRow {
+                kind: 1,
+                handles: vec![edge * 2, edge * 2 + 1],
+            })
+            .collect();
+        let points = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
+        let edge_faces = [[0, 1], [0, 2], [0, 3], [1, 3], [1, 2], [2, 3]];
+        let edge_points = [[0, 1], [1, 2], [2, 0], [0, 3], [3, 1], [2, 3]];
+        let topology = reconstruct_incidence(rows, points, &edge_faces, &edge_points, 4)
+            .expect("closed oriented incidence");
+        assert_eq!(topology.face_count(), 4);
+        assert!(topology
+            .faces()
+            .iter()
+            .all(|face| { face.boundaries.len() == 1 && face.boundaries[0].coedges.len() == 3 }));
+        let mut uses = vec![Vec::new(); 6];
+        for face in topology.faces() {
+            for coedge in &face.boundaries[0].coedges {
+                uses[coedge.edge_row].push(coedge.reversed);
+            }
+        }
+        assert!(uses
+            .iter()
+            .all(|senses| senses == &[false, true] || senses == &[true, false]));
     }
 }

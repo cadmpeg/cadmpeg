@@ -217,6 +217,8 @@ The table has one row per spine edge. Circle center and radius use BE f32. The t
 
 **Edge endpoints by surface-intersection binding:** an edge lies on both adjacent analytic carriers. Two vertices on both carriers (`on(P,surf)` := signed distance within 1e-3 mm) define the endpoint pair. For a line edge whose faces share a carrier, use the two common vertices collinear with the surface-intersection direction `d` (`plane∩plane`: `n0×n1`; `plane∩cylinder`: axis; `cylinder∩cylinder`: shared ruling).
 
+When more than two vertex rows lie on the same analytic intersection, group unresolved line rows by their unordered adjacent-face pair. Enumerate unordered pairs of common vertex rows whose chord is parallel to the intersection direction. The group resolves when the candidate-pair count equals the line-row count; the rows are interchangeable within the group because their curve kind and adjacent faces are identical, so the assignment has one B-rep up to edge relabeling. Any count mismatch leaves the group unresolved.
+
 **Circle/arc endpoints by support intersection:** intersect the decoded circle (center `c`, radius `r`) with the vertex table (`|dist(v,c)−r| ≤ 1e-3`). Two candidates define the endpoint pair. Coaxial arcs can share a circle and require connectivity or cycle closure. A full circle has antipodal on-circle candidates and uses `start==end`. **Line edges** derive from their endpoints (`origin=start`, `direction=end−start`). Use the mesh-derived port-to-vertex collapse rather than sorted handle rank.
 
 ### 5.7 Surface carrier semantics
