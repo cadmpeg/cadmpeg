@@ -139,7 +139,12 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
                     .get(provenance.stream as usize)
                     .cloned()
             })
-            .unwrap_or_else(|| lane.id.clone());
+            .unwrap_or_else(|| {
+                lane.configuration.as_ref().map_or_else(
+                    || "Contents/ResolvedFeatures".into(),
+                    |configuration| format!("Contents/Config-{configuration}-ResolvedFeatures"),
+                )
+            });
         sections.push((section, resolved_feature_payload(lane)?));
     }
     for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep) {

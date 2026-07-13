@@ -4744,6 +4744,48 @@ fn semantic_writer_rejects_incomplete_sketch_marker_lanes() {
 }
 
 #[test]
+fn semantic_writer_derives_resolved_feature_section_names() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    decoded.ir.annotations = Default::default();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].sketch_entities[0].kind =
+            crate::records::SketchInputKind::Native(9);
+    });
+
+    let mut written = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut written)
+        .unwrap();
+    let scan = container::scan_bytes(&written);
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| { block.section.as_deref() == Some("Contents/Config-0-ResolvedFeatures") }));
+
+    let mut unscoped = decoded.ir;
+    update_sldprt_native(&mut unscoped, |native| {
+        native.feature_input_lanes[0].configuration = None;
+    });
+    let mut written = Vec::new();
+    SldprtCodec
+        .write_preserved(&unscoped, &mut written)
+        .unwrap();
+    let scan = container::scan_bytes(&written);
+    assert!(scan
+        .blocks
+        .iter()
+        .any(|block| block.section.as_deref() == Some("Contents/ResolvedFeatures")));
+}
+
+#[test]
 fn semantic_writer_preserves_idless_feature_tree_nodes() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
