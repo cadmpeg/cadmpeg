@@ -709,6 +709,81 @@ mod chart_tests {
             }
         );
     }
+
+    #[test]
+    fn standard_cone_latitude_inverts_to_isoparametric_line() {
+        let half_angle = 0.25f64;
+        let radius = 3.0 + 2.0 * half_angle.tan();
+        let surface = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 3.0,
+            ratio: 1.0,
+            half_angle,
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 2.0),
+                radius,
+            },
+        };
+        let (geometry, range) = standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(radius, 0.0, 2.0),
+            Point3::new(0.0, radius, 2.0),
+        )
+        .expect("cone latitude pcurve");
+        assert_eq!(range, [0.0, 1.0]);
+        assert_eq!(
+            geometry,
+            PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(0.0, 2.0),
+                direction: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
+            }
+        );
+    }
+
+    #[test]
+    fn standard_sphere_latitude_inverts_to_isoparametric_line() {
+        let latitude = 0.4f64;
+        let radius = 5.0;
+        let ring = radius * latitude.cos();
+        let height = radius * latitude.sin();
+        let surface = SurfaceGeometry::Sphere {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius,
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, height),
+                radius: ring,
+            },
+        };
+        let (geometry, _) = standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(ring, 0.0, height),
+            Point3::new(0.0, ring, height),
+        )
+        .expect("sphere latitude pcurve");
+        let PcurveGeometry::Line { origin, direction } = geometry else {
+            panic!("expected line pcurve");
+        };
+        assert!(origin.u.abs() < 1e-12);
+        assert!((origin.v - latitude).abs() < 1e-12);
+        assert!((direction.u - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert!(direction.v.abs() < 1e-12);
+    }
 }
 
 fn canonical_direction(mut direction: Vector3) -> Vector3 {
@@ -2147,6 +2222,39 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
                 axis_dot(offset, *axis),
             ))
         }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            ratio,
+            ..
+        } => {
+            if ratio.abs() <= f64::EPSILON {
+                return None;
+            }
+            let offset = point_delta(point, *origin);
+            let tangent = cross_vector(*axis, *ref_direction);
+            Some(Point2::new(
+                (axis_dot(offset, tangent) / ratio).atan2(axis_dot(offset, *ref_direction)),
+                axis_dot(offset, *axis),
+            ))
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius <= f64::EPSILON {
+                return None;
+            }
+            let offset = point_delta(point, *center);
+            let tangent = cross_vector(*axis, *ref_direction);
+            Some(Point2::new(
+                axis_dot(offset, tangent).atan2(axis_dot(offset, *ref_direction)),
+                (axis_dot(offset, *axis) / radius).clamp(-1.0, 1.0).asin(),
+            ))
+        }
         SurfaceGeometry::Torus {
             center,
             axis,
@@ -2173,7 +2281,9 @@ fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point
 
 fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, reference: Point2) {
     match surface {
-        SurfaceGeometry::Cylinder { .. } => value.u = unwrap_angle(value.u, reference.u),
+        SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. } => value.u = unwrap_angle(value.u, reference.u),
         SurfaceGeometry::Torus { .. } => {
             value.u = unwrap_angle(value.u, reference.u);
             value.v = unwrap_angle(value.v, reference.v);
