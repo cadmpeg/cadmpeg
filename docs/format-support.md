@@ -148,15 +148,15 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 
 **Kernel:** Parasolid in an SPLMSSTR container
 
-**Ladder: L2 claimed.** L3 requires topology across the band. Current topology depends on fixed-record framing and resolved references, while partition-to-deltas tombstones block live-face selection.
+**Ladder: L2 claimed.** L3 requires topology across the band. Supported adjacent equal-schema partition/deltas pairs apply exact-key replacements and tombstones; unmatched tombstones and remaining record families still prevent a band-wide topology claim.
 
 ### Read profile
 
 - **Container and versions: Partial.** The codec decodes the SPLMSSTR directory and extracts and classifies embedded Parasolid partition, deltas, and related streams.
 - **Geometry: Partial.** Points, analytic surfaces and curves, typed B-spline surfaces and curves, and supported type-133 trimmed curves transfer into IR.
-- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when fixed-record framing and references resolve. The active live-face set remains blocked on unresolved partition-to-deltas tombstones for other files.
+- **Topology: Partial.** The body, shell, face, loop, fin, edge, and vertex graph attaches when framing and references resolve. Exact-key BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE deltas replacements and tombstones merge in source order for adjacent equal-schema pairs. Unmatched tombstone relations remain unresolved.
 - **Tessellation: None.**
-- **Design intent: None.**
+- **Design intent: Partial.** Typed numeric expressions retain object identity, name, declared millimeter or degree unit, and value. Named arrangements retain ordered configuration names and default state. Feature, sketch, constraint, and history operation semantics remain open.
 - **Product structure: Inspect.** The codec reports external part dependencies. Assembly graph instances, placements, and constraints remain open.
 - **Presentation and metadata: None.**
 
@@ -165,7 +165,7 @@ See [`formats/f3d.md`](formats/f3d.md) and [`formats/f3d-open-items.md`](formats
 - **Native write: None.**
 - **Round trip: None.**
 
-Open geometry gates include rolling-ball and procedural blends, type-137 surface curves, freeform NURBS-offset blend spines, and other unsupported record families. Open structural gates include tombstone-to-live-face selection, assembly records, and NX object-model serialization.
+Open geometry gates include unresolved procedural-intersection branches, freeform NURBS-offset blend spines, and other unsupported record families. Open structural gates include unmatched tombstones, multi-partition feature composition, assembly records, and NX object-model field serialization.
 
 See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-open-items.md`](formats/siemens_nx-open-items.md).
 
