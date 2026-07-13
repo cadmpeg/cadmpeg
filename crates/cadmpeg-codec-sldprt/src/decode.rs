@@ -967,6 +967,7 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
 
 fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
     let neutral_hash = crate::resolved_features::sketch_hash(ir);
+    let constraint_hash = crate::resolved_features::constraint_hash(ir);
     let native_hash = crate::resolved_features::lane_hash(native);
     if let Some(source) = &mut ir.source {
         source
@@ -975,6 +976,10 @@ fn stamp_sketch_baseline(ir: &mut CadIr, native: &crate::native::SldprtNative) {
         source
             .attributes
             .insert("sldprt_native_sketch_sha256".into(), native_hash);
+        source.attributes.insert(
+            "sldprt_neutral_sketch_constraint_sha256".into(),
+            constraint_hash,
+        );
     }
 }
 

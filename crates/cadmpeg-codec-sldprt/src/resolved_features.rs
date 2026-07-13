@@ -520,6 +520,11 @@ pub fn sketch_hash(ir: &cadmpeg_ir::CadIr) -> String {
     ))
 }
 
+/// Stable hash of neutral sketch constraints.
+pub fn constraint_hash(ir: &cadmpeg_ir::CadIr) -> String {
+    hash_debug(&ir.model.sketch_constraints)
+}
+
 /// Stable hash of retained native feature-input lanes.
 pub fn lane_hash(native: &crate::native::SldprtNative) -> String {
     hash_debug(&native.feature_input_lanes)
@@ -547,6 +552,11 @@ pub fn prepare_sketches_for_write(
         .source
         .as_ref()
         .and_then(|source| source.attributes.get("sldprt_native_sketch_sha256"));
+    let baseline_constraints = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_neutral_sketch_constraint_sha256")
+    });
     let current_neutral = sketch_hash(ir);
     let current_native = native.as_ref().map(lane_hash);
     if baseline_neutral.is_none() && baseline_native.is_none() {
@@ -567,6 +577,12 @@ pub fn prepare_sketches_for_write(
     let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &current_neutral);
     if !neutral_changed {
         return Ok(());
+    }
+    let current_constraints = constraint_hash(ir);
+    if baseline_constraints.is_none_or(|hash| hash != &current_constraints) {
+        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
+            "SLDPRT native sketch relation editing is not implemented".into(),
+        ));
     }
     let native_changed = match (&current_native, baseline_native) {
         (Some(current), Some(baseline)) => current != baseline,

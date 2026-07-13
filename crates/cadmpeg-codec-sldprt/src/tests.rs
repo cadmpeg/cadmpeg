@@ -10729,6 +10729,38 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
 }
 
 #[test]
+fn semantic_writer_rejects_retained_sketch_constraint_edits() {
+    use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition, SketchConstraintId};
+
+    let source = sldprt_with_nested_sketch_profile(&triangle_body());
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let sketch = decoded.ir.model.sketches[0].id.clone();
+    let entity = decoded.ir.model.sketch_entities[0].id.clone();
+    decoded.ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
+        sketch,
+        definition: SketchConstraintDefinition::Horizontal { entity },
+    });
+    assert_ne!(
+        decoded.ir.source.as_ref().unwrap().attributes["semantic_sha256"],
+        crate::decode::semantic_hash(&decoded.ir)
+    );
+
+    let error = SldprtCodec
+        .encode(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(_)
+    ));
+    assert!(error
+        .to_string()
+        .contains("SLDPRT native sketch relation editing is not implemented"));
+}
+
+#[test]
 fn decode_binds_unique_sketch_history_to_profile_consumers() {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 
