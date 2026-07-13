@@ -36,12 +36,45 @@ pub struct Expression {
     pub unit: ExpressionUnit,
     /// Exact serialized expression text.
     pub expression: String,
-    /// Finite numeric value in the declared unit.
-    pub value: f64,
+    /// Finite numeric value when the expression text is a literal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<f64>,
     /// Directory entry containing the OM section.
     pub source_entry: String,
     /// Absolute file offset of the expression text.
     pub source_offset: u64,
+}
+
+/// Return `p<decimal>` parameter identifiers in formula occurrence order.
+pub(crate) fn expression_parameter_indices(expression: &str) -> Vec<u32> {
+    let bytes = expression.as_bytes();
+    let mut indices = Vec::new();
+    let mut at = 0usize;
+    while at < bytes.len() {
+        if bytes[at] != b'p'
+            || at
+                .checked_sub(1)
+                .and_then(|before| bytes.get(before))
+                .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+        {
+            at += 1;
+            continue;
+        }
+        let start = at + 1;
+        let mut end = start;
+        while bytes.get(end).is_some_and(u8::is_ascii_digit) {
+            end += 1;
+        }
+        if end == start {
+            at += 1;
+            continue;
+        }
+        if let Ok(index) = expression[start..end].parse() {
+            indices.push(index);
+        }
+        at = end;
+    }
+    indices
 }
 
 /// Length-framed class definition from an NX OM type registry.

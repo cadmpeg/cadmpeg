@@ -96,8 +96,8 @@ pub struct NumericExpression<'a> {
     pub unit: ExpressionUnit,
     /// Exact expression text following the serialized name separator.
     pub expression: &'a str,
-    /// Finite serialized numeric value in the declared unit.
-    pub value: f64,
+    /// Finite serialized numeric value when the expression text is a literal.
+    pub value: Option<f64>,
 }
 
 /// One validated external entity-index/object-id-table pair.
@@ -706,8 +706,11 @@ fn numeric_expression_at(
     }
     let value_text = value_tail.strip_suffix("; ")?;
     let (parameter_index, qualifier) = parameter_name(name);
-    let value = value_text.parse::<f64>().ok()?;
-    value.is_finite().then_some(NumericExpression {
+    let value = value_text
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite());
+    Some(NumericExpression {
         object_id,
         offset: base_offset + relative,
         name,

@@ -29,6 +29,45 @@ fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
 
+#[test]
+fn nx_expression_parameter_references_preserve_formula_order() {
+    assert_eq!(
+        crate::native::expression_parameter_indices("max(p12, p3) + p12 + exp2 + p7_radius"),
+        vec![12, 3, 12, 7]
+    );
+}
+
+#[test]
+fn nx_formula_dependencies_resolve_to_section_parameters() {
+    let expression =
+        |key: u32, index: u32, text: &str, value: Option<f64>| crate::native::Expression {
+            id: format!("nx:test:expression#{key}"),
+            object_id: Some(key),
+            record: None,
+            name: format!("p{index}"),
+            parameter_index: Some(index),
+            qualifier: None,
+            unit: crate::native::ExpressionUnit::Millimeter,
+            expression: text.into(),
+            value,
+            source_entry: "/Root/UG_PART/UG_PART".into(),
+            source_offset: u64::from(key),
+        };
+    let expressions = [
+        expression(20, 2, "5", Some(5.0)),
+        expression(90, 9, "p2 * 2 + p2", None),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &mut annotations);
+
+    assert_eq!(ir.model.parameters[1].value, None);
+    assert_eq!(
+        ir.model.parameters[1].dependencies,
+        vec![ir.model.parameters[0].id.clone()]
+    );
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
@@ -229,7 +268,7 @@ fn om_offset_only_index_bounds_primary_entity_records() {
     let expressions = sections[0].numeric_expressions();
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name, "length");
-    assert_eq!(expressions[0].value, 25.0);
+    assert_eq!(expressions[0].value, Some(25.0));
 }
 
 #[test]
@@ -267,7 +306,26 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     );
     assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
-    assert_eq!(expressions[0].value, 120.0);
+    assert_eq!(expressions[0].value, Some(120.0));
+}
+
+#[test]
+fn om_numeric_expression_retains_formula_without_literal_value() {
+    let text = b"(Number [mm]) p9: p2 * 2 + p7_radius; ";
+    let mut bytes = b"hostglobalvariables".to_vec();
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+
+    let expressions = crate::om::numeric_expressions(&bytes);
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].name, "p9");
+    assert_eq!(expressions[0].expression, "p2 * 2 + p7_radius");
+    assert_eq!(expressions[0].value, None);
+    assert_eq!(
+        crate::native::expression_parameter_indices(expressions[0].expression),
+        vec![2, 7]
+    );
 }
 
 #[test]
@@ -342,7 +400,7 @@ fn om_numeric_expression_table_is_independent_of_entity_indexing() {
         expressions[0].qualifier,
         Some("CircularPattern_pattern_Circular_Dir_offset_angle")
     );
-    assert_eq!(expressions[0].value, 120.0);
+    assert_eq!(expressions[0].value, Some(120.0));
 }
 
 /// A synthetic Parasolid partition stream: the `PS 00 00` header, a prologue with
@@ -2658,7 +2716,7 @@ fn decode_retains_typed_nx_numeric_expression() {
     );
     assert_eq!(expressions[0].unit, crate::native::ExpressionUnit::Degree);
     assert_eq!(expressions[0].expression, "120");
-    assert_eq!(expressions[0].value, 120.0);
+    assert_eq!(expressions[0].value, Some(120.0));
     assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
     let om_records = result
         .ir

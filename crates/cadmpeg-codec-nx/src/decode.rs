@@ -2330,7 +2330,7 @@ fn attach_native_object_model(
     Ok(())
 }
 
-fn attach_expression_parameters(
+pub(crate) fn attach_expression_parameters(
     ir: &mut CadIr,
     expressions: &[crate::native::Expression],
     annotations: &mut AnnotationBuilder,
@@ -2375,6 +2375,17 @@ fn attach_expression_parameters(
             },
             native_ref: None,
         });
+        let parameter_ids = expressions
+            .iter()
+            .filter_map(|expression| {
+                let index = expression.parameter_index?;
+                let key = expression
+                    .id
+                    .rsplit_once('#')
+                    .map_or("unknown", |(_, key)| key);
+                Some((index, ParameterId(format!("{section}:parameter#{key}"))))
+            })
+            .collect::<BTreeMap<_, _>>();
         for (ordinal, expression) in expressions.into_iter().enumerate() {
             let key = expression
                 .id
@@ -2388,14 +2399,21 @@ fn attach_expression_parameters(
             annotations.derived(&id.0, "ordinal");
             annotations.derived(&id.0, "value");
             annotations.derived(&id.0, "native_ref");
-            let value = match expression.unit {
-                crate::native::ExpressionUnit::Millimeter => {
-                    ParameterValue::Length(Length(expression.value))
-                }
+            let mut seen_dependencies = BTreeSet::new();
+            let dependencies = crate::native::expression_parameter_indices(&expression.expression)
+                .into_iter()
+                .filter_map(|index| parameter_ids.get(&index).cloned())
+                .filter(|dependency| seen_dependencies.insert(dependency.clone()))
+                .collect::<Vec<_>>();
+            if !dependencies.is_empty() {
+                annotations.derived(&id.0, "dependencies");
+            }
+            let value = expression.value.map(|value| match expression.unit {
+                crate::native::ExpressionUnit::Millimeter => ParameterValue::Length(Length(value)),
                 crate::native::ExpressionUnit::Degree => {
-                    ParameterValue::Angle(Angle(expression.value.to_radians()))
+                    ParameterValue::Angle(Angle(value.to_radians()))
                 }
-            };
+            });
             ir.model.parameters.push(DesignParameter {
                 id,
                 owner: feature_id.clone(),
@@ -2403,8 +2421,8 @@ fn attach_expression_parameters(
                 name: expression.name.clone(),
                 expression: expression.expression.clone(),
                 display: None,
-                value: Some(value),
-                dependencies: Vec::new(),
+                value,
+                dependencies,
                 properties: BTreeMap::new(),
                 pmi: None,
                 native_ref: Some(expression.id.clone()),
