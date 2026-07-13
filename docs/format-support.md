@@ -45,6 +45,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
 | STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
+| IGES 5.3 Fixed ASCII mechanical/document  | unscored       | envelope and cumulative proof gates defined; codec implementation pending                             |
 
 Each current score applies to the envelope described in its profile.
 
@@ -68,6 +69,44 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
 - **STEP AP214 (translation):** partial B-rep export with explicit loss reporting.
+- **IGES 5.3 Fixed ASCII mechanical/document profile (unscored):** read-only target envelope with fixed-card framing, geometry, topology, product records, presentation records, and complete byte accounting. No score is claimed before the cumulative gates pass.
+
+## IGES
+
+**Model:** IGES 5.3 entity graph
+
+**Ladder: unscored for the IGES 5.3 Fixed ASCII mechanical/document envelope.** Compressed ASCII, Binary, pre-5.3 Fixed ASCII, and extensions are separate envelopes and do not inherit this score.
+
+### Envelopes
+
+- **IGES 5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the geometry, topology, product, presentation, annotation, drawing, associativity, and property entity branches listed by `corpus/iges-envelope-a.toml`; and no extension entity outside that matrix. The codec is read only.
+- **Pre-5.3 Fixed ASCII.** Version-specific legacy envelope. Detection and exact version reporting do not imply semantic compatibility.
+- **Compressed ASCII.** Distinct representation envelope. Fixed ASCII support does not apply.
+- **Binary.** Distinct representation envelope. Fixed ASCII support does not apply.
+- **Extensions.** Named extension envelopes only. An unregistered entity type or form remains inspectable and prevents a Fixed ASCII mechanical/document score above the last cumulative gate that does not require its semantics.
+
+### Ladder applicability
+
+- **L0 preview/tessellation is inapplicable.** The envelope has no thumbnail or display-mesh record. Detection, fixed-card framing, document kind, and Global metadata satisfy the applicable L0 semantics. Derived tessellation is an optional recovery product and is not required for L0.
+- **L3 connected-model semantics split by source topology.** Explicit manifold B-rep records must produce a connected body-to-vertex graph with source sharing and orientation. Trimmed and bounded surfaces carry face-local boundary identity but no cross-face shared-edge identity; they must produce valid sheet regions without invented adjacency. This is connected recovery of the topology represented by each source object.
+- **L4 is inapplicable.** The envelope contains geometry, topology, presentation, associativity, and application records but no ordered feature-operation history or replayable sketch history.
+- **L6 is inapplicable.** The envelope contains dimensions and associativity as document semantics, not a complete parametric design system with constraints, expressions, configurations, and re-derivable feature history.
+- **L7 mates are inapplicable.** Product definitions, occurrences, groups, placements, external references, and persistent source identities are required. The envelope has no assembly-mate constraint model.
+
+### Read profile
+
+- **Container and versions: None.** Fixed-card framing, version reporting, entity census, external-reference inspection, and named unsupported-representation refusal are not implemented.
+- **Geometry: None.** No IGES carriers transfer to neutral IR.
+- **Topology: None.** No IGES face-local or explicit B-rep topology transfers to neutral IR.
+- **Design intent: Inapplicable.** L4 and L6 semantics are absent from the declared format model.
+- **Product structure: None.** No definition, occurrence, group, placement, or external-reference records transfer.
+- **Presentation and metadata: None.** No Global metadata, appearance, view, drawing, annotation, dimension, or property records transfer.
+- **Recovery and retention: None.** No IGES byte-accounting ledger or native namespace exists.
+
+### Write and round trip
+
+- **Native write: None.** Writing is outside the envelope.
+- **Round trip: None.** Writing is outside the envelope.
 
 ## Rhino `.3dm`
 
