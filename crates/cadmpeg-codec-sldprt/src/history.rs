@@ -363,13 +363,23 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                     .id
                     .strip_prefix("sldprt:history:feature#")
                     .unwrap_or(&feature.id);
+                let properties = feature
+                    .dimension_properties
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_default();
+                let value = properties
+                    .get("Value")
+                    .and_then(|value| parse_parameter_literal(value))
+                    .or_else(|| parse_parameter_literal(expression));
                 DesignParameter {
                     id: ParameterId(format!("sldprt:model:parameter#{key}:{ordinal}")),
                     owner: neutral_feature_id(&feature.id),
                     ordinal: ordinal as u32,
+                    properties,
                     name,
                     expression: expression.clone(),
-                    value: parse_parameter_literal(expression),
+                    value,
                 }
             })
         })
@@ -1574,7 +1584,9 @@ fn sync_neutral_parameters(
         .collect::<HashMap<_, _>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
     for parameter in &ir.model.parameters {
-        if parameter.value != parse_parameter_literal(&parameter.expression) {
+        if parse_parameter_literal(&parameter.expression)
+            .is_some_and(|literal| parameter.value.as_ref() != Some(&literal))
+        {
             return Err(CodecError::Malformed(format!(
                 "SLDPRT parameter {} has a value inconsistent with its expression",
                 parameter.id.0
@@ -1632,9 +1644,10 @@ fn sync_neutral_parameters(
             .iter()
             .map(|parameter| (parameter.name.clone(), parameter.expression.clone()))
             .collect();
-        record
-            .dimension_properties
-            .retain(|name, _| record.parameters.contains_key(name));
+        record.dimension_properties = parameters
+            .iter()
+            .map(|parameter| (parameter.name.clone(), parameter.properties.clone()))
+            .collect();
         let mut names = parameters
             .iter()
             .map(|parameter| parameter.name.clone())

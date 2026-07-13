@@ -89,9 +89,12 @@ pub struct DesignParameter {
     pub name: String,
     /// Literal or expression text used by the source system.
     pub expression: String,
-    /// Evaluated scalar when the expression is an unambiguous literal.
+    /// Evaluated scalar when available.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<ParameterValue>,
+    /// Source dimension properties not represented by another field.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub properties: BTreeMap<String, String>,
 }
 
 /// Canonical scalar value of a literal design parameter.

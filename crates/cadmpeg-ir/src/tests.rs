@@ -668,6 +668,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
             name: name.into(),
             expression: "1mm".into(),
             value: None,
+            properties: BTreeMap::new(),
         });
     }
     ir.finalize();

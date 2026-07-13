@@ -2974,6 +2974,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         name: "Pitch".into(),
         expression: "D1@Sketch1 * 2".into(),
         value: None,
+        properties: BTreeMap::new(),
     });
 
     let mut encoded = Vec::new();
@@ -5063,6 +5064,8 @@ fn semantic_writer_preserves_dimension_attributes() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     let parameter = &mut decoded.ir.model.parameters[0];
+    assert_eq!(parameter.properties["Driven"], "true");
+    assert_eq!(parameter.properties["EquationId"], "D1@Boss");
     parameter.expression = "20mm".into();
     parameter.value = Some(ParameterValue::Length(Length(20.0)));
 
@@ -5080,6 +5083,41 @@ fn semantic_writer_preserves_dimension_attributes() {
         feature.dimension_properties["Depth"]["EquationId"],
         "D1@Boss"
     );
+}
+
+#[test]
+fn semantic_writer_preserves_evaluated_equation_values() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="7"><Dimension Name="Depth" Value="24mm" EquationId="D1@Boss">Width * 2</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = &mut decoded.ir.model.parameters[0];
+    assert_eq!(parameter.expression, "Width * 2");
+    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(24.0))));
+    assert_eq!(parameter.properties["Value"], "24mm");
+    parameter.expression = "Width * 3".into();
+    parameter.value = Some(ParameterValue::Length(Length(36.0)));
+    parameter.properties.insert("Value".into(), "36mm".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let parameter = &regenerated.ir.model.parameters[0];
+    assert_eq!(parameter.expression, "Width * 3");
+    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(36.0))));
+    assert_eq!(parameter.properties["Value"], "36mm");
+    assert_eq!(parameter.properties["EquationId"], "D1@Boss");
 }
 
 #[test]
