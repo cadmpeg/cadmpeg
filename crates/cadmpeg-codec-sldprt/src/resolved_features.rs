@@ -3388,6 +3388,12 @@ fn validate_generated_marker_constraint(
             constraint.id.0
         )));
     }
+    if let Some((kind, first, second)) = binary_marker_relation(&constraint.definition) {
+        let first = sketch_constraint_entity(ir, constraint, first)?;
+        let second = sketch_constraint_entity(ir, constraint, second)?;
+        validate_solved_binary_relation(constraint, kind, first, second)?;
+        return Ok(());
+    }
     let (entity_id, axis) = match &constraint.definition {
         SketchConstraintDefinition::Horizontal { entity } => (entity, Some(false)),
         SketchConstraintDefinition::Vertical { entity } => (entity, Some(true)),
@@ -3450,6 +3456,198 @@ fn validate_generated_marker_constraint(
         )));
     }
     Ok(())
+}
+
+fn binary_marker_relation(
+    definition: &SketchConstraintDefinition,
+) -> Option<(SketchRelationKind, &SketchEntityId, &SketchEntityId)> {
+    Some(match definition {
+        SketchConstraintDefinition::Parallel { first, second } => {
+            (SketchRelationKind::Parallel, first, second)
+        }
+        SketchConstraintDefinition::Perpendicular { first, second } => {
+            (SketchRelationKind::Perpendicular, first, second)
+        }
+        SketchConstraintDefinition::Equal { first, second } => {
+            (SketchRelationKind::Equal, first, second)
+        }
+        SketchConstraintDefinition::Collinear { first, second } => {
+            (SketchRelationKind::Collinear, first, second)
+        }
+        SketchConstraintDefinition::Concentric { first, second } => {
+            (SketchRelationKind::Concentric, first, second)
+        }
+        _ => return None,
+    })
+}
+
+fn sketch_constraint_entity<'a>(
+    ir: &'a cadmpeg_ir::CadIr,
+    constraint: &SketchConstraint,
+    entity: &SketchEntityId,
+) -> Result<&'a SketchEntity, cadmpeg_ir::codec::CodecError> {
+    ir.model
+        .sketch_entities
+        .iter()
+        .find(|candidate| candidate.id == *entity && candidate.sketch == constraint.sketch)
+        .ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "sketch constraint {} references entity {} outside sketch {}",
+                constraint.id.0, entity.0, constraint.sketch.0
+            ))
+        })
+}
+
+fn validate_solved_binary_relation(
+    constraint: &SketchConstraint,
+    kind: SketchRelationKind,
+    first: &SketchEntity,
+    second: &SketchEntity,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    use SketchRelationKind::{Collinear, Concentric, Equal, Parallel, Perpendicular};
+    let solved = match kind {
+        Parallel | Perpendicular | Collinear => {
+            let (first_start, first_end) = sketch_line(&first.geometry).ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "sketch constraint {} requires two line entities",
+                    constraint.id.0
+                ))
+            })?;
+            let (second_start, second_end) = sketch_line(&second.geometry).ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "sketch constraint {} requires two line entities",
+                    constraint.id.0
+                ))
+            })?;
+            let first_direction = [first_end.u - first_start.u, first_end.v - first_start.v];
+            let second_direction = [second_end.u - second_start.u, second_end.v - second_start.v];
+            let scale = vector2_length(first_direction) * vector2_length(second_direction);
+            if scale <= SKETCH_POINT_TOLERANCE {
+                false
+            } else if kind == Perpendicular {
+                (first_direction[0] * second_direction[0]
+                    + first_direction[1] * second_direction[1])
+                    .abs()
+                    <= SKETCH_POINT_TOLERANCE * scale
+            } else {
+                let directions_parallel = cross2(first_direction, second_direction).abs()
+                    <= SKETCH_POINT_TOLERANCE * scale;
+                kind == Parallel && directions_parallel
+                    || kind == Collinear
+                        && directions_parallel
+                        && cross2(
+                            [
+                                second_start.u - first_start.u,
+                                second_start.v - first_start.v,
+                            ],
+                            first_direction,
+                        )
+                        .abs()
+                            <= SKETCH_POINT_TOLERANCE
+                                * vector2_length(first_direction)
+                                * (1.0
+                                    + vector2_length([
+                                        second_start.u - first_start.u,
+                                        second_start.v - first_start.v,
+                                    ]))
+            }
+        }
+        Concentric => match (
+            sketch_center(&first.geometry),
+            sketch_center(&second.geometry),
+        ) {
+            (Some(first), Some(second)) => same_point2(first, second),
+            _ => {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "sketch constraint {} requires two centered entities",
+                    constraint.id.0
+                )));
+            }
+        },
+        Equal => equal_sketch_size(&first.geometry, &second.geometry).ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "source-less SLDPRT equal constraint {} uses unsupported entity families",
+                constraint.id.0
+            ))
+        })?,
+        _ => unreachable!("only generated binary relation kinds are passed"),
+    };
+    if !solved {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+            "source-less SLDPRT sketch constraint {} is not satisfied by its entity geometry",
+            constraint.id.0
+        )));
+    }
+    Ok(())
+}
+
+fn sketch_line(geometry: &SketchGeometry) -> Option<(Point2, Point2)> {
+    match geometry {
+        SketchGeometry::Line { start, end } => Some((*start, *end)),
+        _ => None,
+    }
+}
+
+fn sketch_center(geometry: &SketchGeometry) -> Option<Point2> {
+    match geometry {
+        SketchGeometry::Circle { center, .. }
+        | SketchGeometry::Arc { center, .. }
+        | SketchGeometry::Ellipse { center, .. } => Some(*center),
+        _ => None,
+    }
+}
+
+fn equal_sketch_size(first: &SketchGeometry, second: &SketchGeometry) -> Option<bool> {
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= SKETCH_POINT_TOLERANCE * (1.0 + left.abs().max(right.abs()))
+    };
+    Some(match (first, second) {
+        (
+            SketchGeometry::Line {
+                start: first_start,
+                end: first_end,
+            },
+            SketchGeometry::Line {
+                start: second_start,
+                end: second_end,
+            },
+        ) => close(
+            vector2_length([first_end.u - first_start.u, first_end.v - first_start.v]),
+            vector2_length([second_end.u - second_start.u, second_end.v - second_start.v]),
+        ),
+        (
+            SketchGeometry::Circle { radius: first, .. }
+            | SketchGeometry::Arc { radius: first, .. },
+            SketchGeometry::Circle { radius: second, .. }
+            | SketchGeometry::Arc { radius: second, .. },
+        ) => close(first.0, second.0),
+        (
+            SketchGeometry::Ellipse {
+                major_radius: first_major,
+                minor_radius: first_minor,
+                ..
+            },
+            SketchGeometry::Ellipse {
+                major_radius: second_major,
+                minor_radius: second_minor,
+                ..
+            },
+        ) => close(first_major.0, second_major.0) && close(first_minor.0, second_minor.0),
+        _ => return None,
+    })
+}
+
+fn vector2_length(vector: [f64; 2]) -> f64 {
+    vector[0].hypot(vector[1])
+}
+
+fn cross2(first: [f64; 2], second: [f64; 2]) -> f64 {
+    first[0] * second[1] - first[1] * second[0]
+}
+
+fn same_point2(first: Point2, second: Point2) -> bool {
+    (first.u - second.u).abs() <= SKETCH_POINT_TOLERANCE
+        && (first.v - second.v).abs() <= SKETCH_POINT_TOLERANCE
 }
 
 fn arc_angle_relation_kind(angle: f64) -> Option<SketchRelationKind> {
@@ -3558,6 +3756,11 @@ fn source_less_lanes(
     Ok(lanes)
 }
 
+enum GeneratedMarkerRelation<'a> {
+    Unary(SketchRelationKind, &'a SketchEntityId),
+    Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
+}
+
 fn append_generated_sketch_markers(
     ir: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
@@ -3569,19 +3772,21 @@ fn append_generated_sketch_markers(
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
         .filter_map(|constraint| match &constraint.definition {
-            SketchConstraintDefinition::Horizontal { entity } => {
-                Some((SketchRelationKind::Horizontal, entity))
-            }
-            SketchConstraintDefinition::Vertical { entity } => {
-                Some((SketchRelationKind::Vertical, entity))
-            }
-            SketchConstraintDefinition::Fixed { entity } => {
-                Some((SketchRelationKind::Fixed, entity))
-            }
-            SketchConstraintDefinition::ArcAngle { entity, angle } => {
-                Some((arc_angle_relation_kind(angle.0)?, entity))
-            }
-            _ => None,
+            SketchConstraintDefinition::Horizontal { entity } => Some(
+                GeneratedMarkerRelation::Unary(SketchRelationKind::Horizontal, entity),
+            ),
+            SketchConstraintDefinition::Vertical { entity } => Some(
+                GeneratedMarkerRelation::Unary(SketchRelationKind::Vertical, entity),
+            ),
+            SketchConstraintDefinition::Fixed { entity } => Some(GeneratedMarkerRelation::Unary(
+                SketchRelationKind::Fixed,
+                entity,
+            )),
+            SketchConstraintDefinition::ArcAngle { entity, angle } => Some(
+                GeneratedMarkerRelation::Unary(arc_angle_relation_kind(angle.0)?, entity),
+            ),
+            definition => binary_marker_relation(definition)
+                .map(|(kind, first, second)| GeneratedMarkerRelation::Binary(kind, first, second)),
         })
         .collect::<Vec<_>>();
     if relations.is_empty() {
@@ -3589,6 +3794,7 @@ fn append_generated_sketch_markers(
     }
 
     let mut marker_ids = HashMap::<SketchEntityId, Vec<u16>>::new();
+    let mut marker_loci = Vec::<(SketchEntityId, Point2, SketchInputKind, u16)>::new();
     let mut next_id = 1u32;
     for entity in ir
         .model
@@ -3613,20 +3819,41 @@ fn append_generated_sketch_markers(
                 .entry(entity.id.clone())
                 .or_default()
                 .push(local_id);
+            marker_loci.push((
+                entity.id.clone(),
+                point,
+                generated_marker_kind(&entity.geometry),
+                local_id,
+            ));
             next_id += 1;
         }
     }
-    for (kind, entity) in relations {
-        let ids = marker_ids.get(entity).ok_or_else(|| {
-            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
-                "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
-                entity.0
-            ))
-        })?;
-        let links = match ids.as_slice() {
-            [only] => [*only, *only],
-            [first, second, ..] => [*first, *second],
-            [] => unreachable!("empty marker-id vectors are never inserted"),
+    for relation in relations {
+        let (kind, links) = match relation {
+            GeneratedMarkerRelation::Unary(kind, entity) => {
+                let ids = marker_ids.get(entity).ok_or_else(|| {
+                    cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                        "source-less SLDPRT relation on {} has no coordinate-bearing marker loci",
+                        entity.0
+                    ))
+                })?;
+                let links = match unique_generated_entity_marker(ir, sketch, &marker_loci, entity) {
+                    Ok(unique) => [unique, unique],
+                    Err(_) => match ids.as_slice() {
+                        [only] => [*only, *only],
+                        [first, second, ..] => [*first, *second],
+                        [] => unreachable!("empty marker-id vectors are never inserted"),
+                    },
+                };
+                (kind, links)
+            }
+            GeneratedMarkerRelation::Binary(kind, first, second) => (
+                kind,
+                [
+                    unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                    unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                ],
+            ),
         };
         append_reference_marker(payload, kind, links, next_id);
         next_id = next_id.checked_add(1).ok_or_else(|| {
@@ -3636,6 +3863,35 @@ fn append_generated_sketch_markers(
         })?;
     }
     Ok(())
+}
+
+fn unique_generated_entity_marker(
+    ir: &cadmpeg_ir::CadIr,
+    sketch: &Sketch,
+    markers: &[(SketchEntityId, Point2, SketchInputKind, u16)],
+    entity: &SketchEntityId,
+) -> Result<u16, cadmpeg_ir::codec::CodecError> {
+    for (_, point, kind, local_id) in markers.iter().filter(|(candidate, ..)| candidate == entity) {
+        let mut candidates = ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|candidate| candidate.sketch == sketch.id)
+            .filter(|candidate| marker_accepts_locus(*kind, &candidate.geometry))
+            .filter(|candidate| {
+                sketch_entity_loci(candidate)
+                    .iter()
+                    .any(|(candidate, _)| same_point2(*point, *candidate))
+            })
+            .map(|candidate| &candidate.id);
+        if candidates.next() == Some(entity) && candidates.next().is_none() {
+            return Ok(*local_id);
+        }
+    }
+    Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+        "source-less SLDPRT binary relation cannot identify entity {} with one unambiguous marker locus",
+        entity.0
+    )))
 }
 
 fn generated_marker_kind(geometry: &SketchGeometry) -> SketchInputKind {

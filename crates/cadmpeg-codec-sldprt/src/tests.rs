@@ -2305,12 +2305,32 @@ fn encoder_writes_source_less_curved_sketches() {
             start: Point2::new(18.0, 0.0),
             end: Point2::new(14.0, 0.0),
         },
+        SketchGeometry::Arc {
+            center: Point2::new(24.0, 0.0),
+            radius: Length(2.0),
+            start_angle: Angle(std::f64::consts::FRAC_PI_2),
+            end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+        },
+        SketchGeometry::Line {
+            start: Point2::new(24.0, -2.0),
+            end: Point2::new(24.0, 2.0),
+        },
+        SketchGeometry::Arc {
+            center: Point2::new(8.0, 0.0),
+            radius: Length(3.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        },
+        SketchGeometry::Line {
+            start: Point2::new(5.0, 0.0),
+            end: Point2::new(11.0, 0.0),
+        },
     ];
     let entity_ids = geometries
         .into_iter()
         .enumerate()
         .map(|(index, geometry)| {
-            let id = SketchEntityId(format!("synthetic:test:sketch-entity#curve-{index}"));
+            let id = SketchEntityId(format!("synthetic:test:sketch-entity#curve-{index:02}"));
             ir.model.sketch_entities.push(SketchEntity {
                 id: id.clone(),
                 sketch: sketch_id.clone(),
@@ -2343,6 +2363,8 @@ fn encoder_writes_source_less_curved_sketches() {
             profile(&[0]),
             profile(&[1, 5]),
             profile(&[2, 6]),
+            profile(&[7, 8]),
+            profile(&[9, 10]),
             profile(&[3]),
             profile(&[4]),
         ],
@@ -2368,13 +2390,64 @@ fn encoder_writes_source_less_curved_sketches() {
     });
     ir.model.sketch_constraints.push(SketchConstraint {
         id: SketchConstraintId("synthetic:test:constraint#arc-angle".into()),
-        sketch: sketch_id,
+        sketch: sketch_id.clone(),
         definition: SketchConstraintDefinition::ArcAngle {
             entity: entity_ids[1].clone(),
             angle: Angle(std::f64::consts::PI),
         },
         native_ref: None,
     });
+    for (suffix, definition) in [
+        (
+            "collinear",
+            SketchConstraintDefinition::Collinear {
+                first: entity_ids[5].clone(),
+                second: entity_ids[6].clone(),
+            },
+        ),
+        (
+            "concentric",
+            SketchConstraintDefinition::Concentric {
+                first: entity_ids[1].clone(),
+                second: entity_ids[9].clone(),
+            },
+        ),
+        (
+            "equal-arcs",
+            SketchConstraintDefinition::Equal {
+                first: entity_ids[1].clone(),
+                second: entity_ids[2].clone(),
+            },
+        ),
+        (
+            "equal-lines",
+            SketchConstraintDefinition::Equal {
+                first: entity_ids[5].clone(),
+                second: entity_ids[6].clone(),
+            },
+        ),
+        (
+            "parallel",
+            SketchConstraintDefinition::Parallel {
+                first: entity_ids[5].clone(),
+                second: entity_ids[6].clone(),
+            },
+        ),
+        (
+            "perpendicular",
+            SketchConstraintDefinition::Perpendicular {
+                first: entity_ids[5].clone(),
+                second: entity_ids[8].clone(),
+            },
+        ),
+    ] {
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId(format!("synthetic:test:constraint#{suffix}")),
+            sketch: sketch_id.clone(),
+            definition,
+            native_ref: None,
+        });
+    }
 
     let mut encoded = Vec::new();
     SldprtCodec.encode(&ir, &mut encoded).unwrap();
@@ -2382,7 +2455,7 @@ fn encoder_writes_source_less_curved_sketches() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir.model.sketches.len(), 1);
-    assert_eq!(decoded.ir.model.sketch_entities.len(), 7);
+    assert_eq!(decoded.ir.model.sketch_entities.len(), 11);
     assert!(decoded
         .ir
         .model
@@ -2397,6 +2470,68 @@ fn encoder_writes_source_less_curved_sketches() {
                 } if (value - std::f64::consts::PI).abs() < 1.0e-12
             )
         }));
+    for expected in [
+        crate::records::SketchRelationKind::Parallel,
+        crate::records::SketchRelationKind::Perpendicular,
+        crate::records::SketchRelationKind::Equal,
+        crate::records::SketchRelationKind::Collinear,
+        crate::records::SketchRelationKind::Concentric,
+    ] {
+        assert!(sldprt_native(&decoded.ir)
+            .feature_input_lanes
+            .iter()
+            .flat_map(|lane| &lane.sketch_entities)
+            .any(|marker| marker.kind == crate::records::SketchInputKind::Relation(expected)));
+    }
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Parallel { .. }
+        )));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Perpendicular { .. }
+        )));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Collinear { .. }
+        )));
+    assert!(decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .any(|constraint| matches!(
+            constraint.definition,
+            SketchConstraintDefinition::Concentric { .. }
+        )));
+    assert!(
+        decoded
+            .ir
+            .model
+            .sketch_constraints
+            .iter()
+            .filter(|constraint| matches!(
+                constraint.definition,
+                SketchConstraintDefinition::Equal { .. }
+            ))
+            .count()
+            >= 2
+    );
     assert_eq!(
         decoded
             .ir
@@ -2415,7 +2550,7 @@ fn encoder_writes_source_less_curved_sketches() {
             .iter()
             .filter(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. }))
             .count(),
-        2
+        4
     );
     assert!(decoded
         .ir
