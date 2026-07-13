@@ -252,7 +252,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 && nurbs.knots == [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
                 && nurbs.weights.as_deref() == Some(&[1.0, 0.5, 1.0][..])
     )));
-    assert_eq!(result.ir.model.surfaces.len(), 9);
+    assert_eq!(result.ir.model.surfaces.len(), 10);
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, normal, .. }
@@ -322,7 +322,18 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 ..
             }
         )));
-    assert_eq!(result.ir.model.procedural_surfaces.len(), 3);
+    assert_eq!(result.ir.model.procedural_surfaces.len(), 4);
+    assert!(result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::DegenerateTorus {
+                select_outer: true
+            }
+        )));
     assert!(result
         .ir
         .model

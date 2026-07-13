@@ -483,7 +483,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     radius: radius * scale,
                 },
             ),
-            Some("TOROIDAL_SURFACE") => placement
+            Some("TOROIDAL_SURFACE" | "DEGENERATE_TOROIDAL_SURFACE") => placement
                 .zip(positive(record.parameter(2)))
                 .zip(positive(record.parameter(3)))
                 .map(
@@ -623,6 +623,34 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         if let Some(curve) = curve_step {
             typed.insert(curve);
         }
+    }
+
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("DEGENERATE_TOROIDAL_SURFACE") {
+            continue;
+        }
+        let select_outer = record.parameter(4).and_then(logical_value).flatten();
+        let surface = SurfaceId(format!("step:data:surface#{id}"));
+        if !ir
+            .model
+            .surfaces
+            .iter()
+            .any(|candidate| candidate.id == surface)
+        {
+            continue;
+        }
+        let Some(select_outer) = select_outer else {
+            warnings.push(format!(
+                "DEGENERATE_TOROIDAL_SURFACE #{id} has invalid sheet selection"
+            ));
+            continue;
+        };
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("step:construction:degenerate_torus#{id}")),
+            surface,
+            definition: ProceduralSurfaceDefinition::DegenerateTorus { select_outer },
+            cache_fit_tolerance: None,
+        });
     }
 
     for (&id, record) in &exchange.records {
