@@ -67,7 +67,7 @@ pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, SketchSpace,
+    PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 /// Source location attached to a [`LossNote`].

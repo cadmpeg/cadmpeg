@@ -8177,8 +8177,8 @@ fn semantic_writer_round_trips_positional_thicken_dimension() {
 
 #[test]
 fn semantic_writer_round_trips_typed_scale() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, ScaleCenter};
-    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, ScaleCenter, ScaleFactors};
+    use cadmpeg_ir::math::Point3;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -8198,28 +8198,33 @@ fn semantic_writer_round_trips_typed_scale() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(selection),
-            center: ScaleCenter::Point(Point3 { x: 1.0, y: 2.0, z: 3.0 }),
-            factors: Vector3 { x: 2.0, y: 2.0, z: 2.0 },
+            center: Some(ScaleCenter::Point(Point3 { x: 1.0, y: 2.0, z: 3.0 })),
+            factors: ScaleFactors {
+                uniform: Some(2.0),
+                x: None,
+                y: None,
+                z: None,
+            },
         } if selection == "body:1"
     ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
         FeatureDefinition::Scale {
-            center: ScaleCenter::Centroid,
+            center: Some(ScaleCenter::Centroid),
             ..
         }
     ));
     assert!(matches!(
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Scale {
-            center: ScaleCenter::ModelOrigin,
+            center: Some(ScaleCenter::ModelOrigin),
             ..
         }
     ));
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Scale {
-            center: ScaleCenter::Native(reference),
+            center: Some(ScaleCenter::Native(reference)),
             ..
         } if reference == "csys:4"
     ));
@@ -8233,8 +8238,13 @@ fn semantic_writer_round_trips_typed_scale() {
         panic!("typed scale feature");
     };
     *bodies = BodySelection::Native("body:2,body:3".into());
-    *center = ScaleCenter::Point(Point3::new(4.0, 5.0, 6.0));
-    *factors = Vector3::new(1.5, 2.0, 2.5);
+    *center = Some(ScaleCenter::Point(Point3::new(4.0, 5.0, 6.0)));
+    *factors = ScaleFactors {
+        uniform: None,
+        x: Some(1.5),
+        y: Some(2.0),
+        z: Some(2.5),
+    };
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -8260,15 +8270,16 @@ fn semantic_writer_round_trips_typed_scale() {
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Scale {
-            center: ScaleCenter::Point(Point3 {
+            center: Some(ScaleCenter::Point(Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
-            }),
-            factors: Vector3 {
-                x: 1.5,
-                y: 2.0,
-                z: 2.5
+            })),
+            factors: ScaleFactors {
+                uniform: None,
+                x: Some(1.5),
+                y: Some(2.0),
+                z: Some(2.5),
             },
             ..
         }
@@ -8276,24 +8287,96 @@ fn semantic_writer_round_trips_typed_scale() {
     assert!(matches!(
         regenerated.ir.model.features[1].definition,
         FeatureDefinition::Scale {
-            center: ScaleCenter::Centroid,
+            center: Some(ScaleCenter::Centroid),
             ..
         }
     ));
     assert!(matches!(
         regenerated.ir.model.features[2].definition,
         FeatureDefinition::Scale {
-            center: ScaleCenter::ModelOrigin,
+            center: Some(ScaleCenter::ModelOrigin),
             ..
         }
     ));
     assert!(matches!(
         &regenerated.ir.model.features[3].definition,
         FeatureDefinition::Scale {
-            center: ScaleCenter::Native(reference),
+            center: Some(ScaleCenter::Native(reference)),
             ..
         } if reference == "csys:4"
     ));
+}
+
+#[test]
+fn semantic_writer_retains_partial_native_scale_construction() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, ScaleCenter, ScaleFactors};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Scale Name="Unknown center" Type="Scale" id="71" Bodies="body:1" CenterType="Point" Center="invalid"><Dimension Name="Factor">2</Dimension><Dimension Name="ScaleX">3</Dimension></Scale>
+            <Scale Name="Partial axes" Type="Scale" id="72" CenterType="Centroid"><Dimension Name="Factor">0</Dimension><Dimension Name="ScaleX">1.5</Dimension><Dimension Name="ScaleY">NaN</Dimension><Dimension Name="ScaleZ">2.5</Dimension></Scale>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Scale {
+            bodies: BodySelection::Native(bodies),
+            center: None,
+            factors: ScaleFactors {
+                uniform: Some(2.0),
+                x: Some(3.0),
+                y: None,
+                z: None,
+            },
+        } if bodies == "body:1"
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Scale {
+            bodies: BodySelection::Unresolved,
+            center: Some(ScaleCenter::Centroid),
+            factors: ScaleFactors {
+                uniform: None,
+                x: Some(1.5),
+                y: None,
+                z: Some(2.5),
+            },
+        }
+    ));
+
+    for index in 0..2 {
+        let mut detached = decoded.ir.clone();
+        detached.model.features[index].native_ref = None;
+        let error = SldprtCodec
+            .write_preserved(&detached, &mut Vec::new())
+            .unwrap_err();
+        assert!(error.to_string().contains("unresolved scale construction"));
+    }
+
+    for (index, feature) in decoded.ir.model.features.iter_mut().enumerate() {
+        feature.name = Some(format!("Renamed scale {}", index + 1));
+    }
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[0].properties["Center"], "invalid");
+    assert_eq!(native[0].parameters["Factor"], "2");
+    assert_eq!(native[0].parameters["ScaleX"], "3");
+    assert_eq!(native[1].parameters["Factor"], "0");
+    assert_eq!(native[1].parameters["ScaleY"], "NaN");
+    assert_eq!(native[1].parameters["ScaleX"], "1.5");
+    assert_eq!(native[1].parameters["ScaleZ"], "2.5");
 }
 
 #[test]

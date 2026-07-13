@@ -630,9 +630,10 @@ pub enum FeatureDefinition {
         /// Bodies transformed by the operation.
         bodies: BodySelection,
         /// Fixed locus of the scale transform.
-        center: ScaleCenter,
-        /// Dimensionless scale factors along model-space x, y, and z.
-        factors: Vector3,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        center: Option<ScaleCenter>,
+        /// Independently decoded uniform and axis scale factors.
+        factors: ScaleFactors,
     },
     /// Drilled or machined hole.
     Hole {
@@ -894,6 +895,34 @@ pub enum ScaleCenter {
     Point(Point3),
     /// Format-native coordinate-system or reference identifier.
     Native(String),
+}
+
+/// Independently decoded factors of a body-scale transform.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ScaleFactors {
+    /// Uniform factor, when resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uniform: Option<f64>,
+    /// Model-space x factor, when resolved independently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub x: Option<f64>,
+    /// Model-space y factor, when resolved independently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y: Option<f64>,
+    /// Model-space z factor, when resolved independently.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub z: Option<f64>,
+}
+
+impl ScaleFactors {
+    /// Resolve the effective model-space factors when construction is complete.
+    #[must_use]
+    pub fn resolved(self) -> Option<Vector3> {
+        if let Some(factor) = self.uniform {
+            return Some(Vector3::new(factor, factor, factor));
+        }
+        Some(Vector3::new(self.x?, self.y?, self.z?))
+    }
 }
 
 /// Direction in which a thicken feature adds material.

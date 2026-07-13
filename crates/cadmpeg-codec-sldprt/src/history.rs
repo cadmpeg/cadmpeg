@@ -13,8 +13,8 @@ use cadmpeg_ir::features::{
     FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
     RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion,
-    VariableRadius, WrapMode,
+    ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode,
+    TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1162,7 +1162,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Flex) {
         project_flex(feature)
     } else if class == Some(FeatureClass::Scale) {
-        project_scale(feature).unwrap_or_else(|| native_definition(feature))
+        project_scale(feature)
     } else if class == Some(FeatureClass::Hole) {
         project_hole(feature)
     } else if class == Some(FeatureClass::Revolve) {
@@ -1602,12 +1602,6 @@ fn valid_coordinate_frame(
 
 fn valid_direction(direction: Vector3) -> bool {
     direction.norm().is_finite() && direction.norm() > f64::EPSILON
-}
-
-fn valid_scale_factors(factors: Vector3) -> bool {
-    [factors.x, factors.y, factors.z]
-        .into_iter()
-        .all(|factor| factor.is_finite() && factor != 0.0)
 }
 
 fn project_fillet(feature: &Feature) -> FeatureDefinition {
@@ -2519,42 +2513,44 @@ fn project_flex(feature: &Feature) -> FeatureDefinition {
     FeatureDefinition::Flex { axis, mode }
 }
 
-fn project_scale(feature: &Feature) -> Option<FeatureDefinition> {
+fn project_scale(feature: &Feature) -> FeatureDefinition {
     let center = match feature.properties.get("CenterType").map(String::as_str) {
-        None | Some("Point") => {
-            ScaleCenter::Point(parse_point3_mm(feature.properties.get("Center")?)?)
-        }
-        Some("Centroid") => ScaleCenter::Centroid,
-        Some("Origin" | "ModelOrigin") => ScaleCenter::ModelOrigin,
-        Some("Reference" | "CoordinateSystem") => {
-            ScaleCenter::Native(feature.properties.get("CenterRef")?.clone())
-        }
-        Some(_) => return None,
+        None | Some("Point") => feature
+            .properties
+            .get("Center")
+            .and_then(|value| parse_point3_mm(value))
+            .map(ScaleCenter::Point),
+        Some("Centroid") => Some(ScaleCenter::Centroid),
+        Some("Origin" | "ModelOrigin") => Some(ScaleCenter::ModelOrigin),
+        Some("Reference" | "CoordinateSystem") => feature
+            .properties
+            .get("CenterRef")
+            .filter(|value| !value.is_empty())
+            .cloned()
+            .map(ScaleCenter::Native),
+        Some(_) => None,
     };
-    let uniform = feature
-        .parameters
-        .get("Factor")
-        .and_then(|value| value.trim().parse::<f64>().ok());
-    let factors = match uniform {
-        Some(value) => Vector3::new(value, value, value),
-        None => Vector3::new(
-            feature.parameters.get("ScaleX")?.trim().parse().ok()?,
-            feature.parameters.get("ScaleY")?.trim().parse().ok()?,
-            feature.parameters.get("ScaleZ")?.trim().parse().ok()?,
-        ),
+    let factor = |name| {
+        feature
+            .parameters
+            .get(name)
+            .and_then(|value| value.trim().parse::<f64>().ok())
+            .filter(|value| value.is_finite() && *value != 0.0)
     };
-    if !valid_scale_factors(factors) {
-        return None;
-    }
-    Some(FeatureDefinition::Scale {
+    FeatureDefinition::Scale {
         bodies: feature
             .properties
             .get("Bodies")
             .cloned()
-            .map(BodySelection::Native)?,
+            .map_or(BodySelection::Unresolved, BodySelection::Native),
         center,
-        factors,
-    })
+        factors: ScaleFactors {
+            uniform: factor("Factor"),
+            x: factor("ScaleX"),
+            y: factor("ScaleY"),
+            z: factor("ScaleZ"),
+        },
+    }
 }
 
 fn project_chamfer(feature: &Feature) -> FeatureDefinition {
@@ -5776,21 +5772,33 @@ pub fn sync_neutral_features(
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Scale"))
-                    || selection.is_none()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported scale semantics",
                         feature.id
                     )));
                 }
-                let center_valid = match center {
+                let center_valid = center.as_ref().is_none_or(|center| match center {
                     ScaleCenter::Point(point) => {
                         [point.x, point.y, point.z].into_iter().all(f64::is_finite)
                     }
                     ScaleCenter::Native(reference) => !reference.is_empty(),
                     ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
-                };
-                if !valid_scale_factors(*factors) || !center_valid {
+                });
+                let resolved_factors = factors.resolved();
+                if existing.is_none()
+                    && (selection.is_none() || center.is_none() || resolved_factors.is_none())
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved scale construction",
+                        feature.id
+                    )));
+                }
+                let factors_valid = [factors.uniform, factors.x, factors.y, factors.z]
+                    .into_iter()
+                    .flatten()
+                    .all(|factor| factor.is_finite() && factor != 0.0);
+                if !factors_valid || !center_valid {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has an invalid scale transform",
                         feature.id
@@ -5800,29 +5808,51 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.remove("Factor");
-                parameters.insert("ScaleX".into(), factors.x.to_string());
-                parameters.insert("ScaleY".into(), factors.y.to_string());
-                parameters.insert("ScaleZ".into(), factors.z.to_string());
+                if let Some(factor) = factors.uniform {
+                    parameters.insert("Factor".into(), factor.to_string());
+                } else {
+                    if [factors.x, factors.y, factors.z]
+                        .into_iter()
+                        .all(|factor| factor.is_some())
+                    {
+                        parameters.remove("Factor");
+                    }
+                    if let Some(factor) = factors.x {
+                        parameters.insert("ScaleX".into(), factor.to_string());
+                    }
+                    if let Some(factor) = factors.y {
+                        parameters.insert("ScaleY".into(), factor.to_string());
+                    }
+                    if let Some(factor) = factors.z {
+                        parameters.insert("ScaleZ".into(), factor.to_string());
+                    }
+                }
                 let mut properties = feature.source_properties.clone();
-                properties.insert("Bodies".into(), selection.expect("checked above"));
-                properties.remove("Center");
-                properties.remove("CenterRef");
+                if let Some(selection) = selection {
+                    properties.insert("Bodies".into(), selection);
+                }
                 match center {
-                    ScaleCenter::Centroid => {
+                    Some(ScaleCenter::Centroid) => {
+                        properties.remove("Center");
+                        properties.remove("CenterRef");
                         properties.insert("CenterType".into(), "Centroid".into());
                     }
-                    ScaleCenter::ModelOrigin => {
+                    Some(ScaleCenter::ModelOrigin) => {
+                        properties.remove("Center");
+                        properties.remove("CenterRef");
                         properties.insert("CenterType".into(), "ModelOrigin".into());
                     }
-                    ScaleCenter::Point(point) => {
+                    Some(ScaleCenter::Point(point)) => {
+                        properties.remove("CenterRef");
                         properties.insert("CenterType".into(), "Point".into());
                         properties.insert("Center".into(), format_point3_mm(*point));
                     }
-                    ScaleCenter::Native(reference) => {
+                    Some(ScaleCenter::Native(reference)) => {
+                        properties.remove("Center");
                         properties.insert("CenterType".into(), "Reference".into());
                         properties.insert("CenterRef".into(), reference.clone());
                     }
+                    None => {}
                 }
                 (
                     existing

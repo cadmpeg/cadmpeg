@@ -2115,7 +2115,7 @@ fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
         HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, RibSide,
-        ScaleCenter, ThickenSide, VariableRadius,
+        ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
@@ -2182,8 +2182,13 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::Scale {
             bodies: crate::features::BodySelection::Unresolved,
-            center: ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0)),
-            factors: Vector3::new(1.0, 0.0, 1.0),
+            center: Some(ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0))),
+            factors: ScaleFactors {
+                uniform: None,
+                x: Some(1.0),
+                y: Some(0.0),
+                z: Some(1.0),
+            },
         },
         FeatureDefinition::DatumCoordinateSystem {
             origin: Point3::new(0.0, 0.0, 0.0),

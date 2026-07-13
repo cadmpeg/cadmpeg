@@ -1419,16 +1419,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 factors,
             } => {
                 body_selections.push(bodies);
-                let center_valid = match center {
+                let center_valid = center.as_ref().is_none_or(|center| match center {
                     ScaleCenter::Point(point) => {
                         [point.x, point.y, point.z].into_iter().all(f64::is_finite)
                     }
                     ScaleCenter::Native(reference) => !reference.is_empty(),
                     ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
-                };
+                });
                 if !center_valid
-                    || ![factors.x, factors.y, factors.z]
+                    || ![factors.uniform, factors.x, factors.y, factors.z]
                         .into_iter()
+                        .flatten()
                         .all(|factor| factor.is_finite() && factor != 0.0)
                 {
                     feature_geometry_error(findings, feature, "scale transform is invalid");
