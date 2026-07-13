@@ -942,7 +942,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
 
 fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {
     use crate::features::{
-        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef, ProfileRef,
+        BodySelection, EdgeSelection, Extent, FaceSelection, FeatureDefinition, PathRef,
+        ProfileRef, ScaleCenter,
     };
 
     let mut configuration_ordinals = HashSet::new();
@@ -1302,9 +1303,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 factors,
             } => {
                 body_selections.push(bodies);
-                if ![center.x, center.y, center.z]
-                    .into_iter()
-                    .all(f64::is_finite)
+                let center_valid = match center {
+                    ScaleCenter::Point(point) => {
+                        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                    }
+                    ScaleCenter::Native(reference) => !reference.is_empty(),
+                    ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
+                };
+                if !center_valid
                     || ![factors.x, factors.y, factors.z]
                         .into_iter()
                         .all(|factor| factor.is_finite() && factor != 0.0)

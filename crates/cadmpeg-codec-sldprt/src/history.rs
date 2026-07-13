@@ -9,7 +9,7 @@ use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration,
     DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition,
     FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId, ParameterValue,
-    PathRef, PatternKind, ProfileRef, RadiusSpec, VariableRadius,
+    PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, VariableRadius,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1663,7 +1663,17 @@ fn project_flex(feature: &Feature) -> Option<FeatureDefinition> {
 }
 
 fn project_scale(feature: &Feature) -> Option<FeatureDefinition> {
-    let center = parse_point3_mm(feature.properties.get("Center")?)?;
+    let center = match feature.properties.get("CenterType").map(String::as_str) {
+        None | Some("Point") => {
+            ScaleCenter::Point(parse_point3_mm(feature.properties.get("Center")?)?)
+        }
+        Some("Centroid") => ScaleCenter::Centroid,
+        Some("Origin" | "ModelOrigin") => ScaleCenter::ModelOrigin,
+        Some("Reference" | "CoordinateSystem") => {
+            ScaleCenter::Native(feature.properties.get("CenterRef")?.clone())
+        }
+        Some(_) => return None,
+    };
     let uniform = feature
         .parameters
         .get("Factor")
@@ -3390,11 +3400,14 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if !valid_scale_factors(*factors)
-                    || ![center.x, center.y, center.z]
-                        .into_iter()
-                        .all(f64::is_finite)
-                {
+                let center_valid = match center {
+                    ScaleCenter::Point(point) => {
+                        [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+                    }
+                    ScaleCenter::Native(reference) => !reference.is_empty(),
+                    ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
+                };
+                if !valid_scale_factors(*factors) || !center_valid {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has an invalid scale transform",
                         feature.id
@@ -3410,7 +3423,24 @@ pub fn sync_neutral_features(
                 parameters.insert("ScaleZ".into(), factors.z.to_string());
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Bodies".into(), selection.expect("checked above"));
-                properties.insert("Center".into(), format_point3_mm(*center));
+                properties.remove("Center");
+                properties.remove("CenterRef");
+                match center {
+                    ScaleCenter::Centroid => {
+                        properties.insert("CenterType".into(), "Centroid".into());
+                    }
+                    ScaleCenter::ModelOrigin => {
+                        properties.insert("CenterType".into(), "ModelOrigin".into());
+                    }
+                    ScaleCenter::Point(point) => {
+                        properties.insert("CenterType".into(), "Point".into());
+                        properties.insert("Center".into(), format_point3_mm(*point));
+                    }
+                    ScaleCenter::Native(reference) => {
+                        properties.insert("CenterType".into(), "Reference".into());
+                        properties.insert("CenterRef".into(), reference.clone());
+                    }
+                }
                 (
                     existing
                         .as_deref()

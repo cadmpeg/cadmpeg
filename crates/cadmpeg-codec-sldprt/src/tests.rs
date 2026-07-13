@@ -6477,14 +6477,19 @@ fn semantic_writer_round_trips_typed_thicken() {
 
 #[test]
 fn semantic_writer_round_trips_typed_scale() {
-    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition, ScaleCenter};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
         0x42,
         "Contents/Keywords",
-        br#"<Keywords><Scale Name="Resize" Type="Scale" id="16" Bodies="body:1" Center="1mm,2mm,3mm"><Dimension Name="Factor">2</Dimension></Scale></Keywords>"#,
+        br#"<Keywords>
+            <Scale Name="Point" Type="Scale" id="16" Bodies="body:1" Center="1mm,2mm,3mm"><Dimension Name="Factor">2</Dimension></Scale>
+            <Scale Name="Centroid" Type="Scale" id="17" Bodies="body:1" CenterType="Centroid"><Dimension Name="Factor">1.1</Dimension></Scale>
+            <Scale Name="Origin" Type="Scale" id="18" Bodies="body:1" CenterType="Origin"><Dimension Name="Factor">1.2</Dimension></Scale>
+            <Scale Name="Reference" Type="Scale" id="19" Bodies="body:1" CenterType="CoordinateSystem" CenterRef="csys:4"><Dimension Name="Factor">1.3</Dimension></Scale>
+        </Keywords>"#,
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -6493,9 +6498,30 @@ fn semantic_writer_round_trips_typed_scale() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Scale {
             bodies: BodySelection::Native(selection),
-            center: Point3 { x: 1.0, y: 2.0, z: 3.0 },
+            center: ScaleCenter::Point(Point3 { x: 1.0, y: 2.0, z: 3.0 }),
             factors: Vector3 { x: 2.0, y: 2.0, z: 2.0 },
         } if selection == "body:1"
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::Scale {
+            center: ScaleCenter::Centroid,
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::Scale {
+            center: ScaleCenter::ModelOrigin,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[3].definition,
+        FeatureDefinition::Scale {
+            center: ScaleCenter::Native(reference),
+            ..
+        } if reference == "csys:4"
     ));
 
     let FeatureDefinition::Scale {
@@ -6507,7 +6533,7 @@ fn semantic_writer_round_trips_typed_scale() {
         panic!("typed scale feature");
     };
     *bodies = BodySelection::Native("body:2,body:3".into());
-    *center = Point3::new(4.0, 5.0, 6.0);
+    *center = ScaleCenter::Point(Point3::new(4.0, 5.0, 6.0));
     *factors = Vector3::new(1.5, 2.0, 2.5);
 
     let mut encoded = Vec::new();
@@ -6524,14 +6550,21 @@ fn semantic_writer_round_trips_typed_scale() {
     assert_eq!(feature.parameters["ScaleX"], "1.5");
     assert_eq!(feature.parameters["ScaleY"], "2");
     assert_eq!(feature.parameters["ScaleZ"], "2.5");
+    let native_features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native_features[1].properties["CenterType"], "Centroid");
+    assert!(!native_features[1].properties.contains_key("Center"));
+    assert_eq!(native_features[2].properties["CenterType"], "ModelOrigin");
+    assert!(!native_features[2].properties.contains_key("Center"));
+    assert_eq!(native_features[3].properties["CenterType"], "Reference");
+    assert_eq!(native_features[3].properties["CenterRef"], "csys:4");
     assert!(matches!(
         &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Scale {
-            center: Point3 {
+            center: ScaleCenter::Point(Point3 {
                 x: 4.0,
                 y: 5.0,
                 z: 6.0
-            },
+            }),
             factors: Vector3 {
                 x: 1.5,
                 y: 2.0,
@@ -6539,6 +6572,27 @@ fn semantic_writer_round_trips_typed_scale() {
             },
             ..
         }
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[1].definition,
+        FeatureDefinition::Scale {
+            center: ScaleCenter::Centroid,
+            ..
+        }
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[2].definition,
+        FeatureDefinition::Scale {
+            center: ScaleCenter::ModelOrigin,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &regenerated.ir.model.features[3].definition,
+        FeatureDefinition::Scale {
+            center: ScaleCenter::Native(reference),
+            ..
+        } if reference == "csys:4"
     ));
 }
 

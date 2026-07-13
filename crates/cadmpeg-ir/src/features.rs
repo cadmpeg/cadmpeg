@@ -379,8 +379,8 @@ pub enum FeatureDefinition {
     Scale {
         /// Bodies transformed by the operation.
         bodies: BodySelection,
-        /// Fixed point of the scale transform.
-        center: Point3,
+        /// Fixed locus of the scale transform.
+        center: ScaleCenter,
         /// Dimensionless scale factors along model-space x, y, and z.
         factors: Vector3,
     },
@@ -420,6 +420,20 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Fixed locus of a body-scale transform.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ScaleCenter {
+    /// Combined centroid of the selected bodies.
+    Centroid,
+    /// Model coordinate-system origin.
+    ModelOrigin,
+    /// Explicit model-space point.
+    Point(Point3),
+    /// Format-native coordinate-system or reference identifier.
+    Native(String),
 }
 
 /// Direction in which a thicken feature adds material.
