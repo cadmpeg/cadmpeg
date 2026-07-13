@@ -8,7 +8,7 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEntityHeader,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
     DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
@@ -38,6 +38,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_dimension_locus_groups",
     "design_dimension_locus_pairs",
     "design_dimension_null_locus_pairs",
+    "design_edge_operands",
     "design_entity_headers",
     "design_material_assignments",
     "design_objects",
@@ -78,6 +79,7 @@ macro_rules! f3d_arenas {
             design_dimension_locus_groups: DesignDimensionLocusGroup;
             design_dimension_locus_pairs: DesignDimensionLocusPair;
             design_dimension_null_locus_pairs: DesignDimensionNullLocusPair;
+            design_edge_operands: DesignEdgeOperand;
             design_parameter_companions: DesignParameterCompanion;
             design_parameter_owners: DesignParameterOwner;
             design_parameter_scopes: DesignParameterScope;
@@ -187,6 +189,9 @@ pub struct F3dNative {
     /// Null-plus-typed loci recovered from dimensional companion graphs.
     #[serde(default)]
     pub design_dimension_null_locus_pairs: Vec<DesignDimensionNullLocusPair>,
+    /// Edge-selection operands recovered from Fillet and Chamfer scopes.
+    #[serde(default)]
+    pub design_edge_operands: Vec<DesignEdgeOperand>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub design_parameter_companions: Vec<DesignParameterCompanion>,
@@ -292,6 +297,7 @@ impl Default for F3dNative {
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),
             design_dimension_null_locus_pairs: Vec::new(),
+            design_edge_operands: Vec::new(),
             design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),

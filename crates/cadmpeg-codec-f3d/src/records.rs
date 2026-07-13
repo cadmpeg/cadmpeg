@@ -530,6 +530,37 @@ pub struct DesignParameterScope {
     pub paired_byte_offset: u64,
 }
 
+/// Edge-selection operand owned by a Fillet or Chamfer parameter scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeOperand {
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning parameter-scope record.
+    pub scope_record_index: u32,
+    /// Zero-based position in the scope's ordered reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity named by the scope table.
+    pub record_index: u32,
+    /// Byte offset of the primary indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII primary class tag.
+    pub class_tag: String,
+    /// Byte offset of the same-index paired header.
+    pub paired_byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII paired class tag.
+    pub paired_class_tag: String,
+    /// Indexed record containing the edge regeneration recipe.
+    pub recipe_record_index: u32,
+    /// Byte offset of the recipe record's indexed header.
+    pub recipe_record_byte_offset: u64,
+    /// Native construction-recipe arena id.
+    pub recipe_id: String,
+    /// Identity of the indexed record following the operand frame.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record following the operand frame.
+    pub next_byte_offset: u64,
+}
+
 /// Local-to-model placement frame referenced by a Design sketch scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignSketchPlacement {

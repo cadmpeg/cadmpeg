@@ -132,6 +132,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|record| (design_stream(&record.id), record.record_index))
         .collect::<HashSet<_>>();
+    let records_by_index = native
+        .design_record_headers
+        .iter()
+        .map(|record| ((design_stream(&record.id), record.record_index), record))
+        .collect::<std::collections::HashMap<_, _>>();
+    let recipes_by_id = native
+        .construction_recipes
+        .iter()
+        .map(|recipe| (recipe.id.as_str(), recipe))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut parameter_indices = HashSet::new();
     let mut parameter_ordinals = HashSet::new();
     let parameters_by_index = native
@@ -254,6 +264,73 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion Design parameter scope has an invalid paired frame".into(),
+                entity: Some(scope.id.clone()),
+            });
+        }
+    }
+    let mut edge_operand_slots = HashSet::new();
+    let mut edge_operand_records = HashSet::new();
+    let mut edge_operand_scopes = HashSet::new();
+    for operand in &native.design_edge_operands {
+        let native_stream = design_stream(&operand.id);
+        let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
+        let header = records_by_index.get(&(native_stream, operand.record_index));
+        let recipe = recipes_by_id.get(operand.recipe_id.as_str());
+        let valid = operand.class_tag.len() == 3
+            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && operand.paired_class_tag.len() == 3
+            && operand
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && scope.is_some_and(|scope| {
+                matches!(scope.kind.as_str(), "Fillet" | "Chamfer")
+                    && usize::try_from(operand.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        == Some(&operand.record_index)
+            })
+            && header.is_some_and(|header| {
+                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+            })
+            && operand.paired_byte_offset > operand.byte_offset
+            && operand.recipe_record_index == operand.record_index.saturating_add(3)
+            && operand.recipe_record_byte_offset > operand.paired_byte_offset
+            && operand.next_byte_offset > operand.recipe_record_byte_offset
+            && recipe.is_some_and(|recipe| {
+                design_stream(&recipe.id) == native_stream
+                    && recipe.kind == crate::records::ConstructionRecipeKind::Edge
+                    && recipe.byte_offset > operand.recipe_record_byte_offset
+                    && recipe.byte_offset < operand.next_byte_offset
+            })
+            && edge_operand_slots.insert((
+                native_stream,
+                operand.scope_record_index,
+                operand.scope_reference_ordinal,
+            ))
+            && edge_operand_records.insert((native_stream, operand.record_index));
+        if valid {
+            edge_operand_scopes.insert((native_stream, operand.scope_record_index));
+        } else {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design edge operand has an invalid scope or recipe frame".into(),
+                entity: Some(operand.id.clone()),
+            });
+        }
+    }
+    for scope in native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
+    {
+        let native_stream = design_stream(&scope.id);
+        if !edge_operand_scopes.contains(&(native_stream, scope.record_index)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design edge-treatment scope has no edge recipe operand".into(),
                 entity: Some(scope.id.clone()),
             });
         }

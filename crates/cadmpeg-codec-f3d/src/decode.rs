@@ -484,6 +484,9 @@ fn populate_annotations(
         for entity in &native.design_parameter_scopes {
             note(&entity.id, "design_parameter_scope");
         }
+        for entity in &native.design_edge_operands {
+            note(&entity.id, "design_edge_operand");
+        }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
             note(&crate::design::neutral_sketch_id(entity).0, "sketch");
@@ -757,6 +760,12 @@ fn extend_related_design_records(
     native
         .design_record_headers
         .sort_by_key(|record| record.id.clone());
+    native.design_edge_operands = crate::design::decode_edge_operands(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_record_headers,
+        &native.construction_recipes,
+    )?;
     native.design_sketch_placements =
         crate::design::decode_sketch_placements(scan, &native.design_parameter_scopes)?;
     Ok(())

@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEntityHeader, DesignObject,
-    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
+    DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
     SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
@@ -2403,6 +2403,116 @@ pub fn decode_parameter_scopes(
     Ok(out)
 }
 
+/// Decode the edge-recipe operand frames named by Fillet and Chamfer scopes.
+pub fn decode_edge_operands(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+) -> Result<Vec<DesignEdgeOperand>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for scope in scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
+    {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            let Some(operand) = parse_edge_operand(bytes, scope, ordinal, header, recipes) else {
+                continue;
+            };
+            out.push(operand);
+        }
+    }
+    out.sort_by_key(|operand| operand.id.clone());
+    Ok(out)
+}
+
+fn parse_edge_operand(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+) -> Option<DesignEdgeOperand> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let mut offsets = Vec::with_capacity(5);
+    let mut position = start.checked_add(11)?;
+    for _ in 0..5 {
+        let offset = next_indexed_record_offset(bytes, position)?;
+        offsets.push(offset);
+        position = offset.checked_add(11)?;
+    }
+    let mut indexed = Vec::with_capacity(offsets.len());
+    for offset in &offsets {
+        let (class_tag, after_tag) = lp_ascii(bytes, *offset)?;
+        indexed.push((class_tag, u32_at(bytes, after_tag)?));
+    }
+    let next_one = header.record_index.checked_add(1)?;
+    let next_two = header.record_index.checked_add(2)?;
+    let recipe_record_index = header.record_index.checked_add(3)?;
+    if indexed[0].1 != header.record_index
+        || indexed[1].1 != next_one
+        || indexed[2].1 != next_two
+        || indexed[3].1 != recipe_record_index
+    {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let recipe_start = u64::try_from(offsets[3]).ok()?;
+    let next_byte_offset = u64::try_from(offsets[4]).ok()?;
+    let matches = recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream)
+                && recipe.kind == ConstructionRecipeKind::Edge
+                && recipe.byte_offset > recipe_start
+                && recipe.byte_offset < next_byte_offset
+        })
+        .collect::<Vec<_>>();
+    let [recipe] = matches.as_slice() else {
+        return None;
+    };
+    Some(DesignEdgeOperand {
+        id: format!(
+            "f3d:{}:design-edge-operand#{}",
+            stream.strip_prefix("f3d:").unwrap_or(stream),
+            header.byte_offset
+        ),
+        scope_record_index: scope.record_index,
+        scope_reference_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        paired_byte_offset: u64::try_from(offsets[0]).ok()?,
+        paired_class_tag: indexed[0].0.clone(),
+        recipe_record_index,
+        recipe_record_byte_offset: recipe_start,
+        recipe_id: recipe.id.clone(),
+        next_record_index: indexed[4].1,
+        next_byte_offset,
+    })
+}
+
 fn parse_parameter_scope(
     bytes: &[u8],
     header: &DesignRecordHeader,
@@ -4273,16 +4383,16 @@ mod relation_tests {
     use super::{
         bind_dimension_loci, bind_sketch_graph, find_dimension_locus_pair, identity_matrix,
         next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_parameter_companion,
-        parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
-        parse_sketch_relation, project_parameter_design, project_sketch_constraints,
-        project_sketch_design,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_parameter_design,
+        project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
-        DesignDimensionLocusPair, DesignEntityHeader, DesignObjectKind, DesignParameterKind,
-        DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-        SketchRelation, SketchRelationOperand,
+        ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
+        DesignObjectKind, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -4621,6 +4731,70 @@ mod relation_tests {
         assert_eq!(scope.frame_length, paired_at as u64);
         assert_eq!(scope.paired_class_tag, "261");
         assert_eq!(scope.paired_byte_offset, paired_at as u64);
+    }
+
+    #[test]
+    fn edge_operand_follows_consecutive_nested_records_to_its_recipe() {
+        fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> u64 {
+            let offset = u64::try_from(bytes.len()).expect("generated frame length fits u64");
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&class_tag);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            offset
+        }
+
+        let mut bytes = Vec::new();
+        header(&mut bytes, *b"306", 100);
+        let paired_at = header(&mut bytes, *b"259", 100);
+        header(&mut bytes, *b"408", 101);
+        header(&mut bytes, *b"414", 102);
+        let recipe_record_at = header(&mut bytes, *b"423", 103);
+        bytes.extend_from_slice(&[0; 32]);
+        let next_at = header(&mut bytes, *b"306", 104);
+        let scope = DesignParameterScope {
+            id: "f3d:Design/BulkStream.dat:scope#1".into(),
+            byte_offset: 1000,
+            class_tag: "301".into(),
+            record_index: 1,
+            frame_length: 200,
+            kind: "Fillet".into(),
+            kind_offset: 1100,
+            reference_count_offset: 1080,
+            reference_members: vec![100],
+            reference_member_offsets: vec![1085],
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 1200,
+        };
+        let record = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#100".into(),
+            byte_offset: 0,
+            class_tag: "306".into(),
+            record_index: 100,
+        };
+        let recipe = ConstructionRecipe {
+            id: "f3d:Design/BulkStream.dat:construction-recipe#60".into(),
+            byte_offset: recipe_record_at + 16,
+            record_index_offset: Some(recipe_record_at + 8),
+            kind: ConstructionRecipeKind::Edge,
+            design_id: None,
+            design_id_offset: None,
+            design_id_binary_u32: false,
+            recipe_index: 7,
+            record_index: 303,
+        };
+
+        let operand = parse_edge_operand(&bytes, &scope, 0, &record, std::slice::from_ref(&recipe))
+            .expect("edge recipe operand");
+        assert_eq!(operand.record_index, 100);
+        assert_eq!(operand.paired_byte_offset, paired_at);
+        assert_eq!(operand.recipe_record_index, 103);
+        assert_eq!(operand.recipe_record_byte_offset, recipe_record_at);
+        assert_eq!(operand.recipe_id, recipe.id);
+        assert_eq!(operand.next_record_index, 104);
+        assert_eq!(operand.next_byte_offset, next_at);
     }
 
     #[test]
