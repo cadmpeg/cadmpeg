@@ -18,9 +18,15 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
@@ -396,6 +402,7 @@ impl Codec for FcstdCodec {
                 &shape_payloads,
                 &graph.properties,
             ));
+            transfer_text_topology(&mut ir, &shape_payloads)?;
         }
         let losses = if options.container_only {
             Vec::new()
@@ -816,6 +823,329 @@ fn transfer_text_tessellations(
                 })
         })
         .collect()
+}
+
+fn transfer_text_topology(
+    ir: &mut CadIr,
+    payloads: &[brep::ShapePayloadRecord],
+) -> Result<(), CodecError> {
+    for payload in payloads {
+        let Some(text) = &payload.text else {
+            continue;
+        };
+        let mut vertices = HashMap::new();
+        for shape in &text.tshapes {
+            let brep::TextTShapeGeometry::Vertex {
+                tolerance, point, ..
+            } = &shape.geometry
+            else {
+                continue;
+            };
+            let point_id = PointId(format!("{}:point#{}", payload.id, shape.index));
+            let vertex_id = VertexId(format!("{}:vertex#{}", payload.id, shape.index));
+            ir.model.points.push(Point {
+                id: point_id.clone(),
+                position: *point,
+            });
+            ir.model.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: Some(*tolerance),
+            });
+            vertices.insert(shape.index, vertex_id);
+        }
+
+        let mut edges = HashMap::new();
+        for shape in &text.tshapes {
+            let brep::TextTShapeGeometry::Edge {
+                tolerance,
+                degenerated,
+                representations,
+                ..
+            } = &shape.geometry
+            else {
+                continue;
+            };
+            let endpoint = |orientation: brep::TextOrientation| {
+                shape
+                    .children
+                    .iter()
+                    .find(|child| child.orientation == orientation)
+                    .or_else(|| shape.children.first())
+                    .and_then(|child| vertices.get(&child.shape))
+                    .cloned()
+            };
+            let Some(start) = endpoint(brep::TextOrientation::Forward) else {
+                continue;
+            };
+            let end = endpoint(brep::TextOrientation::Reversed).unwrap_or_else(|| start.clone());
+            let curve_representation = representations
+                .iter()
+                .find(|representation| representation.kind == 1 && representation.location == 0);
+            let curve = curve_representation.map(|representation| {
+                CurveId(format!("{}:curve#{}", payload.id, representation.primary))
+            });
+            let edge_id = EdgeId(format!("{}:edge#{}", payload.id, shape.index));
+            ir.model.edges.push(Edge {
+                id: edge_id.clone(),
+                curve: (!*degenerated).then_some(curve).flatten(),
+                start,
+                end,
+                param_range: curve_representation
+                    .and_then(|representation| representation.parameter_range),
+                tolerance: Some(*tolerance),
+            });
+            edges.insert(shape.index, edge_id);
+        }
+
+        let body_roots = collect_body_roots(text)?;
+        for root in body_roots {
+            append_body_topology(ir, payload, text, &root, &edges);
+        }
+    }
+    close_radial_rings(&mut ir.model.coedges);
+    Ok(())
+}
+
+fn collect_body_roots(text: &brep::TextFacts) -> Result<Vec<brep::TextShapeUse>, CodecError> {
+    fn visit(
+        text: &brep::TextFacts,
+        shape_use: &brep::TextShapeUse,
+        output: &mut Vec<brep::TextShapeUse>,
+    ) -> Result<(), CodecError> {
+        let shape = text
+            .tshapes
+            .get(shape_use.shape - 1)
+            .ok_or_else(|| CodecError::Malformed(format!("missing TShape {}", shape_use.shape)))?;
+        match shape.kind {
+            brep::TextShapeKind::Solid
+            | brep::TextShapeKind::Shell
+            | brep::TextShapeKind::Wire
+            | brep::TextShapeKind::Face => output.push(shape_use.clone()),
+            brep::TextShapeKind::CompSolid | brep::TextShapeKind::Compound => {
+                for child in &shape.children {
+                    visit(text, child, output)?;
+                }
+            }
+            brep::TextShapeKind::Vertex | brep::TextShapeKind::Edge => {}
+        }
+        Ok(())
+    }
+
+    let mut output = Vec::new();
+    for root in &text.roots {
+        visit(text, root, &mut output)?;
+    }
+    Ok(output)
+}
+
+fn append_body_topology(
+    ir: &mut CadIr,
+    payload: &brep::ShapePayloadRecord,
+    text: &brep::TextFacts,
+    root: &brep::TextShapeUse,
+    edges: &HashMap<usize, EdgeId>,
+) {
+    let root_shape = &text.tshapes[root.shape - 1];
+    let body_id = BodyId(format!("{}:body#{}", payload.id, root.shape));
+    let region_id = RegionId(format!("{}:region#{}", payload.id, root.shape));
+    let kind = match root_shape.kind {
+        brep::TextShapeKind::Solid => BodyKind::Solid,
+        brep::TextShapeKind::Wire => BodyKind::Wire,
+        brep::TextShapeKind::Shell | brep::TextShapeKind::Face => BodyKind::Sheet,
+        _ => BodyKind::General,
+    };
+    let transform = (root.location != 0).then(|| text.locations[root.location - 1].transform);
+    let shell_uses = match root_shape.kind {
+        brep::TextShapeKind::Solid => root_shape
+            .children
+            .iter()
+            .filter(|child| text.tshapes[child.shape - 1].kind == brep::TextShapeKind::Shell)
+            .cloned()
+            .collect::<Vec<_>>(),
+        brep::TextShapeKind::Shell => vec![root.clone()],
+        brep::TextShapeKind::Face | brep::TextShapeKind::Wire => vec![root.clone()],
+        _ => Vec::new(),
+    };
+    let mut shell_ids = Vec::new();
+    for shell_use in shell_uses {
+        let shell_id = append_shell_topology(ir, payload, text, &region_id, &shell_use, edges);
+        shell_ids.push(shell_id);
+    }
+    if shell_ids.is_empty() {
+        return;
+    }
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind,
+        regions: vec![region_id.clone()],
+        transform,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: region_id,
+        body: body_id,
+        shells: shell_ids,
+    });
+}
+
+fn append_shell_topology(
+    ir: &mut CadIr,
+    payload: &brep::ShapePayloadRecord,
+    text: &brep::TextFacts,
+    region_id: &RegionId,
+    shell_use: &brep::TextShapeUse,
+    edges: &HashMap<usize, EdgeId>,
+) -> ShellId {
+    let shape = &text.tshapes[shell_use.shape - 1];
+    let shell_id = ShellId(format!("{}:shell#{}", payload.id, shell_use.shape));
+    let face_uses = match shape.kind {
+        brep::TextShapeKind::Shell => shape
+            .children
+            .iter()
+            .filter(|child| text.tshapes[child.shape - 1].kind == brep::TextShapeKind::Face)
+            .cloned()
+            .collect::<Vec<_>>(),
+        brep::TextShapeKind::Face => vec![shell_use.clone()],
+        _ => Vec::new(),
+    };
+    let mut face_ids = Vec::new();
+    for face_use in face_uses {
+        if let Some(face_id) = append_face_topology(ir, payload, text, &shell_id, &face_use, edges)
+        {
+            face_ids.push(face_id);
+        }
+    }
+    let wire_edges = if shape.kind == brep::TextShapeKind::Wire {
+        shape
+            .children
+            .iter()
+            .filter_map(|child| edges.get(&child.shape).cloned())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    ir.model.shells.push(Shell {
+        id: shell_id.clone(),
+        region: region_id.clone(),
+        faces: face_ids,
+        wire_edges,
+        free_vertices: Vec::new(),
+    });
+    shell_id
+}
+
+fn append_face_topology(
+    ir: &mut CadIr,
+    payload: &brep::ShapePayloadRecord,
+    text: &brep::TextFacts,
+    shell_id: &ShellId,
+    face_use: &brep::TextShapeUse,
+    edges: &HashMap<usize, EdgeId>,
+) -> Option<FaceId> {
+    let shape = &text.tshapes[face_use.shape - 1];
+    let brep::TextTShapeGeometry::Face {
+        tolerance,
+        surface,
+        location,
+        ..
+    } = &shape.geometry
+    else {
+        return None;
+    };
+    if *surface == 0 || *location != 0 || face_use.location != 0 {
+        return None;
+    }
+    let face_id = FaceId(format!("{}:face#{}", payload.id, face_use.shape));
+    let mut loop_ids = Vec::new();
+    for (loop_index, wire_use) in shape
+        .children
+        .iter()
+        .filter(|child| text.tshapes[child.shape - 1].kind == brep::TextShapeKind::Wire)
+        .enumerate()
+    {
+        let wire = &text.tshapes[wire_use.shape - 1];
+        let loop_id = LoopId(format!(
+            "{}:loop#{}:{}",
+            payload.id,
+            face_use.shape,
+            loop_index + 1
+        ));
+        let edge_uses = wire
+            .children
+            .iter()
+            .filter(|child| edges.contains_key(&child.shape))
+            .collect::<Vec<_>>();
+        let coedge_ids = (0..edge_uses.len())
+            .map(|index| {
+                CoedgeId(format!(
+                    "{}:coedge#{}:{}:{}",
+                    payload.id,
+                    face_use.shape,
+                    loop_index + 1,
+                    index + 1
+                ))
+            })
+            .collect::<Vec<_>>();
+        for (index, edge_use) in edge_uses.iter().enumerate() {
+            let id = coedge_ids[index].clone();
+            let next = coedge_ids[(index + 1) % coedge_ids.len()].clone();
+            let previous = coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone();
+            ir.model.coedges.push(Coedge {
+                id: id.clone(),
+                owner_loop: loop_id.clone(),
+                edge: edges[&edge_use.shape].clone(),
+                next,
+                previous,
+                radial_next: id,
+                sense: use_sense(edge_use.orientation),
+                pcurve: None,
+            });
+        }
+        if !coedge_ids.is_empty() {
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face_id.clone(),
+                coedges: coedge_ids,
+            });
+            loop_ids.push(loop_id);
+        }
+    }
+    ir.model.faces.push(Face {
+        id: face_id.clone(),
+        shell: shell_id.clone(),
+        surface: SurfaceId(format!("{}:surface#{}", payload.id, surface)),
+        sense: use_sense(face_use.orientation),
+        loops: loop_ids,
+        name: None,
+        color: None,
+        tolerance: Some(*tolerance),
+    });
+    Some(face_id)
+}
+
+fn use_sense(orientation: brep::TextOrientation) -> Sense {
+    match orientation {
+        brep::TextOrientation::Reversed => Sense::Reversed,
+        brep::TextOrientation::Forward
+        | brep::TextOrientation::Internal
+        | brep::TextOrientation::External => Sense::Forward,
+    }
+}
+
+fn close_radial_rings(coedges: &mut [Coedge]) {
+    let mut by_edge: HashMap<EdgeId, Vec<usize>> = HashMap::new();
+    for (index, coedge) in coedges.iter().enumerate() {
+        by_edge.entry(coedge.edge.clone()).or_default().push(index);
+    }
+    for indices in by_edge.values() {
+        for (position, index) in indices.iter().enumerate() {
+            let next = indices[(position + 1) % indices.len()];
+            coedges[*index].radial_next = coedges[next].id.clone();
+        }
+    }
 }
 
 fn logical_ledger(
