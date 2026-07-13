@@ -569,8 +569,128 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
                 radius: *radius,
             })
         }
-        B5Surface::Revolution { .. } | B5Surface::Nurbs(_) => None,
+        B5Surface::Nurbs(surface) => nurbs_isocurve(pcurve, surface).map(CurveGeometry::Nurbs),
+        B5Surface::Revolution { .. } => None,
     }
+}
+
+fn nurbs_isocurve(pcurve: &B5Pcurve, surface: &NurbsSurface) -> Option<NurbsCurve> {
+    if let Some(u) = constant_coordinate(&pcurve.control_points, 0) {
+        contract_surface(surface, u, true)
+    } else if let Some(v) = constant_coordinate(&pcurve.control_points, 1) {
+        contract_surface(surface, v, false)
+    } else {
+        None
+    }
+}
+
+fn contract_surface(surface: &NurbsSurface, parameter: f64, fix_u: bool) -> Option<NurbsCurve> {
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let (fixed_basis, varying_count, degree, knots) = if fix_u {
+        (
+            basis_values(
+                &surface.u_knots,
+                usize::try_from(surface.u_degree).ok()?,
+                parameter,
+                u_count,
+            )?,
+            v_count,
+            surface.v_degree,
+            surface.v_knots.clone(),
+        )
+    } else {
+        (
+            basis_values(
+                &surface.v_knots,
+                usize::try_from(surface.v_degree).ok()?,
+                parameter,
+                v_count,
+            )?,
+            u_count,
+            surface.u_degree,
+            surface.u_knots.clone(),
+        )
+    };
+    let mut control_points = Vec::with_capacity(varying_count);
+    let mut weights = Vec::with_capacity(varying_count);
+    for varying in 0..varying_count {
+        let mut numerator = [0.0; 3];
+        let mut denominator = 0.0;
+        for (fixed, basis) in fixed_basis.iter().copied().enumerate() {
+            let index = if fix_u {
+                fixed.checked_mul(v_count)?.checked_add(varying)?
+            } else {
+                varying.checked_mul(v_count)?.checked_add(fixed)?
+            };
+            let point = surface.control_points.get(index)?;
+            let weight = surface
+                .weights
+                .as_ref()
+                .and_then(|values| values.get(index))
+                .copied()
+                .unwrap_or(1.0);
+            let factor = basis * weight;
+            numerator[0] += factor * point.x;
+            numerator[1] += factor * point.y;
+            numerator[2] += factor * point.z;
+            denominator += factor;
+        }
+        if !denominator.is_finite() || denominator.abs() <= f64::EPSILON {
+            return None;
+        }
+        control_points.push(Point3::new(
+            numerator[0] / denominator,
+            numerator[1] / denominator,
+            numerator[2] / denominator,
+        ));
+        weights.push(denominator);
+    }
+    let rational = surface.weights.is_some();
+    Some(NurbsCurve {
+        degree,
+        knots,
+        control_points,
+        weights: rational.then_some(weights),
+        periodic: if fix_u {
+            surface.v_periodic
+        } else {
+            surface.u_periodic
+        },
+    })
+}
+
+fn basis_values(knots: &[f64], degree: usize, parameter: f64, count: usize) -> Option<Vec<f64>> {
+    if knots.len() != count.checked_add(degree)?.checked_add(1)? || count == 0 {
+        return None;
+    }
+    let mut basis = vec![0.0; count + degree];
+    for (index, value) in basis.iter_mut().enumerate() {
+        if (knots.get(index)? <= &parameter && &parameter < knots.get(index + 1)?)
+            || (parameter == *knots.last()? && index + 1 == count)
+        {
+            *value = 1.0;
+        }
+    }
+    for level in 1..=degree {
+        for index in 0..count + degree - level {
+            let left_denominator = knots[index + level] - knots[index];
+            let right_denominator = knots[index + level + 1] - knots[index + 1];
+            let left = if left_denominator.abs() <= f64::EPSILON {
+                0.0
+            } else {
+                (parameter - knots[index]) / left_denominator * basis[index]
+            };
+            let right = if right_denominator.abs() <= f64::EPSILON {
+                0.0
+            } else {
+                (knots[index + level + 1] - parameter) / right_denominator * basis[index + 1]
+            };
+            basis[index] = left + right;
+        }
+    }
+    basis.truncate(count);
+    basis.iter().all(|value| value.is_finite()).then_some(basis)
 }
 
 fn constant_coordinate(points: &[[f64; 2]], dimension: usize) -> Option<f64> {
@@ -1063,7 +1183,9 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 
 #[cfg(test)]
 mod tests {
-    use super::{lifted_curve_geometry, neutral_pcurve_point, revolution_surface};
+    use super::{
+        contract_surface, lifted_curve_geometry, neutral_pcurve_point, revolution_surface,
+    };
     use crate::b5::{B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
@@ -1149,5 +1271,31 @@ mod tests {
             lifted_curve_geometry(&meridian, &cylinder),
             Some(CurveGeometry::Line { .. })
         ));
+    }
+
+    #[test]
+    fn tensor_surface_contraction_preserves_exact_isocurve() {
+        let surface = cadmpeg_ir::geometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            u_count: 2,
+            v_count: 2,
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(2.0, 1.0, 2.0),
+            ],
+            weights: None,
+            u_periodic: false,
+            v_periodic: false,
+        };
+        let curve = contract_surface(&surface, 0.25, true).expect("u isocurve");
+        assert_eq!(curve.degree, 1);
+        assert_eq!(curve.knots, surface.v_knots);
+        assert_eq!(curve.control_points[0], Point3::new(0.5, 0.0, 0.0));
+        assert_eq!(curve.control_points[1], Point3::new(0.5, 1.0, 0.5));
     }
 }
