@@ -152,7 +152,7 @@ fn datum_slots(data: &[u8], mut offset: usize, count: usize) -> Option<Vec<Datum
                 offset += 8;
                 Some(f64::from_be_bytes(raw))
             }
-            0x73 | 0xbb => {
+            0x73 | 0x9f | 0xa5 | 0xbb => {
                 offset += 7;
                 data.get(start..offset)?;
                 None
@@ -232,5 +232,25 @@ mod tests {
         let data = b"\xe0\x01geom_id\0\x02\xe0\x01feat_id\0\x01outline\0\xf9\x02\x03\x18\x41\xba\x13\x99\xa9\xb3\xd8\x74\x41\x94\xad\x7e\x6a\xb0\x34\x5e\x18\x93\x29\x5a\xfc\xd5\x60\x69\x8c\x40\x79\xe9\x12\xa5\x83";
         let plane = named_zero_plane(data).expect("named plane");
         assert_eq!(plane.normal, [1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn positional_outline_preserves_opaque_seven_byte_slots() {
+        let a5 = [0xa5, 1, 2, 3, 4, 5, 6];
+        let nine_f = [0x9f, 7, 8, 9, 10, 11, 12];
+        let mut data = vec![4, 0x22, 3, 1, 1, 0];
+        data.extend(a5);
+        data.extend(ieee8(2.0));
+        data.extend(nine_f);
+        data.extend(ieee8(-2.0));
+        data.extend(ieee8(3.0));
+        data.push(0x18);
+        data.extend(a5);
+        data.extend(ieee8(-3.0));
+        data.push(0x18);
+        data.extend(nine_f);
+
+        assert_eq!(planes(&data)[0].normal, [0.0, 1.0, 0.0]);
+        assert_eq!(planes(&data)[0].offset, 0.0);
     }
 }
