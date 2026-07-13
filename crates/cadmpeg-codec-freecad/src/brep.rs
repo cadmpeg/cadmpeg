@@ -47,8 +47,10 @@ pub struct BinaryFacts {
     pub locations: Vec<TextLocation>,
     /// Ordered parameter-space curve table.
     pub curve2ds: Vec<TextCurve2d>,
-    /// Byte offset at which the 3D curve section begins.
-    pub curves_offset: usize,
+    /// Ordered 3D curve table.
+    pub curves: Vec<TextCurve>,
+    /// Byte offset immediately after the `Polygon3D` section header.
+    pub polygons3d_offset: usize,
 }
 
 /// Framing facts from a text shape set.
@@ -650,12 +652,149 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
     for _ in 0..curve_count {
         curve2ds.push(parse_binary_curve2d(&mut cursor, 0)?);
     }
-    cursor.expect_section_name("Curves")?;
+    let curve_count = cursor.section_count("Curves")?;
+    let mut curves = Vec::with_capacity(curve_count);
+    for _ in 0..curve_count {
+        curves.push(parse_binary_curve(&mut cursor, 0)?);
+    }
+    cursor.expect_section_name("Polygon3D")?;
     Ok(BinaryFacts {
         topology_version: version,
         locations,
         curve2ds,
-        curves_offset: cursor.offset,
+        curves,
+        polygons3d_offset: cursor.offset,
+    })
+}
+
+fn parse_binary_curve(
+    cursor: &mut BinaryCursor<'_>,
+    depth: usize,
+) -> Result<TextCurve, CodecError> {
+    if depth > 256 {
+        return Err(CodecError::Malformed(
+            "binary 3D curve nesting exceeds 256".into(),
+        ));
+    }
+    Ok(match cursor.u8("binary 3D curve kind")? {
+        1 => TextCurve::Line {
+            origin: cursor.point3("binary line origin")?,
+            direction: cursor.vector3("binary line direction")?,
+        },
+        2 => {
+            let center = cursor.point3("binary circle center")?;
+            let axis = cursor.vector3("binary circle axis")?;
+            let ref_direction = cursor.vector3("binary circle reference direction")?;
+            cursor.vector3("binary circle y axis")?;
+            TextCurve::Circle {
+                center,
+                axis,
+                ref_direction,
+                radius: cursor.f64("binary circle radius")?,
+            }
+        }
+        3 => {
+            let center = cursor.point3("binary ellipse center")?;
+            let axis = cursor.vector3("binary ellipse axis")?;
+            let major_direction = cursor.vector3("binary ellipse major direction")?;
+            cursor.vector3("binary ellipse minor direction")?;
+            TextCurve::Ellipse {
+                center,
+                axis,
+                major_direction,
+                major_radius: cursor.f64("binary ellipse major radius")?,
+                minor_radius: cursor.f64("binary ellipse minor radius")?,
+            }
+        }
+        4 => {
+            let vertex = cursor.point3("binary parabola vertex")?;
+            let axis = cursor.vector3("binary parabola axis")?;
+            let major_direction = cursor.vector3("binary parabola major direction")?;
+            cursor.vector3("binary parabola minor direction")?;
+            TextCurve::Parabola {
+                vertex,
+                axis,
+                major_direction,
+                focal_distance: cursor.f64("binary parabola focal distance")?,
+            }
+        }
+        5 => {
+            let center = cursor.point3("binary hyperbola center")?;
+            let axis = cursor.vector3("binary hyperbola axis")?;
+            let major_direction = cursor.vector3("binary hyperbola major direction")?;
+            cursor.vector3("binary hyperbola minor direction")?;
+            TextCurve::Hyperbola {
+                center,
+                axis,
+                major_direction,
+                major_radius: cursor.f64("binary hyperbola major radius")?,
+                minor_radius: cursor.f64("binary hyperbola minor radius")?,
+            }
+        }
+        6 => {
+            let rational = cursor.bool("binary Bezier rational flag")?;
+            let degree = usize::from(cursor.u16("binary Bezier degree")?);
+            let pole_count = degree
+                .checked_add(1)
+                .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
+            let mut control_points = Vec::with_capacity(pole_count);
+            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            for _ in 0..pole_count {
+                control_points.push(cursor.point3("binary Bezier pole")?);
+                if let Some(weights) = &mut weights {
+                    weights.push(cursor.f64("binary Bezier weight")?);
+                }
+            }
+            TextCurve::Nurbs(NurbsCurve {
+                degree: u32::try_from(degree).map_err(|_| {
+                    CodecError::Malformed("binary Bezier degree exceeds u32".into())
+                })?,
+                knots: clamped_bezier_knots(degree),
+                control_points,
+                weights,
+                periodic: false,
+            })
+        }
+        7 => {
+            let rational = cursor.bool("binary B-spline rational flag")?;
+            let periodic = cursor.bool("binary B-spline periodic flag")?;
+            let degree = u32::from(cursor.u16("binary B-spline degree")?);
+            let pole_count = cursor.count("binary B-spline pole count")?;
+            let knot_count = cursor.count("binary B-spline knot count")?;
+            let mut control_points = Vec::with_capacity(pole_count);
+            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            for _ in 0..pole_count {
+                control_points.push(cursor.point3("binary B-spline pole")?);
+                if let Some(weights) = &mut weights {
+                    weights.push(cursor.f64("binary B-spline weight")?);
+                }
+            }
+            let knots = cursor.expanded_knots(knot_count, "binary B-spline")?;
+            TextCurve::Nurbs(NurbsCurve {
+                degree,
+                knots,
+                control_points,
+                weights,
+                periodic,
+            })
+        }
+        8 => TextCurve::Trimmed {
+            parameter_range: [
+                cursor.f64("binary trim start")?,
+                cursor.f64("binary trim end")?,
+            ],
+            basis: Box::new(parse_binary_curve(cursor, depth + 1)?),
+        },
+        9 => TextCurve::Offset {
+            distance: cursor.f64("binary offset distance")?,
+            direction: cursor.vector3("binary offset direction")?,
+            basis: Box::new(parse_binary_curve(cursor, depth + 1)?),
+        },
+        other => {
+            return Err(CodecError::Malformed(format!(
+                "invalid binary 3D curve kind {other}"
+            )))
+        }
     })
 }
 
@@ -885,6 +1024,41 @@ impl<'a> BinaryCursor<'a> {
             .is_finite()
             .then_some(value)
             .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+    }
+
+    fn point3(&mut self, label: &str) -> Result<Point3, CodecError> {
+        Ok(Point3::new(
+            self.f64(label)?,
+            self.f64(label)?,
+            self.f64(label)?,
+        ))
+    }
+
+    fn vector3(&mut self, label: &str) -> Result<Vector3, CodecError> {
+        Ok(Vector3::new(
+            self.f64(label)?,
+            self.f64(label)?,
+            self.f64(label)?,
+        ))
+    }
+
+    fn expanded_knots(&mut self, count: usize, label: &str) -> Result<Vec<f64>, CodecError> {
+        let mut knots = Vec::new();
+        for _ in 0..count {
+            let knot = self.f64(label)?;
+            let multiplicity = self.count(label)?;
+            if knots
+                .len()
+                .checked_add(multiplicity)
+                .is_none_or(|len| len > 1_000_000)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "{label} expanded knot-count limit exceeded"
+                )));
+            }
+            knots.extend(std::iter::repeat_n(knot, multiplicity));
+        }
+        Ok(knots)
     }
 }
 
@@ -2404,14 +2578,29 @@ mod tests {
         for value in [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 2.0] {
             real(&mut bytes, value);
         }
-        bytes.extend_from_slice(b"Curves 0\n");
+        bytes.extend_from_slice(b"Curves 2\n");
+        bytes.push(1);
+        for value in [0.0, 0.0, 0.0, 1.0, 0.0, 0.0] {
+            real(&mut bytes, value);
+        }
+        bytes.push(9);
+        for value in [0.5, 0.0, 0.0, 1.0] {
+            real(&mut bytes, value);
+        }
+        bytes.push(1);
+        for value in [1.0, 2.0, 3.0, 0.0, 1.0, 0.0] {
+            real(&mut bytes, value);
+        }
+        bytes.extend_from_slice(b"Polygon3D 0\n");
 
         let facts = parse_binary_prefix(&bytes).expect("binary prefix");
         assert_eq!(facts.topology_version, 3);
         assert_eq!(facts.locations[0].transform.rows[0][3], 5.0);
         assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
         assert!(matches!(facts.curve2ds[1], TextCurve2d::Trimmed { .. }));
-        assert_eq!(&bytes[facts.curves_offset..], b"");
+        assert!(matches!(facts.curves[0], TextCurve::Line { .. }));
+        assert!(matches!(facts.curves[1], TextCurve::Offset { .. }));
+        assert_eq!(&bytes[facts.polygons3d_offset..], b"");
     }
 
     #[test]

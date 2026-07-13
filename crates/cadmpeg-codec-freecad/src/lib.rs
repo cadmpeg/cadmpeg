@@ -439,10 +439,14 @@ fn transfer_text_curves(
     properties: &[native::PropertyRecord],
 ) -> CurveTransfer {
     let mut transfer = CurveTransfer::default();
-    for (payload, text) in payloads
-        .iter()
-        .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
-    {
+    for payload in payloads {
+        let curves = if let Some(text) = &payload.text {
+            &text.curves
+        } else if let Some(binary) = &payload.binary {
+            &binary.curves
+        } else {
+            continue;
+        };
         let object_id = properties
             .iter()
             .find(|property| property.id == payload.property)
@@ -459,7 +463,7 @@ fn transfer_text_curves(
             layer: None,
             instance_path: Vec::new(),
         };
-        for (index, curve) in text.curves.iter().enumerate() {
+        for (index, curve) in curves.iter().enumerate() {
             let id = CurveId(format!("{}:curve#{}", payload.id, index + 1));
             append_text_curve(curve, id, &association, &mut transfer);
         }

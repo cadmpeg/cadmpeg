@@ -32,6 +32,30 @@ fn transfers_recursive_exact_parameter_curve_geometry() {
     ));
 }
 
+#[test]
+fn transfers_binary_exact_curve_carrier() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.bin"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let mut brep = b"\nOpen CASCADE Topology V3 (c)\nLocations 0\nCurve2ds 0\nCurves 1\n".to_vec();
+    brep.push(1);
+    for value in [0.0_f64, 0.0, 0.0, 1.0, 0.0, 0.0] {
+        brep.extend_from_slice(&value.to_le_bytes());
+    }
+    brep.extend_from_slice(b"Polygon3D 0\n");
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.bin", &brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("binary curve carrier");
+    assert_eq!(result.ir.model.curves.len(), 1);
+    assert!(matches!(
+        result.ir.model.curves[0].geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Line { .. }
+    ));
+    assert!(result.report.geometry_transferred);
+}
+
 fn archive(document: &str) -> Vec<u8> {
     archive_entries(&[("Document.xml", document.as_bytes())])
 }
