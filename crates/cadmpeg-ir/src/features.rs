@@ -233,6 +233,21 @@ pub enum FeatureDefinition {
         /// Inclusive upper parameter bound.
         end: f64,
     },
+    /// Circular helix or planar spiral constructed around an axis.
+    Helix {
+        /// Point on the construction axis at the curve start.
+        axis_origin: Point3,
+        /// Construction-axis direction.
+        axis_direction: Vector3,
+        /// Initial radial distance from the axis.
+        radius: Length,
+        /// Signed axial rise per revolution; zero produces a planar spiral.
+        pitch: Length,
+        /// Positive number of revolutions.
+        revolutions: f64,
+        /// Whether angular travel is clockwise when viewed along the axis.
+        clockwise: bool,
+    },
     /// Solved sketch node in the construction history.
     Sketch {
         /// Neutral sketch geometry owned by this history node, when resolved.

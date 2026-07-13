@@ -1473,6 +1473,26 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "equation curve is invalid");
                 }
             }
+            FeatureDefinition::Helix {
+                axis_origin,
+                axis_direction,
+                radius,
+                pitch,
+                revolutions,
+                ..
+            } => {
+                let valid = [axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    && valid_feature_direction(*axis_direction)
+                    && radius.0.is_finite()
+                    && radius.0 > 0.0
+                    && revolutions.is_finite()
+                    && *revolutions > 0.0;
+                if !valid {
+                    feature_geometry_error(findings, feature, "helix geometry is invalid");
+                }
+            }
             FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }

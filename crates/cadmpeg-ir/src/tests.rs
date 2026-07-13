@@ -2050,6 +2050,14 @@ fn feature_operation_geometry_is_validated() {
             start: 1.0,
             end: 0.0,
         },
+        FeatureDefinition::Helix {
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_direction: Vector3::new(0.0, 0.0, 0.0),
+            radius: Length(-1.0),
+            pitch: Length(f64::NAN),
+            revolutions: 0.0,
+            clockwise: false,
+        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
@@ -2067,6 +2075,7 @@ fn feature_operation_geometry_is_validated() {
         "scale transform is invalid",
         "coordinate-system frame is invalid",
         "equation curve is invalid",
+        "helix geometry is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

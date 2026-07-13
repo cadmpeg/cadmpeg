@@ -7474,6 +7474,96 @@ fn semantic_writer_round_trips_equation_driven_curve() {
 }
 
 #[test]
+fn semantic_writer_round_trips_helix() {
+    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Helix Name="Coil" Type="HelixSpiral" id="30" AxisOrigin="1mm,2mm,3mm" AxisDirection="0,0,1" Clockwise="true" Taper="none"><Dimension Name="Radius">4mm</Dimension><Dimension Name="Pitch">-2mm</Dimension><Dimension Name="Revolutions">3.5</Dimension></Helix></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Helix {
+            axis_origin: Point3 {
+                x: 1.0,
+                y: 2.0,
+                z: 3.0
+            },
+            axis_direction: Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+            radius: Length(4.0),
+            pitch: Length(-2.0),
+            revolutions: 3.5,
+            clockwise: true,
+        }
+    ));
+
+    let FeatureDefinition::Helix {
+        axis_origin,
+        axis_direction,
+        radius,
+        pitch,
+        revolutions,
+        clockwise,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed helix");
+    };
+    *axis_origin = Point3::new(4.0, 5.0, 6.0);
+    *axis_direction = Vector3::new(0.0, 1.0, 0.0);
+    *radius = Length(7.0);
+    *pitch = Length(8.0);
+    *revolutions = 9.25;
+    *clockwise = false;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.xml_tag, "Helix");
+    assert_eq!(feature.kind, "HelixSpiral");
+    assert_eq!(feature.properties["AxisOrigin"], "4mm,5mm,6mm");
+    assert_eq!(feature.properties["AxisDirection"], "0,1,0");
+    assert_eq!(feature.properties["Clockwise"], "false");
+    assert_eq!(feature.properties["Taper"], "none");
+    assert_eq!(feature.parameters["Radius"], "7mm");
+    assert_eq!(feature.parameters["Pitch"], "8mm");
+    assert_eq!(feature.parameters["Revolutions"], "9.25");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Helix {
+            axis_origin: Point3 {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0
+            },
+            axis_direction: Vector3 {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0
+            },
+            radius: Length(7.0),
+            pitch: Length(8.0),
+            revolutions: 9.25,
+            clockwise: false,
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

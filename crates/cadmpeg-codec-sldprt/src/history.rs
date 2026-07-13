@@ -913,6 +913,9 @@ fn project_definition(
     if feature_family(feature, "EquationDrivenCurve") || feature_family(feature, "EquationCurve") {
         return project_equation_curve(feature).unwrap_or_else(|| native_definition(feature));
     }
+    if feature_family(feature, "Helix") || feature_family(feature, "HelixSpiral") {
+        return project_helix(feature).unwrap_or_else(|| native_definition(feature));
+    }
     if is_extrude(feature) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Fillet") {
@@ -1132,6 +1135,33 @@ fn project_equation_curve(feature: &Feature) -> Option<FeatureDefinition> {
             start,
             end,
         })
+}
+
+fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
+    let axis_origin = parse_point3_mm(feature.properties.get("AxisOrigin")?)?;
+    let axis_direction = parse_valid_direction(feature.properties.get("AxisDirection")?)?;
+    let radius = parse_positive_length_mm(feature.parameters.get("Radius")?)?;
+    let pitch = parse_length_mm(feature.parameters.get("Pitch")?)?;
+    let revolutions = feature
+        .parameters
+        .get("Revolutions")?
+        .trim()
+        .parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite() && *value > 0.0)?;
+    let clockwise = feature
+        .properties
+        .get("Clockwise")
+        .and_then(|value| parse_bool(value))
+        .unwrap_or(false);
+    Some(FeatureDefinition::Helix {
+        axis_origin,
+        axis_direction,
+        radius: Length(radius),
+        pitch: Length(pitch),
+        revolutions,
+        clockwise,
+    })
 }
 
 fn valid_coordinate_frame(
@@ -2926,6 +2956,55 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::Helix {
+                axis_origin,
+                axis_direction,
+                radius,
+                pitch,
+                revolutions,
+                clockwise,
+            } => {
+                if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || !valid_direction(*axis_direction)
+                    || !radius.0.is_finite()
+                    || radius.0 <= 0.0
+                    || !revolutions.is_finite()
+                    || *revolutions <= 0.0
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has invalid helix geometry",
+                        feature.id
+                    )));
+                }
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "Helix") && !feature_family(record, "HelixSpiral")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.insert("Radius".into(), format_length_mm(radius.0));
+                parameters.insert("Pitch".into(), format_length_mm(pitch.0));
+                parameters.insert("Revolutions".into(), revolutions.to_string());
+                let mut properties = feature.source_properties.clone();
+                properties.insert("AxisOrigin".into(), format_point3_mm(*axis_origin));
+                properties.insert("AxisDirection".into(), format_vector3(*axis_direction));
+                properties.insert("Clockwise".into(), clockwise.to_string());
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Helix".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Sketch { .. } => {
                 if existing
                     .as_deref()
@@ -4587,6 +4666,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
         FeatureDefinition::EquationCurve { .. } => "EquationDrivenCurve",
+        FeatureDefinition::Helix { .. } => "Helix",
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
