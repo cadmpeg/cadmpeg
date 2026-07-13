@@ -3703,6 +3703,54 @@ fn f3d_with_smbh(smbh: &[u8]) -> Vec<u8> {
     zip.finish().unwrap().into_inner()
 }
 
+fn set_zip_entry_uncompressed_size(archive: &mut [u8], target: &[u8], size: u32) {
+    let central = archive
+        .windows(4)
+        .enumerate()
+        .find_map(|(offset, signature)| {
+            if signature != b"PK\x01\x02" || offset + 46 > archive.len() {
+                return None;
+            }
+            let name_length = u16::from_le_bytes(
+                archive[offset + 28..offset + 30]
+                    .try_into()
+                    .expect("central name-length field"),
+            ) as usize;
+            (archive.get(offset + 46..offset + 46 + name_length) == Some(target)).then_some(offset)
+        })
+        .expect("generated ZIP central-directory entry");
+    archive[central + 24..central + 28].copy_from_slice(&size.to_le_bytes());
+}
+
+#[test]
+fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
+    let mut archive = f3d_with_smbh(&synthetic_geometry_smbh());
+    let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
+    set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX);
+
+    let error = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .expect_err("oversized inflated entry must be rejected");
+    assert!(error.to_string().contains("inflated bytes"));
+}
+
+#[test]
+fn oversized_nested_protein_entry_is_rejected_before_allocation() {
+    let target = b"AssetData/InstanceProperties.bin";
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file(std::str::from_utf8(target).unwrap(), stored)
+        .unwrap();
+    zip.write_all(b"properties").unwrap();
+    let mut protein = zip.finish().unwrap().into_inner();
+    set_zip_entry_uncompressed_size(&mut protein, target, u32::MAX);
+
+    let error =
+        crate::materials::patch_protein_appearances(&protein, &std::collections::BTreeMap::new())
+            .expect_err("oversized nested Protein entry must be rejected");
+    assert!(error.to_string().contains("inflated bytes"));
+}
+
 fn f3d_with_configuration(smbh: &[u8], name: &str, payload: &[u8]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);

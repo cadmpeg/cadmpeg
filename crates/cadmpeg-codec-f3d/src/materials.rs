@@ -8,7 +8,7 @@
 //! [spec §8.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#82-materials).
 
 use std::collections::BTreeMap;
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, Write};
 
 use crate::records::DesignMaterialAssignment;
 use cadmpeg_ir::appearance::Appearance;
@@ -173,6 +173,7 @@ pub(crate) fn patch_protein_appearances(
     })?;
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let mut patched = std::collections::BTreeSet::new();
+    let mut total_inflated = 0_u64;
     for index in 0..archive.len() {
         let mut entry = archive.by_index(index).map_err(|error| {
             CodecError::Malformed(format!("cannot read nested Protein entry: {error}"))
@@ -180,8 +181,17 @@ pub(crate) fn patch_protein_appearances(
         let name = entry.name().to_owned();
         let options =
             zip::write::SimpleFileOptions::default().compression_method(entry.compression());
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry.read_to_end(&mut bytes)?;
+        let declared_size = entry.size();
+        total_inflated = total_inflated.checked_add(declared_size).ok_or_else(|| {
+            CodecError::Malformed("Protein ZIP total inflated size overflows u64".into())
+        })?;
+        if total_inflated > crate::container::MAX_ARCHIVE_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "Protein ZIP entries declare {total_inflated} inflated bytes; total limit is {}",
+                crate::container::MAX_ARCHIVE_BYTES
+            )));
+        }
+        let mut bytes = crate::container::read_entry_bounded(&mut entry, declared_size, &name)?;
         if name.ends_with("AssetData/InstanceProperties.bin") {
             patch_instance_colors(&mut bytes, edits, &mut patched)?;
         }
@@ -1011,8 +1021,9 @@ fn instance_properties(protein: &[u8]) -> Option<Vec<u8>> {
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).ok()?;
         if file.name().ends_with("AssetData/InstanceProperties.bin") {
-            let mut bytes = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut bytes).ok()?;
+            let size = file.size();
+            let name = file.name().to_owned();
+            let bytes = crate::container::read_entry_bounded(&mut file, size, &name).ok()?;
             return Some(bytes);
         }
     }
@@ -1072,8 +1083,9 @@ fn nested_entry(protein: &[u8], suffix: &str) -> Option<Vec<u8>> {
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).ok()?;
         if file.name().ends_with(suffix) {
-            let mut bytes = Vec::with_capacity(file.size() as usize);
-            file.read_to_end(&mut bytes).ok()?;
+            let size = file.size();
+            let name = file.name().to_owned();
+            let bytes = crate::container::read_entry_bounded(&mut file, size, &name).ok()?;
             return Some(bytes);
         }
     }

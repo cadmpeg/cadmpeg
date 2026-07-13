@@ -16,6 +16,35 @@ use zip::CompressionMethod;
 
 use crate::asm_header;
 
+/// Maximum compressed `.f3d` archive size accepted by the in-memory codec.
+pub(crate) const MAX_ARCHIVE_BYTES: u64 = 1024 * 1024 * 1024;
+/// Maximum inflated size accepted for one top-level or nested ZIP entry.
+pub(crate) const MAX_INFLATED_ENTRY_BYTES: u64 = 512 * 1024 * 1024;
+
+pub(crate) fn read_entry_bounded(
+    reader: &mut impl Read,
+    declared_size: u64,
+    name: &str,
+) -> Result<Vec<u8>, CodecError> {
+    if declared_size > MAX_INFLATED_ENTRY_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "ZIP entry {name} declares {declared_size} inflated bytes; limit is {MAX_INFLATED_ENTRY_BYTES}"
+        )));
+    }
+    let capacity = usize::try_from(declared_size.min(8 * 1024 * 1024)).unwrap_or(0);
+    let mut bytes = Vec::with_capacity(capacity);
+    reader
+        .take(MAX_INFLATED_ENTRY_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| CodecError::Malformed(format!("cannot read {name}: {error}")))?;
+    if bytes.len() as u64 > MAX_INFLATED_ENTRY_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "ZIP entry {name} exceeds the {MAX_INFLATED_ENTRY_BYTES}-byte inflated limit"
+        )));
+    }
+    Ok(bytes)
+}
+
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
     /// The authoritative final-model ASM BREP stream.
@@ -150,7 +179,12 @@ impl ContainerScan {
 pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     reader.seek(SeekFrom::Start(0))?;
     let mut source_image = Vec::new();
-    reader.read_to_end(&mut source_image)?;
+    Read::take(&mut *reader, MAX_ARCHIVE_BYTES + 1).read_to_end(&mut source_image)?;
+    if source_image.len() as u64 > MAX_ARCHIVE_BYTES {
+        return Err(CodecError::Malformed(format!(
+            "F3D archive exceeds the {MAX_ARCHIVE_BYTES}-byte input limit"
+        )));
+    }
     reader.seek(SeekFrom::Start(0))?;
     let mut archive = zip::ZipArchive::new(Cursor::new(&source_image))
         .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
@@ -159,6 +193,8 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     let mut breps = Vec::new();
     let mut asset_folder = None;
     let mut inflated_entries = BTreeMap::new();
+    let mut total_declared_inflated = 0_u64;
+    let mut total_actual_inflated = 0_u64;
 
     for i in 0..archive.len() {
         let mut file = archive
@@ -169,9 +205,24 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
         let mut attributes = BTreeMap::new();
 
         let is_brep = role == role::BREP_SMBH || role == role::BREP_SMB;
-        let mut buf = Vec::with_capacity(file.size() as usize);
-        file.read_to_end(&mut buf)
-            .map_err(|e| CodecError::Malformed(format!("cannot read {name}: {e}")))?;
+        total_declared_inflated = total_declared_inflated
+            .checked_add(file.size())
+            .ok_or_else(|| CodecError::Malformed("F3D total inflated size overflows u64".into()))?;
+        if total_declared_inflated > MAX_ARCHIVE_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "F3D entries declare {total_declared_inflated} inflated bytes; total limit is {MAX_ARCHIVE_BYTES}"
+            )));
+        }
+        let declared_size = file.size();
+        let buf = read_entry_bounded(&mut file, declared_size, &name)?;
+        total_actual_inflated = total_actual_inflated
+            .checked_add(buf.len() as u64)
+            .ok_or_else(|| CodecError::Malformed("F3D total inflated size overflows u64".into()))?;
+        if total_actual_inflated > MAX_ARCHIVE_BYTES {
+            return Err(CodecError::Malformed(format!(
+                "F3D entries exceed the {MAX_ARCHIVE_BYTES}-byte total inflated limit"
+            )));
+        }
         if is_brep {
             if asset_folder.is_none() {
                 if let Some((folder, _)) = name.split_once("/Breps.BlobParts") {
