@@ -381,6 +381,23 @@ fn decode_builds_a_valid_connected_sheet_brep() {
     assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.pcurve.is_some())
+            .count(),
+        1
+    );
+    assert!(matches!(
+        result.ir.model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Line { origin, direction }
+            if origin == cadmpeg_ir::math::Point2::new(0.0, 0.0)
+                && direction == cadmpeg_ir::math::Point2::new(1.0, 0.0)
+    ));
     assert!(result
         .ir
         .model

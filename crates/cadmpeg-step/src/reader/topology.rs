@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-    VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell, Vertex,
@@ -221,6 +221,7 @@ fn build(
             if fr.simple_name() != Some("ADVANCED_FACE") {
                 return None;
             }
+            let surface_step = fr.parameter(2)?.reference()?;
             let fid = FaceId(format!("step:data:face#{face_step}"));
             let mut loop_ids = vec![];
             for bound_step in refs(fr.parameter(1)?)? {
@@ -263,7 +264,7 @@ fn build(
                         } else {
                             Sense::Reversed
                         },
-                        pcurve: None,
+                        pcurve: associated_pcurve(edge.curve, surface_step, exchange),
                     });
                     radial
                         .entry(o.edge)
@@ -287,12 +288,11 @@ fn build(
                 loop_ids.push(lid);
                 built.typed.extend([bound_step, loop_step]);
             }
-            let surface = fr.parameter(2)?.reference()?;
             let face_forward = fr.parameter(3)?.logical()? == shell_forward;
             built.faces.push(Face {
                 id: fid.clone(),
                 shell: sid.clone(),
-                surface: SurfaceId(format!("step:data:surface#{surface}")),
+                surface: SurfaceId(format!("step:data:surface#{surface_step}")),
                 sense: if face_forward {
                     Sense::Forward
                 } else {
@@ -325,7 +325,10 @@ fn build(
         };
         built.edges.push(Edge {
             id: EdgeId(format!("step:data:edge#{edge_id}")),
-            curve: Some(CurveId(format!("step:data:curve#{}", e.curve))),
+            curve: Some(CurveId(format!(
+                "step:data:curve#{}",
+                curve_carrier_step(e.curve, exchange)?
+            ))),
             start: VertexId(format!("step:data:vertex#{start}")),
             end: VertexId(format!("step:data:vertex#{end}")),
             param_range: None,
@@ -350,6 +353,30 @@ fn build(
         }
     }
     Some(built)
+}
+
+fn curve_carrier_step(curve_step: u64, exchange: &Exchange) -> Option<u64> {
+    let curve = exchange.records.get(&curve_step)?;
+    if matches!(curve.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
+        curve.parameter(1)?.reference()
+    } else {
+        Some(curve_step)
+    }
+}
+
+fn associated_pcurve(curve_step: u64, surface_step: u64, exchange: &Exchange) -> Option<PcurveId> {
+    let curve = exchange.records.get(&curve_step)?;
+    if !matches!(curve.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
+        return None;
+    }
+    refs(curve.parameter(2)?)?
+        .into_iter()
+        .find_map(|pcurve_step| {
+            let pcurve = exchange.records.get(&pcurve_step)?;
+            (pcurve.simple_name() == Some("PCURVE")
+                && pcurve.parameter(1)?.reference()? == surface_step)
+                .then(|| PcurveId(format!("step:data:pcurve#{pcurve_step}")))
+        })
 }
 
 fn resolve_shell(

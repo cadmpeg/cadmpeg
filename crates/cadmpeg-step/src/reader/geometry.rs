@@ -5,12 +5,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
-    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurve,
-    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve,
+    PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
+    ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::ids::{
+    CurveId, PcurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::topology::Point;
 
 use crate::parse::{Exchange, RawRecord, Value};
@@ -27,8 +29,11 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
+    let mut points2 = BTreeMap::new();
     let mut directions = BTreeMap::new();
+    let mut directions2 = BTreeMap::new();
     let mut vectors = BTreeMap::new();
+    let mut vectors2 = BTreeMap::new();
     let mut placements = BTreeMap::new();
     if let Some(uncertainty) = linear_uncertainty(exchange) {
         ir.tolerances.linear = uncertainty;
@@ -36,20 +41,28 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
 
     for (&id, record) in &exchange.records {
         match record.simple_name() {
-            Some("CARTESIAN_POINT") => match coordinates(record, 1, scale) {
-                Some(position) => {
+            Some("CARTESIAN_POINT") => {
+                if let Some(position) = coordinates(record, 1, scale) {
                     points.insert(id, position);
                     typed.insert(id);
+                } else if let Some(position) = coordinates2(record, 1) {
+                    points2.insert(id, position);
+                    typed.insert(id);
+                } else {
+                    warnings.push(format!("CARTESIAN_POINT #{id} has invalid coordinates"));
                 }
-                None => warnings.push(format!("CARTESIAN_POINT #{id} has invalid coordinates")),
-            },
-            Some("DIRECTION") => match vector3(record.parameter(1), 1.0).and_then(normalize) {
-                Some(direction) => {
+            }
+            Some("DIRECTION") => {
+                if let Some(direction) = vector3(record.parameter(1), 1.0).and_then(normalize) {
                     directions.insert(id, direction);
                     typed.insert(id);
+                } else if let Some(direction) = vector2(record.parameter(1)).and_then(normalize2) {
+                    directions2.insert(id, direction);
+                    typed.insert(id);
+                } else {
+                    warnings.push(format!("DIRECTION #{id} is invalid or zero"));
                 }
-                None => warnings.push(format!("DIRECTION #{id} is invalid or zero")),
-            },
+            }
             _ => {}
         }
     }
@@ -91,8 +104,19 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 .and_then(|direction| directions.get(&direction).copied())
                 .zip(record.parameter(2).and_then(Value::number))
                 .map(|(direction, magnitude)| scale_vector(direction, magnitude * scale));
+            let value2 = record
+                .parameter(1)
+                .and_then(Value::reference)
+                .and_then(|direction| directions2.get(&direction).copied())
+                .zip(record.parameter(2).and_then(Value::number))
+                .map(|(direction, magnitude)| {
+                    Point2::new(direction.u * magnitude, direction.v * magnitude)
+                });
             if let Some(value) = value {
                 vectors.insert(id, value);
+                typed.insert(id);
+            } else if let Some(value) = value2 {
+                vectors2.insert(id, value);
                 typed.insert(id);
             } else {
                 warnings.push(format!(
@@ -125,8 +149,27 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             }
         }
     }
+    let pcurve_geometries = exchange
+        .records
+        .iter()
+        .filter_map(|(&id, record)| {
+            if record.simple_name() != Some("LINE") {
+                return None;
+            }
+            let origin = record
+                .parameter(1)?
+                .reference()
+                .and_then(|point| points2.get(&point).copied())?;
+            let direction = record
+                .parameter(2)?
+                .reference()
+                .and_then(|vector| vectors2.get(&vector).copied())?;
+            Some((id, PcurveGeometry::Line { origin, direction }))
+        })
+        .collect::<BTreeMap<_, _>>();
     for (&id, record) in &exchange.records {
         let geometry = match record.simple_name() {
+            Some("LINE") if pcurve_geometries.contains_key(&id) => continue,
             Some("LINE") => record
                 .parameter(1)
                 .and_then(Value::reference)
@@ -212,6 +255,23 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
 
+    for (&id, record) in &exchange.records {
+        if !matches!(record.simple_name(), Some("SURFACE_CURVE" | "SEAM_CURVE")) {
+            continue;
+        }
+        let basis = record
+            .parameter(1)
+            .and_then(Value::reference)
+            .map(|basis| CurveId(format!("step:data:curve#{basis}")));
+        if !basis.is_some_and(|basis| ir.model.curves.iter().any(|curve| curve.id == basis)) {
+            warnings.push(format!(
+                "{} #{id} has no decoded 3D curve",
+                record.simple_name().expect("matched surface curve")
+            ));
+            continue;
+        }
+        typed.insert(id);
+    }
     let curve_geometries = ir
         .model
         .curves
@@ -520,6 +580,51 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
     }
 
+    let decoded_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.clone())
+        .collect::<BTreeSet<_>>();
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("PCURVE") {
+            continue;
+        }
+        let surface_step = record.parameter(1).and_then(Value::reference);
+        let representation = record
+            .parameter(2)
+            .and_then(Value::reference)
+            .and_then(|representation| exchange.records.get(&representation));
+        let curve_step = representation
+            .and_then(|representation| representation.parameter(1))
+            .and_then(Value::list)
+            .and_then(|items| items.first())
+            .and_then(Value::reference);
+        let surface = surface_step.map(|surface| SurfaceId(format!("step:data:surface#{surface}")));
+        let Some(geometry) = surface
+            .filter(|surface| decoded_surfaces.contains(surface))
+            .and_then(|_| curve_step.and_then(|curve| pcurve_geometries.get(&curve).cloned()))
+        else {
+            warnings.push(format!("PCURVE #{id} has no decoded surface or 2D curve"));
+            continue;
+        };
+        ir.model.pcurves.push(Pcurve {
+            id: PcurveId(format!("step:data:pcurve#{id}")),
+            geometry,
+            wrapper_reversed: None,
+            native_tail_flags: None,
+            parameter_range: None,
+            fit_tolerance: None,
+        });
+        typed.insert(id);
+        if let Some(representation) = record.parameter(2).and_then(Value::reference) {
+            typed.insert(representation);
+        }
+        if let Some(curve) = curve_step {
+            typed.insert(curve);
+        }
+    }
+
     for (&id, record) in &exchange.records {
         if record.partials.iter().any(|partial| {
             matches!(
@@ -696,6 +801,27 @@ fn coordinates(record: &RawRecord, index: usize, scale: f64) -> Option<Point3> {
         values[1].number()? * scale,
         values[2].number()? * scale,
     ))
+}
+
+fn coordinates2(record: &RawRecord, index: usize) -> Option<Point2> {
+    let values = record.parameter(index)?.list()?;
+    if values.len() != 2 {
+        return None;
+    }
+    Some(Point2::new(values[0].number()?, values[1].number()?))
+}
+
+fn vector2(value: Option<&Value>) -> Option<Point2> {
+    let values = value?.list()?;
+    if values.len() != 2 {
+        return None;
+    }
+    Some(Point2::new(values[0].number()?, values[1].number()?))
+}
+
+fn normalize2(vector: Point2) -> Option<Point2> {
+    let length = vector.u.hypot(vector.v);
+    (length.is_finite() && length > 0.0).then(|| Point2::new(vector.u / length, vector.v / length))
 }
 
 fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
