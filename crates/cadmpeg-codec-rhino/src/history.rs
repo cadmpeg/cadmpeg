@@ -1133,6 +1133,10 @@ fn extended_geometry_json(
         let mut dimension = dimension;
         crate::dimensions::apply_userdata(data, &value.userdata, archive, &mut dimension).ok()?;
         return crate::dimensions::semantic_json(&dimension);
+    } else if value.class_id == crate::polyedge::CURVE_CLASS {
+        let polyedge =
+            crate::polyedge::decode(data, value.class_data_range.clone(), archive).ok()?;
+        return crate::polyedge::semantic_json(&polyedge);
     } else {
         return None;
     };

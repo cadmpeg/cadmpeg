@@ -445,6 +445,10 @@ impl<'a> DecodeContext<'a> {
                 self.decode_curve_on_surface(source_order, object);
                 continue;
             }
+            if object.class_uuid == crate::polyedge::CURVE_CLASS {
+                self.decode_polyedge(source_order, object);
+                continue;
+            }
             if !crate::curves::supported_class(object.class_uuid)
                 && !crate::mesh::supported_class(object.class_uuid)
             {
@@ -780,6 +784,64 @@ impl<'a> DecodeContext<'a> {
                 self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
                 self.mark_failed(source_order);
             }
+        }
+    }
+
+    fn decode_polyedge(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "polyedge retained because identity is unavailable",
+            );
+            return;
+        };
+        let polyedge = match crate::polyedge::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            self.archive(),
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                self.scan_warning(source_order, &format!("polyedge retained: {error}"));
+                return;
+            }
+        };
+        let Some(construction) = crate::polyedge::semantic_json(&polyedge) else {
+            self.scan_warning(source_order, "polyedge semantic serialization failed");
+            return;
+        };
+        let key = self.object_key(identity, source_order);
+        let id = FeatureId(format!("rhino:polyedge:feature#{key}"));
+        let feature = Feature {
+            id: id.clone(),
+            ordinal: u64::try_from(source_order).expect("source order fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoPolyEdgeReference".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "polyedge_reference".to_string(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::from([("construction".to_string(), construction)]),
+            },
+            native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+        };
+        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+            Ok(()) => {
+                self.append_link(source_order, id.to_string());
+                self.mark_decoded(source_order);
+            }
+            Err(error) => self.scan_warning(
+                source_order,
+                &format!("polyedge candidate rejected: {error}"),
+            ),
         }
     }
 

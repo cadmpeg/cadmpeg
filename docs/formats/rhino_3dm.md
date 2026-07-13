@@ -1010,6 +1010,8 @@ failure make the buffer invalid.
 | `ON_ArcCurve`            | `CF33BE2A-09B4-11D4-BFFB-0010830122F0` |
 | `ON_PolylineCurve`       | `4ED7D4E6-E947-11D3-BFE5-0010830122F0` |
 | `ON_PolyCurve`           | `4ED7D4E0-E947-11D3-BFE5-0010830122F0` |
+| `ON_PolyEdgeCurve`       | `39FF3DD3-FE0F-4807-9D59-185F0D73C0E4` |
+| `ON_PolyEdgeSegment`     | `42F47A87-5B1B-4E31-AB87-4639D78325D6` |
 | `ON_NurbsSurface`        | `4ED7D4DE-E947-11D3-BFE5-0010830122F0` |
 | `ON_PlaneSurface`        | `4ED7D4DF-E947-11D3-BFE5-0010830122F0` |
 | `ON_RevSurface`          | `A16220D3-163B-11D4-8000-0010830122F0` |
@@ -1044,6 +1046,12 @@ Alias identity does not add a payload prefix or suffix. It participates in
 the same curve/surface base-class checks used by polymorphic Brep arrays.
 `ON_Circle` and `ON_Arc` are value types; their object wrapper is
 `ON_ArcCurve`.
+
+`ON_CurveProxy`, `ON_SurfaceProxy`, `ON_OffsetSurface`, `ON_PointGrid`,
+`ON_MeshComponentRef`, and `ON_SubDComponentRef` are runtime reference or
+cache classes and have no valid persistent class-data payload. A
+`ON_PolyEdgeSegment` is the archive-bearing proxy-derived exception and uses
+the payload below.
 
 ## 12. Curves and points
 
@@ -1145,7 +1153,27 @@ segment count × polymorphic ON_Curve
 ```
 
 Parameter count is segment count plus one. Segment parameters are finite and
-nondecreasing. Each child is a curve.
+strictly increasing. Each child is a curve.
+
+#### 12.6.1 Persistent polyedge references
+
+`ON_PolyEdgeCurve` uses the polycurve payload with every child class equal to
+`ON_PolyEdgeSegment`. A segment is an anonymous version 1.0 chunk:
+
+```text
+UUID referenced object
+ON_ComponentIndex referenced component
+ON_Interval edge domain
+ON_Interval trim domain
+bool proxy reversed
+ON_Interval polyedge segment domain
+ON_Interval referenced curve domain
+```
+
+The segment and parameter counts obey the polycurve invariants. All domains
+are finite. The object UUID and component index persist the source curve,
+Brep edge, or Brep trim selection; the reversal and domain fields define its
+orientation and parameter mapping inside the polyedge.
 
 ### 12.7 Curve on surface
 
