@@ -25,6 +25,18 @@ impl Value {
         };
         std::str::from_utf8(bytes).ok()?.trim().parse::<i64>().ok()
     }
+
+    fn real(&self) -> Option<f64> {
+        match self {
+            Self::Atom(bytes) => std::str::from_utf8(bytes)
+                .ok()?
+                .trim()
+                .replace(['D', 'd'], "E")
+                .parse::<f64>()
+                .ok(),
+            Self::Omitted | Self::String(_) => None,
+        }
+    }
 }
 
 /// Parsed Global metadata required by inspection and projection.
@@ -173,6 +185,45 @@ fn version_name(flag: i64) -> Option<&'static str> {
 }
 
 impl Global {
+    pub(crate) fn model_scale(&self) -> f64 {
+        self.values.get(12).and_then(Value::real).unwrap_or(1.0)
+    }
+
+    pub(crate) fn units_flag(&self) -> i64 {
+        self.values.get(13).and_then(Value::integer).unwrap_or(1)
+    }
+
+    pub(crate) fn length_factor_mm(&self) -> Option<f64> {
+        let unit = match self.units_flag() {
+            1 => 25.4,
+            2 => 1.0,
+            3 => match self.units_name()?.as_str() {
+                "IN" | "INCH" => 25.4,
+                "MM" => 1.0,
+                "FT" => 304.8,
+                "MI" => 1_609_344.0,
+                "M" => 1_000.0,
+                "KM" => 1_000_000.0,
+                "MIL" => 0.0254,
+                "UM" => 0.001,
+                "CM" => 10.0,
+                "UIN" => 0.000_025_4,
+                _ => return None,
+            },
+            4 => 304.8,
+            5 => 1_609_344.0,
+            6 => 1_000.0,
+            7 => 1_000_000.0,
+            8 => 0.0254,
+            9 => 0.001,
+            10 => 10.0,
+            11 => 0.000_025_4,
+            _ => return None,
+        };
+        let scale = self.model_scale();
+        (scale.is_finite() && scale > 0.0).then_some(unit / scale)
+    }
+
     pub(crate) fn sender_product(&self) -> Option<String> {
         self.values.get(2).and_then(Value::string)
     }

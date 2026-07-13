@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-use crate::{card, directory, global, graph, native, parameter};
+use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::{CadIr, SourceMeta};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn source_meta(global: &global::Global) -> SourceMeta {
     let mut attributes = BTreeMap::new();
@@ -61,23 +61,36 @@ pub(crate) fn decode(
     ir.byte_ledger = scan.ledger.clone();
     native::store(&mut ir, &scan, &directory, &parameters, &references)?;
 
-    let losses = if options.container_only {
-        Vec::new()
+    let projection = if options.container_only {
+        entities::geometry::Projection {
+            handled: BTreeSet::default(),
+            decoded: BTreeSet::default(),
+            losses: Vec::new(),
+        }
     } else {
-        directory
-            .iter()
-            .filter(|entry| entry.entity_type != 0)
-            .map(|entry| LossNote {
-                category: LossCategory::Other,
-                severity: Severity::Warning,
-                message: format!(
-                    "IGES entity type {} form {} retained without neutral projection",
-                    entry.entity_type, entry.form
-                ),
-                provenance: None,
-            })
-            .collect()
+        entities::geometry::project_points(&mut ir, &directory, &parameters, &global)
     };
+
+    let geometry_transferred = !projection.decoded.is_empty();
+    let mut losses = projection.losses;
+    if !options.container_only {
+        losses.extend(
+            directory
+                .iter()
+                .filter(|entry| {
+                    entry.entity_type != 0 && !projection.handled.contains(&entry.sequence)
+                })
+                .map(|entry| LossNote {
+                    category: LossCategory::Other,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "IGES entity type {} form {} retained without neutral projection",
+                        entry.entity_type, entry.form
+                    ),
+                    provenance: None,
+                }),
+        );
+    }
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
     notes.extend(graph::summary_notes(&references));
@@ -86,7 +99,7 @@ pub(crate) fn decode(
         DecodeReport {
             format: "iges".into(),
             container_only: options.container_only,
-            geometry_transferred: false,
+            geometry_transferred,
             losses,
             notes,
         },

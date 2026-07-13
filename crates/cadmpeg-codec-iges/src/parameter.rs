@@ -34,6 +34,16 @@ pub(crate) struct ParameterRecord {
     pub(crate) comment: Vec<u8>,
 }
 
+impl ParameterRecord {
+    pub(crate) fn number(&self, index: usize) -> Option<f64> {
+        match self.tokens.get(index).map(|token| &token.value)? {
+            TokenValue::Integer(value) => Some(*value as f64),
+            TokenValue::Real(value) => Some(*value),
+            TokenValue::Omitted | TokenValue::String(_) => None,
+        }
+    }
+}
+
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
     CodecError::Malformed(format!(
         "IGES parameters for D{sequence}: {}",

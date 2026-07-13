@@ -44,7 +44,7 @@ An entity retains its type, form, Directory Entry fields, status fields, ordered
 
 ## Units and transformations
 
-Model-space lengths equal native values multiplied by the Global model scale and converted from the declared unit to millimetres. Dimensionless values, parameter coordinates, weights, and unit direction vectors are not length-scaled. Angles convert to radians when projected to neutral IR. A transformation matrix is a 3-by-3 linear part plus translation. Translation is length-valued. Entity transforms compose from the entity definition toward model space exactly once. Definition, subfigure-instance, and occurrence transforms remain separate native relationships.
+Model-space lengths equal native values divided by the Global model-space scale and converted from the declared unit to millimetres. Dimensionless values, parameter coordinates, weights, and unit direction vectors are not length-scaled. Angles convert to radians when projected to neutral IR. A transformation matrix is a 3-by-3 linear part plus translation. Translation is length-valued. Entity transforms compose from the entity definition toward model space exactly once. Definition, subfigure-instance, and occurrence transforms remain separate native relationships.
 
 ## Topology
 

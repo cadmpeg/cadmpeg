@@ -3,6 +3,7 @@
 
 mod card;
 mod directory;
+mod entities;
 mod global;
 mod graph;
 mod layout;

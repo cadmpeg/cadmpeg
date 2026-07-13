@@ -171,11 +171,17 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     assert_eq!(native.arenas["cards"].len(), 7);
     assert_eq!(native.arenas["entities"].len(), 1);
     assert_eq!(native.arenas["entities"][0].id, "iges:entity:directory#1");
-    assert!(!result.report.geometry_transferred);
-    assert!(result.report.losses.iter().any(|loss| {
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.points[0].position.x, 1.0);
+    assert_eq!(result.ir.model.points[0].position.y, 2.0);
+    assert_eq!(result.ir.model.points[0].position.z, 3.0);
+    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert!(result.report.geometry_transferred);
+    assert!(!result.report.losses.iter().any(|loss| {
         loss.message == "IGES entity type 116 form 0 retained without neutral projection"
     }));
-    assert!(cadmpeg_ir::validate(&result.ir, Vec::new()).is_ok());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 #[test]
@@ -289,5 +295,6 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
         result.ir.native.namespace("iges").unwrap().arenas["cards"].len(),
         8
     );
-    assert!(cadmpeg_ir::validate(&result.ir, Vec::new()).is_ok());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
