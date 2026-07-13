@@ -592,7 +592,19 @@ impl<'a> DecodeContext<'a> {
                 scale,
                 self.archive(),
             ) {
-                Ok(dimension) => {
+                Ok(mut dimension) => {
+                    if let Err(error) = crate::dimensions::apply_userdata(
+                        &self.scan.data,
+                        &object.userdata,
+                        self.archive(),
+                        &mut dimension,
+                    ) {
+                        self.scan_warning(
+                            source_order,
+                            &format!("dimension extension retained: {error}"),
+                        );
+                        continue;
+                    }
                     let native_ref = Self::mint_unknown_id(source_order).to_string();
                     let (feature, parameter) = crate::dimensions::project(
                         &dimension,

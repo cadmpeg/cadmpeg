@@ -1809,6 +1809,62 @@ All points and distance-valued fields use document length conversion.
 Directions, angles, and distance scale are unscaled. Coordinates, scales, and
 computed measurements are finite; distance scale is positive.
 
+The legacy V5 linear, angular, and radial dimension classes use an anonymous
+version 1.0 family chunk. Linear and radial families contain one common legacy
+annotation child. Angular dimensions append an `f64` angle and `f64` radius.
+The common annotation is anonymous version 1.0 through 1.3:
+
+```text
+i32 annotation type
+i32 text display mode
+ON_Plane plane
+archive array of ON_2dPoint construction points
+UTF-16 displayed text
+i32 user-positioned-text flag
+i32 initial archive dimension-style index
+f64 text height
+i32 justification
+if minor >= 1: bool allow model-space text scaling
+if minor >= 2: UTF-16 text formula
+if minor >= 3:
+  i32 archive text-style index
+  i32 archive dimension-style index
+```
+
+Linear annotation type 1 is rotated and type 2 is aligned. Its five points are
+the first extension endpoint, first arrow, second extension endpoint, second
+arrow, and user text point. The first extension endpoint becomes the defining
+plane origin. The second endpoint and arrow midpoint define the dimension and
+dimension-line points relative to that origin. Rotated measurement is the
+absolute plane-x difference; aligned measurement is the endpoint distance.
+
+Angular annotation type 3 has four points: user text, first ray, second ray,
+and an interior arc point. The ray points define unit directions. The stored
+radius places the dimension-line point along the arc-point direction, and the
+stored angle is the measurement.
+
+Radial annotation type 4 is diameter and type 5 is radius. Its four points are
+center, arrow, tail, and knee. The center becomes the defining plane origin;
+arrow and tail become relative radius and dimension-line points.
+
+Legacy dimensions may carry userdata class
+`8AD5B9FC-0D5C-47FB-ADFD-74C28B6F661E`. Its anonymous version 1.0 through 1.2
+payload is:
+
+```text
+UUID parent dimension style
+i32 forced arrow position (-1 outside, 0 automatic, 1 inside)
+i32 text rectangle count
+if count = 7: 28 × i32 rectangle coordinates
+if minor >= 1: f64 distance scale
+if minor >= 2: UUID detail measured
+```
+
+The rectangle count is zero or seven. Distance scale is finite and positive.
+Dimension plane origins, plane equation offsets, construction points, angular
+radius, and text height use document length conversion. Style indices, flags,
+directions, stored angles, and distance scale remain unscaled.
+
 ### 18.2 Hatches
 
 `ON_Hatch` uses packed version 1.1 before archive 60 and packed version 1.2 in

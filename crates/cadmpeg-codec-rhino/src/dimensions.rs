@@ -4,11 +4,14 @@
 use std::ops::Range;
 
 use crate::chunks::{chunk_at, ArchiveVersion, BoundedReader, FramingError};
-use crate::objects::parse_class_wrapper;
+use crate::objects::{parse_class_wrapper, UserdataDescriptor};
 use crate::settings::{plane, utf16, Plane};
 use crate::wire::{scaled_coordinate, Uuid};
 
 const ANONYMOUS: u32 = 0x4000_8000;
+const V5_DIM_EXTRA: Uuid = Uuid::from_canonical([
+    0x8a, 0xd5, 0xb9, 0xfc, 0x0d, 0x5c, 0x47, 0xfb, 0xad, 0xfd, 0x74, 0xc2, 0x8b, 0x6f, 0x66, 0x1e,
+]);
 pub(crate) const LINEAR: Uuid = Uuid::from_canonical([
     0xe5, 0x50, 0x88, 0x2b, 0xf4, 0x4d, 0x41, 0x54, 0xa1, 0xef, 0x6e, 0x50, 0xcb, 0xbb, 0xf5, 0x43,
 ]);
@@ -17,6 +20,15 @@ pub(crate) const ANGULAR: Uuid = Uuid::from_canonical([
 ]);
 pub(crate) const RADIAL: Uuid = Uuid::from_canonical([
     0xfc, 0x74, 0x9c, 0x2f, 0x4c, 0x00, 0x41, 0xfd, 0x98, 0x40, 0x26, 0xd9, 0x4f, 0x04, 0x7a, 0xd3,
+]);
+pub(crate) const V5_LINEAR: Uuid = Uuid::from_canonical([
+    0xbd, 0x57, 0xf3, 0x3b, 0xa1, 0xb2, 0x46, 0xe9, 0x9c, 0x6e, 0xaf, 0x09, 0xd3, 0x0f, 0xfd, 0xde,
+]);
+pub(crate) const V5_RADIAL: Uuid = Uuid::from_canonical([
+    0xb2, 0xb6, 0x83, 0xfc, 0x79, 0x64, 0x4e, 0x96, 0xb1, 0xf9, 0x9b, 0x35, 0x6a, 0x76, 0xb0, 0x8b,
+]);
+pub(crate) const V5_ANGULAR: Uuid = Uuid::from_canonical([
+    0x84, 0x1b, 0xc4, 0x0b, 0xa9, 0x71, 0x4a, 0x8e, 0x94, 0xe5, 0xbb, 0xa2, 0x6d, 0x67, 0x34, 0x8e,
 ]);
 
 /// Dimension family and defining plane-space geometry.
@@ -47,13 +59,18 @@ pub(crate) struct Dimension {
     pub(crate) annotation_type: i32,
     pub(crate) rich_text: String,
     pub(crate) user_text: String,
-    pub(crate) dimstyle_id: Uuid,
+    pub(crate) dimstyle_id: Option<Uuid>,
+    pub(crate) dimstyle_index: Option<i32>,
     pub(crate) plane: Plane,
     pub(crate) horizontal_direction: [f64; 2],
     pub(crate) allow_text_scaling: bool,
+    pub(crate) text_display_mode: Option<i32>,
+    pub(crate) text_height: Option<f64>,
+    pub(crate) justification: Option<i32>,
     pub(crate) use_default_text_point: bool,
     pub(crate) user_text_point: [f64; 2],
     pub(crate) flip_arrows: [bool; 2],
+    pub(crate) arrow_position: i32,
     pub(crate) detail_measured: Uuid,
     pub(crate) distance_scale: f64,
     pub(crate) definition: Definition,
@@ -70,7 +87,20 @@ struct Annotation {
 }
 
 pub(crate) fn supported_class(class: Uuid) -> bool {
-    matches!(class, LINEAR | ANGULAR | RADIAL)
+    matches!(
+        class,
+        LINEAR | ANGULAR | RADIAL | V5_LINEAR | V5_ANGULAR | V5_RADIAL
+    )
+}
+
+fn scale_plane(mut value: Plane, scale: f64, offset: usize) -> Result<Plane, FramingError> {
+    for coordinate in &mut value.origin.0 {
+        *coordinate = scaled_coordinate(*coordinate, scale)
+            .ok_or_else(|| structural(offset, "scaled dimension plane is invalid"))?;
+    }
+    value.equation[3] = scaled_coordinate(value.equation[3], scale)
+        .ok_or_else(|| structural(offset, "scaled dimension plane is invalid"))?;
+    Ok(value)
 }
 
 fn structural(offset: usize, message: impl Into<String>) -> FramingError {
@@ -268,6 +298,253 @@ fn angular_measurement(first: [f64; 2], second: [f64; 2], line: [f64; 2]) -> f64
     }
 }
 
+struct LegacyAnnotation {
+    kind: i32,
+    text_display_mode: i32,
+    plane: Plane,
+    points: Vec<[f64; 2]>,
+    rich_text: String,
+    user_text: String,
+    user_positioned_text: bool,
+    dimstyle_index: i32,
+    allow_text_scaling: bool,
+    text_height: f64,
+    justification: i32,
+}
+
+fn legacy_annotation(
+    data: &[u8],
+    reader: &mut BoundedReader<'_>,
+    scale: f64,
+    archive: ArchiveVersion,
+) -> Result<LegacyAnnotation, FramingError> {
+    let (mut annotation, next, minor) = anonymous(data, reader.position(), reader.end(), archive)?;
+    if minor > 3 {
+        return Err(structural(
+            annotation.position(),
+            "unsupported legacy annotation version",
+        ));
+    }
+    let kind = annotation.i32()?;
+    let text_display_mode = annotation.i32()?;
+    let plane_offset = annotation.position();
+    let plane = scale_plane(plane(&mut annotation)?, scale, plane_offset)?;
+    let point_count_offset = annotation.position();
+    let point_count = annotation.i32()?;
+    let point_count = usize::try_from(point_count)
+        .ok()
+        .filter(|count| *count <= 1 << 16 && *count <= annotation.remaining() / 16)
+        .ok_or_else(|| structural(point_count_offset, "invalid legacy annotation point count"))?;
+    let mut points = Vec::with_capacity(point_count);
+    for _ in 0..point_count {
+        let offset = annotation.position();
+        points.push(scaled_point(point2(&mut annotation)?, scale, offset)?);
+    }
+    let rich_text = utf16(&mut annotation)?;
+    let user_positioned_text = match annotation.i32()? {
+        0 => false,
+        1 => true,
+        _ => {
+            return Err(structural(
+                annotation.position() - 4,
+                "invalid legacy user-positioned-text flag",
+            ))
+        }
+    };
+    let initial_style_index = annotation.i32()?;
+    let text_height = scaled_coordinate(annotation.f64()?, scale)
+        .ok_or_else(|| structural(annotation.position() - 8, "invalid legacy text height"))?;
+    if !text_height.is_finite() || text_height < 0.0 {
+        return Err(structural(
+            annotation.position() - 8,
+            "invalid legacy annotation text height",
+        ));
+    }
+    let justification = annotation.i32()?;
+    let allow_text_scaling = minor < 1 || annotation.bool()?;
+    let user_text = if minor >= 2 {
+        utf16(&mut annotation)?
+    } else {
+        rich_text.clone()
+    };
+    let dimstyle_index = if minor >= 3 {
+        annotation.i32()?;
+        let dimension_style_index = annotation.i32()?;
+        if dimension_style_index >= 0 {
+            dimension_style_index
+        } else {
+            initial_style_index
+        }
+    } else {
+        initial_style_index
+    };
+    if annotation.remaining() != 0 {
+        return Err(structural(
+            annotation.position(),
+            "legacy annotation has trailing bytes",
+        ));
+    }
+    reader.skip(next - reader.position())?;
+    Ok(LegacyAnnotation {
+        kind,
+        text_display_mode,
+        plane,
+        points,
+        rich_text,
+        user_text,
+        user_positioned_text,
+        dimstyle_index,
+        allow_text_scaling,
+        text_height,
+        justification,
+    })
+}
+
+fn shifted_plane(mut plane: Plane, point: [f64; 2]) -> Plane {
+    for index in 0..3 {
+        plane.origin.0[index] += point[0] * plane.xaxis.0[index] + point[1] * plane.yaxis.0[index];
+    }
+    plane.equation[3] = -(plane.equation[0] * plane.origin.0[0]
+        + plane.equation[1] * plane.origin.0[1]
+        + plane.equation[2] * plane.origin.0[2]);
+    plane
+}
+
+fn difference(a: [f64; 2], b: [f64; 2]) -> [f64; 2] {
+    [a[0] - b[0], a[1] - b[1]]
+}
+
+fn direction(value: [f64; 2], offset: usize) -> Result<[f64; 2], FramingError> {
+    let length = value[0].hypot(value[1]);
+    if !length.is_finite() || length <= f64::EPSILON {
+        return Err(structural(offset, "legacy angular direction is degenerate"));
+    }
+    Ok([value[0] / length, value[1] / length])
+}
+
+fn decode_legacy(
+    data: &[u8],
+    class: Uuid,
+    range: Range<usize>,
+    scale: f64,
+    archive: ArchiveVersion,
+) -> Result<Dimension, FramingError> {
+    let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive)?;
+    if next != range.end || minor != 0 {
+        return Err(structural(
+            range.start,
+            "unsupported legacy dimension version",
+        ));
+    }
+    let annotation = legacy_annotation(data, &mut outer, scale, archive)?;
+    let stored_angular = if class == V5_ANGULAR {
+        let angle = outer.f64()?;
+        let radius = scaled_coordinate(outer.f64()?, scale)
+            .ok_or_else(|| structural(outer.position() - 8, "invalid legacy angular radius"))?;
+        if !angle.is_finite() || angle < 0.0 {
+            return Err(structural(
+                outer.position() - 16,
+                "invalid legacy angular angle",
+            ));
+        }
+        Some((angle, radius))
+    } else {
+        None
+    };
+    if outer.remaining() != 0 {
+        return Err(structural(
+            outer.position(),
+            "legacy dimension has trailing bytes",
+        ));
+    }
+    let (plane, definition, user_text_point, measurement) = if class == V5_LINEAR {
+        if !matches!(annotation.kind, 1 | 2) || annotation.points.len() != 5 {
+            return Err(structural(range.start, "invalid legacy linear definition"));
+        }
+        let origin = annotation.points[0];
+        let definition_point = difference(annotation.points[2], origin);
+        let arrow_midpoint = [
+            (annotation.points[1][0] + annotation.points[3][0]) * 0.5,
+            (annotation.points[1][1] + annotation.points[3][1]) * 0.5,
+        ];
+        let dimension_line_point = difference(arrow_midpoint, origin);
+        (
+            shifted_plane(annotation.plane, origin),
+            Definition::Linear {
+                definition_point,
+                dimension_line_point,
+            },
+            difference(annotation.points[4], origin),
+            if annotation.kind == 1 {
+                definition_point[0].abs()
+            } else {
+                definition_point[0].hypot(definition_point[1])
+            },
+        )
+    } else if class == V5_RADIAL {
+        if !matches!(annotation.kind, 4 | 5) || annotation.points.len() != 4 {
+            return Err(structural(range.start, "invalid legacy radial definition"));
+        }
+        let origin = annotation.points[0];
+        let radius_point = difference(annotation.points[1], origin);
+        let dimension_line_point = difference(annotation.points[2], origin);
+        let diameter = annotation.kind == 4;
+        (
+            shifted_plane(annotation.plane, origin),
+            Definition::Radial {
+                radius_point,
+                dimension_line_point,
+                diameter,
+            },
+            dimension_line_point,
+            radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
+        )
+    } else {
+        if annotation.kind != 3 || annotation.points.len() != 4 {
+            return Err(structural(range.start, "invalid legacy angular definition"));
+        }
+        let first_direction = direction(annotation.points[1], range.start)?;
+        let second_direction = direction(annotation.points[2], range.start)?;
+        let (angle, radius) = stored_angular.expect("angular family has stored fields");
+        let line_direction = direction(annotation.points[3], range.start)?;
+        let dimension_line_point = [line_direction[0] * radius, line_direction[1] * radius];
+        (
+            annotation.plane,
+            Definition::Angular {
+                first_direction,
+                second_direction,
+                first_extension_offset: 0.0,
+                second_extension_offset: 0.0,
+                dimension_line_point,
+            },
+            annotation.points[0],
+            angle,
+        )
+    };
+    Ok(Dimension {
+        source_range: range,
+        annotation_type: annotation.kind,
+        rich_text: annotation.rich_text,
+        user_text: annotation.user_text,
+        dimstyle_id: None,
+        dimstyle_index: Some(annotation.dimstyle_index),
+        plane,
+        horizontal_direction: [1.0, 0.0],
+        allow_text_scaling: annotation.allow_text_scaling,
+        text_display_mode: Some(annotation.text_display_mode),
+        text_height: Some(annotation.text_height),
+        justification: Some(annotation.justification),
+        use_default_text_point: !annotation.user_positioned_text,
+        user_text_point,
+        flip_arrows: [false, false],
+        arrow_position: 0,
+        detail_measured: Uuid::nil(),
+        distance_scale: 1.0,
+        definition,
+        measurement,
+    })
+}
+
 /// Decodes one modern linear, angular, or radial dimension.
 pub(crate) fn decode(
     data: &[u8],
@@ -276,6 +553,9 @@ pub(crate) fn decode(
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
+    if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL) {
+        return decode_legacy(data, class, range, scale, archive);
+    }
     let (mut outer, outer_next, outer_version) = anonymous(data, range.start, range.end, archive)?;
     if outer_next != range.end || outer_version != 0 {
         return Err(structural(
@@ -291,7 +571,8 @@ pub(crate) fn decode(
             "unsupported common dimension version",
         ));
     }
-    let annotation = annotation(data, &mut common, archive)?;
+    let mut annotation = annotation(data, &mut common, archive)?;
+    annotation.plane = scale_plane(annotation.plane, scale, range.start)?;
     let user_text = utf16(&mut common)?;
     if !common.f64()?.is_finite() {
         return Err(structural(
@@ -412,18 +693,98 @@ pub(crate) fn decode(
         annotation_type: annotation.kind,
         rich_text: annotation.rich_text,
         user_text,
-        dimstyle_id: annotation.dimstyle_id,
+        dimstyle_id: Some(annotation.dimstyle_id),
+        dimstyle_index: None,
         plane: annotation.plane,
         horizontal_direction: annotation.horizontal_direction,
         allow_text_scaling: annotation.allow_text_scaling,
+        text_display_mode: None,
+        text_height: None,
+        justification: None,
         use_default_text_point,
         user_text_point,
         flip_arrows,
+        arrow_position: 0,
         detail_measured,
         distance_scale,
         definition,
         measurement,
     })
+}
+
+/// Applies the built-in V5 dimension extension carried as class userdata.
+pub(crate) fn apply_userdata(
+    data: &[u8],
+    userdata: &[UserdataDescriptor],
+    archive: ArchiveVersion,
+    dimension: &mut Dimension,
+) -> Result<(), FramingError> {
+    let Some(extra) = userdata
+        .iter()
+        .find(|userdata| userdata.class_uuid == V5_DIM_EXTRA)
+    else {
+        return Ok(());
+    };
+    let (mut reader, next, minor) = anonymous(
+        data,
+        extra.payload_range.start,
+        extra.payload_range.end,
+        archive,
+    )?;
+    if next != extra.payload_range.end || minor > 2 {
+        return Err(structural(
+            extra.payload_range.start,
+            "unsupported V5 dimension extension version",
+        ));
+    }
+    uuid(&mut reader)?;
+    let arrow_position = reader.i32()?;
+    if !(-1..=1).contains(&arrow_position) {
+        return Err(structural(
+            reader.position() - 4,
+            "invalid V5 dimension arrow position",
+        ));
+    }
+    let rectangle_count = reader.i32()?;
+    match rectangle_count {
+        0 => {}
+        7 => {
+            for _ in 0..28 {
+                reader.i32()?;
+            }
+        }
+        _ => {
+            return Err(structural(
+                reader.position() - 4,
+                "invalid V5 dimension text rectangle count",
+            ))
+        }
+    }
+    let distance_scale = if minor >= 1 { reader.f64()? } else { 1.0 };
+    if !distance_scale.is_finite() || distance_scale <= 0.0 {
+        return Err(structural(
+            reader.position() - 8,
+            "invalid V5 dimension distance scale",
+        ));
+    }
+    let detail_measured = if minor >= 2 {
+        uuid(&mut reader)?
+    } else {
+        Uuid::nil()
+    };
+    if reader.remaining() != 0 {
+        return Err(structural(
+            reader.position(),
+            "V5 dimension extension has trailing bytes",
+        ));
+    }
+    dimension.arrow_position = arrow_position;
+    dimension.distance_scale = distance_scale;
+    dimension.detail_measured = detail_measured;
+    if !matches!(dimension.definition, Definition::Angular { .. }) {
+        dimension.measurement *= distance_scale;
+    }
+    Ok(())
 }
 
 /// Projects a decoded dimension into one native operation and one evaluated parameter.
@@ -476,7 +837,6 @@ pub(crate) fn project(
             "annotation_type".to_string(),
             dimension.annotation_type.to_string(),
         ),
-        ("dimstyle_id".to_string(), dimension.dimstyle_id.to_string()),
         (
             "detail_measured".to_string(),
             dimension.detail_measured.to_string(),
@@ -503,6 +863,10 @@ pub(crate) fn project(
             format!("{},{}", dimension.flip_arrows[0], dimension.flip_arrows[1]),
         ),
         (
+            "arrow_position".to_string(),
+            dimension.arrow_position.to_string(),
+        ),
+        (
             "allow_text_scaling".to_string(),
             dimension.allow_text_scaling.to_string(),
         ),
@@ -527,6 +891,21 @@ pub(crate) fn project(
                 .join(","),
         ),
     ]);
+    if let Some(id) = dimension.dimstyle_id {
+        properties.insert("dimstyle_id".to_string(), id.to_string());
+    }
+    if let Some(index) = dimension.dimstyle_index {
+        properties.insert("dimstyle_index".to_string(), index.to_string());
+    }
+    if let Some(mode) = dimension.text_display_mode {
+        properties.insert("text_display_mode".to_string(), mode.to_string());
+    }
+    if let Some(height) = dimension.text_height {
+        properties.insert("text_height".to_string(), height.to_string());
+    }
+    if let Some(justification) = dimension.justification {
+        properties.insert("justification".to_string(), justification.to_string());
+    }
     match &dimension.definition {
         Definition::Linear {
             definition_point,
@@ -697,6 +1076,31 @@ mod tests {
         anonymous(0, &outer)
     }
 
+    fn legacy_payload(kind: i32, points: &[[f64; 2]], family: &[f64]) -> Vec<u8> {
+        let mut annotation = kind.to_le_bytes().to_vec();
+        annotation.extend(0_i32.to_le_bytes());
+        annotation.extend(plane());
+        annotation.extend((points.len() as i32).to_le_bytes());
+        for point in points {
+            annotation.extend(point[0].to_le_bytes());
+            annotation.extend(point[1].to_le_bytes());
+        }
+        annotation.extend(utf16("<>"));
+        annotation.extend(1_i32.to_le_bytes());
+        annotation.extend(4_i32.to_le_bytes());
+        annotation.extend(1.5_f64.to_le_bytes());
+        annotation.extend(0_i32.to_le_bytes());
+        annotation.push(1);
+        annotation.extend(utf16("formula"));
+        annotation.extend((-1_i32).to_le_bytes());
+        annotation.extend(17_i32.to_le_bytes());
+        let mut outer = anonymous(3, &annotation);
+        for value in family {
+            outer.extend(value.to_le_bytes());
+        }
+        anonymous(0, &outer)
+    }
+
     #[test]
     fn decodes_dimension_families_and_measurements() {
         let archive = ArchiveVersion::V8;
@@ -735,5 +1139,109 @@ mod tests {
         )
         .unwrap();
         assert_eq!(angular.measurement, std::f64::consts::FRAC_PI_2);
+    }
+
+    #[test]
+    fn decodes_legacy_dimension_families_into_common_semantics() {
+        let archive = ArchiveVersion::V8;
+        let linear_bytes = legacy_payload(
+            1,
+            &[[0.0, 0.0], [0.0, 5.0], [3.0, 0.0], [3.0, 5.0], [1.0, 5.0]],
+            &[],
+        );
+        let linear = decode(
+            &linear_bytes,
+            V5_LINEAR,
+            0..linear_bytes.len(),
+            10.0,
+            archive,
+        )
+        .unwrap();
+        assert_eq!(linear.measurement, 30.0);
+        assert_eq!(linear.dimstyle_index, Some(17));
+        assert_eq!(linear.user_text, "formula");
+        assert!(matches!(
+            linear.definition,
+            Definition::Linear {
+                definition_point: [30.0, 0.0],
+                dimension_line_point: [15.0, 50.0]
+            }
+        ));
+
+        let radial_bytes =
+            legacy_payload(4, &[[1.0, 2.0], [4.0, 6.0], [7.0, 8.0], [6.0, 8.0]], &[]);
+        let radial = decode(
+            &radial_bytes,
+            V5_RADIAL,
+            0..radial_bytes.len(),
+            10.0,
+            archive,
+        )
+        .unwrap();
+        assert_eq!(radial.measurement, 100.0);
+        assert!(matches!(
+            radial.definition,
+            Definition::Radial {
+                radius_point: [30.0, 40.0],
+                dimension_line_point: [60.0, 60.0],
+                diameter: true
+            }
+        ));
+
+        let angular_bytes = legacy_payload(
+            3,
+            &[[2.0, 2.0], [2.0, 0.0], [0.0, 3.0], [1.0, 1.0]],
+            &[std::f64::consts::FRAC_PI_2, 5.0],
+        );
+        let angular = decode(
+            &angular_bytes,
+            V5_ANGULAR,
+            0..angular_bytes.len(),
+            10.0,
+            archive,
+        )
+        .unwrap();
+        assert_eq!(angular.measurement, std::f64::consts::FRAC_PI_2);
+        assert!(matches!(
+            angular.definition,
+            Definition::Angular {
+                first_direction: [1.0, 0.0],
+                second_direction: [0.0, 1.0],
+                first_extension_offset: 0.0,
+                second_extension_offset: 0.0,
+                ..
+            }
+        ));
+
+        let mut extension = [0_u8; 16].to_vec();
+        extension.extend((-1_i32).to_le_bytes());
+        extension.extend(0_i32.to_le_bytes());
+        extension.extend(2.0_f64.to_le_bytes());
+        extension.extend([0_u8; 15]);
+        extension.push(42);
+        let extension = anonymous(2, &extension);
+        let descriptor = UserdataDescriptor {
+            range: 0..extension.len(),
+            version: (1, 0),
+            class_uuid: V5_DIM_EXTRA,
+            item_uuid: V5_DIM_EXTRA,
+            copy_count: 1,
+            transform_range: 0..0,
+            application_uuid: None,
+            last_saved_as_goo: None,
+            archive_version: None,
+            writer_version: None,
+            payload_range: 0..extension.len(),
+            unknown_version: false,
+        };
+        let mut radial = radial;
+        apply_userdata(&extension, &[descriptor], archive, &mut radial).unwrap();
+        assert_eq!(radial.measurement, 200.0);
+        assert_eq!(radial.distance_scale, 2.0);
+        assert_eq!(radial.arrow_position, -1);
+        assert_eq!(
+            radial.detail_measured.to_string(),
+            "00000000-0000-0000-0000-00000000002a"
+        );
     }
 }
