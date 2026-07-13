@@ -8148,6 +8148,98 @@ fn semantic_writer_round_trips_extend_surface() {
 }
 
 #[test]
+fn semantic_writer_round_trips_all_ruled_surface_modes() {
+    use cadmpeg_ir::features::{
+        EdgeSelection, FaceSelection, FeatureDefinition, Length, RuledSurfaceMode,
+    };
+    use cadmpeg_ir::math::Vector3;
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let edge = base.ir.model.edges[0].id.0.clone();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><RuledSurface Name="Ruled" Type="SurfaceRuled" id="39" Edges="{edge}" SupportFaces="{face}" Mode="Direction" Direction="0,0,1" Trim="true"><Dimension Name="Distance">2mm</Dimension></RuledSurface></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let edge_id = decoded.ir.model.edges[0].id.clone();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::RuledSurface {
+            edges: EdgeSelection::Resolved { edges, native: edge_native },
+            support_faces: FaceSelection::Resolved { faces, native: face_native },
+            mode: RuledSurfaceMode::Direction {
+                direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+                distance: Length(2.0),
+            },
+        } if edges == &[edge_id.clone()] && edge_native == &edge
+            && faces == &[face_id.clone()] && face_native == &face
+    ));
+
+    let FeatureDefinition::RuledSurface {
+        edges,
+        support_faces,
+        mode,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed ruled surface");
+    };
+    *edges = EdgeSelection::Edges(vec![edge_id.clone()]);
+    *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
+    *mode = RuledSurfaceMode::Normal {
+        distance: Length(3.0),
+    };
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let mut regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Mode"], "Normal");
+    assert!(!native.properties.contains_key("Direction"));
+    assert_eq!(native.properties["Trim"], "true");
+    assert_eq!(native.parameters["Distance"], "3mm");
+
+    let FeatureDefinition::RuledSurface { mode, .. } =
+        &mut regenerated.ir.model.features[0].definition
+    else {
+        panic!("typed ruled surface");
+    };
+    *mode = RuledSurfaceMode::Tangent {
+        distance: Length(4.0),
+    };
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&regenerated.ir, &mut encoded)
+        .unwrap();
+    let tangent = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        tangent.ir.model.features[0].definition,
+        FeatureDefinition::RuledSurface {
+            mode: RuledSurfaceMode::Tangent {
+                distance: Length(4.0)
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

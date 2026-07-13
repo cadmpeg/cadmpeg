@@ -1262,6 +1262,27 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "surface extension is invalid");
                 }
             }
+            FeatureDefinition::RuledSurface {
+                edges,
+                support_faces,
+                mode,
+            } => {
+                edge_selections.push(edges);
+                face_selections.push(support_faces);
+                let valid = match mode {
+                    crate::features::RuledSurfaceMode::Normal { distance }
+                    | crate::features::RuledSurfaceMode::Tangent { distance } => {
+                        positive_feature_length(*distance)
+                    }
+                    crate::features::RuledSurfaceMode::Direction {
+                        direction,
+                        distance,
+                    } => valid_feature_direction(*direction) && positive_feature_length(*distance),
+                };
+                if !valid {
+                    feature_geometry_error(findings, feature, "ruled surface is invalid");
+                }
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,

@@ -422,6 +422,15 @@ pub enum FeatureDefinition {
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
+    /// Ruled surface grown from selected boundary edges.
+    RuledSurface {
+        /// Boundary edges from which the surface is generated.
+        edges: EdgeSelection,
+        /// Adjacent faces supplying normal or tangent context.
+        support_faces: FaceSelection,
+        /// Direction law and extension distance.
+        mode: RuledSurfaceMode,
+    },
     /// Taper applied to selected faces about a neutral plane.
     Draft {
         /// Faces whose angle is modified.
@@ -611,6 +620,29 @@ pub enum SurfaceExtension {
     Natural,
     /// Extend boundary tangents as ruled linear strips.
     Linear,
+}
+
+/// Direction law for a ruled-surface operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum RuledSurfaceMode {
+    /// Extend normal to the support faces.
+    Normal {
+        /// Positive extension distance.
+        distance: Length,
+    },
+    /// Extend tangent to the support faces.
+    Tangent {
+        /// Positive extension distance.
+        distance: Length,
+    },
+    /// Extend along one explicit model-space direction.
+    Direction {
+        /// Extension direction.
+        direction: Vector3,
+        /// Positive extension distance.
+        distance: Length,
+    },
 }
 
 /// Fixed locus of a body-scale transform.

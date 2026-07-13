@@ -9,8 +9,8 @@ use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
     DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, SurfaceContinuity,
-    SurfaceExtension, TrimRegion, VariableRadius, WrapMode,
+    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, RuledSurfaceMode, ScaleCenter,
+    SurfaceContinuity, SurfaceExtension, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -734,6 +734,14 @@ pub fn bind_topology_selections(
             FeatureDefinition::ExtendSurface { faces, .. } => {
                 resolve_face_selection(faces, &face_ids);
             }
+            FeatureDefinition::RuledSurface {
+                edges,
+                support_faces,
+                ..
+            } => {
+                resolve_edge_selection(edges, &edge_ids);
+                resolve_face_selection(support_faces, &face_ids);
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
@@ -976,6 +984,8 @@ fn project_definition(
             .unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "ExtendSurface") || feature_family(feature, "SurfaceExtend") {
         project_extend_surface(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "RuledSurface") || feature_family(feature, "SurfaceRuled") {
+        project_ruled_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
@@ -1810,6 +1820,31 @@ fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
             feature.parameters.get("Distance")?,
         )?),
         method,
+    })
+}
+
+fn project_ruled_surface(feature: &Feature) -> Option<FeatureDefinition> {
+    let distance = Length(parse_positive_length_mm(
+        feature.parameters.get("Distance")?,
+    )?);
+    let mode = match feature
+        .properties
+        .get("Mode")?
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "normal" => RuledSurfaceMode::Normal { distance },
+        "tangent" => RuledSurfaceMode::Tangent { distance },
+        "direction" => RuledSurfaceMode::Direction {
+            direction: parse_valid_direction(feature.properties.get("Direction")?)?,
+            distance,
+        },
+        _ => return None,
+    };
+    Some(FeatureDefinition::RuledSurface {
+        edges: EdgeSelection::Native(feature.properties.get("Edges")?.clone()),
+        support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
+        mode,
     })
 }
 
@@ -3109,6 +3144,74 @@ pub fn sync_neutral_features(
                     existing
                         .as_deref()
                         .map_or_else(|| "ExtendSurface".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
+            FeatureDefinition::RuledSurface {
+                edges,
+                support_faces,
+                mode,
+            } => {
+                let edges = edge_selection_value(edges).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no ruled-surface boundary edges",
+                        feature.id
+                    ))
+                })?;
+                let support_faces = face_selection_value(support_faces).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no ruled-surface supports",
+                        feature.id
+                    ))
+                })?;
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "RuledSurface")
+                        && !feature_family(record, "SurfaceRuled")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let (mode_name, direction, distance) = match mode {
+                    RuledSurfaceMode::Normal { distance } => ("Normal", None, *distance),
+                    RuledSurfaceMode::Tangent { distance } => ("Tangent", None, *distance),
+                    RuledSurfaceMode::Direction {
+                        direction,
+                        distance,
+                    } => {
+                        require_direction(*direction, &feature.id, "ruled-surface direction")?;
+                        ("Direction", Some(*direction), *distance)
+                    }
+                };
+                if !distance.0.is_finite() || distance.0 <= 0.0 {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid ruled-surface distance",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.insert("Distance".into(), format_length_mm(distance.0));
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Edges".into(), edges);
+                properties.insert("SupportFaces".into(), support_faces);
+                properties.insert("Mode".into(), mode_name.into());
+                match direction {
+                    Some(direction) => {
+                        properties.insert("Direction".into(), format_vector3(direction));
+                    }
+                    None => {
+                        properties.remove("Direction");
+                    }
+                }
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "RuledSurface".into(), |record| record.kind.clone()),
                     parameters,
                     properties,
                 )
@@ -5323,6 +5426,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
         FeatureDefinition::TrimSurface { .. } => "TrimSurface",
         FeatureDefinition::ExtendSurface { .. } => "ExtendSurface",
+        FeatureDefinition::RuledSurface { .. } => "RuledSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",

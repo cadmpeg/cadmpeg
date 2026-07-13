@@ -2046,6 +2046,14 @@ fn feature_operation_geometry_is_validated() {
             distance: Length(0.0),
             method: crate::features::SurfaceExtension::Natural,
         },
+        FeatureDefinition::RuledSurface {
+            edges: EdgeSelection::Unresolved,
+            support_faces: FaceSelection::Unresolved,
+            mode: crate::features::RuledSurfaceMode::Direction {
+                direction: Vector3::new(0.0, 0.0, 0.0),
+                distance: Length(0.0),
+            },
+        },
         FeatureDefinition::Scale {
             bodies: crate::features::BodySelection::Unresolved,
             center: ScaleCenter::Point(Point3::new(0.0, f64::NAN, 0.0)),
@@ -2106,6 +2114,7 @@ fn feature_operation_geometry_is_validated() {
         "surface offset is invalid",
         "knit tolerance is invalid",
         "surface extension is invalid",
+        "ruled surface is invalid",
         "scale transform is invalid",
         "coordinate-system frame is invalid",
         "equation curve is invalid",
