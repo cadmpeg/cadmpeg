@@ -191,6 +191,45 @@ const CYLINDER: &[Token] = &[
     Token::Scalar,
     Token::Vector,
 ];
+const CONE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Vector,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Vector,
+];
+const SPHERE: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Scalar,
+    Token::Vector,
+    Token::Vector,
+];
+const TORUS: &[Token] = &[
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Ref,
+    Token::Sense,
+    Token::Position,
+    Token::Vector,
+    Token::Scalar,
+    Token::Scalar,
+    Token::Vector,
+];
 
 /// Walk all accepted full records and compact tombstones in an inflated
 /// deltas stream.
@@ -259,7 +298,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=19 | 29..=32 | 50 | 51)
+        if matches!(kind, 12..=19 | 29..=32 | 50..=54)
             && crate::topology::Graph::parse(&record.canonical_bytes)
                 .get(kind, record.xmt)
                 .is_some()
@@ -419,6 +458,9 @@ fn family_name(kind: u16) -> Option<&'static str> {
         32 => "ELLIPSE",
         50 => "PLANE",
         51 => "CYLINDER",
+        52 => "CONE",
+        53 => "SPHERE",
+        54 => "TORUS",
         12 => "BODY",
         13 => "SHELL",
         19 => "REGION",
@@ -440,6 +482,9 @@ fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
         32 => ELLIPSE,
         50 => PLANE,
         51 => CYLINDER,
+        52 => CONE,
+        53 => SPHERE,
+        54 => TORUS,
         19 => REGION,
         _ => return None,
     })

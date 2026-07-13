@@ -838,6 +838,129 @@ fn deltas_cylinder_partition_stream() -> Vec<u8> {
     stream
 }
 
+fn cone_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face");
+    put_ref(&mut stream, face + 26, 12);
+    let mut cone = record(52, 115);
+    put_ref(&mut cone, 2, 12);
+    cone[18] = b'+';
+    put_vec3(&mut cone, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut cone, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut cone, 67, 0.01);
+    put_f64(&mut cone, 75, 0.0);
+    put_f64(&mut cone, 83, 1.0);
+    put_vec3(&mut cone, 91, [1.0, 0.0, 0.0]);
+    stream.extend(cone);
+    stream
+}
+
+fn deltas_cone_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&52u16.to_be_bytes());
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&911u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [
+        0.001f64,
+        0.002,
+        0.003,
+        0.0,
+        1.0,
+        0.0,
+        0.025,
+        0.5,
+        3.0f64.sqrt() / 2.0,
+        1.0,
+        0.0,
+        0.0,
+    ] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
+fn sphere_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face");
+    put_ref(&mut stream, face + 26, 12);
+    let mut sphere = record(53, 99);
+    put_ref(&mut sphere, 2, 12);
+    sphere[18] = b'+';
+    put_vec3(&mut sphere, 19, [0.0, 0.0, 0.0]);
+    put_f64(&mut sphere, 43, 0.01);
+    put_vec3(&mut sphere, 51, [0.0, 0.0, 1.0]);
+    put_vec3(&mut sphere, 75, [1.0, 0.0, 0.0]);
+    stream.extend(sphere);
+    stream
+}
+
+fn deltas_sphere_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&53u16.to_be_bytes());
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&912u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [0.001f64, 0.002, 0.003, 0.025, 0.0, 1.0, 0.0, 1.0, 0.0, 0.0] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
+fn torus_topology_partition_stream() -> Vec<u8> {
+    let mut stream = topology_partition_stream();
+    let face = stream
+        .windows(4)
+        .position(|window| window == [0, 14, 0, 4])
+        .expect("face");
+    put_ref(&mut stream, face + 26, 12);
+    let mut torus = record(54, 107);
+    put_ref(&mut torus, 2, 12);
+    torus[18] = b'+';
+    put_vec3(&mut torus, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut torus, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut torus, 67, 0.03);
+    put_f64(&mut torus, 75, 0.01);
+    put_vec3(&mut torus, 83, [1.0, 0.0, 0.0]);
+    stream.extend(torus);
+    stream
+}
+
+fn deltas_torus_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&54u16.to_be_bytes());
+    stream.extend_from_slice(&12u16.to_be_bytes());
+    stream.extend_from_slice(&913u32.to_be_bytes());
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for value in [
+        0.001f64, 0.002, 0.003, 0.0, 1.0, 0.0, 0.04, 0.015, 1.0, 0.0, 0.0,
+    ] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
 fn bspline_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00XX: TRANSMIT FILE (partition)\x00SCH_TEST_1_9999\x00");
@@ -2117,6 +2240,70 @@ fn decode_replaces_partition_cylinder_from_status_framed_deltas() {
                 && axis == Vector3::new(0.0, 1.0, 0.0)
                 && ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 25.0
+    )));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_cone_from_status_framed_deltas() {
+    let partition = cone_topology_partition_stream();
+    let deltas = deltas_cone_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cone { origin, axis, ref_direction, radius, half_angle }
+            if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && axis == Vector3::new(0.0, 1.0, 0.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 25.0
+                && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+    )));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_sphere_from_status_framed_deltas() {
+    let partition = sphere_topology_partition_stream();
+    let deltas = deltas_sphere_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Sphere { center, axis, ref_direction, radius }
+            if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && axis == Vector3::new(0.0, 1.0, 0.0)
+                && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                && radius == 25.0
+    )));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_torus_from_status_framed_deltas() {
+    let partition = torus_topology_partition_stream();
+    let deltas = deltas_torus_partition_stream();
+    let file = prt_with_streams(&[&partition, &deltas]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if center == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+            && axis == Vector3::new(0.0, 1.0, 0.0)
+            && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+            && major_radius == 40.0
+            && minor_radius == 15.0
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }

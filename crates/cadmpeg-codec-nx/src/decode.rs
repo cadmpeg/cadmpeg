@@ -1320,7 +1320,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
             severity: Severity::Warning,
             message: format!(
                 "{} Parasolid deltas stream(s) were paired by adjacency and equal schema. Exact-key \
-                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, and CYLINDER full records and compact \
+                 BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, and TORUS full records and compact \
                  tombstones were applied in source order. Tombstones \
                  without an exact partition key remain unresolved.",
                 scan.count(StreamKind::Deltas)
