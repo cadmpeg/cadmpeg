@@ -1980,7 +1980,15 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
 /// the caller falls back to the container-metadata path.
 fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let brep = scan.brep.as_ref()?;
-    let points = geometry::vertices(brep);
+    let points = topology::standard_vertex_points(brep).map_or_else(
+        || geometry::vertices(brep),
+        |points| {
+            points
+                .into_iter()
+                .map(|[x, y, z]| Point3::new(x, y, z))
+                .collect()
+        },
+    );
     let face_count: usize = fbb_groups(brep).into_iter().sum();
     let records = geometry::standard_surface_records(brep, face_count).unwrap_or_else(|| {
         geometry::surface_prefixes(brep)
@@ -2339,67 +2347,101 @@ fn attach_standard_topology(
             .as_ref()
             .and_then(|ports| topology::bind_edge_port_candidates(ports, options))
     });
-    let resolved_endpoint_pairs = endpoint_options
+    let propagated_endpoint_pairs = endpoint_options
         .as_ref()
-        .and_then(|options| {
-            options
+        .zip(topology::standard_edge_ports(brep))
+        .and_then(|(options, ports)| {
+            let pairs = options
                 .iter()
                 .map(|pairs| {
                     <[[usize; 2]; 1]>::try_from(pairs.as_slice())
                         .ok()
                         .map(|pair| pair[0])
                 })
-                .collect::<Option<Vec<_>>>()
-        })
-        .zip(topology::standard_edge_ports(brep))
-        .and_then(|(pairs, ports)| {
-            let pairs = pairs.into_iter().map(Some).collect::<Vec<_>>();
+                .collect::<Vec<_>>();
             topology::propagate_edge_port_points(&ports, &pairs)
         })
-        .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
-    let (topology, point_assignment) = if let Some(topology) = topology::parse_standard(brep) {
-        let endpoint_pairs = resolved_endpoint_pairs.clone().or_else(|| {
-            endpoint_candidates
-                .iter()
-                .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
-                .collect::<Option<Vec<[usize; 2]>>>()
+        .zip(endpoint_options.as_ref())
+        .map(|(propagated, options)| {
+            propagated
+                .into_iter()
+                .zip(options)
+                .map(|(pair, candidates)| {
+                    pair.filter(|pair| {
+                        candidates.iter().any(|candidate| {
+                            *candidate == *pair || *candidate == [pair[1], pair[0]]
+                        })
+                    })
+                })
+                .collect::<Vec<_>>()
         });
-        let Some(endpoint_pairs) = endpoint_pairs else {
-            return false;
-        };
-        let Some(point_assignment) = topology.bind_vertex_points(&endpoint_pairs) else {
-            return false;
-        };
-        (topology, point_assignment)
+    let constrained_endpoint_options = endpoint_options.as_ref().map(|options| {
+        options
+            .iter()
+            .enumerate()
+            .map(|(edge, pairs)| {
+                propagated_endpoint_pairs
+                    .as_ref()
+                    .and_then(|propagated| propagated[edge])
+                    .map_or_else(|| pairs.clone(), |pair| vec![pair])
+            })
+            .collect::<Vec<_>>()
+    });
+    let resolved_endpoint_pairs = propagated_endpoint_pairs
+        .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
+    let mesh_bound = topology::parse_standard(brep).and_then(|topology| {
+        let endpoint_pairs = resolved_endpoint_pairs
+            .clone()
+            .or_else(|| {
+                endpoint_candidates
+                    .iter()
+                    .map(|candidates| <[usize; 2]>::try_from(candidates.as_slice()).ok())
+                    .collect::<Option<Vec<[usize; 2]>>>()
+            })
+            .or_else(|| {
+                let ports = topology
+                    .edge_vertices()?
+                    .into_iter()
+                    .map(|[left, right]| {
+                        Some([u32::try_from(left).ok()?, u32::try_from(right).ok()?])
+                    })
+                    .collect::<Option<Vec<_>>>()?;
+                topology::bind_edge_port_candidates(&ports, constrained_endpoint_options.as_ref()?)
+            })?;
+        let point_assignment = topology.bind_vertex_points(&endpoint_pairs)?;
+        Some((topology, point_assignment))
+    });
+    let circle_anchors: Vec<Option<[usize; 2]>> = supports
+        .iter()
+        .zip(&endpoint_candidates)
+        .map(|(support, candidates)| match &support.geometry {
+            geometry::StandardCurveGeometry::Circle { .. } => {
+                <[usize; 2]>::try_from(candidates.as_slice()).ok()
+            }
+            geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
+                None
+            }
+        })
+        .collect();
+    let motif_topology = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors);
+    let (topology, point_assignment) = if let Some(bound) = mesh_bound {
+        bound
     } else if let Some(topology) = native_endpoint_pairs
         .as_ref()
         .and_then(|pairs| topology::parse_standard_endpoints(brep, &edge_faces, pairs))
-        .or_else(|| {
-            endpoint_options.as_ref().and_then(|options| {
-                topology::parse_standard_endpoint_candidates(brep, &edge_faces, options)
-            })
-        })
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
-    } else {
-        let circle_anchors: Vec<Option<[usize; 2]>> = supports
-            .iter()
-            .zip(&endpoint_candidates)
-            .map(|(support, candidates)| match &support.geometry {
-                geometry::StandardCurveGeometry::Circle { .. } => {
-                    <[usize; 2]>::try_from(candidates.as_slice()).ok()
-                }
-                geometry::StandardCurveGeometry::Line
-                | geometry::StandardCurveGeometry::Bspline => None,
-            })
-            .collect();
-        let Some(topology) = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors)
-        else {
-            return false;
-        };
+    } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
+        topology::parse_standard_endpoint_candidates(brep, &edge_faces, options)
+    }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
+    } else if let Some(topology) = motif_topology {
+        let point_assignment = (0..ir.model.points.len()).collect();
+        (topology, point_assignment)
+    } else {
+        return false;
     };
     if topology.face_count() != face_count
         || topology.edge_rows().len() != supports.len()
@@ -2581,6 +2623,8 @@ fn resolve_standard_endpoint_pairs(
     supports: &[geometry::StandardCurveSupport],
     candidates: &[Vec<usize>],
 ) -> Option<Vec<Vec<[usize; 2]>>> {
+    const MAX_PAIR_RELATIONS_PER_EDGE: usize = 65_536;
+
     let mut resolved: Vec<Vec<[usize; 2]>> = candidates
         .iter()
         .map(|points| {
@@ -2597,15 +2641,22 @@ fn resolve_standard_endpoint_pairs(
                     | geometry::StandardCurveGeometry::Bspline
             )
         {
-            resolved[edge] = candidates[edge]
-                .iter()
-                .enumerate()
-                .flat_map(|(left, &start)| {
-                    candidates[edge][left + 1..]
-                        .iter()
-                        .map(move |&end| [start, end])
-                })
-                .collect();
+            let count = candidates[edge].len();
+            if count
+                .checked_mul(count.saturating_sub(1))
+                .and_then(|value| value.checked_div(2))
+                .is_some_and(|relations| relations <= MAX_PAIR_RELATIONS_PER_EDGE)
+            {
+                resolved[edge] = candidates[edge]
+                    .iter()
+                    .enumerate()
+                    .flat_map(|(left, &start)| {
+                        candidates[edge][left + 1..]
+                            .iter()
+                            .map(move |&end| [start, end])
+                    })
+                    .collect();
+            }
         }
     }
     let mut line_groups = HashMap::<[usize; 2], Vec<usize>>::new();

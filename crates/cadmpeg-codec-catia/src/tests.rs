@@ -101,6 +101,23 @@ fn standard_topology_recovers_a_quad_boundary_and_port_vertices() {
 }
 
 #[test]
+fn standard_counted_vertex_table_excludes_incidental_markers() {
+    let mut bytes = standard_quad_topology_stream();
+    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+    bytes.extend_from_slice(&le_f32(10.0));
+    bytes.extend_from_slice(&le_f32(20.0));
+    bytes.extend_from_slice(&le_f32(30.0));
+
+    assert_eq!(crate::geometry::vertices(&bytes).len(), 5);
+    assert_eq!(
+        crate::topology::standard_vertex_points(&bytes)
+            .unwrap()
+            .len(),
+        4
+    );
+}
+
+#[test]
 fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes
@@ -162,7 +179,13 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
         }
         bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
     }
-    bytes.extend_from_slice(&[0x01, 0x06, 0]);
+    bytes.extend_from_slice(&[0x01, 0x06, 4]);
+    for index in 0..4 {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [index as f32, 0.0, 0.0] {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
 
     let topology = crate::topology::parse_fbb(&bytes).expect("valid FBB topology");
     assert_eq!(
@@ -172,6 +195,12 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.logical_vertex_count(), 4);
     assert!(topology.vertex_points().is_empty());
+    assert_eq!(
+        crate::topology::standard_vertex_points(&bytes)
+            .unwrap()
+            .len(),
+        4
+    );
 }
 
 #[test]

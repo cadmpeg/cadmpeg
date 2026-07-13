@@ -234,6 +234,15 @@ pub fn standard_plane_normals(bytes: &[u8]) -> Vec<[f64; 3]> {
         .collect()
 }
 
+/// Return the counted standard-spine vertex table. The edge-table width family
+/// is resolved structurally before accepting the following `01 06` table.
+#[must_use]
+pub fn standard_vertex_points(bytes: &[u8]) -> Option<Vec<[f64; 3]>> {
+    let (_, _, after_faces) = largest_fbb_run(bytes)?;
+    let (_, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    parse_vertex_table(bytes, vertex_header)
+}
+
 /// Parses the counted standard spine, positional trim packets, mesh boundary
 /// cycles, physical edge uses, and port/corner vertex equivalence classes.
 /// Returns `None` unless every positional face boundary is unambiguous.
@@ -242,14 +251,23 @@ pub fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-
-    let trims = parse_trim_records(&bytes[..face_start]);
-    if trims.len() < face_count {
-        return None;
+    let mut solutions = Vec::new();
+    for width in [2, 3] {
+        let trims = parse_trim_records_with_width(&bytes[..face_start], width);
+        if trims.len() < face_count {
+            continue;
+        }
+        if let Some(topology) = reconstruct(
+            edge_rows.clone(),
+            vertex_points.clone(),
+            &trims[trims.len() - face_count..],
+        ) {
+            solutions.push(topology);
+        }
     }
-    let trims = &trims[trims.len() - face_count..];
-
-    reconstruct(edge_rows, vertex_points, trims)
+    <[StandardTopology; 1]>::try_from(solutions)
+        .ok()
+        .map(|[topology]| topology)
 }
 
 /// Reconstruct regular-motif standard topology by replaying the trim packet's
@@ -265,41 +283,57 @@ pub fn parse_standard_motif(
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
-    let trims = parse_trim_records(&bytes[..face_start]);
-    if trims.len() < face_count
-        || edge_rows.len() != edge_faces.len()
-        || edge_rows.len() != circle_anchors.len()
-    {
+    if edge_rows.len() != edge_faces.len() || edge_rows.len() != circle_anchors.len() {
         return None;
     }
-    let trims = &trims[trims.len() - face_count..];
-    let port_points = motif_port_points(trims, vertex_points.len())?;
-    let edge_points: Vec<[usize; 2]> = edge_rows
-        .iter()
-        .map(|row| {
-            Some([
-                *port_points.get(row.handles.first()?)?,
-                *port_points.get(row.handles.last()?)?,
-            ])
-        })
-        .collect::<Option<_>>()?;
-    for (points, anchor) in edge_points.iter().zip(circle_anchors) {
-        if let Some(mut anchor) = *anchor {
-            anchor.sort_unstable();
-            let mut points = *points;
-            points.sort_unstable();
-            if points != anchor {
-                return None;
+    let mut solutions = Vec::new();
+    for width in [2, 3] {
+        let trims = parse_trim_records_with_width(&bytes[..face_start], width);
+        if trims.len() < face_count {
+            continue;
+        }
+        let trims = &trims[trims.len() - face_count..];
+        let Some(port_points) = motif_port_points(trims, vertex_points.len()) else {
+            continue;
+        };
+        let Some(edge_points) = edge_rows
+            .iter()
+            .map(|row| {
+                Some([
+                    *port_points.get(row.handles.first()?)?,
+                    *port_points.get(row.handles.last()?)?,
+                ])
+            })
+            .collect::<Option<Vec<[usize; 2]>>>()
+        else {
+            continue;
+        };
+        let anchors_match = edge_points
+            .iter()
+            .zip(circle_anchors)
+            .all(|(points, anchor)| {
+                anchor.is_none_or(|mut anchor| {
+                    anchor.sort_unstable();
+                    let mut points = *points;
+                    points.sort_unstable();
+                    points == anchor
+                })
+            });
+        if anchors_match {
+            if let Some(topology) = reconstruct_incidence(
+                edge_rows.clone(),
+                vertex_points.clone(),
+                edge_faces,
+                &edge_points,
+                face_count,
+            ) {
+                solutions.push(topology);
             }
         }
     }
-    reconstruct_incidence(
-        edge_rows,
-        vertex_points,
-        edge_faces,
-        &edge_points,
-        face_count,
-    )
+    <[StandardTopology; 1]>::try_from(solutions)
+        .ok()
+        .map(|[topology]| topology)
 }
 
 /// Reconstruct standard topology from byte-derived endpoint coordinate rows.
@@ -1082,7 +1116,15 @@ fn parse_count(bytes: &[u8], position: &mut usize) -> Option<usize> {
     usize::try_from(value).ok()
 }
 
-fn parse_edge_tables(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+    if let Some(result) = parse_edge_tables_at(bytes, position) {
+        return Some(result);
+    }
+    parse_fbb_edge_tables(bytes, position)
+        .filter(|(_, vertex_header)| parse_vertex_table(bytes, *vertex_header).is_some())
+}
+
+fn parse_edge_tables_at(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRow>, usize)> {
     let mut rows = Vec::new();
     loop {
         if bytes.get(position) != Some(&0x01) {

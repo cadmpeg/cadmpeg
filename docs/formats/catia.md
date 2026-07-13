@@ -148,7 +148,7 @@ vertex_table := count_header(kind=0x06) vertex_record{count}
 vertex_record:= 05 08 01 <x_f32le> <y_f32le> <z_f32le>
 ```
 
-Spine invariants: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are `u16` handles read **big-endian**; the first and last BE handles of a row are its graph endpoints; the `05 08 01` table is the vertex coordinate source; body count = number of contiguous FBB runs. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
+Spine invariants: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are big-endian handles in the selected `u16` or `u24` width family; the first and last handles of a row are its graph endpoints; the counted `01 06` table is the vertex coordinate source; body count = number of contiguous FBB runs. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
 
 ### 5.3 Trim records (indexed triangle-mesh packets)
 
