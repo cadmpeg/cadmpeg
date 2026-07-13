@@ -4560,7 +4560,7 @@ fn decode_dispatches_typed_features_by_xml_family() {
             <Hole Name="Drill" Type="CustomHole" id="55"><Dimension Name="Diameter">4mm</Dimension><Dimension Name="Depth">5mm</Dimension></Hole>
         </Keywords>"#,
     ));
-    let decoded = SldprtCodec
+    let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
     assert!(matches!(
@@ -4597,6 +4597,25 @@ fn decode_dispatches_typed_features_by_xml_family() {
             ..
         }
     ));
+
+    let FeatureDefinition::Fillet {
+        radius: RadiusSpec::Constant { radius },
+        ..
+    } = &mut decoded.ir.model.features[2].definition
+    else {
+        panic!("typed custom fillet");
+    };
+    *radius = Length(2.5);
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(native[2].kind, "CustomFillet");
+    assert_eq!(native[2].parameters["Radius"], "2.5mm");
 }
 
 #[test]

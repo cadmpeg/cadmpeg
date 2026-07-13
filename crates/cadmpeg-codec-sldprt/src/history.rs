@@ -1716,7 +1716,7 @@ pub fn sync_neutral_features(
                 }
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("ReferencePlane"))
+                    .is_some_and(|record| !feature_family(record, "ReferencePlane"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
@@ -1759,7 +1759,7 @@ pub fn sync_neutral_features(
                 }
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("ReferenceAxis"))
+                    .is_some_and(|record| !feature_family(record, "ReferenceAxis"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
@@ -1795,7 +1795,7 @@ pub fn sync_neutral_features(
                 }
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("ReferencePoint"))
+                    .is_some_and(|record| !feature_family(record, "ReferencePoint"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
@@ -1821,7 +1821,7 @@ pub fn sync_neutral_features(
             FeatureDefinition::Sketch { .. } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Sketch"))
+                    .is_some_and(|record| !feature_family(record, "Sketch"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
@@ -1849,10 +1849,10 @@ pub fn sync_neutral_features(
                 op,
                 draft,
             } => {
-                if existing.as_deref().is_some_and(|record| {
-                    extrude_op(&record.kind).is_none()
-                        && !record.kind.eq_ignore_ascii_case("Extrusion")
-                }) {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !is_extrude(record))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported extrusion semantics",
                         feature.id
@@ -1961,7 +1961,7 @@ pub fn sync_neutral_features(
                 };
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Fillet"))
+                    .is_some_and(|record| !feature_family(record, "Fillet"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported fillet semantics",
@@ -2042,7 +2042,7 @@ pub fn sync_neutral_features(
                 };
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Chamfer"))
+                    .is_some_and(|record| !feature_family(record, "Chamfer"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported chamfer semantics",
@@ -2137,7 +2137,7 @@ pub fn sync_neutral_features(
                 };
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Shell"))
+                    .is_some_and(|record| !feature_family(record, "Shell"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported shell semantics",
@@ -2185,7 +2185,7 @@ pub fn sync_neutral_features(
                 };
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Draft"))
+                    .is_some_and(|record| !feature_family(record, "Draft"))
                     || !operands_supported(face_selection, faces)
                     || !operands_supported(plane_selection, neutral_plane)
                 {
@@ -2240,7 +2240,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Combine"))
+                    .is_some_and(|record| !feature_family(record, "Combine"))
                     || *op == BooleanOp::NewBody
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -2278,7 +2278,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("DeleteFace"))
+                    .is_some_and(|record| !feature_family(record, "DeleteFace"))
                     || faces.trim().is_empty()
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -2309,7 +2309,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("MoveFace"))
+                    .is_some_and(|record| !feature_family(record, "MoveFace"))
                     || faces.trim().is_empty()
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -2379,7 +2379,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Dome"))
+                    .is_some_and(|record| !feature_family(record, "Dome"))
                     || faces.trim().is_empty()
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -2423,7 +2423,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Hole"))
+                    .is_some_and(|record| !feature_family(record, "Hole"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported hole semantics",
@@ -2549,7 +2549,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Revolve"))
+                    .is_some_and(|record| !is_revolve(record))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported revolution semantics",
@@ -2621,7 +2621,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Sweep"))
+                    .is_some_and(|record| !feature_family(record, "Sweep"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
@@ -2691,7 +2691,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Loft"))
+                    .is_some_and(|record| !feature_family(record, "Loft"))
                     || profiles.len() < 2
                 {
                     return Err(CodecError::NotImplemented(format!(
@@ -2752,7 +2752,7 @@ pub fn sync_neutral_features(
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !record.kind.eq_ignore_ascii_case("Rib"))
+                    .is_some_and(|record| !feature_family(record, "Rib"))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
