@@ -4,7 +4,7 @@
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve};
 use cadmpeg_ir::ids::{BodyId, CurveId, EdgeId, PointId, RegionId, ShellId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
@@ -504,6 +504,236 @@ pub(crate) fn project_geometry(
             start: start_vertex,
             end: end_vertex,
             param_range: Some([0.0, length]),
+            tolerance: None,
+        });
+        wire_edges.push(edge);
+        decoded.insert(entry.sequence);
+    }
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 126 && (0..=5).contains(&entry.form))
+    {
+        handled.insert(entry.sequence);
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(k) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "upper control-point index K is invalid"));
+            continue;
+        };
+        let Some(degree) = record
+            .integer(2)
+            .and_then(|value| u32::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "basis degree M is invalid"));
+            continue;
+        };
+        let degree_usize = usize::try_from(degree).unwrap_or(usize::MAX);
+        if degree == 0 || k < degree_usize {
+            losses.push(entity_loss(
+                entry,
+                "control-point count is smaller than degree plus one",
+            ));
+            continue;
+        }
+        let flags = [
+            record.integer(3),
+            record.integer(4),
+            record.integer(5),
+            record.integer(6),
+        ];
+        if flags.iter().any(|flag| !matches!(flag, Some(0 | 1))) {
+            losses.push(entity_loss(
+                entry,
+                "one or more spline flags are not 0 or 1",
+            ));
+            continue;
+        }
+        let Some(control_count) = k.checked_add(1) else {
+            losses.push(entity_loss(entry, "control-point count overflows"));
+            continue;
+        };
+        let Some(knot_count) = control_count
+            .checked_add(degree_usize)
+            .and_then(|value| value.checked_add(1))
+        else {
+            losses.push(entity_loss(entry, "knot count overflows"));
+            continue;
+        };
+        let knot_start = 7_usize;
+        let Some(weight_start) = knot_start.checked_add(knot_count) else {
+            losses.push(entity_loss(entry, "weight offset overflows"));
+            continue;
+        };
+        let Some(pole_start) = weight_start.checked_add(control_count) else {
+            losses.push(entity_loss(entry, "control-point offset overflows"));
+            continue;
+        };
+        let Some(pole_value_count) = control_count.checked_mul(3) else {
+            losses.push(entity_loss(entry, "control-point value count overflows"));
+            continue;
+        };
+        let Some(range_start) = pole_start.checked_add(pole_value_count) else {
+            losses.push(entity_loss(entry, "parameter-range offset overflows"));
+            continue;
+        };
+        let collect_numbers = |start: usize, count: usize| -> Option<Vec<f64>> {
+            (start..start.checked_add(count)?)
+                .map(|index| record.number(index).filter(|value| value.is_finite()))
+                .collect()
+        };
+        let Some(knots) = collect_numbers(knot_start, knot_count) else {
+            losses.push(entity_loss(entry, "knot vector is truncated or non-finite"));
+            continue;
+        };
+        if knots.windows(2).any(|pair| pair[0] > pair[1]) {
+            losses.push(entity_loss(entry, "knot vector is decreasing"));
+            continue;
+        }
+        let Some(native_weights) = collect_numbers(weight_start, control_count) else {
+            losses.push(entity_loss(
+                entry,
+                "weight vector is truncated or non-finite",
+            ));
+            continue;
+        };
+        if native_weights.iter().any(|weight| *weight <= 0.0) {
+            losses.push(entity_loss(entry, "weights are not strictly positive"));
+            continue;
+        }
+        let polynomial = native_weights
+            .first()
+            .is_some_and(|first| native_weights.iter().all(|weight| weight == first));
+        if (flags[2] == Some(1)) != polynomial {
+            losses.push(entity_loss(
+                entry,
+                "polynomial flag does not agree with the weight vector",
+            ));
+            continue;
+        }
+        let Some(native_poles) = collect_numbers(pole_start, pole_value_count) else {
+            losses.push(entity_loss(
+                entry,
+                "control-point vector is truncated or non-finite",
+            ));
+            continue;
+        };
+        let Some(parameter_range) = collect_numbers(range_start, 2) else {
+            losses.push(entity_loss(
+                entry,
+                "parameter range is missing or non-finite",
+            ));
+            continue;
+        };
+        if parameter_range[0] > parameter_range[1]
+            || parameter_range[0] < knots[degree_usize]
+            || parameter_range[1] > knots[control_count]
+        {
+            losses.push(entity_loss(
+                entry,
+                "parameter range lies outside the spline knot domain",
+            ));
+            continue;
+        }
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        ) {
+            Ok(transform) => transform,
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        let control_points = native_poles
+            .chunks_exact(3)
+            .map(|point| {
+                transform.point(Point3::new(
+                    point[0] * factor,
+                    point[1] * factor,
+                    point[2] * factor,
+                ))
+            })
+            .collect::<Vec<_>>();
+        let weights = (!polynomial).then_some(native_weights);
+        let nurbs = NurbsCurve {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic: flags[3] == Some(1),
+        };
+        let Some(start) = cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            parameter_range[0],
+        ) else {
+            losses.push(entity_loss(entry, "spline start point cannot be evaluated"));
+            continue;
+        };
+        let Some(end) = cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            parameter_range[1],
+        ) else {
+            losses.push(entity_loss(entry, "spline end point cannot be evaluated"));
+            continue;
+        };
+        let stem = format!("D{}", entry.sequence);
+        let start_point = PointId(format!("iges:model:point#{stem}-start"));
+        let end_point = PointId(format!("iges:model:point#{stem}-end"));
+        let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
+        let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
+        let curve = CurveId(format!("iges:model:curve#{stem}"));
+        let edge = EdgeId(format!("iges:model:edge#{stem}"));
+        ir.model.points.extend([
+            Point {
+                id: start_point.clone(),
+                position: start,
+            },
+            Point {
+                id: end_point.clone(),
+                position: end,
+            },
+        ]);
+        ir.model.vertices.extend([
+            Vertex {
+                id: start_vertex.clone(),
+                point: start_point,
+                tolerance: None,
+            },
+            Vertex {
+                id: end_vertex.clone(),
+                point: end_point,
+                tolerance: None,
+            },
+        ]);
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Nurbs(nurbs),
+            source_object: Some(source_object(entry)),
+        });
+        ir.model.edges.push(Edge {
+            id: edge.clone(),
+            curve: Some(curve),
+            start: start_vertex,
+            end: end_vertex,
+            param_range: Some([parameter_range[0], parameter_range[1]]),
             tolerance: None,
         });
         wire_edges.push(edge);

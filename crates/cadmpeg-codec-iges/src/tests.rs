@@ -181,6 +181,123 @@ fn circular_arc_file() -> Vec<u8> {
     bytes
 }
 
+fn nurbs_curve_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["126", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["126", "0", "0", "1", "1", "", "", "NURBS", "0"],
+        2,
+    ));
+    bytes.extend(parameter_card(
+        b"126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,2,0,0,0,1,0,0,1;",
+        1,
+        1,
+    ));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+fn rational_nurbs_curve_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["126", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["126", "0", "0", "1", "0", "", "", "RNURBS", "0"],
+        2,
+    ));
+    bytes.extend(parameter_card(
+        b"126,2,2,1,0,0,0,0,0,0,1,1,1,1,0.5,1,0,0,0,1,1,0,2,0,0,0,1,0,0,1;",
+        1,
+        1,
+    ));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P0000001").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_preserves_rational_bspline_weights_and_multiplicities() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(rational_nurbs_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a NURBS carrier");
+    };
+    assert_eq!(nurbs.degree, 2);
+    assert_eq!(nurbs.knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+    assert_eq!(nurbs.weights, Some(vec![1.0, 0.5, 1.0]));
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            0.5,
+        ),
+        Some(cadmpeg_ir::math::Point3::new(1.0, 1.0 / 3.0, 0.0))
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_projects_a_bounded_polynomial_bspline_curve() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(nurbs_curve_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &result.ir.model.curves[0].geometry
+    else {
+        panic!("expected a NURBS carrier");
+    };
+    assert_eq!(nurbs.degree, 1);
+    assert_eq!(nurbs.knots, vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(nurbs.control_points.len(), 2);
+    assert_eq!(nurbs.weights, None);
+    assert!(!nurbs.periodic);
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_curve_point(
+            nurbs.degree,
+            &nurbs.knots,
+            &nurbs.control_points,
+            nurbs.weights.as_deref(),
+            0.5,
+        ),
+        Some(cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0))
+    );
+    assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 1.0]));
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_projects_a_counterclockwise_circular_arc() {
     let result = IgesCodec

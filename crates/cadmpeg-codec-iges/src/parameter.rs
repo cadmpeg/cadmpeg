@@ -35,6 +35,13 @@ pub(crate) struct ParameterRecord {
 }
 
 impl ParameterRecord {
+    pub(crate) fn integer(&self, index: usize) -> Option<i64> {
+        match self.tokens.get(index).map(|token| &token.value)? {
+            TokenValue::Integer(value) => Some(*value),
+            TokenValue::Omitted | TokenValue::Real(_) | TokenValue::String(_) => None,
+        }
+    }
+
     pub(crate) fn number(&self, index: usize) -> Option<f64> {
         match self.tokens.get(index).map(|token| &token.value)? {
             TokenValue::Integer(value) => Some(*value as f64),
