@@ -13044,6 +13044,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         code: u32,
         object_id: u32,
         name: &str,
+        class_name: &str,
         direct_class: bool,
         padding: usize,
     ) -> Vec<u8> {
@@ -13052,8 +13053,8 @@ fn decode_projects_feature_input_extrusion_operations() {
         payload.extend(std::iter::repeat_n(0, padding));
         if direct_class {
             payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
-            payload.extend_from_slice(&7u16.to_le_bytes());
-            payload.extend_from_slice(b"moICE_c");
+            payload.extend_from_slice(&(class_name.len() as u16).to_le_bytes());
+            payload.extend_from_slice(class_name.as_bytes());
         } else {
             payload.extend_from_slice(&0x84d8u16.to_le_bytes());
         }
@@ -13067,11 +13068,27 @@ fn decode_projects_feature_input_extrusion_operations() {
         payload
     }
 
-    for (code, expected) in [
-        (3, cadmpeg_ir::features::BooleanOp::Join),
-        (11, cadmpeg_ir::features::BooleanOp::Cut),
+    for (code, expected, class_name, layouts) in [
+        (
+            3,
+            cadmpeg_ir::features::BooleanOp::Join,
+            "moICE_c",
+            &[(true, 8), (true, 4), (false, 8), (false, 4)][..],
+        ),
+        (
+            11,
+            cadmpeg_ir::features::BooleanOp::Cut,
+            "moICE_c",
+            &[(true, 8), (true, 4), (false, 8), (false, 4)][..],
+        ),
+        (
+            1,
+            cadmpeg_ir::features::BooleanOp::Join,
+            "moExtrusion_c",
+            &[(true, 8), (true, 4)][..],
+        ),
     ] {
-        for (direct_class, padding) in [(true, 8), (true, 4), (false, 8), (false, 4)] {
+        for &(direct_class, padding) in layouts {
             let mut source = sldprt_with_body(&triangle_body());
             source.extend(make_block(
                 0x42,
@@ -13081,7 +13098,7 @@ fn decode_projects_feature_input_extrusion_operations() {
             source.extend(make_block(
                 0x45,
                 "Contents/Config-0-ResolvedFeatures",
-                &operation_payload(code, 8, "Extrude1", direct_class, padding),
+                &operation_payload(code, 8, "Extrude1", class_name, direct_class, padding),
             ));
 
             let decoded = SldprtCodec

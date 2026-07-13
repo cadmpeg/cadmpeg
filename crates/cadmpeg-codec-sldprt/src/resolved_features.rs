@@ -1053,9 +1053,12 @@ pub(crate) fn bind_extrusion_operations(
         };
         let mut operations = lanes.iter().filter_map(|lane| {
             let name = feature_object_name(history, lane)?;
-            match feature_operation_code(lane, name)? {
-                3 => Some(BooleanOp::Join),
-                11 => Some(BooleanOp::Cut),
+            match (
+                history.input_class.as_deref(),
+                feature_operation_code(lane, name)?,
+            ) {
+                (Some("moExtrusion_c"), 1) | (_, 3) => Some(BooleanOp::Join),
+                (_, 11) => Some(BooleanOp::Cut),
                 _ => None,
             }
         });
