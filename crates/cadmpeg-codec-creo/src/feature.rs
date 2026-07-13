@@ -1572,7 +1572,13 @@ fn positional_dimension(
     let dimension_type = dimension_type?;
     let (value, cursor, _) = decode_variable_scalar(payload, cursor, end, cache);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
-    let (auxiliary_value, cursor, _) = decode_variable_scalar(payload, cursor + 1, end, cache);
+    let auxiliary_start = cursor + 1;
+    let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
+        (Some(0.0), auxiliary_start + 1)
+    } else {
+        let (value, next, _) = decode_variable_scalar(payload, auxiliary_start, end, cache);
+        (value, next)
+    };
     let (external_id, _) = segment_int(payload, cursor);
     Some(FeatureDimension {
         dimension_type,

@@ -968,7 +968,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
         \xe0\x01ext_id\0\x2a"
         .to_vec();
     payload.extend_from_slice(b"\xf3\xf7\x81\x02\xe2");
-    payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0xe4, 43]);
+    payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
     payload.extend_from_slice(b"\xe0\x00relat_ptr\0");
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
@@ -989,6 +989,7 @@ fn scan_decodes_featdefs_dimension_prototype_and_replay() {
     assert_eq!(dimensions.rows[0].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[0].external_id, 42);
     assert_eq!(dimensions.rows[1].value, Some(3.0));
+    assert_eq!(dimensions.rows[1].auxiliary_value, Some(0.0));
     assert_eq!(dimensions.rows[1].external_id, 43);
 }
 

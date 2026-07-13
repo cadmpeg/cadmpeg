@@ -308,7 +308,9 @@ first endpoint angle advanced by full turns until it exceeds the start.
 `gsec2d_ptr.dimtab_ptr` stores ordered feature dimensions. Each row contains
 `type`, `value`, `direct`, `aux_value`, and `ext_id`; type `0x0a` is an angular
 dimension whose `value` is in radians. `ext_id` is the dimension identity
-within the owning feature definition.
+within the owning feature definition. In positional dimension rows, a bare
+`18` in the `aux_value` slot encodes zero and does not consume the following
+compact `ext_id`.
 
 A `segtab` line whose two endpoint identifiers each have complete type-1 and
 type-2 `var_arr` values is the bounded segment between those two `[u, v]`
