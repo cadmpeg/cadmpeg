@@ -190,6 +190,9 @@ pub struct SketchNativeOperand {
     pub native_kind: String,
     /// Source-native object index.
     pub object_index: u32,
+    /// Resolved source-native operand record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
 }
 
 /// Neutral geometric and dimensional sketch relations.

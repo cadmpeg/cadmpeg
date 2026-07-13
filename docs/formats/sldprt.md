@@ -87,6 +87,8 @@ PNG preview dimensions and encoding fields are in `IHDR`. BMP thumbnail width, h
 
 Sketch relations use named scalar records with two reference cells at fixed scalar-record slots. Point references use `d6 80`, `7b 83`, or `7c bc`; line references use `e1 80`, `86 83`, or `87 bc`. Point-point, line-line, and point-line distance relations follow from the operand pair. Two `cb 8d` cells carry horizontal or vertical point-point distance according to the relation declaration. Two `da 8d` cells carry an angular relation. Scalar records with the same owning sketch, relation family, and ordered operand pair belong to one relation instance. Display-role and driving-role scalars are distinct. A unique driving scalar stores the target parameter.
 
+Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.
+
 ---
 
 ## 3. Parasolid stream

@@ -371,7 +371,11 @@ pub(crate) fn bind_scalar_operands(
             {
                 scalar.feature_ref = Some(feature_id.to_string());
                 for operand in &mut scalar.operands {
-                    if operand.kind != FeatureInputOperandKind::D6 {
+                    if !matches!(
+                        operand.kind,
+                        FeatureInputOperandKind::D6
+                            | FeatureInputOperandKind::Native(0x837b | 0x8dcb | 0xbc7c)
+                    ) {
                         continue;
                     }
                     let mut matches = entities
@@ -860,6 +864,7 @@ pub(crate) fn project_relation_bindings(
                         .map(|operand| SketchNativeOperand {
                             native_kind: operand_kind_name(operand.kind),
                             object_index: u32::from(operand.entity_index),
+                            native_ref: operand.entity_ref.clone(),
                         })
                         .collect(),
                 },
