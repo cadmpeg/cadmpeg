@@ -1464,7 +1464,57 @@ pub(crate) fn project_relation_bindings(
                 native_ref: Some(relation.id.clone()),
             });
         }
+        for marker in &lane.sketch_entities {
+            let Some(sketch) = marker
+                .feature_ref
+                .as_deref()
+                .and_then(|feature| sketches_by_feature.get(feature))
+            else {
+                continue;
+            };
+            let Some(definition) =
+                typed_marker_relation_definition(marker, &markers_by_id, &loci_by_marker)
+            else {
+                continue;
+            };
+            constraints.push(SketchConstraint {
+                id: SketchConstraintId(format!(
+                    "sldprt:model:sketch-constraint#marker:{lane_key}:{}",
+                    marker.offset
+                )),
+                sketch: (*sketch).clone(),
+                definition,
+                native_ref: Some(marker.id.clone()),
+            });
+        }
     }
+}
+
+fn typed_marker_relation_definition(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchConstraintDefinition> {
+    use crate::records::SketchRelationKind::{Fixed, Horizontal, Vertical};
+    let SketchInputKind::Relation(kind @ (Horizontal | Vertical | Fixed)) = marker.kind else {
+        return None;
+    };
+    let entities = marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
+    let [entity] = entities.as_slice() else {
+        return None;
+    };
+    Some(match kind {
+        Horizontal => SketchConstraintDefinition::Horizontal {
+            entity: entity.clone(),
+        },
+        Vertical => SketchConstraintDefinition::Vertical {
+            entity: entity.clone(),
+        },
+        Fixed => SketchConstraintDefinition::Fixed {
+            entity: entity.clone(),
+        },
+        _ => unreachable!("relation kind was filtered above"),
+    })
 }
 
 fn typed_relation_definition(
@@ -1876,15 +1926,19 @@ fn marker_entities(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        marker_entities, profile_loci_by_marker, typed_relation_definition, unique_marker_transform,
+        marker_entities, profile_loci_by_marker, typed_marker_relation_definition,
+        typed_relation_definition, unique_marker_transform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
         FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchInputLink,
+        SketchRelationKind,
     };
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId, ParameterId, SketchSpace};
     use cadmpeg_ir::math::Point2;
-    use cadmpeg_ir::sketches::{SketchEntity, SketchEntityId, SketchGeometry, SketchId};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+    };
     use std::collections::{BTreeMap, HashMap};
 
     fn marker(id: &str, coordinates_m: Option<[f64; 2]>) -> SketchInputEntity {
@@ -1963,6 +2017,7 @@ mod profile_join_tests {
                 entity_ref: "marker-b".into(),
             },
         ];
+        reference.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
         reference.link_selector = Some(0);
         let lane = FeatureInputLane {
             id: "lane".into(),
@@ -1991,7 +2046,16 @@ mod profile_join_tests {
             .iter()
             .map(|marker| (marker.id.as_str(), marker))
             .collect::<HashMap<_, _>>();
-        assert_eq!(marker_entities("reference", &markers, &joins), vec![first]);
+        assert_eq!(
+            marker_entities("reference", &markers, &joins),
+            vec![first.clone()]
+        );
+        assert_eq!(
+            typed_marker_relation_definition(markers["reference"], &markers, &joins,),
+            Some(SketchConstraintDefinition::Vertical {
+                entity: first.clone(),
+            })
+        );
         let relation = FeatureInputRelationInstance {
             id: "relation".into(),
             parent: "lane".into(),
