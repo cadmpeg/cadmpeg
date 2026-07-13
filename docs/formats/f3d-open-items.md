@@ -15,6 +15,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Container, header, and design records
 
+- The top-level `Manifest.dat` field meanings and string records are defined, but the flag and padding bytes between `SimStructuralAttributes`, the asset-folder UUID, `FusionAssetName`, and `NA_EXPORT` have conflicting published offsets and no complete byte grammar. Canonical source-less manifest generation requires those bytes to be defined.
 - The manifest relation that selects one asset folder when several asset folders are present is unresolved.
 - The authoritative B-rep entry relation among multiple `.smb` or `.smbh` entries is unresolved. Filename extension, archive order, face count, and the relative size of the history partition do not define that relation.
 - The relation between `.smb` and `.smbh` stream forms, including the presence of a history partition, is unresolved.

@@ -60,6 +60,10 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot create F3D manifest: {error}")))?;
     archive.write_all(b"cadmpeg-generated-f3d")?;
     archive
+        .start_file("Properties.dat", options)
+        .map_err(|error| CodecError::Malformed(format!("cannot create F3D properties: {error}")))?;
+    archive.write_all(&0u32.to_le_bytes())?;
+    archive
         .start_file(
             "FusionAssetName[Active]/Breps.BlobParts/Body1.smbh",
             options,

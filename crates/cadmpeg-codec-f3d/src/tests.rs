@@ -3663,6 +3663,15 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less F3D encode");
+    let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
+    let mut properties = Vec::new();
+    archive
+        .by_name("Properties.dat")
+        .expect("generated Properties.dat")
+        .read_to_end(&mut properties)
+        .expect("generated properties bytes");
+    assert_eq!(properties, 0u32.to_le_bytes());
+    drop(archive);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less F3D round trip");
