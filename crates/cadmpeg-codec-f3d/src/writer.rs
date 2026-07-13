@@ -53,6 +53,9 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
             "source-less F3D generation does not support SubD surfaces".into(),
         ));
     }
+    if let Some(native) = &native {
+        validate_source_less_design_links(target, native)?;
+    }
     let smbh = encode_planar_triangle_smbh(target)?;
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
@@ -160,6 +163,82 @@ pub(crate) fn write_new(target: &CadIr, writer: &mut dyn Write) -> Result<(), Co
         .map_err(|error| CodecError::Malformed(format!("cannot finish F3D archive: {error}")))?
         .into_inner();
     writer.write_all(&bytes)?;
+    Ok(())
+}
+
+fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Result<(), CodecError> {
+    let coedges = target
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| &coedge.id)
+        .collect::<BTreeSet<_>>();
+    let mut linked_coedges = BTreeSet::new();
+    for link in &native.sketch_curve_links {
+        if !coedges.contains(&link.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch-curve link {} targets a missing coedge {}",
+                link.id, link.coedge.0
+            )));
+        }
+        if !linked_coedges.insert(&link.coedge) {
+            return Err(CodecError::Malformed(format!(
+                "source-less F3D generation supports one sketch-curve link per coedge: {}",
+                link.coedge.0
+            )));
+        }
+    }
+
+    let bodies = target
+        .model
+        .bodies
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let faces = target
+        .model
+        .faces
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let edges = target
+        .model
+        .edges
+        .iter()
+        .map(|item| &item.id)
+        .collect::<BTreeSet<_>>();
+    let mut groups: BTreeMap<(u8, String), Vec<&PersistentDesignLink>> = BTreeMap::new();
+    for link in &native.persistent_design_links {
+        let target_key = match &link.target {
+            cadmpeg_ir::attributes::AttributeTarget::Body(id) if bodies.contains(id) => {
+                Some((3, id.0.clone()))
+            }
+            cadmpeg_ir::attributes::AttributeTarget::Face(id) if faces.contains(id) => {
+                Some((2, id.0.clone()))
+            }
+            cadmpeg_ir::attributes::AttributeTarget::Edge(id) if edges.contains(id) => {
+                Some((1, id.0.clone()))
+            }
+            _ => None,
+        };
+        let Some(target_key) = target_key else {
+            return Err(CodecError::Malformed(format!(
+                "F3D persistent design link {} has an unsupported or missing target",
+                link.id
+            )));
+        };
+        groups.entry(target_key).or_default().push(link);
+    }
+    for (target, mut links) in groups {
+        links.sort_by_key(|link| link.ordinal);
+        for (ordinal, link) in links.iter().enumerate() {
+            if link.ordinal != ordinal as u32 || link.is_current != (ordinal + 1 == links.len()) {
+                return Err(CodecError::Malformed(format!(
+                    "F3D persistent design links for {target:?} require contiguous ordinals and only the final link current"
+                )));
+            }
+        }
+    }
     Ok(())
 }
 

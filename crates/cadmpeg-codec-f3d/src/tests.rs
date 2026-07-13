@@ -5476,6 +5476,52 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
 }
 
 #[test]
+fn generated_source_less_rejects_lossy_design_link_metadata() {
+    use crate::records::{PersistentDesignLink, SketchCurveLink};
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut source_less = cadmpeg_ir::examples::unit_cube();
+    let body = source_less.model.bodies[0].id.clone();
+    let coedge = source_less.model.coedges[0].id.clone();
+    let mut native = f3d_native_mut(&mut source_less);
+    native.persistent_design_links = vec![PersistentDesignLink {
+        id: "generated:persistent-design-link#0".into(),
+        target: AttributeTarget::Body(body),
+        design_id: "311".into(),
+        entity_kind: 3,
+        design_reference: 7,
+        ordinal: 1,
+        is_current: false,
+    }];
+    native.sketch_curve_links = [0, 1]
+        .map(|ordinal| SketchCurveLink {
+            id: format!("generated:sketch-curve-link#{ordinal}"),
+            coedge: coedge.clone(),
+            sketch_curve_id: 113 + ordinal,
+            signed_reference: Some(1),
+            role: 2,
+            closure: 3,
+        })
+        .into();
+    drop(native);
+
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("duplicate sketch links must not be collapsed");
+    assert!(error
+        .to_string()
+        .contains("one sketch-curve link per coedge"));
+
+    f3d_native_mut(&mut source_less).sketch_curve_links.pop();
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("noncanonical persistent link order must not be rewritten");
+    assert!(error
+        .to_string()
+        .contains("contiguous ordinals and only the final link current"));
+}
+
+#[test]
 fn generated_source_less_writes_two_independent_cube_bodies() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let second_json = source_less
