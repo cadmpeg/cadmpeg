@@ -568,6 +568,34 @@ mod tests {
         bytes
     }
 
+    fn generated_torus_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = vec![0x0e, 5];
+        bytes.extend_from_slice(b"torus");
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"surface");
+        for (tag, value) in [(0x0c, -1i64), (0x04, -1), (0x0c, -1)] {
+            bytes.push(tag);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        for (tag, values) in [(0x13, [1.0f64, 2.0, 3.0]), (0x14, [0.0, 0.0, 1.0])] {
+            bytes.push(tag);
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for value in [4.0f64, -5.0] {
+            bytes.push(0x06);
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [1.0f64, 0.0, 0.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0x0b; 5]);
+        bytes.push(0x11);
+        bytes
+    }
+
     #[test]
     fn generated_payload_subtype_lookup_uses_declared_integer_width() {
         for ref_width in [4, 8] {
@@ -638,6 +666,20 @@ mod tests {
             for (index, tag) in [(3usize, 0x13), (4, 0x06), (5, 0x14), (6, 0x14)] {
                 let offset = payload_token_offset(&bytes, record, ref_width, index)
                     .expect("sphere field offset");
+                assert_eq!(bytes[offset], tag);
+            }
+        }
+    }
+
+    #[test]
+    fn generated_torus_geometry_has_fixed_payload_fields_at_both_widths() {
+        for ref_width in [4, 8] {
+            let bytes = generated_torus_record(ref_width);
+            let records = frame(&bytes, 0, bytes.len(), ref_width).expect("generated torus");
+            let record = &records[0];
+            for (index, tag) in [(3usize, 0x13), (4, 0x14), (5, 0x06), (6, 0x06), (7, 0x14)] {
+                let offset = payload_token_offset(&bytes, record, ref_width, index)
+                    .expect("torus field offset");
                 assert_eq!(bytes[offset], tag);
             }
         }
