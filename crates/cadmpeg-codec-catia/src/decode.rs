@@ -624,9 +624,14 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 }
 
 #[cfg(test)]
-mod e5_chart_tests {
-    use super::{fit_rank_one_e5_plane_axes, quintic_jet_pcurve, rational_pcurve_arc};
+mod chart_tests {
+    use super::{
+        fit_rank_one_e5_plane_axes, quintic_jet_pcurve, rational_pcurve_arc,
+        standard_pcurve_geometry,
+    };
+    use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::eval::pcurve_uv;
+    use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     #[test]
@@ -673,6 +678,36 @@ mod e5_chart_tests {
         assert!(residual < 1e-12);
         assert!((v_axis.x - 1.0).abs() < 1e-12);
         assert!((u_axis.z - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn standard_plane_line_inverts_to_exact_parameter_line() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Line,
+        };
+        let (geometry, range) = standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(2.0, 4.0, 3.0),
+            Point3::new(5.0, 8.0, 3.0),
+        )
+        .expect("plane line pcurve");
+        assert_eq!(range, [0.0, 1.0]);
+        assert_eq!(
+            geometry,
+            PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(1.0, 2.0),
+                direction: cadmpeg_ir::math::Point2::new(3.0, 4.0),
+            }
+        );
     }
 }
 
@@ -1804,7 +1839,7 @@ fn attach_standard_topology(
         return false;
     };
 
-    for (edge_index, (support, logical_vertices)) in supports.iter().zip(edge_vertices).enumerate()
+    for (edge_index, (support, logical_vertices)) in supports.iter().zip(&edge_vertices).enumerate()
     {
         let start_point = point_assignment[logical_vertices[0]];
         let end_point = point_assignment[logical_vertices[1]];
@@ -1852,6 +1887,39 @@ fn attach_standard_topology(
                 })
                 .collect();
             for (coedge_index, edge_use) in boundary.coedges.iter().enumerate() {
+                let support = &supports[edge_use.edge_row];
+                let logical_vertices = edge_vertices[edge_use.edge_row];
+                let start = ir.model.points[point_assignment[logical_vertices[0]]].position;
+                let end = ir.model.points[point_assignment[logical_vertices[1]]].position;
+                let pcurve_id = standard_pcurve_geometry(
+                    &ir.model.surfaces[surface_indices[&bindings[face_index].0]].geometry,
+                    support,
+                    start,
+                    end,
+                )
+                .map(|(geometry, range)| {
+                    let id = PcurveId(format!(
+                        "catia:standard:pcurve#{face_index}:{loop_index}:{coedge_index}"
+                    ));
+                    annotate(
+                        annotations,
+                        &id,
+                        "MainDataStream+SurfacicReps",
+                        support.pos as u64,
+                        "derived_surface_parameter_curve",
+                        Exactness::Derived,
+                    );
+                    annotations.derived(&id, "geometry");
+                    ir.model.pcurves.push(Pcurve {
+                        id: id.clone(),
+                        geometry,
+                        wrapper_reversed: None,
+                        parameter_range: Some(range),
+                        fit_tolerance: None,
+                        native_tail_flags: None,
+                    });
+                    id
+                });
                 let arena_index = ir.model.coedges.len();
                 edge_coedges[edge_use.edge_row].push(arena_index);
                 let id = coedge_ids[coedge_index].clone();
@@ -1870,6 +1938,7 @@ fn attach_standard_topology(
                     "previous",
                     "radial_next",
                     "sense",
+                    "pcurve",
                 ] {
                     annotations.derived(&id, field);
                 }
@@ -1886,7 +1955,7 @@ fn attach_standard_topology(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: None,
+                    pcurve: pcurve_id,
                 });
             }
             annotate(
@@ -2001,6 +2070,121 @@ fn face_surface<'a>(
 ) -> Option<&'a Surface> {
     let id = &bindings.get(face)?.0;
     ir.model.surfaces.get(*surface_indices.get(id)?)
+}
+
+fn standard_pcurve_geometry(
+    surface: &SurfaceGeometry,
+    support: &geometry::StandardCurveSupport,
+    start: Point3,
+    end: Point3,
+) -> Option<(PcurveGeometry, [f64; 2])> {
+    let mut uv = [
+        analytic_surface_uv(surface, start)?,
+        analytic_surface_uv(surface, end)?,
+    ];
+    let reference_uv = uv[0];
+    unwrap_standard_uv(surface, &mut uv[1], reference_uv);
+
+    if let (
+        SurfaceGeometry::Plane { .. },
+        geometry::StandardCurveGeometry::Circle { center, radius },
+    ) = (surface, &support.geometry)
+    {
+        let center_uv = analytic_surface_uv(surface, *center)?;
+        let range = uv.map(|point| (point.v - center_uv.v).atan2(point.u - center_uv.u));
+        let range = [range[0], unwrap_angle(range[1], range[0])];
+        let geometry = rational_pcurve_arc([center_uv.u, center_uv.v], *radius, range)?;
+        return Some((geometry, range));
+    }
+
+    let direction = Point2::new(uv[1].u - uv[0].u, uv[1].v - uv[0].v);
+    let midpoint_uv = Point2::new(uv[0].u + 0.5 * direction.u, uv[0].v + 0.5 * direction.v);
+    let midpoint = cadmpeg_ir::eval::surface_point(surface, midpoint_uv.u, midpoint_uv.v)?;
+    let on_curve = match &support.geometry {
+        geometry::StandardCurveGeometry::Line => {
+            let chord = point_delta(end, start);
+            let offset = point_delta(midpoint, start);
+            vector_norm(cross_vector(chord, offset)) <= 2e-3 * vector_norm(chord).max(1.0)
+        }
+        geometry::StandardCurveGeometry::Circle { center, radius } => {
+            (point_distance_squared(midpoint, *center).sqrt() - radius).abs() <= 2e-3
+        }
+        geometry::StandardCurveGeometry::Bspline => false,
+    };
+    on_curve.then_some((
+        PcurveGeometry::Line {
+            origin: uv[0],
+            direction,
+        },
+        [0.0, 1.0],
+    ))
+}
+
+fn analytic_surface_uv(surface: &SurfaceGeometry, point: Point3) -> Option<Point2> {
+    match surface {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let offset = point_delta(point, *origin);
+            let v_axis = cross_vector(*normal, *u_axis);
+            Some(Point2::new(
+                axis_dot(offset, *u_axis),
+                axis_dot(offset, v_axis),
+            ))
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            ..
+        } => {
+            let offset = point_delta(point, *origin);
+            let tangent = cross_vector(*axis, *ref_direction);
+            Some(Point2::new(
+                axis_dot(offset, tangent).atan2(axis_dot(offset, *ref_direction)),
+                axis_dot(offset, *axis),
+            ))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            ..
+        } => {
+            let offset = point_delta(point, *center);
+            let tangent = cross_vector(*axis, *ref_direction);
+            let u = axis_dot(offset, tangent).atan2(axis_dot(offset, *ref_direction));
+            let radial = Vector3::new(
+                u.cos() * ref_direction.x + u.sin() * tangent.x,
+                u.cos() * ref_direction.y + u.sin() * tangent.y,
+                u.cos() * ref_direction.z + u.sin() * tangent.z,
+            );
+            Some(Point2::new(
+                u,
+                axis_dot(offset, *axis).atan2(axis_dot(offset, radial) - major_radius),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn unwrap_standard_uv(surface: &SurfaceGeometry, value: &mut Point2, reference: Point2) {
+    match surface {
+        SurfaceGeometry::Cylinder { .. } => value.u = unwrap_angle(value.u, reference.u),
+        SurfaceGeometry::Torus { .. } => {
+            value.u = unwrap_angle(value.u, reference.u);
+            value.v = unwrap_angle(value.v, reference.v);
+        }
+        _ => {}
+    }
+}
+
+fn unwrap_angle(value: f64, reference: f64) -> f64 {
+    reference + (value - reference + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU)
+        - std::f64::consts::PI
 }
 
 fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {

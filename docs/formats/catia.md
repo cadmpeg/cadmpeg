@@ -230,6 +230,8 @@ When more than two vertex rows lie on the same analytic intersection, group unre
 
 **Circle/arc endpoints by support intersection:** intersect the decoded circle (center `c`, radius `r`) with the vertex table (`|dist(v,c)−r| ≤ 1e-3`). Two candidates define the endpoint pair. Coaxial arcs can share a circle and require connectivity or cycle closure. A full circle has antipodal on-circle candidates and uses `start==end`. **Line edges** derive from their endpoints (`origin=start`, `direction=end−start`). Use the mesh-derived port-to-vertex collapse rather than sorted handle rank.
 
+**Analytic occurrence pcurves** are the inverse image of the bound edge endpoints in the owning face chart. Plane coordinates are orthogonal projections onto `(u_axis, normal×u_axis)`. Cylinder coordinates are azimuth and axial distance. Torus coordinates are major and minor azimuth. Periodic endpoint coordinates unwrap across the shortest congruent interval. A parameter-space segment transfers only when its lifted midpoint lies on the serialized line or circle within `2e-3` mm. Plane-circle images transfer as exact piecewise rational quadratic arcs.
+
 ### 5.7 Surface carrier semantics
 
 - **Cylinder axis-frame** from its two parallel equal-radius rim circles: `origin=circle0.center`, `axis=normalize(circle1.center−circle0.center)`, `radius=circle.radius`.
