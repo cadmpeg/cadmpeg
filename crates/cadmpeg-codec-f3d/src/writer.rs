@@ -13635,7 +13635,10 @@ fn validate_procedural_curve_edits(
                         cadmpeg_ir::geometry::ProjectionTail::Ranged {
                             role: after_role, ..
                         },
-                    ) => before_role == after_role,
+                    ) => {
+                        before_role.len() == after_role.len()
+                            && matches!(after_role.as_str(), "surf1" | "surf2")
+                    }
                     _ => false,
                 }
                 && before.definition != after.definition =>
@@ -15379,117 +15382,74 @@ fn patch_projection_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("projection record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"proj_int_cur".len())
-        .any(|window| window == b"proj_int_cur")
+    let layout = crate::nurbs::projection_patch_layout(record_bytes, active_ref_width(bytes))
+        .ok_or_else(|| CodecError::Malformed("projection construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
     {
-        return Err(CodecError::Malformed("record is not a proj_int_cur".into()));
-    }
-    let mut cache_markers = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
-        .into_iter()
-        .flat_map(|marker| {
-            record_bytes
-                .windows(marker.len())
-                .enumerate()
-                .filter_map(move |(position, window)| (window == marker).then_some(position))
-        })
-        .collect::<Vec<_>>();
-    cache_markers.sort_unstable();
-    cache_markers.dedup();
-    let solved = *cache_markers
-        .last()
-        .ok_or_else(|| CodecError::Malformed("projection solved cache is missing".into()))?;
-    let source = *cache_markers
-        .get(cache_markers.len().saturating_sub(2))
-        .ok_or_else(|| CodecError::Malformed("projection source cache is missing".into()))?;
-    let flag_offset = record
-        .offset
-        .checked_add(source)
-        .and_then(|offset| offset.checked_sub(1))
-        .ok_or_else(|| CodecError::Malformed("projection discontinuity flag is missing".into()))?;
-    if !matches!(bytes.get(flag_offset), Some(0x0a | 0x0b)) {
-        return Err(CodecError::Malformed(
-            "projection discontinuity flag is malformed".into(),
-        ));
-    }
-    let context_count = 2usize
-        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
-        .ok_or_else(|| CodecError::Malformed("projection context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .filter(|offset| *offset < flag_offset)
-        .collect::<Vec<_>>();
-    let context_offsets = context_offsets
-        .get(context_offsets.len().saturating_sub(context_count)..)
-        .ok_or_else(|| CodecError::Malformed("projection context is incomplete".into()))?;
-    if context_offsets.len() != context_count {
         return Err(CodecError::Malformed(
             "projection context is incomplete".into(),
         ));
     }
-    match tail {
-        cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag } => {
-            let tail_offset = solved.checked_sub(2).ok_or_else(|| {
-                CodecError::Malformed("projection early-close tail is missing".into())
-            })?;
-            if !matches!(record_bytes.get(tail_offset), Some(0x0a | 0x0b))
-                || record_bytes.get(tail_offset + 1) != Some(&0x10)
-            {
-                return Err(CodecError::Malformed(
-                    "projection early-close tail is malformed".into(),
-                ));
-            }
-            bytes[record.offset + tail_offset] = native_bool(*flag);
-        }
-        cadmpeg_ir::geometry::ProjectionTail::Ranged {
-            flag,
-            parameter_range,
-            role,
-        } => {
+    match (&layout.tail, tail) {
+        (
+            crate::nurbs::ProjectionTailPatchLayout::EarlyClose { flag: offset },
+            cadmpeg_ir::geometry::ProjectionTail::EarlyClose { flag },
+        ) => bytes[record.offset + offset] = native_bool(*flag),
+        (
+            crate::nurbs::ProjectionTailPatchLayout::Ranged {
+                flag: flag_offset,
+                parameter_range: range_offsets,
+                role: role_range,
+            },
+            cadmpeg_ir::geometry::ProjectionTail::Ranged {
+                flag,
+                parameter_range,
+                role,
+            },
+        ) => {
             if !parameter_range.iter().copied().all(f64::is_finite) {
                 return Err(CodecError::Malformed(
                     "projection tail range must be finite".into(),
                 ));
             }
-            let role_length = u8::try_from(role.len()).map_err(|_| {
-                CodecError::NotImplemented("projection role exceeds short-string width".into())
-            })?;
-            let mut role_marker = vec![0x07, role_length];
-            role_marker.extend_from_slice(role.as_bytes());
-            let role_offset = record_bytes[..solved]
-                .windows(role_marker.len())
-                .rposition(|window| window == role_marker)
-                .ok_or_else(|| CodecError::Malformed("projection role is missing".into()))?;
-            let tail_flag = role_offset.checked_sub(19).ok_or_else(|| {
-                CodecError::Malformed("projection ranged tail is incomplete".into())
-            })?;
-            if !matches!(record_bytes.get(tail_flag), Some(0x0a | 0x0b)) {
-                return Err(CodecError::Malformed(
-                    "projection ranged flag is malformed".into(),
+            if !role.is_ascii() || role.len() != role_range.len() {
+                return Err(CodecError::NotImplemented(
+                    "projection role edit must retain its encoded ASCII length".into(),
                 ));
             }
-            bytes[record.offset + tail_flag] = native_bool(*flag);
-            for (index, value) in parameter_range.iter().copied().enumerate() {
-                let tag = record.offset + tail_flag + 1 + index * 9;
-                if bytes.get(tag) != Some(&0x06) {
-                    return Err(CodecError::Malformed(
-                        "projection ranged interval is malformed".into(),
-                    ));
-                }
-                bytes[tag + 1..tag + 9].copy_from_slice(&value.to_le_bytes());
+            bytes[record.offset + flag_offset] = native_bool(*flag);
+            for (offset, value) in range_offsets.iter().zip(parameter_range) {
+                let offset = record.offset + offset;
+                bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
             }
+            let role_target = record.offset + role_range.start..record.offset + role_range.end;
+            bytes[role_target].copy_from_slice(role.as_bytes());
+        }
+        _ => {
+            return Err(CodecError::NotImplemented(
+                "projection edit cannot change native tail form".into(),
+            ))
         }
     }
-    for (offset, value) in context_offsets.iter().zip(
-        context
-            .parameter_range
-            .into_iter()
-            .chain(context.discontinuities.iter().flatten().copied()),
-    ) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    bytes[flag_offset] = native_bool(*discontinuity_flag);
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     Ok(())
 }
 

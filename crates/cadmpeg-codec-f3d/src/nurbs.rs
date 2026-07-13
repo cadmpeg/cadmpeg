@@ -5156,6 +5156,76 @@ fn decode_embedded_projection(bytes: &[u8], int_width: usize) -> Option<Embedded
     })
 }
 
+/// Writable tail shape of a `proj_int_cur` subtype.
+pub(crate) enum ProjectionTailPatchLayout {
+    EarlyClose {
+        flag: usize,
+    },
+    Ranged {
+        flag: usize,
+        parameter_range: [usize; 2],
+        role: std::ops::Range<usize>,
+    },
+}
+
+/// Writable shared-context and tail fields in a `proj_int_cur` subtype.
+pub(crate) struct ProjectionPatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) discontinuities: [Vec<usize>; 3],
+    pub(crate) discontinuity_flag: usize,
+    pub(crate) tail: ProjectionTailPatchLayout,
+}
+
+/// Locate projection fields by walking supports, source curve, and selected tail.
+pub(crate) fn projection_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<ProjectionPatchLayout> {
+    let (marker, name_len) = find_intcurve_subtype(bytes, b"proj_int_cur")?;
+    let mut position = marker + name_len + 3;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = position;
+    take_bool(bytes, &mut position)?;
+    position = decode_curve_block(bytes, position, int_width)?.end;
+    let tail_flag = position;
+    take_bool(bytes, &mut position)?;
+    let tail = if bytes.get(position) == Some(&0x10) {
+        ProjectionTailPatchLayout::EarlyClose { flag: tail_flag }
+    } else {
+        let parameter_range = [
+            take_double_payload(bytes, &mut position)?,
+            take_double_payload(bytes, &mut position)?,
+        ];
+        (*bytes.get(position)? == 0x07).then_some(())?;
+        let length = usize::from(*bytes.get(position + 1)?);
+        let role = position + 2..position + 2 + length;
+        bytes.get(role.clone())?;
+        ProjectionTailPatchLayout::Ranged {
+            flag: tail_flag,
+            parameter_range,
+            role,
+        }
+    };
+    Some(ProjectionPatchLayout {
+        parameter_range,
+        discontinuities,
+        discontinuity_flag,
+        tail,
+    })
+}
+
 fn decode_embedded_intersection(
     bytes: &[u8],
     int_width: usize,
@@ -6418,6 +6488,59 @@ mod width_tests {
                     layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
                     3
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn projection_layout_walks_both_tail_forms_at_both_widths() {
+        for int_width in [4usize, 8] {
+            for early_close in [false, true] {
+                let mut bytes = vec![0x0f, 0x0d, 0x0c];
+                bytes.extend_from_slice(b"proj_int_cur");
+                for _ in 0..2 {
+                    bytes.extend_from_slice(&[0x0d, 0x06]);
+                    bytes.extend_from_slice(b"spline");
+                    bytes.extend_from_slice(&surface_block(int_width));
+                }
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                bytes.extend_from_slice(&pcurve_block(int_width));
+                push_f64(&mut bytes, -2.0);
+                push_f64(&mut bytes, 3.0);
+                for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+                    push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                    for value in values {
+                        push_f64(&mut bytes, *value);
+                    }
+                }
+                let context_flag = bytes.len();
+                bytes.push(0x0a);
+                bytes.extend_from_slice(&curve_block(int_width));
+                let tail_flag = bytes.len();
+                bytes.push(0x0b);
+                if early_close {
+                    bytes.push(0x10);
+                } else {
+                    push_f64(&mut bytes, -1.0);
+                    push_f64(&mut bytes, 1.0);
+                    bytes.extend_from_slice(&[0x07, 0x05]);
+                    bytes.extend_from_slice(b"surf1");
+                }
+
+                let layout = projection_patch_layout(&bytes, int_width)
+                    .unwrap_or_else(|| panic!("projection layout at width {int_width}"));
+                assert_eq!(layout.discontinuity_flag, context_flag);
+                match layout.tail {
+                    ProjectionTailPatchLayout::EarlyClose { flag } => {
+                        assert!(early_close);
+                        assert_eq!(flag, tail_flag);
+                    }
+                    ProjectionTailPatchLayout::Ranged { flag, role, .. } => {
+                        assert!(!early_close);
+                        assert_eq!(flag, tail_flag);
+                        assert_eq!(&bytes[role], b"surf1");
+                    }
+                }
             }
         }
     }

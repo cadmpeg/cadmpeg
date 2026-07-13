@@ -14623,13 +14623,14 @@ fn generated_projection_decodes_and_writes_source_less() {
     let ProjectionTail::Ranged {
         flag,
         parameter_range,
-        ..
+        role,
     } = tail
     else {
         unreachable!()
     };
     *flag = false;
     *parameter_range = [-4.0, 5.0];
+    *role = "surf1".into();
     let mut regenerated = Vec::new();
     F3dCodec
         .write_preserved(&edited, &mut regenerated)
@@ -14645,10 +14646,10 @@ fn generated_projection_decodes_and_writes_source_less() {
             tail: ProjectionTail::Ranged {
                 flag: false,
                 parameter_range: [-4.0, 5.0],
-                ..
+                ref role,
             },
             ..
-        } if context.parameter_range == [-1.0, 2.0]
+        } if context.parameter_range == [-1.0, 2.0] && role == "surf1"
     ));
 
     let mut source_less = result.ir;
