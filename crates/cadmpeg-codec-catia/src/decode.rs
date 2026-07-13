@@ -13,13 +13,15 @@
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-    UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, UnknownId, VertexId,
 };
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -196,7 +198,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let stream = &scan.data[stream_range];
     let circles = geometry::e5_circles(stream);
     let surfaces = geometry::e5_surfaces(stream);
-    let edges = geometry::e5_edges(stream);
+    let topology = crate::e5::parse_topology(stream);
     let points = geometry::vertices(&scan.data);
     if circles.is_empty() && surfaces.is_empty() && points.is_empty() {
         return None;
@@ -235,10 +237,8 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             tolerance: None,
         });
     }
-    let mut circle_ids = HashMap::new();
     for (index, circle) in circles.iter().enumerate() {
         let id = CurveId(format!("catia:e5:curve#{index}"));
-        circle_ids.insert(circle.record_id, id.clone());
         annotate(
             &mut annotations,
             &id,
@@ -269,145 +269,491 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             source_object: None,
         });
     }
-    attach_e5_edges(&mut ir, &mut annotations, &edges, &circle_ids);
-    if !ir.model.edges.is_empty() {
-        let body_id = BodyId("catia:e5:body#0".to_string());
-        let region_id = RegionId("catia:e5:region#0".to_string());
-        let shell_id = ShellId("catia:e5:shell#0".to_string());
-        for id in [&body_id.0, &region_id.0, &shell_id.0] {
-            annotate(
-                &mut annotations,
-                id,
-                "MainDataStream+SurfacicReps",
-                0,
-                "derived_wire_owner",
-                Exactness::Inferred,
-            );
-        }
-        ir.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: Vec::new(),
-            wire_edges: ir.model.edges.iter().map(|edge| edge.id.clone()).collect(),
-            free_vertices: Vec::new(),
-        });
-        ir.model.regions.push(Region {
-            id: region_id,
-            body: body_id.clone(),
-            shells: vec![shell_id],
-        });
-        ir.model.bodies.push(Body {
-            id: body_id,
-            kind: BodyKind::Wire,
-            regions: vec!["catia:e5:region#0".into()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
+    let topology_transferred = topology.as_ref().is_some_and(|topology| {
+        transfer_e5_topology(&mut ir, &mut annotations, topology, &surfaces)
+    });
+    if !topology_transferred && !ir.model.vertices.is_empty() {
+        attach_e5_free_vertices(&mut ir, &mut annotations);
     }
     link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
+    let losses = if topology_transferred {
+        Vec::new()
+    } else {
+        vec![LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Blocking,
+            message: "E5 analytic carriers were decoded, but the reference graph could not be transferred with a closed surface/pcurve/vertex binding."
+                .to_string(),
+            provenance: None,
+        }]
+    };
     Some((
         ir,
         DecodeReport {
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
-            losses: vec![LossNote {
-                category: LossCategory::Topology,
-                severity: Severity::Blocking,
-                message: "E5 analytic carriers were decoded, but their edge/face reference graph is not yet transferred."
-                    .to_string(),
-                provenance: None,
-            }],
+            losses,
             notes: container::summarize(scan).notes,
         },
     ))
 }
 
-fn attach_e5_edges(
+fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let body_id = BodyId("catia:e5:body#unbound-points".to_string());
+    let region_id = RegionId("catia:e5:region#unbound-points".to_string());
+    let shell_id = ShellId("catia:e5:shell#unbound-points".to_string());
+    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+        annotate(
+            annotations,
+            id,
+            "e5_0d_03",
+            0,
+            "unbound_point_owner",
+            Exactness::Inferred,
+        );
+    }
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Wire,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
+    ir.model.shells.push(Shell {
+        id: shell_id,
+        region: region_id,
+        faces: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.id.clone())
+            .collect(),
+    });
+}
+
+fn transfer_e5_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    edges: &[geometry::E5Edge],
-    circles: &HashMap<u32, CurveId>,
-) {
-    let refs: std::collections::BTreeSet<u32> = edges
-        .iter()
-        .flat_map(|edge| [edge.start_vertex_id, edge.end_vertex_id])
-        .collect();
-    if refs.len() != ir.model.vertices.len() || refs.is_empty() {
-        return;
+    topology: &crate::e5::E5Topology,
+    decoded_surfaces: &[geometry::E5Surface],
+) -> bool {
+    if topology.vertex_refs.len() != ir.model.vertices.len()
+        || topology.vertex_refs.len() != ir.model.points.len()
+        || topology.vertex_refs.is_empty()
+    {
+        return false;
     }
-    let vertex_for_ref: HashMap<u32, VertexId> = refs
+
+    let surface_for_ref: HashMap<u32, (SurfaceId, &SurfaceGeometry)> = decoded_surfaces
+        .iter()
+        .enumerate()
+        .map(|(index, surface)| {
+            (
+                surface.record_id,
+                (
+                    SurfaceId(format!("catia:e5:surf#{index}")),
+                    &surface.geometry,
+                ),
+            )
+        })
+        .collect();
+    let vertex_for_ref: HashMap<u32, VertexId> = topology
+        .vertex_refs
         .iter()
         .enumerate()
         .map(|(index, reference)| (*reference, VertexId(format!("catia:e5:v#{index}"))))
         .collect();
-    // The rank mapping is admitted only when every edge is a decoded circle and
-    // both mapped endpoints lie on that exact carrier.
-    for edge in edges {
-        let Some(curve_id) = circles.get(&edge.support_id) else {
-            return;
+    let point_for_ref: HashMap<u32, Point3> = topology
+        .vertex_refs
+        .iter()
+        .zip(&ir.model.points)
+        .map(|(reference, point)| (*reference, point.position))
+        .collect();
+
+    let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
+    for face in &topology.faces {
+        let Some((_, surface)) = surface_for_ref.get(&face.surface) else {
+            return false;
         };
-        let Some((center, radius)) = ir.model.curves.iter().find_map(|curve| {
-            (curve.id == *curve_id)
-                .then_some(match &curve.geometry {
-                    CurveGeometry::Circle { center, radius, .. } => Some((*center, *radius)),
-                    _ => None,
-                })
-                .flatten()
-        }) else {
-            return;
-        };
-        for reference in [edge.start_vertex_id, edge.end_vertex_id] {
-            let Some(vertex_id) = vertex_for_ref.get(&reference) else {
-                return;
-            };
-            let Some(point) = ir
-                .model
-                .vertices
-                .iter()
-                .find(|vertex| vertex.id == *vertex_id)
-                .and_then(|vertex| {
-                    ir.model
-                        .points
-                        .iter()
-                        .find(|point| point.id == vertex.point)
-                })
-            else {
-                return;
-            };
-            let dx = point.position.x - center.x;
-            let dy = point.position.y - center.y;
-            let dz = point.position.z - center.z;
-            if ((dx * dx + dy * dy + dz * dz).sqrt() - radius).abs() > 1e-5 {
-                return;
+        for loop_ in &face.loops {
+            for (&pcurve_ref, &edge_ref) in loop_.pcurves.iter().zip(&loop_.edge_uses) {
+                let Some(edge) = topology.edges.get(&edge_ref) else {
+                    return false;
+                };
+                let Some(support) = topology.curve_supports.get(&edge.support) else {
+                    return false;
+                };
+                if !support.pcurves.contains(&pcurve_ref) {
+                    return false;
+                }
+                let Some(pcurve) = topology.pcurves.get(&pcurve_ref) else {
+                    return false;
+                };
+                let Some((geometry, range, endpoints)) = e5_pcurve_on_surface(pcurve, surface)
+                else {
+                    return false;
+                };
+                let (Some(start), Some(end)) = (
+                    point_for_ref.get(&edge.start_vertex),
+                    point_for_ref.get(&edge.end_vertex),
+                ) else {
+                    return false;
+                };
+                let forward =
+                    point_distance(endpoints[0], *start).max(point_distance(endpoints[1], *end));
+                let reversed =
+                    point_distance(endpoints[0], *end).max(point_distance(endpoints[1], *start));
+                if forward.min(reversed) > 2e-3 {
+                    return false;
+                }
+                if let Some((existing, existing_range)) = pcurve_plan.get(&pcurve_ref) {
+                    if existing != &geometry || existing_range != &range {
+                        return false;
+                    }
+                } else {
+                    pcurve_plan.insert(pcurve_ref, (geometry, range));
+                }
             }
         }
     }
-    for (index, edge) in edges.iter().enumerate() {
-        let id = EdgeId(format!("catia:e5:edge#{index}"));
+
+    let body_faces: Vec<(Option<u32>, Vec<u32>)> = if topology.bodies.is_empty() {
+        vec![(
+            None,
+            topology.faces.iter().map(|face| face.record_id).collect(),
+        )]
+    } else {
+        topology
+            .bodies
+            .iter()
+            .map(|body| (Some(body.record_id), body.faces.clone()))
+            .collect()
+    };
+    let mut face_shell = HashMap::new();
+    for (index, (_, faces)) in body_faces.iter().enumerate() {
+        let shell = ShellId(format!("catia:e5:shell#{index}"));
+        for face in faces {
+            if face_shell.insert(*face, shell.clone()).is_some() {
+                return false;
+            }
+        }
+    }
+    if face_shell.len() != topology.faces.len()
+        || topology
+            .faces
+            .iter()
+            .any(|face| !face_shell.contains_key(&face.record_id))
+    {
+        return false;
+    }
+
+    let edge_ids: HashMap<u32, EdgeId> = topology
+        .edges
+        .keys()
+        .map(|record_id| (*record_id, EdgeId(format!("catia:e5:edge#{record_id}"))))
+        .collect();
+    for (&record_id, edge) in &topology.edges {
+        let id = edge_ids[&record_id].clone();
         annotate(
             annotations,
             &id,
-            "MainDataStream+SurfacicReps",
-            edge.pos as u64,
-            "e5_ff_edge_use",
+            "e5_0d_03",
+            0,
+            "ff_edge_use",
             Exactness::ByteExact,
         );
-        for field in ["curve", "start", "end"] {
+        for field in ["start", "end"] {
             annotations.derived(&id, field);
         }
         ir.model.edges.push(Edge {
             id,
-            curve: circles.get(&edge.support_id).cloned(),
-            start: vertex_for_ref[&edge.start_vertex_id].clone(),
-            end: vertex_for_ref[&edge.end_vertex_id].clone(),
+            curve: None,
+            start: vertex_for_ref[&edge.start_vertex].clone(),
+            end: vertex_for_ref[&edge.end_vertex].clone(),
             param_range: None,
             tolerance: None,
         });
     }
+
+    for (record_id, (geometry, range)) in pcurve_plan {
+        let id = PcurveId(format!("catia:e5:pcurve#{record_id}"));
+        annotate(
+            annotations,
+            &id,
+            "e5_0d_03",
+            0,
+            "surface_parameter_curve",
+            Exactness::ByteExact,
+        );
+        annotations.derived(&id, "geometry");
+        ir.model.pcurves.push(Pcurve {
+            id,
+            geometry,
+            wrapper_reversed: None,
+            parameter_range: Some(range),
+            fit_tolerance: None,
+        });
+    }
+
+    for (body_index, (record_id, faces)) in body_faces.iter().enumerate() {
+        let body_id = BodyId(record_id.map_or_else(
+            || format!("catia:e5:body#inferred-{body_index}"),
+            |id| format!("catia:e5:body#{id}"),
+        ));
+        let region_id = RegionId(format!("catia:e5:region#{body_index}"));
+        let shell_id = ShellId(format!("catia:e5:shell#{body_index}"));
+        let kind = e5_body_kind(topology, faces);
+        annotate(
+            annotations,
+            &body_id,
+            "e5_0d_03",
+            0,
+            "01_body",
+            if record_id.is_some() {
+                Exactness::ByteExact
+            } else {
+                Exactness::Inferred
+            },
+        );
+        annotations
+            .derived(&body_id, "kind")
+            .derived(&body_id, "regions");
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        annotate(
+            annotations,
+            &region_id,
+            "e5_0d_03",
+            0,
+            "derived_region",
+            Exactness::Inferred,
+        );
+        annotations
+            .derived(&region_id, "body")
+            .derived(&region_id, "shells");
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        annotate(
+            annotations,
+            &shell_id,
+            "e5_0d_03",
+            0,
+            "derived_shell",
+            Exactness::Inferred,
+        );
+        annotations
+            .derived(&shell_id, "region")
+            .derived(&shell_id, "faces");
+        ir.model.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: faces
+                .iter()
+                .map(|face| FaceId(format!("catia:e5:face#{face}")))
+                .collect(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+    }
+
+    let mut coedges_by_edge = HashMap::<u32, Vec<usize>>::new();
+    for face in &topology.faces {
+        let face_id = FaceId(format!("catia:e5:face#{}", face.record_id));
+        let loop_ids: Vec<LoopId> = face
+            .loops
+            .iter()
+            .map(|loop_| LoopId(format!("catia:e5:loop#{}", loop_.record_id)))
+            .collect();
+        annotate(
+            annotations,
+            &face_id,
+            "e5_0d_03",
+            0,
+            "00_advanced_face",
+            Exactness::ByteExact,
+        );
+        for field in ["shell", "surface", "sense", "loops"] {
+            annotations.derived(&face_id, field);
+        }
+        ir.model.faces.push(Face {
+            id: face_id.clone(),
+            shell: face_shell[&face.record_id].clone(),
+            surface: surface_for_ref[&face.surface].0.clone(),
+            sense: if face.trailer_sign > 0 {
+                Sense::Forward
+            } else {
+                Sense::Reversed
+            },
+            loops: loop_ids,
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+
+        for loop_ in &face.loops {
+            let loop_id = LoopId(format!("catia:e5:loop#{}", loop_.record_id));
+            let coedge_ids: Vec<CoedgeId> = (0..loop_.edge_uses.len())
+                .map(|index| CoedgeId(format!("catia:e5:coedge#{}-{index}", loop_.record_id)))
+                .collect();
+            annotate(
+                annotations,
+                &loop_id,
+                "e5_0d_03",
+                0,
+                "09_loop",
+                Exactness::ByteExact,
+            );
+            annotations
+                .derived(&loop_id, "face")
+                .derived(&loop_id, "coedges");
+            ir.model.loops.push(Loop {
+                id: loop_id.clone(),
+                face: face_id.clone(),
+                coedges: coedge_ids.clone(),
+            });
+            for (index, ((&edge_ref, &pcurve_ref), &reversed)) in loop_
+                .edge_uses
+                .iter()
+                .zip(&loop_.pcurves)
+                .zip(&loop_.reversed)
+                .enumerate()
+            {
+                let id = coedge_ids[index].clone();
+                annotate(
+                    annotations,
+                    &id,
+                    "e5_0d_03",
+                    0,
+                    "serialized_loop_member",
+                    Exactness::ByteExact,
+                );
+                for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurve"] {
+                    annotations.derived(&id, field);
+                }
+                let arena_index = ir.model.coedges.len();
+                coedges_by_edge
+                    .entry(edge_ref)
+                    .or_default()
+                    .push(arena_index);
+                ir.model.coedges.push(Coedge {
+                    id: id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: edge_ids[&edge_ref].clone(),
+                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
+                    radial_next: id,
+                    sense: if reversed {
+                        Sense::Reversed
+                    } else {
+                        Sense::Forward
+                    },
+                    pcurve: Some(PcurveId(format!("catia:e5:pcurve#{pcurve_ref}"))),
+                });
+            }
+        }
+    }
+    for occurrences in coedges_by_edge.values() {
+        for (position, &arena_index) in occurrences.iter().enumerate() {
+            let radial = occurrences[(position + 1) % occurrences.len()];
+            ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
+        }
+    }
+    true
+}
+
+fn e5_pcurve_on_surface(
+    pcurve: &crate::e5::E5Pcurve,
+    surface: &SurfaceGeometry,
+) -> Option<(PcurveGeometry, [f64; 2], [Point3; 2])> {
+    let crate::e5::E5Pcurve::Line {
+        origin: raw_origin,
+        direction,
+        range,
+        ..
+    } = pcurve
+    else {
+        return None;
+    };
+    let origin = e5_surface_uv(surface, *raw_origin)?;
+    let tip = e5_surface_uv(
+        surface,
+        [raw_origin[0] + direction[0], raw_origin[1] + direction[1]],
+    )?;
+    let direction = Point2::new(tip.u - origin.u, tip.v - origin.v);
+    let uv0 = Point2::new(
+        origin.u + range[0] * direction.u,
+        origin.v + range[0] * direction.v,
+    );
+    let uv1 = Point2::new(
+        origin.u + range[1] * direction.u,
+        origin.v + range[1] * direction.v,
+    );
+    Some((
+        PcurveGeometry::Line { origin, direction },
+        *range,
+        [
+            cadmpeg_ir::eval::surface_point(surface, uv0.u, uv0.v)?,
+            cadmpeg_ir::eval::surface_point(surface, uv1.u, uv1.v)?,
+        ],
+    ))
+}
+
+fn e5_surface_uv(surface: &SurfaceGeometry, raw: [f64; 2]) -> Option<Point2> {
+    match surface {
+        SurfaceGeometry::Cylinder { radius, .. } => Some(Point2::new(raw[0] / radius, raw[1])),
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(Point2::new(raw[0] / major_radius, raw[1] / minor_radius)),
+        _ => None,
+    }
+}
+
+fn e5_body_kind(topology: &crate::e5::E5Topology, faces: &[u32]) -> BodyKind {
+    let face_ids: HashSet<u32> = faces.iter().copied().collect();
+    let mut uses = HashMap::<u32, usize>::new();
+    for face in topology
+        .faces
+        .iter()
+        .filter(|face| face_ids.contains(&face.record_id))
+    {
+        for edge in face.loops.iter().flat_map(|loop_| &loop_.edge_uses) {
+            *uses.entry(*edge).or_default() += 1;
+        }
+    }
+    if uses.values().any(|count| *count > 2) {
+        BodyKind::General
+    } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
+        BodyKind::Solid
+    } else {
+        BodyKind::Sheet
+    }
+}
+
+fn point_distance(a: Point3, b: Point3) -> f64 {
+    ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {

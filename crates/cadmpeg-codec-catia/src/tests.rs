@@ -1755,6 +1755,103 @@ fn e5_uv_line_payload(surface: u16, offset: f64) -> Vec<u8> {
     payload
 }
 
+fn e5_torus_topology_stream() -> Vec<u8> {
+    let mut bytes = Vec::new();
+
+    let mut torus = vec![0; 130];
+    for (offset, value) in [
+        (1, 0.0),
+        (9, 0.0),
+        (17, 0.0),
+        (25, 1.0),
+        (33, 0.0),
+        (41, 0.0),
+        (73, 0.0),
+        (81, 0.0),
+        (89, 1.0),
+        (97, 10.0),
+        (105, 2.0),
+    ] {
+        torus[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    append_e5_record(&mut bytes, 0xcc, 50, &torus);
+
+    for id in [10u32, 20, 30, 40] {
+        append_e5_record(&mut bytes, 0xfe, id, &[]);
+    }
+
+    let raw_corners = [
+        [0.0, 0.0],
+        [5.0 * std::f64::consts::PI, 0.0],
+        [5.0 * std::f64::consts::PI, std::f64::consts::PI],
+        [0.0, std::f64::consts::PI],
+    ];
+    for index in 0..4 {
+        let start = raw_corners[index];
+        let end = raw_corners[(index + 1) % 4];
+        let mut payload = vec![0x81, 0xb2];
+        for value in [
+            start[0],
+            start[1],
+            end[0] - start[0],
+            end[1] - start[1],
+            0.0,
+            1.0,
+        ] {
+            payload.extend_from_slice(&le_f64(value));
+        }
+        append_e5_record(&mut bytes, 0x96, 60 + index as u32, &payload);
+
+        let mut support = vec![0x81, 0xbc + index as u8, 0x81, 0, 0];
+        support.extend_from_slice(&le_f64(0.0));
+        support.extend_from_slice(&le_f64(1.0));
+        append_e5_record(&mut bytes, 0xc0, 70 + index as u32, &support);
+    }
+
+    for (index, (start, end)) in [(10u8, 20u8), (20, 30), (30, 40), (40, 10)]
+        .into_iter()
+        .enumerate()
+    {
+        append_e5_record(
+            &mut bytes,
+            0xff,
+            80 + index as u32,
+            &[
+                0x85,
+                0xc6 + index as u8,
+                0x80 + start,
+                0x80 + end,
+                0x80,
+                0x80,
+                0x80,
+            ],
+        );
+    }
+
+    let mut loop_payload = vec![0x89];
+    for index in 0..4 {
+        loop_payload.extend_from_slice(&[0xbc + index, 0xd0 + index]);
+    }
+    loop_payload.push(0xb2);
+    append_e5_record(&mut bytes, 0x09, 90, &loop_payload);
+    append_e5_record(&mut bytes, 0x00, 91, &[0x82, 0xb2, 0xda, 1, 0]);
+    append_e5_record(&mut bytes, 0x08, 92, &[0x81, 0xdb, 0x81, 1, 0, 1, 0, 1, 0]);
+    append_e5_record(&mut bytes, 0x01, 93, &[0x81, 0xdc]);
+
+    for xyz in [
+        [12.0f32, 0.0, 0.0],
+        [0.0, 12.0, 0.0],
+        [0.0, 10.0, 2.0],
+        [10.0, 0.0, 2.0],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in xyz {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+    bytes
+}
+
 #[test]
 fn e5_topology_follows_face_loop_and_serialized_edge_members() {
     let mut bytes = Vec::new();
@@ -2856,7 +2953,11 @@ fn decode_e5_stream_transfers_circle_carrier() {
         .unwrap();
     assert_eq!(result.ir.model.curves.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 2);
-    assert_eq!(result.ir.model.edges.len(), 1);
+    assert!(result.ir.model.edges.is_empty());
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Topology
+            && loss.severity == cadmpeg_ir::report::Severity::Blocking
+    }));
     assert!(matches!(
         result.ir.model.curves[0].geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { .. }
@@ -2864,6 +2965,37 @@ fn decode_e5_stream_transfers_circle_carrier() {
     assert!(result.ir.native_unknowns("catia").unwrap()[0]
         .links
         .contains(&"catia:e5:surf#0".to_string()));
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn decode_e5_stream_transfers_reference_closed_torus_topology() {
+    let stream = e5_torus_topology_stream();
+    crate::e5::parse_topology(&stream).expect("generated E5 topology");
+    let file = object_main_catpart(&stream);
+    assert_eq!(
+        crate::container::scan_bytes(file.clone()).variant,
+        Variant::E5Stream
+    );
+
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 4);
+    assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir.model.vertices.len(), 4);
+    assert_eq!(result.ir.model.pcurves.len(), 4);
+    assert!(result.report.losses.iter().all(|loss| {
+        loss.category != cadmpeg_ir::report::LossCategory::Topology
+            || loss.severity != cadmpeg_ir::report::Severity::Blocking
+    }));
+
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }

@@ -141,6 +141,8 @@ pub enum E5Pcurve {
 /// ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct E5Body {
+    /// This class-`0x01` body's stream-assigned `record_id`.
+    pub record_id: u32,
     /// `record_id`s of every class-`0x00` face in the body, in root-record
     /// order.
     pub faces: Vec<u32>,
@@ -341,12 +343,16 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
         });
     }
     solve_absolute_orientation(&mut faces);
-    let edges = edges
+    let edges: BTreeMap<u32, E5Edge> = edges
         .into_iter()
         .filter(|(id, _)| reachable_edges.contains(id))
         .collect();
-    let mut vertex_refs: Vec<u32> = vertex_ids.into_iter().collect();
+    let mut vertex_refs: Vec<u32> = edges
+        .values()
+        .flat_map(|edge| [edge.start_vertex, edge.end_vertex])
+        .collect();
     vertex_refs.sort_unstable();
+    vertex_refs.dedup();
     let bodies = parse_bodies(&records, &by_id)?;
     if !bodies.is_empty() {
         let roster: Vec<u32> = bodies
@@ -682,7 +688,10 @@ fn parse_bodies(records: &[Record<'_>], by_id: &HashMap<u32, &Record<'_>>) -> Op
             {
                 return None;
             }
-            Some(E5Body { faces })
+            Some(E5Body {
+                record_id: record.id,
+                faces,
+            })
         })
         .collect()
 }
