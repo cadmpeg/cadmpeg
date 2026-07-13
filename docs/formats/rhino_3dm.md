@@ -1805,6 +1805,21 @@ Radial family fields are radius point and dimension-line point as two
 radius. The measurement is the radius-point magnitude times distance scale,
 and diameter multiplies that result by two.
 
+Ordinate family fields are:
+
+```text
+i32 measured direction
+ON_2dPoint definition point
+ON_2dPoint leader point
+f64 first kink offset
+f64 second kink offset
+```
+
+Annotation type 6 selects ordinate. Measured direction 1 measures plane x and
+2 measures plane y. Zero infers x when the absolute leader displacement in x
+does not exceed its displacement in y, and otherwise infers y. Measurement is
+the absolute selected definition-point coordinate times distance scale.
+
 All points and distance-valued fields use document length conversion.
 Directions, angles, and distance scale are unscaled. Coordinates, scales, and
 computed measurements are finite; distance scale is positive.
@@ -1847,6 +1862,23 @@ Radial annotation type 4 is diameter and type 5 is radius. Its four points are
 center, arrow, tail, and knee. The center becomes the defining plane origin;
 arrow and tail become relative radius and dimension-line points.
 
+The legacy V5 ordinate class has an anonymous version 1.0 or 1.1 family chunk.
+Its first child is an anonymous version 1.0 wrapper containing the common
+legacy annotation. The suffix is:
+
+```text
+i32 measured direction
+if family minor >= 1:
+  f64 first kink offset
+  f64 second kink offset
+```
+
+Legacy annotation type 8 selects ordinate and has definition and leader points
+in that order. Direction 0 measures x, 1 measures y, and -1 uses the same
+leader-displacement inference rule as a modern unset direction. The plane
+origin is the ordinate reference and measurement is the absolute selected
+definition-point coordinate.
+
 Legacy dimensions may carry userdata class
 `8AD5B9FC-0D5C-47FB-ADFD-74C28B6F661E`. Its anonymous version 1.0 through 1.2
 payload is:
@@ -1862,8 +1894,8 @@ if minor >= 2: UUID detail measured
 
 The rectangle count is zero or seven. Distance scale is finite and positive.
 Dimension plane origins, plane equation offsets, construction points, angular
-radius, and text height use document length conversion. Style indices, flags,
-directions, stored angles, and distance scale remain unscaled.
+radius, kink offsets, and text height use document length conversion. Style
+indices, flags, directions, stored angles, and distance scale remain unscaled.
 
 ### 18.2 Hatches
 

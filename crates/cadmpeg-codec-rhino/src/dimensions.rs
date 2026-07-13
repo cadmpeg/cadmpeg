@@ -30,6 +30,12 @@ pub(crate) const V5_RADIAL: Uuid = Uuid::from_canonical([
 pub(crate) const V5_ANGULAR: Uuid = Uuid::from_canonical([
     0x84, 0x1b, 0xc4, 0x0b, 0xa9, 0x71, 0x4a, 0x8e, 0x94, 0xe5, 0xbb, 0xa2, 0x6d, 0x67, 0x34, 0x8e,
 ]);
+pub(crate) const ORDINATE: Uuid = Uuid::from_canonical([
+    0x03, 0x12, 0x48, 0x28, 0x4c, 0x9b, 0x4d, 0x28, 0x9a, 0x82, 0x66, 0x4d, 0xdd, 0xe7, 0xa1, 0x4f,
+]);
+pub(crate) const V5_ORDINATE: Uuid = Uuid::from_canonical([
+    0xc8, 0x28, 0x8d, 0x69, 0x5b, 0xd8, 0x4f, 0x50, 0x9b, 0xaf, 0x52, 0x5a, 0x00, 0x86, 0xb0, 0xc3,
+]);
 
 /// Dimension family and defining plane-space geometry.
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +55,12 @@ pub(crate) enum Definition {
         radius_point: [f64; 2],
         dimension_line_point: [f64; 2],
         diameter: bool,
+    },
+    Ordinate {
+        definition_point: [f64; 2],
+        leader_point: [f64; 2],
+        measured_direction: i32,
+        kink_offsets: [f64; 2],
     },
 }
 
@@ -89,7 +101,7 @@ struct Annotation {
 pub(crate) fn supported_class(class: Uuid) -> bool {
     matches!(
         class,
-        LINEAR | ANGULAR | RADIAL | V5_LINEAR | V5_ANGULAR | V5_RADIAL
+        LINEAR | ANGULAR | RADIAL | ORDINATE | V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE
     )
 }
 
@@ -422,6 +434,20 @@ fn direction(value: [f64; 2], offset: usize) -> Result<[f64; 2], FramingError> {
     Ok([value[0] / length, value[1] / length])
 }
 
+fn ordinate_direction(stored: i32, definition: [f64; 2], leader: [f64; 2]) -> Option<i32> {
+    match stored {
+        0 | 1 => Some(stored + 1),
+        -1 => Some(
+            if (leader[0] - definition[0]).abs() <= (leader[1] - definition[1]).abs() {
+                1
+            } else {
+                2
+            },
+        ),
+        _ => None,
+    }
+}
+
 fn decode_legacy(
     data: &[u8],
     class: Uuid,
@@ -430,13 +456,39 @@ fn decode_legacy(
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
     let (mut outer, next, minor) = anonymous(data, range.start, range.end, archive)?;
-    if next != range.end || minor != 0 {
+    if next != range.end
+        || if class == V5_ORDINATE {
+            minor > 1
+        } else {
+            minor != 0
+        }
+    {
         return Err(structural(
             range.start,
             "unsupported legacy dimension version",
         ));
     }
-    let annotation = legacy_annotation(data, &mut outer, scale, archive)?;
+    let annotation = if class == V5_ORDINATE {
+        let (mut wrapper, wrapper_next, wrapper_minor) =
+            anonymous(data, outer.position(), outer.end(), archive)?;
+        if wrapper_minor != 0 {
+            return Err(structural(
+                wrapper.position(),
+                "unsupported legacy ordinate annotation wrapper",
+            ));
+        }
+        let annotation = legacy_annotation(data, &mut wrapper, scale, archive)?;
+        if wrapper.remaining() != 0 {
+            return Err(structural(
+                wrapper.position(),
+                "legacy ordinate annotation wrapper has trailing bytes",
+            ));
+        }
+        outer.skip(wrapper_next - outer.position())?;
+        annotation
+    } else {
+        legacy_annotation(data, &mut outer, scale, archive)?
+    };
     let stored_angular = if class == V5_ANGULAR {
         let angle = outer.f64()?;
         let radius = scaled_coordinate(outer.f64()?, scale)
@@ -448,6 +500,24 @@ fn decode_legacy(
             ));
         }
         Some((angle, radius))
+    } else {
+        None
+    };
+    let stored_ordinate = if class == V5_ORDINATE {
+        let direction = outer.i32()?;
+        let kink_offsets = if minor >= 1 {
+            [
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    structural(outer.position() - 8, "invalid legacy ordinate kink offset")
+                })?,
+                scaled_coordinate(outer.f64()?, scale).ok_or_else(|| {
+                    structural(outer.position() - 8, "invalid legacy ordinate kink offset")
+                })?,
+            ]
+        } else {
+            [0.0, 0.0]
+        };
+        Some((direction, kink_offsets))
     } else {
         None
     };
@@ -499,7 +569,7 @@ fn decode_legacy(
             dimension_line_point,
             radius_point[0].hypot(radius_point[1]) * if diameter { 2.0 } else { 1.0 },
         )
-    } else {
+    } else if class == V5_ANGULAR {
         if annotation.kind != 3 || annotation.points.len() != 4 {
             return Err(structural(range.start, "invalid legacy angular definition"));
         }
@@ -519,6 +589,36 @@ fn decode_legacy(
             },
             annotation.points[0],
             angle,
+        )
+    } else {
+        if annotation.kind != 8 || annotation.points.len() != 2 {
+            return Err(structural(
+                range.start,
+                "invalid legacy ordinate definition",
+            ));
+        }
+        let definition_point = annotation.points[0];
+        let leader_point = annotation.points[1];
+        let (stored_direction, kink_offsets) =
+            stored_ordinate.expect("ordinate family has stored fields");
+        let measured_direction =
+            ordinate_direction(stored_direction, definition_point, leader_point)
+                .ok_or_else(|| structural(range.start, "invalid legacy ordinate direction"))?;
+        let measurement = if measured_direction == 1 {
+            definition_point[0].abs()
+        } else {
+            definition_point[1].abs()
+        };
+        (
+            annotation.plane,
+            Definition::Ordinate {
+                definition_point,
+                leader_point,
+                measured_direction,
+                kink_offsets,
+            },
+            leader_point,
+            measurement,
         )
     };
     Ok(Dimension {
@@ -553,7 +653,7 @@ pub(crate) fn decode(
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Dimension, FramingError> {
-    if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL) {
+    if matches!(class, V5_LINEAR | V5_ANGULAR | V5_RADIAL | V5_ORDINATE) {
         return decode_legacy(data, class, range, scale, archive);
     }
     let (mut outer, outer_next, outer_version) = anonymous(data, range.start, range.end, archive)?;
@@ -659,6 +759,42 @@ pub(crate) fn decode(
             dimension_line_point,
             diameter: annotation.kind == 3,
         }
+    } else if class == ORDINATE {
+        if annotation.kind != 6 {
+            return Err(structural(
+                outer.position(),
+                "invalid ordinate annotation type",
+            ));
+        }
+        let stored_direction = outer.i32()?;
+        if !(0..=2).contains(&stored_direction) {
+            return Err(structural(
+                outer.position() - 4,
+                "invalid ordinate measured direction",
+            ));
+        }
+        let offset = outer.position();
+        let definition_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+        let offset = outer.position();
+        let leader_point = scaled_point(point2(&mut outer)?, scale, offset)?;
+        let measured_direction = if stored_direction == 0 {
+            ordinate_direction(-1, definition_point, leader_point)
+                .expect("inferred ordinate direction")
+        } else {
+            stored_direction
+        };
+        let kink_offsets = [
+            scaled_coordinate(outer.f64()?, scale)
+                .ok_or_else(|| structural(outer.position() - 8, "invalid ordinate kink offset"))?,
+            scaled_coordinate(outer.f64()?, scale)
+                .ok_or_else(|| structural(outer.position() - 8, "invalid ordinate kink offset"))?,
+        ];
+        Definition::Ordinate {
+            definition_point,
+            leader_point,
+            measured_direction,
+            kink_offsets,
+        }
     } else {
         return Err(structural(range.start, "unsupported dimension class"));
     };
@@ -683,6 +819,17 @@ pub(crate) fn decode(
             radius_point[0].hypot(radius_point[1])
                 * distance_scale
                 * if *diameter { 2.0 } else { 1.0 }
+        }
+        Definition::Ordinate {
+            definition_point,
+            measured_direction,
+            ..
+        } => {
+            (if *measured_direction == 1 {
+                definition_point[0].abs()
+            } else {
+                definition_point[1].abs()
+            }) * distance_scale
         }
     };
     if !measurement.is_finite() {
@@ -829,6 +976,11 @@ pub(crate) fn project(
                 DimensionDisplay::Radius
             }),
         ),
+        Definition::Ordinate { .. } => (
+            "ordinate_dimension",
+            ParameterValue::Length(Length(dimension.measurement)),
+            None,
+        ),
     };
     let mut parameters =
         BTreeMap::from([("measurement".to_string(), dimension.measurement.to_string())]);
@@ -962,6 +1114,29 @@ pub(crate) fn project(
                 format!("{},{}", dimension_line_point[0], dimension_line_point[1]),
             );
         }
+        Definition::Ordinate {
+            definition_point,
+            leader_point,
+            measured_direction,
+            kink_offsets,
+        } => {
+            properties.insert(
+                "definition_point".to_string(),
+                format!("{},{}", definition_point[0], definition_point[1]),
+            );
+            properties.insert(
+                "leader_point".to_string(),
+                format!("{},{}", leader_point[0], leader_point[1]),
+            );
+            properties.insert(
+                "measured_direction".to_string(),
+                measured_direction.to_string(),
+            );
+            properties.insert(
+                "kink_offsets".to_string(),
+                format!("{},{}", kink_offsets[0], kink_offsets[1]),
+            );
+        }
     }
     parameters.insert("parameter_id".to_string(), parameter_id.0.clone());
     let feature = Feature {
@@ -1076,7 +1251,7 @@ mod tests {
         anonymous(0, &outer)
     }
 
-    fn legacy_payload(kind: i32, points: &[[f64; 2]], family: &[f64]) -> Vec<u8> {
+    fn legacy_annotation_payload(kind: i32, points: &[[f64; 2]]) -> Vec<u8> {
         let mut annotation = kind.to_le_bytes().to_vec();
         annotation.extend(0_i32.to_le_bytes());
         annotation.extend(plane());
@@ -1094,7 +1269,11 @@ mod tests {
         annotation.extend(utf16("formula"));
         annotation.extend((-1_i32).to_le_bytes());
         annotation.extend(17_i32.to_le_bytes());
-        let mut outer = anonymous(3, &annotation);
+        anonymous(3, &annotation)
+    }
+
+    fn legacy_payload(kind: i32, points: &[[f64; 2]], family: &[f64]) -> Vec<u8> {
+        let mut outer = legacy_annotation_payload(kind, points);
         for value in family {
             outer.extend(value.to_le_bytes());
         }
@@ -1139,6 +1318,36 @@ mod tests {
         )
         .unwrap();
         assert_eq!(angular.measurement, std::f64::consts::FRAC_PI_2);
+
+        let mut ordinate_family = 1_i32.to_le_bytes().to_vec();
+        ordinate_family.extend(
+            [
+                -3.0_f64, 8.0, // definition
+                2.0, 12.0, // leader
+                1.5, 0.75, // kink offsets
+            ]
+            .into_iter()
+            .flat_map(f64::to_le_bytes),
+        );
+        let ordinate_bytes = payload(6, &ordinate_family);
+        let ordinate = decode(
+            &ordinate_bytes,
+            ORDINATE,
+            0..ordinate_bytes.len(),
+            10.0,
+            archive,
+        )
+        .unwrap();
+        assert_eq!(ordinate.measurement, 60.0);
+        assert!(matches!(
+            ordinate.definition,
+            Definition::Ordinate {
+                definition_point: [-30.0, 80.0],
+                leader_point: [20.0, 120.0],
+                measured_direction: 1,
+                kink_offsets: [15.0, 7.5]
+            }
+        ));
     }
 
     #[test]
@@ -1210,6 +1419,31 @@ mod tests {
                 first_extension_offset: 0.0,
                 second_extension_offset: 0.0,
                 ..
+            }
+        ));
+
+        let annotation = legacy_annotation_payload(8, &[[4.0, -7.0], [4.0, 2.0]]);
+        let mut wrapped = anonymous(0, &annotation);
+        wrapped.extend((-1_i32).to_le_bytes());
+        wrapped.extend(1.25_f64.to_le_bytes());
+        wrapped.extend(0.5_f64.to_le_bytes());
+        let ordinate_bytes = anonymous(1, &wrapped);
+        let ordinate = decode(
+            &ordinate_bytes,
+            V5_ORDINATE,
+            0..ordinate_bytes.len(),
+            10.0,
+            archive,
+        )
+        .unwrap();
+        assert_eq!(ordinate.measurement, 40.0);
+        assert!(matches!(
+            ordinate.definition,
+            Definition::Ordinate {
+                definition_point: [40.0, -70.0],
+                leader_point: [40.0, 20.0],
+                measured_direction: 1,
+                kink_offsets: [12.5, 5.0]
             }
         ));
 
