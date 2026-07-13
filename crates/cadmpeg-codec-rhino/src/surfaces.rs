@@ -830,7 +830,7 @@ fn read_curve_poles(
     Ok((points, weights))
 }
 
-fn read_nurbs_surface(
+pub(crate) fn read_nurbs_surface(
     reader: &mut BoundedReader<'_>,
     scale: f64,
 ) -> Result<NurbsSurface, GeometryError> {

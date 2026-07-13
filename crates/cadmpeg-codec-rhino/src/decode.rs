@@ -437,6 +437,10 @@ impl<'a> DecodeContext<'a> {
                 self.decode_cage(source_order, object);
                 continue;
             }
+            if object.class_uuid == crate::morph::CLASS {
+                self.decode_morph(source_order, object);
+                continue;
+            }
             if !crate::curves::supported_class(object.class_uuid)
                 && !crate::mesh::supported_class(object.class_uuid)
             {
@@ -992,6 +996,70 @@ impl<'a> DecodeContext<'a> {
                     source_order,
                     &format!("NURBS cage candidate rejected: {error}"),
                 );
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_morph(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "morph control retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "morph control retained because identity is unavailable",
+            );
+            return;
+        };
+        let morph = match crate::morph::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(morph) => morph,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "morph control {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        if !self.charge_entities(source_order, 1) {
+            return;
+        }
+        let key = self.object_key(identity, source_order);
+        let feature = crate::morph::project(
+            &morph,
+            &key,
+            (!identity.name.is_empty()).then(|| identity.name.clone()),
+            self.unknowns[source_order].id.to_string(),
+        );
+        let feature_id = feature.id.to_string();
+        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+            Ok(()) => {
+                self.append_link(source_order, feature_id);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(source_order, &format!("morph candidate rejected: {error}"));
                 self.mark_failed(source_order);
             }
         }

@@ -980,6 +980,7 @@ failure make the buffer invalid.
 | `ON_Hatch`               | `0559733B-5332-49D1-A936-0532AC76ADE5` |
 | `ON_DetailView`          | `C8C66EFA-B3CB-4E00-9440-2AD66203379E` |
 | `ON_NurbsCage`           | `06936AFB-3D3C-41AC-BF70-C9319FA480A1` |
+| `ON_MorphControl`        | `D379E6D8-7C31-4407-A913-E3B7040D034A` |
 | `ON_Layer`               | `95809813-E985-11D3-BFE5-0010830122F0` |
 | `ON_InstanceDefinition`  | `26F8BFF6-2618-417F-A158-153D64A94989` |
 | `ON_InstanceRef`         | `F9CFB638-B9D4-4340-87E3-C56E7865D96A` |
@@ -1823,6 +1824,53 @@ Nonrational control values are Euclidean coordinates. Rational control values
 are homogeneous coordinates followed by a finite nonzero weight; Euclidean
 coordinates divide by that weight. Coordinates use document length conversion.
 Knot values and weights are unscaled.
+
+### 18.5 Morph controls
+
+Current `ON_MorphControl` payloads use anonymous version 2.0 or 2.1:
+
+```text
+i32 variant
+anonymous start-control version 1.0
+anonymous end-control version 1.0
+anonymous captive-UUID-list version 1.0
+anonymous localizer-list version 1.0
+if minor >= 1:
+  f64 tolerance
+  bool quick preview
+  bool preserve structure
+```
+
+Variant 1 stores a raw `ON_NurbsCurve` in each control chunk. Variant 2 stores
+a raw `ON_NurbsSurface` in each control chunk. Variant 3 stores an `ON_Xform`
+in the start chunk and one complete anonymous `ON_NurbsCage` in the end chunk.
+The UUID list is `i32 count` followed by that many UUID values. The localizer
+list is `i32 count` followed by that many localizer chunks.
+
+Each localizer is anonymous version 1.0:
+
+```text
+i32 type
+ON_3dPoint point
+ON_3dVector vector
+ON_Interval distances
+anonymous optional-curve version 1.0
+  bool present
+  if present: raw ON_NurbsCurve
+anonymous optional-surface version 1.0
+  bool present
+  if present: raw ON_NurbsSurface
+```
+
+Localizer types are 0 none, 1 sphere, 2 plane, 3 cylinder, 4 curve, 5 surface,
+and 6 distance. Control points, localizer points, localizer distance intervals,
+transform translation coefficients, and tolerance use document length
+conversion. Vectors, transform linear coefficients, knots, parameters, and
+weights are unscaled. Tolerance is finite and nonnegative.
+
+Legacy morph-control major version 1 is the cage variant. Its field order is a
+complete NURBS cage, captive UUID list, and start `ON_Xform`. It has no
+localizers and defaults tolerance and both option flags to zero or false.
 
 ## 19. Exact gates and invariants
 

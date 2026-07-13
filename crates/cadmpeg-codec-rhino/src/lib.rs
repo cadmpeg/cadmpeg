@@ -21,6 +21,7 @@ pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;
 pub(crate) mod mesh;
+pub(crate) mod morph;
 pub(crate) mod objects;
 pub(crate) mod settings;
 pub(crate) mod subd;
