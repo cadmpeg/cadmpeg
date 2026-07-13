@@ -48,10 +48,25 @@ pub struct CurveExpressionRecord {
     pub backup: bool,
     /// Ordered source lines declared by the `f8` array.
     pub lines: Vec<CurveExpressionLine>,
+    /// Assignment statements in source order.
+    pub assignments: Vec<CurveExpressionAssignment>,
     /// Byte offset of the enclosing entity label.
     pub offset: usize,
     /// Byte offset of the `expression` field.
     pub expression_offset: usize,
+}
+
+/// One executable assignment in a curve expression program.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurveExpressionAssignment {
+    /// Assigned identifier.
+    pub name: String,
+    /// Exact right-hand expression after surrounding ASCII whitespace removal.
+    pub expression: String,
+    /// Referenced identifiers in first-appearance order.
+    pub dependencies: Vec<String>,
+    /// Byte offset of the assignment source line.
+    pub offset: usize,
 }
 
 /// A curve row with a uniquely delimited topology suffix.
@@ -327,16 +342,63 @@ pub fn expression_records(payload: &[u8]) -> Vec<CurveExpressionRecord> {
             cursor = line_end + 1;
         }
         if lines.len() == usize::try_from(count).unwrap_or(usize::MAX) {
+            let assignments = lines.iter().filter_map(expression_assignment).collect();
             records.push(CurveExpressionRecord {
                 entity_id,
                 backup,
                 lines,
+                assignments,
                 offset,
                 expression_offset,
             });
         }
     }
     records
+}
+
+fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAssignment> {
+    let source = line.text.trim();
+    if source.starts_with("/*") {
+        return None;
+    }
+    let (name, expression) = source.split_once('=')?;
+    let name = name.trim();
+    let expression = expression.trim();
+    let valid_name = !name.is_empty()
+        && name.bytes().enumerate().all(|(index, byte)| {
+            byte == b'_' || byte.is_ascii_alphabetic() || (index > 0 && byte.is_ascii_digit())
+        });
+    if !valid_name || expression.is_empty() {
+        return None;
+    }
+    let mut dependencies = Vec::new();
+    let bytes = expression.as_bytes();
+    let mut cursor = 0;
+    while cursor < bytes.len() {
+        if bytes[cursor] == b'_' || bytes[cursor].is_ascii_alphabetic() {
+            let start = cursor;
+            cursor += 1;
+            while cursor < bytes.len()
+                && (bytes[cursor] == b'_'
+                    || bytes[cursor].is_ascii_alphabetic()
+                    || bytes[cursor].is_ascii_digit())
+            {
+                cursor += 1;
+            }
+            let dependency = &expression[start..cursor];
+            if !dependencies.iter().any(|existing| existing == dependency) {
+                dependencies.push(dependency.to_owned());
+            }
+        } else {
+            cursor += 1;
+        }
+    }
+    Some(CurveExpressionAssignment {
+        name: name.to_owned(),
+        expression: expression.to_owned(),
+        dependencies,
+        offset: line.offset,
+    })
 }
 
 /// Decode positional `crv_array` rows whose terminal
@@ -1024,6 +1086,13 @@ mod tests {
         assert!(records[1].backup);
         assert_eq!(records[1].lines[0].text, "r=5");
         assert!(records[0].lines[0].offset < records[0].lines[1].offset);
+        assert_eq!(records[0].assignments.len(), 3);
+        assert_eq!(records[0].assignments[0].name, "r");
+        assert_eq!(records[0].assignments[0].expression, "5");
+        assert!(records[0].assignments[0].dependencies.is_empty());
+        assert_eq!(records[0].assignments[1].name, "theta");
+        assert_eq!(records[0].assignments[1].expression, "t*360");
+        assert_eq!(records[0].assignments[1].dependencies, ["t"]);
     }
 
     #[test]

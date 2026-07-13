@@ -103,11 +103,20 @@ struct CreoCurveExpressionRecord {
     entity_id: u32,
     backup: bool,
     lines: Vec<CreoCurveExpressionLine>,
+    assignments: Vec<CreoCurveExpressionAssignment>,
 }
 
 #[derive(Serialize)]
 struct CreoCurveExpressionLine {
     text: String,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoCurveExpressionAssignment {
+    name: String,
+    expression: String,
+    dependencies: Vec<String>,
     offset: usize,
 }
 
@@ -129,6 +138,16 @@ fn curve_expression_records(scan: &ContainerScan) -> Vec<CreoCurveExpressionReco
                 .map(|line| CreoCurveExpressionLine {
                     text: line.text.clone(),
                     offset: line.offset,
+                })
+                .collect(),
+            assignments: record
+                .assignments
+                .iter()
+                .map(|assignment| CreoCurveExpressionAssignment {
+                    name: assignment.name.clone(),
+                    expression: assignment.expression.clone(),
+                    dependencies: assignment.dependencies.clone(),
+                    offset: assignment.offset,
                 })
                 .collect(),
         })

@@ -586,6 +586,9 @@ fn curve_expressions(data: &[u8], sections: &[Section]) -> Vec<CurveExpressionRe
                     for line in &mut record.lines {
                         line.offset += section.offset;
                     }
+                    for assignment in &mut record.assignments {
+                        assignment.offset += section.offset;
+                    }
                     record
                 }),
         );

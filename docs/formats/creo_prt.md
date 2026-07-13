@@ -414,7 +414,7 @@ A `point` record stores a first section coordinate as an IEEE-fill scalar, a poi
 
 `i_pnts f9 <n> 03`, `end_tangts f9 02 03`, and `params f8 <n>` encode an interpolation-point spline with endpoint tangent angles and parameter values.
 
-A curve-from-equation entity stores `expression f8 <count>` followed by exactly `count` NUL-terminated UTF-8 source lines. `entity(crv_fr_eqn)` is the active equation record and `backup_ents(crv_fr_eqn)` is its separately identified backup record. Source-line order is significant.
+A curve-from-equation entity stores `expression f8 <count>` followed by exactly `count` NUL-terminated UTF-8 source lines. `entity(crv_fr_eqn)` is the active equation record and `backup_ents(crv_fr_eqn)` is its separately identified backup record. Source-line order is significant. Lines beginning with `/*` are comments. Executable lines use `identifier = expression`; identifiers referenced on the right-hand side are expression dependencies.
 
 A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. Extruding a section line yields a plane, extruding an arc yields a cylinder, and a closed profile yields cap planes. Revolving a line parallel, angled, or perpendicular to the axis yields a cylinder, cone, or plane. An arc with center on or off the axis yields a sphere or torus.
 
