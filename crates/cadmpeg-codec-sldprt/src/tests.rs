@@ -15467,6 +15467,69 @@ fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
 }
 
 #[test]
+fn decode_binds_uniquely_enclosed_profile_stream_to_extrusion() {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Sketch1" Type="Boss-Extrude"><Dimension Name="D1">25</Dimension></Extrusion></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let [sketch] = decoded.ir.model.sketches.as_slice() else {
+        panic!("one enclosed extrusion profile stream");
+    };
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("extrusion history feature");
+    assert!(matches!(
+        &feature.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(id),
+            ..
+        } if id == &sketch.id
+    ));
+}
+
+#[test]
+fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_extrusion() {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_nested_sketch_profiles(&triangle_body(), 2);
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Sketch1" Type="Boss-Extrude"><Dimension Name="D1">25</Dimension></Extrusion></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("extrusion history feature");
+    assert!(matches!(
+        &feature.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Unresolved(_),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_rejects_retained_sketch_constraint_edits() {
     use cadmpeg_ir::sketches::{SketchConstraint, SketchConstraintDefinition, SketchConstraintId};
 

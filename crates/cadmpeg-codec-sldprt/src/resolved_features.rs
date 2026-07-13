@@ -1558,6 +1558,15 @@ pub(crate) fn bind_sketch_profiles(
                 {
                     *profile = Some(cadmpeg_ir::features::ProfileRef::Sketch(sketch.id.clone()));
                 }
+                cadmpeg_ir::features::FeatureDefinition::Extrude { profile, .. } => {
+                    if matches!(
+                        &*profile,
+                        cadmpeg_ir::features::ProfileRef::Unresolved(owner)
+                            if owner == &native_feature.id
+                    ) {
+                        *profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.id.clone());
+                    }
+                }
                 _ => {}
             }
         }
