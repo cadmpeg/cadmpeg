@@ -13603,6 +13603,53 @@ fn generated_exact_intcurve_preserves_native_construction_source_less() {
 }
 
 #[test]
+fn generated_spline_carriers_write_explicit_forward_sense() {
+    for (smbh, head) in [
+        (synthetic_geometry_with_exact_curve_smbh(), "intcurve"),
+        (synthetic_exact_spl_sur_smbh("exact_spl_sur"), "spline"),
+    ] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("generated spline carrier decode");
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("source-less spline carrier encode");
+        let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
+        let mut generated_smbh = Vec::new();
+        archive
+            .by_name("FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh")
+            .expect("generated BREP stream")
+            .read_to_end(&mut generated_smbh)
+            .expect("generated BREP bytes");
+        let record_start = generated_smbh
+            .windows(b"\x0d\x09asmheader".len())
+            .position(|window| window == b"\x0d\x09asmheader")
+            .expect("generated ASM record table");
+        let records = crate::sab::frame(&generated_smbh, record_start, generated_smbh.len(), 8)
+            .expect("generated ASM records must frame");
+        let record = records
+            .iter()
+            .find(|record| record.head == head)
+            .expect("generated spline carrier record");
+        let subtype = record
+            .tokens
+            .iter()
+            .position(|token| matches!(token, crate::sab::Token::SubtypeOpen))
+            .expect("spline carrier subtype scope");
+        assert!(subtype > 0);
+        assert_eq!(record.tokens[subtype - 1], crate::sab::Token::False);
+    }
+}
+
+#[test]
 fn generated_legacy_intcurve_aliases_decode_and_write_canonically() {
     use cadmpeg_ir::geometry::ProceduralCurveDefinition;
 

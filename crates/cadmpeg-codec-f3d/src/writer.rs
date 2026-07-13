@@ -4510,6 +4510,9 @@ fn native_curve_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError> 
     native_ref(bytes, -1);
     native_i64(bytes, -1);
     native_ref(bytes, -1);
+    if kind == "intcurve" {
+        bytes.push(native_bool(false));
+    }
     Ok(())
 }
 
@@ -4519,6 +4522,9 @@ fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(), CodecError
     native_ref(bytes, -1);
     native_i64(bytes, -1);
     native_ref(bytes, -1);
+    if kind == "spline" {
+        bytes.push(native_bool(false));
+    }
     Ok(())
 }
 
