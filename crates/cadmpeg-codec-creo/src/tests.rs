@@ -1611,18 +1611,21 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         "c",
         &[(
             "MdlStatus",
-            b"noise\0Extrude id 40\0Round id 41\0future id 42\0".to_vec(),
+            b"noise\0Extrude id 40\0Round id 41\0future id 42\0Datum Plane id 43\0Draft id 44\0"
+                .to_vec(),
         )],
     );
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_operations.len(), 2);
+    assert_eq!(scan.feature_operations.len(), 4);
     assert_eq!(scan.feature_operations[0].feature_id, 40);
     assert_eq!(scan.feature_operations[0].kind, "Extrude");
     assert_eq!(scan.feature_operations[1].feature_id, 41);
     assert_eq!(scan.feature_operations[1].kind, "Round");
+    assert_eq!(scan.feature_operations[2].kind, "Datum Plane");
+    assert_eq!(scan.feature_operations[3].kind, "Draft");
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
-    assert_eq!(result.ir.model.features.len(), 2);
+    assert_eq!(result.ir.model.features.len(), 4);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
         "creo:mdlstatus:feature#40"

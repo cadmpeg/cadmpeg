@@ -320,7 +320,10 @@ In a round-feature generated-entity table, a rowless face-use entry is a cylinde
 
 ## 6. Features and datums
 
-`MdlStatus` names encode feature kinds as `<Kind> id <N>`. Known names include `Round`, `Chamfer`, `Protrusion`, `Extrude`, `Revolve`, `Hole`, and `Cut`.
+`MdlStatus` names encode feature kinds as `<Kind> id <N>`. Defined names include
+`Annotation Feature`, `Cross Section`, `Datum Plane`, `Round`, `Chamfer`,
+`Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
+`Surface`.
 
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 

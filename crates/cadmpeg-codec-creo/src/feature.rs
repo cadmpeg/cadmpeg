@@ -25,6 +25,9 @@ pub struct FeatureOperation {
 /// Decode `<Kind> id <N>\0` operation names from one `MdlStatus` payload.
 pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
     const KINDS: &[&[u8]] = &[
+        b"Annotation Feature",
+        b"Cross Section",
+        b"Datum Plane",
         b"Round",
         b"Chamfer",
         b"Protrusion",
@@ -32,6 +35,9 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         b"Revolve",
         b"Hole",
         b"Cut",
+        b"Draft",
+        b"Mirror",
+        b"Surface",
     ];
     let mut result = Vec::new();
     for offset in 0..payload.len() {
