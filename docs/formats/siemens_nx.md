@@ -37,6 +37,8 @@ Directory entry grammar (HEADER and FOOTER identical): `name_len:u32 LE` + ASCII
 
 FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, then directory entries, then a 4-byte per-save fingerprint (unique per file version). The `/Root/` sentinel node carries UUID `611ec9b3-fa60-d111-8ad9-0800362fb302` across files.
 
+`/Root/part/arrangements` is a UTF-8 XML document with an `Arrangements` root. Each `Arrangement` child has a nonempty `Name` and a `Default` value of `YES` or `NO`. At most one child is default. Child order is configuration order.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |
@@ -100,6 +102,22 @@ The neutral-binary streams are partially self-describing. After `SCH_` the head 
 Signature alphabet: `C` = component/pointer (xmt ref), `I` = int, `D` = double, `A` = array ref, `Z` = terminator/compound. Inline definitions include type 38 `intersection_data` (`CCCCCCCCCCCA`), type 80 `legal_owners` (`CCCCCDI`), and type 100 `precision` (`CCCCCCCCCA`).
 
 The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definition list (`attdef_list`), preview-mesh references (`mesh`/`polyline`/`lattice`), and index-map arrays (`index_map`, `node_id_index_map`, `schema_embedding_map`).
+
+### 3.3 NX object-model framing
+
+An indexed object-model section carries an entity-boundary array followed by an object count and object-ID array. Boundary slot zero is zero. Subsequent values are monotonic offsets relative to the section base. Object IDs in slots `1..count` pair with entity spans bounded by adjacent boundary values. The first entity begins with `04 01 0e "NX "`.
+
+Class definitions before the boundary array use `name_length:u8 + "UGS::" name bytes + class_id:u8`.
+
+A numeric expression table contains a `hostglobalvariables` root entity. Each expression entity contains:
+
+```text
+<handle:u8> 04 text_length:u8
+"(Number [" unit "]) " name ": " finite_decimal "; "
+00
+```
+
+`text_length` includes the leading marker byte and trailing zero, so it equals the ASCII text length plus two. Defined units are `mm` and `degrees`.
 
 ---
 
@@ -364,6 +382,11 @@ live = partition ∪ delta_full − tombstones
 BODY (`00 0c`, xmt=3) records delimit snapshots. `node_id` is a monotonic per-body revision counter.
 
 `RMFastLoad` stores an object-id set alongside the partition and deltas body records.
+
+A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. When its
+`(type, xmt)` key matches a partition entity, it deletes that entity. Full
+deltas records with the same key replace the partition record. Later full or
+tombstone events for one key take precedence over earlier events.
 
 ---
 

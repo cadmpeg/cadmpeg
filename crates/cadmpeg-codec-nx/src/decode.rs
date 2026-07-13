@@ -141,14 +141,16 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     ir.source = Some(source_meta(scan));
     let mut counts = Counts::default();
     let mut body_node_ids = BTreeMap::new();
+    let semantic_streams = semantic_streams(scan);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
             continue;
         }
+        let semantic = &semantic_streams[si];
         let stream_name = format!("parasolid#{si}:{}", stream.kind.label());
         let source_stream = annotations.stream(format!("nx:{stream_name}"));
-        let graph = Graph::parse(&stream.inflated);
+        let graph = Graph::parse(semantic);
         body_node_ids.extend(topology_body_node_ids(si, &graph));
         let mut points_by_xmt = BTreeMap::new();
         let mut surfaces_by_xmt = BTreeMap::new();
@@ -156,8 +158,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         let mut trim_ranges = BTreeMap::new();
         let first_surface = ir.model.surfaces.len();
         let first_curve = ir.model.curves.len();
-
-        for (pi, pt) in geometry::points(&stream.inflated).into_iter().enumerate() {
+        for (pi, pt) in geometry::points(semantic).into_iter().enumerate() {
             let pid = PointId(format!("nx:s{si}:pt#{pi}"));
             let vid = VertexId(format!("nx:s{si}:v#{pi}"));
             annotations
@@ -192,7 +193,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             counts.points += 1;
         }
 
-        for (fi, surf) in geometry::surfaces(&stream.inflated).into_iter().enumerate() {
+        for (fi, surf) in geometry::surfaces(semantic).into_iter().enumerate() {
             match &surf.geometry {
                 SurfaceGeometry::Plane { .. } => counts.planes += 1,
                 SurfaceGeometry::Cylinder { .. } => counts.cylinders += 1,
@@ -216,10 +217,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             }
         }
 
-        for (fi, surf) in crate::nurbs::surfaces(&stream.inflated)
-            .into_iter()
-            .enumerate()
-        {
+        for (fi, surf) in crate::nurbs::surfaces(semantic).into_iter().enumerate() {
             counts.nurbs_surfaces += 1;
             let id = SurfaceId(format!("nx:s{si}:nurbs-surf#{fi}"));
             annotations
@@ -236,7 +234,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             }
         }
 
-        for (oi, offset) in crate::topology::offset_surfaces(&stream.inflated)
+        for (oi, offset) in crate::topology::offset_surfaces(semantic)
             .into_iter()
             .enumerate()
         {
@@ -276,7 +274,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             counts.offset_surfaces += 1;
         }
 
-        for (bi, blend) in crate::topology::blend_surfaces(&stream.inflated)
+        for (bi, blend) in crate::topology::blend_surfaces(semantic)
             .into_iter()
             .enumerate()
         {
@@ -333,7 +331,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             counts.blend_surfaces += 1;
         }
 
-        for (ci, crv) in geometry::curves(&stream.inflated).into_iter().enumerate() {
+        for (ci, crv) in geometry::curves(semantic).into_iter().enumerate() {
             match &crv.geometry {
                 CurveGeometry::Line { .. } => counts.lines += 1,
                 CurveGeometry::Circle { .. } => counts.circles += 1,
@@ -359,10 +357,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             }
         }
 
-        for (ci, crv) in crate::nurbs::curves(&stream.inflated)
-            .into_iter()
-            .enumerate()
-        {
+        for (ci, crv) in crate::nurbs::curves(semantic).into_iter().enumerate() {
             counts.nurbs_curves += 1;
             let id = CurveId(format!("nx:s{si}:nurbs-crv#{ci}"));
             annotations
@@ -379,13 +374,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             }
         }
 
-        let charted_intersections: BTreeMap<_, _> = crate::intersection::curves(&stream.inflated)
+        let charted_intersections: BTreeMap<_, _> = crate::intersection::curves(semantic)
             .into_iter()
             .map(|curve| (curve.xmt, curve))
             .collect();
-        for (ci, construction) in crate::topology::composite_curves(&stream.inflated)
+        for (ci, construction) in crate::topology::composite_curves(semantic)
             .into_iter()
-            .chain(crate::topology::intersection_data_curves(&stream.inflated))
+            .chain(crate::topology::intersection_data_curves(semantic))
             .enumerate()
         {
             let curve_id = CurveId(format!("nx:s{si}:intersection-crv#{ci}"));
@@ -471,13 +466,13 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             counts.intersection_curves += 1;
         }
 
-        for trim in crate::topology::trimmed_curves(&stream.inflated) {
+        for trim in crate::topology::trimmed_curves(semantic) {
             if let Some(basis) = curves_by_xmt.get(&trim.basis).cloned() {
                 curves_by_xmt.insert(trim.xmt, basis);
                 trim_ranges.insert(trim.xmt, trim.parameters);
             }
         }
-        for (xmt, basis_xmt) in crate::topology::surface_curves(&stream.inflated) {
+        for (xmt, basis_xmt) in crate::topology::surface_curves(semantic) {
             if let Some(basis) = curves_by_xmt.get(&basis_xmt).cloned() {
                 curves_by_xmt.insert(xmt, basis);
             }
@@ -522,6 +517,8 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         return None;
     }
 
+    attach_native_object_model(&mut ir, scan).ok()?;
+
     select_active_body(
         &mut ir,
         &body_node_ids,
@@ -532,6 +529,32 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     retain_live_annotations(&mut ir);
     let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
     Some((ir, report))
+}
+
+fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
+    let mut semantic = scan
+        .streams
+        .iter()
+        .map(|stream| stream.inflated.clone())
+        .collect::<Vec<_>>();
+    let mut index = 0;
+    while index < scan.streams.len() {
+        if scan.streams[index].kind != StreamKind::Partition {
+            index += 1;
+            continue;
+        }
+        let mut next = index + 1;
+        while next < scan.streams.len()
+            && scan.streams[next].kind == StreamKind::Deltas
+            && scan.streams[next].schema == scan.streams[index].schema
+        {
+            semantic[index] = crate::deltas::merge_full_records(&semantic[index], &semantic[next]);
+            semantic[next].clear();
+            next += 1;
+        }
+        index = next;
+    }
+    semantic
 }
 
 fn retain_live_annotations(ir: &mut CadIr) {
@@ -1269,12 +1292,11 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
             category: LossCategory::Topology,
             severity: Severity::Blocking,
             message: "The B-rep topology graph (body→shell→face→loop→fin→edge→vertex) was not \
-                      reconstructed: resolving it requires a full sequential record-framing walk that \
-                      tracks each record's escape and large-index byte shifts, and the active body's \
-                      surviving-face set additionally depends on the undecoded partition↔deltas \
-                      tombstone bridge (the in-stream index maps are declared but serialize empty). \
-                      Faces, loops, fins, edges, and their surface/curve incidence are therefore not \
-                      emitted; the decoded points, surfaces, and curves are unattached carriers."
+                      reconstructed because the surviving typed records did not form a complete \
+                      connected ownership graph. Exact-key supported partition↔deltas replacements \
+                      and deletions were applied before graph construction. Required unresolved \
+                      records prevent their dependent incidence from being emitted; decoded geometry \
+                      then remains unattached."
                 .to_string(),
             provenance: None,
         });
@@ -1294,13 +1316,13 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
 
     if scan.count(StreamKind::Deltas) > 0 {
         losses.push(LossNote {
-            category: LossCategory::Geometry,
+            category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
-                "{} Parasolid deltas (edit-overlay) stream(s) were scanned for analytic carriers \
-                 alongside the partition(s); because the tombstone bridge is undecoded, carriers \
-                 from a deltas stream may include entities that the active-body edit later deleted. \
-                 They are emitted as unattached carriers, not as a resolved live-body face set.",
+                "{} Parasolid deltas stream(s) were paired by adjacency and equal schema. Exact-key \
+                 BODY, SHELL, FACE, LOOP, EDGE, VERTEX, REGION, and POINT full records and compact \
+                 tombstones were applied in source order. Full FIN delta framing and tombstones \
+                 without an exact partition key remain unresolved.",
                 scan.count(StreamKind::Deltas)
             ),
             provenance: None,
@@ -1356,8 +1378,34 @@ fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
             ir.push_native_unknown("nx", unknown)?;
         }
     }
+    attach_native_object_model(&mut ir, scan)
+        .map_err(|error| CodecError::Malformed(error.to_string()))?;
     ir.annotations = annotations.build();
     Ok(ir)
+}
+
+fn attach_native_object_model(
+    ir: &mut CadIr,
+    scan: &Scan,
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let expressions = crate::native::expressions(&scan.container);
+    let classes = crate::native::class_definitions(&scan.container);
+    let configurations = crate::native::configurations(&scan.container);
+    if expressions.is_empty() && classes.is_empty() && configurations.is_empty() {
+        return Ok(());
+    }
+    let namespace = ir.native.namespace_mut("nx");
+    namespace.version = namespace.version.max(1);
+    if !expressions.is_empty() {
+        namespace.set_arena("expressions", &expressions)?;
+    }
+    if !classes.is_empty() {
+        namespace.set_arena("class_definitions", &classes)?;
+    }
+    if !configurations.is_empty() {
+        namespace.set_arena("configurations", &configurations)?;
+    }
+    Ok(())
 }
 
 fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
@@ -1432,6 +1480,18 @@ pub fn summary_notes(scan: &Scan) -> Vec<String> {
     ));
     if let Some(schema) = scan.streams.iter().find_map(|s| s.schema.as_deref()) {
         notes.push(format!("Parasolid schema: {schema}"));
+    }
+    let om_sections = c.indexed_om_sections();
+    if !om_sections.is_empty() {
+        let entities = om_sections
+            .iter()
+            .map(|(_, section)| section.records.len())
+            .sum::<usize>();
+        notes.push(format!(
+            "NX object model: {} indexed section(s), {} bounded entity record(s)",
+            om_sections.len(),
+            entities
+        ));
     }
     if !scan.has_parasolid()
         && c.entries

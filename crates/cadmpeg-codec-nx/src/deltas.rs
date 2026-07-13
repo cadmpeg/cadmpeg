@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::be;
+use cadmpeg_ir::math::Point3;
 
 /// One complete status-framed topology record.
 #[derive(Debug, Clone, PartialEq)]
@@ -16,10 +17,38 @@ pub struct Record {
     pub node_id: u32,
     /// Ordered reference fields without their framing status bytes.
     pub references: Vec<u32>,
+    /// POINT coordinates in Parasolid metres, when present.
+    pub position: Option<[f64; 3]>,
+    /// Equivalent partition-style record with status bytes removed.
+    pub canonical_bytes: Vec<u8>,
     /// Record start offset in the inflated stream.
     pub offset: usize,
     /// First byte following the record.
     pub end: usize,
+}
+
+/// One typed POINT addition or replacement from a deltas stream.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Point {
+    /// Stream-local XMT identifier.
+    pub xmt: u32,
+    /// Kernel node identifier.
+    pub node_id: u32,
+    /// Position converted from Parasolid metres to model millimeters.
+    pub position: Point3,
+    /// Record start offset in the inflated stream.
+    pub offset: usize,
+}
+
+/// One compact deletion carrying an explicit Parasolid type and XMT identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tombstone {
+    /// Parasolid node type.
+    pub kind: u16,
+    /// Stream-local XMT identifier.
+    pub xmt: u32,
+    /// Record start offset in the inflated deltas stream.
+    pub offset: usize,
 }
 
 /// Result of a deterministic deltas topology walk.
@@ -27,6 +56,8 @@ pub struct Record {
 pub struct Census {
     /// Complete records in source order.
     pub records: Vec<Record>,
+    /// Compact tombstones in source order.
+    pub tombstones: Vec<Tombstone>,
     /// Complete-record counts keyed by Parasolid family name.
     pub full_counts: BTreeMap<&'static str, usize>,
     /// Compact tombstone counts keyed by Parasolid family name.
@@ -85,6 +116,9 @@ const POINT: &[Token] = &[
     Token::Ref,
     Token::Position,
 ];
+const LOOP: &[Token] = &[Token::Ref; 4];
+const BODY_OR_SHELL: &[Token] = &[Token::Ref; 8];
+const REGION: &[Token] = &[Token::Ref; 4];
 
 /// Walk all accepted full records and compact tombstones in an inflated
 /// deltas stream.
@@ -101,11 +135,7 @@ pub fn walk(stream: &[u8]) -> Census {
         };
         let decoded = fixed_signature(kind)
             .and_then(|signature| consume_fixed(stream, offset, kind, signature))
-            .filter(|record| plausible_next(stream, record.end))
-            .or_else(|| {
-                variable_bounds(kind)
-                    .and_then(|bounds| consume_variable(stream, offset, kind, bounds))
-            });
+            .filter(|record| plausible_next(stream, record.end));
         if let Some(record) = decoded {
             census.bytes_decoded += record.end - record.offset;
             *census.full_counts.entry(name).or_default() += 1;
@@ -116,6 +146,7 @@ pub fn walk(stream: &[u8]) -> Census {
         if let Some(xmt) = compact_tombstone(stream, offset) {
             if xmt > 1 && plausible_next(stream, offset + 6) {
                 *census.tombstone_counts.entry(name).or_default() += 1;
+                census.tombstones.push(Tombstone { kind, xmt, offset });
                 offset += 6;
                 continue;
             }
@@ -123,6 +154,93 @@ pub fn walk(stream: &[u8]) -> Census {
         offset += 1;
     }
     census
+}
+
+/// Decode complete status-framed POINT records in source order.
+pub fn points(stream: &[u8]) -> Vec<Point> {
+    walk(stream)
+        .records
+        .into_iter()
+        .filter_map(|record| {
+            let [x, y, z] = record.position?;
+            Some(Point {
+                xmt: record.xmt,
+                node_id: record.node_id,
+                position: Point3::new(x * 1000.0, y * 1000.0, z * 1000.0),
+                offset: record.offset,
+            })
+        })
+        .collect()
+}
+
+/// Overlay supported complete deltas records onto one paired partition stream.
+///
+/// Replaced partition records and status-framed source records are masked with
+/// non-tag bytes. Their status-free canonical forms are appended in last-write
+/// order. Unrecognized deltas bytes remain available to independent procedural
+/// record decoders.
+pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
+    let census = walk(deltas);
+    let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
+    let mut normalized_sources = Vec::new();
+    for record in &census.records {
+        let Ok(kind) = u8::try_from(record.kind) else {
+            continue;
+        };
+        if matches!(kind, 12..=16 | 18 | 19 | 29)
+            && crate::topology::Graph::parse(&record.canonical_bytes)
+                .get(kind, record.xmt)
+                .is_some()
+        {
+            replacements.insert((kind, record.xmt), record);
+            normalized_sources.push(record);
+        }
+    }
+
+    let tombstones = census
+        .tombstones
+        .iter()
+        .filter_map(|tombstone| {
+            u8::try_from(tombstone.kind)
+                .ok()
+                .map(|kind| ((kind, tombstone.xmt), tombstone))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let graph = crate::topology::Graph::parse(partition);
+    replacements.retain(|key, record| {
+        tombstones
+            .get(key)
+            .is_none_or(|tombstone| record.offset > tombstone.offset)
+    });
+    let deletions = tombstones
+        .into_iter()
+        .filter(|(key, tombstone)| {
+            graph.get(key.0, key.1).is_some()
+                && replacements
+                    .get(key)
+                    .is_none_or(|record| tombstone.offset > record.offset)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut merged = partition.to_vec();
+    for &(kind, xmt) in replacements.keys().chain(deletions.keys()) {
+        if let Some(node) = graph.get(kind, xmt) {
+            merged[node.pos..node.end()].fill(0xff);
+        }
+    }
+
+    let mut residual_deltas = deltas.to_vec();
+    for record in normalized_sources {
+        residual_deltas[record.offset..record.end].fill(0xff);
+    }
+    for tombstone in deletions.values() {
+        residual_deltas[tombstone.offset..tombstone.offset + 6].fill(0xff);
+    }
+    merged.extend(residual_deltas);
+    for record in replacements.values() {
+        merged.extend_from_slice(&record.canonical_bytes);
+    }
+    merged
 }
 
 fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -> Option<Record> {
@@ -133,29 +251,37 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
     let mut at = offset + 2 + consumed;
     let node_id = be::u32_at(stream, at)?;
     at += 4;
+    let mut canonical_bytes = stream.get(offset..at)?.to_vec();
     let mut references = Vec::new();
+    let mut position = None;
     for token in signature {
         match token {
             Token::Ref => {
+                let start = at;
                 let (reference, consumed) = read_xmt(stream, at)?;
                 at += consumed;
                 if stream.get(at) != Some(&1) {
                     return None;
                 }
                 at += 1;
+                canonical_bytes.extend_from_slice(stream.get(start..start + consumed)?);
                 references.push(reference);
             }
             Token::Tolerance => {
                 be::f64_at(stream, at)?.is_finite().then_some(())?;
+                canonical_bytes.extend_from_slice(stream.get(at..at + 8)?);
                 at += 8;
             }
             Token::Sense => {
                 matches!(stream.get(at), Some(b'+' | b'-')).then_some(())?;
+                canonical_bytes.push(*stream.get(at)?);
                 at += 1;
             }
             Token::Position => {
                 let xyz = be::vec3_at(stream, at)?;
                 xyz.iter().all(|value| value.is_finite()).then_some(())?;
+                position = Some(xyz);
+                canonical_bytes.extend_from_slice(stream.get(at..at + 24)?);
                 at += 24;
             }
         }
@@ -165,48 +291,10 @@ fn consume_fixed(stream: &[u8], offset: usize, kind: u16, signature: &[Token]) -
         xmt,
         node_id,
         references,
+        position,
+        canonical_bytes,
         offset,
         end: at,
-    })
-}
-
-fn consume_variable(
-    stream: &[u8],
-    offset: usize,
-    kind: u16,
-    bounds: (usize, usize),
-) -> Option<Record> {
-    let (xmt, consumed) = read_xmt(stream, offset + 2)?;
-    if xmt <= 1 {
-        return None;
-    }
-    let mut at = offset + 2 + consumed;
-    let node_id = be::u32_at(stream, at)?;
-    at += 4;
-    let mut references = Vec::new();
-    let mut accepted = None;
-    for _ in 0..bounds.1 {
-        let Some((reference, consumed)) = read_xmt(stream, at) else {
-            break;
-        };
-        let status = at + consumed;
-        if stream.get(status) != Some(&1) {
-            break;
-        }
-        references.push(reference);
-        at = status + 1;
-        if references.len() >= bounds.0 && plausible_next(stream, at) {
-            accepted = Some((at, references.clone()));
-        }
-    }
-    let (end, references) = accepted?;
-    Some(Record {
-        kind,
-        xmt,
-        node_id,
-        references,
-        offset,
-        end,
     })
 }
 
@@ -233,11 +321,14 @@ fn is_next_kind(kind: u16) -> bool {
 fn family_name(kind: u16) -> Option<&'static str> {
     Some(match kind {
         14 => "FACE",
-        15 => "FIN",
+        15 => "LOOP",
         16 => "EDGE",
-        17 => "LOOP",
+        17 => "FIN",
         18 => "VERTEX",
         29 => "POINT",
+        12 => "BODY",
+        13 => "SHELL",
+        19 => "REGION",
         _ => return None,
     })
 }
@@ -245,17 +336,12 @@ fn family_name(kind: u16) -> Option<&'static str> {
 fn fixed_signature(kind: u16) -> Option<&'static [Token]> {
     Some(match kind {
         14 => FACE,
+        12 | 13 => BODY_OR_SHELL,
+        15 => LOOP,
         16 => EDGE,
         18 => VERTEX,
         29 => POINT,
-        _ => return None,
-    })
-}
-
-fn variable_bounds(kind: u16) -> Option<(usize, usize)> {
-    Some(match kind {
-        15 => (2, 12),
-        17 => (2, 8),
+        19 => REGION,
         _ => return None,
     })
 }

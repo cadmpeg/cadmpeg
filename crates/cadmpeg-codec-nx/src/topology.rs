@@ -98,6 +98,11 @@ pub struct VertexFields {
 }
 
 impl Node {
+    /// First byte after this complete record in its source stream.
+    pub fn end(&self) -> usize {
+        self.pos + self.bytes.len()
+    }
+
     /// Locate the payload following the five-reference compact geometry header.
     pub fn compact_tail_offset(&self) -> Option<usize> {
         let mut at = 8 + self.shift;

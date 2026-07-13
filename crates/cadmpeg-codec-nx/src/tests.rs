@@ -52,6 +52,82 @@ fn record(tag: u8, len: usize) -> Vec<u8> {
     r
 }
 
+fn indexed_om_section() -> Vec<u8> {
+    let mut bytes = vec![0xaa; 32];
+    let base = 8usize;
+    let class_name = b"UGS::ModlFeature";
+    bytes[base] = class_name.len() as u8;
+    bytes[base + 1..base + 1 + class_name.len()].copy_from_slice(class_name);
+    bytes[base + 1 + class_name.len()] = 0x81;
+    let root = b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables";
+    let text = b"(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; ";
+    let mut expression = vec![0x99, 0x04, (text.len() + 2) as u8];
+    expression.extend_from_slice(text);
+    expression.push(0);
+    let records = [root.as_slice(), expression.as_slice()];
+    let table = bytes.len() + 4 * 4;
+    let table_end = table + 4 + 3 * 4;
+    let first = table_end - base;
+    let second = first + records[0].len();
+    let end = second + records[1].len();
+    for value in [0u32, first as u32, second as u32, end as u32] {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    for id in [0x100u32, 0x101, 0x102] {
+        bytes.extend_from_slice(&id.to_le_bytes());
+    }
+    bytes.extend_from_slice(records[0]);
+    bytes.extend_from_slice(records[1]);
+    bytes
+}
+
+#[test]
+fn om_index_pairs_object_ids_with_bounded_entity_records() {
+    let bytes = indexed_om_section();
+    let sections = crate::om::indexed_sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].base, 8);
+    assert_eq!(sections[0].records.len(), 2);
+    assert_eq!(sections[0].records[0].object_id, 0x101);
+    assert_eq!(
+        sections[0].records[0].bytes,
+        b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables"
+    );
+    assert_eq!(sections[0].records[1].object_id, 0x102);
+    assert_eq!(
+        sections[0].records[1].bytes,
+        b"\x99\x04P(Number [degrees]) p8_CircularPattern_pattern_Circular_Dir_offset_angle: 120; \x00"
+    );
+}
+
+#[test]
+fn om_registry_uses_length_framing_and_stays_outside_entity_payloads() {
+    let mut bytes = indexed_om_section();
+    bytes.extend_from_slice(b"\x10UGS::PayloadText");
+    let sections = crate::om::indexed_sections(&bytes);
+    assert_eq!(sections.len(), 1);
+    assert_eq!(sections[0].types.len(), 1);
+    assert_eq!(sections[0].types[0].name, "UGS::ModlFeature");
+    assert_eq!(sections[0].types[0].class_id, 0x81);
+    assert_eq!(sections[0].types[0].offset, 8);
+}
+
+#[test]
+fn om_numeric_expression_retains_identity_name_unit_and_value() {
+    let bytes = indexed_om_section();
+    let section = crate::om::indexed_sections(&bytes).remove(0);
+    let expressions = section.numeric_expressions();
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].object_id, 0x102);
+    assert_eq!(
+        expressions[0].name,
+        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
+    );
+    assert_eq!(expressions[0].unit, crate::om::ExpressionUnit::Degree);
+    assert_eq!(expressions[0].value, 120.0);
+}
+
 /// A synthetic Parasolid partition stream: the `PS 00 00` header, a prologue with
 /// a `(partition)` subtype and a schema token, then one POINT, one PLANE, one
 /// CYLINDER, and one LINE record laid out back-to-back at their fixed lengths.
@@ -493,7 +569,7 @@ fn variable_status_framed_deltas_stream() -> Vec<u8> {
     stream.extend_from_slice(&(-100i16).to_be_bytes());
     stream.extend_from_slice(&0u16.to_be_bytes());
     stream.extend_from_slice(&8u32.to_be_bytes());
-    for reference in [1u16, 2, 3] {
+    for reference in [1u16, 2, 3, 4] {
         stream.extend_from_slice(&reference.to_be_bytes());
         stream.push(1);
     }
@@ -501,6 +577,102 @@ fn variable_status_framed_deltas_stream() -> Vec<u8> {
     stream.extend_from_slice(&101u16.to_be_bytes());
     stream.extend_from_slice(&9u32.to_be_bytes());
     for reference in [1u16, 2] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream
+}
+
+fn status_framed_deltas_point_stream() -> Vec<u8> {
+    let mut stream = Vec::new();
+    stream.extend_from_slice(&29u16.to_be_bytes());
+    stream.extend_from_slice(&50u16.to_be_bytes());
+    stream.extend_from_slice(&900u32.to_be_bytes());
+    for reference in [1u16; 4] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    for value in [0.0125f64, -0.002, 0.004] {
+        stream.extend_from_slice(&value.to_be_bytes());
+    }
+    stream
+}
+
+fn deltas_point_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend(status_framed_deltas_point_stream());
+    stream
+}
+
+fn deltas_edge_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&16u16.to_be_bytes());
+    stream.extend_from_slice(&8u16.to_be_bytes());
+    stream.extend_from_slice(&901u32.to_be_bytes());
+    stream.extend_from_slice(&1u16.to_be_bytes());
+    stream.push(1);
+    stream.extend_from_slice(&0.000_9f64.to_be_bytes());
+    for reference in [7u16, 1, 1, 9, 1, 1, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream
+}
+
+fn deltas_face_vertex_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&14u16.to_be_bytes());
+    stream.extend_from_slice(&4u16.to_be_bytes());
+    stream.extend_from_slice(&902u32.to_be_bytes());
+    stream.extend_from_slice(&1u16.to_be_bytes());
+    stream.push(1);
+    stream.extend_from_slice(&0.000_8f64.to_be_bytes());
+    for reference in [1u16, 1, 5, 3, 6] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.push(b'+');
+    for reference in [1u16; 5] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+
+    stream.extend_from_slice(&18u16.to_be_bytes());
+    stream.extend_from_slice(&10u16.to_be_bytes());
+    stream.extend_from_slice(&903u32.to_be_bytes());
+    for reference in [1u16, 1, 1, 1, 11] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream.extend_from_slice(&0.000_7f64.to_be_bytes());
+    stream.extend_from_slice(&1u16.to_be_bytes());
+    stream.push(1);
+    stream
+}
+
+fn deltas_loop_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&15u16.to_be_bytes());
+    stream.extend_from_slice(&5u16.to_be_bytes());
+    stream.extend_from_slice(&904u32.to_be_bytes());
+    for reference in [1u16, 7, 4, 1] {
+        stream.extend_from_slice(&reference.to_be_bytes());
+        stream.push(1);
+    }
+    stream
+}
+
+fn deltas_shell_partition_stream() -> Vec<u8> {
+    let mut stream =
+        b"PS\x00\x00XX: TRANSMIT FILE (deltas) created by modeller\x00SCH_TEST_1_9999\x00".to_vec();
+    stream.extend_from_slice(&13u16.to_be_bytes());
+    stream.extend_from_slice(&3u16.to_be_bytes());
+    stream.extend_from_slice(&905u32.to_be_bytes());
+    for reference in [1u16, 2, 1, 4, 1, 1, 1, 1] {
         stream.extend_from_slice(&reference.to_be_bytes());
         stream.push(1);
     }
@@ -759,6 +931,41 @@ fn single_part_prt() -> Vec<u8> {
     f
 }
 
+fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let mut file = Vec::new();
+    file.extend_from_slice(MAGIC);
+    file.push(0x06);
+    file.extend_from_slice(&[0; 3 + 4 + 1 + 6 + 2]);
+    file.extend_from_slice(b"HEADER");
+    let mut spans = Vec::new();
+    for (name, _) in entries {
+        file.extend_from_slice(&(name.len() as u32).to_le_bytes());
+        file.extend_from_slice(name.as_bytes());
+        spans.push(file.len());
+        file.extend_from_slice(&[0; 16]);
+    }
+    for ((_, payload), span) in entries.iter().zip(spans) {
+        let offset = file.len();
+        file.extend_from_slice(payload);
+        file[span..span + 8].copy_from_slice(&(offset as u64).to_le_bytes());
+        file[span + 8..span + 16].copy_from_slice(&(payload.len() as u64).to_le_bytes());
+    }
+    file
+}
+
+fn prt_with_arrangements() -> Vec<u8> {
+    prt_with_named_payloads(&[
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&partition_stream()),
+        ),
+        (
+            "/Root/part/arrangements",
+            br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Exploded"/></Arrangements>"#.to_vec(),
+        ),
+    ])
+}
+
 fn topology_part_prt() -> Vec<u8> {
     prt_with_partition(&topology_partition_stream())
 }
@@ -787,6 +994,42 @@ fn prt_with_partition(stream: &[u8]) -> Vec<u8> {
     let size_at = offset as usize - 8;
     f[size_at..size_at + 8].copy_from_slice(&(compressed.len() as u64).to_le_bytes());
     f
+}
+
+fn prt_with_streams(streams: &[&[u8]]) -> Vec<u8> {
+    let mut file = single_part_prt();
+    let entry = container::scan_bytes(file.clone())
+        .unwrap()
+        .entries
+        .remove(0);
+    let (offset, size) = entry.file_span.unwrap();
+    assert_eq!(offset as usize + size as usize, file.len());
+    file.truncate(offset as usize);
+    let payload = streams
+        .iter()
+        .flat_map(|stream| zlib_compress(stream))
+        .collect::<Vec<_>>();
+    file.extend_from_slice(&payload);
+    let size_at = offset as usize - 8;
+    file[size_at..size_at + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
+    file
+}
+
+fn prt_with_indexed_om_section() -> Vec<u8> {
+    let mut file = single_part_prt();
+    let entry = container::scan_bytes(file.clone())
+        .unwrap()
+        .entries
+        .remove(0);
+    let (offset, size) = entry.file_span.unwrap();
+    assert_eq!(offset as usize + size as usize, file.len());
+    file.truncate(offset as usize);
+    let mut payload = indexed_om_section();
+    payload.extend(zlib_compress(&partition_stream()));
+    file.extend_from_slice(&payload);
+    let size_at = offset as usize - 8;
+    file[size_at..size_at + 8].copy_from_slice(&(payload.len() as u64).to_le_bytes());
+    file
 }
 
 fn large_xmt_headers(stream: &[u8]) -> Vec<u8> {
@@ -980,6 +1223,91 @@ fn container_parses_header_and_directory() {
         .entries
         .iter()
         .any(|e| e.name == "/Root/UG_PART/UG_PART" && e.file_span.is_some()));
+}
+
+#[test]
+fn inspect_reports_bounded_nx_object_model_entities() {
+    let mut cur = Cursor::new(prt_with_indexed_om_section());
+    let summary = NxCodec.inspect(&mut cur).unwrap();
+    assert!(summary.notes.iter().any(|note| {
+        note == "NX object model: 1 indexed section(s), 2 bounded entity record(s)"
+    }));
+}
+
+#[test]
+fn decode_retains_typed_nx_numeric_expression() {
+    let mut cur = Cursor::new(prt_with_indexed_om_section());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let expressions = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::Expression>("expressions")
+        .unwrap();
+    assert_eq!(expressions.len(), 1);
+    assert_eq!(expressions[0].object_id, 0x102);
+    assert_eq!(
+        expressions[0].name,
+        "p8_CircularPattern_pattern_Circular_Dir_offset_angle"
+    );
+    assert_eq!(expressions[0].unit, crate::native::ExpressionUnit::Degree);
+    assert_eq!(expressions[0].value, 120.0);
+    assert_eq!(expressions[0].source_entry, "/Root/UG_PART/UG_PART");
+}
+
+#[test]
+fn decode_retains_length_framed_nx_class_definition() {
+    let mut cur = Cursor::new(prt_with_indexed_om_section());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let classes = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::ClassDefinition>("class_definitions")
+        .unwrap();
+    assert_eq!(classes.len(), 1);
+    assert_eq!(classes[0].name, "UGS::ModlFeature");
+    assert_eq!(classes[0].class_id, 0x81);
+    assert_eq!(classes[0].source_entry, "/Root/UG_PART/UG_PART");
+}
+
+#[test]
+fn decode_retains_nx_arrangement_configurations() {
+    let mut cur = Cursor::new(prt_with_arrangements());
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let configurations = result
+        .ir
+        .native
+        .namespace("nx")
+        .expect("NX namespace")
+        .arena_as::<crate::native::Configuration>("configurations")
+        .unwrap();
+    assert_eq!(configurations.len(), 2);
+    assert_eq!(configurations[0].name, "Model");
+    assert!(configurations[0].active);
+    assert_eq!(configurations[1].name, "Exploded");
+    assert!(!configurations[1].active);
+}
+
+#[test]
+fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
+    let file = prt_with_named_payloads(&[
+        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        (
+            "/Root/part/arrangements",
+            br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="YES" Name="Exploded"/></Arrangements>"#.to_vec(),
+        ),
+    ]);
+    let mut cur = Cursor::new(file);
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
+        namespace
+            .arena_as::<crate::native::Configuration>("configurations")
+            .unwrap()
+            .is_empty()
+    }));
 }
 
 #[test]
@@ -1338,20 +1666,183 @@ fn decode_reports_status_framed_deltas_records_and_tombstones() {
 }
 
 #[test]
-fn decode_reports_variable_deltas_records_with_extended_xmt() {
+fn decode_accepts_exact_loop_and_rejects_incomplete_fin_deltas() {
     let stream = variable_status_framed_deltas_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let attributes = &result.ir.source.expect("source metadata").attributes;
 
-    assert_eq!(
-        attributes.get("deltas.0.full.FIN").map(String::as_str),
-        Some("1")
-    );
+    assert!(!attributes.contains_key("deltas.0.full.FIN"));
     assert_eq!(
         attributes.get("deltas.0.full.LOOP").map(String::as_str),
         Some("1")
     );
+}
+
+#[test]
+fn deltas_point_exposes_typed_position_in_model_units() {
+    let points = crate::deltas::points(&status_framed_deltas_point_stream());
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].xmt, 50);
+    assert_eq!(points[0].node_id, 900);
+    assert_eq!(points[0].position.x, 12.5);
+    assert_eq!(points[0].position.y, -2.0);
+    assert_eq!(points[0].position.z, 4.0);
+}
+
+#[test]
+fn deltas_point_normalizes_to_partition_record_framing() {
+    let record = crate::deltas::walk(&status_framed_deltas_point_stream())
+        .records
+        .remove(0);
+    let mut expected = crate::tests::record(29, 40);
+    put_ref(&mut expected, 2, 50);
+    expected[4..8].copy_from_slice(&900u32.to_be_bytes());
+    for at in [8, 10, 12, 14] {
+        put_ref(&mut expected, at, 1);
+    }
+    put_vec3(&mut expected, 16, [0.0125, -0.002, 0.004]);
+    assert_eq!(record.canonical_bytes, expected);
+}
+
+#[test]
+fn merged_deltas_full_record_replaces_partition_node() {
+    let partition = topology_partition_stream();
+    let mut deltas = status_framed_deltas_point_stream();
+    deltas[2..4].copy_from_slice(&11u16.to_be_bytes());
+    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    let points = crate::geometry::points(&merged);
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].position.x, 12.5);
+    assert_eq!(points[0].position.y, -2.0);
+    assert_eq!(points[0].position.z, 4.0);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+}
+
+#[test]
+fn merged_exact_key_tombstone_removes_partition_node() {
+    let partition = topology_partition_stream();
+    let mut tombstone = Vec::new();
+    tombstone.extend_from_slice(&29u16.to_be_bytes());
+    tombstone.extend_from_slice(&11u16.to_be_bytes());
+    tombstone.extend_from_slice(&[0, 1]);
+    let census = crate::deltas::walk(&tombstone);
+    assert_eq!(census.tombstones.len(), 1);
+    assert_eq!(census.tombstones[0].kind, 29);
+    assert_eq!(census.tombstones[0].xmt, 11);
+    let merged = crate::deltas::merge_full_records(&partition, &tombstone);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_none());
+    assert!(crate::geometry::points(&merged).is_empty());
+}
+
+#[test]
+fn merged_deltas_uses_last_full_or_tombstone_event() {
+    let partition = topology_partition_stream();
+    let tombstone = [0, 29, 0, 11, 0, 1];
+    let mut full = status_framed_deltas_point_stream();
+    full[2..4].copy_from_slice(&11u16.to_be_bytes());
+
+    let mut delete_then_replace = tombstone.to_vec();
+    delete_then_replace.extend_from_slice(&full);
+    let merged = crate::deltas::merge_full_records(&partition, &delete_then_replace);
+    assert_eq!(crate::geometry::points(&merged).len(), 1);
+    assert_eq!(crate::geometry::points(&merged)[0].position.x, 12.5);
+
+    let mut replace_then_delete = full;
+    replace_then_delete.extend_from_slice(&tombstone);
+    let merged = crate::deltas::merge_full_records(&partition, &replace_then_delete);
+    assert!(crate::geometry::points(&merged).is_empty());
+}
+
+#[test]
+fn decode_emits_point_added_by_deltas_stream() {
+    let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.points[0].position.x, 12.5);
+    assert_eq!(result.ir.model.points[0].position.y, -2.0);
+    assert_eq!(result.ir.model.points[0].position.z, 4.0);
+}
+
+#[test]
+fn decode_replaces_partition_point_with_same_xmt_deltas_point() {
+    let partition = topology_partition_stream();
+    let mut deltas = deltas_point_partition_stream();
+    let record = deltas
+        .windows(2)
+        .rposition(|window| window == 29u16.to_be_bytes())
+        .expect("deltas POINT");
+    deltas[record + 2..record + 4].copy_from_slice(&11u16.to_be_bytes());
+    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(result.ir.model.points[0].position.x, 12.5);
+    assert_eq!(result.ir.model.points[0].position.y, -2.0);
+    assert_eq!(result.ir.model.points[0].position.z, 4.0);
+}
+
+#[test]
+fn decode_replaces_partition_edge_from_status_framed_deltas() {
+    let partition = topology_partition_stream();
+    let deltas = deltas_edge_partition_stream();
+    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir.model.edges[0].tolerance, Some(0.9));
+    assert_eq!(
+        result.ir.model.edges[0].curve.as_ref(),
+        Some(&result.ir.model.curves[0].id)
+    );
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_face_and_vertex_from_deltas() {
+    let partition = topology_partition_stream();
+    let deltas = deltas_face_vertex_partition_stream();
+    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.faces[0].tolerance, Some(0.8));
+    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir.model.vertices[0].tolerance, Some(0.7));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_loop_from_status_framed_deltas() {
+    let partition = topology_partition_stream();
+    let deltas = deltas_loop_partition_stream();
+    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    assert_eq!(
+        crate::topology::Graph::parse(&merged)
+            .get(15, 5)
+            .and_then(|node| node.u32_at(4)),
+        Some(904)
+    );
+    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir.model.loops.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_replaces_partition_shell_from_status_framed_deltas() {
+    let partition = topology_partition_stream();
+    let deltas = deltas_shell_partition_stream();
+    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    assert_eq!(
+        crate::topology::Graph::parse(&merged)
+            .get(13, 3)
+            .and_then(|node| node.u32_at(4)),
+        Some(905)
+    );
+    let mut cur = Cursor::new(prt_with_streams(&[&partition, &deltas]));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    assert_eq!(result.ir.model.shells.len(), 1);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
