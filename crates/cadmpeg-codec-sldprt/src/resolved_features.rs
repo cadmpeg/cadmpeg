@@ -1525,13 +1525,10 @@ pub(crate) fn bind_sketch_profiles(
         }
         starts.sort_by_key(|start| start.0);
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
-            let Some(feature) = features.iter_mut().find(|feature| {
-                feature.native_ref.as_deref() == Some(native_feature.id.as_str())
-                    && matches!(
-                        feature.definition,
-                        cadmpeg_ir::features::FeatureDefinition::Sketch { .. }
-                    )
-            }) else {
+            let Some(feature) = features
+                .iter_mut()
+                .find(|feature| feature.native_ref.as_deref() == Some(native_feature.id.as_str()))
+            else {
                 continue;
             };
             let end = starts.get(index + 1).map_or(u64::MAX, |next| next.0);
@@ -1548,13 +1545,20 @@ pub(crate) fn bind_sketch_profiles(
             if enclosed.next().is_some() {
                 continue;
             }
-            sketch.name = Some(native_feature.name.clone());
-            if let cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: feature_sketch,
-                ..
-            } = &mut feature.definition
-            {
-                *feature_sketch = Some(sketch.id.clone());
+            match &mut feature.definition {
+                cadmpeg_ir::features::FeatureDefinition::Sketch {
+                    sketch: feature_sketch,
+                    ..
+                } => {
+                    sketch.name = Some(native_feature.name.clone());
+                    *feature_sketch = Some(sketch.id.clone());
+                }
+                cadmpeg_ir::features::FeatureDefinition::Sweep { profile, .. }
+                    if profile.is_none() =>
+                {
+                    *profile = Some(cadmpeg_ir::features::ProfileRef::Sketch(sketch.id.clone()));
+                }
+                _ => {}
             }
         }
     }

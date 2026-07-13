@@ -1211,13 +1211,19 @@ fn sldprt_with_body_and_resolved_features(body: &[u8], codes: &[u32]) -> Vec<u8>
 }
 
 fn sldprt_with_nested_sketch_profile(body: &[u8]) -> Vec<u8> {
+    sldprt_with_nested_sketch_profiles(body, 1)
+}
+
+fn sldprt_with_nested_sketch_profiles(body: &[u8], count: usize) -> Vec<u8> {
     let mut file = sldprt_with_body(body);
     let mut payload = resolved_features_payload(&[0, 1, 1, 1]);
-    payload.extend(parasolid_with_body(
-        "feature input sketch",
-        "SCH_SW_33103_11000",
-        &triangle_body(),
-    ));
+    for _ in 0..count {
+        payload.extend(parasolid_with_body(
+            "feature input sketch",
+            "SCH_SW_33103_11000",
+            &triangle_body(),
+        ));
+    }
     file.extend(make_block(
         0x45,
         "Contents/Config-0-ResolvedFeatures",
@@ -15397,6 +15403,66 @@ fn decode_binds_profile_stream_by_feature_object_interval() {
             sketch: Some(id),
             ..
         } if id == &sketch.id
+    ));
+}
+
+#[test]
+fn decode_binds_uniquely_enclosed_profile_stream_to_sweep() {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sweep Name="Sketch1" Type="Sweep"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let [sketch] = decoded.ir.model.sketches.as_slice() else {
+        panic!("one enclosed sweep profile stream");
+    };
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("sweep history feature");
+    assert!(matches!(
+        &feature.definition,
+        FeatureDefinition::Sweep {
+            profile: Some(ProfileRef::Sketch(id)),
+            ..
+        } if id == &sketch.id
+    ));
+}
+
+#[test]
+fn decode_does_not_bind_ambiguous_enclosed_profile_streams_to_sweep() {
+    use cadmpeg_ir::features::FeatureDefinition;
+
+    let mut source = sldprt_with_nested_sketch_profiles(&triangle_body(), 2);
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sweep Name="Sketch1" Type="Sweep"/></Keywords>"#,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .expect("sweep history feature");
+    assert!(matches!(
+        &feature.definition,
+        FeatureDefinition::Sweep { profile: None, .. }
     ));
 }
 

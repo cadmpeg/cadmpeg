@@ -95,6 +95,8 @@ An extrusion object without an `EndCondition` attribute and without an owned `De
 
 An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile. A nested profile stream owned by that extrusion resolves the profile to its transferred sketch.
 
+A planar Parasolid profile stream is enclosed by the feature object whose bound feature-name record precedes the stream offset and whose next bound feature-name record follows it. A sweep object with exactly one enclosed planar profile stream uses the transferred sketch as its cross-section profile. Zero or multiple enclosed profile streams leave the sweep profile unresolved.
+
 A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. Marker local identifiers are scoped to that feature object.
 
 Coordinate-bearing marker codes `0`, `1`, `2`, and `3` identify point, line-or-circle, arc, and constrained-point geometry handles. Non-coordinate codes `1..27` identify distance, angle, radius, horizontal, vertical, tangent, parallel, perpendicular, coincident, concentric, symmetric, midpoint, intersection, equal, diameter, offset-edge, fixed, the seven quadrant and cardinal arc-angle relations, horizontal-points, vertical-points, and collinear relations in that order. The marker layout disambiguates the reused codes `1..3`.
