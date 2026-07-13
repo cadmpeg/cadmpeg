@@ -238,8 +238,8 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
-        marker_coordinates, marker_local_id, marker_local_links, unique_locus,
-        unique_marker_candidate,
+        marker_coordinates, marker_local_id, marker_local_links, named_scalars, object_names,
+        unique_locus, unique_marker_candidate, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::SketchRelationKind;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
@@ -269,6 +269,36 @@ mod marker_tests {
             Some(SketchRelationKind::ArcAngle270)
         );
         assert_eq!(arc_angle_relation_kind(std::f64::consts::FRAC_PI_3), None);
+    }
+
+    #[test]
+    fn scalar_trailer_is_relative_to_variable_length_name() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(NAME_MARKER);
+        payload.push(3);
+        for unit in "D10".encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(SCALAR_HEADER);
+        payload.extend_from_slice(&0.025f64.to_le_bytes());
+        let trailer = payload.len();
+        payload.resize(trailer + 59, 0);
+        payload[trailer + 3..trailer + 7].copy_from_slice(&42u32.to_le_bytes());
+        payload[trailer + 24..trailer + 29].copy_from_slice(&[0, 0, 0, 2, 0]);
+        for (relative, index) in [(35usize, 7u16), (47, 9)] {
+            payload[trailer + relative..trailer + relative + 2].copy_from_slice(&[0xd6, 0x80]);
+            payload[trailer + relative + 2..trailer + relative + 4]
+                .copy_from_slice(&index.to_le_bytes());
+            payload[trailer + relative + 4..trailer + relative + 8].fill(0xff);
+        }
+        let names = object_names(&payload, "lane");
+        let scalars = named_scalars(&payload, "lane", &names);
+        let [scalar] = scalars.as_slice() else {
+            panic!("expected one scalar");
+        };
+        assert_eq!(scalar.object_id, 42);
+        assert_eq!(scalar.role, crate::records::FeatureInputScalarRole::Driving);
+        assert_eq!(scalar.entity_indices, [7, 9]);
     }
 
     #[test]
@@ -367,10 +397,7 @@ pub(crate) fn named_scalars(
         .iter()
         .filter_map(|name| {
             let name_offset = usize::try_from(name.offset).ok()?;
-            let value_offset = name_offset
-                .checked_add(NAME_MARKER.len() + 1)?
-                .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?
-                .checked_add(SCALAR_HEADER.len())?;
+            let value_offset = scalar_value_offset(name_offset, &name.value)?;
             let header_offset = value_offset.checked_sub(SCALAR_HEADER.len())?;
             if payload.get(header_offset..value_offset)? != SCALAR_HEADER {
                 return None;
@@ -381,14 +408,15 @@ pub(crate) fn named_scalars(
                     .try_into()
                     .ok()?,
             );
+            let trailer_offset = value_offset.checked_add(8)?;
             let object_id = u32::from_le_bytes(
                 payload
-                    .get(name_offset + 43..name_offset + 47)?
+                    .get(trailer_offset + 3..trailer_offset + 7)?
                     .try_into()
                     .ok()?,
             );
-            let role = scalar_role(payload, name_offset);
-            let operands = scalar_operands(payload, name_offset, parent);
+            let role = scalar_role(payload, trailer_offset);
+            let operands = scalar_operands(payload, trailer_offset, parent);
             let entity_indices = operands
                 .iter()
                 .filter(|operand| operand.kind == FeatureInputOperandKind::D6)
@@ -425,6 +453,13 @@ pub(crate) fn named_scalars(
         .collect()
 }
 
+fn scalar_value_offset(name_offset: usize, name: &str) -> Option<usize> {
+    name_offset
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(name.encode_utf16().count().checked_mul(2)?)?
+        .checked_add(SCALAR_HEADER.len())
+}
+
 pub(crate) fn scalar_indices_match(
     actual: &[FeatureInputScalar],
     expected: &[FeatureInputScalar],
@@ -457,12 +492,16 @@ fn ulp_distance(left: f64, right: f64) -> u64 {
     ordered(left).abs_diff(ordered(right))
 }
 
-fn scalar_operands(payload: &[u8], name_offset: usize, parent: &str) -> Vec<FeatureInputOperand> {
+fn scalar_operands(
+    payload: &[u8],
+    trailer_offset: usize,
+    parent: &str,
+) -> Vec<FeatureInputOperand> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    [75usize, 87]
+    [35usize, 47]
         .into_iter()
         .filter_map(|relative| {
-            let offset = name_offset.checked_add(relative)?;
+            let offset = trailer_offset.checked_add(relative)?;
             let cell = payload.get(offset..offset + 12)?;
             if cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
                 return None;
@@ -955,16 +994,16 @@ fn relation_signature(
     }
 }
 
-fn scalar_role(payload: &[u8], name_offset: usize) -> FeatureInputScalarRole {
-    let fixed_layout = payload.get(name_offset + 40..name_offset + 43) == Some(&[0, 0, 0])
+fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole {
+    let fixed_layout = payload.get(trailer_offset..trailer_offset + 3) == Some(&[0, 0, 0])
         && payload
-            .get(name_offset + 47..name_offset + 61)
+            .get(trailer_offset + 7..trailer_offset + 21)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && payload.get(name_offset + 64..name_offset + 69) == Some(&[0, 0, 0, 2, 0]);
+        && payload.get(trailer_offset + 24..trailer_offset + 29) == Some(&[0, 0, 0, 2, 0]);
     if !fixed_layout {
         return FeatureInputScalarRole::Native;
     }
-    match payload.get(name_offset + 69) {
+    match payload.get(trailer_offset + 29) {
         Some(0) => FeatureInputScalarRole::Driving,
         Some(1) => FeatureInputScalarRole::Display,
         _ => FeatureInputScalarRole::Native,
