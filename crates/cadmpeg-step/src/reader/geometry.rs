@@ -4,8 +4,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{derive_reference_direction, Curve, CurveGeometry};
-use cadmpeg_ir::ids::{CurveId, PointId};
+use cadmpeg_ir::geometry::{
+    derive_reference_direction, Curve, CurveGeometry, Surface, SurfaceGeometry,
+};
+use cadmpeg_ir::ids::{CurveId, PointId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Point;
 
@@ -115,11 +117,103 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         radius: radius * scale,
                     },
                 ),
+            Some("ELLIPSE") => record
+                .parameter(1)
+                .and_then(Value::reference)
+                .and_then(|placement| placements.get(&placement).copied())
+                .zip(record.parameter(2).and_then(Value::number))
+                .zip(record.parameter(3).and_then(Value::number))
+                .filter(|((_, major), minor)| {
+                    major.is_finite() && minor.is_finite() && *major > 0.0 && *minor > 0.0
+                })
+                .map(
+                    |(((center, axis, major_direction), major_radius), minor_radius)| {
+                        CurveGeometry::Ellipse {
+                            center,
+                            axis,
+                            major_direction,
+                            major_radius: major_radius * scale,
+                            minor_radius: minor_radius * scale,
+                        }
+                    },
+                ),
             _ => continue,
         };
         if let Some(geometry) = geometry {
             ir.model.curves.push(Curve {
                 id: CurveId(format!("step:curve:#{id}")),
+                geometry,
+                source_object: None,
+            });
+            typed.insert(id);
+        } else {
+            warnings.push(format!(
+                "{} #{id} has invalid geometry",
+                record.simple_name().unwrap()
+            ));
+        }
+    }
+
+    for (&id, record) in &exchange.records {
+        let placement = record
+            .parameter(1)
+            .and_then(Value::reference)
+            .and_then(|placement| placements.get(&placement).copied());
+        let geometry = match record.simple_name() {
+            Some("PLANE") => placement.map(|(origin, normal, u_axis)| SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis,
+            }),
+            Some("CYLINDRICAL_SURFACE") => placement.zip(positive(record.parameter(2))).map(
+                |((origin, axis, ref_direction), radius)| SurfaceGeometry::Cylinder {
+                    origin,
+                    axis,
+                    ref_direction,
+                    radius: radius * scale,
+                },
+            ),
+            Some("CONICAL_SURFACE") => placement
+                .zip(positive(record.parameter(2)))
+                .zip(record.parameter(3).and_then(Value::number))
+                .filter(|(_, angle)| angle.is_finite() && *angle > 0.0)
+                .map(|(((origin, axis, ref_direction), radius), half_angle)| {
+                    SurfaceGeometry::Cone {
+                        origin,
+                        axis,
+                        ref_direction,
+                        radius: radius * scale,
+                        ratio: 1.0,
+                        half_angle,
+                    }
+                }),
+            Some("SPHERICAL_SURFACE") => placement.zip(positive(record.parameter(2))).map(
+                |((center, axis, ref_direction), radius)| SurfaceGeometry::Sphere {
+                    center,
+                    axis,
+                    ref_direction,
+                    radius: radius * scale,
+                },
+            ),
+            Some("TOROIDAL_SURFACE") => placement
+                .zip(positive(record.parameter(2)))
+                .zip(positive(record.parameter(3)))
+                .map(
+                    |(((center, axis, ref_direction), major_radius), minor_radius)| {
+                        SurfaceGeometry::Torus {
+                            center,
+                            axis,
+                            ref_direction,
+                            major_radius: major_radius * scale,
+                            minor_radius: minor_radius * scale,
+                        }
+                    },
+                ),
+            _ => continue,
+        };
+        if let Some(geometry) = geometry {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("step:surface:#{id}")),
                 geometry,
                 source_object: None,
             });
@@ -209,6 +303,12 @@ fn vector3(value: Option<&Value>, scale: f64) -> Option<Vector3> {
         values[1].number()? * scale,
         values[2].number()? * scale,
     ))
+}
+
+fn positive(value: Option<&Value>) -> Option<f64> {
+    value
+        .and_then(Value::number)
+        .filter(|value| value.is_finite() && *value > 0.0)
 }
 
 fn normalize(vector: Vector3) -> Option<Vector3> {
