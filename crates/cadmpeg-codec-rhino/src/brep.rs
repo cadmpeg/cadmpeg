@@ -8,7 +8,8 @@ use std::collections::BTreeSet;
 use std::ops::Range;
 
 use crate::chunks::{
-    chunk_at, verify_checksum, ArchiveVersion, BoundedReader, ChecksumStatus, Chunk,
+    chunk_at, verify_checksum, verify_checksum_ranges, ArchiveVersion, BoundedReader,
+    ChecksumStatus, Chunk,
 };
 use crate::curves::{error, unsupported, GeometryError};
 use crate::objects::parse_class_wrapper;
@@ -459,9 +460,13 @@ fn read_children(
         ));
     }
     let count = count(&mut child_reader, MAX_BREP_ITEMS)?;
+    let mut direct_ranges = Vec::with_capacity(count + 1);
+    direct_ranges.push(version_offset..child_reader.position());
     let mut slots = Vec::with_capacity(count);
     for _ in 0..count {
+        let presence_start = child_reader.position();
         let present = child_reader.i32()?;
+        direct_ranges.push(presence_start..child_reader.position());
         match present {
             0 => slots.push(None),
             1 => {
@@ -487,7 +492,14 @@ fn read_children(
             }
         }
     }
-    finish_anonymous(bytes, reader, &chunk, child_reader, warnings)?;
+    finish_anonymous_ranges(
+        bytes,
+        reader,
+        &chunk,
+        child_reader,
+        &direct_ranges,
+        warnings,
+    )?;
     Ok(RawBrepChildren {
         slots,
         source_range: start..chunk.next_offset,
@@ -1459,6 +1471,33 @@ fn finish_anonymous(
     }
     if matches!(
         verify_checksum(bytes, chunk)?,
+        ChecksumStatus::Mismatch { .. }
+    ) {
+        warnings.push(format!(
+            "Brep anonymous CRC mismatch at offset {}",
+            chunk.header_start
+        ));
+    }
+    parent.skip(chunk.next_offset - parent.position())?;
+    Ok(())
+}
+
+fn finish_anonymous_ranges(
+    bytes: &[u8],
+    parent: &mut BoundedReader<'_>,
+    chunk: &Chunk,
+    child: BoundedReader<'_>,
+    direct_ranges: &[Range<usize>],
+    warnings: &mut Vec<String>,
+) -> Result<(), GeometryError> {
+    if child.remaining() != 0 {
+        return Err(error(
+            child.position(),
+            "anonymous Brep chunk has trailing bytes",
+        ));
+    }
+    if matches!(
+        verify_checksum_ranges(bytes, chunk, direct_ranges)?,
         ChecksumStatus::Mismatch { .. }
     ) {
         warnings.push(format!(

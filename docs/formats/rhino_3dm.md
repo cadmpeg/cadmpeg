@@ -181,7 +181,10 @@ long-chunk form; this exception does not apply to V2 and later.
 
 For V2 and later, a long chunk with `TCODE_CRC` set ends with a four-byte
 little-endian CRC32. The declared length includes those four bytes. CRC32 covers
-all body bytes before the CRC and excludes the chunk header and stored CRC.
+the bytes written directly in the chunk body and excludes the chunk header,
+stored CRC, and every complete nested chunk. A leaf chunk therefore checksums
+all body bytes before its CRC. A container resumes its CRC after each nested
+chunk and checksums only the intervening direct fields.
 
 For V1, CRC16 is selected by the legacy chunk cases: legacy geometry chunks,
 `TCODE_SUMMARY`, and the V1 class-UUID chunk. The V1 class-UUID checksum is
