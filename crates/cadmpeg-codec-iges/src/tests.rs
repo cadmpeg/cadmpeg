@@ -389,6 +389,81 @@ fn parametric_spline_curve_file() -> Vec<u8> {
     bytes
 }
 
+fn parametric_spline_surface_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut values = vec![
+        "114".to_owned(),
+        "3".to_owned(),
+        "1".to_owned(),
+        "1".to_owned(),
+        "1".to_owned(),
+        "0".to_owned(),
+        "1".to_owned(),
+        "0".to_owned(),
+        "1".to_owned(),
+    ];
+    let mut patch = vec!["0".to_owned(); 48];
+    patch[1] = "1".into();
+    patch[16 + 4] = "1".into();
+    values.extend(patch);
+    values.extend((0..48 * 3).map(|_| "0".to_owned()));
+    let parameters = format!("{};", values.join(","));
+    let parameter_count = parameters.len().div_ceil(64);
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["114", "1", "0", "0", "0", "0", "0", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        [
+            "114",
+            "0",
+            "0",
+            &parameter_count.to_string(),
+            "0",
+            "",
+            "",
+            "SPLSURF",
+            "0",
+        ],
+        2,
+    ));
+    bytes.extend(parameter_cards(parameters.as_bytes(), 1, 1));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000002P{parameter_count:07}").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_converts_bicubic_power_patches_to_an_exact_nurbs_surface() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametric_spline_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(surface) =
+        &result.ir.model.surfaces[0].geometry
+    else {
+        panic!("expected a bicubic NURBS carrier");
+    };
+    assert_eq!((surface.u_degree, surface.v_degree), (3, 3));
+    assert_eq!((surface.u_count, surface.v_count), (4, 4));
+    assert_eq!(
+        cadmpeg_ir::eval::nurbs_surface_point(surface, 0.25, 0.75),
+        Some(cadmpeg_ir::math::Point3::new(0.25, 0.75, 0.0))
+    );
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_converts_piecewise_power_splines_to_exact_cubic_nurbs() {
     let result = IgesCodec
