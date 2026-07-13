@@ -72,6 +72,20 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
 
     let mut opaque = Vec::with_capacity(exchange.records.len());
     let mut counts = BTreeMap::<String, usize>::new();
+    let opaque_ids = exchange
+        .records
+        .values()
+        .filter(|record| !typed_records.contains(&record.id))
+        .map(|record| {
+            let kind = record
+                .partials
+                .iter()
+                .map(|partial| partial.name.to_ascii_lowercase())
+                .collect::<Vec<_>>()
+                .join("_");
+            (record.id, format!("step:data:{kind}#{}", record.id))
+        })
+        .collect::<BTreeMap<_, _>>();
     for record in exchange.records.values() {
         if typed_records.contains(&record.id) {
             continue;
@@ -92,12 +106,15 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
                 .for_each(|value| collect_references(value, &mut links));
         }
         opaque.push(UnknownRecord {
-            id: UnknownId(format!("step:{kind}:#{}", record.id)),
+            id: UnknownId(opaque_ids[&record.id].clone()),
             offset: record.span.start as u64,
             byte_len: record.span.len() as u64,
             sha256: sha256_hex(&bytes),
             data: Some(bytes),
-            links: links.into_iter().map(|id| format!("step:#{id}")).collect(),
+            links: links
+                .into_iter()
+                .filter_map(|id| opaque_ids.get(&id).cloned())
+                .collect(),
         });
     }
     ir.set_native_unknowns("step", &opaque)?;

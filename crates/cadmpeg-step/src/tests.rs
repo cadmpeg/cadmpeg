@@ -105,7 +105,7 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
     assert_eq!(result.ir.source.as_ref().unwrap().format, "step");
     let unknowns = result.ir.native_unknowns("step").unwrap();
     assert_eq!(unknowns.len(), 2);
-    assert_eq!(unknowns[0].id.0, "step:EXAMPLE_RECORD:#1");
+    assert_eq!(unknowns[0].id.0, "step:data:example_record#1");
     assert_eq!(
         unknowns[0].data.as_deref(),
         Some(
@@ -113,7 +113,9 @@ fn decode_preserves_named_opaque_records_with_exact_byte_spans() {
                 [unknowns[0].offset as usize..(unknowns[0].offset + unknowns[0].byte_len) as usize]
         )
     );
-    assert!(unknowns[0].links.contains(&"step:#2".to_string()));
+    assert!(unknowns[0]
+        .links
+        .contains(&"step:data:opaque_target#2".to_string()));
     assert!(!result.report.geometry_transferred);
     assert!(result
         .report
@@ -228,6 +230,26 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         .coedges
         .iter()
         .all(|coedge| coedge.sense == Sense::Forward));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn reader_recovers_a_valid_solid_from_writer_output() {
+    use cadmpeg_ir::topology::BodyKind;
+
+    let source = unit_cube();
+    let mut bytes = Vec::new();
+    write_step(&source, &mut bytes, &StepWriteOptions::default()).unwrap();
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode generated cube STEP");
+
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.bodies[0].kind, BodyKind::Solid);
+    assert_eq!(result.ir.model.faces.len(), 6);
+    assert_eq!(result.ir.model.edges.len(), 12);
+    assert_eq!(result.ir.model.vertices.len(), 8);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
