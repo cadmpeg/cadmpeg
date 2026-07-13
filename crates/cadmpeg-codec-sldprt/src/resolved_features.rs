@@ -4,8 +4,8 @@
 use crate::records::{
     FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
     FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
-    FeatureInputRelationBinding, FeatureInputRelationFamily, FeatureInputScalar,
-    FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
+    FeatureInputRelationBinding, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
@@ -109,6 +109,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 names,
                 scalars,
                 relation_bindings,
+                relation_instances: Vec::new(),
                 references,
                 sketch_entities,
             })
@@ -395,7 +396,114 @@ pub(crate) fn bind_scalar_operands(
                 .cloned()
                 .flatten();
         }
+        lane.relation_instances = relation_instances(histories, lane);
     }
+}
+
+fn relation_instances(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+) -> Vec<FeatureInputRelationInstance> {
+    let sketch_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.xml_tag.eq_ignore_ascii_case("Sketch"))
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let class_by_family = lane
+        .classes
+        .iter()
+        .filter_map(|class| match class.name.as_str() {
+            "sgLLDist" => Some((
+                FeatureInputRelationFamily::LineLineDistance,
+                class.id.as_str(),
+            )),
+            "sgPntPntDist" => Some((
+                FeatureInputRelationFamily::PointPointDistance,
+                class.id.as_str(),
+            )),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let mut groups = Vec::<(
+        String,
+        FeatureInputRelationFamily,
+        Vec<FeatureInputOperand>,
+        Vec<&FeatureInputScalar>,
+    )>::new();
+    for scalar in &lane.scalars {
+        let Some(feature_ref) = scalar
+            .feature_ref
+            .as_deref()
+            .filter(|feature| sketch_features.contains(feature))
+        else {
+            continue;
+        };
+        let [first, second] = scalar.operands.as_slice() else {
+            continue;
+        };
+        if first.kind != second.kind {
+            continue;
+        }
+        let family = match first.kind {
+            FeatureInputOperandKind::D6 => FeatureInputRelationFamily::PointPointDistance,
+            FeatureInputOperandKind::E1 => FeatureInputRelationFamily::LineLineDistance,
+        };
+        if !class_by_family.contains_key(&family) {
+            continue;
+        }
+        if let Some((_, _, _, scalars)) =
+            groups.iter_mut().find(|(owner, candidate, operands, _)| {
+                owner == feature_ref
+                    && *candidate == family
+                    && operands
+                        .iter()
+                        .map(|operand| (operand.kind, operand.entity_index))
+                        .eq(scalar
+                            .operands
+                            .iter()
+                            .map(|operand| (operand.kind, operand.entity_index)))
+            })
+        {
+            scalars.push(scalar);
+        } else {
+            groups.push((
+                feature_ref.to_string(),
+                family,
+                scalar.operands.clone(),
+                vec![scalar],
+            ));
+        }
+    }
+    groups
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, (feature_ref, family, operands, scalars))| {
+            let driving = scalars
+                .iter()
+                .filter(|scalar| scalar.role == FeatureInputScalarRole::Driving)
+                .copied()
+                .collect::<Vec<_>>();
+            let offset = scalars[0].offset;
+            FeatureInputRelationInstance {
+                id: format!(
+                    "sldprt:feature-input:relation-instance#{}:{offset}",
+                    lane.id
+                        .rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key)
+                ),
+                parent: lane.id.clone(),
+                ordinal: ordinal as u32,
+                offset,
+                family,
+                class_ref: class_by_family[&family].to_string(),
+                feature_ref,
+                scalar_refs: scalars.iter().map(|scalar| scalar.id.clone()).collect(),
+                parameter_scalar_ref: (driving.len() == 1).then(|| driving[0].id.clone()),
+                operands,
+            }
+        })
+        .collect()
 }
 
 fn scalar_role(payload: &[u8], name_offset: usize) -> FeatureInputScalarRole {
@@ -670,40 +778,30 @@ pub(crate) fn project_relation_bindings(
             .id
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
-        let scalars = lane
-            .scalars
-            .iter()
-            .map(|scalar| (scalar.id.as_str(), scalar))
-            .collect::<HashMap<_, _>>();
-        for binding in &lane.relation_bindings {
-            let Some(scalar) = scalars.get(binding.scalar_ref.as_str()) else {
+        for relation in &lane.relation_instances {
+            let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let Some(sketch) = binding
-                .feature_ref
+            let parameter = relation
+                .parameter_scalar_ref
                 .as_deref()
-                .and_then(|feature| sketches_by_feature.get(feature))
-            else {
-                continue;
-            };
-            let parameter = parameters_by_scalar
-                .get(scalar.id.as_str())
+                .and_then(|scalar| parameters_by_scalar.get(scalar))
                 .map(|parameter| (*parameter).clone());
-            let native_kind = match binding.family {
+            let native_kind = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
                 FeatureInputRelationFamily::PointPointDistance => "sgPntPntDist",
             };
             constraints.push(SketchConstraint {
                 id: SketchConstraintId(format!(
                     "sldprt:model:sketch-constraint#relation:{lane_key}:{}",
-                    binding.offset
+                    relation.offset
                 )),
                 sketch: (*sketch).clone(),
                 definition: SketchConstraintDefinition::Native {
                     native_kind: native_kind.into(),
                     entities: Vec::new(),
                     parameter,
-                    operands: scalar
+                    operands: relation
                         .operands
                         .iter()
                         .map(|operand| SketchNativeOperand {
@@ -716,7 +814,7 @@ pub(crate) fn project_relation_bindings(
                         })
                         .collect(),
                 },
-                native_ref: Some(binding.id.clone()),
+                native_ref: Some(relation.id.clone()),
             });
         }
     }
@@ -1448,6 +1546,7 @@ fn source_less_lanes(
                 names: Vec::new(),
                 scalars: Vec::new(),
                 relation_bindings: Vec::new(),
+                relation_instances: Vec::new(),
                 references: Vec::new(),
                 sketch_entities: Vec::new(),
             });

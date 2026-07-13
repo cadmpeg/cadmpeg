@@ -1052,6 +1052,28 @@ fn sldprt_with_nested_sketch_profile(body: &[u8]) -> Vec<u8> {
     file
 }
 
+fn sldprt_with_compact_relation_pair(body: &[u8]) -> Vec<u8> {
+    let mut file = sldprt_with_body(body);
+    let mut payload = resolved_features_payload_with_names(&[0, 1, 1, 1], &["Sketch1", "D1", "D2"]);
+    let d1_marker = [0x04, 0x80, 0xff, 0xfe, 0xff, 2, b'D', 0, b'1', 0];
+    let d1_offset = payload
+        .windows(d1_marker.len())
+        .position(|window| window == d1_marker)
+        .expect("D1 scalar name");
+    payload[d1_offset + 69] = 1;
+    payload.extend(parasolid_with_body(
+        "feature input sketch",
+        "SCH_SW_33103_11000",
+        &triangle_body(),
+    ));
+    file.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+    file
+}
+
 fn sldprt_with_compressed_nested_sketch_profile(body: &[u8]) -> Vec<u8> {
     let mut file = sldprt_with_body(body);
     let mut payload = resolved_features_payload(&[0, 1, 1, 1]);
@@ -5646,6 +5668,32 @@ fn native_validation_rejects_edited_relation_binding() {
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap_err();
     assert!(error.to_string().contains("edited relation bindings"));
+}
+
+#[test]
+fn native_validation_rejects_edited_relation_instance() {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].relation_instances[0].parameter_scalar_ref = None;
+    });
+
+    assert!(crate::validate_native(&decoded.ir).iter().any(|finding| {
+        finding
+            .message
+            .contains("relation instances do not match the native payload")
+    }));
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("edited relation instances"));
 }
 
 #[test]
@@ -11471,7 +11519,7 @@ fn decode_projects_owned_native_sketch_relation() {
     assert!(constraint
         .native_ref
         .as_deref()
-        .is_some_and(|id| id.starts_with("sldprt:feature-input:relation-binding#")));
+        .is_some_and(|id| id.starts_with("sldprt:feature-input:relation-instance#")));
     assert!(matches!(
         &constraint.definition,
         SketchConstraintDefinition::Native {
@@ -11490,6 +11538,61 @@ fn decode_projects_owned_native_sketch_relation() {
     ));
     let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap();
+}
+
+#[test]
+fn decode_groups_compact_relation_scalar_pair() {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition;
+
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(&decoded.ir);
+    let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
+        panic!("one compact relation instance");
+    };
+    assert_eq!(relation.scalar_refs.len(), 2);
+    let driving = native.feature_input_lanes[0]
+        .scalars
+        .iter()
+        .find(|scalar| scalar.role == crate::records::FeatureInputScalarRole::Driving)
+        .expect("driving scalar");
+    assert_eq!(
+        relation.parameter_scalar_ref.as_deref(),
+        Some(driving.id.as_str())
+    );
+    assert_eq!(relation.operands.len(), 2);
+    assert_eq!(relation.operands[0].entity_index, 0);
+    assert_eq!(relation.operands[1].entity_index, 2);
+
+    let constraint = decoded
+        .ir
+        .model
+        .sketch_constraints
+        .iter()
+        .find(|constraint| constraint.native_ref.as_deref() == Some(relation.id.as_str()))
+        .expect("projected compact relation");
+    assert!(matches!(
+        &constraint.definition,
+        SketchConstraintDefinition::Native {
+            native_kind,
+            parameter: Some(parameter),
+            ..
+        } if native_kind == "sgPntPntDist"
+            && decoded.ir.model.parameters.iter().any(|candidate| {
+                &candidate.id == parameter
+                    && candidate.native_ref.as_deref() == Some(driving.id.as_str())
+            })
+    ));
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
         .unwrap();

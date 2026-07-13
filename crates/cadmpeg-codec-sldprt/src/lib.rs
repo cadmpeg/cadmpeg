@@ -315,6 +315,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
+        if lane.relation_instances != expected_lane.relation_instances {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message:
+                    "SolidWorks feature-input relation instances do not match the native payload"
+                        .into(),
+                entity: Some(lane.id.clone()),
+            });
+        }
         if lane.references != expected_lane.references {
             findings.push(Finding {
                 check: Check::NativeLinks,

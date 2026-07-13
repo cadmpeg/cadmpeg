@@ -778,6 +778,12 @@ fn resolved_feature_payload(
             lane.id
         )));
     }
+    if lane.relation_instances != expected_lane.relation_instances {
+        return Err(CodecError::NotImplemented(format!(
+            "feature-input lane {} has edited relation instances",
+            lane.id
+        )));
+    }
     if lane.references != expected_lane.references {
         return Err(CodecError::NotImplemented(format!(
             "feature-input lane {} has edited reference cells",

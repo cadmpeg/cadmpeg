@@ -196,6 +196,9 @@ pub struct FeatureInputLane {
     /// Relation-class declarations bound to their attached scalar records.
     #[serde(default)]
     pub relation_bindings: Vec<FeatureInputRelationBinding>,
+    /// Compact relation instances grouped by feature and operand identity.
+    #[serde(default)]
+    pub relation_instances: Vec<FeatureInputRelationInstance>,
     /// Native entity-reference cells in byte order.
     #[serde(default)]
     pub references: Vec<FeatureInputReference>,
@@ -226,8 +229,34 @@ pub struct FeatureInputRelationBinding {
     pub feature_ref: Option<String>,
 }
 
+/// One compact sketch-relation instance represented by related scalar records.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputRelationInstance {
+    /// Globally unique deterministic identifier for this relation instance.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among relation instances in scalar stream order.
+    pub ordinal: u32,
+    /// First participating scalar's byte offset.
+    pub offset: u64,
+    /// Native relation family.
+    pub family: FeatureInputRelationFamily,
+    /// Class declaration defining the relation family.
+    pub class_ref: String,
+    /// Native sketch feature owning the relation.
+    pub feature_ref: String,
+    /// Scalar records carrying measured and target values.
+    pub scalar_refs: Vec<String>,
+    /// Unique driving scalar carrying the target parameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parameter_scalar_ref: Option<String>,
+    /// Operand cells shared by the participating scalar records.
+    pub operands: Vec<FeatureInputOperand>,
+}
+
 /// Native sketch-relation family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeatureInputRelationFamily {
     /// Distance between two line loci.
