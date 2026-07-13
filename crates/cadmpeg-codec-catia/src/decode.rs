@@ -32,6 +32,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::{self, ContainerScan};
 use crate::geometry;
+use crate::native::CatiaNative;
 use crate::topology;
 use crate::variant::Variant;
 
@@ -53,19 +54,19 @@ pub fn decode(
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report)) = try_decode_standard(&scan) {
-            return Ok(DecodeResult::new(ir, report));
+            return finish_decode(&scan, ir, report);
         }
     }
 
     if scan.variant == Variant::ZeroEntity {
         if let Some((ir, report)) = try_decode_zero_entity(&scan) {
-            return Ok(DecodeResult::new(ir, report));
+            return finish_decode(&scan, ir, report);
         }
     }
 
     if scan.variant == Variant::E5Stream {
         if let Some((ir, report)) = try_decode_e5(&scan) {
-            return Ok(DecodeResult::new(ir, report));
+            return finish_decode(&scan, ir, report);
         }
     }
 
@@ -74,12 +75,21 @@ pub fn decode(
         Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
     ) {
         if let Some((ir, report)) = try_decode_freeform_surfaces(&scan) {
-            return Ok(DecodeResult::new(ir, report));
+            return finish_decode(&scan, ir, report);
         }
     }
 
     let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
+    finish_decode(&scan, ir, report)
+}
+
+fn finish_decode(
+    scan: &ContainerScan,
+    mut ir: CadIr,
+    report: DecodeReport,
+) -> Result<DecodeResult, CodecError> {
+    CatiaNative::decode(&scan.data).store(ir.native.namespace_mut("catia"))?;
     Ok(DecodeResult::new(ir, report))
 }
 

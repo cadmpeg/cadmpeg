@@ -16,6 +16,8 @@ categories = ["encoding", "parser-implementations", "graphics"]
 [dependencies]
 cadmpeg-ir.workspace = true
 sha2.workspace = true
+serde.workspace = true
+schemars.workspace = true
 
 [lints]
 workspace = true

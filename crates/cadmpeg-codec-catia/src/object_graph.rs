@@ -2,9 +2,11 @@
 //! Outer `7C08` feature and object-ownership graph decoder.
 
 use cadmpeg_ir::le::u32_at as u32_le;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 /// One decoded outer object graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ObjectGraph {
     /// Offset of the selected `7C08` root.
     pub pos: usize,
@@ -15,7 +17,7 @@ pub struct ObjectGraph {
 }
 
 /// One `7C09` ownership record and its nested `7C0A` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ObjectRecord {
     /// Zero-based serialized record index.
     pub index: usize,
@@ -40,7 +42,7 @@ pub struct ObjectRecord {
 }
 
 /// Token in a `7C09` record head.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum HeadToken {
     /// Initial head lead.
     Lead(u8),
@@ -55,7 +57,7 @@ pub enum HeadToken {
 }
 
 /// Decoded `7C0A` tagged-atom payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ObjectPayload {
     /// Payload size in bytes.
     pub size: usize,
@@ -64,7 +66,7 @@ pub struct ObjectPayload {
 }
 
 /// Item within a count-prefixed `0x3b` list.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ListItem {
     /// Referenced object ordinal.
     Reference(u32),
@@ -73,7 +75,7 @@ pub enum ListItem {
 }
 
 /// One schema-free field in a `7C0A` payload.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum PayloadField {
     /// Untagged atom.
     Atom {
@@ -135,7 +137,7 @@ pub enum PayloadField {
 }
 
 /// Structural role of a decoded payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum PayloadSubtype {
     /// Contains a sane bulk-table header.
     BulkTable,

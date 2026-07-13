@@ -1137,6 +1137,15 @@ fn object_graph_vm_stream() -> Vec<u8> {
     ])
 }
 
+fn standard_catpart_with_object_graph() -> Vec<u8> {
+    let graph = object_graph_stream();
+    let mut file = standard_catpart();
+    file.splice(16..16, graph);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn surface_alias_stream() -> Vec<u8> {
     let mut bytes = 1u32.to_le_bytes().to_vec();
     bytes.extend_from_slice(&[0x01, 0x00, 0x04, 0x00]);
@@ -2546,6 +2555,35 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
             ..
         }
     ));
+}
+
+#[test]
+fn decode_retains_outer_object_graph_order_and_dependencies() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_object_graph()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated object graph part");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA namespace"),
+    )
+    .expect("load CATIA native records");
+
+    assert_eq!(native.object_graphs.len(), 1);
+    let graph = &native.object_graphs[0];
+    assert_eq!(graph.records.len(), 2);
+    assert_eq!(graph.records[0].ordinal, 0);
+    assert_eq!(graph.records[0].owner_ref, Some(2));
+    assert_eq!(graph.records[0].class_ref, Some(3));
+    assert_eq!(graph.records[0].storage_ref, Some(4));
+    assert_eq!(graph.records[1].ordinal, 1);
+    assert_eq!(graph.records[1].owner_ref, Some(2));
+    assert_eq!(graph.records[1].class_ref, Some(4));
 }
 
 #[test]
