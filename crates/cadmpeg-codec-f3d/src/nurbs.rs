@@ -4747,6 +4747,61 @@ fn decode_embedded_spring(bytes: &[u8], int_width: usize) -> Option<EmbeddedSpri
     })
 }
 
+/// Writable fields in the shared context tail of a `spring_int_cur` subtype.
+pub(crate) struct SpringPatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) discontinuities: [Vec<usize>; 3],
+    pub(crate) discontinuity_flag: usize,
+    pub(crate) direction: usize,
+}
+
+/// Locate spring context fields by walking the subtype grammar at `int_width`.
+pub(crate) fn spring_patch_layout(bytes: &[u8], int_width: usize) -> Option<SpringPatchLayout> {
+    let (marker, name_len) = find_intcurve_subtype(bytes, b"spring_int_cur")?;
+    let mut position = marker + name_len + 3;
+    for _ in 0..2 {
+        let saved = position;
+        if take_native_ident(bytes, &mut position).as_deref() == Some("null_surface") {
+            for _ in 0..4 {
+                take_double_payload(bytes, &mut position)?;
+            }
+        } else {
+            position = saved;
+            decode_embedded_surface(bytes, &mut position, int_width)?;
+        }
+    }
+    let saved = position;
+    if take_native_ident(bytes, &mut position).as_deref() == Some("nullbs") {
+        take_double_payload(bytes, &mut position)?;
+        take_double_payload(bytes, &mut position)?;
+    } else {
+        position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
+    }
+    let saved = position;
+    if take_native_ident(bytes, &mut position).as_deref() != Some("nullbs") {
+        position = decode_pcurve_block_with_end(bytes, saved, int_width)?.1;
+    }
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = position;
+    take_bool(bytes, &mut position)?;
+    let direction = position;
+    take_tagged_int(bytes, &mut position, 0x15, int_width)?;
+    Some(SpringPatchLayout {
+        parameter_range,
+        discontinuities,
+        discontinuity_flag,
+        direction,
+    })
+}
+
 fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<EmbeddedSurfaceOffset> {
     let name = b"off_surf_int_cur";
     let (marker, name_len) = find_intcurve_subtype(bytes, name)?;
@@ -6064,5 +6119,46 @@ mod width_tests {
         )
         .expect("resolved width-4 ref");
         assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    }
+
+    #[test]
+    fn spring_layout_walks_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f, 0x0d, 0x0e];
+            bytes.extend_from_slice(b"spring_int_cur");
+            for _ in 0..2 {
+                bytes.extend_from_slice(&[0x0d, 0x0c]);
+                bytes.extend_from_slice(b"null_surface");
+                for value in [0.0, 1.0, 2.0, 3.0] {
+                    push_f64(&mut bytes, value);
+                }
+            }
+            bytes.extend_from_slice(&[0x0d, 0x06]);
+            bytes.extend_from_slice(b"nullbs");
+            push_f64(&mut bytes, -1.0);
+            push_f64(&mut bytes, 1.0);
+            bytes.extend_from_slice(&[0x0d, 0x06]);
+            bytes.extend_from_slice(b"nullbs");
+            push_f64(&mut bytes, -2.0);
+            push_f64(&mut bytes, 2.0);
+            for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                for value in values {
+                    push_f64(&mut bytes, *value);
+                }
+            }
+            bytes.push(0x0a);
+            let direction = bytes.len();
+            push_int(&mut bytes, 0x15, -3, int_width);
+
+            let layout = spring_patch_layout(&bytes, int_width)
+                .unwrap_or_else(|| panic!("spring layout at width {int_width}"));
+            assert_eq!(layout.direction, direction);
+            assert_eq!(
+                layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
+                3
+            );
+            assert_eq!(layout.discontinuity_flag + 1, layout.direction);
+        }
     }
 }

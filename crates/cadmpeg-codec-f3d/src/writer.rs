@@ -15312,62 +15312,38 @@ fn patch_spring_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("spring record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"spring_int_cur".len())
-        .any(|window| window == b"spring_int_cur")
+    let int_width = active_ref_width(bytes);
+    let layout = crate::nurbs::spring_patch_layout(record_bytes, int_width)
+        .ok_or_else(|| CodecError::Malformed("spring construction is malformed".into()))?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
     {
-        return Err(CodecError::Malformed(
-            "record is not a spring_int_cur".into(),
-        ));
-    }
-    let solved = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
-        .into_iter()
-        .filter_map(|marker| {
-            record_bytes
-                .windows(marker.len())
-                .rposition(|window| window == marker)
-        })
-        .max()
-        .ok_or_else(|| CodecError::Malformed("spring solved cache is missing".into()))?;
-    let boundary = record.offset + solved;
-    let direction_offset = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x15)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .rfind(|offset| *offset < boundary)
-        .ok_or_else(|| CodecError::Malformed("spring direction enum is missing".into()))?;
-    let flag_offset = direction_offset
-        .checked_sub(1)
-        .ok_or_else(|| CodecError::Malformed("spring discontinuity flag is missing".into()))?;
-    if !matches!(bytes.get(flag_offset), Some(0x0a | 0x0b)) {
-        return Err(CodecError::Malformed(
-            "spring discontinuity flag is malformed".into(),
-        ));
-    }
-    let context_count = 2usize
-        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
-        .ok_or_else(|| CodecError::Malformed("spring context is too large".into()))?;
-    let context_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?
-        .into_iter()
-        .filter(|offset| *offset < flag_offset)
-        .collect::<Vec<_>>();
-    let context_offsets = context_offsets
-        .get(context_offsets.len().saturating_sub(context_count)..)
-        .ok_or_else(|| CodecError::Malformed("spring context is incomplete".into()))?;
-    if context_offsets.len() != context_count {
         return Err(CodecError::Malformed("spring context is incomplete".into()));
     }
-    for (offset, value) in context_offsets.iter().zip(
-        context
-            .parameter_range
-            .into_iter()
-            .chain(context.discontinuities.iter().flatten().copied()),
-    ) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+    for (offset, value) in layout
+        .parameter_range
+        .into_iter()
+        .chain(layout.discontinuities.into_iter().flatten())
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied()),
+        )
+    {
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
-    bytes[flag_offset] = native_bool(*discontinuity_flag);
-    let int_width = active_ref_width(bytes);
-    patch_tagged_integer_at(bytes, direction_offset, int_width, *direction)?;
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
+    patch_tagged_integer_at(
+        bytes,
+        record.offset + layout.direction,
+        int_width,
+        *direction,
+    )?;
     Ok(())
 }
 
