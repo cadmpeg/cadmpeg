@@ -10,8 +10,8 @@ use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
     ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, FlexMode, HoleKind, Length, ParameterId, ParameterValue, PathRef,
-    PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    FeatureTreeNodeRole, FlexMode, HoleForm, HoleKind, Length, ParameterId, ParameterValue,
+    PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter,
     SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius,
     WrapMode,
@@ -1164,7 +1164,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(feature).unwrap_or_else(|| native_definition(feature))
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(feature).unwrap_or_else(|| native_definition(feature))
+        project_hole(feature)
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)
     } else if class == Some(FeatureClass::Pattern) {
@@ -1997,87 +1997,98 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
     }
 }
 
-fn project_hole(feature: &Feature) -> Option<FeatureDefinition> {
+fn project_hole(feature: &Feature) -> FeatureDefinition {
     let diameter = feature
         .parameters
         .get("Diameter")
-        .and_then(|value| parse_positive_length_mm(value))?;
+        .and_then(|value| parse_positive_length_mm(value))
+        .map(Length);
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
         || feature.parameters.contains_key("CounterboreDepth");
     let has_countersink = feature.parameters.contains_key("CountersinkDiameter")
         || feature.parameters.contains_key("CountersinkAngle");
-    if has_counterbore && has_countersink {
-        return None;
-    }
-    let kind = if has_counterbore {
-        HoleKind::Counterbore {
-            diameter: Length(
-                feature
-                    .parameters
-                    .get("CounterboreDiameter")
-                    .and_then(|value| parse_positive_length_mm(value))?,
-            ),
-            depth: Length(
-                feature
-                    .parameters
-                    .get("CounterboreDepth")
-                    .and_then(|value| parse_positive_length_mm(value))?,
-            ),
+    let counterbore_diameter = feature
+        .parameters
+        .get("CounterboreDiameter")
+        .and_then(|value| parse_positive_length_mm(value))
+        .map(Length);
+    let counterbore_depth = feature
+        .parameters
+        .get("CounterboreDepth")
+        .and_then(|value| parse_positive_length_mm(value))
+        .map(Length);
+    let countersink_diameter = feature
+        .parameters
+        .get("CountersinkDiameter")
+        .and_then(|value| parse_positive_length_mm(value))
+        .map(Length);
+    let countersink_angle = feature
+        .parameters
+        .get("CountersinkAngle")
+        .and_then(|value| parse_bounded_angle_rad(value))
+        .map(Angle);
+    let kind = if has_counterbore && has_countersink {
+        HoleKind::Unresolved {
+            form: None,
+            counterbore_diameter,
+            counterbore_depth,
+            countersink_diameter,
+            countersink_angle,
+        }
+    } else if has_counterbore {
+        match (counterbore_diameter, counterbore_depth) {
+            (Some(diameter), Some(depth)) => HoleKind::Counterbore { diameter, depth },
+            (diameter, depth) => HoleKind::Unresolved {
+                form: Some(HoleForm::Counterbore),
+                counterbore_diameter: diameter,
+                counterbore_depth: depth,
+                countersink_diameter: None,
+                countersink_angle: None,
+            },
         }
     } else if has_countersink {
-        HoleKind::Countersink {
-            diameter: Length(
-                feature
-                    .parameters
-                    .get("CountersinkDiameter")
-                    .and_then(|value| parse_positive_length_mm(value))?,
-            ),
-            angle: Angle(
-                feature
-                    .parameters
-                    .get("CountersinkAngle")
-                    .and_then(|value| parse_bounded_angle_rad(value))?,
-            ),
+        match (countersink_diameter, countersink_angle) {
+            (Some(diameter), Some(angle)) => HoleKind::Countersink { diameter, angle },
+            (diameter, angle) => HoleKind::Unresolved {
+                form: Some(HoleForm::Countersink),
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: diameter,
+                countersink_angle: angle,
+            },
         }
     } else {
         HoleKind::Simple
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
-        None | Some("Blind") => Extent::Blind {
-            length: Length(
-                feature
-                    .parameters
-                    .get("Depth")
-                    .and_then(|value| parse_positive_length_mm(value))?,
-            ),
-        },
-        Some("ThroughAll") => Extent::ThroughAll,
-        Some(_) => return None,
+        None | Some("Blind") => feature
+            .parameters
+            .get("Depth")
+            .and_then(|value| parse_positive_length_mm(value))
+            .map(|length| Extent::Blind {
+                length: Length(length),
+            }),
+        Some("ThroughAll") => Some(Extent::ThroughAll),
+        Some(_) => None,
     };
-    Some(FeatureDefinition::Hole {
+    FeatureDefinition::Hole {
         face: feature
             .properties
             .get("Face")
             .cloned()
             .map(FaceSelection::Native),
         position: match feature.properties.get("Position") {
-            Some(value) => Some(parse_point3_mm(value)?),
+            Some(value) => parse_point3_mm(value),
             None => None,
         },
         direction: match feature.properties.get("Direction") {
-            Some(value) => {
-                let direction = parse_vector3(value)?;
-                if !valid_direction(direction) {
-                    return None;
-                }
-                Some(direction)
-            }
+            Some(value) => parse_vector3(value).filter(|direction| valid_direction(*direction)),
             None => None,
         },
         kind,
-        diameter: Length(diameter),
+        diameter,
         extent,
-    })
+    }
 }
 
 fn project_shell(feature: &Feature) -> FeatureDefinition {
@@ -5794,23 +5805,43 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
+                if existing.is_none() && diameter.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved hole diameter",
+                        feature.id
+                    )));
+                }
                 let mut parameters = existing
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Diameter".into(), format_length_mm(diameter.0));
-                parameters.remove("CounterboreDiameter");
-                parameters.remove("CounterboreDepth");
-                parameters.remove("CountersinkDiameter");
-                parameters.remove("CountersinkAngle");
+                if let Some(diameter) = diameter {
+                    parameters.insert("Diameter".into(), format_length_mm(diameter.0));
+                }
                 match kind {
-                    HoleKind::Simple => {}
+                    HoleKind::Unresolved { .. } if existing.is_some() => {}
+                    HoleKind::Unresolved { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved hole entry construction",
+                            feature.id
+                        )));
+                    }
+                    HoleKind::Simple => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                    }
                     HoleKind::Counterbore { diameter, depth } => {
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
                         parameters
                             .insert("CounterboreDiameter".into(), format_length_mm(diameter.0));
                         parameters.insert("CounterboreDepth".into(), format_length_mm(depth.0));
                     }
                     HoleKind::Countersink { diameter, angle } => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
                         parameters
                             .insert("CountersinkDiameter".into(), format_length_mm(diameter.0));
                         parameters.insert("CountersinkAngle".into(), format_angle_rad(angle.0));
@@ -5855,33 +5886,42 @@ pub fn sync_neutral_features(
                             feature.id
                         )));
                     }
-                    None => {
+                    None if existing.is_none() => {
                         properties.remove("Position");
                     }
+                    None => {}
                 }
                 match direction {
                     Some(direction) => {
                         require_direction(*direction, &feature.id, "hole direction")?;
                         properties.insert("Direction".into(), format_vector3(*direction));
                     }
-                    None => {
+                    None if existing.is_none() => {
                         properties.remove("Direction");
                     }
+                    None => {}
                 }
                 match extent {
-                    Extent::Blind {
+                    Some(Extent::Blind {
                         length: Length(depth),
-                    } => {
+                    }) => {
                         parameters.insert("Depth".into(), format_length_mm(*depth));
                         properties.insert("EndCondition".into(), "Blind".into());
                     }
-                    Extent::ThroughAll => {
+                    Some(Extent::ThroughAll) => {
                         parameters.remove("Depth");
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
-                    _ => {
+                    Some(_) => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} changes unsupported hole termination",
+                            feature.id
+                        )))
+                    }
+                    None if existing.is_some() => {}
+                    None => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has unresolved hole termination",
                             feature.id
                         )))
                     }

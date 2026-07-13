@@ -643,10 +643,12 @@ pub enum FeatureDefinition {
         direction: Option<Vector3>,
         /// Entry-shape family of the hole.
         kind: HoleKind,
-        /// Hole diameter.
-        diameter: Length,
-        /// How deep the hole extends.
-        extent: Extent,
+        /// Hole diameter, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        diameter: Option<Length>,
+        /// How deep the hole extends, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extent: Option<Extent>,
     },
     /// Repetition or reflection of existing features.
     Pattern {
@@ -1189,6 +1191,24 @@ pub enum ChamferForm {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum HoleKind {
+    /// Entry treatment fields whose complete form is unresolved.
+    Unresolved {
+        /// Entry-treatment family, when established.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        form: Option<HoleForm>,
+        /// Resolved counterbore diameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        counterbore_diameter: Option<Length>,
+        /// Resolved counterbore depth.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        counterbore_depth: Option<Length>,
+        /// Resolved countersink diameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        countersink_diameter: Option<Length>,
+        /// Resolved countersink included angle.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        countersink_angle: Option<Angle>,
+    },
     /// Plain cylindrical hole with no entry feature.
     Simple,
     /// Hole with a wider, flat-bottomed counterbore at the entry.
@@ -1205,6 +1225,16 @@ pub enum HoleKind {
         /// Countersink included angle.
         angle: Angle,
     },
+}
+
+/// Structural form of a hole entry treatment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HoleForm {
+    /// Wider, flat-bottomed entry.
+    Counterbore,
+    /// Conical entry.
+    Countersink,
 }
 
 /// Deformation applied by a flex feature.

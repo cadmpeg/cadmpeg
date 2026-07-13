@@ -1444,8 +1444,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 position,
             } => {
                 face_selections.extend(face);
-                extents.push(extent);
+                extents.extend(extent);
                 let kind_valid = match kind {
+                    HoleKind::Unresolved {
+                        counterbore_diameter,
+                        counterbore_depth,
+                        countersink_diameter,
+                        countersink_angle,
+                        ..
+                    } => {
+                        counterbore_diameter.is_none_or(positive_feature_length)
+                            && counterbore_depth.is_none_or(positive_feature_length)
+                            && countersink_diameter.is_none_or(positive_feature_length)
+                            && countersink_angle.is_none_or(|value| {
+                                value.0.is_finite()
+                                    && value.0 > 0.0
+                                    && value.0 < std::f64::consts::PI
+                            })
+                    }
                     HoleKind::Simple => true,
                     HoleKind::Counterbore { diameter, depth } => {
                         positive_feature_length(*diameter) && positive_feature_length(*depth)
@@ -1460,7 +1476,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 let position_valid = position.is_none_or(|point| {
                     point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
                 });
-                if !positive_feature_length(*diameter)
+                if diameter.is_some_and(|value| !positive_feature_length(value))
                     || !kind_valid
                     || !position_valid
                     || direction.is_some_and(|value| !valid_feature_direction(value))

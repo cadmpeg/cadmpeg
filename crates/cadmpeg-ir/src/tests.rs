@@ -2149,8 +2149,8 @@ fn feature_operation_geometry_is_validated() {
             position: None,
             direction: None,
             kind: HoleKind::Simple,
-            diameter: Length(0.0),
-            extent: Extent::ThroughAll,
+            diameter: Some(Length(0.0)),
+            extent: Some(Extent::ThroughAll),
         },
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
