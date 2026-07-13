@@ -193,6 +193,56 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let typed_sketch_records = native
+        .sketch_points
+        .iter()
+        .map(|point| point.record_index)
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|curve| curve.record_index),
+        )
+        .collect::<std::collections::HashSet<_>>();
+    let mut relation_owners = std::collections::HashMap::new();
+    for relation in &native.sketch_relations {
+        for member in relation.members.iter().chain(&relation.return_members) {
+            if !typed_sketch_records.contains(member) {
+                continue;
+            }
+            if relation_owners
+                .insert(*member, relation.owner_reference)
+                .is_some_and(|owner| owner != relation.owner_reference)
+            {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
+                    entity: Some(relation.id.clone()),
+                });
+            }
+        }
+    }
+    for (id, record_index, owner_reference) in native
+        .sketch_points
+        .iter()
+        .map(|point| (&point.id, point.record_index, point.owner_reference))
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
+        )
+    {
+        if relation_owners.get(&record_index).copied() != owner_reference {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch geometry owner disagrees with its relation graph".into(),
+                entity: Some(id.clone()),
+            });
+        }
+    }
     let body_ids = ir
         .model
         .bodies

@@ -6622,6 +6622,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     native.sketch_points = vec![SketchPoint {
         id: "generated:sketch-point#0".into(),
         record_index: 100,
+        owner_reference: None,
         class_tag: "360".into(),
         byte_offset: 0,
         coordinate_offset: 89,
@@ -6635,6 +6636,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#0".into(),
             record_index: 600,
+            owner_reference: None,
             class_tag: "361".into(),
             byte_offset: 0,
             geometry_offset: 133,
@@ -6651,6 +6653,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#1".into(),
             record_index: 601,
+            owner_reference: None,
             class_tag: "362".into(),
             byte_offset: 0,
             geometry_offset: 133,
@@ -6669,6 +6672,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         SketchCurveIdentity {
             id: "generated:sketch-curve#2".into(),
             record_index: 602,
+            owner_reference: None,
             class_tag: "363".into(),
             byte_offset: 0,
             geometry_offset: 133,
@@ -6788,6 +6792,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_points[0].persistent_id, 500);
     assert_eq!(native.sketch_points[0].entity_genesis, Some(900));
     assert_eq!(native.sketch_points[0].coordinate_offset, 141);
+    assert_eq!(native.sketch_points[0].owner_reference, Some(277));
     assert_eq!(
         native.sketch_points[0].coordinates,
         Point2::new(12.5, -25.0)
@@ -6800,6 +6805,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .expect("genesis curve");
     assert_eq!(genesis_curve.entity_genesis, Some(901));
     assert_eq!(genesis_curve.geometry_offset, 185);
+    assert_eq!(genesis_curve.owner_reference, Some(277));
     for expected in expected_geometries {
         assert!(native
             .sketch_curve_identities
@@ -6812,6 +6818,18 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
     assert_eq!(native.sketch_relations[0].state, 0x11);
     assert_eq!(native.sketch_relations[0].return_members, [600, 100]);
+    assert!(crate::validate_native(&round_trip.ir).is_empty());
+
+    let mut points = native.sketch_points.clone();
+    let mut curves = native.sketch_curve_identities.clone();
+    let mut relations = native.sketch_relations.clone();
+    let mut conflicting_relation = relations[0].clone();
+    conflicting_relation.id = "generated:sketch-relation#1".into();
+    conflicting_relation.owner_reference = 278;
+    relations.push(conflicting_relation);
+    let error = crate::design::bind_sketch_owners(&mut points, &mut curves, &relations)
+        .expect_err("typed sketch geometry cannot belong to two sketches");
+    assert!(error.to_string().contains("belongs to multiple sketches"));
 }
 
 #[test]

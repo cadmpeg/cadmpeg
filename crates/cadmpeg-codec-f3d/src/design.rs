@@ -849,6 +849,7 @@ pub fn decode_sketch_points(
                 out.push(SketchPoint {
                     id: format!("f3d:{}:sketch-point#{at}", entry.name),
                     record_index,
+                    owner_reference: None,
                     class_tag,
                     byte_offset: at as u64,
                     coordinate_offset: (89 + shift) as u32,
@@ -951,6 +952,7 @@ pub fn decode_sketch_curve_identities(
                 out.push(SketchCurveIdentity {
                     id: format!("f3d:{}:sketch-curve-identity#{at}", entry.name),
                     record_index,
+                    owner_reference: None,
                     class_tag,
                     byte_offset: at as u64,
                     geometry_offset: (133 + geometry_shift) as u32,
@@ -967,6 +969,42 @@ pub fn decode_sketch_curve_identities(
         }
     }
     Ok(out)
+}
+
+/// Bind relation-connected sketch geometry to its unique owning sketch.
+pub(crate) fn bind_sketch_owners(
+    points: &mut [SketchPoint],
+    curves: &mut [SketchCurveIdentity],
+    relations: &[SketchRelation],
+) -> Result<(), CodecError> {
+    let typed_records = points
+        .iter()
+        .map(|point| point.record_index)
+        .chain(curves.iter().map(|curve| curve.record_index))
+        .collect::<std::collections::HashSet<_>>();
+    let mut owners = std::collections::HashMap::new();
+    for relation in relations {
+        for record_index in relation.members.iter().chain(&relation.return_members) {
+            if !typed_records.contains(record_index) {
+                continue;
+            }
+            if owners
+                .insert(*record_index, relation.owner_reference)
+                .is_some_and(|owner| owner != relation.owner_reference)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "Fusion sketch record {record_index} belongs to multiple sketches"
+                )));
+            }
+        }
+    }
+    for point in points {
+        point.owner_reference = owners.get(&point.record_index).copied();
+    }
+    for curve in curves {
+        curve.owner_reference = owners.get(&curve.record_index).copied();
+    }
+    Ok(())
 }
 
 fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize, Option<u64>)> {
