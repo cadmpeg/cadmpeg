@@ -20,6 +20,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - The byte-backed outer/inner loop discriminator for multi-loop faces is unspecified.
 - Fields binding vertex identifiers to XYZ coordinates and rowless face uses are unspecified.
 - Section-to-datum joins, relation-backed coordinates, and the `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
+- Positional compression and `e5`/`e6` expansion inside the three `relat_ptr` operand vectors are unspecified; these rules determine the individual vector boundaries and entity-locus references.
 - The DEPDB sketch-datum and sweep-axis relation for parts without `ActDatums` is unspecified, including the feature-definition datum defaults or standard-datum convention that supplies the `protextrude` axis.
 - The `AllFeatur.dtm_id_tab` and feature-graph join from a `gsec3d` outer `plane_id` to the sketch datum row are unspecified, including selection of a perpendicular orienting datum when the resolved reference is parallel to the sketch normal.
 - In named `ActDatums` outline slots outside the paired standalone-zero axis slots, the value semantics of `18 <index>`, `a5`, `9f`, `5c`, and `45` are unspecified. Their values determine nonzero datum offsets and extents.
