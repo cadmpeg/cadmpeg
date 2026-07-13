@@ -120,6 +120,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     };
     let mut findings = Vec::new();
     for history in &native.feature_histories {
+        if let Err(error) = crate::writer::validate_feature_graph(&history.features) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: error.to_string(),
+                entity: Some(history.id.clone()),
+            });
+        }
         let mut feature_ordinals = std::collections::HashSet::new();
         for feature in &history.features {
             if !feature_ordinals.insert(feature.ordinal) {

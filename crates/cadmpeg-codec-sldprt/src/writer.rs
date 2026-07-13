@@ -756,7 +756,9 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
     Ok(out.into_bytes())
 }
 
-fn validate_feature_graph(features: &[crate::records::Feature]) -> Result<(), CodecError> {
+pub(crate) fn validate_feature_graph(
+    features: &[crate::records::Feature],
+) -> Result<(), CodecError> {
     if features
         .iter()
         .any(|feature| !valid_xml_name(&feature.xml_tag))
