@@ -490,7 +490,7 @@ pub struct SketchRelation {
     /// Payload offsets parallel to `return_members`, relative to the record.
     #[serde(default)]
     pub return_member_offsets: Vec<u32>,
-    /// Complete 101-byte source record for native replay/write.
+    /// Complete variable-width source record for native replay/write.
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub raw_bytes: Vec<u8>,

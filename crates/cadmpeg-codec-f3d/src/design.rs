@@ -559,7 +559,8 @@ pub fn decode_sketch_relations(
             let Ok(at) = usize::try_from(record.byte_offset) else {
                 continue;
             };
-            let Some(payload) = bytes.get(at..at + 101) else {
+            let record_end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
+            let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
             let Some((
@@ -573,10 +574,17 @@ pub fn decode_sketch_relations(
                 state_offset,
                 return_members,
                 return_member_offsets,
+                parsed_end,
             )) = parse_sketch_relation(payload, &owners)
             else {
                 continue;
             };
+            if payload
+                .get(parsed_end..)
+                .is_none_or(|padding| padding.iter().any(|byte| *byte != 0))
+            {
+                continue;
+            }
             let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(state);
             out.push(SketchRelation {
                 id: format!("f3d:{}:sketch-relation#{}", entry.name, record.record_index),
@@ -1015,6 +1023,7 @@ type ParsedSketchRelation = (
     usize,
     Vec<u32>,
     Vec<usize>,
+    usize,
 );
 
 fn parse_sketch_relation(
@@ -1073,6 +1082,7 @@ fn parse_sketch_relation(
             cursor = next_reference_marker(payload, cursor)?;
         }
     }
+    let parsed_end = cursor;
     Some((
         members,
         member_offsets,
@@ -1084,7 +1094,25 @@ fn parse_sketch_relation(
         state_offset,
         return_members,
         return_member_offsets,
+        parsed_end,
     ))
+}
+
+fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize> {
+    while position + 11 <= bytes.len() {
+        let Some((class_tag, after_tag)) = lp_ascii(bytes, position) else {
+            position += 1;
+            continue;
+        };
+        if class_tag.len() == 3
+            && class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && bytes.get(after_tag..after_tag + 4).is_some()
+        {
+            return Some(position);
+        }
+        position += 1;
+    }
+    None
 }
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
@@ -1543,4 +1571,43 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
     bytes
         .chunks_exact(2)
         .all(|pair| pair[1] == 0 && (pair[0].is_ascii_hexdigit() || pair[0] == b'-'))
+}
+
+#[cfg(test)]
+mod relation_tests {
+    use super::{next_indexed_record_offset, parse_sketch_relation};
+    use std::collections::HashSet;
+
+    #[test]
+    fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
+        let mut record = vec![0u8; 127];
+        record[0..4].copy_from_slice(&3u32.to_le_bytes());
+        record[4..7].copy_from_slice(b"286");
+        record[7..11].copy_from_slice(&1239u32.to_le_bytes());
+        record[19] = 1;
+        record[20..24].copy_from_slice(&3u32.to_le_bytes());
+        for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236), (65, 0), (70, 1041)] {
+            record[marker] = 1;
+            record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
+        }
+        record[82..86].copy_from_slice(&4u32.to_le_bytes());
+        record[89..93].copy_from_slice(&3u32.to_le_bytes());
+        for (marker, reference) in [(93, 1224u32), (104, 1228), (115, 1236)] {
+            record[marker] = 1;
+            record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
+        }
+        let mut bytes = record.clone();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"277");
+        bytes.extend_from_slice(&1240u32.to_le_bytes());
+
+        assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
+        let parsed = parse_sketch_relation(&record, &HashSet::from([1041])).unwrap();
+        assert_eq!(parsed.0, [1224, 1228, 1236]);
+        assert_eq!(parsed.2, [0]);
+        assert_eq!(parsed.4, 1041);
+        assert_eq!(parsed.6, 4);
+        assert_eq!(parsed.8, [1224, 1228, 1236]);
+        assert_eq!(parsed.10, 120);
+    }
 }

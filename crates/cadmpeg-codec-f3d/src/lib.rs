@@ -154,8 +154,24 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for relation in &native.sketch_relations {
         let (constraint_kinds, unknown_constraint_bits) =
             design::decode_constraint_kinds(relation.state);
+        let offsets_fit = relation
+            .member_offsets
+            .iter()
+            .chain(&relation.auxiliary_reference_offsets)
+            .chain(std::iter::once(&relation.owner_reference_offset))
+            .chain(&relation.return_member_offsets)
+            .all(|offset| {
+                usize::try_from(*offset)
+                    .ok()
+                    .and_then(|offset| offset.checked_add(4))
+                    .is_some_and(|end| end <= relation.raw_bytes.len())
+            });
         let valid = sketch_owners.contains(&relation.owner_reference)
-            && relation.raw_bytes.len() == 101
+            && relation.raw_bytes.len() >= 24
+            && relation.members.len() == relation.member_offsets.len()
+            && relation.auxiliary_references.len() == relation.auxiliary_reference_offsets.len()
+            && relation.return_members.len() == relation.return_member_offsets.len()
+            && offsets_fit
             && relation.unknown_constraint_bits == unknown_constraint_bits
             && relation.constraint_kinds == constraint_kinds;
         if !valid {
