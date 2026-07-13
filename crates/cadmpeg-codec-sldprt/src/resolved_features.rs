@@ -242,7 +242,11 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 
 #[cfg(test)]
 mod marker_tests {
-    use super::{marker_coordinates, marker_local_id, marker_local_links, unique_marker_candidate};
+    use super::{
+        marker_coordinates, marker_local_id, marker_local_links, unique_locus,
+        unique_marker_candidate,
+    };
+    use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
 
     #[test]
     fn marker_local_id_is_the_trailing_u32() {
@@ -304,6 +308,18 @@ mod marker_tests {
         assert_eq!(unique_marker_candidate(&candidates), Some("geometry"));
         let ambiguous = vec![("first".into(), true), ("second".into(), true)];
         assert_eq!(unique_marker_candidate(&ambiguous), None);
+    }
+
+    #[test]
+    fn point_operand_requires_one_profile_locus() {
+        let entity = SketchEntityId("entity".into());
+        let locus = SketchLocus::Start(entity.clone());
+        assert_eq!(unique_locus(&[locus.clone()]), Some(locus));
+        assert_eq!(unique_locus(&[]), None);
+        assert_eq!(
+            unique_locus(&[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]),
+            None
+        );
     }
 }
 
@@ -1692,7 +1708,7 @@ fn marker_point_locus(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchLocus> {
     if let Some(loci) = loci_by_marker.get(marker_id) {
-        return loci.first().cloned();
+        return unique_locus(loci);
     }
     let marker = markers_by_id.get(marker_id)?;
     let mut linked = marker
@@ -1703,7 +1719,14 @@ fn marker_point_locus(
     if linked.next().is_some() {
         return None;
     }
-    loci.first().cloned()
+    unique_locus(loci)
+}
+
+fn unique_locus(loci: &[SketchLocus]) -> Option<SketchLocus> {
+    let [locus] = loci else {
+        return None;
+    };
+    Some(locus.clone())
 }
 
 fn single_marker_entity(
