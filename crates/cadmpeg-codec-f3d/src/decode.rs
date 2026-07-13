@@ -137,6 +137,13 @@ pub fn decode(
                 &native.sketch_points,
                 &native.sketch_curve_identities,
             );
+            ir.model.sketch_constraints = crate::design::project_sketch_constraints(
+                &native.design_sketch_placements,
+                &native.sketch_points,
+                &native.sketch_curve_identities,
+                &native.sketch_relations,
+                &ir.model.sketch_entities,
+            );
             let act = crate::act::decode(reader, &scan)?;
             native.act_entities = act.entities;
             native.act_guids = act.guids;
@@ -252,6 +259,13 @@ pub fn decode(
         &native.design_sketch_placements,
         &native.sketch_points,
         &native.sketch_curve_identities,
+    );
+    ir.model.sketch_constraints = crate::design::project_sketch_constraints(
+        &native.design_sketch_placements,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
+        &native.sketch_relations,
+        &ir.model.sketch_entities,
     );
     let act = crate::act::decode(reader, &scan)?;
     native.act_entities = act.entities;
@@ -391,6 +405,17 @@ fn populate_annotations(
         }
         for entity in &native.sketch_relations {
             note(&entity.id, "sketch_relation");
+            if ir
+                .model
+                .sketch_constraints
+                .iter()
+                .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+            {
+                note(
+                    &crate::design::neutral_sketch_constraint_id(entity.record_index).0,
+                    "sketch_constraint",
+                );
+            }
         }
         for entity in &native.sketch_points {
             note(&entity.id, "sketch_point");

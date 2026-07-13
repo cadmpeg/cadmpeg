@@ -385,6 +385,12 @@ pub(crate) fn neutral_sketch_entity_id(record_index: u32) -> cadmpeg_ir::sketche
     cadmpeg_ir::sketches::SketchEntityId(format!("f3d:model:sketch-entity#{record_index}"))
 }
 
+pub(crate) fn neutral_sketch_constraint_id(
+    record_index: u32,
+) -> cadmpeg_ir::sketches::SketchConstraintId {
+    cadmpeg_ir::sketches::SketchConstraintId(format!("f3d:model:sketch-constraint#{record_index}"))
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
@@ -521,6 +527,229 @@ pub fn project_sketch_design(
     }));
     entities.sort_by_key(|entity| entity.id.clone());
     (sketches, entities)
+}
+
+/// Project each native relation as an exact atomic constraint or an explicitly
+/// native aggregate when its member roles do not determine neutral loci.
+pub fn project_sketch_constraints(
+    placements: &[DesignSketchPlacement],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+    relations: &[SketchRelation],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraint, SketchConstraintDefinition as Definition, SketchNativeOperand,
+    };
+
+    let sketches = placements
+        .iter()
+        .filter_map(|placement| {
+            u32::try_from(placement.entity_suffix)
+                .ok()
+                .map(|suffix| (suffix, neutral_sketch_id(placement.entity_suffix)))
+        })
+        .collect::<HashMap<_, _>>();
+    let record_indices_by_native_ref = points
+        .iter()
+        .map(|point| (point.id.as_str(), point.record_index))
+        .chain(
+            curves
+                .iter()
+                .map(|curve| (curve.id.as_str(), curve.record_index)),
+        )
+        .collect::<HashMap<_, _>>();
+    let projected = entities
+        .iter()
+        .filter_map(|entity| {
+            entity
+                .native_ref
+                .as_deref()
+                .and_then(|native_ref| record_indices_by_native_ref.get(native_ref).copied())
+                .map(|record_index| (record_index, entity))
+        })
+        .collect::<HashMap<_, _>>();
+    let point_native_refs = points
+        .iter()
+        .map(|point| (point.record_index, point.id.as_str()))
+        .collect::<HashMap<_, _>>();
+    let curve_native_refs = curves
+        .iter()
+        .map(|curve| (curve.record_index, curve.id.as_str()))
+        .collect::<HashMap<_, _>>();
+
+    let mut constraints = relations
+        .iter()
+        .filter_map(|relation| {
+            let sketch = sketches.get(&relation.owner_reference)?.clone();
+            let member_entities = relation
+                .members
+                .iter()
+                .filter_map(|record_index| projected.get(record_index).copied())
+                .collect::<Vec<_>>();
+            let exact = relation.unknown_constraint_bits == 0
+                && relation.constraint_kinds.len() == 1
+                && member_entities.len() == relation.members.len();
+            let definition = exact
+                .then(|| exact_atomic_constraint(relation.constraint_kinds[0], &member_entities))
+                .flatten()
+                .unwrap_or_else(|| Definition::Native {
+                    native_kind: relation_kind_name(relation),
+                    entities: member_entities
+                        .iter()
+                        .map(|entity| entity.id.clone())
+                        .collect(),
+                    parameter: None,
+                    operands: relation
+                        .resolved_members
+                        .iter()
+                        .filter_map(|operand| {
+                            let record_index = relation_operand_index(operand);
+                            (!projected.contains_key(&record_index)).then(|| SketchNativeOperand {
+                                native_kind: relation_operand_kind(operand).into(),
+                                object_index: record_index,
+                                native_ref: point_native_refs
+                                    .get(&record_index)
+                                    .copied()
+                                    .or_else(|| curve_native_refs.get(&record_index).copied())
+                                    .map(str::to_owned),
+                            })
+                        })
+                        .collect(),
+                });
+            Some(SketchConstraint {
+                id: neutral_sketch_constraint_id(relation.record_index),
+                sketch,
+                definition,
+                native_ref: Some(relation.id.clone()),
+            })
+        })
+        .collect::<Vec<_>>();
+    constraints.sort_by_key(|constraint| constraint.id.clone());
+    constraints
+}
+
+fn exact_atomic_constraint(
+    kind: SketchConstraintKind,
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
+    };
+
+    let lines = || {
+        (entities.len() == 2
+            && entities
+                .iter()
+                .all(|entity| matches!(entity.geometry, Geometry::Line { .. })))
+        .then(|| (entities[0].id.clone(), entities[1].id.clone()))
+    };
+    match kind {
+        SketchConstraintKind::Coincident
+            if entities.len() == 2
+                && entities
+                    .iter()
+                    .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
+        {
+            Some(Definition::Coincident {
+                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+            })
+        }
+        SketchConstraintKind::Colinear => {
+            lines().map(|(first, second)| Definition::Collinear { first, second })
+        }
+        SketchConstraintKind::Concentric
+            if entities.len() == 2
+                && entities.iter().all(|entity| {
+                    matches!(
+                        entity.geometry,
+                        Geometry::Circle { .. } | Geometry::Arc { .. } | Geometry::Ellipse { .. }
+                    )
+                }) =>
+        {
+            Some(Definition::Concentric {
+                first: entities[0].id.clone(),
+                second: entities[1].id.clone(),
+            })
+        }
+        SketchConstraintKind::EqualLength => {
+            lines().map(|(first, second)| Definition::Equal { first, second })
+        }
+        SketchConstraintKind::Parallel => {
+            lines().map(|(first, second)| Definition::Parallel { first, second })
+        }
+        SketchConstraintKind::Perpendicular => {
+            lines().map(|(first, second)| Definition::Perpendicular { first, second })
+        }
+        SketchConstraintKind::Horizontal
+            if entities.len() == 1 && matches!(entities[0].geometry, Geometry::Line { .. }) =>
+        {
+            Some(Definition::Horizontal {
+                entity: entities[0].id.clone(),
+            })
+        }
+        SketchConstraintKind::Vertical
+            if entities.len() == 1 && matches!(entities[0].geometry, Geometry::Line { .. }) =>
+        {
+            Some(Definition::Vertical {
+                entity: entities[0].id.clone(),
+            })
+        }
+        SketchConstraintKind::Tangent if entities.len() == 2 => Some(Definition::Tangent {
+            first: entities[0].id.clone(),
+            second: entities[1].id.clone(),
+        }),
+        SketchConstraintKind::Equal if entities.len() == 2 => Some(Definition::Equal {
+            first: entities[0].id.clone(),
+            second: entities[1].id.clone(),
+        }),
+        _ => None,
+    }
+}
+
+fn relation_operand_index(operand: &SketchRelationOperand) -> u32 {
+    match operand {
+        SketchRelationOperand::Point { record_index, .. }
+        | SketchRelationOperand::Curve { record_index, .. }
+        | SketchRelationOperand::Record { record_index } => *record_index,
+    }
+}
+
+fn relation_operand_kind(operand: &SketchRelationOperand) -> &'static str {
+    match operand {
+        SketchRelationOperand::Point { .. } => "point",
+        SketchRelationOperand::Curve { .. } => "curve",
+        SketchRelationOperand::Record { .. } => "record",
+    }
+}
+
+fn relation_kind_name(relation: &SketchRelation) -> String {
+    let mut names = relation
+        .constraint_kinds
+        .iter()
+        .map(|kind| match kind {
+            SketchConstraintKind::Coincident => "coincident",
+            SketchConstraintKind::Colinear => "collinear",
+            SketchConstraintKind::Concentric => "concentric",
+            SketchConstraintKind::EqualLength => "equal_length",
+            SketchConstraintKind::Parallel => "parallel",
+            SketchConstraintKind::Perpendicular => "perpendicular",
+            SketchConstraintKind::Horizontal => "horizontal",
+            SketchConstraintKind::Vertical => "vertical",
+            SketchConstraintKind::Tangent => "tangent",
+            SketchConstraintKind::Curvature => "curvature",
+            SketchConstraintKind::Symmetry => "symmetry",
+            SketchConstraintKind::Equal => "equal",
+            SketchConstraintKind::Midpoint => "midpoint",
+            SketchConstraintKind::Polygon => "polygon",
+            SketchConstraintKind::CircularPattern => "circular_pattern",
+            SketchConstraintKind::RectangularPattern => "rectangular_pattern",
+        })
+        .collect::<Vec<_>>();
+    if relation.unknown_constraint_bits != 0 {
+        names.push("unknown_bits");
+    }
+    names.join("+")
 }
 
 fn planar_point(point: &Point3) -> bool {
@@ -3046,15 +3275,17 @@ mod relation_tests {
         identity_matrix, next_indexed_record_offset, parse_design_parameter,
         parse_dimension_locus_group, parse_dimension_locus_pair, parse_parameter_companion,
         parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
-        parse_sketch_relation, project_parameter_design, project_sketch_design,
+        parse_sketch_relation, project_parameter_design, project_sketch_constraints,
+        project_sketch_design,
     };
     use crate::records::{
         DesignParameterKind, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+        SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::sketches::SketchGeometry;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry};
     use std::collections::HashSet;
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
@@ -3443,7 +3674,10 @@ mod relation_tests {
             }),
         };
 
-        let (sketches, entities) = project_sketch_design(&[placement], &[point], &[line]);
+        let placements = vec![placement];
+        let points = vec![point];
+        let curves = vec![line];
+        let (sketches, entities) = project_sketch_design(&placements, &points, &curves);
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].origin, Point3::new(10.0, 20.0, 30.0));
         assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
@@ -3458,6 +3692,67 @@ mod relation_tests {
             SketchGeometry::Line { start, end }
                 if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 6.0)
         )));
+
+        let relation = |record_index, member, operand| SketchRelation {
+            id: format!("f3d:native:relation#{record_index}"),
+            record_index,
+            class_tag: "302".into(),
+            byte_offset: 600,
+            state_offset: 70,
+            owner_reference: 172,
+            owner_entity_id: "0_172".into(),
+            auxiliary_references: Vec::new(),
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![member],
+            resolved_members: vec![operand],
+            member_offsets: vec![25],
+            owner_reference_offset: 55,
+            state: 0x40,
+            constraint_kinds: vec![SketchConstraintKind::Horizontal],
+            unknown_constraint_bits: 0,
+            return_members: vec![member],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: vec![80],
+            raw_bytes: Vec::new(),
+        };
+        let constraints = project_sketch_constraints(
+            &placements,
+            &points,
+            &curves,
+            &[
+                relation(
+                    700,
+                    217,
+                    SketchRelationOperand::Curve {
+                        record_index: 217,
+                        primary_id: 20,
+                        secondary_id: 0,
+                    },
+                ),
+                relation(
+                    701,
+                    175,
+                    SketchRelationOperand::Point {
+                        record_index: 175,
+                        persistent_id: 10,
+                    },
+                ),
+            ],
+            &entities,
+        );
+        assert!(matches!(
+            constraints[0].definition,
+            SketchConstraintDefinition::Horizontal { .. }
+        ));
+        assert!(matches!(
+            constraints[1].definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ref entities,
+                ref operands,
+                ..
+            } if native_kind == "horizontal" && entities.len() == 1 && operands.is_empty()
+        ));
     }
 
     #[test]
