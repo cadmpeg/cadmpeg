@@ -9883,6 +9883,8 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
         )
         .expect("explicit surface sweep decode");
     let ProceduralSurfaceDefinition::Sweep {
+        profile,
+        spine,
         native: Some(native),
         ..
     } = &decoded.ir.model.procedural_surfaces[0].definition
@@ -9891,6 +9893,8 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
     };
     let SweepSurfaceLayout::ExplicitSurface {
         mode,
+        profile_range,
+        path_range,
         singularity,
         auxiliary_curve,
         support_flag,
@@ -9904,10 +9908,26 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
     assert!(auxiliary_curve.is_some());
     assert!(*support_flag);
     assert_eq!(*legacy_flag, Some(false));
+    let bounded_curves = [
+        (profile.clone(), *profile_range),
+        (spine.clone(), [path_range[0] / 10.0, path_range[1] / 10.0]),
+    ];
 
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == *curve_id)
+            .expect("explicit surface sweep curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(ordinal as f64, 1.0, -2.0),
+            direction: cadmpeg_ir::math::Vector3::new(4.0, 2.0, -3.0),
+        };
+    }
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9922,6 +9942,20 @@ fn generated_explicit_surface_sweep_decodes_and_writes_full_graph() {
             ..
         } if matches!(native.layout, SweepSurfaceLayout::ExplicitSurface { .. })
     ));
+    for (curve_id, range) in bounded_curves {
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == curve_id)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1
+                    && curve.knots == [range[0], range[0], range[1], range[1]]
+        ));
+    }
 }
 
 #[test]
@@ -9935,6 +9969,8 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
         )
         .expect("law-driven sweep decode");
     let ProceduralSurfaceDefinition::Sweep {
+        profile,
+        spine,
         native: Some(native),
         ..
     } = &decoded.ir.model.procedural_surfaces[0].definition
@@ -9943,11 +9979,13 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     };
     let SweepSurfaceLayout::LawDriven {
         mode,
+        profile_range,
         first_law,
         first_mode,
         second_law,
         formula_mode,
         formula,
+        path_range,
         ..
     } = &native.layout
     else {
@@ -9957,10 +9995,26 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
     assert!(matches!(first_law.as_ref(), LawExpression::Double { value } if *value == 2.5));
     assert!(matches!(second_law.as_ref(), LawExpression::Vector { value } if value.z == 3.0));
     assert_eq!(formula.name, "null_law");
+    let bounded_curves = [
+        (profile.clone(), *profile_range),
+        (spine.clone(), *path_range),
+    ];
 
     let mut source_less = decoded.ir;
     source_less.source = None;
     source_less.set_native_unknowns("f3d", &[]).unwrap();
+    for (ordinal, (curve_id, _)) in bounded_curves.iter().enumerate() {
+        source_less
+            .model
+            .curves
+            .iter_mut()
+            .find(|curve| curve.id == *curve_id)
+            .expect("law-driven sweep curve")
+            .geometry = cadmpeg_ir::geometry::CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(ordinal as f64, -1.0, 2.0),
+            direction: cadmpeg_ir::math::Vector3::new(3.0, 4.0, -2.0),
+        };
+    }
     let mut encoded = Vec::new();
     F3dCodec
         .encode(&source_less, &mut encoded)
@@ -9975,6 +10029,20 @@ fn generated_law_driven_sweep_decodes_and_writes_full_graph() {
             ..
         } if matches!(native.layout, SweepSurfaceLayout::LawDriven { .. })
     ));
+    for (curve_id, range) in bounded_curves {
+        assert!(matches!(
+            round_trip
+                .ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == curve_id)
+                .map(|curve| &curve.geometry),
+            Some(cadmpeg_ir::geometry::CurveGeometry::Nurbs(curve))
+                if curve.degree == 1
+                    && curve.knots == [range[0], range[0], range[1], range[1]]
+        ));
+    }
 }
 
 #[test]
