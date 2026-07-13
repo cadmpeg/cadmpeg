@@ -20,6 +20,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
@@ -391,6 +392,10 @@ impl Codec for FcstdCodec {
             ir.model
                 .procedural_surfaces
                 .extend(surface_transfer.procedural);
+            ir.model.tessellations.extend(transfer_text_tessellations(
+                &shape_payloads,
+                &graph.properties,
+            ));
         }
         let losses = if options.container_only {
             Vec::new()
@@ -767,6 +772,50 @@ fn append_text_surface(
         source_object: Some(association.clone()),
     });
     geometry
+}
+
+fn transfer_text_tessellations(
+    payloads: &[brep::ShapePayloadRecord],
+    properties: &[native::PropertyRecord],
+) -> Vec<Tessellation> {
+    payloads
+        .iter()
+        .filter_map(|payload| payload.text.as_ref().map(|text| (payload, text)))
+        .flat_map(|(payload, text)| {
+            let object_id = properties
+                .iter()
+                .find(|property| property.id == payload.property)
+                .map_or_else(
+                    || payload.property.clone(),
+                    |property| property.owner.clone(),
+                );
+            text.triangulations
+                .iter()
+                .enumerate()
+                .map(move |(index, triangulation)| Tessellation {
+                    id: format!("{}:triangulation#{}", payload.id, index + 1),
+                    body: None,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "fcstd".into(),
+                        object_id: object_id.clone(),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                    vertices: triangulation.nodes.clone(),
+                    triangles: triangulation
+                        .triangles
+                        .iter()
+                        .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
+                        .collect(),
+                    strip_lengths: Vec::new(),
+                    normals: triangulation.normals.clone().unwrap_or_default(),
+                    channels: Vec::new(),
+                })
+        })
+        .collect()
 }
 
 fn logical_ledger(

@@ -53,6 +53,49 @@ pub struct TextFacts {
     pub curves: Vec<TextCurve>,
     /// Ordered surface table.
     pub surfaces: Vec<TextSurface>,
+    /// Ordered standalone 3D polygons.
+    pub polygons3d: Vec<TextPolygon3d>,
+    /// Ordered polygons indexing triangulation nodes.
+    pub polygons_on_triangulations: Vec<TextPolygonOnTriangulation>,
+    /// Ordered display triangulations.
+    pub triangulations: Vec<TextTriangulation>,
+}
+
+/// One standalone 3D polygon carrier.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextPolygon3d {
+    /// Chordal deflection.
+    pub deflection: f64,
+    /// Ordered model-space nodes.
+    pub nodes: Vec<Point3>,
+    /// Optional per-node curve parameters.
+    pub parameters: Option<Vec<f64>>,
+}
+
+/// One polygon whose indices address a triangulation node table.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextPolygonOnTriangulation {
+    /// One-based source node indices.
+    pub nodes: Vec<u32>,
+    /// Chordal deflection.
+    pub deflection: f64,
+    /// Optional per-node curve parameters.
+    pub parameters: Option<Vec<f64>>,
+}
+
+/// One indexed display triangulation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TextTriangulation {
+    /// Chordal deflection.
+    pub deflection: f64,
+    /// Ordered model-space vertices.
+    pub nodes: Vec<Point3>,
+    /// Optional UV coordinates parallel to `nodes`.
+    pub uv_nodes: Option<Vec<Point2>>,
+    /// One-based source triangle indices.
+    pub triangles: Vec<[u32; 3]>,
+    /// Optional normals parallel to `nodes`.
+    pub normals: Option<Vec<Vector3>>,
 }
 
 /// A rational or non-rational 2D B-spline curve.
@@ -368,6 +411,9 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     let curve2ds = parse_curve2ds(&tokens, &section_counts)?;
     let curves = parse_curves(&tokens, &section_counts)?;
     let surfaces = parse_surfaces(&tokens, &section_counts)?;
+    let polygons3d = parse_polygons3d(&tokens, &section_counts)?;
+    let polygons_on_triangulations = parse_polygons_on_triangulations(&tokens, &section_counts)?;
+    let triangulations = parse_triangulations(&tokens, &section_counts, topology_version)?;
     Ok(TextFacts {
         topology_version,
         section_counts,
@@ -376,6 +422,9 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         curve2ds,
         curves,
         surfaces,
+        polygons3d,
+        polygons_on_triangulations,
+        triangulations,
     })
 }
 
@@ -675,6 +724,177 @@ fn invert_affine(transform: Transform) -> Result<Transform, CodecError> {
             .sum::<f64>();
     }
     Ok(result)
+}
+
+fn parse_polygons3d(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+) -> Result<Vec<TextPolygon3d>, CodecError> {
+    let mut cursor = section_cursor(tokens, "Polygon3D", "PolygonOnTriangulations")?;
+    let count = section_counts.get("Polygon3D").copied().unwrap_or(0);
+    let mut polygons = Vec::with_capacity(count);
+    for _ in 0..count {
+        let node_count = cursor.count("3D polygon node count", 10_000_000)?;
+        let has_parameters = cursor.boolean("3D polygon parameter flag")?;
+        let deflection = cursor.real("3D polygon deflection")?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(cursor.point("3D polygon node")?);
+        }
+        let parameters = if has_parameters {
+            let mut parameters = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                parameters.push(cursor.real("3D polygon parameter")?);
+            }
+            Some(parameters)
+        } else {
+            None
+        };
+        polygons.push(TextPolygon3d {
+            deflection,
+            nodes,
+            parameters,
+        });
+    }
+    ensure_section_consumed(&cursor, "Polygon3D")?;
+    Ok(polygons)
+}
+
+fn parse_polygons_on_triangulations(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+) -> Result<Vec<TextPolygonOnTriangulation>, CodecError> {
+    let mut cursor = section_cursor(tokens, "PolygonOnTriangulations", "Surfaces")?;
+    let count = section_counts
+        .get("PolygonOnTriangulations")
+        .copied()
+        .unwrap_or(0);
+    let mut polygons = Vec::with_capacity(count);
+    for _ in 0..count {
+        let node_count = cursor.count("polygon-on-triangulation node count", 10_000_000)?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            let node = cursor.count("polygon-on-triangulation node index", u32::MAX as usize)?;
+            if node == 0 {
+                return Err(CodecError::Malformed(
+                    "polygon-on-triangulation node index is zero".into(),
+                ));
+            }
+            nodes.push(node as u32);
+        }
+        if cursor.next("polygon-on-triangulation parameter marker")? != "p" {
+            return Err(CodecError::Malformed(
+                "polygon-on-triangulation has no parameter marker".into(),
+            ));
+        }
+        let deflection = cursor.real("polygon-on-triangulation deflection")?;
+        let has_parameters = cursor.boolean("polygon-on-triangulation parameter flag")?;
+        let parameters = if has_parameters {
+            let mut parameters = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                parameters.push(cursor.real("polygon-on-triangulation parameter")?);
+            }
+            Some(parameters)
+        } else {
+            None
+        };
+        polygons.push(TextPolygonOnTriangulation {
+            nodes,
+            deflection,
+            parameters,
+        });
+    }
+    ensure_section_consumed(&cursor, "PolygonOnTriangulations")?;
+    Ok(polygons)
+}
+
+fn parse_triangulations(
+    tokens: &[&str],
+    section_counts: &BTreeMap<String, usize>,
+    topology_version: u8,
+) -> Result<Vec<TextTriangulation>, CodecError> {
+    let mut cursor = section_cursor(tokens, "Triangulations", "TShapes")?;
+    let count = section_counts.get("Triangulations").copied().unwrap_or(0);
+    let mut triangulations = Vec::with_capacity(count);
+    for _ in 0..count {
+        let node_count = cursor.count("triangulation node count", 10_000_000)?;
+        let triangle_count = cursor.count("triangulation triangle count", 10_000_000)?;
+        let has_uv = cursor.boolean("triangulation UV flag")?;
+        let has_normals = topology_version >= 3 && cursor.boolean("triangulation normal flag")?;
+        let deflection = cursor.real("triangulation deflection")?;
+        let mut nodes = Vec::with_capacity(node_count);
+        for _ in 0..node_count {
+            nodes.push(cursor.point("triangulation node")?);
+        }
+        let uv_nodes = if has_uv {
+            let mut uv_nodes = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                uv_nodes.push(cursor.point2("triangulation UV node")?);
+            }
+            Some(uv_nodes)
+        } else {
+            None
+        };
+        let mut triangles = Vec::with_capacity(triangle_count);
+        for _ in 0..triangle_count {
+            let mut triangle = [0_u32; 3];
+            for node in &mut triangle {
+                let index = cursor.count("triangulation node index", node_count)?;
+                if index == 0 {
+                    return Err(CodecError::Malformed(
+                        "triangulation node index is zero".into(),
+                    ));
+                }
+                *node = index as u32;
+            }
+            triangles.push(triangle);
+        }
+        let normals = if has_normals {
+            let mut normals = Vec::with_capacity(node_count);
+            for _ in 0..node_count {
+                normals.push(cursor.vector("triangulation normal")?);
+            }
+            Some(normals)
+        } else {
+            None
+        };
+        triangulations.push(TextTriangulation {
+            deflection,
+            nodes,
+            uv_nodes,
+            triangles,
+            normals,
+        });
+    }
+    ensure_section_consumed(&cursor, "Triangulations")?;
+    Ok(triangulations)
+}
+
+fn section_cursor<'a>(
+    tokens: &'a [&'a str],
+    section: &str,
+    following: &str,
+) -> Result<TokenCursor<'a>, CodecError> {
+    let start = tokens
+        .iter()
+        .position(|token| *token == section)
+        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {section} table")))?
+        + 2;
+    let end = tokens
+        .iter()
+        .position(|token| *token == following)
+        .ok_or_else(|| CodecError::Malformed(format!("text B-rep has no {following} table")))?;
+    Ok(TokenCursor::new(&tokens[start..end]))
+}
+
+fn ensure_section_consumed(cursor: &TokenCursor<'_>, section: &str) -> Result<(), CodecError> {
+    if cursor.is_empty() {
+        Ok(())
+    } else {
+        Err(CodecError::Malformed(format!(
+            "text B-rep {section} table contains trailing tokens"
+        )))
+    }
 }
 
 fn parse_surfaces(
@@ -1286,5 +1506,22 @@ mod tests {
         };
         assert_eq!(*parameter_range, [0.0, 6.28]);
         assert!(matches!(basis.as_ref(), TextCurve2d::Offset { .. }));
+    }
+
+    #[test]
+    fn parses_polygonal_carriers_and_version_three_normals() {
+        let input = "CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 1\n2 1 0.1 0 0 0 1 0 0 0 1\nPolygonOnTriangulations 1\n2 1 2 p 0.2 1 0 1\nSurfaces 0\nTriangulations 1\n3 1 1 1 0.01 0 0 0 1 0 0 0 1 0 0 0 1 0 0 1 1 2 3 0 0 1 0 0 1 0 0 1\nTShapes 0\n*";
+        let facts = parse_text(input.as_bytes()).expect("polygonal carriers");
+        assert_eq!(facts.polygons3d[0].nodes.len(), 2);
+        assert_eq!(
+            facts.polygons3d[0].parameters.as_deref(),
+            Some(&[0.0, 1.0][..])
+        );
+        assert_eq!(facts.polygons_on_triangulations[0].nodes, [1, 2]);
+        let triangulation = &facts.triangulations[0];
+        assert_eq!(triangulation.nodes.len(), 3);
+        assert_eq!(triangulation.triangles, [[1, 2, 3]]);
+        assert_eq!(triangulation.uv_nodes.as_ref().map(Vec::len), Some(3));
+        assert_eq!(triangulation.normals.as_ref().map(Vec::len), Some(3));
     }
 }
