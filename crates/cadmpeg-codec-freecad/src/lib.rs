@@ -574,6 +574,7 @@ fn transfer_text_surfaces(
                             major_radius: *major_radius,
                             minor_radius: *minor_radius,
                         },
+                        brep::TextSurface::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs.clone()),
                     };
                     Surface {
                         id: SurfaceId(format!("{}:surface#{}", payload.id, index + 1)),

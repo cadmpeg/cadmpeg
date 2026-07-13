@@ -91,7 +91,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         ("Payload.bin", b"payload"),
         (
             "Shape.brp",
-            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 2\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 1\n1 0 0 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 0\n*",
+            b"\nCASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves 2\n1 10 20 30 1 0 0\n7 0 0 2 3 2 0 0 0 5 0 0 10 0 0 0 3 1 3\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n9 0 0 0 0 1 1 2 2 2 2 0 0 0 0 1 0 1 0 0 1 1 0 0 2 1 2 0 2 1 2\nTriangulations 0\nTShapes 0\n*",
         ),
     ]);
     let result = FcstdCodec
@@ -187,7 +187,7 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         }
         other => panic!("unexpected curve {other:?}"),
     }
-    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(result.ir.model.surfaces.len(), 2);
     match &result.ir.model.surfaces[0].geometry {
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
             origin,
@@ -197,6 +197,17 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
             assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0]);
             assert_eq!([normal.x, normal.y, normal.z], [0.0, 0.0, 1.0]);
             assert_eq!([u_axis.x, u_axis.y, u_axis.z], [1.0, 0.0, 0.0]);
+        }
+        other => panic!("unexpected surface {other:?}"),
+    }
+    match &result.ir.model.surfaces[1].geometry {
+        cadmpeg_ir::geometry::SurfaceGeometry::Nurbs(nurbs) => {
+            assert_eq!((nurbs.u_degree, nurbs.v_degree), (1, 1));
+            assert_eq!((nurbs.u_count, nurbs.v_count), (2, 2));
+            assert_eq!(nurbs.control_points.len(), 4);
+            assert_eq!(nurbs.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
+            assert_eq!(nurbs.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
+            assert!(nurbs.weights.is_none());
         }
         other => panic!("unexpected surface {other:?}"),
     }

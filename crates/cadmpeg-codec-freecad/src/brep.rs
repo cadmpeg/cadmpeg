@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::geometry::NurbsCurve;
+use cadmpeg_ir::geometry::{NurbsCurve, NurbsSurface};
 use cadmpeg_ir::math::{Point3, Vector3};
 use serde::{Deserialize, Serialize};
 
@@ -130,6 +130,8 @@ pub enum TextSurface {
         major_radius: f64,
         minor_radius: f64,
     },
+    /// Rational or non-rational tensor-product B-spline surface.
+    Nurbs(NurbsSurface),
 }
 
 /// Bind every exact-shape property to and frame its payload.
@@ -271,42 +273,9 @@ fn parse_surfaces(
     let mut surfaces = Vec::with_capacity(count);
     for index in 0..count {
         let kind = cursor.integer("surface type")?;
-        let origin = cursor.point("surface origin")?;
-        let axis = cursor.vector("surface axis")?;
-        let ref_direction = cursor.vector("surface reference direction")?;
-        let _y_direction = cursor.vector("surface y direction")?;
         let surface = match kind {
-            1 => TextSurface::Plane {
-                origin,
-                axis,
-                u_axis: ref_direction,
-            },
-            2 => TextSurface::Cylinder {
-                origin,
-                axis,
-                ref_direction,
-                radius: cursor.real("cylinder radius")?,
-            },
-            3 => TextSurface::Cone {
-                origin,
-                axis,
-                ref_direction,
-                radius: cursor.real("cone radius")?,
-                half_angle: cursor.real("cone half angle")?,
-            },
-            4 => TextSurface::Sphere {
-                center: origin,
-                axis,
-                ref_direction,
-                radius: cursor.real("sphere radius")?,
-            },
-            5 => TextSurface::Torus {
-                center: origin,
-                axis,
-                ref_direction,
-                major_radius: cursor.real("torus major radius")?,
-                minor_radius: cursor.real("torus minor radius")?,
-            },
+            1..=5 => parse_analytic_surface(kind, &mut cursor)?,
+            9 => TextSurface::Nurbs(parse_nurbs_surface(&mut cursor)?),
             other => {
                 return Err(CodecError::NotImplemented(format!(
                     "text B-rep surface family {other} at table index {}",
@@ -322,6 +291,112 @@ fn parse_surfaces(
         ));
     }
     Ok(surfaces)
+}
+
+fn parse_analytic_surface(
+    kind: i64,
+    cursor: &mut TokenCursor<'_>,
+) -> Result<TextSurface, CodecError> {
+    let origin = cursor.point("surface origin")?;
+    let axis = cursor.vector("surface axis")?;
+    let ref_direction = cursor.vector("surface reference direction")?;
+    let _y_direction = cursor.vector("surface y direction")?;
+    Ok(match kind {
+        1 => TextSurface::Plane {
+            origin,
+            axis,
+            u_axis: ref_direction,
+        },
+        2 => TextSurface::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius: cursor.real("cylinder radius")?,
+        },
+        3 => TextSurface::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius: cursor.real("cone radius")?,
+            half_angle: cursor.real("cone half angle")?,
+        },
+        4 => TextSurface::Sphere {
+            center: origin,
+            axis,
+            ref_direction,
+            radius: cursor.real("sphere radius")?,
+        },
+        5 => TextSurface::Torus {
+            center: origin,
+            axis,
+            ref_direction,
+            major_radius: cursor.real("torus major radius")?,
+            minor_radius: cursor.real("torus minor radius")?,
+        },
+        _ => unreachable!("analytic surface kind was range checked"),
+    })
+}
+
+fn parse_nurbs_surface(cursor: &mut TokenCursor<'_>) -> Result<NurbsSurface, CodecError> {
+    let u_rational = cursor.boolean("B-spline u rational flag")?;
+    let v_rational = cursor.boolean("B-spline v rational flag")?;
+    let rational = u_rational || v_rational;
+    let u_periodic = cursor.boolean("B-spline u periodic flag")?;
+    let v_periodic = cursor.boolean("B-spline v periodic flag")?;
+    let u_degree = cursor.count("B-spline u degree", 64)?;
+    let v_degree = cursor.count("B-spline v degree", 64)?;
+    let u_count = cursor.count("B-spline u pole count", 1_000_000)?;
+    let v_count = cursor.count("B-spline v pole count", 1_000_000)?;
+    let u_knot_count = cursor.count("B-spline u knot count", 1_000_000)?;
+    let v_knot_count = cursor.count("B-spline v knot count", 1_000_000)?;
+    let pole_count = u_count
+        .checked_mul(v_count)
+        .filter(|count| *count <= 1_000_000)
+        .ok_or_else(|| CodecError::Malformed("B-spline surface pole limit exceeded".into()))?;
+    let mut control_points = Vec::with_capacity(pole_count);
+    let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+    for _ in 0..pole_count {
+        control_points.push(cursor.point("B-spline surface pole")?);
+        if let Some(weights) = &mut weights {
+            weights.push(cursor.real("B-spline surface weight")?);
+        }
+    }
+    let u_knots = parse_knots(cursor, u_knot_count, u_degree, "B-spline u")?;
+    let v_knots = parse_knots(cursor, v_knot_count, v_degree, "B-spline v")?;
+    Ok(NurbsSurface {
+        u_degree: u_degree as u32,
+        v_degree: v_degree as u32,
+        u_knots,
+        v_knots,
+        u_count: u_count as u32,
+        v_count: v_count as u32,
+        control_points,
+        weights,
+        u_periodic,
+        v_periodic,
+    })
+}
+
+fn parse_knots(
+    cursor: &mut TokenCursor<'_>,
+    knot_count: usize,
+    degree: usize,
+    label: &str,
+) -> Result<Vec<f64>, CodecError> {
+    let mut knots = Vec::new();
+    for _ in 0..knot_count {
+        let knot = cursor.real(&format!("{label} knot"))?;
+        let multiplicity = cursor.count(&format!("{label} knot multiplicity"), degree + 1)?;
+        let expanded = knots
+            .len()
+            .checked_add(multiplicity)
+            .filter(|count| *count <= 2_000_000)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("expanded {label} knot limit exceeded"))
+            })?;
+        knots.resize(expanded, knot);
+    }
+    Ok(knots)
 }
 
 fn parse_curves(
