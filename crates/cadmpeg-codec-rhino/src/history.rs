@@ -1075,6 +1075,60 @@ fn extended_geometry_json(
             writer_version,
             scale,
         );
+    } else if value.class_id == crate::hatch::CLASS {
+        let hatch =
+            crate::hatch::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+        let mut plane = hatch.plane;
+        for coordinate in &mut plane.origin.0 {
+            *coordinate *= scale;
+        }
+        plane.equation[3] *= scale;
+        let loops = hatch
+            .loops
+            .iter()
+            .map(|hatch_loop| {
+                serde_json::json!({
+                    "kind": match hatch_loop.kind {
+                        crate::hatch::LoopKind::Outer => "outer",
+                        crate::hatch::LoopKind::Inner => "inner",
+                    },
+                    "curve": hatch_loop.curve.geometry,
+                })
+            })
+            .collect::<Vec<_>>();
+        serde_json::json!({
+            "kind": "hatch",
+            "plane": {
+                "origin": plane.origin.0,
+                "xaxis": plane.xaxis.0,
+                "yaxis": plane.yaxis.0,
+                "zaxis": plane.zaxis.0,
+                "equation": plane.equation,
+            },
+            "pattern_scale": hatch.pattern_scale,
+            "pattern_rotation": hatch.pattern_rotation,
+            "pattern_index": hatch.pattern_index,
+            "loops": loops,
+            "basepoint": hatch.basepoint,
+        })
+    } else if value.class_id == crate::detail::CLASS {
+        let detail =
+            crate::detail::decode(data, value.class_data_range.clone(), scale, archive).ok()?;
+        serde_json::json!({
+            "kind": "detail_view",
+            "boundary": detail.boundary.geometry,
+            "page_per_model_ratio": detail.page_per_model_ratio,
+        })
+    } else if crate::dimensions::supported_class(value.class_id) {
+        let dimension = crate::dimensions::decode(
+            data,
+            value.class_id,
+            value.class_data_range.clone(),
+            scale,
+            archive,
+        )
+        .ok()?;
+        return crate::dimensions::semantic_json(&dimension);
     } else {
         return None;
     };

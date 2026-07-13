@@ -1180,6 +1180,22 @@ pub(crate) fn project(
     (feature, parameter)
 }
 
+/// Serializes one decoded dimension without source-record identity.
+pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
+    let (feature, parameter) = project(
+        dimension,
+        "embedded-history-dimension",
+        None,
+        "rhino:history:embedded-dimension".to_string(),
+    );
+    serde_json::to_string(&serde_json::json!({
+        "kind": "dimension",
+        "definition": feature.definition,
+        "parameter": parameter,
+    }))
+    .ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1291,6 +1307,10 @@ mod tests {
         let linear = decode(&linear_bytes, LINEAR, 0..linear_bytes.len(), 10.0, archive).unwrap();
         assert_eq!(linear.measurement, 60.0);
         assert_eq!(linear.horizontal_direction, [1.0, 0.0]);
+        let semantic: serde_json::Value =
+            serde_json::from_str(&semantic_json(&linear).unwrap()).unwrap();
+        assert_eq!(semantic["kind"], "dimension");
+        assert_eq!(semantic["definition"]["kind"], "linear_dimension");
 
         let radial_family = [3.0_f64, 4.0, 8.0, 9.0]
             .into_iter()
