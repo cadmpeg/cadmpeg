@@ -186,6 +186,8 @@ Named prototype fields describe the first surface instance. Positional row bodie
 
 The next named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. Bytes after that close belong to subsequent instance or namespace records.
 
+`radius`, `radius1`, `radius2`, and `half_angle` are scalar-typed fields. A body that does not complete a scalar token remains opaque and is not reinterpreted as a compact integer.
+
 Positional cylinder rows store cap-plane point data rather than a `local_sys` replay. Their per-instance radius does not inherit the prototype default; derive it from bound `fc 05` cap-circle geometry or from a byte-backed analytic construction.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.

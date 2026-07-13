@@ -456,7 +456,7 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "frst_cntr_crv_hdr_ptr",
 ];
 
-fn named_surface_value(body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
+fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
     if body.first() == Some(&psb::token::ARRAY_OPEN) {
         let (count, mut cursor) = compact_int(body, 1);
         if cursor > 1 {
@@ -512,8 +512,9 @@ fn named_surface_value(body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamed
     if !values.is_empty() {
         return SurfaceNamedValue::ScalarSequence(values);
     }
+    let scalar_field = matches!(name, "radius" | "radius1" | "radius2" | "half_angle");
     let (value, end) = compact_int(body, 0);
-    if end == body.len() && end != 0 {
+    if !scalar_field && end == body.len() && end != 0 {
         SurfaceNamedValue::CompactInt(value)
     } else {
         SurfaceNamedValue::Opaque(body.to_vec())
@@ -563,9 +564,10 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
                 value_end = value_offset + compound_close.offset;
             }
             let body = payload[value_offset..value_end].to_vec();
+            let value = named_surface_value(&name, &body, &cache);
             parameters.push(SurfaceNamedParameter {
                 name: name.into_owned(),
-                value: named_surface_value(&body, &cache),
+                value,
                 body,
                 offset: token_offset,
                 value_offset,
@@ -1026,6 +1028,19 @@ mod tests {
         assert_eq!(field.name, "radius2");
         assert_eq!(field.body, [0x2e, 0x05, 0x33, 0xf1, 0xf7, 0x0e]);
         assert_eq!(field.value, SurfaceNamedValue::ScalarSequence(vec![2.65]));
+    }
+
+    #[test]
+    fn withholds_incomplete_scalar_field_from_compact_integer_fallback() {
+        let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].parameters.len(), 1);
+        assert_eq!(
+            records[0].parameters[0].value,
+            SurfaceNamedValue::Opaque(vec![0x18])
+        );
     }
 
     #[test]
