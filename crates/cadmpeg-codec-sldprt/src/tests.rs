@@ -4545,6 +4545,61 @@ fn decode_projects_generic_extrusion_with_explicit_operation() {
 }
 
 #[test]
+fn decode_dispatches_typed_features_by_xml_family() {
+    use cadmpeg_ir::features::{ChamferSpec, FeatureDefinition, HoleKind, Length, RadiusSpec};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Sketch Name="Profile" Type="CustomSketch" id="51"/>
+            <ReferencePoint Name="Origin" Type="CustomDatum" id="52" Position="1mm,2mm,3mm"/>
+            <Fillet Name="Round" Type="CustomFillet" id="53"><Dimension Name="Radius">2mm</Dimension></Fillet>
+            <Chamfer Name="Bevel" Type="CustomChamfer" id="54"><Dimension Name="Distance">3mm</Dimension></Chamfer>
+            <Hole Name="Drill" Type="CustomHole" id="55"><Dimension Name="Diameter">4mm</Dimension><Dimension Name="Depth">5mm</Dimension></Hole>
+        </Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::Sketch { .. }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[1].definition,
+        FeatureDefinition::DatumPoint { .. }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[2].definition,
+        FeatureDefinition::Fillet {
+            radius: RadiusSpec::Constant {
+                radius: Length(2.0),
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[3].definition,
+        FeatureDefinition::Chamfer {
+            spec: ChamferSpec::Distance {
+                distance: Length(3.0),
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        decoded.ir.model.features[4].definition,
+        FeatureDefinition::Hole {
+            kind: HoleKind::Simple,
+            diameter: Length(4.0),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_all_extrusion_forms() {
     use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
     use cadmpeg_ir::math::Vector3;

@@ -407,51 +407,55 @@ fn project_definition(
     by_source: &HashMap<&str, FeatureId>,
     native_by_source: &HashMap<&str, &str>,
 ) -> FeatureDefinition {
-    if feature.kind.eq_ignore_ascii_case("Sketch") {
+    if feature_family(feature, "Sketch") {
         return FeatureDefinition::Sketch { sketch: None };
     }
-    if feature.kind.eq_ignore_ascii_case("ReferencePlane") {
+    if feature_family(feature, "ReferencePlane") {
         return project_datum_plane(feature).unwrap_or_else(|| native_definition(feature));
     }
-    if feature.kind.eq_ignore_ascii_case("ReferenceAxis") {
+    if feature_family(feature, "ReferenceAxis") {
         return project_datum_axis(feature).unwrap_or_else(|| native_definition(feature));
     }
-    if feature.kind.eq_ignore_ascii_case("ReferencePoint") {
+    if feature_family(feature, "ReferencePoint") {
         return project_datum_point(feature).unwrap_or_else(|| native_definition(feature));
     }
     if is_extrude(feature) {
         project_extrude(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Fillet") {
+    } else if feature_family(feature, "Fillet") {
         project_fillet(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Chamfer") {
+    } else if feature_family(feature, "Chamfer") {
         project_chamfer(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Shell") {
+    } else if feature_family(feature, "Shell") {
         project_shell(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Draft") {
+    } else if feature_family(feature, "Draft") {
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Combine") {
+    } else if feature_family(feature, "Combine") {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("DeleteFace") {
+    } else if feature_family(feature, "DeleteFace") {
         project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("MoveFace") {
+    } else if feature_family(feature, "MoveFace") {
         project_move_face(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Dome") {
+    } else if feature_family(feature, "Dome") {
         project_dome(feature).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Hole") {
+    } else if feature_family(feature, "Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if is_revolve(feature) {
         project_revolve(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else if pattern_form(feature).is_some() {
         project_pattern(feature, by_source).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Sweep") {
+    } else if feature_family(feature, "Sweep") {
         project_sweep(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Loft") {
+    } else if feature_family(feature, "Loft") {
         project_loft(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
-    } else if feature.kind.eq_ignore_ascii_case("Rib") {
+    } else if feature_family(feature, "Rib") {
         project_rib(feature, native_by_source).unwrap_or_else(|| native_definition(feature))
     } else {
         native_definition(feature)
     }
+}
+
+fn feature_family(feature: &Feature, family: &str) -> bool {
+    feature.kind.eq_ignore_ascii_case(family) || feature.xml_tag.eq_ignore_ascii_case(family)
 }
 
 fn is_extrude(feature: &Feature) -> bool {
@@ -724,17 +728,24 @@ enum PatternForm {
 }
 
 fn pattern_form(feature: &Feature) -> Option<PatternForm> {
-    let form = if feature.kind.eq_ignore_ascii_case("Pattern") {
-        feature.properties.get("PatternType")?.as_str()
-    } else {
-        feature.kind.as_str()
-    };
-    match form.to_ascii_lowercase().as_str() {
+    let parse = |form: &str| match form.to_ascii_lowercase().as_str() {
         "linear" | "linearpattern" => Some(PatternForm::Linear),
         "circular" | "circularpattern" => Some(PatternForm::Circular),
         "mirror" => Some(PatternForm::Mirror),
         _ => None,
+    };
+    if let Some(form) = parse(&feature.kind) {
+        return Some(form);
     }
+    if feature.xml_tag.eq_ignore_ascii_case("Mirror") {
+        return Some(PatternForm::Mirror);
+    }
+    feature
+        .xml_tag
+        .eq_ignore_ascii_case("Pattern")
+        .then(|| feature.properties.get("PatternType"))
+        .flatten()
+        .and_then(|form| parse(form))
 }
 
 fn project_pattern(
