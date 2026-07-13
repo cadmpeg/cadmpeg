@@ -723,6 +723,60 @@ pub fn bind_unique_sketch_feature(
     }
 }
 
+/// Assign stable neutral regeneration ordinals with every structural parent and
+/// explicit dependency before its consumer. Native history ordinals retain the
+/// independent Keywords serialization order.
+pub fn order_features_for_regeneration(features: &mut [cadmpeg_ir::features::Feature]) -> bool {
+    let by_id = features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (feature.id.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let mut outgoing = vec![Vec::<usize>::new(); features.len()];
+    let mut indegree = vec![0usize; features.len()];
+    for (consumer, feature) in features.iter().enumerate() {
+        let mut predecessors = feature
+            .dependencies
+            .iter()
+            .collect::<std::collections::HashSet<_>>();
+        if let Some(parent) = &feature.parent {
+            predecessors.insert(parent);
+        }
+        for predecessor in predecessors {
+            let Some(&source) = by_id.get(predecessor) else {
+                continue;
+            };
+            outgoing[source].push(consumer);
+            indegree[consumer] += 1;
+        }
+    }
+    let mut ready = std::collections::BTreeSet::new();
+    for (index, feature) in features.iter().enumerate() {
+        if indegree[index] == 0 {
+            ready.insert((feature.ordinal, feature.id.clone(), index));
+        }
+    }
+    let mut order = Vec::with_capacity(features.len());
+    while let Some(item) = ready.pop_first() {
+        let index = item.2;
+        order.push(index);
+        for &consumer in &outgoing[index] {
+            indegree[consumer] -= 1;
+            if indegree[consumer] == 0 {
+                let feature = &features[consumer];
+                ready.insert((feature.ordinal, feature.id.clone(), consumer));
+            }
+        }
+    }
+    if order.len() != features.len() {
+        return false;
+    }
+    for (ordinal, index) in order.into_iter().enumerate() {
+        features[index].ordinal = ordinal as u64;
+    }
+    true
+}
+
 /// Resolve native topology selections against decoded B-rep identities.
 pub fn bind_topology_selections(
     features: &mut [cadmpeg_ir::features::Feature],

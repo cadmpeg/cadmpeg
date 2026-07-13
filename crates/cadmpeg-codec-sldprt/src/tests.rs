@@ -13010,6 +13010,7 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
         "Contents/Keywords",
         br#"<Keywords><Extrusion Name="Extrude1" Type="Extrusion" id="8" DissectableChildren="3"><Dimension Name="D1">25</Dimension></Extrusion><Sketch Name="Sketch1" Type="Sketch" id="3"/></Keywords>"#,
     ));
+    let original = source.clone();
 
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
@@ -13029,6 +13030,7 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
         .find(|feature| feature.name.as_deref() == Some("Sketch1"))
         .expect("projected sketch feature");
     assert_eq!(extrusion.dependencies, vec![sketch.id.clone()]);
+    assert!(sketch.ordinal < extrusion.ordinal);
     assert!(matches!(
         &extrusion.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
@@ -13036,6 +13038,11 @@ fn decode_binds_generic_extrusion_to_its_dissectable_sketch_child() {
             ..
         } if Some(profile.as_str()) == sketch.native_ref.as_deref()
     ));
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    assert_eq!(encoded, original);
 }
 
 #[test]

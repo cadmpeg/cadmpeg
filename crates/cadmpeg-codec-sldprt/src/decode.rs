@@ -344,6 +344,7 @@ fn build_geometry_ir(
         &ir.model.edges,
         &ir.model.curves,
     );
+    crate::history::order_features_for_regeneration(&mut ir.model.features);
     stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
     mark_active_configuration(&mut ir);
@@ -856,6 +857,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &ir.model.parameters,
         &lanes,
     );
+    crate::history::order_features_for_regeneration(&mut ir.model.features);
     stamp_feature_baseline(&mut ir);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
