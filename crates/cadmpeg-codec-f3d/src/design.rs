@@ -668,7 +668,8 @@ pub fn decode_sketch_points(
                 break;
             };
             let payload = &bytes[at..];
-            let Some((persistent_id, paired_reference, x, y, shift)) = decode_sketch_point(payload)
+            let Some((persistent_id, paired_reference, x, y, shift, entity_genesis)) =
+                decode_sketch_point(payload)
             else {
                 at += 1;
                 continue;
@@ -685,6 +686,7 @@ pub fn decode_sketch_points(
                     class_tag,
                     byte_offset: at as u64,
                     coordinate_offset: (89 + shift) as u32,
+                    entity_genesis,
                     persistent_id,
                     paired_reference,
                     coordinates: Point2::new(u, v),
@@ -697,9 +699,9 @@ pub fn decode_sketch_points(
     Ok(out)
 }
 
-fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize)> {
+fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize, Option<u64>)> {
     if let Some(point) = decode_sketch_point_variant(payload, 0, 1) {
-        return Some((point.0, point.1, point.2, point.3, 0));
+        return Some((point.0, point.1, point.2, point.3, 0, None));
     }
     if u32_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
@@ -708,8 +710,9 @@ fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize)> {
     {
         return None;
     }
+    let entity_genesis = u64::from_le_bytes(payload.get(69..77)?.try_into().ok()?);
     decode_sketch_point_variant(payload, 52, 2)
-        .map(|point| (point.0, point.1, point.2, point.3, 52))
+        .map(|point| (point.0, point.1, point.2, point.3, 52, Some(entity_genesis)))
 }
 
 fn decode_sketch_point_variant(
@@ -769,7 +772,7 @@ pub fn decode_sketch_curve_identities(
                 break;
             };
             let payload = &bytes[at..];
-            let Some((primary_id, secondary_id, geometry_shift)) =
+            let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
                 decode_sketch_curve_identity(payload)
             else {
                 at += 1;
@@ -785,6 +788,7 @@ pub fn decode_sketch_curve_identities(
                     class_tag,
                     byte_offset: at as u64,
                     geometry_offset: (133 + geometry_shift) as u32,
+                    entity_genesis,
                     primary_id,
                     secondary_id,
                     geometry: decode_sketch_nurbs(geometry_payload)
@@ -799,9 +803,9 @@ pub fn decode_sketch_curve_identities(
     Ok(out)
 }
 
-fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize)> {
+fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize, Option<u64>)> {
     if let Some((primary, secondary)) = decode_sketch_curve_identity_variant(payload, 0, 2) {
-        return Some((primary, secondary, 0));
+        return Some((primary, secondary, 0, None));
     }
     if u32_at(payload, 25) != Some(13)
         || payload.get(29..42) != Some(b"EntityGenesis")
@@ -810,8 +814,9 @@ fn decode_sketch_curve_identity(payload: &[u8]) -> Option<(u64, u64, usize)> {
     {
         return None;
     }
+    let entity_genesis = u64::from_le_bytes(payload.get(69..77)?.try_into().ok()?);
     decode_sketch_curve_identity_variant(payload, 52, 3)
-        .map(|(primary, secondary)| (primary, secondary, 52))
+        .map(|(primary, secondary)| (primary, secondary, 52, Some(entity_genesis)))
 }
 
 fn decode_sketch_curve_identity_variant(

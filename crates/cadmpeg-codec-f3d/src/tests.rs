@@ -5668,6 +5668,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         class_tag: "360".into(),
         byte_offset: 0,
         coordinate_offset: 89,
+        entity_genesis: Some(900),
         persistent_id: 500,
         paired_reference: 101,
         coordinates: Point2::new(12.5, -25.0),
@@ -5680,6 +5681,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             class_tag: "361".into(),
             byte_offset: 0,
             geometry_offset: 133,
+            entity_genesis: Some(901),
             primary_id: 700,
             secondary_id: 701,
             geometry: Some(SketchCurveGeometry::Line {
@@ -5695,6 +5697,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             class_tag: "362".into(),
             byte_offset: 0,
             geometry_offset: 133,
+            entity_genesis: None,
             primary_id: 702,
             secondary_id: 703,
             geometry: Some(SketchCurveGeometry::Arc {
@@ -5712,6 +5715,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
             class_tag: "363".into(),
             byte_offset: 0,
             geometry_offset: 133,
+            entity_genesis: None,
             primary_id: 704,
             secondary_id: 705,
             geometry: Some(SketchCurveGeometry::Nurbs {
@@ -5778,11 +5782,20 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     let native = f3d_native(&round_trip.ir);
     assert_eq!(native.sketch_points.len(), 1);
     assert_eq!(native.sketch_points[0].persistent_id, 500);
+    assert_eq!(native.sketch_points[0].entity_genesis, Some(900));
+    assert_eq!(native.sketch_points[0].coordinate_offset, 141);
     assert_eq!(
         native.sketch_points[0].coordinates,
         Point2::new(12.5, -25.0)
     );
     assert_eq!(native.sketch_curve_identities.len(), 3);
+    let genesis_curve = native
+        .sketch_curve_identities
+        .iter()
+        .find(|curve| curve.primary_id == 700)
+        .expect("genesis curve");
+    assert_eq!(genesis_curve.entity_genesis, Some(901));
+    assert_eq!(genesis_curve.geometry_offset, 185);
     for expected in expected_geometries {
         assert!(native
             .sketch_curve_identities
@@ -14491,6 +14504,7 @@ fn decode_transfers_generated_protein_appearance() {
         .cloned()
         .expect("point 600");
     assert_eq!(point_600.coordinates.u, -40.0);
+    assert_eq!(point_600.entity_genesis, Some(9));
     assert_eq!(f3d_native(&result.ir).sketch_curve_identities.len(), 2);
     assert_eq!(
         f3d_native(&result.ir).sketch_curve_identities[0].primary_id,
@@ -14499,6 +14513,10 @@ fn decode_transfers_generated_protein_appearance() {
     assert_eq!(
         f3d_native(&result.ir).sketch_curve_identities[0].secondary_id,
         0
+    );
+    assert_eq!(
+        f3d_native(&result.ir).sketch_curve_identities[1].entity_genesis,
+        Some(10)
     );
     assert!(matches!(
         f3d_native(&result.ir).sketch_curve_identities[0].geometry,

@@ -434,19 +434,23 @@ fn encode_sketch_point(
             "source-less sketch point coordinates must be finite".into(),
         ));
     }
-    let mut record = [0u8; 112];
+    let shift = usize::from(point.entity_genesis.is_some()) * 52;
+    let mut record = vec![0u8; 112 + shift];
     encode_sketch_record_header(&mut record, &point.class_tag, point.record_index)?;
     record[20] = 1;
-    record[21..25].copy_from_slice(&1u32.to_le_bytes());
-    record[25..29].copy_from_slice(&6u32.to_le_bytes());
-    record[29..35].copy_from_slice(b"pt_tag");
-    record[35..39].copy_from_slice(&23u32.to_le_bytes());
-    record[39..62].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[62..70].copy_from_slice(&point.persistent_id.to_le_bytes());
-    record[70] = 1;
-    record[71..75].copy_from_slice(&point.paired_reference.to_le_bytes());
-    record[89..97].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
-    record[97..105].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
+    record[21..25].copy_from_slice(&(1 + u32::from(point.entity_genesis.is_some())).to_le_bytes());
+    if let Some(entity_genesis) = point.entity_genesis {
+        encode_entity_genesis(&mut record, entity_genesis);
+    }
+    record[25 + shift..29 + shift].copy_from_slice(&6u32.to_le_bytes());
+    record[29 + shift..35 + shift].copy_from_slice(b"pt_tag");
+    record[35 + shift..39 + shift].copy_from_slice(&23u32.to_le_bytes());
+    record[39 + shift..62 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[62 + shift..70 + shift].copy_from_slice(&point.persistent_id.to_le_bytes());
+    record[70 + shift] = 1;
+    record[71 + shift..75 + shift].copy_from_slice(&point.paired_reference.to_le_bytes());
+    record[89 + shift..97 + shift].copy_from_slice(&(point.coordinates.u / 10.0).to_le_bytes());
+    record[97 + shift..105 + shift].copy_from_slice(&(point.coordinates.v / 10.0).to_le_bytes());
     out.extend_from_slice(&record);
     Ok(())
 }
@@ -455,20 +459,24 @@ fn encode_sketch_curve_identity(
     out: &mut Vec<u8>,
     curve: &crate::records::SketchCurveIdentity,
 ) -> Result<(), CodecError> {
-    let mut record = vec![0u8; 133];
+    let shift = usize::from(curve.entity_genesis.is_some()) * 52;
+    let mut record = vec![0u8; 133 + shift];
     encode_sketch_record_header(&mut record, &curve.class_tag, curve.record_index)?;
     record[20] = 1;
-    record[21..25].copy_from_slice(&2u32.to_le_bytes());
-    record[25..29].copy_from_slice(&14u32.to_le_bytes());
-    record[29..43].copy_from_slice(b"crv_primary_id");
-    record[43..47].copy_from_slice(&23u32.to_le_bytes());
-    record[47..70].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[70..78].copy_from_slice(&curve.primary_id.to_le_bytes());
-    record[78..82].copy_from_slice(&16u32.to_le_bytes());
-    record[82..98].copy_from_slice(b"crv_secondary_id");
-    record[98..102].copy_from_slice(&23u32.to_le_bytes());
-    record[102..125].copy_from_slice(b"IntrinsicMetaTypeuint64");
-    record[125..133].copy_from_slice(&curve.secondary_id.to_le_bytes());
+    record[21..25].copy_from_slice(&(2 + u32::from(curve.entity_genesis.is_some())).to_le_bytes());
+    if let Some(entity_genesis) = curve.entity_genesis {
+        encode_entity_genesis(&mut record, entity_genesis);
+    }
+    record[25 + shift..29 + shift].copy_from_slice(&14u32.to_le_bytes());
+    record[29 + shift..43 + shift].copy_from_slice(b"crv_primary_id");
+    record[43 + shift..47 + shift].copy_from_slice(&23u32.to_le_bytes());
+    record[47 + shift..70 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[70 + shift..78 + shift].copy_from_slice(&curve.primary_id.to_le_bytes());
+    record[78 + shift..82 + shift].copy_from_slice(&16u32.to_le_bytes());
+    record[82 + shift..98 + shift].copy_from_slice(b"crv_secondary_id");
+    record[98 + shift..102 + shift].copy_from_slice(&23u32.to_le_bytes());
+    record[102 + shift..125 + shift].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[125 + shift..133 + shift].copy_from_slice(&curve.secondary_id.to_le_bytes());
     match curve.geometry.as_ref() {
         Some(SketchCurveGeometry::Line {
             start,
@@ -542,6 +550,14 @@ fn encode_sketch_curve_identity(
     }
     out.extend_from_slice(&record);
     Ok(())
+}
+
+fn encode_entity_genesis(record: &mut [u8], entity_genesis: u64) {
+    record[25..29].copy_from_slice(&13u32.to_le_bytes());
+    record[29..42].copy_from_slice(b"EntityGenesis");
+    record[42..46].copy_from_slice(&23u32.to_le_bytes());
+    record[46..69].copy_from_slice(b"IntrinsicMetaTypeuint64");
+    record[69..77].copy_from_slice(&entity_genesis.to_le_bytes());
 }
 
 fn encode_f64_sequence(out: &mut Vec<u8>, values: &[f64]) -> Result<(), CodecError> {

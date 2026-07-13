@@ -390,6 +390,9 @@ pub struct SketchPoint {
     pub byte_offset: u64,
     /// Byte offset of the first coordinate relative to the record start.
     pub coordinate_offset: u32,
+    /// Optional persistent genesis identity carried ahead of the point identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_genesis: Option<u64>,
     /// Persistent Fusion identifier for this sketch point, stable across regeneration.
     pub persistent_id: u64,
     /// Record index of a paired/companion record (e.g. the owning sketch curve),
@@ -416,6 +419,9 @@ pub struct SketchCurveIdentity {
     pub byte_offset: u64,
     /// Byte offset of the fixed analytic geometry payload relative to the record start.
     pub geometry_offset: u32,
+    /// Optional persistent genesis identity carried ahead of the curve identities.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_genesis: Option<u64>,
     /// Primary persistent identifier of the source sketch curve.
     pub primary_id: u64,
     /// Secondary persistent identifier of the source sketch curve (e.g. its
