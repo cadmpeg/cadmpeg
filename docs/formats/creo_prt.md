@@ -453,6 +453,8 @@ A section arc bound this way supplies a cylinder radius from its `cntrid` and en
 
 A resolved `gsec3d` frame places every complete `var_arr` section point in model space. It places a `segtab` line as the line through its transformed endpoints and a `segtab` arc as a circle whose center is the transformed `cntrid` point, whose axis is the section normal, and whose parameter-zero direction is the section `u` axis.
 
+The placed section is the owning sweep feature's profile input. For `protextrude`, the resolved section normal is the model-space sweep direction. Each solved sketch entity references the model-space carrier produced from the same `segtab` row.
+
 `ent_tab` membership identifies solved trimmed section entities. `segtab` entities outside `ent_tab` are construction or envelope entities.
 
 `vert_tab` chains bind a solved trim-vertex identifier to two incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A solved trim vertex is the intersection of its two defining `segtab` entities evaluated from `var_arr`; its identifier differs from a `segtab` point identifier.

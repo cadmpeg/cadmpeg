@@ -845,7 +845,10 @@ fn transfer_resolved_sketches(
                     sketch: sketch_id.clone(),
                     construction: !solved.contains(&segment.external_id),
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
-                    geometry_ref: None,
+                    geometry_ref: Some(format!(
+                        "creo:featdefs:section_curve#{}:{}",
+                        definition.id, segment.external_id
+                    )),
                     endpoint_refs: if segment.kind == crate::feature::FeatureSegmentKind::Arc {
                         [segment.point_ids[1], segment.point_ids[0]]
                     } else {
@@ -1218,6 +1221,29 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
                 .map_or(0, |dimensions| dimensions.rows.len())
                 .to_string(),
         );
+    }
+    for transform in scan
+        .feature_section_transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+    {
+        insert_feature_parameter(
+            &mut parameters,
+            "profile_sketch",
+            format!("creo:model:sketch#{}", transform.definition_id),
+        );
+        if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
+            insert_feature_parameter(
+                &mut parameters,
+                "sweep_direction",
+                transform
+                    .normal
+                    .iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
     }
     parameters
 }
