@@ -6,10 +6,10 @@ use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, His
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
-    Angle, BodySelection, BooleanOp, ChamferSpec, ConfigurationId, DesignConfiguration,
-    DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition,
-    FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId, ParameterValue,
-    PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, VariableRadius,
+    Angle, BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, ConfigurationId,
+    DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureId, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterId,
+    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusSpec, ScaleCenter, VariableRadius,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -724,6 +724,9 @@ pub fn bind_topology_selections(
                 resolve_body_selection(target, &body_ids);
                 resolve_body_selection(tools, &body_ids);
             }
+            FeatureDefinition::DeleteBody { bodies, .. } => {
+                resolve_body_selection(bodies, &body_ids);
+            }
             FeatureDefinition::Scale { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
             }
@@ -915,6 +918,8 @@ fn project_definition(
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
+    } else if body_retention_mode(feature).is_some() {
+        project_delete_body(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "DeleteFace") {
         project_delete_face(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "ReplaceFace") {
@@ -1549,6 +1554,31 @@ fn project_combine(feature: &Feature) -> Option<FeatureDefinition> {
         target: BodySelection::Native(feature.properties.get("Target")?.clone()),
         tools: BodySelection::Native(feature.properties.get("Tools")?.clone()),
         op,
+    })
+}
+
+fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
+    let value = feature
+        .properties
+        .get("Mode")
+        .map_or(feature.kind.as_str(), String::as_str);
+    match value.to_ascii_lowercase().as_str() {
+        "delete" | "deletebody" => Some(BodyRetentionMode::DeleteSelected),
+        "keep" | "keepbody" => Some(BodyRetentionMode::KeepSelected),
+        _ if feature.xml_tag.eq_ignore_ascii_case("DeleteBody") => {
+            Some(BodyRetentionMode::DeleteSelected)
+        }
+        _ if feature.xml_tag.eq_ignore_ascii_case("KeepBody") => {
+            Some(BodyRetentionMode::KeepSelected)
+        }
+        _ => None,
+    }
+}
+
+fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::DeleteBody {
+        bodies: BodySelection::Native(feature.properties.get("Bodies")?.clone()),
+        mode: body_retention_mode(feature)?,
     })
 }
 
@@ -3200,6 +3230,43 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::DeleteBody { bodies, mode } => {
+                let selection = body_selection_value(bodies);
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| body_retention_mode(record).is_none())
+                    || selection.is_none()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported delete-body semantics",
+                        feature.id
+                    )));
+                }
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Bodies".into(), selection.expect("checked above"));
+                properties.insert(
+                    "Mode".into(),
+                    match mode {
+                        BodyRetentionMode::DeleteSelected => "Delete",
+                        BodyRetentionMode::KeepSelected => "Keep",
+                    }
+                    .into(),
+                );
+                (
+                    existing.as_deref().map_or_else(
+                        || match mode {
+                            BodyRetentionMode::DeleteSelected => "DeleteBody".into(),
+                            BodyRetentionMode::KeepSelected => "KeepBody".into(),
+                        },
+                        |record| record.kind.clone(),
+                    ),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::DeleteFace { faces, heal } => {
                 let faces = face_selection_value(faces);
                 if existing
@@ -4364,6 +4431,14 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Thicken { .. } => "Thicken",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
+        FeatureDefinition::DeleteBody {
+            mode: BodyRetentionMode::DeleteSelected,
+            ..
+        } => "DeleteBody",
+        FeatureDefinition::DeleteBody {
+            mode: BodyRetentionMode::KeepSelected,
+            ..
+        } => "KeepBody",
         FeatureDefinition::DeleteFace { .. } => "DeleteFace",
         FeatureDefinition::ReplaceFace { .. } => "ReplaceFace",
         FeatureDefinition::MoveFace { .. } => "MoveFace",

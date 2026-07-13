@@ -343,6 +343,13 @@ pub enum FeatureDefinition {
         /// Join, cut, or intersection operation.
         op: BooleanOp,
     },
+    /// Deletes bodies directly or retains only the selected bodies.
+    DeleteBody {
+        /// Bodies selected by the operation.
+        bodies: BodySelection,
+        /// Whether selected bodies are deleted or retained.
+        mode: BodyRetentionMode,
+    },
     /// Removal of selected faces from an existing body.
     DeleteFace {
         /// Faces removed by the operation.
@@ -427,6 +434,16 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Selection interpretation for a delete/keep-body operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BodyRetentionMode {
+    /// Delete the selected bodies.
+    DeleteSelected,
+    /// Delete every body except the selected bodies.
+    KeepSelected,
 }
 
 /// Fixed locus of a body-scale transform.

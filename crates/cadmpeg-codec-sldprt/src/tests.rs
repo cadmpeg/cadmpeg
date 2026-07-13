@@ -6802,6 +6802,76 @@ fn semantic_writer_round_trips_typed_combine() {
 }
 
 #[test]
+fn semantic_writer_round_trips_delete_and_keep_body() {
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <DeleteBody Name="Discard" Type="DeleteBody" id="20" Bodies="body:2,body:3"/>
+            <KeepBody Name="Isolate" Type="KeepBody" id="21" Bodies="body:1"/>
+        </Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Native(bodies),
+            mode: BodyRetentionMode::DeleteSelected,
+        } if bodies == "body:2,body:3"
+    ));
+    assert!(matches!(
+        &decoded.ir.model.features[1].definition,
+        FeatureDefinition::DeleteBody {
+            bodies: BodySelection::Native(bodies),
+            mode: BodyRetentionMode::KeepSelected,
+        } if bodies == "body:1"
+    ));
+
+    let FeatureDefinition::DeleteBody { bodies, .. } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed delete body");
+    };
+    *bodies = BodySelection::Native("body:4".into());
+    let FeatureDefinition::DeleteBody { bodies, .. } = &mut decoded.ir.model.features[1].definition
+    else {
+        panic!("typed keep body");
+    };
+    *bodies = BodySelection::Native("body:5,body:6".into());
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let features = &sldprt_native(&regenerated.ir).feature_histories[0].features;
+    assert_eq!(features[0].properties["Bodies"], "body:4");
+    assert_eq!(features[0].properties["Mode"], "Delete");
+    assert_eq!(features[1].properties["Bodies"], "body:5,body:6");
+    assert_eq!(features[1].properties["Mode"], "Keep");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::DeleteBody {
+            mode: BodyRetentionMode::DeleteSelected,
+            ..
+        }
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[1].definition,
+        FeatureDefinition::DeleteBody {
+            mode: BodyRetentionMode::KeepSelected,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_delete_face() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
 
