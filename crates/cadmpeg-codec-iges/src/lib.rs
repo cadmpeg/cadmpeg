@@ -2,6 +2,7 @@
 //! Read-only IGES 5.3 Fixed ASCII codec.
 
 mod card;
+mod directory;
 mod global;
 
 use cadmpeg_ir::codec::{
@@ -24,8 +25,10 @@ impl Codec for IgesCodec {
     fn inspect(&self, reader: &mut dyn ReadSeek) -> Result<ContainerSummary, CodecError> {
         let scan = card::scan(reader)?;
         let global = global::parse(&scan)?;
+        let directory = directory::parse(&scan)?;
         let mut summary = card::summarize(&scan);
         summary.notes.extend(global.summary_notes());
+        summary.notes.extend(directory::summary_notes(&directory));
         Ok(summary)
     }
 
