@@ -742,6 +742,7 @@ pub fn decode_sketch_relations(
                 byte_offset: record.byte_offset,
                 state_offset: state_offset as u32,
                 owner_reference,
+                owner_entity_id: String::new(),
                 owner_reference_offset: owner_reference_offset as u32,
                 auxiliary_references,
                 auxiliary_reference_offsets: auxiliary_reference_offsets
@@ -976,10 +977,27 @@ pub fn decode_sketch_curve_identities(
 
 /// Bind relation-connected sketch geometry to its unique owning sketch.
 pub(crate) fn bind_sketch_graph(
+    entities: &[DesignEntityHeader],
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
     relations: &mut [SketchRelation],
 ) -> Result<(), CodecError> {
+    let sketch_owners = entities
+        .iter()
+        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
+        .map(|entity| (entity.entity_suffix as u32, entity.entity_id.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
+    for relation in relations.iter_mut() {
+        relation.owner_entity_id = sketch_owners
+            .get(&relation.owner_reference)
+            .ok_or_else(|| {
+                CodecError::Malformed(format!(
+                    "Fusion sketch relation {} has no owning Design entity {}",
+                    relation.record_index, relation.owner_reference
+                ))
+            })?
+            .to_string();
+    }
     let typed_records = points
         .iter()
         .map(|point| point.record_index)

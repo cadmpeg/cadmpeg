@@ -478,8 +478,11 @@ pub struct SketchRelation {
     pub byte_offset: u64,
     /// Byte offset of the constraint mask relative to the record start.
     pub state_offset: u32,
-    /// Record index of the sketch entity container that owns this relation.
+    /// Numeric design-entity suffix of the sketch container that owns this relation.
     pub owner_reference: u32,
+    /// Full Design entity id resolved from `owner_reference`.
+    #[serde(default)]
+    pub owner_entity_id: String,
     /// Nullable or role-specific references stored before the owner reference.
     #[serde(default)]
     pub auxiliary_references: Vec<u32>,

@@ -151,6 +151,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
         .map(|header| header.entity_suffix as u32)
         .collect::<HashSet<_>>();
+    let sketch_owner_ids = native
+        .design_entity_headers
+        .iter()
+        .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
+        .map(|header| (header.entity_suffix as u32, header.entity_id.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
     for relation in &native.sketch_relations {
         let (constraint_kinds, unknown_constraint_bits) =
             design::decode_constraint_kinds(relation.state);
@@ -167,6 +173,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .is_some_and(|end| end <= relation.raw_bytes.len())
             });
         let valid = sketch_owners.contains(&relation.owner_reference)
+            && sketch_owner_ids.get(&relation.owner_reference).copied()
+                == Some(relation.owner_entity_id.as_str())
             && relation.raw_bytes.len() >= 24
             && relation.members.len() == relation.member_offsets.len()
             && relation.auxiliary_references.len() == relation.auxiliary_reference_offsets.len()

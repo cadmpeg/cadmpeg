@@ -6730,6 +6730,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         byte_offset: 0,
         state_offset: 0,
         owner_reference: 277,
+        owner_entity_id: String::new(),
         owner_reference_offset: 0,
         auxiliary_references: vec![900],
         auxiliary_reference_offsets: Vec::new(),
@@ -6845,6 +6846,7 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     assert_eq!(native.sketch_relations[0].members, [100, 600]);
     assert_eq!(native.sketch_relations[0].auxiliary_references, [900]);
     assert_eq!(native.sketch_relations[0].owner_reference, 277);
+    assert_eq!(native.sketch_relations[0].owner_entity_id, "0_277");
     assert_eq!(native.sketch_relations[0].state, 0x11);
     assert_eq!(native.sketch_relations[0].return_members, [600, 100]);
     assert_eq!(
@@ -6893,8 +6895,15 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     conflicting_relation.id = "generated:sketch-relation#1".into();
     conflicting_relation.owner_reference = 278;
     relations.push(conflicting_relation);
-    let error = crate::design::bind_sketch_graph(&mut points, &mut curves, &mut relations)
-        .expect_err("typed sketch geometry cannot belong to two sketches");
+    let mut entities = native.design_entity_headers.clone();
+    let mut second_owner = entities[0].clone();
+    second_owner.id = "generated:sketch-header#1".into();
+    second_owner.entity_suffix = 278;
+    second_owner.entity_id = "0_278".into();
+    entities.push(second_owner);
+    let error =
+        crate::design::bind_sketch_graph(&entities, &mut points, &mut curves, &mut relations)
+            .expect_err("typed sketch geometry cannot belong to two sketches");
     assert!(error.to_string().contains("belongs to multiple sketches"));
 }
 

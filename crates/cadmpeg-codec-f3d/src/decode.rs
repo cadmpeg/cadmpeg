@@ -99,6 +99,7 @@ pub fn decode(
             native.sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
             crate::design::bind_sketch_graph(
+                &native.design_entity_headers,
                 &mut native.sketch_points,
                 &mut native.sketch_curve_identities,
                 &mut native.sketch_relations,
@@ -186,6 +187,7 @@ pub fn decode(
     native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
     native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
     crate::design::bind_sketch_graph(
+        &native.design_entity_headers,
         &mut native.sketch_points,
         &mut native.sketch_curve_identities,
         &mut native.sketch_relations,
