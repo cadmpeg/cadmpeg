@@ -154,6 +154,8 @@ pub(super) fn decode(
                 | Some("SHAPE_DEFINITION_REPRESENTATION")
                 | Some("ITEM_DEFINED_TRANSFORMATION")
                 | Some("CONTEXT_DEPENDENT_SHAPE_REPRESENTATION")
+                | Some("REPRESENTATION_MAP")
+                | Some("MAPPED_ITEM")
         ) || record
             .partial("REPRESENTATION_RELATIONSHIP_WITH_TRANSFORMATION")
             .is_some()
@@ -208,25 +210,53 @@ fn shape_binding(
 ) -> Option<(u64, Vec<BodyId>)> {
     let definition = *pds.get(&record.parameter(0)?.reference()?)?;
     let product = *definitions.get(&definition)?;
-    let representation = exchange.records.get(&record.parameter(1)?.reference()?)?;
-    let bodies = representation
-        .parameter(1)?
-        .list()?
-        .iter()
-        .filter_map(ValueExt::reference)
-        .filter(|item| {
-            exchange.records.get(item).is_some_and(|record| {
-                matches!(
-                    record.simple_name(),
-                    Some("SHELL_BASED_SURFACE_MODEL")
-                        | Some("MANIFOLD_SOLID_BREP")
-                        | Some("BREP_WITH_VOIDS")
-                )
-            })
-        })
-        .map(|item| BodyId(format!("step:data:body#{item}")))
-        .collect();
+    let representation = record.parameter(1)?.reference()?;
+    let bodies = representation_bodies(representation, exchange, &mut BTreeSet::new());
     Some((product, bodies))
+}
+
+fn representation_bodies(
+    representation: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+) -> Vec<BodyId> {
+    if !active.insert(representation) {
+        return Vec::new();
+    }
+    let bodies = exchange
+        .records
+        .get(&representation)
+        .and_then(|record| record.parameter(1))
+        .and_then(ValueExt::list)
+        .into_iter()
+        .flatten()
+        .filter_map(ValueExt::reference)
+        .flat_map(|item| {
+            let Some(record) = exchange.records.get(&item) else {
+                return Vec::new();
+            };
+            if matches!(
+                record.simple_name(),
+                Some("SHELL_BASED_SURFACE_MODEL" | "MANIFOLD_SOLID_BREP" | "BREP_WITH_VOIDS")
+            ) {
+                return vec![BodyId(format!("step:data:body#{item}"))];
+            }
+            if record.simple_name() == Some("MAPPED_ITEM") {
+                let mapped_representation = record
+                    .parameter(1)
+                    .and_then(ValueExt::reference)
+                    .and_then(|map| exchange.records.get(&map))
+                    .and_then(|map| map.parameter(1))
+                    .and_then(ValueExt::reference);
+                if let Some(mapped_representation) = mapped_representation {
+                    return representation_bodies(mapped_representation, exchange, active);
+                }
+            }
+            Vec::new()
+        })
+        .collect();
+    active.remove(&representation);
+    bodies
 }
 
 fn occurrence_placements(
@@ -254,6 +284,56 @@ fn occurrence_placements(
             if usages.contains_key(&usage) {
                 result.insert(usage, transform);
             }
+        }
+    }
+    let definition_representations = exchange
+        .records
+        .values()
+        .filter(|record| record.simple_name() == Some("SHAPE_DEFINITION_REPRESENTATION"))
+        .filter_map(|record| {
+            let shape = record.parameter(0)?.reference()?;
+            let definition = *pds.get(&shape)?;
+            Some((definition, record.parameter(1)?.reference()?))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let representation_maps = exchange
+        .records
+        .iter()
+        .filter_map(|(&id, record)| {
+            (record.simple_name() == Some("REPRESENTATION_MAP")).then_some((
+                id,
+                (
+                    record.parameter(0)?.reference()?,
+                    record.parameter(1)?.reference()?,
+                ),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for (&usage_id, usage) in usages {
+        if result.contains_key(&usage_id) {
+            continue;
+        }
+        let Some(&child_representation) = definition_representations.get(&usage.child_definition)
+        else {
+            continue;
+        };
+        let placement = exchange.records.values().find_map(|record| {
+            if record.simple_name() != Some("MAPPED_ITEM") {
+                return None;
+            }
+            let map = record.parameter(1)?.reference()?;
+            let &(origin, mapped_representation) = representation_maps.get(&map)?;
+            if mapped_representation != child_representation {
+                return None;
+            }
+            let target = record.parameter(2)?.reference()?;
+            Some(between(
+                *geometry.placements.get(&origin)?,
+                *geometry.placements.get(&target)?,
+            ))
+        });
+        if let Some(placement) = placement {
+            result.insert(usage_id, placement);
         }
     }
     result

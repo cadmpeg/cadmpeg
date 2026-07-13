@@ -393,6 +393,26 @@ fn decode_builds_product_occurrences_with_relative_placement() {
 }
 
 #[test]
+fn decode_builds_occurrence_placement_from_mapped_item() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_mapped_assembly.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode mapped-item assembly");
+
+    let child = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
+        .unwrap();
+    assert_eq!(child.transform.rows[0][3], 40.0);
+    assert_eq!(child.transform.rows[1][3], 5.0);
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_transfers_ap242_one_based_tessellation_indices() {
     let bytes = include_bytes!("../tests/fixtures/ap242_tessellation.p21");
     let result = StepCodec::default()
