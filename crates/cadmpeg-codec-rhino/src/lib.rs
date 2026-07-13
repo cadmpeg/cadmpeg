@@ -6,8 +6,11 @@
 //! typed model and design decoding for those archive bands.
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
+    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::ExportReport;
+use std::io::Write;
 
 pub(crate) mod accounting;
 pub(crate) mod annotations;
@@ -36,6 +39,7 @@ pub(crate) mod subd;
 pub(crate) mod surfaces;
 pub(crate) mod views;
 pub(crate) mod wire;
+mod writer;
 
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;
@@ -45,6 +49,43 @@ const MAGIC: &[u8] = chunks::MAGIC;
 /// Decoder and inspector for Rhino `.3dm` files.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RhinoCodec;
+
+/// A supported native 3DM output archive version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RhinoArchiveVersion {
+    /// Rhino 5 archive (`50`).
+    V5,
+    /// Rhino 6 archive (`60`).
+    V6,
+    /// Rhino 7 archive (`70`).
+    V7,
+    /// Rhino 8 archive (`80`).
+    V8,
+}
+
+impl RhinoArchiveVersion {
+    const fn value(self) -> u64 {
+        match self {
+            Self::V5 => 50,
+            Self::V6 => 60,
+            Self::V7 => 70,
+            Self::V8 => 80,
+        }
+    }
+}
+
+/// Native 3DM encoder with an explicit target archive version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RhinoEncoder {
+    version: RhinoArchiveVersion,
+}
+
+impl RhinoEncoder {
+    /// Select a target archive version.
+    pub const fn new(version: RhinoArchiveVersion) -> Self {
+        Self { version }
+    }
+}
 
 impl Codec for RhinoCodec {
     fn id(&self) -> &'static str {
@@ -69,6 +110,34 @@ impl Codec for RhinoCodec {
         options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError> {
         container::decode(reader, options.container_only)
+    }
+}
+
+impl Encoder for RhinoEncoder {
+    fn id(&self) -> &'static str {
+        "rhino"
+    }
+
+    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        writer::write(ir, self.version.value(), output)?;
+        let validation = cadmpeg_ir::validate(ir, Vec::new());
+        Ok(ExportReport {
+            format: "rhino".into(),
+            total_entities: ir.model.points.len(),
+            entity_counts: validation.entity_counts,
+            losses: Vec::new(),
+            notes: vec![format!("3DM archive version {}", self.version.value())],
+        })
+    }
+}
+
+impl Encoder for RhinoCodec {
+    fn id(&self) -> &'static str {
+        "rhino"
+    }
+
+    fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        RhinoEncoder::new(RhinoArchiveVersion::V8).encode(ir, output)
     }
 }
 

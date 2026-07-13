@@ -31,6 +31,7 @@ impl Registry {
             encoders: vec![
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
+                Box::new(RhinoCodec),
                 Box::new(StepCodec::default()),
                 Box::new(CadirEncoder),
             ],
@@ -73,7 +74,13 @@ mod tests {
     #[test]
     fn every_exportable_format_has_an_encoder() {
         let registry = Registry::with_builtins();
-        for format in [Format::Cadir, Format::Step, Format::F3d, Format::Sldprt] {
+        for format in [
+            Format::Cadir,
+            Format::Step,
+            Format::F3d,
+            Format::Sldprt,
+            Format::Rhino,
+        ] {
             assert!(
                 registry.encoder_by_id(format.name()).is_some(),
                 "{}",

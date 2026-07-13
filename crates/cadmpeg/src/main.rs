@@ -41,6 +41,9 @@ enum Format {
     F3d,
     /// `SolidWorks` `.sldprt`.
     Sldprt,
+    /// Rhino `.3dm`.
+    #[value(alias = "3dm")]
+    Rhino,
 }
 
 impl Format {
@@ -50,12 +53,13 @@ impl Format {
             "step" | "stp" => Some(Self::Step),
             "f3d" => Some(Self::F3d),
             "sldprt" => Some(Self::Sldprt),
+            "3dm" => Some(Self::Rhino),
             _ => None,
         }
     }
 
     fn is_geometry_export(self) -> bool {
-        matches!(self, Self::Step | Self::F3d | Self::Sldprt)
+        matches!(self, Self::Step | Self::F3d | Self::Sldprt | Self::Rhino)
     }
 
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
@@ -70,6 +74,7 @@ impl Format {
             Self::Step => "step",
             Self::F3d => "f3d",
             Self::Sldprt => "sldprt",
+            Self::Rhino => "rhino",
         }
     }
 }
