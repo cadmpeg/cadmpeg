@@ -7886,6 +7886,69 @@ fn semantic_writer_round_trips_knit_surface() {
 }
 
 #[test]
+fn semantic_writer_round_trips_cut_with_surface() {
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+
+    let base_bytes = sldprt_with_body(&triangle_body());
+    let base = SldprtCodec
+        .decode(
+            &mut Cursor::new(base_bytes.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let body = base.ir.model.bodies[0].id.0.clone();
+    let face = base.ir.model.faces[0].id.0.clone();
+    let xml = format!(
+        r#"<Keywords><CutWithSurface Name="Cut" Type="SurfaceCut" id="35" Targets="{body}" Tools="{face}" Reverse="false" ConsumeTool="false"/></Keywords>"#
+    );
+    let mut source = base_bytes;
+    source.extend(make_block(0x42, "Contents/Keywords", xml.as_bytes()));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let body_id = decoded.ir.model.bodies[0].id.clone();
+    let face_id = decoded.ir.model.faces[0].id.clone();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::CutWithSurface {
+            targets: BodySelection::Resolved { bodies, native: body_native },
+            tools: FaceSelection::Resolved { faces, native: face_native },
+            reverse: false,
+        } if bodies == &[body_id.clone()] && body_native == &body
+            && faces == &[face_id.clone()] && face_native == &face
+    ));
+
+    let FeatureDefinition::CutWithSurface {
+        targets,
+        tools,
+        reverse,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed surface cut");
+    };
+    *targets = BodySelection::Bodies(vec![body_id.clone()]);
+    *tools = FaceSelection::Faces(vec![face_id.clone()]);
+    *reverse = true;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(native.properties["Targets"], body_id.0);
+    assert_eq!(native.properties["Tools"], face_id.0);
+    assert_eq!(native.properties["Reverse"], "true");
+    assert_eq!(native.properties["ConsumeTool"], "false");
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::CutWithSurface { reverse: true, .. }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_simple_blind_hole() {
     use cadmpeg_ir::features::{Extent, FeatureDefinition, HoleKind, Length};
 

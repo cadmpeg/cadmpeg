@@ -415,6 +415,15 @@ pub enum FeatureDefinition {
         /// Join, cut, or intersection operation.
         op: BooleanOp,
     },
+    /// Removes one side of selected bodies using selected surface faces.
+    CutWithSurface {
+        /// Bodies cut by the operation.
+        targets: BodySelection,
+        /// Oriented surface faces defining the cut.
+        tools: FaceSelection,
+        /// Whether the side opposite the default tool orientation is removed.
+        reverse: bool,
+    },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
         /// Bodies selected by the operation.

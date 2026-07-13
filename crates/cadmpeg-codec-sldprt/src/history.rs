@@ -731,6 +731,10 @@ pub fn bind_topology_selections(
                 resolve_body_selection(target, &body_ids);
                 resolve_body_selection(tools, &body_ids);
             }
+            FeatureDefinition::CutWithSurface { targets, tools, .. } => {
+                resolve_body_selection(targets, &body_ids);
+                resolve_face_selection(tools, &face_ids);
+            }
             FeatureDefinition::DeleteBody { bodies, .. } => {
                 resolve_body_selection(bodies, &body_ids);
             }
@@ -953,6 +957,8 @@ fn project_definition(
         project_draft(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Combine") {
         project_combine(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "CutWithSurface") || feature_family(feature, "SurfaceCut") {
+        project_cut_with_surface(feature).unwrap_or_else(|| native_definition(feature))
     } else if body_retention_mode(feature).is_some() {
         project_delete_body(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "DeleteFace") {
@@ -1770,6 +1776,18 @@ fn body_retention_mode(feature: &Feature) -> Option<BodyRetentionMode> {
         }
         _ => None,
     }
+}
+
+fn project_cut_with_surface(feature: &Feature) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::CutWithSurface {
+        targets: BodySelection::Native(feature.properties.get("Targets")?.clone()),
+        tools: FaceSelection::Native(feature.properties.get("Tools")?.clone()),
+        reverse: feature
+            .properties
+            .get("Reverse")
+            .and_then(|value| parse_bool(value))
+            .unwrap_or(false),
+    })
 }
 
 fn project_delete_body(feature: &Feature) -> Option<FeatureDefinition> {
@@ -3747,6 +3765,47 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::CutWithSurface {
+                targets,
+                tools,
+                reverse,
+            } => {
+                if existing.as_deref().is_some_and(|record| {
+                    !feature_family(record, "CutWithSurface")
+                        && !feature_family(record, "SurfaceCut")
+                }) {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes operation family",
+                        feature.id
+                    )));
+                }
+                let targets = body_selection_value(targets).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no surface-cut target bodies",
+                        feature.id
+                    ))
+                })?;
+                let tools = face_selection_value(tools).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT feature {} has no surface-cut tools",
+                        feature.id
+                    ))
+                })?;
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Targets".into(), targets);
+                properties.insert("Tools".into(), tools);
+                properties.insert("Reverse".into(), reverse.to_string());
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "CutWithSurface".into(), |record| record.kind.clone()),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
+                    properties,
+                )
+            }
             FeatureDefinition::DeleteBody { bodies, mode } => {
                 let selection = body_selection_value(bodies);
                 if existing
@@ -5027,6 +5086,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
+        FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",
         FeatureDefinition::DeleteBody {
             mode: BodyRetentionMode::DeleteSelected,
             ..
