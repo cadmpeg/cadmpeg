@@ -173,6 +173,26 @@ fn version_name(flag: i64) -> Option<&'static str> {
 }
 
 impl Global {
+    pub(crate) fn sender_product(&self) -> Option<String> {
+        self.values.get(2).and_then(Value::string)
+    }
+
+    pub(crate) fn native_file_name(&self) -> Option<String> {
+        self.values.get(3).and_then(Value::string)
+    }
+
+    pub(crate) fn units_name(&self) -> Option<String> {
+        self.values.get(14).and_then(Value::string)
+    }
+
+    pub(crate) fn version_flag(&self) -> Option<i64> {
+        self.values.get(22).and_then(Value::integer)
+    }
+
+    pub(crate) fn version(&self) -> Option<&'static str> {
+        self.version_flag().and_then(version_name)
+    }
+
     pub(crate) fn summary_notes(&self) -> Vec<String> {
         let mut notes = vec![
             format!(
@@ -181,18 +201,13 @@ impl Global {
             ),
             format!("record_delimiter={}", char::from(self.record_delimiter)),
         ];
-        if let Some(product) = self.values.get(2).and_then(Value::string) {
+        if let Some(product) = self.sender_product() {
             notes.push(format!("sender_product={product}"));
         }
-        if let Some(units) = self.values.get(14).and_then(Value::string) {
+        if let Some(units) = self.units_name() {
             notes.push(format!("units={units}"));
         }
-        if let Some(version) = self
-            .values
-            .get(22)
-            .and_then(Value::integer)
-            .and_then(version_name)
-        {
+        if let Some(version) = self.version() {
             notes.push(format!("iges_version={version}"));
         }
         notes

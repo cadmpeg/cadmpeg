@@ -59,6 +59,15 @@ impl LineEnding {
             Self::None => "none",
         }
     }
+
+    pub(crate) fn bytes(self) -> &'static [u8] {
+        match self {
+            Self::Lf => b"\n",
+            Self::CrLf => b"\r\n",
+            Self::Cr => b"\r",
+            Self::None => b"",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -68,6 +77,12 @@ pub(crate) struct PhysicalLine {
     ending: LineEnding,
     pub(crate) section: Option<Section>,
     pub(crate) sequence: Option<u32>,
+}
+
+impl PhysicalLine {
+    pub(crate) fn line_ending(&self) -> &'static [u8] {
+        self.ending.bytes()
+    }
 }
 
 #[derive(Debug, Clone)]

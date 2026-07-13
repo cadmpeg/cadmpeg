@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_ir::codec::{Codec, Confidence};
+use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use std::fmt::Write as _;
 use std::io::Cursor;
 
@@ -105,6 +105,17 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
 
 #[test]
 fn inspect_reports_directory_entity_and_form_census() {
+    let bytes = point_file();
+
+    let summary = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+
+    assert!(summary.notes.contains(&"entities=1".into()));
+    assert!(summary.notes.contains(&"entity.116.form.0=1".into()));
+    assert!(summary.notes.contains(&"parameter_records=1".into()));
+    assert!(summary.notes.contains(&"parameter_tokens=4".into()));
+}
+
+fn point_file() -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -123,13 +134,7 @@ fn inspect_reports_directory_entity_and_form_census() {
         b'T',
         1,
     ));
-
-    let summary = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
-
-    assert!(summary.notes.contains(&"entities=1".into()));
-    assert!(summary.notes.contains(&"entity.116.form.0=1".into()));
-    assert!(summary.notes.contains(&"parameter_records=1".into()));
-    assert!(summary.notes.contains(&"parameter_tokens=4".into()));
+    bytes
 }
 
 #[test]
@@ -143,4 +148,68 @@ fn inspect_rejects_terminate_count_mismatch() {
         error.to_string(),
         "malformed container: IGES Terminate count for global is 2, actual 1"
     );
+}
+
+#[test]
+fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
+    let bytes = point_file();
+    let source_length = u64::try_from(bytes.len()).unwrap();
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.source.as_ref().unwrap().format, "iges");
+    assert_eq!(result.ir.byte_ledger.source_length, source_length);
+    assert_eq!(result.ir.byte_ledger.spans.first().unwrap().start, 0);
+    assert_eq!(
+        result.ir.byte_ledger.spans.last().unwrap().end,
+        source_length
+    );
+    let native = result.ir.native.namespace("iges").unwrap();
+    assert_eq!(native.version, 1);
+    assert_eq!(native.arenas["cards"].len(), 7);
+    assert_eq!(native.arenas["entities"].len(), 1);
+    assert_eq!(native.arenas["entities"][0].id, "iges:entity:directory#1");
+    assert!(!result.report.geometry_transferred);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message == "IGES entity type 116 form 0 retained without neutral projection"
+    }));
+    assert!(cadmpeg_ir::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn inspect_preserves_transform_cycles_as_named_reference_states() {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    bytes.extend(directory_card(
+        ["124", "1", "0", "0", "0", "0", "3", "0", "00000000"],
+        1,
+    ));
+    bytes.extend(directory_card(
+        ["124", "0", "0", "1", "0", "", "", "XFORM", "1"],
+        2,
+    ));
+    bytes.extend(directory_card(
+        ["124", "2", "0", "0", "0", "0", "1", "0", "00000000"],
+        3,
+    ));
+    bytes.extend(directory_card(
+        ["124", "0", "0", "1", "0", "", "", "XFORM", "2"],
+        4,
+    ));
+    let matrix = b"124,1.,0.,0.,0.,1.,0.,0.,0.,1.,0.,0.,0.;";
+    bytes.extend(parameter_card(matrix, 1, 1));
+    bytes.extend(parameter_card(matrix, 3, 2));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
+        b'T',
+        1,
+    ));
+
+    let summary = IgesCodec.inspect(&mut Cursor::new(bytes)).unwrap();
+
+    assert!(summary.notes.contains(&"references.cyclic=2".into()));
 }

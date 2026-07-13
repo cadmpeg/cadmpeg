@@ -4,7 +4,10 @@
 mod card;
 mod directory;
 mod global;
+mod graph;
+mod native;
 mod parameter;
+mod reader;
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
@@ -28,19 +31,21 @@ impl Codec for IgesCodec {
         let global = global::parse(&scan)?;
         let directory = directory::parse(&scan)?;
         let parameters = parameter::assemble(&scan, &directory, &global)?;
+        let references = graph::build(&directory);
         let mut summary = card::summarize(&scan);
         summary.notes.extend(global.summary_notes());
         summary.notes.extend(directory::summary_notes(&directory));
         summary.notes.extend(parameter::summary_notes(&parameters));
+        summary.notes.extend(graph::summary_notes(&references));
         Ok(summary)
     }
 
     fn decode(
         &self,
-        _reader: &mut dyn ReadSeek,
-        _options: &DecodeOptions,
+        reader: &mut dyn ReadSeek,
+        options: &DecodeOptions,
     ) -> Result<DecodeResult, CodecError> {
-        Err(CodecError::NotImplemented("IGES decode".into()))
+        reader::decode(reader, *options)
     }
 }
 
