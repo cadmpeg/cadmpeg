@@ -218,22 +218,95 @@ pub fn project_configurations(
     projected
 }
 
-/// Project document-owned user parameters into the neutral parameter arena.
-/// Owned dimension and feature-input records remain native until their indexed
-/// owner records have neutral constraint or feature identities.
-pub fn project_user_parameters(
+/// Project parameter scopes and their document- or scope-owned parameters into
+/// the neutral construction history.
+pub fn project_parameter_design(
     native: &[DesignParameter],
-) -> Vec<cadmpeg_ir::features::DesignParameter> {
+    owners: &[DesignParameterOwner],
+    scopes: &[DesignParameterScope],
+) -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    Vec<cadmpeg_ir::features::DesignParameter>,
+) {
     use cadmpeg_ir::features::{
-        Angle, DesignParameter as NeutralParameter, Length, ParameterId, ParameterValue,
+        Angle, DesignParameter as NeutralParameter, DimensionDisplay, Feature, FeatureDefinition,
+        FeatureId, Length, ParameterId, ParameterValue, SketchSpace,
     };
     use std::collections::BTreeMap;
 
+    let scope_ids = scopes
+        .iter()
+        .map(|scope| {
+            (
+                scope.record_index,
+                FeatureId(format!("f3d:model:feature#scope-{}", scope.record_index)),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let owners_by_index = owners
+        .iter()
+        .map(|owner| (owner.record_index, owner))
+        .collect::<HashMap<_, _>>();
+    let mut features = scopes
+        .iter()
+        .map(|scope| {
+            let parameters = owners
+                .iter()
+                .filter(|owner| owner.scope_record_index == scope.record_index)
+                .filter_map(|owner| {
+                    native
+                        .iter()
+                        .find(|parameter| parameter.record_index == owner.parameter_record_index)
+                        .map(|parameter| {
+                            (
+                                owner.local_ordinal,
+                                parameter.name.clone(),
+                                parameter.expression.clone(),
+                            )
+                        })
+                })
+                .collect::<Vec<_>>();
+            let definition = if scope.kind == "Sketch" {
+                FeatureDefinition::Sketch {
+                    space: SketchSpace::Planar,
+                    sketch: None,
+                }
+            } else {
+                FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, name, expression)| (name.clone(), expression.clone()))
+                        .collect(),
+                    properties: BTreeMap::new(),
+                }
+            };
+            Feature {
+                id: scope_ids[&scope.record_index].clone(),
+                ordinal: scope.byte_offset,
+                name: None,
+                suppressed: false,
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: Some(scope.kind.clone()),
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition,
+                native_ref: Some(scope.id.clone()),
+            }
+        })
+        .collect::<Vec<_>>();
+    features.sort_by_key(|feature| feature.ordinal);
+
     let mut parameters = native
         .iter()
-        .filter(|parameter| parameter.kind == DesignParameterKind::User)
         .map(|parameter| {
             let mut properties = BTreeMap::new();
+            if parameter.kind != DesignParameterKind::User {
+                properties.insert("source_kind".into(), parameter.source_kind.clone());
+            }
             let value = match parameter.unit.as_deref() {
                 Some("mm") => Some(ParameterValue::Length(Length(
                     parameter.evaluated_value * 10.0,
@@ -247,11 +320,24 @@ pub fn project_user_parameters(
             };
             NeutralParameter {
                 id: ParameterId(format!("f3d:model:parameter#{}", parameter.record_index)),
-                owner: None,
-                ordinal: parameter.source_ordinal,
+                owner: parameter
+                    .owner_record_index
+                    .and_then(|owner| owners_by_index.get(&owner))
+                    .and_then(|owner| scope_ids.get(&owner.scope_record_index))
+                    .cloned(),
+                ordinal: parameter
+                    .owner_record_index
+                    .and_then(|owner| owners_by_index.get(&owner))
+                    .map_or(parameter.source_ordinal, |owner| owner.local_ordinal),
                 name: parameter.name.clone(),
                 expression: parameter.expression.clone(),
-                display: None,
+                display: if parameter.source_kind.contains("Diameter Dimension") {
+                    Some(DimensionDisplay::Diameter)
+                } else if parameter.source_kind.contains("Radius Dimension") {
+                    Some(DimensionDisplay::Radius)
+                } else {
+                    None
+                },
                 value,
                 dependencies: Vec::new(),
                 properties,
@@ -276,7 +362,7 @@ pub fn project_user_parameters(
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
             .collect();
     }
-    parameters
+    (features, parameters)
 }
 
 fn expression_identifiers(expression: &str) -> impl Iterator<Item = String> + '_ {
@@ -2186,10 +2272,10 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 mod relation_tests {
     use super::{
         next_indexed_record_offset, parse_design_parameter, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_relation, project_user_parameters,
+        parse_parameter_scope, parse_sketch_relation, project_parameter_design,
     };
-    use crate::records::{DesignParameterKind, DesignRecordHeader};
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use crate::records::{DesignParameterKind, DesignParameterScope, DesignRecordHeader};
+    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use std::collections::HashSet;
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
@@ -2391,7 +2477,8 @@ mod relation_tests {
         half.record_index = 21;
         half.source_ordinal = 5;
 
-        let projected = project_user_parameters(&[half, width]);
+        let (features, projected) = project_parameter_design(&[half, width], &[], &[]);
+        assert!(features.is_empty());
         assert_eq!(projected[0].name, "Width");
         assert_eq!(projected[0].owner, None);
         assert_eq!(
@@ -2402,6 +2489,51 @@ mod relation_tests {
         assert_eq!(
             projected[1].native_ref.as_deref(),
             Some("f3d:native:parameter#half")
+        );
+    }
+
+    #[test]
+    fn owned_parameter_projects_under_its_real_scope_feature() {
+        let mut parameter = parse_design_parameter(&parameter_record(
+            Some(44),
+            "60 mm",
+            "AlongDistance",
+            Some("mm"),
+            "d12",
+            6.0,
+        ))
+        .unwrap();
+        parameter.id = "f3d:native:parameter#45".into();
+        parameter.record_index = 45;
+        let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+        owner.id = "f3d:native:parameter-owner#44".into();
+        let scope = DesignParameterScope {
+            id: "f3d:native:parameter-scope#12".into(),
+            byte_offset: 100,
+            class_tag: "301".into(),
+            record_index: 12,
+            frame_length: 200,
+            kind: "Extrude".into(),
+            kind_offset: 210,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 300,
+        };
+
+        let (features, parameters) = project_parameter_design(&[parameter], &[owner], &[scope]);
+        assert_eq!(features.len(), 1);
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Native { kind, parameters, .. }
+                if kind == "Extrude" && parameters.get("d12").map(String::as_str) == Some("60 mm")
+        ));
+        assert_eq!(parameters[0].owner.as_ref(), Some(&features[0].id));
+        assert_eq!(parameters[0].ordinal, 2);
+        assert_eq!(
+            parameters[0]
+                .properties
+                .get("source_kind")
+                .map(String::as_str),
+            Some("AlongDistance")
         );
     }
 
