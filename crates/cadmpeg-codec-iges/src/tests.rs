@@ -150,16 +150,26 @@ fn point_file() -> Vec<u8> {
     bytes
 }
 
-fn line_file() -> Vec<u8> {
+fn line_file(form: i64) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
     bytes.extend(directory_card(
-        ["110", "1", "0", "0", "4", "0", "0", "0", "00000000"],
+        [
+            "110",
+            "1",
+            "0",
+            "0",
+            "4",
+            "0",
+            "0",
+            "0",
+            if form == 0 { "00000000" } else { "00000600" },
+        ],
         1,
     ));
     bytes.extend(directory_card(
-        ["110", "0", "0", "1", "0", "", "", "LINE", "0"],
+        ["110", "0", "0", "1", &form.to_string(), "", "", "LINE", "0"],
         2,
     ));
     bytes.extend(parameter_card(b"110,1,2,3,4,6,3;", 1, 1));
@@ -471,7 +481,7 @@ fn decode_projects_a_counterclockwise_circular_arc() {
 #[test]
 fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     let result = IgesCodec
-        .decode(&mut Cursor::new(line_file()), &DecodeOptions::default())
+        .decode(&mut Cursor::new(line_file(0)), &DecodeOptions::default())
         .unwrap();
 
     assert_eq!(result.ir.model.curves.len(), 1);
@@ -498,6 +508,32 @@ fn decode_projects_a_line_as_a_normalized_bounded_wire_edge() {
     assert!(result.report.losses.is_empty());
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_semi_bounded_and_unbounded_line_domains_natively() {
+    for form in [1, 2] {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(line_file(form)), &DecodeOptions::default())
+            .unwrap();
+
+        assert_eq!(result.ir.model.curves.len(), 1);
+        assert!(result.ir.model.edges.is_empty());
+        assert!(result.ir.model.bodies.is_empty());
+        assert_eq!(
+            result.ir.model.curves[0]
+                .source_object
+                .as_ref()
+                .unwrap()
+                .object_id,
+            "D1"
+        );
+        assert!(result.report.losses.is_empty());
+        let native = result.ir.native.namespace("iges").unwrap();
+        assert_eq!(native.arenas["entities"][0].fields["form"], form);
+        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
 }
 
 fn nested_transformed_point_file() -> Vec<u8> {

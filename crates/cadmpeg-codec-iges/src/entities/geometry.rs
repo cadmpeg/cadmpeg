@@ -411,7 +411,7 @@ pub(crate) fn project_geometry(
     }
     for entry in directory
         .iter()
-        .filter(|entry| entry.entity_type == 110 && entry.form == 0)
+        .filter(|entry| entry.entity_type == 110 && (0..=2).contains(&entry.form))
     {
         handled.insert(entry.sequence);
         let Some(factor) = global.length_factor_mm() else {
@@ -462,11 +462,23 @@ pub(crate) fn project_geometry(
             continue;
         }
         let stem = format!("D{}", entry.sequence);
+        let curve = CurveId(format!("iges:model:curve#{stem}"));
+        ir.model.curves.push(Curve {
+            id: curve.clone(),
+            geometry: CurveGeometry::Line {
+                origin: start,
+                direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+            },
+            source_object: Some(source_object(entry)),
+        });
+        if entry.form != 0 {
+            decoded.insert(entry.sequence);
+            continue;
+        }
         let start_point = PointId(format!("iges:model:point#{stem}-start"));
         let end_point = PointId(format!("iges:model:point#{stem}-end"));
         let start_vertex = VertexId(format!("iges:model:vertex#{stem}-start"));
         let end_vertex = VertexId(format!("iges:model:vertex#{stem}-end"));
-        let curve = CurveId(format!("iges:model:curve#{stem}"));
         let edge = EdgeId(format!("iges:model:edge#{stem}"));
         ir.model.points.extend([
             Point {
@@ -490,14 +502,6 @@ pub(crate) fn project_geometry(
                 tolerance: None,
             },
         ]);
-        ir.model.curves.push(Curve {
-            id: curve.clone(),
-            geometry: CurveGeometry::Line {
-                origin: start,
-                direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
-            },
-            source_object: Some(source_object(entry)),
-        });
         ir.model.edges.push(Edge {
             id: edge.clone(),
             curve: Some(curve),
