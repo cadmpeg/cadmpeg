@@ -2700,6 +2700,30 @@ fn merged_deltas_uses_first_full_or_tombstone_snapshot() {
 }
 
 #[test]
+fn merged_deltas_stops_after_current_shell_transaction() {
+    let partition = topology_partition_stream();
+    let mut current_point = status_framed_deltas_point_stream();
+    current_point[2..4].copy_from_slice(&11u16.to_be_bytes());
+    let shell_stream = deltas_shell_partition_stream();
+    let shell_at = shell_stream
+        .windows(2)
+        .position(|window| window == 13u16.to_be_bytes())
+        .expect("deltas shell");
+    let shell = &shell_stream[shell_at..];
+    let mut stale_point = status_framed_deltas_point_stream();
+    stale_point[2..4].copy_from_slice(&99u16.to_be_bytes());
+
+    let mut deltas = current_point;
+    deltas.extend_from_slice(shell);
+    deltas.extend_from_slice(shell);
+    deltas.extend_from_slice(&stale_point);
+
+    let merged = crate::deltas::merge_full_records(&partition, &deltas);
+    assert!(crate::topology::Graph::parse(&merged).get(29, 11).is_some());
+    assert!(crate::topology::Graph::parse(&merged).get(29, 99).is_none());
+}
+
+#[test]
 fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();

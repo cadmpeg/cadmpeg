@@ -383,15 +383,16 @@ live = partition ∪ delta_full − tombstones
 - A full record with `xmt ∉ partition` (high range) adds a new entity.
 - The deltas stream adds entities through explicit high-range records.
 
-BODY (`00 0c`, xmt=3) records delimit snapshots. `node_id` is a monotonic per-body revision counter.
+BODY (`00 0c`, xmt=3) records delimit body revisions. Body-shape SHELL records delimit reverse-ordered topology transactions. The current transaction ends at the second valid SHELL snapshot when present; a stream with zero or one valid SHELL is one transaction. Records after that boundary belong to historical transactions. `node_id` is a monotonic per-body revision counter.
 
 `RMFastLoad` stores an object-id set alongside the partition and deltas body records.
 
 A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. When its
 `(type, xmt)` key matches a partition entity, it deletes that entity. Full
-deltas records with the same key replace the partition record. Repeated events
-for one key are reverse snapshots: the first full record or tombstone is the
-current event and takes precedence over later historical states.
+deltas records with the same key replace the partition record. Within the
+current transaction, repeated events for one key are reverse snapshots: the
+first full record or tombstone is the current event and takes precedence over
+later states.
 
 ---
 

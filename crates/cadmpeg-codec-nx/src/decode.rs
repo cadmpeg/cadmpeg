@@ -1831,7 +1831,8 @@ fn build_geometry_report(
             message: format!(
                 "{} Parasolid deltas stream(s) were paired by adjacency and equal schema. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE full records and compact \
-                 tombstones were applied using the first current snapshot for each key. Tombstones \
+                 tombstones were applied from the current shell-delimited transaction using its \
+                 first snapshot for each key. Tombstones \
                  without an exact partition key remain unresolved.",
                 scan.count(StreamKind::Deltas)
             ),

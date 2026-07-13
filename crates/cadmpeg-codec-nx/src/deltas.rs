@@ -303,8 +303,29 @@ pub fn points(stream: &[u8]) -> Vec<Point> {
 /// records here.
 pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     let census = walk(deltas);
+    let snapshot_end = census
+        .records
+        .iter()
+        .filter(|record| {
+            record.kind == 13
+                && record.references.len() == 8
+                && record.references[0] == 1
+                && record.references[1] > 1
+                && record.references[2] == 1
+                && record.references[3] > 1
+                && record.references[4] == 1
+                && record.references[5] == 1
+                && record.references[6] > 1
+                && (record.references[7] == 1 || record.references[7] == record.references[3])
+        })
+        .nth(1)
+        .map_or(usize::MAX, |record| record.end);
     let mut replacements = BTreeMap::<(u8, u32), &Record>::new();
-    for record in &census.records {
+    for record in census
+        .records
+        .iter()
+        .filter(|record| record.offset < snapshot_end)
+    {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
@@ -318,7 +339,11 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     }
 
     let mut tombstones = BTreeMap::new();
-    for tombstone in &census.tombstones {
+    for tombstone in census
+        .tombstones
+        .iter()
+        .filter(|tombstone| tombstone.offset < snapshot_end)
+    {
         if let Ok(kind) = u8::try_from(tombstone.kind) {
             tombstones.entry((kind, tombstone.xmt)).or_insert(tombstone);
         }
