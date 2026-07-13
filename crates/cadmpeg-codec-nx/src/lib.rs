@@ -52,10 +52,11 @@
 //! files may contain only references to external child parts.
 //!
 //! Design history, assembly occurrence placement, materials, appearances,
-//! attributes, tessellation, and `.prt` writing are not supported. The public
-//! submodules expose the lower-level container, stream, geometry, NURBS,
-//! intersection, and topology decoders; applications that need a complete IR
-//! entry point should use [`NxCodec`].
+//! entity-owned attributes, tessellation, and `.prt` writing are not supported.
+//! Part attributes transfer as document attributes. The public submodules
+//! expose the lower-level container, stream, geometry, NURBS, intersection, and
+//! topology decoders; applications that need a complete IR entry point should
+//! use [`NxCodec`].
 
 pub mod container;
 pub mod decode;

@@ -6,7 +6,8 @@ extracts zlib-compressed Parasolid neutral-binary streams from the canonical
 part payload, and decodes supported geometry and topology. It does not read
 Creo files, which also use the `.prt` extension.
 
-Support level: [L2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder) on the cadmpeg support ladder.
+Support level: [L3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
+for the single active body-image band and L2 for multi-partition body history.
 
 ```sh
 cargo add cadmpeg-codec-nx cadmpeg-ir
@@ -55,16 +56,17 @@ edge, and vertex topology when its fixed-record references resolve. Geometry
 that cannot be attached remains available through derived free topology.
 
 Partition and adjacent equal-schema deltas streams are scanned together.
-Exactly keyed full records and tombstones use the first current snapshot for
+Exactly keyed full records and tombstones use the last event for
 each key. Unmatched tombstones remain unresolved. Multiple partitions are
 emitted without reconstructing their feature-history Boolean composition.
 Assembly files can contain only external child-part references and therefore
 produce no inline geometry.
 
-Procedural blend surfaces, NX design history, assembly occurrence placement,
-materials, appearances, attributes, tessellation, and native `.prt` writing
-are not supported. See the [format support matrix][support] for current
-coverage and the [format notes][spec] for byte semantics.
+NX design history, assembly occurrence placement, materials, appearances,
+entity-owned attributes, tessellation, and native `.prt` writing are not
+supported. Part attributes transfer as document attributes. See the [format
+support matrix][support] for current coverage and the [format notes][spec] for
+byte semantics.
 
 The crate also exposes lower-level container, stream, geometry, NURBS, and
 topology modules for tools that need inspection or partial decoding. Most
