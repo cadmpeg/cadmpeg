@@ -415,6 +415,7 @@ mod tests {
             axis,
             ref_direction,
             radius,
+            ratio,
             half_angle,
         }) = carrier.geometry
         else {
@@ -424,6 +425,7 @@ mod tests {
         assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
         assert_eq!(ref_direction, Vector3::new(-1.0, 0.0, 0.0));
         assert!((radius - 1.5).abs() < 1e-12);
+        assert_eq!(ratio, 1.0);
         assert!((half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
     }
 

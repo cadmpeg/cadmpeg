@@ -2349,11 +2349,12 @@ fn decode_replaces_partition_cone_from_status_framed_deltas() {
 
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
-        SurfaceGeometry::Cone { origin, axis, ref_direction, radius, half_angle }
+        SurfaceGeometry::Cone { origin, axis, ref_direction, radius, ratio, half_angle }
             if origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
                 && axis == Vector3::new(0.0, 1.0, 0.0)
                 && ref_direction == Vector3::new(1.0, 0.0, 0.0)
                 && radius == 25.0
+                && ratio == 1.0
                 && (half_angle - std::f64::consts::FRAC_PI_6).abs() < 1e-12
     )));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
@@ -2429,7 +2430,7 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert_eq!(nurbs.control_points[0].x, 0.0);
     assert_eq!(nurbs.control_points[1].x, 10.0);
     assert_eq!(procedural.cache_fit_tolerance, Some(0.01));
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &procedural.definition
     else {
         panic!("typed surface intersection");
@@ -2468,7 +2469,7 @@ fn decode_emits_both_intersection_support_pcurves() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir.model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
@@ -2486,7 +2487,7 @@ fn decode_resolves_intersection_second_support_through_blend_bound() {
     let mut cur = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context } =
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir.model.procedural_curves[0].definition
     else {
         panic!("typed intersection");
