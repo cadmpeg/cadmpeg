@@ -44,8 +44,8 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
     crate::writer_transform::bake(&mut normalized)?;
     sort_arenas(&mut normalized);
     let ir = &normalized;
-    crate::resolved_features::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::prepare_features_for_write(ir, &mut native)?;
+    crate::resolved_features::prepare_sketches_for_write(ir, &mut native)?;
     crate::history::prepare_parameters_for_write(ir, &mut native)?;
     crate::history::prepare_configurations_for_write(ir, &mut native)?;
     let validation = cadmpeg_ir::validate::validate(ir, Vec::new());

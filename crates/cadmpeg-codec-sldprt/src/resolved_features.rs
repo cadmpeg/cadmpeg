@@ -3237,11 +3237,9 @@ pub fn prepare_sketches_for_write(
             return Ok(());
         }
         validate_source_less_constraints(ir)?;
-        let generated = source_less_lanes(ir)?;
-        native
-            .get_or_insert_with(crate::native::SldprtNative::default)
-            .feature_input_lanes
-            .extend(generated);
+        let native = native.get_or_insert_with(crate::native::SldprtNative::default);
+        let generated = source_less_lanes(ir, native)?;
+        native.feature_input_lanes.extend(generated);
         return Ok(());
     }
     let neutral_changed = baseline_neutral.is_none_or(|hash| hash != &current_neutral);
@@ -3341,6 +3339,7 @@ fn validate_source_less_constraints(
 
 fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
+    native: &crate::native::SldprtNative,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_ir::codec::CodecError> {
     let mut lanes = Vec::<FeatureInputLane>::new();
     for sketch in &ir.model.sketches {
@@ -3367,6 +3366,51 @@ fn source_less_lanes(
             });
             lanes.last_mut().expect("lane was inserted")
         };
+        let owner = ir.model.features.iter().find(|feature| {
+            matches!(
+                &feature.definition,
+                FeatureDefinition::Sketch {
+                    sketch: Some(candidate),
+                    ..
+                } if candidate == &sketch.id
+            )
+        });
+        if let Some(owner) = owner {
+            let owner_record_id = owner
+                .native_ref
+                .clone()
+                .unwrap_or_else(|| format!("sldprt:generated:feature#{}", owner.id.0));
+            let owner_record = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|feature| feature.id == owner_record_id)
+                .ok_or_else(|| {
+                    cadmpeg_ir::codec::CodecError::Malformed(format!(
+                        "source-less SLDPRT sketch {} has no native feature record",
+                        sketch.id.0
+                    ))
+                })?;
+            let object_id = owner_record
+                .source_id
+                .as_deref()
+                .and_then(|source_id| source_id.parse::<u32>().ok())
+                .ok_or_else(|| {
+                    cadmpeg_ir::codec::CodecError::Malformed(format!(
+                        "source-less SLDPRT sketch {} has no numeric feature source id",
+                        sketch.id.0
+                    ))
+                })?;
+            append_generated_object_name(
+                &mut lane.native_payload,
+                if owner_record.name.is_empty() {
+                    sketch.name.as_deref().unwrap_or(&sketch.id.0)
+                } else {
+                    owner_record.name.as_str()
+                },
+                object_id,
+            )?;
+        }
         let sketch_ir = sketch_brep(ir, sketch)?;
         let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
         lane.native_payload
@@ -3376,7 +3420,36 @@ fn source_less_lanes(
                 sketch.name.as_deref().unwrap_or(&sketch.id.0),
             ));
     }
+    for lane in &mut lanes {
+        lane.names = object_names(&lane.native_payload, &lane.id);
+    }
     Ok(lanes)
+}
+
+fn append_generated_object_name(
+    payload: &mut Vec<u8>,
+    name: &str,
+    object_id: u32,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let units = name.encode_utf16().collect::<Vec<_>>();
+    let length = u8::try_from(units.len()).map_err(|_| {
+        cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT generated feature name exceeds 255 UTF-16 code units".into(),
+        )
+    })?;
+    if length == 0 || length > 128 {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT generated feature name must contain 1 to 128 UTF-16 code units".into(),
+        ));
+    }
+    payload.extend_from_slice(NAME_MARKER);
+    payload.push(length);
+    for unit in units {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(&object_id.to_le_bytes());
+    Ok(())
 }
 
 fn sketch_brep(

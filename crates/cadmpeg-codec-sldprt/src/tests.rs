@@ -2296,7 +2296,7 @@ fn encoder_writes_source_less_curved_sketches() {
 }
 
 #[test]
-fn encoder_binds_multiple_source_less_sketches_by_name() {
+fn encoder_binds_multiple_source_less_sketches_by_object_id() {
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
@@ -2308,7 +2308,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
         .edges
         .iter_mut()
         .for_each(|edge| edge.param_range = None);
-    for (ordinal, name) in ["Profile A", "Profile B"].into_iter().enumerate() {
+    for (ordinal, name) in ["Profile", "Profile"].into_iter().enumerate() {
         let sketch_id = SketchId(format!("synthetic:test:sketch#named-{ordinal}"));
         ir.model.sketches.push(Sketch {
             id: sketch_id.clone(),
@@ -2365,7 +2365,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             .iter()
             .filter_map(|sketch| sketch.name.as_deref())
             .collect::<Vec<_>>(),
-        ["Profile A", "Profile B"]
+        ["Profile", "Profile"]
     );
     let bound = decoded
         .ir
