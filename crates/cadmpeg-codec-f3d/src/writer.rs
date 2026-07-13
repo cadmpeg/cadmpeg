@@ -15182,104 +15182,47 @@ fn patch_surface_offset_definition(
     let record_bytes = bytes
         .get(record.offset..end)
         .ok_or_else(|| CodecError::Malformed("surface-offset record is truncated".into()))?;
-    if !record_bytes
-        .windows(b"off_surf_int_cur".len())
-        .any(|window| window == b"off_surf_int_cur")
-    {
-        return Err(CodecError::Malformed(
-            "record is not an off_surf_int_cur".into(),
-        ));
-    }
-    let mut cache_markers = [b"\x0d\x04nubs".as_slice(), b"\x0d\x05nurbs".as_slice()]
-        .into_iter()
-        .flat_map(|marker| {
-            record_bytes
-                .windows(marker.len())
-                .enumerate()
-                .filter_map(move |(position, window)| (window == marker).then_some(position))
-        })
-        .collect::<Vec<_>>();
-    cache_markers.sort_unstable();
-    cache_markers.dedup();
-    let solved = *cache_markers
-        .last()
-        .ok_or_else(|| CodecError::Malformed("surface-offset solved cache is missing".into()))?;
-    let base = *cache_markers
-        .get(cache_markers.len().saturating_sub(2))
-        .ok_or_else(|| CodecError::Malformed("surface-offset base curve is missing".into()))?;
-    let all_offsets = sab::payload_token_offsets(bytes, record, active_ref_width(bytes), 0x06)
-        .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    let before_base = all_offsets
-        .iter()
-        .copied()
-        .filter(|offset| *offset < record.offset + base)
-        .collect::<Vec<_>>();
-    let support_ranges = before_base
-        .get(before_base.len().saturating_sub(4)..)
+    let layout = crate::nurbs::surface_offset_patch_layout(record_bytes, active_ref_width(bytes))
         .ok_or_else(|| {
-            CodecError::Malformed("surface-offset support ranges are incomplete".into())
-        })?;
-    let context_value_count = 2usize
-        .checked_add(context.discontinuities.iter().map(Vec::len).sum::<usize>())
-        .ok_or_else(|| CodecError::Malformed("surface-offset context is too large".into()))?;
-    let context_end = before_base.len().saturating_sub(4);
-    let context_offsets = before_base
-        .get(context_end.saturating_sub(context_value_count)..context_end)
-        .ok_or_else(|| CodecError::Malformed("surface-offset context is incomplete".into()))?;
-    if context_offsets.len() != context_value_count {
+        CodecError::Malformed("surface-offset construction is malformed".into())
+    })?;
+    if layout
+        .discontinuities
+        .iter()
+        .map(Vec::len)
+        .ne(context.discontinuities.iter().map(Vec::len))
+    {
         return Err(CodecError::Malformed(
             "surface-offset context is incomplete".into(),
         ));
     }
-    for (offset, value) in context_offsets.iter().zip(
-        context
-            .parameter_range
-            .into_iter()
-            .chain(context.discontinuities.iter().flatten().copied()),
-    ) {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
-    }
-    let first_range = *support_ranges
-        .first()
-        .ok_or_else(|| CodecError::Malformed("surface-offset support ranges are missing".into()))?;
-    let flag_offset = first_range.checked_sub(1).ok_or_else(|| {
-        CodecError::Malformed("surface-offset discontinuity flag is missing".into())
-    })?;
-    if !matches!(bytes.get(flag_offset), Some(0x0a | 0x0b)) {
-        return Err(CodecError::Malformed(
-            "surface-offset discontinuity flag is malformed".into(),
-        ));
-    }
-    bytes[flag_offset] = native_bool(*discontinuity_flag);
-    for (offset, value) in support_ranges
-        .iter()
-        .zip(base_u_range.iter().chain(base_v_range.iter()))
-    {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
-    }
-    let boundary = record.offset + solved;
-    let offsets = all_offsets
+    for (offset, value) in layout
+        .parameter_range
         .into_iter()
-        .filter(|offset| *offset < boundary)
-        .collect::<Vec<_>>();
-    let tail_offsets = offsets
-        .get(offsets.len().saturating_sub(5)..)
-        .ok_or_else(|| CodecError::Malformed("surface-offset scalar tail is incomplete".into()))?;
-    if tail_offsets.len() != 5 {
-        return Err(CodecError::Malformed(
-            "surface-offset scalar tail is incomplete".into(),
-        ));
-    }
-    for (offset, value) in
-        tail_offsets.iter().zip(
-            base_range
-                .iter()
-                .copied()
-                .chain([distance / 10.0, *shift, *scale]),
+        .chain(layout.discontinuities.into_iter().flatten())
+        .chain(layout.base_u_range)
+        .chain(layout.base_v_range)
+        .chain(layout.base_range)
+        .chain([layout.distance, layout.shift, layout.scale])
+        .zip(
+            context
+                .parameter_range
+                .into_iter()
+                .chain(context.discontinuities.iter().flatten().copied())
+                .chain(base_u_range.iter().copied())
+                .chain(base_v_range.iter().copied())
+                .chain(
+                    base_range
+                        .iter()
+                        .copied()
+                        .chain([distance / 10.0, *shift, *scale]),
+                ),
         )
     {
-        bytes[*offset + 1..*offset + 9].copy_from_slice(&value.to_le_bytes());
+        let offset = record.offset + offset;
+        bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
     }
+    bytes[record.offset + layout.discontinuity_flag] = native_bool(*discontinuity_flag);
     Ok(())
 }
 

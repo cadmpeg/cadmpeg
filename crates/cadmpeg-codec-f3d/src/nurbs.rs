@@ -4856,6 +4856,70 @@ fn decode_embedded_surface_offset(bytes: &[u8], int_width: usize) -> Option<Embe
     })
 }
 
+/// Writable scalar fields in an `off_surf_int_cur` subtype.
+pub(crate) struct SurfaceOffsetPatchLayout {
+    pub(crate) parameter_range: [usize; 2],
+    pub(crate) discontinuities: [Vec<usize>; 3],
+    pub(crate) discontinuity_flag: usize,
+    pub(crate) base_u_range: [usize; 2],
+    pub(crate) base_v_range: [usize; 2],
+    pub(crate) base_range: [usize; 2],
+    pub(crate) distance: usize,
+    pub(crate) shift: usize,
+    pub(crate) scale: usize,
+}
+
+/// Locate surface-offset fields by walking supports and the base curve.
+pub(crate) fn surface_offset_patch_layout(
+    bytes: &[u8],
+    int_width: usize,
+) -> Option<SurfaceOffsetPatchLayout> {
+    let (marker, name_len) = find_intcurve_subtype(bytes, b"off_surf_int_cur")?;
+    let mut position = marker + name_len + 3;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    decode_embedded_surface(bytes, &mut position, int_width)?;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    position = decode_pcurve_block_with_end(bytes, position, int_width)?.1;
+    let parameter_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let discontinuities = [
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+        take_float_array_payloads(bytes, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = position;
+    take_bool(bytes, &mut position)?;
+    let base_u_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let base_v_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    position = decode_curve_block(bytes, position, int_width)?.end;
+    let base_range = [
+        take_double_payload(bytes, &mut position)?,
+        take_double_payload(bytes, &mut position)?,
+    ];
+    let distance = take_double_payload(bytes, &mut position)?;
+    let shift = take_double_payload(bytes, &mut position)?;
+    let scale = take_double_payload(bytes, &mut position)?;
+    Some(SurfaceOffsetPatchLayout {
+        parameter_range,
+        discontinuities,
+        discontinuity_flag,
+        base_u_range,
+        base_v_range,
+        base_range,
+        distance,
+        shift,
+        scale,
+    })
+}
+
 fn decode_embedded_silhouette(bytes: &[u8], int_width: usize) -> Option<EmbeddedSilhouette> {
     use cadmpeg_ir::geometry::SilhouetteKind;
     let names = [
@@ -6646,6 +6710,48 @@ mod width_tests {
                 assert_eq!(layout.light_direction, light);
                 assert_eq!(layout.draft_factor.is_some(), name.starts_with("taper"));
             }
+        }
+    }
+
+    #[test]
+    fn surface_offset_layout_walks_both_integer_widths() {
+        for int_width in [4usize, 8] {
+            let name = "off_surf_int_cur";
+            let mut bytes = vec![0x0f, 0x0d, name.len() as u8];
+            bytes.extend_from_slice(name.as_bytes());
+            for _ in 0..2 {
+                bytes.extend_from_slice(&[0x0d, 0x06]);
+                bytes.extend_from_slice(b"spline");
+                bytes.extend_from_slice(&surface_block(int_width));
+            }
+            bytes.extend_from_slice(&pcurve_block(int_width));
+            bytes.extend_from_slice(&pcurve_block(int_width));
+            push_f64(&mut bytes, -2.0);
+            push_f64(&mut bytes, 3.0);
+            for values in [&[0.25][..], &[][..], &[0.5, 0.75][..]] {
+                push_int(&mut bytes, 0x04, values.len() as i64, int_width);
+                for value in values {
+                    push_f64(&mut bytes, *value);
+                }
+            }
+            let flag = bytes.len();
+            bytes.push(0x0a);
+            for value in [-1.0, 1.0, -2.0, 2.0] {
+                push_f64(&mut bytes, value);
+            }
+            bytes.extend_from_slice(&curve_block(int_width));
+            for value in [-3.0, 3.0, 0.5, 0.25, 1.5] {
+                push_f64(&mut bytes, value);
+            }
+
+            let layout = surface_offset_patch_layout(&bytes, int_width)
+                .unwrap_or_else(|| panic!("surface-offset layout at width {int_width}"));
+            assert_eq!(layout.discontinuity_flag, flag);
+            assert_eq!(
+                layout.discontinuities.iter().map(Vec::len).sum::<usize>(),
+                3
+            );
+            assert!(layout.distance < layout.shift && layout.shift < layout.scale);
         }
     }
 }
