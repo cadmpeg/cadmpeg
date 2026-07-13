@@ -14180,20 +14180,30 @@ fn patch_framed_geometry(
             }
         } else if record.head == "straight" {
             if let Some((origin, direction)) = lines.get(&id) {
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x13,
-                    0,
+                let field_indices = match record.name.as_str() {
+                    "straight" => [0, 1],
+                    "straight-curve" => [3, 4],
+                    _ => {
+                        return Err(CodecError::Malformed(format!(
+                            "straight record {} has unsupported carrier name {}",
+                            record.index, record.name
+                        )))
+                    }
+                };
+                let ref_width = active_ref_width(bytes);
+                let fields = [
+                    required_payload_field(bytes, record, ref_width, field_indices[0], 0x13)?,
+                    required_payload_field(bytes, record, ref_width, field_indices[1], 0x14)?,
+                ];
+                for (offset, values) in fields.into_iter().zip([
                     [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0],
-                )?;
-                patch_vec3_token(
-                    bytes,
-                    record,
-                    0x14,
-                    0,
                     [direction.x, direction.y, direction.z],
-                )?;
+                ]) {
+                    for (component, value) in values.into_iter().enumerate() {
+                        let at = offset + 1 + component * 8;
+                        bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                    }
+                }
             }
         } else if record.head == "degenerate_curve" {
             if let Some(point) = degenerate_curves.get(&id) {
