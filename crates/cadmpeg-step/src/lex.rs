@@ -74,6 +74,15 @@ pub fn lex(input: &[u8]) -> Result<Vec<Token>, LexError> {
     let mut tokens = Vec::new();
     while lexer.skip_trivia()? {
         tokens.push(lexer.token()?);
+        if matches!(
+            tokens.last().map(|token| &token.kind),
+            Some(TokenKind::Semicolon)
+        ) && matches!(
+            tokens.get(tokens.len().saturating_sub(2)).map(|token| &token.kind),
+            Some(TokenKind::Name(name)) if name == "SIGNATURE"
+        ) {
+            lexer.skip_signature_payload()?;
+        }
     }
     Ok(tokens)
 }
@@ -84,6 +93,21 @@ struct Lexer<'a> {
 }
 
 impl Lexer<'_> {
+    fn skip_signature_payload(&mut self) -> Result<(), LexError> {
+        let start = self.at;
+        let tail = &self.input[start..];
+        let exchange_end = tail
+            .windows(b"END-ISO-10303-21".len())
+            .position(|window| window == b"END-ISO-10303-21")
+            .ok_or_else(|| self.error(start, "unterminated signature section"))?;
+        let section_end = tail[..exchange_end]
+            .windows(b"ENDSEC".len())
+            .rposition(|window| window == b"ENDSEC")
+            .ok_or_else(|| self.error(start, "unterminated signature section"))?;
+        self.at = start + section_end;
+        Ok(())
+    }
+
     fn skip_trivia(&mut self) -> Result<bool, LexError> {
         loop {
             while self

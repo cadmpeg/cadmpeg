@@ -17,6 +17,6 @@ DATA('AP242');
 #2=EXAMPLE_RECORD(#1);
 ENDSEC;
 SIGNATURE;
-deadbeef
+opaque signature bytes: @%[]{}=deadbeef
 ENDSEC;
 END-ISO-10303-21;

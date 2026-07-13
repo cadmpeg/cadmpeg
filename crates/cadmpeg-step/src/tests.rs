@@ -156,6 +156,9 @@ fn codec_inspects_edition3_sections_and_external_references() {
         references.attributes["external_uris"],
         "https://example.invalid/external-part"
     );
+    let exchange = crate::parse::parse(bytes).expect("parse opaque signature payload");
+    let signature = exchange.signature.expect("signature byte span");
+    assert!(bytes[signature].windows(2).any(|bytes| bytes == b"@%"));
 }
 
 #[test]
