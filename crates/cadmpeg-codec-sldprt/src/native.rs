@@ -591,6 +591,44 @@ impl SldprtNative {
                         )));
                     }
                 }
+                if record.kind
+                    == crate::records::SketchInputKind::Relation(
+                        crate::records::SketchRelationKind::Midpoint,
+                    )
+                {
+                    let linked_kinds = record
+                        .links
+                        .iter()
+                        .filter_map(|link| sketch_entities.get(link.entity_ref.as_str()))
+                        .map(|target| target.kind)
+                        .collect::<Vec<_>>();
+                    let point_count = linked_kinds
+                        .iter()
+                        .filter(|kind| {
+                            matches!(
+                                kind,
+                                crate::records::SketchInputKind::Point
+                                    | crate::records::SketchInputKind::ConstrainedPoint
+                            )
+                        })
+                        .count();
+                    let entity_count = linked_kinds
+                        .iter()
+                        .filter(|kind| {
+                            matches!(
+                                kind,
+                                crate::records::SketchInputKind::LineOrCircle
+                                    | crate::records::SketchInputKind::Arc
+                            )
+                        })
+                        .count();
+                    if linked_kinds.len() != 2 || point_count != 1 || entity_count != 1 {
+                        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                            "midpoint sketch input entity {} has inconsistent linked marker kinds",
+                            record.id
+                        )));
+                    }
+                }
             }
         }
         let mut expected_histories = self.feature_histories.clone();

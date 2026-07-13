@@ -13825,6 +13825,49 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
 }
 
 #[test]
+fn native_store_rejects_midpoint_without_point_and_entity_markers() {
+    let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut native = sldprt_native(&decoded.ir);
+    let entities = &mut native.feature_input_lanes[0].sketch_entities;
+    let owner = entities[0].feature_ref.clone();
+    let point_id = entities[1].id.clone();
+    let second_point_id = entities[2].id.clone();
+    entities[1].feature_ref = owner.clone();
+    entities[1].local_id = Some(7);
+    entities[1].kind = crate::records::SketchInputKind::Point;
+    entities[2].feature_ref = owner;
+    entities[2].local_id = Some(8);
+    entities[2].kind = crate::records::SketchInputKind::ConstrainedPoint;
+    entities[0].kind =
+        crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Midpoint);
+    entities[0].links = vec![
+        crate::records::SketchInputLink {
+            local_id: 7,
+            entity_ref: point_id,
+        },
+        crate::records::SketchInputLink {
+            local_id: 8,
+            entity_ref: second_point_id,
+        },
+    ];
+    entities[0].link_selector = Some(0);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("inconsistent linked marker kinds"));
+}
+
+#[test]
 fn decode_groups_compact_relation_scalar_pair() {
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
 

@@ -1520,8 +1520,8 @@ fn typed_marker_relation_definition(
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
     use crate::records::SketchRelationKind::{
-        Coincident, Collinear, Concentric, Equal, Fixed, Horizontal, HorizontalPoints, Parallel,
-        Perpendicular, Tangent, Vertical, VerticalPoints,
+        Coincident, Collinear, Concentric, Equal, Fixed, Horizontal, HorizontalPoints, Midpoint,
+        Parallel, Perpendicular, Tangent, Vertical, VerticalPoints,
     };
     let SketchInputKind::Relation(kind) = marker.kind else {
         return None;
@@ -1602,8 +1602,38 @@ fn typed_marker_relation_definition(
                 _ => unreachable!("relation kind was filtered above"),
             }
         }
+        Midpoint => {
+            let (point, entity) = linked_midpoint_operands(marker, markers_by_id, loci_by_marker)?;
+            SketchConstraintDefinition::Midpoint { point, entity }
+        }
         _ => return None,
     })
+}
+
+fn linked_midpoint_operands(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<(SketchLocus, SketchEntityId)> {
+    let [first, second] = marker.links.as_slice() else {
+        return None;
+    };
+    let mut point = None;
+    let mut entity = None;
+    for link in [first, second] {
+        let linked_marker = markers_by_id.get(link.entity_ref.as_str())?;
+        let locus = unique_locus(loci_by_marker.get(&link.entity_ref)?)?;
+        match linked_marker.kind {
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint if point.is_none() => {
+                point = Some(locus)
+            }
+            SketchInputKind::LineOrCircle | SketchInputKind::Arc if entity.is_none() => {
+                entity = Some(locus_entity(&locus))
+            }
+            _ => return None,
+        }
+    }
+    Some((point?, entity?))
 }
 
 fn linked_single_loci(
@@ -2234,6 +2264,36 @@ mod profile_join_tests {
             Some(SketchConstraintDefinition::HorizontalPoints {
                 first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
                 second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+            })
+        );
+        let mut entity_marker = marker("entity-marker", Some([0.01, 0.01]));
+        entity_marker.kind = SketchInputKind::LineOrCircle;
+        let mut midpoint = marker("midpoint", None);
+        midpoint.kind = SketchInputKind::Relation(SketchRelationKind::Midpoint);
+        midpoint.links = vec![
+            SketchInputLink {
+                local_id: 3,
+                entity_ref: entity_marker.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: "marker-a".into(),
+            },
+        ];
+        let mut midpoint_loci = joins.clone();
+        midpoint_loci.insert(
+            entity_marker.id.clone(),
+            vec![cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId(
+                "second".into(),
+            ))],
+        );
+        markers.insert(entity_marker.id.as_str(), &entity_marker);
+        markers.insert(midpoint.id.as_str(), &midpoint);
+        assert_eq!(
+            typed_marker_relation_definition(&midpoint, &markers, &midpoint_loci),
+            Some(SketchConstraintDefinition::Midpoint {
+                point: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                entity: SketchEntityId("second".into()),
             })
         );
         let relation = FeatureInputRelationInstance {
