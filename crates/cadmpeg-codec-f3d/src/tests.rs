@@ -5462,6 +5462,30 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             [2, 0, -1, 1, -1]
         );
     }
+    for name in [
+        b"pt_tag".as_slice(),
+        b"crv_primary_id".as_slice(),
+        b"crv_secondary_id".as_slice(),
+    ] {
+        let offset = bulkstream
+            .windows(name.len())
+            .position(|window| window == name)
+            .expect("generated persistent-reference name");
+        let payload = offset + name.len();
+        assert_eq!(
+            &bulkstream[payload..payload + 8],
+            &[2, 0, 0, 0, 14, 0, 0, 0]
+        );
+        assert_eq!(&bulkstream[payload + 8..payload + 22], &[0; 14]);
+        assert_eq!(
+            u32::from_le_bytes(bulkstream[payload + 22..payload + 26].try_into().unwrap()),
+            23
+        );
+        assert_eq!(
+            &bulkstream[payload + 26..payload + 49],
+            b"IntrinsicMetaTypeuint64"
+        );
+    }
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design BulkStream round trip");

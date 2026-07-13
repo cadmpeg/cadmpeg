@@ -129,7 +129,20 @@ pub fn decode_persistent_references(
             while let Some(relative) = bytes[cursor..].windows(name.len()).position(|w| w == name) {
                 let offset = cursor + relative;
                 cursor = offset + name.len();
-                let type_offset = offset + name.len();
+                let compact_type_offset = offset + name.len();
+                let type_offset = if u32_at(bytes, compact_type_offset) == Some(23) {
+                    compact_type_offset
+                } else if u32_at(bytes, compact_type_offset) == Some(2)
+                    && u32_at(bytes, compact_type_offset + 4) == Some(14)
+                    && bytes
+                        .get(compact_type_offset + 8..compact_type_offset + 22)
+                        .is_some()
+                    && u32_at(bytes, compact_type_offset + 22) == Some(23)
+                {
+                    compact_type_offset + 22
+                } else {
+                    continue;
+                };
                 let Some(length_bytes) = bytes.get(type_offset..type_offset + 4) else {
                     continue;
                 };

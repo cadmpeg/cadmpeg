@@ -396,6 +396,9 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     }
     for reference in &native.persistent_references {
         out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&23u32.to_le_bytes());
         out.extend_from_slice(b"IntrinsicMetaTypeuint64");
         out.extend_from_slice(&reference.value.to_le_bytes());
