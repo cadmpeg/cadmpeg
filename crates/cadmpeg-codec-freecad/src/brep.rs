@@ -143,6 +143,27 @@ pub enum TextSurface {
     },
     /// Rational or non-rational tensor-product B-spline surface.
     Nurbs(NurbsSurface),
+    /// Translation of an inline directrix curve.
+    Extrusion {
+        direction: Vector3,
+        directrix: Box<TextCurve>,
+    },
+    /// Revolution of an inline directrix around an axis.
+    Revolution {
+        axis_origin: Point3,
+        axis_direction: Vector3,
+        directrix: Box<TextCurve>,
+    },
+    /// Rectangular parameter sub-range of an inline basis surface.
+    Trimmed {
+        parameter_ranges: [[f64; 2]; 2],
+        basis: Box<TextSurface>,
+    },
+    /// Signed normal offset from an inline basis surface.
+    Offset {
+        distance: f64,
+        basis: Box<TextSurface>,
+    },
 }
 
 /// Bind every exact-shape property to and frame its payload.
@@ -283,19 +304,7 @@ fn parse_surfaces(
     let mut cursor = TokenCursor::new(&tokens[start..end]);
     let mut surfaces = Vec::with_capacity(count);
     for index in 0..count {
-        let kind = cursor.integer("surface type")?;
-        let surface = match kind {
-            1..=5 => parse_analytic_surface(kind, &mut cursor)?,
-            8 => TextSurface::Nurbs(parse_bezier_surface(&mut cursor)?),
-            9 => TextSurface::Nurbs(parse_nurbs_surface(&mut cursor)?),
-            other => {
-                return Err(CodecError::NotImplemented(format!(
-                    "text B-rep surface family {other} at table index {}",
-                    index + 1
-                )))
-            }
-        };
-        surfaces.push(surface);
+        surfaces.push(parse_surface(&mut cursor, 0, index + 1)?);
     }
     if !cursor.is_empty() {
         return Err(CodecError::Malformed(
@@ -303,6 +312,76 @@ fn parse_surfaces(
         ));
     }
     Ok(surfaces)
+}
+
+fn parse_surface(
+    cursor: &mut TokenCursor<'_>,
+    depth: usize,
+    table_index: usize,
+) -> Result<TextSurface, CodecError> {
+    if depth > 64 {
+        return Err(CodecError::Malformed(
+            "text B-rep surface recursion limit exceeded".into(),
+        ));
+    }
+    let kind = cursor.integer("surface type")?;
+    Ok(match kind {
+        1..=5 => parse_analytic_surface(kind, cursor)?,
+        6 => {
+            let direction = cursor.vector("extrusion direction")?;
+            if direction.norm() == 0.0 {
+                return Err(CodecError::Malformed("extrusion direction is zero".into()));
+            }
+            TextSurface::Extrusion {
+                direction,
+                directrix: Box::new(parse_curve(cursor, 0, table_index)?),
+            }
+        }
+        7 => {
+            let axis_origin = cursor.point("revolution axis origin")?;
+            let axis_direction = cursor.vector("revolution axis direction")?;
+            if axis_direction.norm() == 0.0 {
+                return Err(CodecError::Malformed(
+                    "revolution axis direction is zero".into(),
+                ));
+            }
+            TextSurface::Revolution {
+                axis_origin,
+                axis_direction,
+                directrix: Box::new(parse_curve(cursor, 0, table_index)?),
+            }
+        }
+        8 => TextSurface::Nurbs(parse_bezier_surface(cursor)?),
+        9 => TextSurface::Nurbs(parse_nurbs_surface(cursor)?),
+        10 => {
+            let u_range = [
+                cursor.real("trimmed surface first u parameter")?,
+                cursor.real("trimmed surface last u parameter")?,
+            ];
+            let v_range = [
+                cursor.real("trimmed surface first v parameter")?,
+                cursor.real("trimmed surface last v parameter")?,
+            ];
+            if u_range[0] > u_range[1] || v_range[0] > v_range[1] {
+                return Err(CodecError::Malformed(
+                    "trimmed surface parameter range is reversed".into(),
+                ));
+            }
+            TextSurface::Trimmed {
+                parameter_ranges: [u_range, v_range],
+                basis: Box::new(parse_surface(cursor, depth + 1, table_index)?),
+            }
+        }
+        11 => TextSurface::Offset {
+            distance: cursor.real("offset surface distance")?,
+            basis: Box::new(parse_surface(cursor, depth + 1, table_index)?),
+        },
+        other => {
+            return Err(CodecError::NotImplemented(format!(
+                "text B-rep surface family {other} at table index {table_index}"
+            )))
+        }
+    })
 }
 
 fn parse_analytic_surface(
@@ -745,5 +824,40 @@ mod tests {
         let zero_normal = text_brep("9 2 0 0 0 1 0 0 0 1 0 0", 1, "", 0);
         let error = parse_text(zero_normal.as_bytes()).expect_err("zero normal must fail");
         assert!(error.to_string().contains("direction is zero"));
+    }
+
+    #[test]
+    fn parses_recursive_surface_constructions() {
+        let input = text_brep(
+            "",
+            0,
+            "6 0 0 2 1 0 0 0 1 0 0\n7 0 0 0 0 0 1 1 0 0 0 1 0 0\n10 0 1 2 3 11 4 1 0 0 0 0 0 1 1 0 0 0 1 0",
+            3,
+        );
+        let facts = parse_text(input.as_bytes()).expect("recursive surfaces");
+        let TextSurface::Extrusion {
+            direction,
+            directrix,
+        } = &facts.surfaces[0]
+        else {
+            panic!("expected extrusion")
+        };
+        assert_eq!([direction.x, direction.y, direction.z], [0.0, 0.0, 2.0]);
+        assert!(matches!(directrix.as_ref(), TextCurve::Line { .. }));
+
+        let TextSurface::Revolution { directrix, .. } = &facts.surfaces[1] else {
+            panic!("expected revolution")
+        };
+        assert!(matches!(directrix.as_ref(), TextCurve::Line { .. }));
+
+        let TextSurface::Trimmed {
+            parameter_ranges,
+            basis,
+        } = &facts.surfaces[2]
+        else {
+            panic!("expected trimmed surface")
+        };
+        assert_eq!(*parameter_ranges, [[0.0, 1.0], [2.0, 3.0]]);
+        assert!(matches!(basis.as_ref(), TextSurface::Offset { .. }));
     }
 }

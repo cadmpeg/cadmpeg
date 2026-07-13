@@ -634,6 +634,12 @@ fn transfer_text_surfaces(
                             minor_radius: *minor_radius,
                         },
                         brep::TextSurface::Nurbs(nurbs) => SurfaceGeometry::Nurbs(nurbs.clone()),
+                        brep::TextSurface::Extrusion { .. }
+                        | brep::TextSurface::Revolution { .. }
+                        | brep::TextSurface::Trimmed { .. }
+                        | brep::TextSurface::Offset { .. } => {
+                            SurfaceGeometry::Unknown { record: None }
+                        }
                     };
                     Surface {
                         id: SurfaceId(format!("{}:surface#{}", payload.id, index + 1)),
