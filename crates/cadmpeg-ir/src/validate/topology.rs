@@ -750,6 +750,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
+            | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
             ProceduralSurfaceDefinition::Deformable { construction } => {
                 if !ids.surfaces.contains(&construction.support.0) {

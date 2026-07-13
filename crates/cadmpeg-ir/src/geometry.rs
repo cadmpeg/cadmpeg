@@ -465,6 +465,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Whether the source classifies the result as self-intersecting.
         self_intersect: Option<bool>,
     },
+    /// Self-intersecting torus with an explicitly selected outer or inner sheet.
+    DegenerateTorus {
+        /// Whether the outer sheet is selected at the self-intersection.
+        select_outer: bool,
+    },
     /// Ruled surface joining two directrices.
     Ruled {
         /// First bounding curve of the ruled surface.

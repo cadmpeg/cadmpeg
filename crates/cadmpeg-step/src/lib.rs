@@ -1041,6 +1041,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::TSpline { .. }
                 | ProceduralSurfaceDefinition::Offset { .. }
                 | ProceduralSurfaceDefinition::ParallelOffset { .. }
+                | ProceduralSurfaceDefinition::DegenerateTorus { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }
                 | ProceduralSurfaceDefinition::Unknown { .. } => true,
