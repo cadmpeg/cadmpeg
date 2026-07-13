@@ -34,6 +34,21 @@ pub struct ShapePayloadRecord {
     pub form: ShapePayloadForm,
     /// Text shape-set facts, when applicable.
     pub text: Option<TextFacts>,
+    /// Decoded binary shape-set prefix, when applicable.
+    pub binary: Option<BinaryFacts>,
+}
+
+/// Versioned prefix tables decoded from a binary shape set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BinaryFacts {
+    /// Binary topology grammar version.
+    pub topology_version: u8,
+    /// Ordered location table with resolved transforms.
+    pub locations: Vec<TextLocation>,
+    /// Ordered parameter-space curve table.
+    pub curve2ds: Vec<TextCurve2d>,
+    /// Byte offset at which the 3D curve section begins.
+    pub curves_offset: usize,
 }
 
 /// Framing facts from a text shape set.
@@ -446,9 +461,9 @@ pub fn parse_payloads(
             } else {
                 ShapePayloadForm::Text
             };
-            let text = match form {
-                ShapePayloadForm::Text => Some(parse_text(&entry.data)?),
-                ShapePayloadForm::Binary => None,
+            let (text, binary) = match form {
+                ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
+                ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
             };
             Ok(ShapePayloadRecord {
                 id: format!("{}:shape-payload", property.id),
@@ -456,6 +471,7 @@ pub fn parse_payloads(
                 entry: entry.id.clone(),
                 form,
                 text,
+                binary,
             })
         })
         .collect()
@@ -551,6 +567,325 @@ fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
         tshapes,
         roots,
     })
+}
+
+fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
+    const MAX_BINARY_BREP_BYTES: usize = 256 * 1024 * 1024;
+    if bytes.len() > MAX_BINARY_BREP_BYTES {
+        return Err(CodecError::Malformed(
+            "binary B-rep exceeds the 256 MiB parser limit".into(),
+        ));
+    }
+    let mut cursor = BinaryCursor::new(bytes);
+    let version = loop {
+        let line = cursor.line("binary B-rep version")?;
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let version = line
+            .strip_prefix("Open CASCADE Topology V")
+            .and_then(|tail| tail.as_bytes().first())
+            .and_then(|byte| byte.checked_sub(b'0'))
+            .filter(|version| (1..=4).contains(version))
+            .ok_or_else(|| CodecError::Malformed("unsupported binary B-rep header".into()))?;
+        break version;
+    };
+    let location_count = cursor.section_count("Locations")?;
+    let mut locations: Vec<TextLocation> = Vec::with_capacity(location_count);
+    for index in 0..location_count {
+        let kind = cursor.u8("binary location kind")?;
+        let location = match kind {
+            1 => {
+                let mut transform = Transform::identity();
+                for row in 0..3 {
+                    for column in 0..4 {
+                        transform.rows[row][column] = cursor.f64("binary location transform")?;
+                    }
+                }
+                invert_affine(transform)?;
+                TextLocation {
+                    factors: Vec::new(),
+                    transform,
+                }
+            }
+            2 => {
+                let mut factors = Vec::new();
+                let mut transform = Transform::identity();
+                loop {
+                    let referenced = cursor.i32("binary location factor")?;
+                    if referenced == 0 {
+                        break;
+                    }
+                    let referenced = usize::try_from(referenced).map_err(|_| {
+                        CodecError::Malformed("negative binary location factor".into())
+                    })?;
+                    if referenced == 0 || referenced > locations.len() {
+                        return Err(CodecError::Malformed(format!(
+                            "binary location {} references unavailable location {referenced}",
+                            index + 1
+                        )));
+                    }
+                    let power = cursor.i32("binary location power")?;
+                    let powered =
+                        transform_power(locations[referenced - 1].transform, i64::from(power))?;
+                    transform = multiply_transform(powered, transform);
+                    factors.push(LocationFactor {
+                        location: referenced,
+                        power: i64::from(power),
+                    });
+                }
+                TextLocation { factors, transform }
+            }
+            other => {
+                return Err(CodecError::Malformed(format!(
+                    "invalid binary location type {other}"
+                )))
+            }
+        };
+        locations.push(location);
+    }
+    let curve_count = cursor.section_count("Curve2ds")?;
+    let mut curve2ds = Vec::with_capacity(curve_count);
+    for _ in 0..curve_count {
+        curve2ds.push(parse_binary_curve2d(&mut cursor, 0)?);
+    }
+    cursor.expect_section_name("Curves")?;
+    Ok(BinaryFacts {
+        topology_version: version,
+        locations,
+        curve2ds,
+        curves_offset: cursor.offset,
+    })
+}
+
+fn parse_binary_curve2d(
+    cursor: &mut BinaryCursor<'_>,
+    depth: usize,
+) -> Result<TextCurve2d, CodecError> {
+    if depth > 256 {
+        return Err(CodecError::Malformed(
+            "binary parameter-curve nesting exceeds 256".into(),
+        ));
+    }
+    let point = |cursor: &mut BinaryCursor<'_>, label| -> Result<Point2, CodecError> {
+        Ok(Point2::new(cursor.f64(label)?, cursor.f64(label)?))
+    };
+    Ok(match cursor.u8("binary parameter-curve kind")? {
+        1 => TextCurve2d::Line {
+            origin: point(cursor, "binary line origin")?,
+            direction: point(cursor, "binary line direction")?,
+        },
+        2 => TextCurve2d::Circle {
+            center: point(cursor, "binary circle center")?,
+            x_axis: point(cursor, "binary circle x axis")?,
+            y_axis: point(cursor, "binary circle y axis")?,
+            radius: cursor.f64("binary circle radius")?,
+        },
+        3 => TextCurve2d::Ellipse {
+            center: point(cursor, "binary ellipse center")?,
+            x_axis: point(cursor, "binary ellipse x axis")?,
+            y_axis: point(cursor, "binary ellipse y axis")?,
+            major_radius: cursor.f64("binary ellipse major radius")?,
+            minor_radius: cursor.f64("binary ellipse minor radius")?,
+        },
+        4 => TextCurve2d::Parabola {
+            vertex: point(cursor, "binary parabola vertex")?,
+            x_axis: point(cursor, "binary parabola x axis")?,
+            y_axis: point(cursor, "binary parabola y axis")?,
+            focal_distance: cursor.f64("binary parabola focal distance")?,
+        },
+        5 => TextCurve2d::Hyperbola {
+            center: point(cursor, "binary hyperbola center")?,
+            x_axis: point(cursor, "binary hyperbola x axis")?,
+            y_axis: point(cursor, "binary hyperbola y axis")?,
+            major_radius: cursor.f64("binary hyperbola major radius")?,
+            minor_radius: cursor.f64("binary hyperbola minor radius")?,
+        },
+        6 => {
+            let rational = cursor.bool("binary Bezier rational flag")?;
+            let degree = usize::from(cursor.u16("binary Bezier degree")?);
+            let pole_count = degree
+                .checked_add(1)
+                .ok_or_else(|| CodecError::Malformed("binary Bezier pole count overflow".into()))?;
+            let mut control_points = Vec::with_capacity(pole_count);
+            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            for _ in 0..pole_count {
+                control_points.push(point(cursor, "binary Bezier pole")?);
+                if let Some(weights) = &mut weights {
+                    weights.push(cursor.f64("binary Bezier weight")?);
+                }
+            }
+            TextCurve2d::Nurbs(NurbsCurve2d {
+                degree: u32::try_from(degree).map_err(|_| {
+                    CodecError::Malformed("binary Bezier degree exceeds u32".into())
+                })?,
+                knots: clamped_bezier_knots(degree),
+                control_points,
+                weights,
+                periodic: false,
+            })
+        }
+        7 => {
+            let rational = cursor.bool("binary B-spline rational flag")?;
+            let periodic = cursor.bool("binary B-spline periodic flag")?;
+            let degree = u32::from(cursor.u16("binary B-spline degree")?);
+            let pole_count = cursor.count("binary B-spline pole count")?;
+            let knot_count = cursor.count("binary B-spline knot count")?;
+            let mut control_points = Vec::with_capacity(pole_count);
+            let mut weights = rational.then(|| Vec::with_capacity(pole_count));
+            for _ in 0..pole_count {
+                control_points.push(point(cursor, "binary B-spline pole")?);
+                if let Some(weights) = &mut weights {
+                    weights.push(cursor.f64("binary B-spline weight")?);
+                }
+            }
+            let mut knots = Vec::new();
+            for _ in 0..knot_count {
+                let knot = cursor.f64("binary B-spline knot")?;
+                let multiplicity = cursor.count("binary B-spline multiplicity")?;
+                if knots
+                    .len()
+                    .checked_add(multiplicity)
+                    .is_none_or(|len| len > 1_000_000)
+                {
+                    return Err(CodecError::Malformed(
+                        "binary B-spline expanded knot-count limit exceeded".into(),
+                    ));
+                }
+                knots.extend(std::iter::repeat_n(knot, multiplicity));
+            }
+            TextCurve2d::Nurbs(NurbsCurve2d {
+                degree,
+                knots,
+                control_points,
+                weights,
+                periodic,
+            })
+        }
+        8 => TextCurve2d::Trimmed {
+            parameter_range: [
+                cursor.f64("binary trim start")?,
+                cursor.f64("binary trim end")?,
+            ],
+            basis: Box::new(parse_binary_curve2d(cursor, depth + 1)?),
+        },
+        9 => TextCurve2d::Offset {
+            distance: cursor.f64("binary offset distance")?,
+            basis: Box::new(parse_binary_curve2d(cursor, depth + 1)?),
+        },
+        other => {
+            return Err(CodecError::Malformed(format!(
+                "invalid binary parameter-curve kind {other}"
+            )))
+        }
+    })
+}
+
+struct BinaryCursor<'a> {
+    bytes: &'a [u8],
+    offset: usize,
+}
+
+impl<'a> BinaryCursor<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, offset: 0 }
+    }
+
+    fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
+        let end = self
+            .offset
+            .checked_add(count)
+            .ok_or_else(|| CodecError::Malformed(format!("{label} offset overflow")))?;
+        let bytes = self
+            .bytes
+            .get(self.offset..end)
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
+        self.offset = end;
+        Ok(bytes)
+    }
+
+    fn line(&mut self, label: &str) -> Result<&'a str, CodecError> {
+        let tail = self
+            .bytes
+            .get(self.offset..)
+            .ok_or_else(|| CodecError::Malformed(format!("truncated {label}")))?;
+        let length = tail
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .ok_or_else(|| CodecError::Malformed(format!("unterminated {label}")))?;
+        let line = self.take(length + 1, label)?;
+        std::str::from_utf8(&line[..length])
+            .map_err(|_| CodecError::Malformed(format!("non-UTF-8 {label}")))
+    }
+
+    fn section_count(&mut self, name: &str) -> Result<usize, CodecError> {
+        let line = self.line(name)?;
+        let mut tokens = line.split_ascii_whitespace();
+        if tokens.next() != Some(name) || tokens.clone().count() != 1 {
+            return Err(CodecError::Malformed(format!(
+                "binary B-rep expected {name} section"
+            )));
+        }
+        tokens
+            .next()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|count| *count <= 1_000_000)
+            .ok_or_else(|| CodecError::Malformed(format!("invalid binary {name} count")))
+    }
+
+    fn expect_section_name(&mut self, name: &str) -> Result<(), CodecError> {
+        let line = self.line(name)?;
+        let mut tokens = line.split_ascii_whitespace();
+        if tokens.next() != Some(name) || tokens.next().is_none() || tokens.next().is_some() {
+            return Err(CodecError::Malformed(format!(
+                "binary B-rep expected {name} section"
+            )));
+        }
+        Ok(())
+    }
+
+    fn u8(&mut self, label: &str) -> Result<u8, CodecError> {
+        Ok(self.take(1, label)?[0])
+    }
+
+    fn bool(&mut self, label: &str) -> Result<bool, CodecError> {
+        match self.u8(label)? {
+            0 => Ok(false),
+            1 => Ok(true),
+            other => Err(CodecError::Malformed(format!(
+                "invalid {label} byte {other}"
+            ))),
+        }
+    }
+
+    fn u16(&mut self, label: &str) -> Result<u16, CodecError> {
+        Ok(u16::from_le_bytes(
+            self.take(2, label)?.try_into().expect("two-byte slice"),
+        ))
+    }
+
+    fn i32(&mut self, label: &str) -> Result<i32, CodecError> {
+        Ok(i32::from_le_bytes(
+            self.take(4, label)?.try_into().expect("four-byte slice"),
+        ))
+    }
+
+    fn count(&mut self, label: &str) -> Result<usize, CodecError> {
+        let value = self.i32(label)?;
+        usize::try_from(value)
+            .ok()
+            .filter(|count| *count <= 1_000_000)
+            .ok_or_else(|| CodecError::Malformed(format!("invalid {label}")))
+    }
+
+    fn f64(&mut self, label: &str) -> Result<f64, CodecError> {
+        let value = f64::from_le_bytes(self.take(8, label)?.try_into().expect("eight-byte slice"));
+        value
+            .is_finite()
+            .then_some(value)
+            .ok_or_else(|| CodecError::Malformed(format!("non-finite {label}")))
+    }
 }
 
 fn parse_locations(
@@ -2044,6 +2379,39 @@ mod tests {
         assert_eq!(facts.locations[1].transform.rows[0][3], 10.0);
         assert_eq!(facts.locations[2].transform.rows[0][3], 5.0);
         assert_eq!(facts.locations[2].factors[0].power, -1);
+    }
+
+    #[test]
+    fn parses_binary_locations_and_recursive_parameter_curves() {
+        fn real(bytes: &mut Vec<u8>, value: f64) {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        let mut bytes = b"\nOpen CASCADE Topology V3 (c)\nLocations 1\n".to_vec();
+        bytes.push(1);
+        for value in [1.0, 0.0, 0.0, 5.0, 0.0, 1.0, 0.0, 6.0, 0.0, 0.0, 1.0, 7.0] {
+            real(&mut bytes, value);
+        }
+        bytes.extend_from_slice(b"Curve2ds 2\n");
+        bytes.push(1);
+        for value in [0.0, 0.0, 1.0, 0.0] {
+            real(&mut bytes, value);
+        }
+        bytes.push(8);
+        real(&mut bytes, 0.0);
+        real(&mut bytes, std::f64::consts::PI);
+        bytes.push(2);
+        for value in [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 2.0] {
+            real(&mut bytes, value);
+        }
+        bytes.extend_from_slice(b"Curves 0\n");
+
+        let facts = parse_binary_prefix(&bytes).expect("binary prefix");
+        assert_eq!(facts.topology_version, 3);
+        assert_eq!(facts.locations[0].transform.rows[0][3], 5.0);
+        assert!(matches!(facts.curve2ds[0], TextCurve2d::Line { .. }));
+        assert!(matches!(facts.curve2ds[1], TextCurve2d::Trimmed { .. }));
+        assert_eq!(&bytes[facts.curves_offset..], b"");
     }
 
     #[test]
