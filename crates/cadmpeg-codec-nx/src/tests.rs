@@ -235,13 +235,19 @@ fn size_framed_om_section() -> Vec<u8> {
     bytes[4..8].fill(0);
     bytes[12..14].copy_from_slice(b"OM");
     bytes.extend_from_slice(&[0, 1, 2]);
-    for (name, code) in [
+    for (index, (name, code)) in [
         (b"UGS::FEATURE_RECORD".as_slice(), 0xa0),
         (b"UGS::ModlUtils::BooleanComponent".as_slice(), 0x65),
-    ] {
+    ]
+    .into_iter()
+    .enumerate()
+    {
         bytes.push((name.len() + 1) as u8);
         bytes.extend_from_slice(name);
         bytes.push(code);
+        if index == 0 {
+            bytes.extend_from_slice(&[0x81, 0x02, 0x03]);
+        }
     }
     for (name, code, suffix) in [
         (b"m_target".as_slice(), 0x80, [0x01, 0x02]),
@@ -288,6 +294,7 @@ fn om_size_frame_bounds_its_type_declarations() {
     assert_eq!(sections[0].byte_len, bytes.len());
     assert_eq!(sections[0].types.len(), 2);
     assert_eq!(sections[0].types[0].name, "UGS::FEATURE_RECORD");
+    assert_eq!(sections[0].types[0].registry_suffix, &[0x81, 0x02, 0x03]);
     assert_eq!(sections[0].types[1].trailing_code, 0x65);
     assert_eq!(sections[0].fields.len(), 2);
     assert_eq!(sections[0].fields[0].name, "m_target");
@@ -2935,7 +2942,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 9);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 10);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

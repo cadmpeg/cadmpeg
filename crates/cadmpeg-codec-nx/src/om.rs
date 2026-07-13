@@ -26,6 +26,8 @@ pub struct TypeDefinition<'a> {
     pub name: &'a str,
     /// Declaration code following the name.
     pub trailing_code: u8,
+    /// Bytes between this declaration core and the next class declaration.
+    pub registry_suffix: &'a [u8],
 }
 
 /// One member declaration in an NX OM field registry.
@@ -650,11 +652,17 @@ fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinitio
                 offset: at,
                 name,
                 trailing_code: bytes[name_end],
+                registry_suffix: &[],
             });
             at = name_end + 1;
         } else {
             at += 1;
         }
+    }
+    for index in 0..out.len().saturating_sub(1) {
+        let suffix_start = out[index].offset + out[index].name.len() + 2;
+        let suffix_end = out[index + 1].offset;
+        out[index].registry_suffix = &bytes[suffix_start..suffix_end];
     }
     out
 }
