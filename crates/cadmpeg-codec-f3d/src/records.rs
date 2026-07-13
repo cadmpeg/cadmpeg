@@ -356,6 +356,15 @@ pub struct DesignParameterScope {
     pub kind: String,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
+    /// Full Design entity id of a sketch scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_id: Option<String>,
+    /// Numeric suffix of `entity_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_suffix: Option<u64>,
+    /// Byte offset of the sketch entity suffix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_reference_offset: Option<u64>,
     /// Per-file dynamic class tag of the paired header.
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.

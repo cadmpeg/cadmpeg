@@ -622,6 +622,7 @@ pub fn decode_parameter_scopes(
     scan: &ContainerScan,
     owners: &[DesignParameterOwner],
     headers: &[DesignRecordHeader],
+    entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
     let wanted = owners
         .iter()
@@ -644,6 +645,38 @@ pub fn decode_parameter_scopes(
         let Some(mut scope) = parse_parameter_scope(bytes, header) else {
             continue;
         };
+        if scope.kind == "Sketch" {
+            let start = usize::try_from(scope.byte_offset).ok();
+            let end = usize::try_from(scope.paired_byte_offset).ok();
+            let frame = start
+                .zip(end)
+                .and_then(|(start, end)| bytes.get(start..end));
+            let matches = frame
+                .into_iter()
+                .flat_map(|frame| {
+                    entities.iter().filter_map(move |entity| {
+                        if entity.object_kind != Some(DesignObjectKind::Sketch)
+                            || entity.entity_suffix > u64::from(u32::MAX)
+                        {
+                            return None;
+                        }
+                        let mut pattern = [0; 11];
+                        pattern[0] = 1;
+                        pattern[1..5].copy_from_slice(&(entity.entity_suffix as u32).to_le_bytes());
+                        frame
+                            .windows(pattern.len())
+                            .position(|window| window == pattern)
+                            .map(|offset| (entity, offset + 1))
+                    })
+                })
+                .collect::<Vec<_>>();
+            if let [(entity, relative_offset)] = matches.as_slice() {
+                scope.entity_id = Some(entity.entity_id.clone());
+                scope.entity_suffix = Some(entity.entity_suffix);
+                scope.entity_reference_offset =
+                    Some(scope.byte_offset.saturating_add(*relative_offset as u64));
+            }
+        }
         scope.id = format!(
             "f3d:{}:design-parameter-scope#{}",
             entry.name, header.byte_offset
@@ -688,6 +721,9 @@ fn parse_parameter_scope(
         frame_length: u64::try_from(paired_at.checked_sub(start)?).ok()?,
         kind: kind.clone(),
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
     })
@@ -2515,6 +2551,9 @@ mod relation_tests {
             frame_length: 200,
             kind: "Extrude".into(),
             kind_offset: 210,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
             paired_class_tag: "261".into(),
             paired_byte_offset: 300,
         };

@@ -479,6 +479,7 @@ fn extend_related_design_records(
         scan,
         &native.design_parameter_owners,
         &native.design_record_headers,
+        &native.design_entity_headers,
     )?;
     Ok(())
 }

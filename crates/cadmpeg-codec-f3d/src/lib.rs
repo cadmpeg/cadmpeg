@@ -145,9 +145,31 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|scope| (scope.record_index, scope))
         .collect::<std::collections::HashMap<_, _>>();
+    let entities_by_suffix = native
+        .design_entity_headers
+        .iter()
+        .map(|entity| (entity.entity_suffix, entity))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut scope_indices = HashSet::new();
     for scope in &native.design_parameter_scopes {
         let unique_index = scope_indices.insert(scope.record_index);
+        let entity_link = match (
+            scope.entity_id.as_deref(),
+            scope.entity_suffix,
+            scope.entity_reference_offset,
+        ) {
+            (None, None, None) => None,
+            (Some(entity_id), Some(entity_suffix), Some(offset)) => Some(
+                entities_by_suffix
+                    .get(&entity_suffix)
+                    .is_some_and(|entity| {
+                        entity.entity_id == entity_id
+                            && offset > scope.byte_offset
+                            && offset < scope.paired_byte_offset
+                    }),
+            ),
+            _ => Some(false),
+        };
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -161,6 +183,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.kind_offset > scope.byte_offset
             && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
             && record_indices.contains(&scope.record_index)
+            && entity_link.unwrap_or(scope.kind != "Sketch")
             && unique_index;
         if !valid {
             findings.push(Finding {
