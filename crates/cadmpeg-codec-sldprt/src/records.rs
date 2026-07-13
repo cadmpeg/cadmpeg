@@ -90,6 +90,18 @@ pub enum FeatureContent {
     Text(String),
 }
 
+/// One ordered item inside the native `Keywords` root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum HistoryContent {
+    /// Native configuration record id.
+    Configuration(String),
+    /// Native top-level feature record id.
+    Feature(String),
+    /// Non-whitespace root text content.
+    Text(String),
+}
+
 /// The full parametric construction-history timeline for a part.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FeatureHistory {
@@ -101,6 +113,9 @@ pub struct FeatureHistory {
     /// Source attributes on the `Keywords` root, excluding its `Name` key.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub properties: BTreeMap<String, String>,
+    /// Source order of configurations, top-level features, and root text.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub content: Vec<HistoryContent>,
     /// Named parametric-model variants defined on this part.
     #[serde(default)]
     pub configurations: Vec<Configuration>,

@@ -758,25 +758,55 @@ fn history_payload(history: &crate::records::FeatureHistory) -> Result<Vec<u8>, 
         xml_attribute(&mut out, name, value);
     }
     out.push('>');
-    for configuration in &history.configurations {
+    let write_configuration = |out: &mut String, configuration: &crate::records::Configuration| {
         out.push_str("<Configuration");
-        xml_attribute(&mut out, "Name", &configuration.name);
+        xml_attribute(out, "Name", &configuration.name);
         if let Some(material) = &configuration.material {
-            xml_attribute(&mut out, "Material", material);
+            xml_attribute(out, "Material", material);
         }
         for (name, value) in &configuration.properties {
-            xml_attribute(&mut out, name, value);
+            xml_attribute(out, name, value);
         }
         out.push_str("/>");
-    }
+    };
     let mut roots = history
         .features
         .iter()
         .filter(|feature| feature.tree_parent.is_none() && feature.parent_source_id.is_none())
         .collect::<Vec<_>>();
     roots.sort_by_key(|feature| feature.ordinal);
+    let mut emitted_configurations = HashSet::new();
+    let mut emitted_features = HashSet::new();
+    for item in &history.content {
+        match item {
+            crate::records::HistoryContent::Configuration(id) => {
+                if let Some(configuration) = history
+                    .configurations
+                    .iter()
+                    .find(|configuration| configuration.id == *id)
+                {
+                    write_configuration(&mut out, configuration);
+                    emitted_configurations.insert(configuration.id.as_str());
+                }
+            }
+            crate::records::HistoryContent::Feature(id) => {
+                if let Some(feature) = roots.iter().find(|feature| feature.id == *id) {
+                    write_feature_xml(&mut out, feature, &history.features);
+                    emitted_features.insert(feature.id.as_str());
+                }
+            }
+            crate::records::HistoryContent::Text(text) => xml_text(&mut out, text),
+        }
+    }
+    for configuration in &history.configurations {
+        if emitted_configurations.insert(configuration.id.as_str()) {
+            write_configuration(&mut out, configuration);
+        }
+    }
     for feature in roots {
-        write_feature_xml(&mut out, feature, &history.features);
+        if emitted_features.insert(feature.id.as_str()) {
+            write_feature_xml(&mut out, feature, &history.features);
+        }
     }
     out.push_str("</Keywords>");
     Ok(out.into_bytes())

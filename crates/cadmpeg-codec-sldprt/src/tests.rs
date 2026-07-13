@@ -4734,6 +4734,49 @@ fn semantic_writer_preserves_keywords_attributes() {
 }
 
 #[test]
+fn semantic_writer_preserves_keywords_child_order() {
+    use crate::records::HistoryContent;
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="First" Type="Custom" id="1"/>between<Configuration Name="Default"/><Extrusion Name="Boss" Type="BossExtrude" id="2"><Dimension Name="Depth">12mm</Dimension></Extrusion></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let depth = decoded
+        .ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Depth")
+        .unwrap();
+    depth.expression = "20mm".into();
+    depth.value = Some(ParameterValue::Length(Length(20.0)));
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let history = &sldprt_native(&regenerated.ir).feature_histories[0];
+    assert!(matches!(
+        history.content.as_slice(),
+        [
+            HistoryContent::Feature(_),
+            HistoryContent::Text(text),
+            HistoryContent::Configuration(_),
+            HistoryContent::Feature(_),
+        ] if text == "between"
+    ));
+}
+
+#[test]
 fn semantic_writer_applies_neutral_parameter_order() {
     use crate::records::FeatureContent;
 

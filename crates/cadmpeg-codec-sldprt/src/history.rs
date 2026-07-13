@@ -2,7 +2,7 @@
 //! `SolidWorks` Keywords XML feature history.
 
 use crate::container::ContainerScan;
-use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory};
+use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
@@ -191,6 +191,39 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                             .collect(),
                     }
                 })
+                .collect::<Vec<_>>();
+            let configuration_ids = root
+                .children()
+                .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
+                .enumerate()
+                .map(|(ordinal, node)| {
+                    (
+                        node.range().start,
+                        format!("sldprt:history:configuration#{}:{ordinal}", block.offset),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
+            let content = root
+                .children()
+                .filter_map(|child| {
+                    if child.is_text() {
+                        let value = child.text()?.trim();
+                        return (!value.is_empty()).then(|| HistoryContent::Text(value.into()));
+                    }
+                    if !child.is_element() {
+                        return None;
+                    }
+                    configuration_ids
+                        .get(&child.range().start)
+                        .cloned()
+                        .map(HistoryContent::Configuration)
+                        .or_else(|| {
+                            feature_ids
+                                .get(&child.range().start)
+                                .cloned()
+                                .map(HistoryContent::Feature)
+                        })
+                })
                 .collect();
             let id = parent;
             crate::annotations::note(
@@ -212,6 +245,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                     .filter(|attribute| attribute.name() != "Name")
                     .map(|attribute| (attribute.name().to_string(), attribute.value().to_string()))
                     .collect(),
+                content,
                 configurations,
                 features,
             })
@@ -1555,6 +1589,7 @@ fn sync_neutral_configurations(
             id: "sldprt:generated:feature-history#0".into(),
             part_name: None,
             properties: BTreeMap::new(),
+            content: Vec::new(),
             configurations: Vec::new(),
             features: Vec::new(),
         });
@@ -1629,6 +1664,7 @@ pub fn sync_neutral_features(
                 id: "sldprt:generated:feature-history#0".into(),
                 part_name: None,
                 properties: BTreeMap::new(),
+                content: Vec::new(),
                 configurations: Vec::new(),
                 features: Vec::new(),
             }],
@@ -1641,6 +1677,7 @@ pub fn sync_neutral_features(
             id: "sldprt:generated:feature-history#0".into(),
             part_name: None,
             properties: BTreeMap::new(),
+            content: Vec::new(),
             configurations: Vec::new(),
             features: Vec::new(),
         });
