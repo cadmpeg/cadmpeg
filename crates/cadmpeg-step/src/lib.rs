@@ -1031,7 +1031,9 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::VariableBlend { .. }
                 | ProceduralSurfaceDefinition::VertexBlend { .. }
                 | ProceduralSurfaceDefinition::Extrusion { .. }
+                | ProceduralSurfaceDefinition::LinearSweep { .. }
                 | ProceduralSurfaceDefinition::Revolution { .. }
+                | ProceduralSurfaceDefinition::AxisRevolution { .. }
                 | ProceduralSurfaceDefinition::Sum { .. }
                 | ProceduralSurfaceDefinition::Sweep { .. }
                 | ProceduralSurfaceDefinition::Helix { .. }

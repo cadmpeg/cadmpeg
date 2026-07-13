@@ -6,9 +6,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::{
     derive_reference_direction, Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralCurve,
-    ProceduralCurveDefinition, Surface, SurfaceGeometry,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, SurfaceId};
+use cadmpeg_ir::ids::{CurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::Point;
 
@@ -101,7 +102,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         }
     }
     for (&id, record) in &exchange.records {
-        if record.simple_name() == Some("AXIS2_PLACEMENT_3D") {
+        if matches!(
+            record.simple_name(),
+            Some("AXIS2_PLACEMENT_3D" | "AXIS1_PLACEMENT")
+        ) {
             let placement = record
                 .parameter(1)
                 .and_then(Value::reference)
@@ -252,6 +256,73 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 parameter_range: if sense { [start, end] } else { [end, start] },
             },
             cache_fit_tolerance: Some(0.0),
+        });
+        typed.insert(id);
+    }
+
+    let curve_ids = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| curve.id.clone())
+        .collect::<BTreeSet<_>>();
+    for (&id, record) in &exchange.records {
+        let definition = match record.simple_name() {
+            Some("SURFACE_OF_LINEAR_EXTRUSION") => record
+                .parameter(1)
+                .and_then(Value::reference)
+                .map(|curve| CurveId(format!("step:data:curve#{curve}")))
+                .filter(|curve| curve_ids.contains(curve))
+                .zip(
+                    record
+                        .parameter(2)
+                        .and_then(Value::reference)
+                        .and_then(|vector| vectors.get(&vector).copied()),
+                )
+                .map(
+                    |(directrix, direction)| ProceduralSurfaceDefinition::LinearSweep {
+                        directrix,
+                        direction,
+                    },
+                ),
+            Some("SURFACE_OF_REVOLUTION") => record
+                .parameter(1)
+                .and_then(Value::reference)
+                .map(|curve| CurveId(format!("step:data:curve#{curve}")))
+                .filter(|curve| curve_ids.contains(curve))
+                .zip(
+                    record
+                        .parameter(2)
+                        .and_then(Value::reference)
+                        .and_then(|placement| placements.get(&placement).copied()),
+                )
+                .map(|(directrix, (axis_origin, axis_direction, _))| {
+                    ProceduralSurfaceDefinition::AxisRevolution {
+                        directrix,
+                        axis_origin,
+                        axis_direction,
+                    }
+                }),
+            _ => continue,
+        };
+        let Some(definition) = definition else {
+            warnings.push(format!(
+                "{} #{id} has an unresolved directrix, vector, or axis",
+                record.simple_name().expect("matched swept surface")
+            ));
+            continue;
+        };
+        let surface = SurfaceId(format!("step:data:surface#{id}"));
+        ir.model.surfaces.push(Surface {
+            id: surface.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId(format!("step:construction:swept_surface#{id}")),
+            surface,
+            definition,
+            cache_fit_tolerance: None,
         });
         typed.insert(id);
     }
