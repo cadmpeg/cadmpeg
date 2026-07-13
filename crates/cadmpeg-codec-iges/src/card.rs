@@ -144,6 +144,7 @@ pub(crate) fn detect_fixed_ascii(prefix: &[u8]) -> Confidence {
 fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
     let mut lines = Vec::new();
     let mut start = 0_usize;
+    let mut terminated = false;
     while start < source.len() {
         let relative_end = source[start..]
             .iter()
@@ -164,8 +165,10 @@ fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
             None => (source.len(), LineEnding::None, source.len()),
         };
         let payload = source[start..payload_end].to_vec();
-        let section = payload.get(72).copied().and_then(Section::parse);
-        let sequence = (payload.len() >= CARD_WIDTH)
+        let section = (!terminated)
+            .then(|| payload.get(72).copied().and_then(Section::parse))
+            .flatten();
+        let sequence = (!terminated && payload.len() >= CARD_WIDTH)
             .then(|| sequence(&payload))
             .flatten();
         lines.push(PhysicalLine {
@@ -176,6 +179,7 @@ fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
             section,
             sequence,
         });
+        terminated = terminated || section == Some(Section::Terminate);
         start = next;
     }
     Ok(lines)
@@ -184,7 +188,11 @@ fn physical_lines(source: &[u8]) -> Result<Vec<PhysicalLine>, CodecError> {
 fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
     let mut section = None;
     let mut expected_sequence = 1_u32;
+    let mut terminated = false;
     for line in lines {
+        if terminated {
+            continue;
+        }
         let current = line.section.ok_or_else(|| {
             CodecError::Malformed(format!(
                 "IGES card at offset {} has no recognized section marker",
@@ -216,10 +224,9 @@ fn validate_card_order(lines: &[PhysicalLine]) -> Result<(), CodecError> {
         expected_sequence = expected_sequence
             .checked_add(1)
             .ok_or_else(|| CodecError::Malformed("IGES section sequence overflow".into()))?;
+        terminated = current == Section::Terminate;
     }
-    if lines.first().and_then(|line| line.section) != Some(Section::Start)
-        || lines.last().and_then(|line| line.section) != Some(Section::Terminate)
-    {
+    if lines.first().and_then(|line| line.section) != Some(Section::Start) || !terminated {
         return Err(CodecError::Malformed(
             "IGES Fixed ASCII requires Start through Terminate sections".into(),
         ));
@@ -349,7 +356,7 @@ pub(crate) fn summarize(scan: &CardScan) -> ContainerSummary {
         Section::Parameter,
         Section::Terminate,
     ];
-    let entries = sections
+    let mut entries = sections
         .into_iter()
         .filter_map(|section| {
             let lines = scan
@@ -391,7 +398,32 @@ pub(crate) fn summarize(scan: &CardScan) -> ContainerSummary {
                 attributes,
             })
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let terminate_index = scan
+        .lines
+        .iter()
+        .position(|line| line.section == Some(Section::Terminate));
+    let post_terminate = terminate_index
+        .and_then(|index| scan.lines.get(index + 1..))
+        .unwrap_or_default();
+    if !post_terminate.is_empty() {
+        let size = post_terminate.iter().fold(0_u64, |size, line| {
+            let ending = match line.ending {
+                LineEnding::CrLf => 2,
+                LineEnding::Lf | LineEnding::Cr => 1,
+                LineEnding::None => 0,
+            };
+            size.saturating_add(u64::try_from(line.payload.len()).unwrap_or(u64::MAX) + ending)
+        });
+        entries.push(ContainerEntry {
+            name: "post-terminate".into(),
+            role: "retained-trailing-records".into(),
+            compression: "none".into(),
+            compressed_size: size,
+            uncompressed_size: size,
+            attributes: BTreeMap::from([("records".into(), post_terminate.len().to_string())]),
+        });
+    }
     ContainerSummary {
         format: "iges".into(),
         container_kind: "fixed-ascii".into(),

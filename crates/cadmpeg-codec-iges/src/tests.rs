@@ -269,3 +269,25 @@ fn legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3() {
         "not implemented yet: IGES Fixed ASCII version 5.2 decode; target envelope is 5.3"
     );
 }
+
+#[test]
+fn decode_retains_and_accounts_for_post_terminate_records() {
+    let mut bytes = point_file();
+    bytes.extend_from_slice(b"transport padding\r\n");
+    let source_length = u64::try_from(bytes.len()).unwrap();
+
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(result.ir.byte_ledger.source_length, source_length);
+    assert_eq!(
+        result.ir.byte_ledger.spans.last().unwrap().end,
+        source_length
+    );
+    assert_eq!(
+        result.ir.native.namespace("iges").unwrap().arenas["cards"].len(),
+        8
+    );
+    assert!(cadmpeg_ir::validate(&result.ir, Vec::new()).is_ok());
+}
