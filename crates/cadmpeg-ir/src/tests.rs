@@ -2030,6 +2030,11 @@ fn feature_operation_geometry_is_validated() {
             thickness: Length(0.0),
             side: ThickenSide::Forward,
         },
+        FeatureDefinition::Scale {
+            bodies: crate::features::BodySelection::Unresolved,
+            center: Point3::new(0.0, f64::NAN, 0.0),
+            factors: Vector3::new(1.0, 0.0, 1.0),
+        },
         FeatureDefinition::Pattern {
             seeds: Vec::new(),
             pattern: PatternKind::Linear {
@@ -2044,6 +2049,7 @@ fn feature_operation_geometry_is_validated() {
         "rib geometry is invalid",
         "hole geometry is invalid",
         "thicken thickness is invalid",
+        "scale transform is invalid",
         "pattern geometry is invalid",
     ];
     let mut ir = unit_cube();

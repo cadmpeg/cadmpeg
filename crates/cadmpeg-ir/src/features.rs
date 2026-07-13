@@ -375,6 +375,15 @@ pub enum FeatureDefinition {
         /// Applied deformation mode and magnitude.
         mode: FlexMode,
     },
+    /// Scales selected bodies about a model-space point.
+    Scale {
+        /// Bodies transformed by the operation.
+        bodies: BodySelection,
+        /// Fixed point of the scale transform.
+        center: Point3,
+        /// Dimensionless scale factors along model-space x, y, and z.
+        factors: Vector3,
+    },
     /// Drilled or machined hole.
     Hole {
         /// Face the hole is placed on, when known.

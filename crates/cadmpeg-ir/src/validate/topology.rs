@@ -1296,6 +1296,22 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     });
                 }
             }
+            FeatureDefinition::Scale {
+                bodies,
+                center,
+                factors,
+            } => {
+                body_selections.push(bodies);
+                if ![center.x, center.y, center.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || ![factors.x, factors.y, factors.z]
+                        .into_iter()
+                        .all(|factor| factor.is_finite() && factor != 0.0)
+                {
+                    feature_geometry_error(findings, feature, "scale transform is invalid");
+                }
+            }
             FeatureDefinition::Combine { target, tools, .. } => {
                 body_selections.push(target);
                 body_selections.push(tools);

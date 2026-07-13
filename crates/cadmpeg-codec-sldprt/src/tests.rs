@@ -6476,6 +6476,73 @@ fn semantic_writer_round_trips_typed_thicken() {
 }
 
 #[test]
+fn semantic_writer_round_trips_typed_scale() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Scale Name="Resize" Type="Scale" id="16" Bodies="body:1" Center="1mm,2mm,3mm"><Dimension Name="Factor">2</Dimension></Scale></Keywords>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &decoded.ir.model.features[0].definition,
+        FeatureDefinition::Scale {
+            bodies: BodySelection::Native(selection),
+            center: Point3 { x: 1.0, y: 2.0, z: 3.0 },
+            factors: Vector3 { x: 2.0, y: 2.0, z: 2.0 },
+        } if selection == "body:1"
+    ));
+
+    let FeatureDefinition::Scale {
+        bodies,
+        center,
+        factors,
+    } = &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed scale feature");
+    };
+    *bodies = BodySelection::Native("body:2,body:3".into());
+    *center = Point3::new(4.0, 5.0, 6.0);
+    *factors = Vector3::new(1.5, 2.0, 2.5);
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let feature = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
+    assert_eq!(feature.properties["Bodies"], "body:2,body:3");
+    assert_eq!(feature.properties["Center"], "4mm,5mm,6mm");
+    assert!(!feature.parameters.contains_key("Factor"));
+    assert_eq!(feature.parameters["ScaleX"], "1.5");
+    assert_eq!(feature.parameters["ScaleY"], "2");
+    assert_eq!(feature.parameters["ScaleZ"], "2.5");
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        FeatureDefinition::Scale {
+            center: Point3 {
+                x: 4.0,
+                y: 5.0,
+                z: 6.0
+            },
+            factors: Vector3 {
+                x: 1.5,
+                y: 2.0,
+                z: 2.5
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_draft() {
     use cadmpeg_ir::features::{Angle, FaceSelection, FeatureDefinition};
     use cadmpeg_ir::math::Vector3;

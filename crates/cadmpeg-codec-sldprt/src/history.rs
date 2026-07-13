@@ -724,6 +724,9 @@ pub fn bind_topology_selections(
                 resolve_body_selection(target, &body_ids);
                 resolve_body_selection(tools, &body_ids);
             }
+            FeatureDefinition::Scale { bodies, .. } => {
+                resolve_body_selection(bodies, &body_ids);
+            }
             FeatureDefinition::DeleteFace { faces, .. }
             | FeatureDefinition::MoveFace { faces, .. }
             | FeatureDefinition::Dome { faces, .. } => {
@@ -913,6 +916,8 @@ fn project_definition(
         project_dome(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Flex") {
         project_flex(feature).unwrap_or_else(|| native_definition(feature))
+    } else if feature_family(feature, "Scale") {
+        project_scale(feature).unwrap_or_else(|| native_definition(feature))
     } else if feature_family(feature, "Hole") {
         project_hole(feature).unwrap_or_else(|| native_definition(feature))
     } else if is_revolve(feature) {
@@ -1064,6 +1069,12 @@ fn project_datum_point(feature: &Feature) -> Option<FeatureDefinition> {
 
 fn valid_direction(direction: Vector3) -> bool {
     direction.norm().is_finite() && direction.norm() > f64::EPSILON
+}
+
+fn valid_scale_factors(factors: Vector3) -> bool {
+    [factors.x, factors.y, factors.z]
+        .into_iter()
+        .all(|factor| factor.is_finite() && factor != 0.0)
 }
 
 fn project_fillet(feature: &Feature) -> Option<FeatureDefinition> {
@@ -1649,6 +1660,34 @@ fn project_flex(feature: &Feature) -> Option<FeatureDefinition> {
         return None;
     }
     Some(FeatureDefinition::Flex { axis, mode })
+}
+
+fn project_scale(feature: &Feature) -> Option<FeatureDefinition> {
+    let center = parse_point3_mm(feature.properties.get("Center")?)?;
+    let uniform = feature
+        .parameters
+        .get("Factor")
+        .and_then(|value| value.trim().parse::<f64>().ok());
+    let factors = match uniform {
+        Some(value) => Vector3::new(value, value, value),
+        None => Vector3::new(
+            feature.parameters.get("ScaleX")?.trim().parse().ok()?,
+            feature.parameters.get("ScaleY")?.trim().parse().ok()?,
+            feature.parameters.get("ScaleZ")?.trim().parse().ok()?,
+        ),
+    };
+    if !valid_scale_factors(factors) {
+        return None;
+    }
+    Some(FeatureDefinition::Scale {
+        bodies: feature
+            .properties
+            .get("Bodies")
+            .cloned()
+            .map(BodySelection::Native)?,
+        center,
+        factors,
+    })
 }
 
 fn project_chamfer(feature: &Feature) -> Option<FeatureDefinition> {
@@ -3335,6 +3374,51 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::Scale {
+                bodies,
+                center,
+                factors,
+            } => {
+                let selection = body_selection_value(bodies);
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !feature_family(record, "Scale"))
+                    || selection.is_none()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported scale semantics",
+                        feature.id
+                    )));
+                }
+                if !valid_scale_factors(*factors)
+                    || ![center.x, center.y, center.z]
+                        .into_iter()
+                        .all(f64::is_finite)
+                {
+                    return Err(CodecError::Malformed(format!(
+                        "SLDPRT feature {} has an invalid scale transform",
+                        feature.id
+                    )));
+                }
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.remove("Factor");
+                parameters.insert("ScaleX".into(), factors.x.to_string());
+                parameters.insert("ScaleY".into(), factors.y.to_string());
+                parameters.insert("ScaleZ".into(), factors.z.to_string());
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Bodies".into(), selection.expect("checked above"));
+                properties.insert("Center".into(), format_point3_mm(*center));
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "Scale".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Hole {
                 face,
                 position,
@@ -4204,6 +4288,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::MoveFace { .. } => "MoveFace",
         FeatureDefinition::Dome { .. } => "Dome",
         FeatureDefinition::Flex { .. } => "Flex",
+        FeatureDefinition::Scale { .. } => "Scale",
         FeatureDefinition::Hole { .. } => "Hole",
         FeatureDefinition::Pattern {
             pattern: PatternKind::Mirror { .. },
