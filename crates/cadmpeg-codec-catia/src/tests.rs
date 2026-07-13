@@ -1137,10 +1137,38 @@ fn object_graph_vm_stream() -> Vec<u8> {
     ])
 }
 
+fn catalog_stream(entries: &[&str]) -> Vec<u8> {
+    let mut bytes = vec![0x7c, 0x02, 0, 0, 0, 0];
+    bytes.push(0x80 + u8::try_from(entries.len() + 1).unwrap());
+    for entry in entries {
+        bytes.push(u8::try_from(entry.len() + 1).unwrap());
+        bytes.extend_from_slice(entry.as_bytes());
+    }
+    let total_len = u32::try_from(bytes.len()).unwrap();
+    bytes[2..6].copy_from_slice(&total_len.to_le_bytes());
+    bytes
+}
+
 fn standard_catpart_with_object_graph() -> Vec<u8> {
     let graph = object_graph_stream();
     let mut file = standard_catpart();
     file.splice(16..16, graph);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn standard_catpart_with_catalog() -> Vec<u8> {
+    let catalog = catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "Pad",
+    ]);
+    let mut file = standard_catpart();
+    file.splice(16..16, catalog);
     let file_len = u32::try_from(file.len()).unwrap();
     file[8..12].copy_from_slice(&be32(file_len));
     file
@@ -2536,6 +2564,26 @@ fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
 }
 
 #[test]
+fn catalog_parser_reads_exact_inclusive_length_dictionary() {
+    let entries = [
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+        "Pad",
+    ];
+    let catalogs = crate::catalog::parse(&catalog_stream(&entries));
+
+    assert_eq!(catalogs.len(), 1);
+    assert_eq!(catalogs[0].declared_count, 7);
+    assert_eq!(catalogs[0].entries.len(), entries.len());
+    assert_eq!(catalogs[0].entries[4].ordinal, 4);
+    assert_eq!(catalogs[0].entries[4].value, "Sketch");
+    assert_eq!(catalogs[0].entries[5].value, "Pad");
+}
+
+#[test]
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
@@ -2584,6 +2632,29 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
     assert_eq!(graph.records[1].ordinal, 1);
     assert_eq!(graph.records[1].owner_ref, Some(2));
     assert_eq!(graph.records[1].class_ref, Some(4));
+}
+
+#[test]
+fn decode_retains_catalog_schema_names_without_promoting_features() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_catalog()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated catalog part");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA namespace"),
+    )
+    .expect("load CATIA native records");
+
+    assert_eq!(native.catalogs.len(), 1);
+    assert_eq!(native.catalogs[0].entries[4].value, "Sketch");
+    assert_eq!(native.catalogs[0].entries[5].value, "Pad");
+    assert!(decoded.ir.model.features.is_empty());
 }
 
 #[test]
