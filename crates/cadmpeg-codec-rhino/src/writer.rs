@@ -13,8 +13,21 @@ use crate::chunks::{MAGIC, TCODE_ENDOFFILE, TCODE_SHORT};
 
 const TCODE_PROPERTIES_TABLE: u32 = 0x1000_0014;
 const TCODE_SETTINGS_TABLE: u32 = 0x1000_0015;
+const TCODE_BITMAP_TABLE: u32 = 0x1000_0016;
+const TCODE_TEXTURE_MAPPING_TABLE: u32 = 0x1000_0025;
+const TCODE_MATERIAL_TABLE: u32 = 0x1000_0010;
+const TCODE_LINETYPE_TABLE: u32 = 0x1000_0023;
+const TCODE_LAYER_TABLE: u32 = 0x1000_0011;
+const TCODE_GROUP_TABLE: u32 = 0x1000_0018;
+const TCODE_FONT_TABLE: u32 = 0x1000_0019;
+const TCODE_DIMSTYLE_TABLE: u32 = 0x1000_0020;
+const TCODE_LIGHT_TABLE: u32 = 0x1000_0012;
+const TCODE_HATCH_PATTERN_TABLE: u32 = 0x1000_0022;
+const TCODE_INSTANCE_DEFINITION_TABLE: u32 = 0x1000_0021;
 const TCODE_OBJECT_TABLE: u32 = 0x1000_0013;
+const TCODE_HISTORY_RECORD_TABLE: u32 = 0x1000_0026;
 const TCODE_ENDOFTABLE: u32 = 0xffff_ffff;
+const TCODE_PROPERTIES_OPENNURBS_VERSION: u32 = 0xa000_0026;
 const TCODE_UNITS_AND_TOLERANCES: u32 = 0x2000_8031;
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
 const TCODE_OBJECT_RECORD_TYPE: u32 = 0x0200_0071;
@@ -204,12 +217,31 @@ fn write_archive(
 ) -> Result<(), CodecError> {
     let mut bytes = header(version)?;
     bytes.extend(long_chunk(1, b"cadmpeg"));
-    bytes.extend(table(TCODE_PROPERTIES_TABLE, &[]));
+    bytes.extend(table(
+        TCODE_PROPERTIES_TABLE,
+        &[short_chunk(TCODE_PROPERTIES_OPENNURBS_VERSION, 200_712_190)],
+    ));
     bytes.extend(table(
         TCODE_SETTINGS_TABLE,
         &[units_record(ir.tolerances.linear, ir.tolerances.angular)],
     ));
+    for typecode in [
+        TCODE_BITMAP_TABLE,
+        TCODE_TEXTURE_MAPPING_TABLE,
+        TCODE_MATERIAL_TABLE,
+        TCODE_LINETYPE_TABLE,
+        TCODE_LAYER_TABLE,
+        TCODE_GROUP_TABLE,
+        TCODE_FONT_TABLE,
+        TCODE_DIMSTYLE_TABLE,
+        TCODE_LIGHT_TABLE,
+        TCODE_HATCH_PATTERN_TABLE,
+        TCODE_INSTANCE_DEFINITION_TABLE,
+    ] {
+        bytes.extend(table(typecode, &[]));
+    }
     bytes.extend(table(TCODE_OBJECT_TABLE, objects));
+    bytes.extend(table(TCODE_HISTORY_RECORD_TABLE, &[]));
     let final_size = bytes
         .len()
         .checked_add(20)
@@ -950,6 +982,12 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
             record.extend(vertex_index[&edge.end.0].to_le_bytes());
             record.extend(indexes(&[index as i32]));
             record.extend(edge.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(
+                edge.param_range
+                    .expect("validated edge domain")
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes),
+            );
             record
         })
         .collect::<Vec<_>>();
@@ -988,7 +1026,14 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
                     .into_iter()
                     .flat_map(f64::to_le_bytes),
             );
-            record.extend([0_u8; 48]);
+            record.extend(
+                edge.param_range
+                    .expect("validated edge domain")
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes),
+            );
+            record.push(0);
+            record.extend([0_u8; 31]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
             record
         })
@@ -1023,8 +1068,9 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     for value in min.into_iter().chain(max) {
         payload.extend(value.to_le_bytes());
     }
-    payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
-    payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
+    let mesh_presence = vec![0; model.faces.len()];
+    payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
+    payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(0_i32.to_le_bytes());
     Ok(Some(payload))
 }
@@ -1585,6 +1631,7 @@ fn multi_face_brep_payload(
                     .collect::<Vec<_>>(),
             ));
             record.extend(edge.tolerance.unwrap_or(0.0).to_le_bytes());
+            record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
             record
         })
         .collect::<Vec<_>>();
@@ -1624,7 +1671,9 @@ fn multi_face_brep_payload(
                     .into_iter()
                     .flat_map(f64::to_le_bytes),
             );
-            record.extend([0_u8; 48]);
+            record.extend(domain.into_iter().flat_map(f64::to_le_bytes));
+            record.push(0);
+            record.extend([0_u8; 31]);
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
             record
         })
@@ -1686,8 +1735,9 @@ fn multi_face_brep_payload(
     for value in min.into_iter().chain(max) {
         payload.extend(value.to_le_bytes());
     }
-    payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
-    payload.extend(crc_chunk(0x4000_8000, &[0, 0]));
+    let mesh_presence = vec![0; model.faces.len()];
+    payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
+    payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(i32::from(body.kind == BodyKind::Solid).to_le_bytes());
     Ok(payload)
 }
@@ -2218,11 +2268,13 @@ fn bounded_line_payload(from: [f64; 3], to: [f64; 3], domain: [f64; 2], dimensio
 fn polymorphic_array(children: &[([u8; 16], Vec<u8>)]) -> Vec<u8> {
     let mut body = vec![0x10];
     body.extend((children.len() as i32).to_le_bytes());
+    let mut direct = body.clone();
     for (class, payload) in children {
         body.extend(1_i32.to_le_bytes());
+        direct.extend(1_i32.to_le_bytes());
         body.extend(class_wrapper(*class, payload));
     }
-    crc_chunk(0x4000_8000, &body)
+    crc_chunk_with_direct(0x4000_8000, &body, &direct)
 }
 
 fn raw_array(records: &[Vec<u8>]) -> Vec<u8> {
@@ -2600,8 +2652,18 @@ fn long_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
 }
 
 fn crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+    crc_chunk_with_direct(typecode, body, body)
+}
+
+fn crc_chunk_with_direct(typecode: u32, body: &[u8], direct: &[u8]) -> Vec<u8> {
     let mut payload = body.to_vec();
-    payload.extend(crc32fast::hash(body).to_le_bytes());
+    payload.extend(crc32fast::hash(direct).to_le_bytes());
+    long_chunk(typecode, &payload)
+}
+
+fn zero_crc_chunk(typecode: u32, body: &[u8]) -> Vec<u8> {
+    let mut payload = body.to_vec();
+    payload.extend(0_u32.to_le_bytes());
     long_chunk(typecode, &payload)
 }
 
@@ -2830,7 +2892,7 @@ fn cross(a: cadmpeg_ir::math::Vector3, b: cadmpeg_ir::math::Vector3) -> cadmpeg_
 }
 
 fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: u64) -> Vec<u8> {
-    let minor = if archive_version == 50 { 5_u8 } else { 7_u8 };
+    let minor = if archive_version == 50 { 5_u8 } else { 8_u8 };
     let mut payload = vec![0x30 | minor];
     payload.extend((mesh.vertices.len() as i32).to_le_bytes());
     payload.extend((mesh.triangles.len() as i32).to_le_bytes());
@@ -2892,6 +2954,7 @@ fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: 
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 16]);
     payload.extend(mesh_buffer(mesh_channel(mesh, CHANNEL_SURFACE_PARAMETERS)));
+    payload.extend(mesh_mapping_tag());
     payload.extend([0_u8; 3]);
     if minor >= 6 {
         payload.push(0);
@@ -2913,7 +2976,32 @@ fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: 
         body.extend(mesh_buffer(&doubles));
         payload.extend(crc_chunk(0x4000_8000, &body));
     }
+    if minor >= 8 {
+        let min = mesh.vertices.iter().fold([f64::INFINITY; 3], |a, point| {
+            [a[0].min(point.x), a[1].min(point.y), a[2].min(point.z)]
+        });
+        let max = mesh
+            .vertices
+            .iter()
+            .fold([f64::NEG_INFINITY; 3], |a, point| {
+                [a[0].max(point.x), a[1].max(point.y), a[2].max(point.z)]
+            });
+        payload.extend(min.into_iter().chain(max).flat_map(f64::to_le_bytes));
+    }
     payload
+}
+
+fn mesh_mapping_tag() -> Vec<u8> {
+    let mut body = 1_i32.to_le_bytes().to_vec();
+    body.extend(0_i32.to_le_bytes());
+    body.extend([0_u8; 16]);
+    body.extend(0_i32.to_le_bytes());
+    for value in [
+        1.0_f64, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ] {
+        body.extend(value.to_le_bytes());
+    }
+    crc_chunk(0x4000_8000, &body)
 }
 
 fn mesh_channel(mesh: &cadmpeg_ir::tessellation::Tessellation, kind: u32) -> &[u8] {
@@ -2961,7 +3049,13 @@ fn framed_object_record(
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
     let uuid = long_chunk(TCODE_CLASS_UUID, &uuid_body);
-    let class_data = crc_chunk(TCODE_CLASS_DATA, payload);
+    let class_data = if class_uuid == BREP_CLASS {
+        brep_class_data_chunk(payload)
+    } else if class_uuid == MESH_CLASS {
+        mesh_class_data_chunk(payload)
+    } else {
+        crc_chunk(TCODE_CLASS_DATA, payload)
+    };
     let class_end = short_chunk(TCODE_CLASS_END, 0);
     let class = long_chunk(TCODE_CLASS_WRAPPER, &[uuid, class_data, class_end].concat());
     let object_end = short_chunk(TCODE_OBJECT_RECORD_END, 0);
@@ -2970,7 +3064,55 @@ fn framed_object_record(
         body.extend(crc_chunk(TCODE_OBJECT_RECORD_ATTRIBUTES, &attributes));
     }
     body.extend(object_end);
-    crc_chunk(TCODE_OBJECT_RECORD, &body)
+    zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
+}
+
+fn mesh_class_data_chunk(payload: &[u8]) -> Vec<u8> {
+    let mapping = payload
+        .windows(12)
+        .position(|window| {
+            window[..4] == 0x4000_8000_u32.to_le_bytes()
+                && i64::from_le_bytes(
+                    window[4..12]
+                        .try_into()
+                        .expect("fixed nested chunk header width"),
+                ) == 160
+        })
+        .expect("generated mesh mapping tag");
+    let mut direct = payload[..mapping].to_vec();
+    let mut cursor = nested_chunk_end(payload, mapping);
+    let minor = payload[0] & 0x0f;
+    if minor >= 7 {
+        direct.extend(&payload[cursor..cursor + 5]);
+        cursor += 5;
+        cursor = nested_chunk_end(payload, cursor);
+    }
+    direct.extend(&payload[cursor..]);
+    crc_chunk_with_direct(TCODE_CLASS_DATA, payload, &direct)
+}
+
+fn brep_class_data_chunk(payload: &[u8]) -> Vec<u8> {
+    let mut direct = vec![payload[0]];
+    let mut cursor = 1;
+    for _ in 0..8 {
+        cursor = nested_chunk_end(payload, cursor);
+    }
+    direct.extend(&payload[cursor..cursor + 48]);
+    cursor += 48;
+    for _ in 0..2 {
+        cursor = nested_chunk_end(payload, cursor);
+    }
+    direct.extend(&payload[cursor..]);
+    crc_chunk_with_direct(TCODE_CLASS_DATA, payload, &direct)
+}
+
+fn nested_chunk_end(bytes: &[u8], offset: usize) -> usize {
+    let length = i64::from_le_bytes(
+        bytes[offset + 4..offset + 12]
+            .try_into()
+            .expect("generated nested chunk header width"),
+    );
+    offset + 12 + usize::try_from(length).expect("generated nested chunk length")
 }
 
 fn check_object_attributes(
