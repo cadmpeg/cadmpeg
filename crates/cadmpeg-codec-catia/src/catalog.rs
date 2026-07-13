@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Framed CATIA `7C02` string catalogs.
+//! Framed CATIA `7C02` UTF-8 string catalogs.
 
 use cadmpeg_ir::le::u32_at as u32_le;
 use schemars::JsonSchema;
@@ -27,7 +27,8 @@ pub struct CatalogEntry {
     pub ordinal: u32,
     /// Byte offset of the inclusive length field.
     pub pos: usize,
-    /// Decoded ASCII value.
+    /// Decoded UTF-8 value. Schema expressions can contain line feeds and
+    /// non-ASCII unit symbols.
     pub value: String,
 }
 
@@ -62,9 +63,6 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
             return None;
         }
         let raw = &bytes[value_start..next];
-        if !raw.iter().all(|byte| (0x20..=0x7e).contains(byte)) {
-            return None;
-        }
         entries.push(CatalogEntry {
             ordinal: ordinal as u32,
             pos: at,
@@ -98,5 +96,37 @@ fn count_atom(bytes: &[u8], pos: usize) -> Option<(u32, usize)> {
             pos + 2,
         )),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_accepts_utf8_and_expression_line_feeds() {
+        let entries = [
+            "CATCatalogManager",
+            "catalogManager",
+            "catalogLinks",
+            "",
+            "angle\n°",
+        ];
+        let mut body = vec![0x86];
+        for entry in entries {
+            body.push(u8::try_from(entry.len() + 1).expect("fixture entry fits in u8"));
+            body.extend_from_slice(entry.as_bytes());
+        }
+        let total_len = 6 + body.len();
+        let mut bytes = vec![0x7c, 0x02];
+        bytes.extend_from_slice(
+            &u32::try_from(total_len)
+                .expect("fixture catalog length fits in u32")
+                .to_le_bytes(),
+        );
+        bytes.extend_from_slice(&body);
+        let catalogs = parse(&bytes);
+        assert_eq!(catalogs.len(), 1);
+        assert_eq!(catalogs[0].entries[4].value, "angle\n°");
     }
 }

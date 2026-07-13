@@ -367,6 +367,8 @@ entry   := <inclusive_len:u8> <ascii[inclusive_len-1]>
 
 A nested total-length tree rooted at `7C 08`; each `7C09` object holds a lead-coded head and a `7C0A` tagged-atom payload. It is the **feature/object-ownership layer**, not the expanded face→loop→coedge table or the port→vertex collapse. `7C09` head: `<lead> 01 <owner_ref> <class_ref> [storage_ref]`; references are compact record ordinals, class refs are per-file prototype ordinals rather than global type codes. `7C0A` atoms: compact `0x80..0xD0` (value = byte−0x80), raw `0x51..0x7F`, **paged** `0xD1..0xE4 <byte>` (value = `(prefix−0xD1)·256 + byte + 1`, consumes 2 bytes, **not** little-endian-widened), escaped `0x80 <u32le>`. E5 blobs inside `7C0A` are templated descriptor records (≈59 or 46 bytes), not NURBS payloads. The class30 pair records and `76 ac 7f`-delimited handle table are coedge/half-edge sub-tables, not the port→vertex relation.
 
+The following `7C02` schema catalog stores inclusive-length UTF-8 strings. String values may contain line feeds and non-ASCII unit symbols. Its fixed first four entries are `CATCatalogManager`, `catalogManager`, `catalogLinks`, and the empty string.
+
 ### 7.3 `7C0B` value blocks
 
 ```text
