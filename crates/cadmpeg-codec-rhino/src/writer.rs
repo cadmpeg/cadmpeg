@@ -38,6 +38,9 @@ const NURBS_SURFACE_CLASS: [u8; 16] = [
 const PLANE_SURFACE_CLASS: [u8; 16] = [
     0xdf, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
 ];
+const MESH_CLASS: [u8; 16] = [
+    0xe4, 0xd4, 0xd7, 0x4e, 0x47, 0xe9, 0xd3, 0x11, 0xbf, 0xe5, 0x00, 0x10, 0x83, 0x01, 0x22, 0xf0,
+];
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
@@ -86,6 +89,13 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         };
         objects.push(object_record(8, class, &payload));
     }
+    for mesh in &ir.model.tessellations {
+        objects.push(object_record(
+            0x20,
+            MESH_CLASS,
+            &mesh_payload(mesh, version),
+        ));
+    }
 
     let mut bytes = header(version)?;
     bytes.extend(long_chunk(1, b"cadmpeg"));
@@ -128,7 +138,6 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         ("sketches", model.sketches.len()),
         ("sketch_entities", model.sketch_entities.len()),
         ("sketch_constraints", model.sketch_constraints.len()),
-        ("tessellations", model.tessellations.len()),
         ("appearances", model.appearances.len()),
         ("appearance_bindings", model.appearance_bindings.len()),
         ("attributes", model.attributes.len()),
@@ -198,10 +207,67 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
             }
         }
     }
+    for mesh in &model.tessellations {
+        check_mesh(mesh)?;
+    }
     if ir.native.namespace("rhino").is_some() {
         return Err(CodecError::NotImplemented(
             "Rhino native records require explicit survival handling".into(),
         ));
+    }
+    Ok(())
+}
+
+fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), CodecError> {
+    let vertex_count = mesh.vertices.len();
+    if vertex_count == 0 || vertex_count > (1 << 24) || mesh.triangles.len() > (1 << 24) {
+        return Err(CodecError::Malformed(format!(
+            "mesh {} has invalid native counts",
+            mesh.id
+        )));
+    }
+    if mesh.body.is_some() || !mesh.strip_lengths.is_empty() || !mesh.channels.is_empty() {
+        return Err(CodecError::NotImplemented(format!(
+            "mesh {} uses body binding, strips, or channels not yet writable",
+            mesh.id
+        )));
+    }
+    if !mesh.normals.is_empty() && mesh.normals.len() != vertex_count {
+        return Err(CodecError::Malformed(format!(
+            "mesh {} normal count mismatch",
+            mesh.id
+        )));
+    }
+    if mesh.vertices.iter().any(|p| {
+        !p.x.is_finite()
+            || !p.y.is_finite()
+            || !p.z.is_finite()
+            || !(p.x as f32).is_finite()
+            || !(p.y as f32).is_finite()
+            || !(p.z as f32).is_finite()
+    }) || mesh.normals.iter().any(|n| {
+        !n.x.is_finite()
+            || !n.y.is_finite()
+            || !n.z.is_finite()
+            || !(n.x as f32).is_finite()
+            || !(n.y as f32).is_finite()
+            || !(n.z as f32).is_finite()
+    }) {
+        return Err(CodecError::Malformed(format!(
+            "mesh {} contains non-finite native values",
+            mesh.id
+        )));
+    }
+    if mesh
+        .triangles
+        .iter()
+        .flatten()
+        .any(|index| *index as usize >= vertex_count)
+    {
+        return Err(CodecError::Malformed(format!(
+            "mesh {} index is out of range",
+            mesh.id
+        )));
     }
     Ok(())
 }
@@ -524,6 +590,97 @@ fn cross(a: cadmpeg_ir::math::Vector3, b: cadmpeg_ir::math::Vector3) -> cadmpeg_
     )
 }
 
+fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: u64) -> Vec<u8> {
+    let minor = if archive_version == 50 { 5_u8 } else { 7_u8 };
+    let mut payload = vec![0x30 | minor];
+    payload.extend((mesh.vertices.len() as i32).to_le_bytes());
+    payload.extend((mesh.triangles.len() as i32).to_le_bytes());
+    for _ in 0..4 {
+        payload.extend(0.0_f64.to_le_bytes());
+        payload.extend(1.0_f64.to_le_bytes());
+    }
+    payload.extend([0_u8; 16]);
+    payload.extend([0_u8; 16 * 4]);
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend([0_u8; 5]);
+
+    let width = if mesh.vertices.len() < 256 {
+        1_i32
+    } else if mesh.vertices.len() < 65_536 {
+        2_i32
+    } else {
+        4_i32
+    };
+    payload.extend(width.to_le_bytes());
+    for triangle in &mesh.triangles {
+        for index in [triangle[0], triangle[1], triangle[2], triangle[2]] {
+            match width {
+                1 => payload.push(index as u8),
+                2 => payload.extend((index as u16).to_le_bytes()),
+                4 => payload.extend(index.to_le_bytes()),
+                _ => unreachable!(),
+            }
+        }
+    }
+
+    let float_vertices = mesh
+        .vertices
+        .iter()
+        .flat_map(|point| {
+            [point.x as f32, point.y as f32, point.z as f32]
+                .into_iter()
+                .flat_map(f32::to_le_bytes)
+        })
+        .collect::<Vec<_>>();
+    let normals = mesh
+        .normals
+        .iter()
+        .flat_map(|normal| {
+            [normal.x as f32, normal.y as f32, normal.z as f32]
+                .into_iter()
+                .flat_map(f32::to_le_bytes)
+        })
+        .collect::<Vec<_>>();
+    for data in [&float_vertices[..], &normals[..], &[], &[], &[]] {
+        payload.extend(mesh_buffer(data));
+    }
+    payload.extend(0_i32.to_le_bytes());
+    payload.extend([0_u8; 16]);
+    payload.extend(mesh_buffer(&[]));
+    payload.extend([0_u8; 3]);
+    if minor >= 6 {
+        payload.push(0);
+    }
+    if minor >= 7 {
+        payload.push(1);
+        let doubles = mesh
+            .vertices
+            .iter()
+            .flat_map(|point| {
+                [point.x, point.y, point.z]
+                    .into_iter()
+                    .flat_map(f64::to_le_bytes)
+            })
+            .collect::<Vec<_>>();
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(0_i32.to_le_bytes());
+        body.extend((mesh.vertices.len() as u32).to_le_bytes());
+        body.extend(mesh_buffer(&doubles));
+        payload.extend(crc_chunk(0x4000_8000, &body));
+    }
+    payload
+}
+
+fn mesh_buffer(data: &[u8]) -> Vec<u8> {
+    let mut result = (data.len() as u32).to_le_bytes().to_vec();
+    if !data.is_empty() {
+        result.extend(crc32fast::hash(data).to_le_bytes());
+        result.push(0);
+        result.extend(data);
+    }
+    result
+}
+
 fn object_record(object_type: i64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
@@ -719,5 +876,78 @@ mod tests {
                 .collect::<Vec<_>>();
             assert_eq!(actual, expected);
         }
+    }
+
+    #[test]
+    fn standalone_mesh_round_trips_across_archive_versions() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .tessellations
+            .push(cadmpeg_ir::tessellation::Tessellation {
+                id: "cadir:model:tessellation#mesh".into(),
+                body: None,
+                source_object: None,
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                    Point3::new(0.0, 3.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+                strip_lengths: Vec::new(),
+                normals: vec![cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0); 3],
+                channels: Vec::new(),
+            });
+        for version in [
+            RhinoArchiveVersion::V5,
+            RhinoArchiveVersion::V6,
+            RhinoArchiveVersion::V7,
+            RhinoArchiveVersion::V8,
+        ] {
+            let mut bytes = Vec::new();
+            RhinoEncoder::new(version).encode(&ir, &mut bytes).unwrap();
+            let decoded = RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(decoded.ir.model.tessellations.len(), 1);
+            let actual = &decoded.ir.model.tessellations[0];
+            assert_eq!(actual.vertices, ir.model.tessellations[0].vertices);
+            assert_eq!(actual.triangles, ir.model.tessellations[0].triangles);
+            assert_eq!(actual.normals, ir.model.tessellations[0].normals);
+        }
+    }
+
+    #[test]
+    fn mesh_precision_is_target_specific_and_reported() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model
+            .tessellations
+            .push(cadmpeg_ir::tessellation::Tessellation {
+                id: "cadir:model:tessellation#precision".into(),
+                body: None,
+                source_object: None,
+                vertices: vec![
+                    Point3::new(0.1, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+                strip_lengths: Vec::new(),
+                normals: Vec::new(),
+                channels: Vec::new(),
+            });
+        let mut v5 = Vec::new();
+        let v5_report = RhinoEncoder::new(RhinoArchiveVersion::V5)
+            .encode(&ir, &mut v5)
+            .unwrap();
+        assert_eq!(v5_report.losses.len(), 1);
+        let mut v8 = Vec::new();
+        let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut v8)
+            .unwrap();
+        assert!(v8_report.losses.is_empty());
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(v8), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir.model.tessellations[0].vertices[0].x, 0.1);
     }
 }

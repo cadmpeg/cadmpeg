@@ -9,7 +9,7 @@ use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
 use std::io::Write;
 
 pub(crate) mod accounting;
@@ -121,11 +121,52 @@ impl Encoder for RhinoEncoder {
     fn encode(&self, ir: &CadIr, output: &mut dyn Write) -> Result<ExportReport, CodecError> {
         writer::write(ir, self.version.value(), output)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
+        let vertex_quantization = self.version == RhinoArchiveVersion::V5
+            && ir
+                .model
+                .tessellations
+                .iter()
+                .flat_map(|mesh| &mesh.vertices)
+                .any(|point| {
+                    f64::from(point.x as f32) != point.x
+                        || f64::from(point.y as f32) != point.y
+                        || f64::from(point.z as f32) != point.z
+                });
+        let normal_quantization = ir
+            .model
+            .tessellations
+            .iter()
+            .flat_map(|mesh| &mesh.normals)
+            .any(|normal| {
+                f64::from(normal.x as f32) != normal.x
+                    || f64::from(normal.y as f32) != normal.y
+                    || f64::from(normal.z as f32) != normal.z
+            });
+        let mut losses = Vec::new();
+        if vertex_quantization {
+            losses.push(LossNote {
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: "archive version 50 stores standalone mesh vertices as f32".into(),
+                provenance: None,
+            });
+        }
+        if normal_quantization {
+            losses.push(LossNote {
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: "3DM mesh normals are stored as f32".into(),
+                provenance: None,
+            });
+        }
         Ok(ExportReport {
             format: "rhino".into(),
-            total_entities: ir.model.points.len() + ir.model.curves.len() + ir.model.surfaces.len(),
+            total_entities: ir.model.points.len()
+                + ir.model.curves.len()
+                + ir.model.surfaces.len()
+                + ir.model.tessellations.len(),
             entity_counts: validation.entity_counts,
-            losses: Vec::new(),
+            losses,
             notes: vec![format!("3DM archive version {}", self.version.value())],
         })
     }
