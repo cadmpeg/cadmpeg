@@ -202,12 +202,34 @@ pub struct FeatureInputLane {
     /// Compact relation instances grouped by feature and operand identity.
     #[serde(default)]
     pub relation_instances: Vec<FeatureInputRelationInstance>,
+    /// Compact body-selection vectors owned by feature objects in this lane.
+    #[serde(default)]
+    pub body_selections: Vec<FeatureInputBodySelection>,
     /// Native entity-reference cells in byte order.
     #[serde(default)]
     pub references: Vec<FeatureInputReference>,
     /// Typed sketch-entity markers located within `native_payload`.
     #[serde(default)]
     pub sketch_entities: Vec<SketchInputEntity>,
+}
+
+/// One compact feature-local body-selection vector.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputBodySelection {
+    /// Globally unique deterministic identifier for this vector.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among compact body-selection vectors in stream order.
+    pub ordinal: u32,
+    /// Byte offset of the schema word opening the vector.
+    pub offset: u64,
+    /// Feature-input name record owning this vector.
+    pub object_name_ref: String,
+    /// Native history feature owning this vector.
+    pub feature_ref: String,
+    /// Ordered feature-local body identifiers.
+    pub local_body_ids: Vec<u32>,
 }
 
 /// A declared sketch-relation family and its attached scalar record.

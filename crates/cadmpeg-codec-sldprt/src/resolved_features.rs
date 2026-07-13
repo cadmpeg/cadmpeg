@@ -3,8 +3,8 @@
 
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
-    FeatureInputClass, FeatureInputClassRole, FeatureInputLane, FeatureInputName,
-    FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
+    FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole, FeatureInputLane,
+    FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
     FeatureInputRelationBinding, FeatureInputRelationFamily, FeatureInputRelationInstance,
     FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
     SketchInputLink,
@@ -121,6 +121,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 scalars,
                 relation_bindings,
                 relation_instances: Vec::new(),
+                body_selections: Vec::new(),
                 references,
                 sketch_entities,
             })
@@ -243,8 +244,8 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        marker_coordinates, marker_local_id, marker_local_links, unique_locus,
-        unique_marker_candidate,
+        compact_body_selection_at, compact_body_selection_vector, marker_coordinates,
+        marker_local_id, marker_local_links, unique_locus, unique_marker_candidate,
     };
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
 
@@ -320,6 +321,27 @@ mod marker_tests {
             unique_locus(&[SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]),
             None
         );
+    }
+
+    #[test]
+    fn compact_body_selection_requires_the_complete_trailer() {
+        let mut payload = vec![0xaa; 9];
+        payload.extend(11000u32.to_le_bytes());
+        payload.extend([0; 8]);
+        payload.extend(2u32.to_le_bytes());
+        payload.extend(287u32.to_le_bytes());
+        payload.extend(115u32.to_le_bytes());
+        payload.extend(u32::MAX.to_le_bytes());
+        payload.extend([0; 12]);
+        payload.extend([0x6a, 0xcb]);
+        assert_eq!(
+            compact_body_selection_vector(&payload, 100),
+            Some((109, vec![287, 115]))
+        );
+        assert_eq!(compact_body_selection_at(&payload, 9), Some(vec![287, 115]));
+        let zero_trailer = payload.len() - 3;
+        payload[zero_trailer] = 1;
+        assert_eq!(compact_body_selection_vector(&payload, 100), None);
     }
 }
 
@@ -601,7 +623,117 @@ pub(crate) fn bind_scalar_operands(
                 .flatten();
         }
         lane.relation_instances = relation_instances(histories, lane);
+        lane.body_selections = compact_body_selections(histories, lane);
     }
+}
+
+fn compact_body_selections(
+    histories: &[crate::records::FeatureHistory],
+    lane: &FeatureInputLane,
+) -> Vec<FeatureInputBodySelection> {
+    let mut objects = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| Some((feature_object_name(feature, lane)?, feature)))
+        .collect::<Vec<_>>();
+    objects.sort_by_key(|(name, _)| name.offset);
+    let lane_key = lane
+        .id
+        .rsplit_once('#')
+        .map_or(lane.id.as_str(), |(_, key)| key);
+    let mut result = Vec::new();
+    for (object_index, &(name, feature)) in objects.iter().enumerate() {
+        if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            != NativeClassKind::DeleteBody
+        {
+            continue;
+        }
+        let Some(start) = usize::try_from(name.offset).ok() else {
+            continue;
+        };
+        let end = objects
+            .get(object_index + 1)
+            .and_then(|(next, _)| usize::try_from(next.offset).ok())
+            .unwrap_or(lane.native_payload.len());
+        let Some((offset, local_body_ids)) = lane
+            .native_payload
+            .get(start..end)
+            .and_then(|payload| compact_body_selection_vector(payload, start))
+        else {
+            continue;
+        };
+        result.push(FeatureInputBodySelection {
+            id: format!("sldprt:feature-input:body-selection#{lane_key}:{offset}"),
+            parent: lane.id.clone(),
+            ordinal: result.len() as u32,
+            offset: offset as u64,
+            object_name_ref: name.id.clone(),
+            feature_ref: feature.id.clone(),
+            local_body_ids,
+        });
+    }
+    result
+}
+
+fn compact_body_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {
+    const SCHEMA: &[u8] = &11000u32.to_le_bytes();
+    for relative in (0..=payload.len().checked_sub(16)?).rev() {
+        if payload.get(relative..relative + 4)? != SCHEMA
+            || payload.get(relative + 4..relative + 12)? != [0; 8]
+        {
+            continue;
+        }
+        let count = usize::try_from(u32::from_le_bytes(
+            payload.get(relative + 12..relative + 16)?.try_into().ok()?,
+        ))
+        .ok()?;
+        let ids_end = relative.checked_add(16 + count.checked_mul(4)?)?;
+        let sentinel_end = ids_end.checked_add(4)?;
+        let zeros_end = sentinel_end.checked_add(12)?;
+        if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
+            || payload.get(sentinel_end..zeros_end)? != [0; 12]
+            || !matches!(
+                payload.get(zeros_end..),
+                Some([] | [0, 0, 0, 0] | [0x6a, 0xcb])
+            )
+        {
+            continue;
+        }
+        let local_body_ids = payload
+            .get(relative + 16..ids_end)?
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
+            .collect();
+        return Some((base + relative, local_body_ids));
+    }
+    None
+}
+
+pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option<Vec<u32>> {
+    if payload.get(offset..offset + 4)? != 11000u32.to_le_bytes()
+        || payload.get(offset + 4..offset + 12)? != [0; 8]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(offset + 12..offset + 16)?.try_into().ok()?,
+    ))
+    .ok()?;
+    let ids_end = offset.checked_add(16 + count.checked_mul(4)?)?;
+    let sentinel_end = ids_end.checked_add(4)?;
+    let zeros_end = sentinel_end.checked_add(12)?;
+    if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
+        || payload.get(sentinel_end..zeros_end)? != [0; 12]
+    {
+        return None;
+    }
+    Some(
+        payload
+            .get(offset + 16..ids_end)?
+            .chunks_exact(4)
+            .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
+            .collect(),
+    )
 }
 
 fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
@@ -2210,6 +2342,7 @@ mod profile_join_tests {
             scalars: Vec::new(),
             relation_bindings: Vec::new(),
             relation_instances: Vec::new(),
+            body_selections: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![
                 marker("marker-a", Some([0.0, 0.0])),
@@ -3106,6 +3239,7 @@ fn source_less_lanes(
                 scalars: Vec::new(),
                 relation_bindings: Vec::new(),
                 relation_instances: Vec::new(),
+                body_selections: Vec::new(),
                 references: Vec::new(),
                 sketch_entities: Vec::new(),
             });
