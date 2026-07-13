@@ -882,6 +882,7 @@ fn project_design_history(
 ) {
     let mut projection = histories.to_vec();
     crate::resolved_features::enrich_history_parameters(&mut projection, lanes);
+    crate::resolved_features::enrich_history_reference_planes(&mut projection, lanes);
     ir.model.features = crate::history::project_features(&projection);
     ir.model.configurations = crate::history::project_configurations(&projection);
     ir.model.parameters = crate::history::project_parameters(&projection);

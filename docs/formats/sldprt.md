@@ -119,6 +119,8 @@ Built-in reference-plane history records have no dimensions or extra attributes.
 
 Dimensionless, attribute-free `Feature` history records use reserved source IDs for non-modeling tree roles. Source ID `6` is the lights-and-cameras container, `12` is the ambient light, `13`, `14`, and `15` are the built-in directional lights, and `19` is the exploded-views container. Display names and type strings do not affect these roles.
 
+`moFixedRefPlnData_c` stores a constructed reference-plane frame. The record body begins with eight zero bytes. Three f64 values at body offsets `+8`, `+16`, and `+24` store origin `(y,z,x)` in metres. The normal is `(0, f64@+32, f64@+40)`. Byte `+48` is `1`. The in-plane u-axis is `(f64@+73, f64@+81, f64@+89)`. Both vectors are unit length and mutually orthogonal. The frame belongs to the immediately preceding feature object and precedes the next feature object.
+
 ---
 
 ## 3. Parasolid stream

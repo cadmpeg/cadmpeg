@@ -868,6 +868,135 @@ pub(crate) fn enrich_history_parameters(
     }
 }
 
+/// Add exact fixed-reference-plane frames to a projection copy of history.
+pub(crate) fn enrich_history_reference_planes(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
+    for lane in lanes {
+        let mut starts =
+            histories
+                .iter()
+                .enumerate()
+                .flat_map(|(history_index, history)| {
+                    history.features.iter().enumerate().filter_map(
+                        move |(feature_index, feature)| {
+                            feature_object_name(feature, lane)
+                                .map(|name| (name.offset, history_index, feature_index))
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+        starts.sort_by_key(|start| start.0);
+        for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
+            let feature = &histories[history_index].features[feature_index];
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::ReferencePlane
+                || feature.properties.contains_key("Origin")
+                || feature.properties.contains_key("Normal")
+                || feature.properties.contains_key("UAxis")
+            {
+                continue;
+            }
+            let end = starts
+                .get(index + 1)
+                .map_or(lane.native_payload.len(), |next| next.0 as usize);
+            let Ok(start) = usize::try_from(start) else {
+                continue;
+            };
+            let Some(bytes) = lane.native_payload.get(start..end) else {
+                continue;
+            };
+            let mut frames = bytes
+                .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+                .filter_map(fixed_reference_plane_frame)
+                .collect::<Vec<_>>();
+            frames.sort_by_key(|(origin, normal, u_axis)| {
+                [
+                    origin.x.to_bits(),
+                    origin.y.to_bits(),
+                    origin.z.to_bits(),
+                    normal.x.to_bits(),
+                    normal.y.to_bits(),
+                    normal.z.to_bits(),
+                    u_axis.x.to_bits(),
+                    u_axis.y.to_bits(),
+                    u_axis.z.to_bits(),
+                ]
+            });
+            frames.dedup_by(|left, right| left == right);
+            let [(origin, normal, u_axis)] = frames.as_slice() else {
+                continue;
+            };
+            candidates
+                .entry((history_index, feature_index))
+                .or_default()
+                .push((*origin, *normal, *u_axis));
+        }
+    }
+    for ((history_index, feature_index), mut frames) in candidates {
+        frames.sort_by_key(|(origin, normal, u_axis)| {
+            [
+                origin.x.to_bits(),
+                origin.y.to_bits(),
+                origin.z.to_bits(),
+                normal.x.to_bits(),
+                normal.y.to_bits(),
+                normal.z.to_bits(),
+                u_axis.x.to_bits(),
+                u_axis.y.to_bits(),
+                u_axis.z.to_bits(),
+            ]
+        });
+        frames.dedup();
+        let [(origin, normal, u_axis)] = frames.as_slice() else {
+            continue;
+        };
+        let feature = &mut histories[history_index].features[feature_index];
+        feature.properties.insert(
+            "Origin".into(),
+            format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+        );
+        feature.properties.insert(
+            "Normal".into(),
+            format!("{},{},{}", normal.x, normal.y, normal.z),
+        );
+        feature.properties.insert(
+            "UAxis".into(),
+            format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
+        );
+    }
+}
+
+const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
+
+fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    if bytes.get(..8)?.iter().any(|byte| *byte != 0) || bytes.get(48) != Some(&1) {
+        return None;
+    }
+    let scalar = |offset| {
+        let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let native_origin = [scalar(8)?, scalar(16)?, scalar(24)?];
+    let origin = Point3::new(
+        native_origin[2] * NATIVE_TO_IR,
+        native_origin[0] * NATIVE_TO_IR,
+        native_origin[1] * NATIVE_TO_IR,
+    );
+    let normal = Vector3::new(0.0, scalar(32)?, scalar(40)?);
+    let u_axis = Vector3::new(scalar(73)?, scalar(81)?, scalar(89)?);
+    let norm =
+        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    let normal_norm = norm(normal);
+    let u_norm = norm(u_axis);
+    let dot = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
+    ((normal_norm - 1.0).abs() <= 1.0e-9 && (u_norm - 1.0).abs() <= 1.0e-9 && dot.abs() <= 1.0e-9)
+        .then_some((origin, normal, u_axis))
+}
+
 /// Bind Keywords history records to their serialized feature-input object classes.
 pub(crate) fn bind_history_classes(
     histories: &mut [crate::records::FeatureHistory],
