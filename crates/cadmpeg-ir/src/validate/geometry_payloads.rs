@@ -1442,6 +1442,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 check_knots(findings, &c.id.0, &n.knots, "");
             }
+            CurveGeometry::Procedural { .. } => {}
             CurveGeometry::Unknown { .. } => {}
         }
     }

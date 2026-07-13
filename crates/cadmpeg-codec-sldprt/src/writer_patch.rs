@@ -313,6 +313,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Hyperbola { .. } => 5,
         CurveGeometry::Degenerate { .. } => 6,
         CurveGeometry::Unknown { .. } => 7,
+        CurveGeometry::Procedural { .. } => 8,
     }
 }
 

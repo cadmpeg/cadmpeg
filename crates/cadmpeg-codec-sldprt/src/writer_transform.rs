@@ -371,7 +371,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
         CurveGeometry::Degenerate { point } => {
             *point = transform_point(transform, *point);
         }
-        CurveGeometry::Unknown { .. } => {}
+        CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {}
     }
 }
 

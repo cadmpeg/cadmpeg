@@ -406,6 +406,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 | CurveGeometry::Hyperbola { .. }
                 | CurveGeometry::Degenerate { .. }
                 | CurveGeometry::Nurbs(_)
+                | CurveGeometry::Procedural { .. }
                 | CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
@@ -1803,6 +1804,8 @@ fn emit_topology(
         }
     }
 
+    attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
+
     let owned_edges: BTreeSet<_> = ir
         .model
         .coedges
@@ -1822,6 +1825,106 @@ fn emit_topology(
     ir.model.vertices.retain(|vertex| {
         !vertex.id.0.starts_with(&prefix) || retained_vertices.contains(&vertex.id)
     });
+}
+
+pub(crate) fn attach_tolerant_edge_intersections(
+    ir: &mut CadIr,
+    graph: &Graph,
+    edges: &BTreeMap<u32, EdgeId>,
+    prefix: &str,
+    source_stream: cadmpeg_ir::annotations::StreamHandle,
+    annotations: &mut AnnotationBuilder,
+) {
+    let mut candidates = Vec::new();
+    for (&xmt, edge_id) in edges {
+        let Some(edge) = ir
+            .model
+            .edges
+            .iter()
+            .find(|candidate| &candidate.id == edge_id)
+        else {
+            continue;
+        };
+        if edge.curve.is_some() || edge.tolerance.is_none() {
+            continue;
+        }
+        let mut supports = ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| &coedge.edge == edge_id)
+            .filter_map(|coedge| {
+                let face = ir
+                    .model
+                    .loops
+                    .iter()
+                    .find(|loop_| loop_.id == coedge.owner_loop)?
+                    .face
+                    .clone();
+                ir.model
+                    .faces
+                    .iter()
+                    .find(|candidate| candidate.id == face)
+                    .map(|face| face.surface.clone())
+            })
+            .collect::<BTreeSet<_>>();
+        if supports.len() != 2 {
+            continue;
+        }
+        let second = supports.pop_last().expect("two supports");
+        let first = supports.pop_first().expect("two supports");
+        candidates.push((xmt, edge_id.clone(), [first, second]));
+    }
+
+    for (xmt, edge_id, supports) in candidates {
+        let curve_id = CurveId(format!("{prefix}:tolerant-curve#{xmt}"));
+        let procedural_id = ProceduralCurveId(format!("{prefix}:tolerant-intersection#{xmt}"));
+        let Some(edge) = ir
+            .model
+            .edges
+            .iter_mut()
+            .find(|candidate| candidate.id == edge_id)
+        else {
+            continue;
+        };
+        edge.curve = Some(curve_id.clone());
+        edge.param_range = Some([0.0, 1.0]);
+        annotations.derived(&edge_id, "curve");
+        annotations.derived(&edge_id, "param_range");
+        if let Some(node) = graph.get(16, xmt) {
+            annotations
+                .note(&curve_id, source_stream, node.pos as u64)
+                .tag("TOLERANT_EDGE_INTERSECTION");
+            annotations
+                .note(&procedural_id, source_stream, node.pos as u64)
+                .tag("TOLERANT_EDGE_INTERSECTION");
+        }
+        annotations.derived(&curve_id, "geometry");
+        annotations.derived(&procedural_id, "definition");
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Procedural {
+                construction: procedural_id.clone(),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: procedural_id,
+            curve: curve_id,
+            definition: ProceduralCurveDefinition::Intersection {
+                context: IntcurveSupportContext {
+                    sides: supports.map(|surface| IntcurveSupportSide {
+                        surface: Some(surface),
+                        pcurve: None,
+                    }),
+                    parameter_range: [0.0, 1.0],
+                    discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+                },
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+    }
 }
 
 pub(crate) fn pcurve_matches_edge(
@@ -1973,6 +2076,7 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
         CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
+        CurveGeometry::Procedural { .. } => "PROCEDURAL_CURVE",
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
 }

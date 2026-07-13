@@ -2064,6 +2064,31 @@ fn procedural_curve_cache_tolerance_bounds_endpoint_consistency() {
 }
 
 #[test]
+fn procedural_curve_geometry_resolves_its_construction() {
+    let mut ir = unit_cube();
+    let curve_id = ir.model.curves[0].id.clone();
+    let procedural_id = ProceduralCurveId("synthetic:cube:procedural-curve#linked".into());
+    ir.model.curves[0].geometry = CurveGeometry::Procedural {
+        construction: procedural_id.clone(),
+    };
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: procedural_id,
+        curve: curve_id,
+        definition: ProceduralCurveDefinition::Exact,
+        cache_fit_tolerance: None,
+    });
+    let report = validate(&ir, Vec::new());
+    assert!(report.is_ok(), "{:?}", report.findings);
+
+    ir.model.procedural_curves[0].curve = ir.model.curves[1].id.clone();
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("construction points to a different curve")
+    }));
+}
+
+#[test]
 fn pcurve_surface_mismatch_is_flagged() {
     // The bottom face's plane is `origin (0,0,0), normal (0,0,-1)`, whose
     // derived u/v frame maps `(u, v) -> (u, -v, 0)`. Edge #0 runs from

@@ -876,6 +876,57 @@ fn decode_retains_native_carrierless_edge() {
 }
 
 #[test]
+fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let edge_id = ir.model.edges[0].id.clone();
+    ir.model.edges[0].curve = None;
+    ir.model.edges[0].param_range = None;
+    ir.model.edges[0].tolerance = Some(0.01);
+    let mut edges = std::collections::BTreeMap::new();
+    edges.insert(12, edge_id.clone());
+    let graph = crate::topology::Graph::parse(&[]);
+    let mut annotations = cadmpeg_ir::annotations::AnnotationBuilder::new();
+    let stream = annotations.stream("nx:test");
+
+    crate::decode::attach_tolerant_edge_intersections(
+        &mut ir,
+        &graph,
+        &edges,
+        "nx:test",
+        stream,
+        &mut annotations,
+    );
+
+    let edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == edge_id)
+        .expect("tolerant edge");
+    assert_eq!(edge.param_range, Some([0.0, 1.0]));
+    let curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| Some(&curve.id) == edge.curve.as_ref())
+        .expect("procedural carrier");
+    assert!(matches!(curve.geometry, CurveGeometry::Procedural { .. }));
+    let procedural = ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|procedural| procedural.curve == curve.id)
+        .expect("intersection construction");
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &procedural.definition
+    else {
+        panic!("intersection definition");
+    };
+    assert!(context.sides.iter().all(|side| side.surface.is_some()));
+    assert_ne!(context.sides[0].surface, context.sides[1].surface);
+}
+
+#[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));

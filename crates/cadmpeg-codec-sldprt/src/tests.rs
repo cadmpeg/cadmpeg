@@ -3776,7 +3776,7 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
-            CurveGeometry::Unknown { .. } => {}
+            CurveGeometry::Procedural { .. } | CurveGeometry::Unknown { .. } => {}
         }
     }
     for surface in &mut ir.model.surfaces {

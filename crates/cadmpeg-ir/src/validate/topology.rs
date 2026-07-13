@@ -271,13 +271,28 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for curve in &ir.model.curves {
-        if let CurveGeometry::Unknown {
-            record: Some(unknown),
-        } = &curve.geometry
-        {
-            if !ids.unknowns.contains(&unknown.0) {
+        match &curve.geometry {
+            CurveGeometry::Procedural { construction } => match ir
+                .model
+                .procedural_curves
+                .iter()
+                .find(|candidate| &candidate.id == construction)
+            {
+                Some(procedural) if procedural.curve != curve.id => findings.push(Finding {
+                    check: Check::ReferentialIntegrity,
+                    severity: Severity::Error,
+                    message: "procedural construction points to a different curve".into(),
+                    entity: Some(curve.id.0.clone()),
+                }),
+                Some(_) => {}
+                None => ref_error(findings, &curve.id.0, "procedural curve", &construction.0),
+            },
+            CurveGeometry::Unknown {
+                record: Some(unknown),
+            } if !ids.unknowns.contains(&unknown.0) => {
                 ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
             }
+            _ => {}
         }
     }
     for procedural in &ir.model.procedural_surfaces {
@@ -790,6 +805,23 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
     for procedural in &ir.model.procedural_curves {
         if !ids.curves.contains(&procedural.curve.0) {
             ref_error(findings, &procedural.curve.0, "curve", &procedural.curve.0);
+        }
+        if let Some(curve) = ir
+            .model
+            .curves
+            .iter()
+            .find(|candidate| candidate.id == procedural.curve)
+        {
+            if let CurveGeometry::Procedural { construction } = &curve.geometry {
+                if construction != &procedural.id {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: "procedural curve points to a different construction".into(),
+                        entity: Some(procedural.id.0.clone()),
+                    });
+                }
+            }
         }
         match &procedural.definition {
             ProceduralCurveDefinition::Exact | ProceduralCurveDefinition::Helix { .. } => {}
