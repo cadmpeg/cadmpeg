@@ -123,6 +123,25 @@ impl Container {
             .collect()
     }
 
+    /// Decode indexed EXTREFSTREAM record prefixes and sorted handle sets.
+    pub(crate) fn external_reference_records(&self) -> Vec<(&DirEntry, ExtrefRecord)> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.name.contains("ExternalReferences"))
+            .filter_map(|entry| {
+                let (offset, size) = entry.file_span?;
+                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                let payload = self.data.get(offset..offset.checked_add(size)?)?;
+                Some(
+                    parse_extref_records(payload)
+                        .into_iter()
+                        .map(move |record| (entry, record)),
+                )
+            })
+            .flatten()
+            .collect()
+    }
+
     /// Extract active NX object identifiers from `/Root/FastLoad/RMFastLoad`.
     pub fn rmfastload_object_ids(&self) -> Vec<u32> {
         let Some((offset, size)) = self
@@ -172,6 +191,19 @@ impl Container {
     }
 }
 
+/// Decoded prefix of one indexed EXTREFSTREAM record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtrefRecord {
+    pub record_id: u32,
+    pub offset: usize,
+    pub declared_count: u16,
+    pub id_slots: [u32; 4],
+    pub handles: Vec<u32>,
+    pub closing_duplicate: bool,
+    pub prefix_byte_len: usize,
+    pub tail_byte_len: usize,
+}
+
 fn find(bytes: &[u8], needle: &[u8]) -> Option<usize> {
     bytes
         .windows(needle.len())
@@ -185,6 +217,7 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
             (payload[marker] == 1).then_some(())?;
             let count = u32_le(payload, marker + 1)? as usize;
             let mut pos = marker + 5;
+            (count <= payload.len().saturating_sub(pos) / 3).then_some(())?;
             let mut out = Vec::with_capacity(count);
             for _ in 0..count {
                 let raw_length = payload.get(pos..pos + 2)?;
@@ -193,15 +226,103 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
                 pos = string_offset.checked_add(length)?;
                 let raw = payload.get(string_offset..pos)?;
                 let value = std::str::from_utf8(raw).ok()?;
-                (!value.is_empty()
-                    && value
-                        .bytes()
-                        .all(|byte| byte.is_ascii_graphic() || byte == b' '))
-                .then_some(())?;
+                (!value.is_empty() && value.chars().all(|character| !character.is_control()))
+                    .then_some(())?;
                 out.push((string_offset, value.to_string()));
             }
             (pos == payload.len()).then_some((marker, out))
         })
+}
+
+pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
+    if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
+        return Vec::new();
+    }
+    let Some((string_table, _)) = parse_extref_string_table(payload) else {
+        return Vec::new();
+    };
+    let mut directory = Vec::new();
+    let mut at = 25usize;
+    loop {
+        let Some(record_id) = u32_le(payload, at) else {
+            return Vec::new();
+        };
+        at += 4;
+        if record_id == 0 {
+            break;
+        }
+        let Some(offset) = u32_le(payload, at) else {
+            return Vec::new();
+        };
+        at += 4;
+        let offset = offset as usize;
+        if offset >= string_table {
+            return Vec::new();
+        }
+        directory.push((record_id, offset));
+    }
+    if directory.is_empty()
+        || !directory.windows(2).all(|pair| pair[0].1 < pair[1].1)
+        || at > directory[0].1
+    {
+        return Vec::new();
+    }
+
+    let parse_record = |record_id, offset, end| -> Option<ExtrefRecord> {
+        let bytes = payload.get(offset..end)?;
+        (bytes.get(..4) == Some(&[1, 0, 0, 0]) && bytes.get(6) == Some(&1)).then_some(())?;
+        let declared_count = u16::from_be_bytes(bytes.get(4..6)?.try_into().ok()?);
+        let mut id_slots = [0; 4];
+        for (slot, value) in id_slots.iter_mut().enumerate() {
+            *value = u32::from_le_bytes(bytes.get(7 + slot * 4..11 + slot * 4)?.try_into().ok()?);
+        }
+        (bytes.get(23) == Some(&1)).then_some(())?;
+        let count = usize::from(*bytes.get(24)?);
+        (count >= 2).then_some(())?;
+        let handle_token_count = count - 1;
+        let prefix_byte_len = 26usize.checked_add(handle_token_count.checked_mul(5)?)?;
+        (prefix_byte_len <= bytes.len() && bytes.get(prefix_byte_len - 1) == Some(&(count as u8)))
+            .then_some(())?;
+        let mut handles = Vec::with_capacity(handle_token_count);
+        for handle_index in 0..handle_token_count {
+            let token = 25 + handle_index * 5;
+            (bytes.get(token) == Some(&0xe0)).then_some(())?;
+            handles.push(u32::from_be_bytes(
+                bytes.get(token + 1..token + 5)?.try_into().ok()?,
+            ));
+        }
+        let closing_duplicate = handle_token_count >= 2
+            && handles[handle_token_count - 1] == handles[handle_token_count - 2];
+        let unique_count = handle_token_count - usize::from(closing_duplicate);
+        handles[..unique_count]
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+            .then_some(())?;
+        if closing_duplicate {
+            handles.pop();
+        }
+        Some(ExtrefRecord {
+            record_id,
+            offset,
+            declared_count,
+            id_slots,
+            handles,
+            closing_duplicate,
+            prefix_byte_len,
+            tail_byte_len: bytes.len() - prefix_byte_len,
+        })
+    };
+
+    let mut records = Vec::with_capacity(directory.len());
+    for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
+        let end = directory
+            .get(index + 1)
+            .map_or(string_table, |(_, offset)| *offset);
+        if let Some(record) = parse_record(record_id, offset, end) {
+            records.push(record);
+        }
+    }
+    records
 }
 
 /// A parsed SPLMSSTR container and its directory entries.

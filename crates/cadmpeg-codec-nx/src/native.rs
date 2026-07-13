@@ -239,6 +239,31 @@ pub struct ExternalReference {
     pub source_offset: u64,
 }
 
+/// Indexed EXTREFSTREAM record prefix with its exact handle membership set.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReferenceRecord {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Record type from the external-reference directory.
+    pub record_id: u32,
+    /// Count declared before the four ID slots.
+    pub declared_count: u16,
+    /// Four uninterpreted little-endian ID slots.
+    pub id_slots: [u32; 4],
+    /// Strictly ascending persistent handles; the serialized closing duplicate is omitted.
+    pub handles: Vec<u32>,
+    /// Whether the final serialized handle repeats the preceding handle.
+    pub closing_duplicate: bool,
+    /// Length of the decoded record prefix.
+    pub prefix_byte_len: u64,
+    /// Length after the decoded handle-set prefix and before the next record or string table.
+    pub tail_byte_len: u64,
+    /// Directory entry containing the external-reference stream.
+    pub source_entry: String,
+    /// Absolute file offset of the record marker.
+    pub source_offset: u64,
+}
+
 /// Decode end-anchored external child-part string tables.
 pub fn external_references(container: &Container) -> Vec<ExternalReference> {
     let mut ordinals = BTreeMap::<String, u32>::new();
@@ -256,6 +281,32 @@ pub fn external_references(container: &Container) -> Vec<ExternalReference> {
                 path,
                 source_entry: entry.name.clone(),
                 source_offset: entry_offset + relative as u64,
+            }
+        })
+        .collect()
+}
+
+/// Decode exact indexed external-reference record prefixes.
+pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenceRecord> {
+    container
+        .external_reference_records()
+        .into_iter()
+        .map(|(entry, record)| {
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            ExternalReferenceRecord {
+                id: format!(
+                    "nx:external-reference-record:{}#{}",
+                    entry.name, record.record_id
+                ),
+                record_id: record.record_id,
+                declared_count: record.declared_count,
+                id_slots: record.id_slots,
+                handles: record.handles,
+                closing_duplicate: record.closing_duplicate,
+                prefix_byte_len: record.prefix_byte_len as u64,
+                tail_byte_len: record.tail_byte_len as u64,
+                source_entry: entry.name.clone(),
+                source_offset: entry_offset + record.offset as u64,
             }
         })
         .collect()

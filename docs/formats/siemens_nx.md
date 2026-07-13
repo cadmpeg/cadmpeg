@@ -53,7 +53,7 @@ FOOTER region at the 48-bit offset: ASCII `FOOTER`, then `entry_count:u32 LE`, t
 
 `part/attrs` carries flags such as `NX_MaterialMissingAssignments=TRUE`. JT and LWPA payloads are preview meshes.
 
-`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + ASCII)`. The string table contains child `.prt` names and paths.
+`EXTREFSTREAM` contains `EXTREFSTREAM` magic, `version:u32 LE (3)`, `payload_size:u32 LE`, a record region, and a trailing string table: `01` + `count:u32 LE` + `count × (len:u16 LE + control-free UTF-8)`. The string table contains child `.prt` names and paths.
 
 Assembly `.prt` files contain no inline Parasolid partition, deltas, or plain cached-body streams. Their component geometry resides in the external child `.prt` files named by `EXTREFSTREAM`. Occurrence placement binds each external component instance.
 
@@ -432,7 +432,7 @@ A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. Outside the auth
 
 ### 9.1 `EXTREFSTREAM`
 
-An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by `record_id == 0`. Each record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, and a count-delimited persistent-handle set. The set contains `count - 1` ascending `e0 + handle:u32` entries, repeats the final handle, and ends with a closing byte equal to `count`. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty printable ASCII)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
+An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by a single `record_id == 0`. A handle-set record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, `count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`, and a closing byte equal to `count`. Handles are strictly ascending except that the final occurrence may repeat the preceding handle; transfer records whether that closing duplicate is present and omits it from the normalized handle list. Other indexed record layouts remain opaque. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty control-free UTF-8)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
 
 ### 9.2 Stream and deltas framing
 

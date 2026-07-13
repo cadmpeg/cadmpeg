@@ -4316,6 +4316,50 @@ fn external_reference_string_table_is_end_anchored() {
     let mut trailed = table.to_vec();
     trailed.push(0);
     assert!(crate::container::parse_extref_string_table(&trailed).is_none());
+    assert!(crate::container::parse_extref_string_table(b"\x01\xff\xff\xff\xff").is_none());
+}
+
+#[test]
+fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
+    let mut payload = b"EXTREFSTREAM".to_vec();
+    payload.extend_from_slice(&3u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    payload.push(0);
+    payload.extend_from_slice(&6u32.to_le_bytes());
+    payload.extend_from_slice(&41u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    assert_eq!(payload.len(), 41);
+    payload.extend_from_slice(&[1, 0, 0, 0]);
+    payload.extend_from_slice(&2u16.to_be_bytes());
+    payload.push(1);
+    for value in [8u32, 11, 12, 4] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[1, 4]);
+    for handle in [0x1020_3040u32, 0x2030_4050, 0x2030_4050] {
+        payload.push(0xe0);
+        payload.extend_from_slice(&handle.to_be_bytes());
+    }
+    payload.push(4);
+    payload.extend_from_slice(b"\x01\x01\x00\x00\x00\x09\x00child.prt");
+
+    let records = crate::container::parse_extref_records(&payload);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].record_id, 6);
+    assert_eq!(records[0].declared_count, 2);
+    assert_eq!(records[0].id_slots, [8, 11, 12, 4]);
+    assert_eq!(records[0].handles, [0x1020_3040, 0x2030_4050]);
+    assert!(records[0].closing_duplicate);
+    assert_eq!(records[0].tail_byte_len, 0);
+
+    let duplicate = payload
+        .windows(5)
+        .rposition(|window| window == [0xe0, 0x20, 0x30, 0x40, 0x50])
+        .expect("closing duplicate");
+    payload[duplicate + 1] = 0x10;
+    assert!(crate::container::parse_extref_records(&payload).is_empty());
 }
 
 #[test]
