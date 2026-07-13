@@ -16,6 +16,12 @@ const TEXT: Uuid = Uuid::from_canonical([
 const LEADER: Uuid = Uuid::from_canonical([
     0x94, 0x5b, 0xf5, 0x94, 0x6f, 0xf9, 0x4f, 0x5c, 0xbf, 0xc0, 0xb3, 0xaf, 0x52, 0x8f, 0x29, 0xd2,
 ]);
+const LEGACY_TEXT: Uuid = Uuid::from_canonical([
+    0x46, 0xf7, 0x55, 0x41, 0xf4, 0x6b, 0x48, 0xbe, 0xaa, 0x7e, 0xb3, 0x53, 0xbb, 0xe0, 0x68, 0xa7,
+]);
+const LEGACY_LEADER: Uuid = Uuid::from_canonical([
+    0x14, 0x92, 0x2b, 0x7a, 0x5b, 0x65, 0x4f, 0x11, 0x83, 0x45, 0xd4, 0x15, 0xa9, 0x63, 0x71, 0x29,
+]);
 const TEXT_DOT: Uuid = Uuid::from_canonical([
     0x74, 0x19, 0x83, 0x02, 0xcd, 0xf4, 0x4f, 0x95, 0x96, 0x09, 0x6d, 0x68, 0x4f, 0x22, 0xab, 0x37,
 ]);
@@ -41,6 +47,12 @@ struct AnnotationRecord {
     wrapped: bool,
     horizontal_direction: [f64; 2],
     allow_text_scaling: bool,
+    legacy_text_display_mode: Option<i32>,
+    legacy_user_text: Option<String>,
+    legacy_user_positioned_text: Option<bool>,
+    legacy_style_index: Option<i32>,
+    legacy_text_height: Option<f64>,
+    legacy_justification: Option<i32>,
     leader_points: Vec<[f64; 2]>,
     links: Vec<String>,
 }
@@ -143,6 +155,36 @@ fn decode_annotation(
     Ok((annotation, points))
 }
 
+fn decode_legacy_annotation(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    scale: f64,
+) -> Result<crate::dimensions::LegacyAnnotation, FramingError> {
+    let chunk = chunk_at(data, range.start, range.end, archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
+        return Err(structural(
+            range.start,
+            "legacy annotation wrapper is invalid",
+        ));
+    }
+    let mut outer = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+    if outer.i32()? != 1 || outer.i32()? != 0 {
+        return Err(structural(
+            chunk.body.start,
+            "legacy annotation wrapper version is unsupported",
+        ));
+    }
+    let value = crate::dimensions::legacy_annotation(data, &mut outer, scale, archive)?;
+    if outer.remaining() != 0 {
+        return Err(structural(
+            outer.position(),
+            "legacy annotation has trailing bytes",
+        ));
+    }
+    Ok(value)
+}
+
 fn decode_dot(
     data: &[u8],
     range: std::ops::Range<usize>,
@@ -241,10 +283,55 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 wrapped: value.wrapped,
                 horizontal_direction: value.horizontal_direction,
                 allow_text_scaling: value.allow_text_scaling,
+                legacy_text_display_mode: None,
+                legacy_user_text: None,
+                legacy_user_positioned_text: None,
+                legacy_style_index: None,
+                legacy_text_height: None,
+                legacy_justification: None,
                 leader_points: points
                     .into_iter()
                     .map(|p| [p[0] * scale, p[1] * scale])
                     .collect(),
+                links: vec![link],
+            });
+        } else if matches!(object.class_uuid, LEGACY_TEXT | LEGACY_LEADER) {
+            let leader = object.class_uuid == LEGACY_LEADER;
+            let Ok(value) = decode_legacy_annotation(
+                &scan.data,
+                object.class_data_range.clone(),
+                scan.archive,
+                scale,
+            ) else {
+                continue;
+            };
+            annotations.push(AnnotationRecord {
+                id: format!("rhino:document:annotation#{key}"),
+                source_offset: object.range.start as u64,
+                source_uuid: identity.object_id.to_string(),
+                kind: if leader { "leader" } else { "text" },
+                rich_text: value.rich_text,
+                plane_origin: value.plane.origin.0,
+                plane_x_axis: value.plane.xaxis.0,
+                plane_y_axis: value.plane.yaxis.0,
+                plane_z_axis: value.plane.zaxis.0,
+                plane_equation: value.plane.equation,
+                dimstyle_uuid: None,
+                annotation_type: value.kind,
+                text_rectangle_width: 0.0,
+                text_rotation_radians: 0.0,
+                horizontal_alignment: 0,
+                vertical_alignment: 0,
+                wrapped: false,
+                horizontal_direction: [1.0, 0.0],
+                allow_text_scaling: value.allow_text_scaling,
+                legacy_text_display_mode: Some(value.text_display_mode),
+                legacy_user_text: Some(value.user_text),
+                legacy_user_positioned_text: Some(value.user_positioned_text),
+                legacy_style_index: Some(value.dimstyle_index),
+                legacy_text_height: Some(value.text_height),
+                legacy_justification: Some(value.justification),
+                leader_points: value.points,
                 links: vec![link],
             });
         } else if object.class_uuid == TEXT_DOT {
@@ -271,7 +358,8 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
 
 #[cfg(test)]
 mod tests {
-    use super::decode_dot;
+    use super::{decode_dot, decode_legacy_annotation, ANONYMOUS};
+    use crate::chunks::ArchiveVersion;
 
     fn utf16(value: &str) -> Vec<u8> {
         let mut units = value.encode_utf16().collect::<Vec<_>>();
@@ -281,6 +369,26 @@ mod tests {
             bytes.extend(unit.to_le_bytes());
         }
         bytes
+    }
+
+    fn anonymous(minor: i32, suffix: &[u8]) -> Vec<u8> {
+        let mut body = 1_i32.to_le_bytes().to_vec();
+        body.extend(minor.to_le_bytes());
+        body.extend(suffix);
+        crate::archive_test_support::crc_chunk(ANONYMOUS, &body)
+    }
+
+    fn plane() -> Vec<u8> {
+        [
+            1.0, 2.0, 3.0, // origin
+            1.0, 0.0, 0.0, // x axis
+            0.0, 1.0, 0.0, // y axis
+            0.0, 0.0, 1.0, // z axis
+            0.0, 0.0, 1.0, -3.0, // equation
+        ]
+        .into_iter()
+        .flat_map(f64::to_le_bytes)
+        .collect()
     }
 
     #[test]
@@ -294,10 +402,40 @@ mod tests {
         bytes.extend(utf16("Arial"));
         bytes.extend(15_i32.to_le_bytes());
         bytes.extend(utf16("secondary"));
-        let dot = decode_dot(&bytes, 0..bytes.len(), 10.0).unwrap();
+        let dot = decode_dot(&bytes, 0..bytes.len(), 10.0).expect("valid text dot");
         assert_eq!(dot.center, [10.0, 20.0, 30.0]);
         assert_eq!(dot.primary_text, "primary");
         assert_eq!(dot.secondary_text, "secondary");
         assert!(dot.always_on_top && dot.transparent && dot.bold && dot.italic);
+    }
+
+    #[test]
+    fn legacy_leader_reuses_dimension_annotation_grammar() {
+        let mut common = 7_i32.to_le_bytes().to_vec();
+        common.extend(2_i32.to_le_bytes());
+        common.extend(plane());
+        common.extend(2_i32.to_le_bytes());
+        for value in [1.0_f64, 2.0, 4.0, 8.0] {
+            common.extend(value.to_le_bytes());
+        }
+        common.extend(utf16("leader"));
+        common.extend(0_i32.to_le_bytes());
+        common.extend(12_i32.to_le_bytes());
+        common.extend(1.5_f64.to_le_bytes());
+        common.extend(4_i32.to_le_bytes());
+        common.push(1);
+        common.extend(utf16("formula"));
+        common.extend((-1_i32).to_le_bytes());
+        common.extend(12_i32.to_le_bytes());
+        let inner = anonymous(3, &common);
+        let bytes = anonymous(0, &inner);
+        let value = decode_legacy_annotation(&bytes, 0..bytes.len(), ArchiveVersion::V8, 10.0)
+            .expect("valid legacy leader");
+        assert_eq!(value.rich_text, "leader");
+        assert_eq!(value.user_text, "formula");
+        assert_eq!(value.plane.origin.0, [10.0, 20.0, 30.0]);
+        assert_eq!(value.points, [[10.0, 20.0], [40.0, 80.0]]);
+        assert_eq!(value.text_height, 15.0);
+        assert_eq!(value.dimstyle_index, 12);
     }
 }

@@ -349,21 +349,21 @@ fn angular_measurement(first: [f64; 2], second: [f64; 2], line: [f64; 2]) -> f64
     }
 }
 
-struct LegacyAnnotation {
-    kind: i32,
-    text_display_mode: i32,
-    plane: Plane,
-    points: Vec<[f64; 2]>,
-    rich_text: String,
-    user_text: String,
-    user_positioned_text: bool,
-    dimstyle_index: i32,
-    allow_text_scaling: bool,
-    text_height: f64,
-    justification: i32,
+pub(crate) struct LegacyAnnotation {
+    pub(crate) kind: i32,
+    pub(crate) text_display_mode: i32,
+    pub(crate) plane: Plane,
+    pub(crate) points: Vec<[f64; 2]>,
+    pub(crate) rich_text: String,
+    pub(crate) user_text: String,
+    pub(crate) user_positioned_text: bool,
+    pub(crate) dimstyle_index: i32,
+    pub(crate) allow_text_scaling: bool,
+    pub(crate) text_height: f64,
+    pub(crate) justification: i32,
 }
 
-fn legacy_annotation(
+pub(crate) fn legacy_annotation(
     data: &[u8],
     reader: &mut BoundedReader<'_>,
     scale: f64,
