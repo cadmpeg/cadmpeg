@@ -57,7 +57,7 @@ const CHANNEL_CURVATURE: u32 = 0x5248_0004;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
-    if let Some(payload) = planar_triangle_brep_payload(ir)? {
+    if let Some(payload) = planar_sheet_brep_payload(ir)? {
         return write_archive(
             ir,
             version,
@@ -213,8 +213,8 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
         .iter()
         .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet)
     {
-        planar_triangle_brep_payload(ir)?.ok_or_else(|| {
-            CodecError::NotImplemented("sheet topology is not a writable planar triangle".into())
+        planar_sheet_brep_payload(ir)?.ok_or_else(|| {
+            CodecError::NotImplemented("sheet topology is not a writable planar polygon".into())
         })?;
         return Ok(());
     } else {
@@ -281,7 +281,7 @@ fn check_representable(ir: &CadIr) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
+fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 
     let model = &ir.model;
@@ -292,21 +292,22 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     else {
         return Ok(None);
     };
+    let edge_count = model.coedges.len();
     if model.bodies.len() != 1
         || model.regions.len() != 1
         || model.shells.len() != 1
         || model.faces.len() != 1
         || model.loops.len() != 1
-        || model.coedges.len() != 3
-        || model.edges.len() != 3
-        || model.vertices.len() != 3
-        || model.points.len() != 3
-        || model.curves.len() != 3
+        || edge_count < 3
+        || model.edges.len() != edge_count
+        || model.vertices.len() != edge_count
+        || model.points.len() != edge_count
+        || model.curves.len() != edge_count
         || model.surfaces.len() != 1
         || !model.tessellations.is_empty()
     {
         return Err(CodecError::NotImplemented(
-            "planar sheet writing currently requires one triangular face".into(),
+            "planar sheet writing currently requires one polygonal face".into(),
         ));
     }
     if body.regions.len() != 1
@@ -335,10 +336,10 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         || face.name.is_some()
         || face.color.is_some()
         || loop_.face != face.id
-        || loop_.coedges.len() != 3
+        || loop_.coedges.len() != edge_count
     {
         return Err(CodecError::Malformed(
-            "planar triangle ownership graph is inconsistent".into(),
+            "planar sheet ownership graph is inconsistent".into(),
         ));
     }
     let surface = model
@@ -364,7 +365,7 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     check_frame(&surface.id.0, origin, normal, u_axis, "plane")?;
     let v_axis = cross(normal, u_axis);
 
-    let mut ordered_coedges = Vec::with_capacity(3);
+    let mut ordered_coedges = Vec::with_capacity(edge_count);
     for id in &loop_.coedges {
         let coedge = model
             .coedges
@@ -379,10 +380,10 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         }
         ordered_coedges.push(coedge);
     }
-    for index in 0..3 {
+    for index in 0..edge_count {
         let current = ordered_coedges[index];
-        if current.next != ordered_coedges[(index + 1) % 3].id
-            || current.previous != ordered_coedges[(index + 2) % 3].id
+        if current.next != ordered_coedges[(index + 1) % edge_count].id
+            || current.previous != ordered_coedges[(index + edge_count - 1) % edge_count].id
             || current.radial_next != current.id
         {
             return Err(CodecError::Malformed(format!(
@@ -392,8 +393,8 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         }
     }
 
-    let mut ordered_edges = Vec::with_capacity(3);
-    let mut traversal_vertices = Vec::with_capacity(3);
+    let mut ordered_edges = Vec::with_capacity(edge_count);
+    let mut traversal_vertices = Vec::with_capacity(edge_count);
     for coedge in &ordered_coedges {
         let edge = model
             .edges
@@ -405,7 +406,7 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
             .any(|existing: &&cadmpeg_ir::topology::Edge| existing.id == edge.id)
         {
             return Err(CodecError::NotImplemented(
-                "triangle sheet cannot reuse an edge in one loop".into(),
+                "planar sheet cannot reuse an edge in one loop".into(),
             ));
         }
         let from_id = if coedge.sense == Sense::Forward {
@@ -416,22 +417,22 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         traversal_vertices.push(from_id.clone());
         ordered_edges.push(edge);
     }
-    for index in 0..3 {
+    for index in 0..edge_count {
         let edge = ordered_edges[index];
         let traversal_end = if ordered_coedges[index].sense == Sense::Forward {
             &edge.end
         } else {
             &edge.start
         };
-        if *traversal_end != traversal_vertices[(index + 1) % 3] {
+        if *traversal_end != traversal_vertices[(index + 1) % edge_count] {
             return Err(CodecError::Malformed(
-                "triangle coedge traversal does not close".into(),
+                "planar coedge traversal does not close".into(),
             ));
         }
     }
 
-    let mut ordered_vertices = Vec::with_capacity(3);
-    let mut ordered_points = Vec::with_capacity(3);
+    let mut ordered_vertices = Vec::with_capacity(edge_count);
+    let mut ordered_points = Vec::with_capacity(edge_count);
     for id in &traversal_vertices {
         let vertex = model
             .vertices
@@ -443,7 +444,7 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
             .any(|existing: &&cadmpeg_ir::topology::Vertex| existing.id == vertex.id)
         {
             return Err(CodecError::Malformed(
-                "triangle has repeated traversal vertices".into(),
+                "planar loop has repeated traversal vertices".into(),
             ));
         }
         let point = model
@@ -455,14 +456,19 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         ordered_points.push(point.position);
     }
     for edge in &ordered_edges {
-        validate_triangle_edge(model, edge, ir.tolerances.linear)?;
+        validate_planar_edge(model, edge, ir.tolerances.linear)?;
     }
 
     let mut payload = vec![0x32];
-    let c2 = (0..3)
+    let c2 = (0..edge_count)
         .map(|index| {
             let from = plane_uv(ordered_points[index], origin, u_axis, v_axis);
-            let to = plane_uv(ordered_points[(index + 1) % 3], origin, u_axis, v_axis);
+            let to = plane_uv(
+                ordered_points[(index + 1) % edge_count],
+                origin,
+                u_axis,
+                v_axis,
+            );
             (LINE_CLASS, bounded_line_payload(from, to, [0.0, 1.0], 2))
         })
         .collect::<Vec<_>>();
@@ -558,7 +564,7 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         .collect::<Vec<_>>();
     payload.extend(raw_array(&trim_records));
     let mut loop_record = 0_i32.to_le_bytes().to_vec();
-    loop_record.extend(indexes(&[0, 1, 2]));
+    loop_record.extend(indexes(&(0..edge_count as i32).collect::<Vec<_>>()));
     loop_record.extend(1_i32.to_le_bytes());
     loop_record.extend(0_i32.to_le_bytes());
     payload.extend(raw_array(&[loop_record]));
@@ -583,7 +589,7 @@ fn planar_triangle_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     Ok(Some(payload))
 }
 
-fn validate_triangle_edge(
+fn validate_planar_edge(
     model: &cadmpeg_ir::document::Model,
     edge: &cadmpeg_ir::topology::Edge,
     document_tolerance: f64,
@@ -1832,7 +1838,26 @@ mod tests {
 
     #[test]
     fn planar_triangle_sheet_round_trips_connected_topology() {
-        let ir = triangle_sheet();
+        let ir = polygon_sheet(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]);
+        assert_planar_sheet_round_trip(&ir, 3);
+    }
+
+    #[test]
+    fn planar_quad_sheet_round_trips_connected_topology() {
+        let ir = polygon_sheet(&[
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+            Point3::new(3.0, 2.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+        ]);
+        assert_planar_sheet_round_trip(&ir, 4);
+    }
+
+    fn assert_planar_sheet_round_trip(ir: &CadIr, edge_count: usize) {
         for version in [
             RhinoArchiveVersion::V5,
             RhinoArchiveVersion::V6,
@@ -1847,9 +1872,9 @@ mod tests {
             assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
             assert_eq!(decoded.ir.model.faces.len(), 1, "{version:?}");
             assert_eq!(decoded.ir.model.loops.len(), 1, "{version:?}");
-            assert_eq!(decoded.ir.model.coedges.len(), 3, "{version:?}");
-            assert_eq!(decoded.ir.model.edges.len(), 3, "{version:?}");
-            assert_eq!(decoded.ir.model.vertices.len(), 3, "{version:?}");
+            assert_eq!(decoded.ir.model.coedges.len(), edge_count, "{version:?}");
+            assert_eq!(decoded.ir.model.edges.len(), edge_count, "{version:?}");
+            assert_eq!(decoded.ir.model.vertices.len(), edge_count, "{version:?}");
             assert!(
                 cadmpeg_ir::validate(&decoded.ir, Vec::new()).is_ok(),
                 "{version:?}"
@@ -1857,49 +1882,34 @@ mod tests {
         }
     }
 
-    fn triangle_sheet() -> CadIr {
+    fn polygon_sheet(points: &[Point3]) -> CadIr {
         use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
         use cadmpeg_ir::ids::*;
         use cadmpeg_ir::math::Vector3;
         use cadmpeg_ir::topology::*;
 
         let mut ir = CadIr::empty(Units::default());
-        let body: BodyId = "cadir:model:body#triangle".into();
-        let region: RegionId = "cadir:model:region#triangle".into();
-        let shell: ShellId = "cadir:model:shell#triangle".into();
-        let face: FaceId = "cadir:model:face#triangle".into();
-        let loop_id: LoopId = "cadir:model:loop#triangle".into();
-        let surface: SurfaceId = "cadir:model:surface#triangle".into();
-        let points = [
-            Point3::new(0.0, 0.0, 0.0),
-            Point3::new(2.0, 0.0, 0.0),
-            Point3::new(0.0, 2.0, 0.0),
-        ];
-        let point_ids = [
-            PointId("cadir:model:point#triangle.0".into()),
-            PointId("cadir:model:point#triangle.1".into()),
-            PointId("cadir:model:point#triangle.2".into()),
-        ];
-        let vertex_ids = [
-            VertexId("cadir:model:vertex#triangle.0".into()),
-            VertexId("cadir:model:vertex#triangle.1".into()),
-            VertexId("cadir:model:vertex#triangle.2".into()),
-        ];
-        let edge_ids = [
-            EdgeId("cadir:model:edge#triangle.0".into()),
-            EdgeId("cadir:model:edge#triangle.1".into()),
-            EdgeId("cadir:model:edge#triangle.2".into()),
-        ];
-        let curve_ids = [
-            CurveId("cadir:model:curve#triangle.0".into()),
-            CurveId("cadir:model:curve#triangle.1".into()),
-            CurveId("cadir:model:curve#triangle.2".into()),
-        ];
-        let coedge_ids = [
-            CoedgeId("cadir:model:coedge#triangle.0".into()),
-            CoedgeId("cadir:model:coedge#triangle.1".into()),
-            CoedgeId("cadir:model:coedge#triangle.2".into()),
-        ];
+        let body: BodyId = "cadir:model:body#polygon".into();
+        let region: RegionId = "cadir:model:region#polygon".into();
+        let shell: ShellId = "cadir:model:shell#polygon".into();
+        let face: FaceId = "cadir:model:face#polygon".into();
+        let loop_id: LoopId = "cadir:model:loop#polygon".into();
+        let surface: SurfaceId = "cadir:model:surface#polygon".into();
+        let point_ids = (0..points.len())
+            .map(|index| PointId(format!("cadir:model:point#polygon.{index}")))
+            .collect::<Vec<_>>();
+        let vertex_ids = (0..points.len())
+            .map(|index| VertexId(format!("cadir:model:vertex#polygon.{index}")))
+            .collect::<Vec<_>>();
+        let edge_ids = (0..points.len())
+            .map(|index| EdgeId(format!("cadir:model:edge#polygon.{index}")))
+            .collect::<Vec<_>>();
+        let curve_ids = (0..points.len())
+            .map(|index| CurveId(format!("cadir:model:curve#polygon.{index}")))
+            .collect::<Vec<_>>();
+        let coedge_ids = (0..points.len())
+            .map(|index| CoedgeId(format!("cadir:model:coedge#polygon.{index}")))
+            .collect::<Vec<_>>();
         ir.model.bodies.push(Body {
             id: body.clone(),
             kind: BodyKind::Sheet,
@@ -1945,15 +1955,15 @@ mod tests {
             },
             source_object: None,
         });
-        let directions = [
-            (Vector3::new(1.0, 0.0, 0.0), 2.0),
-            (
-                Vector3::new(-0.5_f64.sqrt(), 0.5_f64.sqrt(), 0.0),
-                8.0_f64.sqrt(),
-            ),
-            (Vector3::new(0.0, -1.0, 0.0), 2.0),
-        ];
-        for index in 0..3 {
+        for index in 0..points.len() {
+            let next = points[(index + 1) % points.len()];
+            let delta = Vector3::new(
+                next.x - points[index].x,
+                next.y - points[index].y,
+                next.z - points[index].z,
+            );
+            let length = delta.norm();
+            let direction = Vector3::new(delta.x / length, delta.y / length, delta.z / length);
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: points[index],
@@ -1967,7 +1977,7 @@ mod tests {
                 id: curve_ids[index].clone(),
                 geometry: CurveGeometry::Line {
                     origin: points[index],
-                    direction: directions[index].0,
+                    direction,
                 },
                 source_object: None,
             });
@@ -1975,16 +1985,16 @@ mod tests {
                 id: edge_ids[index].clone(),
                 curve: Some(curve_ids[index].clone()),
                 start: vertex_ids[index].clone(),
-                end: vertex_ids[(index + 1) % 3].clone(),
-                param_range: Some([0.0, directions[index].1]),
+                end: vertex_ids[(index + 1) % points.len()].clone(),
+                param_range: Some([0.0, length]),
                 tolerance: None,
             });
             ir.model.coedges.push(Coedge {
                 id: coedge_ids[index].clone(),
                 owner_loop: loop_id.clone(),
                 edge: edge_ids[index].clone(),
-                next: coedge_ids[(index + 1) % 3].clone(),
-                previous: coedge_ids[(index + 2) % 3].clone(),
+                next: coedge_ids[(index + 1) % points.len()].clone(),
+                previous: coedge_ids[(index + points.len() - 1) % points.len()].clone(),
                 radial_next: coedge_ids[index].clone(),
                 sense: Sense::Forward,
                 pcurve: None,
