@@ -946,7 +946,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
 
     let mut configuration_ordinals = HashSet::new();
     let mut configuration_source_indices = HashSet::new();
+    let mut active_configurations = 0;
     for configuration in &ir.model.configurations {
+        active_configurations += usize::from(configuration.active);
         if !configuration_ordinals.insert(configuration.ordinal) {
             findings.push(Finding {
                 check: Check::Counts,
@@ -982,6 +984,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 });
             }
         }
+    }
+    if active_configurations > 1 {
+        findings.push(Finding {
+            check: Check::Counts,
+            severity: Severity::Error,
+            message: "design has multiple active configurations".into(),
+            entity: None,
+        });
     }
     let features = ir
         .model

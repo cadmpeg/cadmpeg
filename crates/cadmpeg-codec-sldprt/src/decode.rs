@@ -280,6 +280,7 @@ fn build_geometry_ir(
     ir.annotations = std::mem::take(&mut brep.annotations);
     let histories = crate::history::histories(scan, &mut ir.annotations);
     project_design_history(&mut ir, &histories);
+    mark_active_configuration(&mut ir);
     let lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
     let (sketches, sketch_entities) = crate::resolved_features::sketches(scan, &mut ir.annotations);
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
@@ -860,6 +861,16 @@ fn project_design_history(ir: &mut CadIr, histories: &[crate::records::FeatureHi
     }
 }
 
+fn mark_active_configuration(ir: &mut CadIr) {
+    let active = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("sw_configuration_name"));
+    for configuration in &mut ir.model.configurations {
+        configuration.active = active == Some(&configuration.name);
+    }
+}
+
 fn stamp_feature_baseline(ir: &mut CadIr) {
     let hash = crate::history::feature_hash(&ir.model.features);
     if let Some(source) = &mut ir.source {
@@ -915,6 +926,7 @@ fn assign_configuration_bodies(
                     "sldprt:model:configuration#partition:{source_index}"
                 )),
                 ordinal,
+                active: false,
                 source_index: Some(source_index),
                 name: format!("Config-{source_index}"),
                 material: None,

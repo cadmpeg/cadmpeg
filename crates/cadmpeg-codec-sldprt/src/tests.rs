@@ -2593,6 +2593,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:z".into()),
         ordinal: 0,
+        active: false,
         source_index: None,
         name: "Metric".into(),
         material: Some("Steel".into()),
@@ -2603,6 +2604,7 @@ fn encoder_writes_source_less_neutral_configurations() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("sldprt:model:configuration#generated:a".into()),
         ordinal: 1,
+        active: false,
         source_index: None,
         name: "Empty".into(),
         material: None,
@@ -2659,6 +2661,42 @@ fn encoder_writes_source_less_neutral_configurations() {
             .collect::<Vec<_>>()
     );
     assert!(decoded.ir.model.configurations[1].bodies.is_empty());
+}
+
+#[test]
+fn semantic_writer_round_trips_active_configuration() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Manufacturing &amp; QA"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x43,
+        "Contents/SolidWorks",
+        br#"<?xml version="1.0"?><swSolidWorks swVersion="34000"><swModel swName="Part" swConfigurationName="Default"/></swSolidWorks>"#,
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir.model.configurations[0].active);
+    assert!(!decoded.ir.model.configurations[1].active);
+
+    decoded.ir.model.configurations[0].active = false;
+    decoded.ir.model.configurations[1].active = true;
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(!regenerated.ir.model.configurations[0].active);
+    assert!(regenerated.ir.model.configurations[1].active);
+    assert_eq!(
+        regenerated.ir.source.as_ref().unwrap().attributes["sw_configuration_name"],
+        "Manufacturing & QA"
+    );
 }
 
 #[test]
@@ -2726,6 +2764,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|(index, body)| DesignConfiguration {
             id: ConfigurationId(format!("synthetic:test:configuration#config-{index}")),
             ordinal: index as u32,
+            active: false,
             source_index: None,
             name: format!("Config {index}"),
             material: None,

@@ -146,7 +146,7 @@ pub fn write_semantic(ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecErr
         );
         sections.push((section, resolved_feature_payload(lane)?));
     }
-    for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep) {
+    for (section, payload) in opaque_blocks(ir, &active_partition_section, retain_native_brep)? {
         sections.push((section.clone(), payload.clone()));
     }
 
@@ -590,7 +590,7 @@ fn opaque_blocks(
     ir: &CadIr,
     active_partition: &str,
     retain_native_brep: bool,
-) -> Vec<(String, Vec<u8>)> {
+) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
     let mut seen = HashSet::new();
     ir.native_unknowns("sldprt")
         .unwrap_or_default()
@@ -627,11 +627,59 @@ fn opaque_blocks(
             {
                 return None;
             }
-            let payload = record.data?;
+            let mut payload = record.data?;
+            if let Some(active) = ir.model.configurations.iter().find(|value| value.active) {
+                match patch_active_configuration_xml(&payload, &active.name) {
+                    Ok(Some(patched)) => payload = patched,
+                    Ok(None) => {}
+                    Err(error) => return Some(Err(error)),
+                }
+            }
             seen.insert((section.to_string(), record.sha256))
-                .then_some((section.to_string(), payload))
+                .then_some(Ok((section.to_string(), payload)))
         })
         .collect()
+}
+
+fn patch_active_configuration_xml(
+    payload: &[u8],
+    name: &str,
+) -> Result<Option<Vec<u8>>, CodecError> {
+    if !payload.windows(12).any(|window| window == b"swSolidWorks") {
+        return Ok(None);
+    }
+    let text = std::str::from_utf8(payload)
+        .map_err(|_| CodecError::Malformed("invalid retained SolidWorks XML".into()))?;
+    let document = roxmltree::Document::parse(text)
+        .map_err(|_| CodecError::Malformed("invalid retained SolidWorks XML".into()))?;
+    if document.root_element().tag_name().name() != "swSolidWorks" {
+        return Ok(None);
+    }
+    let attribute = document
+        .descendants()
+        .find(|node| node.has_tag_name("swModel"))
+        .ok_or_else(|| CodecError::Malformed("SolidWorks XML has no model record".into()))?
+        .attributes()
+        .find(|attribute| attribute.name() == "swConfigurationName")
+        .ok_or_else(|| {
+            CodecError::Malformed("SolidWorks XML has no active configuration".into())
+        })?;
+    let range = attribute.range();
+    let mut output = String::with_capacity(text.len() + name.len());
+    output.push_str(&text[..range.start]);
+    output.push_str("swConfigurationName=\"");
+    for character in name.chars() {
+        match character {
+            '&' => output.push_str("&amp;"),
+            '"' => output.push_str("&quot;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            _ => output.push(character),
+        }
+    }
+    output.push('"');
+    output.push_str(&text[range.end..]);
+    Ok(Some(output.into_bytes()))
 }
 
 fn resolved_feature_payload(

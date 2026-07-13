@@ -49,6 +49,9 @@ pub struct DesignConfiguration {
     /// Position in the design configuration list.
     #[serde(default)]
     pub ordinal: u32,
+    /// Whether this configuration supplies the document's active model state.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub active: bool,
     /// Format-native configuration slot, when distinct from list order.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_index: Option<u32>,

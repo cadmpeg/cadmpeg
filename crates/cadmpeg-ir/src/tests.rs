@@ -805,6 +805,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: configuration_id.clone(),
         ordinal: 0,
+        active: false,
         source_index: Some(7),
         name: "Default".into(),
         material: None,
@@ -834,6 +835,7 @@ fn configuration_body_membership_round_trips_and_validates() {
     ir.model.configurations.push(DesignConfiguration {
         id: ConfigurationId("synthetic:test:configuration#1".into()),
         ordinal: 0,
+        active: false,
         source_index: Some(7),
         name: "Alternate".into(),
         material: None,
@@ -841,12 +843,18 @@ fn configuration_body_membership_round_trips_and_validates() {
         bodies: Vec::new(),
         native_ref: None,
     });
+    ir.model.configurations[0].active = true;
+    ir.model.configurations[1].active = true;
     ir.finalize();
     let report = validate(&ir, Vec::new());
     assert!(report
         .findings
         .iter()
         .any(|finding| finding.message.contains("repeats configuration ordinal")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("multiple active configurations")));
     assert!(report.findings.iter().any(|finding| finding
         .message
         .contains("repeats configuration source index")));
