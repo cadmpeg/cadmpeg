@@ -1066,7 +1066,9 @@ fn bind_definition_sketch(
     sketch: &cadmpeg_ir::sketches::SketchId,
 ) -> bool {
     let bind_profile = |profile: &mut ProfileRef| {
-        if matches!(profile, ProfileRef::Native(value) if value == native_ref) {
+        if matches!(profile, ProfileRef::Unresolved(owner) if owner == native_ref)
+            || matches!(profile, ProfileRef::Native(value) if value == native_ref)
+        {
             *profile = ProfileRef::Sketch(sketch.clone());
             true
         } else {
@@ -1398,20 +1400,22 @@ fn project_extrude(
         None => None,
     };
     let profile = if let Some(source) = feature.properties.get("Profile") {
-        native_by_source
-            .get(source.as_str())
-            .map_or_else(|| source.clone(), |id| (*id).to_string())
+        ProfileRef::Native(
+            native_by_source
+                .get(source.as_str())
+                .map_or_else(|| source.clone(), |id| (*id).to_string()),
+        )
     } else if let Some(children) = feature.properties.get("DissectableChildren") {
         let profiles = resolve_native_refs(children, native_by_source)?;
         let [profile] = profiles.as_slice() else {
             return None;
         };
-        profile.clone()
+        ProfileRef::Native(profile.clone())
     } else {
-        feature.id.clone()
+        ProfileRef::Unresolved(feature.id.clone())
     };
     Some(FeatureDefinition::Extrude {
-        profile: ProfileRef::Native(profile),
+        profile,
         direction,
         extent,
         op,
@@ -4644,13 +4648,25 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let profile_source = profile_source(profile, &record_sources, &sketch_sources)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing extrusion profile",
-                            feature.id
-                        ))
-                    })?;
+                let implicit_profile = existing.as_deref().is_some_and(|record| {
+                    !record.properties.contains_key("Profile")
+                        && (matches!(profile, ProfileRef::Unresolved(owner) if owner == &record.id)
+                            || matches!(profile, ProfileRef::Native(native) if native == &record.id))
+                });
+                let profile_source = if implicit_profile {
+                    None
+                } else {
+                    Some(
+                        profile_source(profile, &record_sources, &sketch_sources).ok_or_else(
+                            || {
+                                CodecError::Malformed(format!(
+                                    "SLDPRT feature {} references a missing extrusion profile",
+                                    feature.id
+                                ))
+                            },
+                        )?,
+                    )
+                };
                 if let Some(record) = existing.as_deref() {
                     if !record.properties.contains_key("Operation")
                         && *op != BooleanOp::Unresolved
@@ -4754,12 +4770,11 @@ pub fn sync_neutral_features(
                         resolved_boolean_op(*op, &feature.id)?.into(),
                     );
                 }
-                let implicit_profile = existing.as_deref().is_some_and(|record| {
-                    !record.properties.contains_key("Profile")
-                        && matches!(profile, ProfileRef::Native(native) if native == &record.id)
-                });
                 if !implicit_profile {
-                    properties.insert("Profile".into(), profile_source);
+                    properties.insert(
+                        "Profile".into(),
+                        profile_source.expect("non-implicit profile was resolved"),
+                    );
                 }
                 let kind = existing.as_deref().map_or_else(
                     || match op {
@@ -6960,6 +6975,7 @@ fn profile_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match profile {
+        ProfileRef::Unresolved(_) => None,
         ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(

@@ -31,4 +31,5 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 - Marker-to-profile correspondence is unresolved when the feature's coordinate sets admit no unique signed-axis transform or a reference marker's linked loci do not identify one profile entity.
 - Keywords operation families outside the typed neutral feature set are unresolved.
 - The termination carrier for compact extrusion objects with no owned `Depth` or `D1` scalar is unresolved.
+- The profile carrier for extrusion objects with neither `Profile` nor `DissectableChildren` is unresolved.
 - The operation, target-body, and tool-body carriers for compact `moCombineBodies_c` objects without corresponding Keywords attributes are unresolved.

@@ -93,6 +93,8 @@ An extrusion feature-input object stores a little-endian u32 operation discrimin
 
 An extrusion object without an `EndCondition` attribute and without an owned `Depth` or `D1` scalar has an unresolved extent. The class, profile reference, direction, draft, and Boolean discriminator remain independently meaningful.
 
+An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile. A nested profile stream owned by that extrusion resolves the profile to its transferred sketch.
+
 A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. Marker local identifiers are scoped to that feature object.
 
 Coordinate-bearing geometry handles and no-coordinate relation handles reuse feature-local identifiers. A handle reference with one coordinate-bearing candidate selects that geometry handle. With zero or multiple coordinate-bearing candidates, the identifier resolves only when it has one candidate in the complete feature-local marker set.

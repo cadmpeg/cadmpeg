@@ -5991,7 +5991,7 @@ fn decode_extracts_parametric_history() {
     assert!(matches!(
         &neutral.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
-            profile: cadmpeg_ir::features::ProfileRef::Native(profile),
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved(profile),
             direction: None,
             extent: cadmpeg_ir::features::Extent::Blind {
                 length: cadmpeg_ir::features::Length(12.5),
@@ -7493,7 +7493,7 @@ fn decode_projects_cut_extrude_with_canonical_length() {
 
 #[test]
 fn decode_projects_compact_extrusion_with_unresolved_extent() {
-    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition};
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -7507,6 +7507,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
+            profile: ProfileRef::Unresolved(_),
             extent: Extent::Unresolved,
             op: BooleanOp::Unresolved,
             ..
@@ -7524,6 +7525,7 @@ fn decode_projects_compact_extrusion_with_unresolved_extent() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
+            profile: ProfileRef::Unresolved(_),
             extent: Extent::Unresolved,
             ..
         }
@@ -14172,7 +14174,7 @@ fn decode_uses_pmi_dimension_to_project_sparse_extrusion() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(_),
+            profile: ProfileRef::Unresolved(_),
             extent: Extent::Blind {
                 length: Length(25.0)
             },
