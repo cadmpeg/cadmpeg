@@ -229,13 +229,16 @@ fn anonymous_versioned<'a>(
     reader: &mut BoundedReader<'a>,
     archive: ArchiveVersion,
     label: &str,
+    verify_container_crc: bool,
     warnings: &mut Vec<String>,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>, (i32, i32)), FramingError> {
     let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
     if chunk.typecode != ANONYMOUS || chunk.short {
         return Err(structural(reader, format!("{label} is not anonymous")));
     }
-    checksum_warning(data, &chunk, label, warnings)?;
+    if verify_container_crc {
+        checksum_warning(data, &chunk, label, warnings)?;
+    }
     let mut payload = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let version = (payload.i32()?, payload.i32()?);
     reader.skip(chunk.next_offset - reader.position())?;
@@ -249,7 +252,8 @@ fn anonymous<'a>(
     label: &str,
     warnings: &mut Vec<String>,
 ) -> Result<(crate::chunks::Chunk, BoundedReader<'a>), FramingError> {
-    let (chunk, payload, version) = anonymous_versioned(data, reader, archive, label, warnings)?;
+    let (chunk, payload, version) =
+        anonymous_versioned(data, reader, archive, label, true, warnings)?;
     if version != (1, 0) {
         return Err(structural(&payload, format!("unsupported {label} version")));
     }
@@ -334,7 +338,7 @@ pub(crate) fn file_reference<'a>(
     warnings: &mut Vec<String>,
 ) -> Result<FileReference, FramingError> {
     let (chunk, mut payload, version) =
-        anonymous_versioned(data, reader, archive, "file reference", warnings)?;
+        anonymous_versioned(data, reader, archive, "file reference", false, warnings)?;
     if version.0 != 1 || !(0..=1).contains(&version.1) {
         return Err(structural(&payload, "unsupported file-reference version"));
     }
@@ -344,7 +348,6 @@ pub(crate) fn file_reference<'a>(
     if hash.typecode != ANONYMOUS || hash.short {
         return Err(structural(&payload, "missing content-hash chunk"));
     }
-    checksum_warning(data, &hash, "file-reference content hash", warnings)?;
     let mut hash_payload = BoundedReader::new(data, hash.body.start, hash.body.end)?;
     if (hash_payload.i32()?, hash_payload.i32()?) != (1, 0) {
         return Err(structural(

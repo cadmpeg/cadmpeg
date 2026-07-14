@@ -1317,7 +1317,12 @@ pub(crate) fn project(
     }
     let mut producers = HashMap::<Uuid, Option<(usize, FeatureId)>>::new();
     for (index, record) in records.iter().enumerate() {
-        for descendant in &record.descendants {
+        let mut record_descendants = HashSet::new();
+        for descendant in record
+            .descendants
+            .iter()
+            .filter(|descendant| record_descendants.insert(**descendant))
+        {
             if descendant.is_nil() {
                 continue;
             }
@@ -1339,8 +1344,15 @@ pub(crate) fn project(
             .collect();
         let mut parameters = BTreeMap::new();
         let mut properties = BTreeMap::new();
+        let mut value_occurrences = HashMap::<i32, usize>::new();
         for value in &record.values {
-            let key = format!("value_{}", value.id);
+            let occurrence = value_occurrences.entry(value.id).or_default();
+            let key = if *occurrence == 0 {
+                format!("value_{}", value.id)
+            } else {
+                format!("value_{}_{}", value.id, occurrence)
+            };
+            *occurrence += 1;
             structured_value_properties(&key, &value.value, geometry_context, &mut properties);
             if let Some(text) = value_text(&value.value) {
                 parameters.insert(key, text);
@@ -1479,6 +1491,30 @@ mod tests {
             ir.model.features[1].native_ref.as_deref(),
             Some("rhino:history:record#00000000-0000-0000-0000-000000000002")
         );
+    }
+
+    #[test]
+    fn projection_preserves_duplicate_values_and_same_record_descendants() {
+        let mut producer = record(1, 11, &[], &[40, 40]);
+        producer.values.push(HistoryValue {
+            id: 7,
+            value: Value::Doubles(vec![3.5]),
+        });
+        let records = [producer, record(2, 12, &[40], &[41])];
+        let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+        project(&records, None, &mut ir);
+
+        assert_eq!(
+            ir.model.features[1].dependencies,
+            vec![ir.model.features[0].id.clone()]
+        );
+        let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
+            &ir.model.features[0].definition
+        else {
+            panic!("native history operation");
+        };
+        assert_eq!(parameters["value_7"], "2.5");
+        assert_eq!(parameters["value_7_1"], "3.5");
     }
 
     #[test]

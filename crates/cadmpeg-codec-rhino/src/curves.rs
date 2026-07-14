@@ -165,6 +165,11 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
     )
 }
 
+/// Returns whether class data contains independently checksummed child chunks.
+pub(crate) fn class_data_nests_chunks(uuid: Uuid) -> bool {
+    matches!(uuid, CURVE_ON_SURFACE | POLYCURVE | POLYCURVE_LEGACY)
+}
+
 /// Returns whether a class derives from the curve carrier family.
 pub(crate) fn curve_class(uuid: Uuid) -> bool {
     matches!(

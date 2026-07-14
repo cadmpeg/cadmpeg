@@ -61,6 +61,7 @@ struct ViewRecord {
     trace_image: Option<TraceImage>,
     wallpaper: Option<Wallpaper>,
     children: Vec<ViewChild>,
+    parse_warnings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -712,6 +713,7 @@ fn parse_view(
     let mut trace_image = None;
     let mut wallpaper = None;
     let mut children = Vec::new();
+    let mut parse_warnings = Vec::new();
     let mut terminated = false;
     while offset < record.body.end {
         let child = chunk_at(data, offset, record.body.end, archive, false)?;
@@ -727,7 +729,10 @@ fn parse_view(
                 construction_plane = Some(parse_cplane(data, child.body.clone(), scale)?);
             }
             VIEW_VIEWPORT if !child.short => {
-                viewport = Some(parse_viewport(data, child.body.clone(), scale)?);
+                match parse_viewport(data, child.body.clone(), scale) {
+                    Ok(value) => viewport = Some(value),
+                    Err(error) => parse_warnings.push(format!("viewport retained: {error}")),
+                }
             }
             VIEW_TRACE_IMAGE if !child.short => {
                 trace_image = Some(parse_trace_image(data, child.body.clone(), archive, scale)?);
@@ -822,6 +827,7 @@ fn parse_view(
         trace_image,
         wallpaper,
         children,
+        parse_warnings,
     })
 }
 
@@ -851,9 +857,42 @@ fn parse_list(
         };
         let next = view.next_offset;
         if view.typecode == VIEW_RECORD && !view.short {
-            if let Ok(value) = parse_view(data, &view, archive, scale, kind, index) {
-                views.push(value);
-            }
+            views.push(
+                parse_view(data, &view, archive, scale, kind, index).unwrap_or_else(|error| {
+                    ViewRecord {
+                        id: format!("rhino:document:view#{kind}-{index:04}"),
+                        source_offset: view.header_start as u64,
+                        list_kind: kind,
+                        list_index: index,
+                        name: String::new(),
+                        target_millimeters: None,
+                        show_construction_grid: true,
+                        show_construction_axes: true,
+                        show_world_axes: true,
+                        legacy_display_mode: None,
+                        view_type: None,
+                        page_width_mm: None,
+                        page_height_mm: None,
+                        display_mode_uuid: None,
+                        attributes_version: None,
+                        attributes: None,
+                        construction_plane: None,
+                        viewport: None,
+                        trace_image: None,
+                        wallpaper: None,
+                        children: vec![ViewChild {
+                            typecode: format!("{:#010x}", view.typecode),
+                            kind: "degraded view record",
+                            source_offset: view.header_start as u64,
+                            byte_len: (view.next_offset - view.header_start) as u64,
+                            sha256: cadmpeg_ir::hash::sha256_hex(
+                                &data[view.header_start..view.next_offset],
+                            ),
+                        }],
+                        parse_warnings: vec![format!("view retained: {error}")],
+                    }
+                }),
+            );
         }
         if reader.skip(next - reader.position()).is_err() {
             break;

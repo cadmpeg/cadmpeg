@@ -1195,10 +1195,16 @@ pub(crate) fn parse_object_record(
     offset = uuid_chunk.next_offset;
     let data_chunk = child(bytes, offset, class.body.end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
-    // Brep and mesh class-data payloads contain checksummed nested chunks.
-    // Their container CRC excludes those chunks, so full-body verification is
-    // invalid. Their family readers validate the nested leaf checksums.
-    if !crate::brep::supported_class(class_uuid) && !crate::mesh::supported_class(class_uuid) {
+    // Container CRCs exclude independently checksummed nested chunks. Family
+    // readers validate those leaf chunks while decoding their payloads.
+    let nests_chunks = crate::brep::supported_class(class_uuid)
+        || crate::mesh::supported_class(class_uuid)
+        || crate::curves::class_data_nests_chunks(class_uuid)
+        || crate::surfaces::is_procedural_class(class_uuid)
+        || class_uuid == crate::surfaces::CLIPPING_PLANE_SURFACE
+        || crate::extrusion::supported_class(class_uuid)
+        || crate::subd::supported_class(class_uuid);
+    if !nests_chunks {
         if let Some(note) = checksum_warning(bytes, &data_chunk)? {
             warnings.push(note);
         }

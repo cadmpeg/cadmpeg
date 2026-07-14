@@ -2758,6 +2758,7 @@ fn check_nurbs_surface(
         || i32::try_from(v_order).is_err()
         || i32::try_from(u_count).is_err()
         || i32::try_from(v_count).is_err()
+        || pole_count.is_none_or(|count| i32::try_from(count).is_err())
         || surface.u_knots.len() != u_count + u_order
         || surface.v_knots.len() != v_count + v_order
         || pole_count != Some(surface.control_points.len())

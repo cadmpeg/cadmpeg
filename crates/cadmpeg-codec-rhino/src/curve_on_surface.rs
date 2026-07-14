@@ -112,7 +112,7 @@ pub(crate) fn decode(
         support.class_data_range,
         scale,
         archive,
-        1,
+        depth,
     )?;
     if reader.remaining() != 0 {
         return Err(malformed(

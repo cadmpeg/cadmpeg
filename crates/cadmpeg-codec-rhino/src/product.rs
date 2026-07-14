@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent Rhino definition, occurrence, and external-reference graph.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use cadmpeg_ir::document::CadIr;
 use serde::Serialize;
@@ -203,6 +203,21 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
         .units
         .as_ref()
         .and_then(|units| units.millimeters_per_unit);
+    let mut member_definitions = HashMap::<Uuid, Vec<String>>::new();
+    let mut definition_ids = std::collections::HashSet::new();
+    for definition in &scan.definitions.definitions {
+        definition_ids.insert(definition.id);
+        for member in &definition.members {
+            member_definitions
+                .entry(*member)
+                .or_default()
+                .push(definition.id.to_string());
+        }
+    }
+    for parents in member_definitions.values_mut() {
+        parents.sort();
+        parents.dedup();
+    }
     let mut occurrences = Vec::new();
     for (source_order, object) in scan.objects.iter().enumerate() {
         if !crate::instances::is_reference_class(object.class_uuid) || object.framing_degraded {
@@ -223,14 +238,10 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
             });
         let definition = definition_id(reference.definition_id);
         let object_record = format!("rhino:object:record#{source_order:06}");
-        let mut parents = scan
-            .definitions
-            .definitions
-            .iter()
-            .filter(|candidate| candidate.members.contains(&identity.object_id))
-            .map(|candidate| candidate.id.to_string())
-            .collect::<Vec<_>>();
-        parents.sort();
+        let parents = member_definitions
+            .get(&identity.object_id)
+            .cloned()
+            .unwrap_or_default();
         let key = if identity.object_id.is_nil()
             || object_records
                 .get(&identity.object_id)
@@ -241,12 +252,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
             identity.object_id.to_string()
         };
         let mut links = vec![object_record];
-        if scan
-            .definitions
-            .definitions
-            .iter()
-            .any(|candidate| candidate.id == reference.definition_id)
-        {
+        if definition_ids.contains(&reference.definition_id) {
             links.push(definition);
         }
         links.sort();

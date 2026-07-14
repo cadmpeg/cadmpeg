@@ -291,7 +291,13 @@ pub(crate) fn decode(
 ) -> Result<Morph, GeometryError> {
     let (mut outer, next, major, minor) =
         anonymous(data, range.start, range.end, archive, "morph control")?;
-    if next != range.end || !matches!(major, 1 | 2) || (major == 2 && !(0..=1).contains(&minor)) {
+    if next != range.end {
+        return Err(malformed(range.start, "morph-control framing is invalid"));
+    }
+    if !matches!(major, 1 | 2)
+        || (major == 1 && minor != 0)
+        || (major == 2 && !(0..=1).contains(&minor))
+    {
         return Err(GeometryError::UnsupportedVersion {
             offset: range.start,
             message: format!("unsupported morph-control version {major}.{minor}"),

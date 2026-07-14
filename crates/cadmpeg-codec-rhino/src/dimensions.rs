@@ -645,6 +645,12 @@ fn decode_legacy(
             measurement,
         )
     };
+    if !measurement.is_finite() {
+        return Err(structural(
+            range.start,
+            "legacy dimension measurement is invalid",
+        ));
+    }
     Ok(Dimension {
         source_range: range,
         annotation_type: annotation.kind,
@@ -1069,6 +1075,49 @@ pub(crate) fn project(
                 .plane
                 .origin
                 .0
+                .iter()
+                .map(f64::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        (
+            "plane_x_axis".to_string(),
+            dimension
+                .plane
+                .xaxis
+                .0
+                .iter()
+                .map(f64::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        (
+            "plane_y_axis".to_string(),
+            dimension
+                .plane
+                .yaxis
+                .0
+                .iter()
+                .map(f64::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        (
+            "plane_z_axis".to_string(),
+            dimension
+                .plane
+                .zaxis
+                .0
+                .iter()
+                .map(f64::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        ),
+        (
+            "plane_equation".to_string(),
+            dimension
+                .plane
+                .equation
                 .iter()
                 .map(f64::to_string)
                 .collect::<Vec<_>>()

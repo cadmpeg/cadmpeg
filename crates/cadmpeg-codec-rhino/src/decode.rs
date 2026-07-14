@@ -574,6 +574,13 @@ impl<'a> DecodeContext<'a> {
             if !crate::dimensions::supported_class(object.class_uuid) {
                 continue;
             }
+            if self.is_definition_member(object) {
+                self.scan_warning(
+                    source_order,
+                    "definition-member dimension retained because annotation instance expansion is unsupported",
+                );
+                continue;
+            }
             let Some(scale) = self.unit_scale() else {
                 self.scan_warning(
                     source_order,
@@ -634,6 +641,7 @@ impl<'a> DecodeContext<'a> {
                 }
                 Err(error) => {
                     self.scan_warning(source_order, &format!("dimension retained: {error}"));
+                    self.mark_failed(source_order);
                 }
             }
         }
@@ -799,6 +807,7 @@ impl<'a> DecodeContext<'a> {
             Ok(value) => value,
             Err(error) => {
                 self.scan_warning(source_order, &format!("polyedge retained: {error}"));
+                self.mark_failed(source_order);
                 return;
             }
         };
