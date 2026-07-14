@@ -3367,14 +3367,25 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     ))
                 })
                 .collect::<Vec<_>>();
-            let candidates = marker_transforms.get(*feature).cloned().unwrap_or_else(|| {
-                sketches
-                    .iter()
-                    .find(|sketch| sketch.id == *sketch_id)
-                    .map_or_else(Vec::new, |sketch| {
-                        dimensioned_circle_surface_transforms(sketch, surfaces, &circles, QUANTUM)
-                    })
-            });
+            let profile_candidates = marker_transforms
+                .get(*feature)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let surface_candidates = sketches
+                .iter()
+                .find(|sketch| sketch.id == *sketch_id)
+                .map_or_else(Vec::new, |sketch| {
+                    dimensioned_circle_surface_transforms(sketch, surfaces, &circles, QUANTUM)
+                });
+            let candidates =
+                intersect_marker_transform_candidates(profile_candidates, &surface_candidates);
+            let frame_candidates = sketches
+                .iter()
+                .find(|sketch| sketch.id == *sketch_id)
+                .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                .into_iter()
+                .collect::<Vec<_>>();
+            let candidates = intersect_marker_transform_candidates(&candidates, &frame_candidates);
             dimensioned_circle_transform(&candidates, &circles)
                 .map(|transform| ((*feature).to_string(), transform))
         })
@@ -3524,6 +3535,7 @@ fn implicit_circle_marker<'a>(
 pub(crate) fn project_relation_bindings(
     constraints: &mut Vec<SketchConstraint>,
     features: &[cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
@@ -3541,7 +3553,7 @@ pub(crate) fn project_relation_bindings(
             Some((feature.native_ref.as_deref()?, sketch))
         })
         .collect::<HashMap<_, _>>();
-    let loci_by_marker = profile_loci_by_marker(features, sketch_entities, lanes);
+    let loci_by_marker = profile_loci_by_marker(features, sketches, sketch_entities, lanes);
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
@@ -4083,6 +4095,7 @@ fn single_marker_entity(
 
 fn profile_loci_by_marker(
     features: &[cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<SketchLocus>> {
@@ -4107,7 +4120,7 @@ fn profile_loci_by_marker(
         .iter()
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
-    let transforms = marker_transforms_by_feature(features, sketch_entities, lanes);
+    let transforms = marker_transforms_by_feature(features, sketches, sketch_entities, lanes);
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -4178,16 +4191,39 @@ fn profile_loci_by_marker(
 
 fn marker_transforms_by_feature(
     features: &[cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, MarkerTransform> {
-    marker_transform_candidates_by_feature(features, sketch_entities, lanes)
-        .into_iter()
-        .filter_map(|(feature, candidates)| {
+    const QUANTUM: f64 = 1.0e-8;
+    let candidates_by_feature =
+        marker_transform_candidates_by_feature(features, sketch_entities, lanes);
+    features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                sketch: Some(sketch_id),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            let native_ref = feature.native_ref.as_deref()?;
+            let profile = candidates_by_feature
+                .get(native_ref)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let frame = sketches
+                .iter()
+                .find(|sketch| sketch.id == *sketch_id)
+                .and_then(|sketch| sketch_frame_marker_transform(sketch, QUANTUM))
+                .into_iter()
+                .collect::<Vec<_>>();
+            let candidates = intersect_marker_transform_candidates(profile, &frame);
             let [transform] = candidates.as_slice() else {
                 return None;
             };
-            Some((feature, *transform))
+            Some((native_ref.to_string(), *transform))
         })
         .collect()
 }
@@ -4368,6 +4404,63 @@ impl MarkerTransform {
     }
 }
 
+fn sketch_frame_marker_transform(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    quantum: f64,
+) -> Option<MarkerTransform> {
+    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
+    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
+    let v_axis = [
+        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
+        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
+        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+    ];
+    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
+    let axis = |vector: [f64; 3]| {
+        let matches = vector
+            .iter()
+            .enumerate()
+            .filter(|(_, value)| (value.abs() - 1.0).abs() <= 1.0e-8)
+            .map(|(index, value)| (index, if *value < 0.0 { -1 } else { 1 }))
+            .collect::<Vec<_>>();
+        let [(index, sign)] = matches.as_slice() else {
+            return None;
+        };
+        vector
+            .iter()
+            .enumerate()
+            .all(|(candidate, value)| candidate == *index || value.abs() <= 1.0e-8)
+            .then_some((*index, *sign))
+    };
+    let (normal_axis, _) = axis(normal)?;
+    let native_axes = (0..3)
+        .filter(|candidate| *candidate != normal_axis)
+        .collect::<Vec<_>>();
+    let [first_native_axis, second_native_axis] = native_axes.as_slice() else {
+        return None;
+    };
+    let (u_axis_index, u_sign) = axis(u_axis)?;
+    let (v_axis_index, v_sign) = axis(v_axis)?;
+    if u_axis_index == normal_axis || v_axis_index == normal_axis || u_axis_index == v_axis_index {
+        return None;
+    }
+    let swap = match (u_axis_index, v_axis_index) {
+        (u, v) if u == *first_native_axis && v == *second_native_axis => false,
+        (u, v) if u == *second_native_axis && v == *first_native_axis => true,
+        _ => return None,
+    };
+    let translation = (
+        (-origin[u_axis_index] * f64::from(u_sign) / quantum).round() as i64,
+        (-origin[v_axis_index] * f64::from(v_sign) / quantum).round() as i64,
+    );
+    Some(MarkerTransform {
+        swap,
+        u_sign,
+        v_sign,
+        translation,
+    })
+}
+
 fn dimensioned_circle_surface_transforms(
     sketch: &cadmpeg_ir::sketches::Sketch,
     surfaces: &[cadmpeg_ir::geometry::Surface],
@@ -4476,6 +4569,21 @@ fn dimensioned_circle_transform(
             transform.translation,
         )
     })
+}
+
+fn intersect_marker_transform_candidates(
+    profile: &[MarkerTransform],
+    surfaces: &[MarkerTransform],
+) -> Vec<MarkerTransform> {
+    match (profile.is_empty(), surfaces.is_empty()) {
+        (true, _) => surfaces.to_vec(),
+        (_, true) => profile.to_vec(),
+        (false, false) => profile
+            .iter()
+            .copied()
+            .filter(|candidate| surfaces.contains(candidate))
+            .collect(),
+    }
 }
 
 #[cfg(test)]
@@ -4805,8 +4913,9 @@ fn marker_entities(
 mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, dimensioned_circle_surface_transforms,
-        dimensioned_circle_transform, implicit_circle_marker, marker_entities,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        dimensioned_circle_transform, implicit_circle_marker,
+        intersect_marker_transform_candidates, marker_entities, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, sketch_frame_marker_transform,
         typed_marker_relation_definition, typed_relation_definition,
         unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
     };
@@ -4986,6 +5095,59 @@ mod profile_join_tests {
     }
 
     #[test]
+    fn surface_frames_constrain_ambiguous_profile_frames() {
+        let shared = MarkerTransform {
+            swap: false,
+            u_sign: 1,
+            v_sign: -1,
+            translation: (2, 3),
+        };
+        let profile_only = MarkerTransform {
+            translation: (5, 7),
+            ..shared
+        };
+        let surface_only = MarkerTransform {
+            swap: true,
+            ..shared
+        };
+        assert_eq!(
+            intersect_marker_transform_candidates(&[profile_only, shared], &[surface_only, shared]),
+            vec![shared]
+        );
+        assert_eq!(
+            intersect_marker_transform_candidates(&[profile_only, shared], &[]),
+            vec![profile_only, shared]
+        );
+        assert_eq!(
+            intersect_marker_transform_candidates(&[], &[surface_only, shared]),
+            vec![surface_only, shared]
+        );
+    }
+
+    #[test]
+    fn axis_aligned_sketch_frame_projects_native_plane_coordinates() {
+        let sketch = Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(28.65, -35.0, 0.35),
+            normal: Vector3::new(0.0, -1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).unwrap();
+        assert_eq!(
+            transform.apply((2_865_000_000, -2_385_000_000)),
+            Some((2_420_000_000, 0))
+        );
+        assert_eq!(
+            transform.apply((1_915_000_000, -2_385_000_000)),
+            Some((2_420_000_000, -950_000_000))
+        );
+    }
+
+    #[test]
     fn unique_translation_joins_linked_endpoints_to_one_profile_entity() {
         let sketch = SketchId("sketch".into());
         let first = SketchEntityId("first".into());
@@ -5076,7 +5238,7 @@ mod profile_join_tests {
             sketch_entities: vec![marker_a, marker_b, marker_c, display, reference],
         };
 
-        let joins = profile_loci_by_marker(&[feature], &entities, std::slice::from_ref(&lane));
+        let joins = profile_loci_by_marker(&[feature], &[], &entities, std::slice::from_ref(&lane));
         assert!(joins.contains_key("marker-a"));
         assert!(joins.contains_key("marker-b"));
         assert!(joins.contains_key("marker-c"));
