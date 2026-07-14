@@ -1233,7 +1233,7 @@ mod chart_tests {
     }
 
     #[test]
-    fn unresolved_standard_spline_does_not_invent_all_endpoint_pairs() {
+    fn standard_spline_retains_complete_surface_incidence_pair_domain() {
         let mut ir = CadIr::empty(Units::default());
         for index in 0..3 {
             ir.model.points.push(Point {
@@ -1267,7 +1267,7 @@ mod chart_tests {
         let choices =
             resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1, 2]])
                 .expect("endpoint option pass");
-        assert!(choices[0].is_empty());
+        assert_eq!(choices[0], [[0, 1], [0, 2], [1, 2]]);
     }
 
     #[test]
@@ -3191,6 +3191,28 @@ fn resolve_standard_endpoint_pairs(
             resolved[edge].clone_from(&pairs);
             resolved[edge].rotate_left(rank % pairs.len());
         }
+    }
+    let mut fallback_relation_budget = 8_192usize;
+    for (edge, pairs) in resolved.iter_mut().enumerate() {
+        if !pairs.is_empty() {
+            continue;
+        }
+        let points = &candidates[edge];
+        let relation_count = points
+            .len()
+            .checked_mul(points.len().saturating_sub(1))
+            .and_then(|value| value.checked_div(2));
+        let Some(relation_count) = relation_count.filter(|count| {
+            *count <= MAX_PAIR_RELATIONS_PER_EDGE && *count <= fallback_relation_budget
+        }) else {
+            continue;
+        };
+        fallback_relation_budget -= relation_count;
+        *pairs = points
+            .iter()
+            .enumerate()
+            .flat_map(|(left, &start)| points[left + 1..].iter().map(move |&end| [start, end]))
+            .collect();
     }
     Some(resolved)
 }
