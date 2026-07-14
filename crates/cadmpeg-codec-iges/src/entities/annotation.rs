@@ -171,6 +171,207 @@ fn leader_valid(
         && (4..=6 + count * 2).all(|index| finite(record, index))
 }
 
+fn pointer(
+    record: &ParameterRecord,
+    index: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<u32> {
+    record
+        .integer(index)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|sequence| sequence % 2 == 1)
+        .filter(|sequence| entries.contains_key(sequence))
+}
+
+fn child_valid(
+    sequence: u32,
+    entity_type: i64,
+    forms: impl Fn(i64) -> bool,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> bool {
+    entries.get(&sequence).is_some_and(|entry| {
+        entry.entity_type == entity_type
+            && forms(entry.form)
+            && entry.status.subordinate == 1
+            && entry.status.use_flag == 1
+            && records
+                .get(&sequence)
+                .is_some_and(|record| match entity_type {
+                    212 => general_note_valid(record, entries),
+                    214 => leader_valid(entry, record, entries),
+                    106 => witness_valid(record, entries),
+                    _ => false,
+                })
+    })
+}
+
+fn dimension_children_valid(
+    parent: &DirectoryEntry,
+    children: &[u32],
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    let Some(first_transform) = children
+        .first()
+        .and_then(|sequence| entries.get(sequence))
+        .map(|entry| entry.transform)
+    else {
+        return false;
+    };
+    (parent.transform == 0 || first_transform == 0)
+        && children.iter().all(|sequence| {
+            entries
+                .get(sequence)
+                .is_some_and(|entry| entry.transform == first_transform)
+        })
+}
+
+fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
+    let Some(count) = record
+        .integer(2)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count >= 3 && *count % 2 == 1)
+    else {
+        return false;
+    };
+    record.integer(1) == Some(1)
+        && exact_parameter_count(record, 4 + count * 2, entries)
+        && (3..4 + count * 2).all(|index| finite(record, index))
+}
+
+fn dimension_valid(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> bool {
+    let note = pointer(record, 1, entries);
+    let note_valid =
+        note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
+    let mut children = note.into_iter().collect::<Vec<_>>();
+    let fields_valid = match (entry.entity_type, entry.form) {
+        (216, 0..=2) => {
+            let leaders = [pointer(record, 2, entries), pointer(record, 3, entries)];
+            let witnesses = [record.integer(4), record.integer(5)];
+            let leaders_valid = leaders.iter().all(|sequence| {
+                sequence.is_some_and(|sequence| {
+                    child_valid(
+                        sequence,
+                        214,
+                        |form| matches!(form, 1..=12),
+                        entries,
+                        records,
+                    )
+                })
+            });
+            let witnesses_valid = witnesses.iter().enumerate().all(|(offset, raw)| match raw {
+                Some(0) => true,
+                Some(_) => pointer(record, 4 + offset, entries).is_some_and(|sequence| {
+                    child_valid(sequence, 106, |form| form == 40, entries, records)
+                }),
+                None => false,
+            });
+            children.extend(leaders.into_iter().flatten());
+            children.extend((4..=5).filter_map(|index| pointer(record, index, entries)));
+            exact_parameter_count(record, 6, entries) && leaders_valid && witnesses_valid
+        }
+        (218, 0) => {
+            let ordinate = pointer(record, 2, entries);
+            let valid = ordinate.is_some_and(|sequence| {
+                child_valid(sequence, 106, |form| form == 40, entries, records)
+                    || child_valid(
+                        sequence,
+                        214,
+                        |form| matches!(form, 1..=12),
+                        entries,
+                        records,
+                    )
+            });
+            children.extend(ordinate);
+            exact_parameter_count(record, 3, entries) && valid
+        }
+        (218, 1) => {
+            let witness = pointer(record, 2, entries);
+            let leader = pointer(record, 3, entries);
+            let valid = witness.is_some_and(|sequence| {
+                child_valid(sequence, 106, |form| form == 40, entries, records)
+            }) && leader.is_some_and(|sequence| {
+                child_valid(
+                    sequence,
+                    214,
+                    |form| matches!(form, 1..=12),
+                    entries,
+                    records,
+                )
+            });
+            children.extend(witness);
+            children.extend(leader);
+            exact_parameter_count(record, 4, entries) && valid
+        }
+        (220, 0) => {
+            let leader = pointer(record, 2, entries);
+            let enclosure_raw = record.integer(3);
+            let enclosure = pointer(record, 3, entries);
+            let leader_valid = leader.is_some_and(|sequence| {
+                child_valid(
+                    sequence,
+                    214,
+                    |form| matches!(form, 1..=12),
+                    entries,
+                    records,
+                ) && records.get(&sequence).and_then(|record| record.integer(1)) == Some(3)
+            });
+            let enclosure_valid = match enclosure_raw {
+                Some(0) => true,
+                Some(_) => enclosure.is_some_and(|sequence| {
+                    entries.get(&sequence).is_some_and(|entry| {
+                        matches!((entry.entity_type, entry.form), (100 | 102, 0) | (106, 63))
+                            && entry.status.subordinate == 1
+                            && entry.status.use_flag == 1
+                    })
+                }),
+                None => false,
+            };
+            children.extend(leader);
+            children.extend(enclosure);
+            exact_parameter_count(record, 4, entries) && leader_valid && enclosure_valid
+        }
+        (222, 0..=1) => {
+            let first = pointer(record, 2, entries);
+            let first_valid = first.is_some_and(|sequence| {
+                child_valid(
+                    sequence,
+                    214,
+                    |form| matches!(form, 1..=12),
+                    entries,
+                    records,
+                )
+            });
+            let center_valid = finite(record, 3) && finite(record, 4);
+            let second_raw = (entry.form == 1).then(|| record.integer(5)).flatten();
+            let second = (entry.form == 1)
+                .then(|| pointer(record, 5, entries))
+                .flatten();
+            let second_valid = entry.form == 0
+                || match second_raw {
+                    Some(0) => true,
+                    Some(_) => second.is_some_and(|sequence| {
+                        child_valid(sequence, 214, |form| form == 4, entries, records)
+                    }),
+                    None => false,
+                };
+            children.extend(first);
+            children.extend(second);
+            exact_parameter_count(record, if entry.form == 0 { 5 } else { 6 }, entries)
+                && first_valid
+                && center_valid
+                && second_valid
+        }
+        _ => false,
+    };
+    note_valid && fields_valid && dimension_children_valid(entry, &children, entries)
+}
+
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -192,6 +393,10 @@ pub(super) fn project(
     for entry in directory.iter().filter(|entry| {
         (matches!(entry.entity_type, 212 | 213) && entry.form == 0)
             || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
+            || matches!(
+                (entry.entity_type, entry.form),
+                (216, 0..=2) | (218 | 222, 0..=1) | (220, 0)
+            )
     }) {
         handled.insert(entry.sequence);
         let valid = records.get(&entry.sequence).is_some_and(|record| {
@@ -211,16 +416,19 @@ pub(super) fn project(
                     212 => general_note_valid(record, &entries),
                     213 => new_general_note_valid(record, &entries),
                     214 => leader_valid(entry, record, &entries),
+                    216 | 218 | 220 | 222 => dimension_valid(entry, record, &entries, &records),
                     _ => false,
                 }
         });
         if valid {
             decoded.insert(entry.sequence);
         } else {
-            losses.push(entity_loss(
-                entry,
-                "text count, presentation metrics, encoding, placement, or Directory use flag is invalid",
-            ));
+            let message = if matches!(entry.entity_type, 216 | 218 | 220 | 222) {
+                "dimension components, role types, transforms, or Directory status are invalid"
+            } else {
+                "text count, presentation metrics, encoding, placement, or Directory use flag is invalid"
+            };
+            losses.push(entity_loss(entry, message));
         }
     }
 

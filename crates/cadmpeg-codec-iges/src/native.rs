@@ -517,6 +517,41 @@ enum NativeAnnotation {
         segment_tails: Vec<[Option<f64>; 3]>,
         transformation: Option<String>,
     },
+    LinearDimension {
+        id: String,
+        source_entity: String,
+        form: i64,
+        note: Option<String>,
+        leaders: [Option<String>; 2],
+        witnesses: [Option<String>; 2],
+        transformation: Option<String>,
+    },
+    OrdinateDimension {
+        id: String,
+        source_entity: String,
+        form: i64,
+        note: Option<String>,
+        ordinate: Option<String>,
+        supplemental_leader: Option<String>,
+        transformation: Option<String>,
+    },
+    PointDimension {
+        id: String,
+        source_entity: String,
+        note: Option<String>,
+        leader: Option<String>,
+        enclosure: Option<String>,
+        transformation: Option<String>,
+    },
+    RadiusDimension {
+        id: String,
+        source_entity: String,
+        form: i64,
+        note: Option<String>,
+        leaders: [Option<String>; 2],
+        center: [Option<f64>; 2],
+        transformation: Option<String>,
+    },
 }
 
 #[derive(Clone)]
@@ -1962,6 +1997,10 @@ pub(crate) fn store(
         .filter(|entry| {
             (matches!(entry.entity_type, 212 | 213) && entry.form == 0)
                 || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
+                || matches!(
+                    (entry.entity_type, entry.form),
+                    (216, 0..=2) | (218 | 222, 0..=1) | (220, 0)
+                )
         })
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
@@ -2054,7 +2093,7 @@ pub(crate) fn store(
                         .collect(),
                     transformation,
                 }
-            } else {
+            } else if entry.entity_type == 214 {
                 let count = record
                     .and_then(|record| record.integer(1))
                     .and_then(|value| usize::try_from(value).ok())
@@ -2084,6 +2123,82 @@ pub(crate) fn store(
                         })
                         .collect(),
                     transformation,
+                }
+            } else {
+                let annotation_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .map(|sequence| format!("iges:presentation:annotation#D{sequence}"))
+                };
+                let entity_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                };
+                let presentation_or_entity_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .map(|sequence| {
+                            u32::try_from(sequence)
+                                .ok()
+                                .and_then(|sequence| entries.get(&sequence))
+                                .filter(|target| target.entity_type == 214)
+                                .map_or_else(
+                                    || format!("iges:entity:directory#{sequence}"),
+                                    |_| format!("iges:presentation:annotation#D{sequence}"),
+                                )
+                        })
+                };
+                let id = format!("iges:presentation:annotation#D{}", entry.sequence);
+                let source_entity = format!("iges:entity:directory#{}", entry.sequence);
+                match entry.entity_type {
+                    216 => NativeAnnotation::LinearDimension {
+                        id,
+                        source_entity,
+                        form: entry.form,
+                        note: annotation_link(1),
+                        leaders: [annotation_link(2), annotation_link(3)],
+                        witnesses: [entity_link(4), entity_link(5)],
+                        transformation,
+                    },
+                    218 => NativeAnnotation::OrdinateDimension {
+                        id,
+                        source_entity,
+                        form: entry.form,
+                        note: annotation_link(1),
+                        ordinate: presentation_or_entity_link(2),
+                        supplemental_leader: (entry.form == 1)
+                            .then(|| annotation_link(3))
+                            .flatten(),
+                        transformation,
+                    },
+                    220 => NativeAnnotation::PointDimension {
+                        id,
+                        source_entity,
+                        note: annotation_link(1),
+                        leader: annotation_link(2),
+                        enclosure: entity_link(3),
+                        transformation,
+                    },
+                    222 => NativeAnnotation::RadiusDimension {
+                        id,
+                        source_entity,
+                        form: entry.form,
+                        note: annotation_link(1),
+                        leaders: [
+                            annotation_link(2),
+                            (entry.form == 1).then(|| annotation_link(5)).flatten(),
+                        ],
+                        center: [
+                            record.and_then(|record| record.number(3)),
+                            record.and_then(|record| record.number(4)),
+                        ],
+                        transformation,
+                    },
+                    _ => unreachable!("annotation filter admits known dimension types"),
                 }
             }
         })

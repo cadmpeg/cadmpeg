@@ -2564,6 +2564,102 @@ fn leader_forms_file() -> Vec<u8> {
     owned_test_file(&entities)
 }
 
+fn dimension_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "DIMNOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "ARROW".into(),
+            status: "00010100",
+            parameters: "214,3,2,1,0,0,0,2,0,2,2,4,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 40,
+            label: "WITNESS".into(),
+            status: "00010100",
+            parameters: "106,1,3,0,0,0,1,0,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "ENCLOSE".into(),
+            status: "00010100",
+            parameters: "100,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 4,
+            label: "NOARROW".into(),
+            status: "00010100",
+            parameters: "214,1,0,0,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 0,
+            label: "LINEAR0".into(),
+            status: "00000100",
+            parameters: "216,1,3,3,5,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 1,
+            label: "LINEAR1".into(),
+            status: "00000100",
+            parameters: "216,1,3,3,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 2,
+            label: "LINEAR2".into(),
+            status: "00000100",
+            parameters: "216,1,3,3,5,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 218,
+            form: 0,
+            label: "ORD0".into(),
+            status: "00000100",
+            parameters: "218,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 218,
+            form: 1,
+            label: "ORD1".into(),
+            status: "00000100",
+            parameters: "218,1,5,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 220,
+            form: 0,
+            label: "POINTDIM".into(),
+            status: "00000100",
+            parameters: "220,1,3,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 222,
+            form: 0,
+            label: "RADIUS0".into(),
+            status: "00000100",
+            parameters: "222,1,3,10,20;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 222,
+            form: 1,
+            label: "RADIUS1".into(),
+            status: "00000100",
+            parameters: "222,1,3,10,20,9;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4034,6 +4130,72 @@ fn decode_types_every_leader_arrow_form_and_segment_chain() {
         .unwrap();
     assert_eq!(circle.fields["arrowhead_size"][0], 2.0);
     assert_eq!(circle.fields["arrowhead_size"][1], 2.0);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_dimension_component_roles_for_every_admitted_form() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(dimension_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
+    let kinds = annotations
+        .iter()
+        .filter_map(|annotation| annotation.fields["kind"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == "linear_dimension")
+            .count(),
+        3
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == "ordinate_dimension")
+            .count(),
+        2
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == "point_dimension")
+            .count(),
+        1
+    );
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == "radius_dimension")
+            .count(),
+        2
+    );
+    let point = annotations
+        .iter()
+        .find(|annotation| annotation.fields["kind"] == "point_dimension")
+        .unwrap();
+    assert_eq!(point.fields["note"], "iges:presentation:annotation#D1");
+    assert_eq!(point.fields["leader"], "iges:presentation:annotation#D3");
+    assert_eq!(point.fields["enclosure"], "iges:entity:directory#7");
+    let radius = annotations
+        .iter()
+        .find(|annotation| {
+            annotation.fields["kind"] == "radius_dimension" && annotation.fields["form"] == 1
+        })
+        .unwrap();
+    assert_eq!(radius.fields["center"][0], 10.0);
+    assert_eq!(
+        radius.fields["leaders"][1],
+        "iges:presentation:annotation#D9"
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

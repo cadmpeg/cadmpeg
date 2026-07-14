@@ -110,6 +110,10 @@ Type 213 Form 0 defines one coplanar note inside a finite containment area with 
 
 Type 214 Forms 1 through 12 define a leader as an arrowhead point followed by one or more ordered segment-tail points in one constant-Z plane. Forms select wedge, triangle, filled triangle, no arrowhead, circle, filled circle, rectangle, filled rectangle, slash, integral sign, open triangle, and dimension-origin presentation. Arrowhead height and width are positive except that both are zero for Form 4. Forms 5, 6, and 12 require equal positive height and width. The `annotations` arena retains the form, arrowhead dimensions and point, complete segment chain, and Directory transformation as presentation witness geometry.
 
+Type 216 Forms 0 through 2 store one Type 212 note, two Type 214 leaders, and two independently nullable Type 106 Form 40 witness lines. Type 218 Form 0 stores a note and either a witness line or leader; Form 1 stores a note, witness line, and supplemental leader. Type 220 Form 0 stores a note, a three-segment leader, and an optional Type 100 circular arc, Type 102 composite curve, or Type 106 Form 63 closed planar enclosure. Type 222 Forms 0 and 1 store a note, first leader, and finite two-dimensional arc center; Form 1 additionally stores a nullable second Type 214 Form 4 leader.
+
+Every dimension component is physically dependent and has entity-use flag `01`. All children of one dimension carry the same Directory transformation pointer. The parent transformation or child transformation may be nonzero, but not both. The `annotations` arena preserves dimension kind and form, each component role and identity, native radius center, and parent transformation without deriving semantic PMI.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.
