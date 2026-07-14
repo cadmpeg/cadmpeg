@@ -5301,8 +5301,12 @@ pub(crate) fn project_relation_solved_point_geometry(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
-            if relation.family != FeatureInputRelationFamily::PointPointDistance
-                || relation.operands.len() != 2
+            if !matches!(
+                relation.family,
+                FeatureInputRelationFamily::PointPointDistance
+                    | FeatureInputRelationFamily::PointPointHorizontalDistance
+                    | FeatureInputRelationFamily::PointPointVerticalDistance
+            ) || relation.operands.len() != 2
             {
                 continue;
             }
@@ -5356,7 +5360,18 @@ pub(crate) fn project_relation_solved_point_geometry(
                 .filter(|entity| entity.sketch == *sketch)
                 .flat_map(sketch_entity_loci)
                 .filter_map(|(point, _)| {
-                    let measured = (point.u - known_point.u).hypot(point.v - known_point.v);
+                    let measured = match relation.family {
+                        FeatureInputRelationFamily::PointPointDistance => {
+                            (point.u - known_point.u).hypot(point.v - known_point.v)
+                        }
+                        FeatureInputRelationFamily::PointPointHorizontalDistance => {
+                            (point.u - known_point.u).abs()
+                        }
+                        FeatureInputRelationFamily::PointPointVerticalDistance => {
+                            (point.v - known_point.v).abs()
+                        }
+                        _ => unreachable!("relation family was filtered above"),
+                    };
                     same_dimension_length(measured, distance.0).then_some(quantize(point, QUANTUM))
                 })
                 .collect::<Vec<_>>();
@@ -6145,10 +6160,8 @@ fn typed_relation_definition(
         }
         PointPointHorizontalDistance | PointPointVerticalDistance => {
             let horizontal = relation.family == PointPointHorizontalDistance;
-            let first = marker(0)
-                .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
-            let second = marker(1)
-                .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker));
+            let first = point(0);
+            let second = point(1);
             let (first, second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -8782,23 +8795,45 @@ mod profile_join_tests {
             entity_index: index as u16,
             entity_ref: Some(marker.into()),
         };
-        let relation =
-            |id: &str, offset: u64, known: &str, scalar: &str| FeatureInputRelationInstance {
-                id: id.into(),
-                parent: "lane".into(),
-                ordinal: 0,
-                offset,
-                family: FeatureInputRelationFamily::PointPointDistance,
-                class_ref: "class".into(),
-                feature_ref: "feature-native".into(),
-                scalar_refs: vec![scalar.into()],
-                parameter_scalar_ref: Some(scalar.into()),
-                display_scalar_ref: None,
-                operands: vec![operand(0, known), operand(1, "missing")],
-            };
+        let relation = |id: &str,
+                        offset: u64,
+                        family: FeatureInputRelationFamily,
+                        known: &str,
+                        scalar: &str| FeatureInputRelationInstance {
+            id: id.into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset,
+            family,
+            class_ref: "class".into(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: vec![scalar.into()],
+            parameter_scalar_ref: Some(scalar.into()),
+            display_scalar_ref: None,
+            operands: vec![operand(0, known), operand(1, "missing")],
+        };
         let relations = vec![
-            relation("relation-a", 10, "known-a", "scalar-a"),
-            relation("relation-b", 20, "known-b", "scalar-b"),
+            relation(
+                "relation-a",
+                10,
+                FeatureInputRelationFamily::PointPointDistance,
+                "known-a",
+                "scalar-a",
+            ),
+            relation(
+                "relation-b",
+                20,
+                FeatureInputRelationFamily::PointPointDistance,
+                "known-b",
+                "scalar-b",
+            ),
+            relation(
+                "relation-c",
+                30,
+                FeatureInputRelationFamily::PointPointHorizontalDistance,
+                "known-b",
+                "scalar-c",
+            ),
         ];
         let lane = FeatureInputLane {
             id: "lane#test".into(),
@@ -8831,6 +8866,7 @@ mod profile_join_tests {
         let parameters = vec![
             parameter("distance-a", "scalar-a", 5.0),
             parameter("distance-b", "scalar-b", 7.0),
+            parameter("distance-c", "scalar-c", 7.0),
         ];
 
         project_relation_solved_point_geometry(
@@ -8845,7 +8881,7 @@ mod profile_join_tests {
             .iter()
             .filter(|entity| entity.id.0.contains("dimension-point:"))
             .collect::<Vec<_>>();
-        assert_eq!(solved.len(), 2);
+        assert_eq!(solved.len(), 3);
         assert!(matches!(
             solved[0].geometry,
             SketchGeometry::Point { position } if position == Point2::new(5.0, 0.0)
@@ -8854,7 +8890,12 @@ mod profile_join_tests {
             solved[1].geometry,
             SketchGeometry::Point { position } if position == Point2::new(12.0, 0.0)
         ));
+        assert!(matches!(
+            solved[2].geometry,
+            SketchGeometry::Point { position } if position == Point2::new(12.0, 0.0)
+        ));
         assert_ne!(solved[0].geometry_ref, solved[1].geometry_ref);
+        assert_ne!(solved[1].geometry_ref, solved[2].geometry_ref);
 
         let markers = lane
             .sketch_entities
@@ -8876,13 +8917,12 @@ mod profile_join_tests {
                 &markers,
                 &loci,
             );
-            assert!(matches!(
-                definition,
-                Some(SketchConstraintDefinition::DistanceLoci {
-                    second: SketchLocus::Entity(ref entity),
-                    ..
-                }) if entity == &solved[index].id
-            ));
+            let second = match definition {
+                Some(SketchConstraintDefinition::DistanceLoci { second, .. })
+                | Some(SketchConstraintDefinition::HorizontalDistance { second, .. }) => second,
+                other => panic!("unexpected relation definition: {other:?}"),
+            };
+            assert_eq!(second, SketchLocus::Entity(solved[index].id.clone()));
         }
     }
 
