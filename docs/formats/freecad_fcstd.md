@@ -258,3 +258,10 @@ major-axis angle or a two-component major-axis direction. Bounded ellipses addit
 both parameter bounds. Missing radii, coordinates, orientation, or bounds leave the carrier as a
 named native geometry record; the decoder does not synthesize zero coordinates or full-curve
 bounds.
+
+Sketch B-splines retain degree, periodic state, ordered poles, rational weights, and distinct knot
+values with their positive multiplicities. The neutral NURBS knot vector expands each value by its
+multiplicity. Declared pole and knot counts must match; values and weights must be finite; weights
+must be positive; planar pole z-coordinates must be zero; and degree must be smaller than the pole
+count. A non-periodic full knot vector must contain `pole_count + degree + 1` entries. Invalid or
+resource-exceeding records remain named native carriers.

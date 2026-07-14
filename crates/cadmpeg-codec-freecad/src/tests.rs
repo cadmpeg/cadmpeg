@@ -73,6 +73,41 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
 }
 
 #[test]
+fn transfers_bounded_rational_sketch_nurbs() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="1">
+ <Geometry type="Part::GeomBSplineCurve"><BSplineCurve PolesCount="3" KnotsCount="2" Degree="2" IsPeriodic="0">
+  <Pole X="0" Y="0" Z="0" Weight="1"/>
+  <Pole X="1" Y="2" Z="0" Weight="0.5"/>
+  <Pole X="3" Y="0" Z="0" Weight="1"/>
+  <Knot Value="0" Mult="3"/>
+  <Knot Value="1" Mult="3"/>
+ </BSplineCurve></Geometry>
+</GeometryList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("sketch NURBS");
+    assert!(matches!(
+        &result.ir.model.sketch_entities[0].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Nurbs {
+            degree: 2,
+            knots,
+            control_points,
+            weights: Some(weights),
+            periodic: false,
+        } if knots == &[0.0, 0.0, 0.0, 1.0, 1.0, 1.0]
+            && control_points.len() == 3
+            && weights == &[1.0, 0.5, 1.0]
+    ));
+}
+
+#[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

@@ -387,7 +387,9 @@ fn parse_sketch(
                     .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
                     .collect()
             });
-            let geometry_value = sketch_geometry(&native_kind, &attributes);
+            let geometry_value = carrier
+                .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
+                .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
             entities.push(SketchEntity {
                 id: SketchEntityId(format!(
                     "fcstd:design:sketch-entity#{}:{}",
@@ -423,6 +425,101 @@ fn parse_sketch(
         entities,
         constraints,
         parameters,
+    })
+}
+
+fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeometry> {
+    if !kind.contains("BSpline") && !node.has_tag_name("BSplineCurve") {
+        return None;
+    }
+    let degree = node.attribute("Degree")?.parse::<u32>().ok()?;
+    let periodic = matches!(node.attribute("IsPeriodic")?, "1" | "true" | "True");
+    let pole_count = node.attribute("PolesCount")?.parse::<usize>().ok()?;
+    let knot_count = node.attribute("KnotsCount")?.parse::<usize>().ok()?;
+    if pole_count == 0
+        || knot_count == 0
+        || pole_count > MAX_SKETCH_RECORDS
+        || knot_count > MAX_SKETCH_RECORDS
+    {
+        return None;
+    }
+    let poles = node
+        .children()
+        .filter(|child| child.has_tag_name("Pole"))
+        .map(|pole| {
+            Some((
+                Point2::new(
+                    pole.attribute("X")?.parse().ok()?,
+                    pole.attribute("Y")?.parse().ok()?,
+                ),
+                pole.attribute("Z")?.parse::<f64>().ok()?,
+                pole.attribute("Weight")?.parse::<f64>().ok()?,
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let knots = node
+        .children()
+        .filter(|child| child.has_tag_name("Knot"))
+        .map(|knot| {
+            Some((
+                knot.attribute("Value")?.parse::<f64>().ok()?,
+                knot.attribute("Mult")?.parse::<usize>().ok()?,
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if poles.len() != pole_count
+        || knots.len() != knot_count
+        || degree == 0
+        || usize::try_from(degree)
+            .ok()
+            .is_none_or(|degree| degree >= pole_count)
+        || poles.iter().any(|(point, z, weight)| {
+            !point.u.is_finite()
+                || !point.v.is_finite()
+                || !z.is_finite()
+                || z.abs() > f64::EPSILON
+                || !weight.is_finite()
+                || *weight <= 0.0
+        })
+        || knots.iter().any(|(value, multiplicity)| {
+            !value.is_finite() || *multiplicity == 0 || *multiplicity > MAX_SKETCH_RECORDS
+        })
+        || knots.windows(2).any(|pair| pair[0].0 >= pair[1].0)
+    {
+        return None;
+    }
+    let expanded_count = knots.iter().try_fold(0_usize, |count, (_, multiplicity)| {
+        count.checked_add(*multiplicity)
+    })?;
+    if expanded_count > MAX_SKETCH_RECORDS {
+        return None;
+    }
+    if !periodic
+        && expanded_count
+            != pole_count
+                .checked_add(usize::try_from(degree).ok()?)?
+                .checked_add(1)?
+    {
+        return None;
+    }
+    let full_knots = knots
+        .iter()
+        .flat_map(|(value, multiplicity)| std::iter::repeat_n(*value, *multiplicity))
+        .collect();
+    let control_points = poles.iter().map(|(point, _, _)| *point).collect();
+    let weights = poles
+        .iter()
+        .map(|(_, _, weight)| *weight)
+        .collect::<Vec<_>>();
+    Some(SketchGeometry::Nurbs {
+        degree,
+        knots: full_knots,
+        control_points,
+        weights: weights
+            .iter()
+            .any(|weight| (*weight - 1.0).abs() > f64::EPSILON)
+            .then_some(weights),
+        periodic,
     })
 }
 
