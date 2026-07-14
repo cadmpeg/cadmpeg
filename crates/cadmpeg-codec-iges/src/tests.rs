@@ -2987,6 +2987,26 @@ fn text_font_definition_file() -> Vec<u8> {
     ])
 }
 
+fn units_data_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "MEASURED".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,1,0,0,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 316,
+            form: 0,
+            label: "UNITS".into(),
+            status: "00000200",
+            parameters: "316,3,6HLENGTH,1HM,1000,4HTIME,1HS,1,5HPLANE,1HD,0.017453292519943295;"
+                .into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4797,6 +4817,33 @@ fn decode_preserves_text_font_glyphs_and_supersession() {
         template.fields["font_definition"],
         "iges:presentation:text-font#D3"
     );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_fundamental_units_and_property_owner() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(units_data_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let units = &result.ir.native.namespace("iges").unwrap().arenas["units_data"][0];
+    assert_eq!(units.fields["units"].as_array().unwrap().len(), 3);
+    assert_eq!(units.fields["units"][0]["unit_type"][0], 76);
+    assert_eq!(units.fields["units"][0]["unit_value"][0], 77);
+    assert_eq!(units.fields["units"][0]["scale_factor"], 1000.0);
+    assert_eq!(
+        units.fields["units"][2]["scale_factor"],
+        0.017_453_292_519_943_295
+    );
+    assert_eq!(units.fields["owners"][0], "iges:entity:directory#1");
+    let owner = &result.ir.native.namespace("iges").unwrap().arenas["entities"][0];
+    assert_eq!(owner.fields["property_links"][0], "iges:entity:directory#3");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

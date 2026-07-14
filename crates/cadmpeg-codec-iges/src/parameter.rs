@@ -108,9 +108,9 @@ pub(crate) fn trailing_pointer_groups(
                         .and_then(|value| u32::try_from(value).ok())
                         .filter(|sequence| sequence % 2 == 1)
                         .filter(|sequence| {
-                            directory
-                                .get(sequence)
-                                .is_some_and(|entry| matches!(entry.entity_type, 322 | 406 | 422))
+                            directory.get(sequence).is_some_and(|entry| {
+                                matches!(entry.entity_type, 316 | 322 | 406 | 422)
+                            })
                         })
                 })
                 .collect::<Option<Vec<_>>>()?;

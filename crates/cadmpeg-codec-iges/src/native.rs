@@ -504,6 +504,22 @@ struct NativeProductProperty {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeUnitDefinition {
+    unit_type: Option<Vec<u8>>,
+    unit_value: Option<Vec<u8>>,
+    scale_factor: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeUnitsData {
+    id: String,
+    source_entity: String,
+    declared_count: Option<i64>,
+    units: Vec<NativeUnitDefinition>,
+    owners: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeProductOccurrence {
     id: String,
     source_instance: String,
@@ -2205,6 +2221,45 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let units_data = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 316 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let owners = by_directory
+                .iter()
+                .filter(|(_, owner)| {
+                    trailing_pointer_groups(owner, &entries)
+                        .is_some_and(|groups| groups.properties.contains(&entry.sequence))
+                })
+                .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
+                .collect();
+            NativeUnitsData {
+                id: format!("iges:metadata:units-data#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                declared_count: record.and_then(|record| record.integer(1)),
+                units: (0..count)
+                    .map(|offset| {
+                        let start = 2 + offset * 3;
+                        NativeUnitDefinition {
+                            unit_type: record
+                                .and_then(|record| record.string(start))
+                                .map(<[u8]>::to_vec),
+                            unit_value: record
+                                .and_then(|record| record.string(start + 1))
+                                .map(<[u8]>::to_vec),
+                            scale_factor: record.and_then(|record| record.number(start + 2)),
+                        }
+                    })
+                    .collect(),
+                owners,
+            }
+        })
+        .collect::<Vec<_>>();
     let views = directory
         .iter()
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
@@ -2852,6 +2907,7 @@ pub(crate) fn store(
     namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
     namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
     namespace.set_arena("product_properties", &product_properties)?;
+    namespace.set_arena("units_data", &units_data)?;
     namespace.set_arena("views", &views)?;
     namespace.set_arena("view_visibility", &view_visibility)?;
     namespace.set_arena("segmented_visibility", &segmented_visibility)?;

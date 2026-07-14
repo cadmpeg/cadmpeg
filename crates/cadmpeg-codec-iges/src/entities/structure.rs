@@ -177,6 +177,27 @@ fn attribute_value_valid(
     }
 }
 
+fn unit_value_valid(unit_type: &[u8], value: &[u8]) -> bool {
+    match unit_type {
+        b"LENGTH" => matches!(
+            value,
+            b"A" | b"AU" | b"FT" | b"IN" | b"LY" | b"M" | b"UM" | b"MIL" | b"MI" | b"KN" | b"Y"
+        ),
+        b"MASS" => matches!(
+            value,
+            b"C" | b"DR" | b"GA" | b"KG" | b"MT" | b"OU" | b"LB" | b"S"
+        ),
+        b"TIME" => matches!(value, b"D" | b"HR" | b"M" | b"S" | b"W" | b"Y"),
+        b"CURRENT" => value == b"A",
+        b"TEMPERATURE" => matches!(value, b"C" | b"F" | b"K" | b"R"),
+        b"AMOUNT" => value == b"M",
+        b"INTENSITY" => value == b"C",
+        b"PLANE" => matches!(value, b"D" | b"G" | b"M" | b"R" | b"REV" | b"S"),
+        b"SOLID" => value == b"C",
+        _ => false,
+    }
+}
+
 fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
     match record.tokens.get(index).map(|token| &token.value) {
         None | Some(TokenValue::Omitted) => Some(default),
@@ -737,6 +758,54 @@ pub(super) fn project(
             losses.push(entity_loss(
                 entry,
                 "attribute-table instance definition, row count, or typed value is invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 316 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let count = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0);
+        let mut types = BTreeSet::<Vec<u8>>::new();
+        let units_valid = count.is_some_and(|count| {
+            entity_parameter_end(record, &entries) == 2 + count * 3
+                && (0..count).all(|offset| {
+                    let start = 2 + offset * 3;
+                    record
+                        .string(start)
+                        .zip(record.string(start + 1))
+                        .is_some_and(|(unit_type, value)| {
+                            unit_value_valid(unit_type, value) && types.insert(unit_type.to_vec())
+                        })
+                        && record
+                            .number(start + 2)
+                            .is_some_and(|scale| scale.is_finite() && scale > 0.0)
+                })
+        });
+        let directory_valid = entry.status.use_flag == 2
+            && entry.structure == 0
+            && entry.line_font == 0
+            && entry.level == 0
+            && entry.view == 0
+            && entry.transform == 0
+            && entry.label_display == 0
+            && entry.line_weight == 0
+            && entry.color == 0;
+        if units_valid && directory_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "units count, type/value pair, scale factor, uniqueness, or Directory fields are invalid",
             ));
         }
     }
