@@ -777,6 +777,8 @@ It is a profile entity when a class-200 entry with the same `ext_id` binds it to
 a same-feature generated plane or cylinder of the corresponding family. Without
 that generated-carrier binding, the evaluated geometry remains a construction
 entity and does not establish solved trim membership.
+A generated saved circle is a closed one-entity profile. Its traversal uses the
+stored increasing full-turn parameterization.
 
 The named `entity(arc)` record is followed by positional generated-entity
 rows. Each row begins after `e3` with its saved entity identifier and a header

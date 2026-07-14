@@ -1123,6 +1123,17 @@ fn saved_section_entity_geometry(
     }
 }
 
+fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
+    matches!(
+        geometry,
+        SketchGeometry::Arc {
+            start_angle,
+            end_angle,
+            ..
+        } if (end_angle.0 - start_angle.0 - std::f64::consts::TAU).abs() <= 1e-12
+    )
+}
+
 fn resolved_section_segment_geometry(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -4288,7 +4299,7 @@ fn transfer_resolved_sketches(
             })
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
-        let profiles = resolved_profile_chains(definition, &emitted);
+        let mut profiles = resolved_profile_chains(definition, &emitted);
         let profile_segments = segments
             .iter()
             .filter(|segment| {
@@ -4444,6 +4455,12 @@ fn transfer_resolved_sketches(
                 "saved_section_entity",
                 Exactness::Derived,
             );
+            if generated && is_full_circle_geometry(&geometry) {
+                profiles.push(vec![SketchEntityUse {
+                    entity: entity_id.clone(),
+                    reversed: false,
+                }]);
+            }
             entities.push(SketchEntity {
                 id: entity_id,
                 sketch: sketch_id.clone(),
@@ -6721,6 +6738,9 @@ mod resolved_sketch_tests {
                 19,
             ))
         );
+        let (_, geometry, _) =
+            saved_section_entity_geometry(&entity).expect("complete saved circle");
+        assert!(is_full_circle_geometry(&geometry));
     }
 
     #[test]
