@@ -1158,7 +1158,7 @@ mod chart_tests {
         attach_standard_free_vertices, build_standard_edge_curve, fit_rank_one_e5_plane_axes,
         intersection_line_direction, ordered_range, point_on_known_surface, quintic_jet_pcurve,
         rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
-        standard_pcurve_geometry,
+        standard_pcurve_geometry, unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
@@ -1169,6 +1169,7 @@ mod chart_tests {
     use cadmpeg_ir::topology::{Point, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::BTreeMap;
     use std::collections::HashMap;
 
     #[test]
@@ -1287,6 +1288,28 @@ mod chart_tests {
             standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0),
             [0]
         );
+    }
+
+    #[test]
+    fn native_identity_locus_binds_only_one_coordinate_row_within_tolerance() {
+        let points = [
+            Point {
+                id: PointId("a".to_string()),
+                position: Point3::new(1.0, 0.0, 0.0),
+            },
+            Point {
+                id: PointId("b".to_string()),
+                position: Point3::new(1.01, 0.0, 0.0),
+            },
+        ];
+        let tolerances = [(2usize, 0.02)].into_iter().collect();
+        let ambiguous =
+            unique_native_identity_points(&[7], &[[1.0, 0.0, 0.0]], 2, &tolerances, &points);
+        assert!(ambiguous.is_empty());
+
+        let exact =
+            unique_native_identity_points(&[7], &[[1.0, 0.0, 0.0]], 2, &BTreeMap::new(), &points);
+        assert_eq!(exact.get(&7), Some(&0));
     }
 
     #[test]
@@ -2735,45 +2758,72 @@ fn attach_standard_topology(
         endpoint_candidates.push(candidates);
     }
     let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
-    let endpoint_options = resolve_standard_endpoint_pairs(
+    let native_edges = crate::b5::edge_vertex_references(source);
+    let graph_endpoint_pairs =
+        standard_native_graph_endpoint_pairs(source, &supports, &native_edges, &ir.model.points);
+    if let Some(pairs) = &graph_endpoint_pairs {
+        for (candidates, pair) in endpoint_candidates.iter_mut().zip(pairs) {
+            if let Some(pair) = pair {
+                for point in pair {
+                    if !candidates.contains(point) {
+                        candidates.push(*point);
+                    }
+                }
+            }
+        }
+    }
+    let mut endpoint_options = resolve_standard_endpoint_pairs(
         ir,
         bindings,
         &surface_indices,
         &supports,
         &endpoint_candidates,
     );
-    let native_edges = crate::b5::edge_vertex_references(source);
+    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &graph_endpoint_pairs) {
+        for (options, pair) in options.iter_mut().zip(pairs) {
+            if let Some(pair) = pair {
+                *options = vec![*pair];
+            }
+        }
+    }
     let native_ports = supports
         .iter()
         .map(|support| native_edges.get(&support.tag).copied())
         .collect::<Option<Vec<_>>>();
-    let native_endpoint_pairs = endpoint_options.as_ref().and_then(|options| {
-        const MAX_NATIVE_PORT_CHOICES: usize = 8_192;
-        const MAX_NATIVE_PORT_WORK: usize = 1_000_000;
+    let graph_propagated_pairs = native_ports
+        .as_ref()
+        .zip(graph_endpoint_pairs.as_ref())
+        .and_then(|(ports, pairs)| topology::propagate_edge_port_points(ports, pairs))
+        .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<_>>>());
+    let native_endpoint_pairs = graph_propagated_pairs.or_else(|| {
+        endpoint_options.as_ref().and_then(|options| {
+            const MAX_NATIVE_PORT_CHOICES: usize = 8_192;
+            const MAX_NATIVE_PORT_WORK: usize = 1_000_000;
 
-        let ports = native_ports.as_ref()?;
-        let seeds = options
-            .iter()
-            .map(|choices| {
-                <[[usize; 2]; 1]>::try_from(choices.as_slice())
-                    .ok()
-                    .map(|[pair]| pair)
-            })
-            .collect::<Vec<_>>();
-        let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
-        if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
-            return Some(complete);
-        }
-        // Exhaustive binding is a fallback after exact identity propagation.
-        // Large symmetric choice sets remain unresolved and continue through
-        // trim-mesh and incidence paths instead of making decode unbounded.
-        let choice_count = options.iter().map(Vec::len).sum::<usize>();
-        (choice_count <= MAX_NATIVE_PORT_CHOICES
-            && options
-                .len()
-                .checked_mul(choice_count)
-                .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
-        .then(|| topology::bind_edge_port_candidates(ports, options))?
+            let ports = native_ports.as_ref()?;
+            let seeds = options
+                .iter()
+                .map(|choices| {
+                    <[[usize; 2]; 1]>::try_from(choices.as_slice())
+                        .ok()
+                        .map(|[pair]| pair)
+                })
+                .collect::<Vec<_>>();
+            let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
+            if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
+                return Some(complete);
+            }
+            // Exhaustive binding is a fallback after exact identity propagation.
+            // Large symmetric choice sets remain unresolved and continue through
+            // trim-mesh and incidence paths instead of making decode unbounded.
+            let choice_count = options.iter().map(Vec::len).sum::<usize>();
+            (choice_count <= MAX_NATIVE_PORT_CHOICES
+                && options
+                    .len()
+                    .checked_mul(choice_count)
+                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
+            .then(|| topology::bind_edge_port_candidates(ports, options))?
+        })
     });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
@@ -3236,6 +3286,74 @@ fn standard_circle_endpoint_candidates(
         .filter_map(|(index, point)| {
             ((point_distance_squared(point.position, center).sqrt() - radius).abs() <= 1e-3)
                 .then_some(index)
+        })
+        .collect()
+}
+
+fn standard_native_graph_endpoint_pairs(
+    source: &[u8],
+    supports: &[geometry::StandardCurveSupport],
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    points: &[Point],
+) -> Option<Vec<Option<[usize; 2]>>> {
+    let graph = crate::b5::parse(source)?;
+    let identity_points = unique_native_identity_points(
+        &graph.logical_vertex_refs,
+        &graph.logical_vertex_points,
+        graph.vertex_points.len(),
+        &graph.vertex_tolerances,
+        points,
+    );
+    Some(
+        supports
+            .iter()
+            .map(|support| {
+                let identities = native_edges.get(&support.tag)?;
+                Some([
+                    *identity_points.get(&identities[0])?,
+                    *identity_points.get(&identities[1])?,
+                ])
+            })
+            .collect(),
+    )
+}
+
+fn unique_native_identity_points(
+    identities: &[u32],
+    coordinates: &[[f64; 3]],
+    raw_point_count: usize,
+    tolerances: &BTreeMap<usize, f64>,
+    points: &[Point],
+) -> HashMap<u32, usize> {
+    const MATCH_TOLERANCE: f64 = 2e-3;
+
+    identities
+        .iter()
+        .copied()
+        .zip(coordinates)
+        .enumerate()
+        .filter_map(|(rank, (identity, coordinate))| {
+            let tolerance = tolerances
+                .get(&(raw_point_count + rank))
+                .copied()
+                .unwrap_or(MATCH_TOLERANCE)
+                .max(MATCH_TOLERANCE);
+            let matches = points
+                .iter()
+                .enumerate()
+                .filter_map(|(index, point)| {
+                    (point_distance_squared(
+                        point.position,
+                        Point3::new(coordinate[0], coordinate[1], coordinate[2]),
+                    )
+                    .sqrt()
+                        <= tolerance)
+                        .then_some(index)
+                })
+                .collect::<Vec<_>>();
+            <[usize; 1]>::try_from(matches)
+                .ok()
+                .map(|[point]| (identity, point))
         })
         .collect()
 }
