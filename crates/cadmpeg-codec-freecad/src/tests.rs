@@ -373,6 +373,72 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
 }
 
 #[test]
+fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="Sketcher::SketchObject" name="Section1" id="1"/>
+ <Object type="Sketcher::SketchObject" name="Section2" id="2"/>
+ <Object type="Sketcher::SketchObject" name="Path" id="3"/>
+ <Object type="PartDesign::AdditiveLoft" name="Loft" id="4"/>
+ <Object type="PartDesign::SubtractivePipe" name="Pipe" id="5"/>
+</Objects>
+<ObjectData Count="5">
+ <Object name="Section1"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Section2"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Loft"><Properties Count="2">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
+  <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Pipe"><Properties Count="2">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("loft and pipe");
+    let feature = |name: &str| {
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+    };
+    assert!(matches!(
+        &feature("Loft").definition,
+        cadmpeg_ir::features::FeatureDefinition::Loft {
+            profiles,
+            closed: true,
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            ..
+        } if matches!(profiles.as_slice(), [
+            cadmpeg_ir::features::ProfileRef::Sketch(first),
+            cadmpeg_ir::features::ProfileRef::Sketch(second),
+        ] if first.0.ends_with("#Section1") && second.0.ends_with("#Section2"))
+    ));
+    assert!(matches!(
+        &feature("Pipe").definition,
+        cadmpeg_ir::features::FeatureDefinition::Sweep {
+            profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
+            path: Some(cadmpeg_ir::features::PathRef::Native(path)),
+            mode: cadmpeg_ir::features::SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanOp::Cut,
+            },
+            ..
+        } if path.ends_with(":property:Spine")
+    ));
+    assert_eq!(feature("Loft").dependencies.len(), 2);
+    assert_eq!(feature("Pipe").dependencies.len(), 2);
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn reports_attributable_native_design_blockers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>

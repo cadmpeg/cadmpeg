@@ -8,7 +8,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
-    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, SketchSpace,
+    PathRef, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    SketchSpace, SweepMode,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -102,6 +103,22 @@ pub(crate) fn transfer(
             })
         } else if is_boolean(&object.type_name) {
             boolean_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if is_loft(&object.type_name) {
+            loft_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if is_sweep(&object.type_name) {
+            sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -1408,6 +1425,79 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
     Some(FeatureDefinition::Combine { target, tools, op })
 }
 
+fn loft_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    sketches: &HashMap<&str, SketchId>,
+) -> Option<FeatureDefinition> {
+    let sections = property(properties, "Sections").or_else(|| property(properties, "Profile"))?;
+    let profiles = sections
+        .links
+        .iter()
+        .filter_map(|link| link.object.as_deref())
+        .map(|object| {
+            sketches
+                .get(object)
+                .cloned()
+                .map_or_else(|| ProfileRef::Native(object.to_owned()), ProfileRef::Sketch)
+        })
+        .collect::<Vec<_>>();
+    if profiles.len() < 2 {
+        return None;
+    }
+    Some(FeatureDefinition::Loft {
+        profiles,
+        guides: Vec::new(),
+        op: operation_boolean(kind),
+        closed: bool_property(properties, "Closed").unwrap_or(false),
+    })
+}
+
+fn sweep_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    sketches: &HashMap<&str, SketchId>,
+) -> Option<FeatureDefinition> {
+    let profile = property(properties, "Profile")
+        .or_else(|| property(properties, "Sections"))?
+        .links
+        .first()
+        .and_then(|link| link.object.as_deref())?;
+    let profile = sketches.get(profile).cloned().map_or_else(
+        || ProfileRef::Native(profile.to_owned()),
+        ProfileRef::Sketch,
+    );
+    let path_property = property(properties, "Spine").or_else(|| property(properties, "Path"))?;
+    if path_property.links.is_empty() {
+        return None;
+    }
+    let solid =
+        kind.starts_with("PartDesign::") || bool_property(properties, "Solid").unwrap_or(false);
+    Some(FeatureDefinition::Sweep {
+        profile: Some(profile),
+        path: Some(PathRef::Native(path_property.id.clone())),
+        mode: if solid {
+            SweepMode::Solid {
+                op: operation_boolean(kind),
+            }
+        } else {
+            SweepMode::Surface
+        },
+        twist: None,
+        scale: None,
+    })
+}
+
+fn operation_boolean(kind: &str) -> BooleanOp {
+    if kind.contains("Subtractive") {
+        BooleanOp::Cut
+    } else if kind.contains("Additive") {
+        BooleanOp::Join
+    } else {
+        BooleanOp::NewBody
+    }
+}
+
 fn feature_id(object: &ObjectRecord) -> FeatureId {
     FeatureId(format!("fcstd:design:feature#{}", object.name))
 }
@@ -1435,6 +1525,20 @@ fn is_boolean(kind: &str) -> bool {
         .iter()
         .any(|operation| kind == format!("Part::{operation}"))
 }
+fn is_loft(kind: &str) -> bool {
+    kind == "Part::Loft"
+        || matches!(
+            kind,
+            "PartDesign::AdditiveLoft" | "PartDesign::SubtractiveLoft"
+        )
+}
+fn is_sweep(kind: &str) -> bool {
+    kind == "Part::Sweep"
+        || matches!(
+            kind,
+            "PartDesign::AdditivePipe" | "PartDesign::SubtractivePipe"
+        )
+}
 fn is_dress_up(kind: &str) -> bool {
     kind.contains("Fillet") || kind.contains("Chamfer")
 }
@@ -1450,6 +1554,8 @@ fn is_design_object(kind: &str) -> bool {
         || is_sketch(kind)
         || is_primitive(kind)
         || is_boolean(kind)
+        || is_loft(kind)
+        || is_sweep(kind)
         || is_extrusion(kind)
         || is_revolution(kind)
         || is_dress_up(kind)

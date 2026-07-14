@@ -285,3 +285,9 @@ operations. Two-input forms retain distinct `Base` and `Tool` property identitie
 forms define link zero as the target and the remaining ordered `Shapes` links as tools without
 claiming that application-object links are already neutral body ids. Feature dependencies are the
 stable union of declared object dependencies and earlier link-property operands in source order.
+
+Part and PartDesign lofts retain ordered section profiles and closed state. Part sweeps and
+PartDesign additive or subtractive pipes retain the profile plus the complete native spine/path
+property, including its ordered subelement selectors. Standalone sweeps distinguish surface from
+solid results through their persisted solid flag; PartDesign pipes are solid and explicitly join
+or cut. Cached result shapes remain outputs and do not replace these construction operands.
