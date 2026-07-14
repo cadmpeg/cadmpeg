@@ -3803,7 +3803,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)
                 .map_or(candidates.clone(), |sketch| {
-                    constrain_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
+                    select_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
                 });
             dimensioned_circle_transform(&candidates, &circles)
                 .map(|transform| ((*feature).to_string(), transform))
@@ -4971,7 +4971,7 @@ fn marker_transform_candidates_by_feature(
                 .iter()
                 .find(|candidate| candidate.id == **sketch)
                 .map_or(candidates.clone(), |sketch| {
-                    constrain_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
+                    select_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
                 });
             if !candidates.is_empty() {
                 result.insert(feature.to_string(), candidates);
@@ -5106,13 +5106,12 @@ fn sketch_frame_marker_transform(
     })
 }
 
-fn constrain_marker_transforms_by_frame(
+fn select_marker_transforms_by_frame(
     candidates: &[MarkerTransform],
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Vec<MarkerTransform> {
     sketch_frame_marker_transform(sketch, quantum)
-        .filter(|frame| candidates.contains(frame))
         .map_or_else(|| candidates.to_vec(), |frame| vec![frame])
 }
 
@@ -5579,10 +5578,10 @@ fn marker_entities_inner(
 mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, bind_detached_relation_drivers,
-        constrain_marker_transforms_by_frame, dimensioned_circle_surface_transforms,
-        dimensioned_circle_transform, implicit_circle_marker, marker_entities,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        project_relation_point_geometry, relation_parameter_by_display_name,
+        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+        implicit_circle_marker, marker_entities, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, project_relation_point_geometry,
+        relation_parameter_by_display_name, select_marker_transforms_by_frame,
         sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_relation_definition,
         unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
@@ -5768,10 +5767,13 @@ mod profile_join_tests {
             ..transform
         };
         assert_eq!(
-            constrain_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
+            select_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
             vec![transform]
         );
-        assert!(constrain_marker_transforms_by_frame(&[], &sketch, 1.0e-8).is_empty());
+        assert_eq!(
+            select_marker_transforms_by_frame(&[], &sketch, 1.0e-8),
+            vec![transform]
+        );
     }
 
     #[test]
