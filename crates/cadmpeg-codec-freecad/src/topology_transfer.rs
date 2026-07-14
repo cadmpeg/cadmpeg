@@ -28,6 +28,8 @@ use crate::brep::{
 };
 use crate::native::PropertyRecord;
 
+type IndexedPolygon = (Vec<Point3>, Option<Vec<f64>>, f64);
+
 /// Transfer text or binary shape-set topology with placements applied once.
 pub(crate) fn transfer(
     ir: &mut CadIr,
@@ -808,7 +810,7 @@ impl<'a> Builder<'a> {
         &self,
         index: usize,
         representation: &TextEdgeRepresentation,
-    ) -> Result<(Vec<Point3>, Option<Vec<f64>>, f64), CodecError> {
+    ) -> Result<IndexedPolygon, CodecError> {
         let polygon = &self.tables.polygons_on_triangulations[index - 1];
         let triangulation_index = representation.surface.ok_or_else(|| {
             CodecError::Malformed("indexed polygon has no triangulation reference".into())

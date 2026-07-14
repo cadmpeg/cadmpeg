@@ -707,7 +707,8 @@ mod tests {
 
     #[test]
     fn restores_absolute_and_relative_string_table_headers() {
-        let records = parse_string_table(b"a.c.2 alpha\n-3.c.-1 beta\n", 2, false).unwrap();
+        let records = parse_string_table(b"a.c.2 alpha\n-3.c.-1 beta\n", 2, false)
+            .expect("parse relative string table");
         assert_eq!(records[0].string_id, 10);
         assert_eq!(records[0].components, [2]);
         assert_eq!(records[1].string_id, 13);
@@ -720,7 +721,7 @@ mod tests {
         let input = b"7 PostfixCount 1 :tag MapCount 1\n\
             ElementMap 1 7 1 Face ChildCount 0 NameCount 2\n\
             ;Generated.0.a 0 :1.a.0.b 0 EndMap";
-        let parsed = parse_element_map(input, false).unwrap();
+        let parsed = parse_element_map(input, false).expect("parse element map");
         assert_eq!(parsed.map_id, 7);
         assert_eq!(parsed.postfixes, [":tag"]);
         assert_eq!(parsed.maps[0].groups[0].names.len(), 2);
@@ -738,19 +739,21 @@ mod tests {
 
     #[test]
     fn restores_multiline_length_prefixed_string() {
-        let records = parse_string_table(b"1.0 1:first\nsecond\n", 1, false).unwrap();
+        let records = parse_string_table(b"1.0 1:first\nsecond\n", 1, false)
+            .expect("parse multiline string table");
         assert_eq!(records[0].payload, "first\nsecond");
     }
 
     #[test]
     fn parses_side_entry_headers() {
-        let table = parse_string_table(b"StringTableStart v1 1\n1.c value\n", 1, true).unwrap();
+        let table = parse_string_table(b"StringTableStart v1 1\n1.c value\n", 1, true)
+            .expect("parse absolute string table");
         assert_eq!(table[0].payload, "value");
         let map = parse_element_map(
             b"BeginElementMap v1 1 PostfixCount 0 MapCount 1 ElementMap 1 1 0 EndMap",
             true,
         )
-        .unwrap();
+        .expect("parse absolute element map");
         assert_eq!(map.map_id, 1);
     }
 }

@@ -18,7 +18,7 @@ const MAX_TOTAL_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_EXPANSION_RATIO: u64 = 1_000;
 const DETECTION_XML_BYTES: usize = 8 * 1024;
 
-/// Inspect the first local entry deeply enough to confirm FCStd document markers.
+/// Inspect the first local entry deeply enough to confirm `FCStd` document markers.
 pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
     if prefix.len() < 30 || &prefix[..4] != b"PK\x03\x04" {
         return false;

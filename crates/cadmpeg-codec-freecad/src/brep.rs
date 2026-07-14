@@ -3714,7 +3714,7 @@ mod tests {
         else {
             panic!("expected trimmed 2D curve")
         };
-        assert_eq!(*parameter_range, [0.0, 6.28]);
+        assert_eq!(*parameter_range, [0.0, 314.0 / 50.0]);
         assert!(matches!(basis.as_ref(), TextCurve2d::Offset { .. }));
     }
 

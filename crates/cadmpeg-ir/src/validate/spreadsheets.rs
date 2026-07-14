@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::*;
+use super::{CadIr, Check, Finding, Severity};
 
 pub(super) fn check_spreadsheets(ir: &CadIr, findings: &mut Vec<Finding>) {
     let features = ir

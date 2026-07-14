@@ -390,8 +390,7 @@ fn transfer_neutral_presentation(ir: &mut CadIr, graph: &Graph) {
                     (
                         property.name.clone(),
                         gui_property_value(property)
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| property.raw_xml.clone()),
+                            .map_or_else(|| property.raw_xml.clone(), str::to_owned),
                     )
                 })
                 .collect(),

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Generate deterministic machine-readable evidence from the public FCStd corpus.
+//! Generate deterministic machine-readable evidence from the public `FCStd` corpus.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -16,7 +16,8 @@ use serde_json::Value;
 
 #[derive(Serialize)]
 struct Profile {
-    profile_version: u32,
+    #[serde(rename = "profile_version")]
+    version: u32,
     format: &'static str,
     manifest_sha256: String,
     manifest_verified: bool,
@@ -191,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        profile_version: 3,
+        version: 3,
         format: "fcstd",
         manifest_sha256: sha256_hex(&manifest),
         manifest_verified: true,
@@ -802,8 +803,8 @@ fn gates(
                 assertion(
                     "carrier_families",
                     required_carriers.is_subset(&carriers),
-                    format!("{:?}", carriers),
-                    format!("{:?}", required_carriers),
+                    format!("{carriers:?}"),
+                    format!("{required_carriers:?}"),
                 ),
                 assertion(
                     "application_geometry",
@@ -823,8 +824,8 @@ fn gates(
                 assertion(
                     "connected_topology",
                     required_topology.is_subset(&topology),
-                    format!("{:?}", topology),
-                    format!("{:?}", required_topology),
+                    format!("{topology:?}"),
+                    format!("{required_topology:?}"),
                 ),
                 assertion(
                     "persistent_names",
@@ -970,6 +971,7 @@ fn gates(
     gates
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn assertion(
     id: &'static str,
     passed: bool,
