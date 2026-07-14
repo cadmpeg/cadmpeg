@@ -2228,13 +2228,19 @@ fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> O
                 .then_some(code_offset)
         })?
     } else {
-        [8usize, 4].into_iter().find_map(|padding| {
-            let code_offset = name_offset.checked_sub(6 + padding)?;
-            lane.native_payload
-                .get(code_offset + 4..name_offset - 2)?
-                .iter()
-                .all(|byte| *byte == 0)
-                .then_some(code_offset)
+        let compact_instance = name_offset.checked_sub(14).filter(|code_offset| {
+            lane.native_payload.get(code_offset + 4..code_offset + 8) == Some(&[0; 4])
+                && lane.native_payload.get(name_offset - 2..name_offset) == Some(&[0x00, 0x80])
+        });
+        compact_instance.or_else(|| {
+            [8usize, 4].into_iter().find_map(|padding| {
+                let code_offset = name_offset.checked_sub(6 + padding)?;
+                lane.native_payload
+                    .get(code_offset + 4..name_offset - 2)?
+                    .iter()
+                    .all(|byte| *byte == 0)
+                    .then_some(code_offset)
+            })
         })?
     };
     Some(u32::from_le_bytes(
@@ -2243,6 +2249,54 @@ fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> O
             .try_into()
             .ok()?,
     ))
+}
+
+/// Project compact solid-sweep Boolean operation discriminators.
+pub(crate) fn bind_sweep_operations(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let FeatureDefinition::Sweep {
+            mode: cadmpeg_ir::features::SweepMode::Solid { op },
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if *op != BooleanOp::Unresolved {
+            continue;
+        }
+        let Some(history) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_features.get(native).copied())
+        else {
+            continue;
+        };
+        let mut operations = lanes.iter().filter_map(|lane| {
+            let name = feature_object_name(history, lane)?;
+            match (
+                history.input_class.as_deref(),
+                feature_operation_code(lane, name)?,
+            ) {
+                (Some("moSweep_c"), 15) => Some(BooleanOp::Join),
+                _ => None,
+            }
+        });
+        let Some(first) = operations.next() else {
+            continue;
+        };
+        if operations.all(|operation| operation == first) {
+            *op = first;
+        }
+    }
 }
 
 fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {

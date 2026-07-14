@@ -157,7 +157,7 @@ The inline extrusion operation trailer establishes the extrusion object family i
 
 An integer or Boolean Keywords dimension is discrete. A same-named native f64 scalar binds to that dimension only when it exactly represents the existing integer or Boolean value. Other same-named native scalars in the feature-object interval belong to a different semantic field.
 
-`moSweep_c` produces a solid sweep. Its Boolean operation remains independently unresolved when no operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
+`moSweep_c` produces a solid sweep. Compact operation code `15` joins the swept result to the existing body. Its Boolean operation remains independently unresolved when no recognized operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
 
 A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. An absent attribute leaves that field unresolved.
 

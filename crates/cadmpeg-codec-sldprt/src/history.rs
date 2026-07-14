@@ -3271,6 +3271,11 @@ fn project_features_with_native_inputs(
     );
     crate::pmi::enrich_history_parameters(&mut histories, &native.pmi_dimensions);
     let mut features = project_features(&histories);
+    crate::resolved_features::bind_sweep_operations(
+        &mut features,
+        &histories,
+        &native.feature_input_lanes,
+    );
     crate::resolved_features::project_compact_body_selections(
         &mut features,
         &native.feature_input_lanes,
