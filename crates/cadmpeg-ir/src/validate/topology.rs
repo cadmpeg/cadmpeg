@@ -1639,10 +1639,32 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Extrude {
-                profile, extent, ..
+                profile,
+                direction,
+                extent,
+                draft,
+                reverse_draft,
+                direction_source,
+                face_maker,
+                ..
             } => {
                 profiles.push(profile);
                 extents.push(extent);
+                if let Some(crate::features::ExtrusionDirectionSource::Edge { reference }) =
+                    direction_source
+                {
+                    paths.push(reference);
+                }
+                if direction.is_some_and(|value| !valid_feature_direction(value))
+                    || [draft, reverse_draft].into_iter().flatten().any(|angle| {
+                        !angle.0.is_finite() || angle.0.abs() >= std::f64::consts::FRAC_PI_2
+                    })
+                    || face_maker
+                        .as_ref()
+                        .is_some_and(|maker| maker.class.is_empty())
+                {
+                    feature_geometry_error(findings, feature, "extrusion construction is invalid");
+                }
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);

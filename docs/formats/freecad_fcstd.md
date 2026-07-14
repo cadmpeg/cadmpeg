@@ -380,8 +380,11 @@ plane as an origin and unit normal. When present, the native plane, face, or cir
 supplied that resolved plane remains attached for attribution and dependency recovery. A missing
 source or zero-length normal leaves the operation attributable and native.
 
-Part extrusions retain their normalized direction, independent forward and reverse lengths, and
-equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
+Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
+direction source, independent forward and reverse lengths and tapers, symmetric construction, and
+solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class
+and mode and whether inner wires taper with or against outer wires. A zero pair of explicit lengths
+uses the persisted direction-vector magnitude. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected
 termination. Midplane blind features retain total symmetric travel; reversed features invert the
 resolved sketch-normal or explicit custom direction. A pad joins and a pocket cuts. Missing

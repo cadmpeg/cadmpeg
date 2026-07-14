@@ -1806,6 +1806,11 @@ fn encoder_writes_source_less_line_sketches() {
             },
             op: BooleanOp::Join,
             draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: Some(true),
+            face_maker: None,
+            inner_wire_taper: None,
         },
         native_ref: None,
     });
@@ -5678,6 +5683,7 @@ fn decode_extracts_parametric_history() {
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
             draft: None,
+            ..
         } if profile == &history.features[0].id
     ));
     assert_eq!(
@@ -7461,6 +7467,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
             extent: Extent::Blind { length: Length(2.0) },
             op: BooleanOp::Join,
             draft: None,
+            ..
         } if profile == &profile_native
     ));
     assert!(matches!(

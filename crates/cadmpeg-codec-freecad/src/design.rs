@@ -8,13 +8,13 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
     BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
-    DesignParameter, EdgeSelection, Extent, Feature, FeatureDefinition, FeatureId,
-    FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw, HoleBottom, HoleKind,
-    HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue,
-    PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
-    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SketchSpace, SweepMode,
-    SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
+    DesignParameter, EdgeSelection, Extent, ExtrusionDirectionSource, ExtrusionFaceMaker, Feature,
+    FeatureDefinition, FeatureId, FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw,
+    HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper,
+    Length, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternStage,
+    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
+    SketchSpace, SweepMode, SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1668,40 +1668,95 @@ fn extrusion_definition(
     sketches: &[Sketch],
 ) -> Option<FeatureDefinition> {
     if kind == "Part::Extrusion" {
-        let mut direction = unit_vector(vector_property(properties, "Dir")?)?;
-        let forward = scalar_named(properties, "LengthFwd").filter(|value| *value >= 0.0)?;
+        let raw_direction = vector_property(properties, "Dir")?;
+        let magnitude = (raw_direction.x * raw_direction.x
+            + raw_direction.y * raw_direction.y
+            + raw_direction.z * raw_direction.z)
+            .sqrt();
+        let mut direction = unit_vector(raw_direction)?;
+        let mut forward = scalar_named(properties, "LengthFwd").filter(|value| *value >= 0.0)?;
         let reverse = scalar_named(properties, "LengthRev").filter(|value| *value >= 0.0)?;
-        let (extent, reverse_direction) = match (forward > 0.0, reverse > 0.0) {
-            (true, false) => (
-                Extent::Blind {
-                    length: Length(forward),
+        if forward == 0.0 && reverse == 0.0 {
+            forward = magnitude;
+        }
+        let symmetric = bool_property(properties, "Symmetric").unwrap_or(false);
+        let (extent, reverse_direction) = if symmetric {
+            (
+                Extent::Symmetric {
+                    length: Length((forward > 0.0).then_some(forward)?),
                 },
                 false,
-            ),
-            (false, true) => (
-                Extent::Blind {
-                    length: Length(reverse),
-                },
-                true,
-            ),
-            (true, true) => (
-                Extent::TwoSided {
-                    first: Length(forward),
-                    second: Length(reverse),
-                },
-                false,
-            ),
-            (false, false) => return None,
+            )
+        } else {
+            match (forward > 0.0, reverse > 0.0) {
+                (true, false) => (
+                    Extent::Blind {
+                        length: Length(forward),
+                    },
+                    false,
+                ),
+                (false, true) => (
+                    Extent::Blind {
+                        length: Length(reverse),
+                    },
+                    true,
+                ),
+                (true, true) => (
+                    Extent::TwoSided {
+                        first: Length(forward),
+                        second: Length(reverse),
+                    },
+                    false,
+                ),
+                (false, false) => return None,
+            }
         };
         if reverse_direction {
             direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
         let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
         let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
-        let draft = match (forward > 0.0, reverse > 0.0) {
-            (true, true) if (forward_draft - reverse_draft).abs() > f64::EPSILON => return None,
-            (false, true) => reverse_draft,
-            _ => forward_draft,
+        let (draft, reverse_draft) = match (symmetric, forward > 0.0, reverse > 0.0) {
+            (true, _, _) => (forward_draft, forward_draft),
+            (false, false, true) => (reverse_draft, 0.0),
+            (false, true, true) => (forward_draft, reverse_draft),
+            _ => (forward_draft, 0.0),
+        };
+        let direction_source = match integer_property(properties, "DirMode").unwrap_or(0) {
+            0 => ExtrusionDirectionSource::Custom,
+            1 => {
+                let reference = property(properties, "DirLink")?;
+                if reference.links.len() != 1 {
+                    return None;
+                }
+                ExtrusionDirectionSource::Edge {
+                    reference: PathRef::Native(reference.id.clone()),
+                }
+            }
+            2 => ExtrusionDirectionSource::ProfileNormal,
+            _ => return None,
+        };
+        let face_maker = if let Some(class_property) = property(properties, "FaceMakerClass") {
+            let mode = if property(properties, "FaceMakerMode").is_some() {
+                Some(u32::try_from(integer_property(properties, "FaceMakerMode")?).ok()?)
+            } else {
+                None
+            };
+            Some(ExtrusionFaceMaker {
+                class: string_property_value(class_property)?.to_owned(),
+                mode,
+            })
+        } else {
+            None
+        };
+        let inner_wire_taper = if property(properties, "InnerWireTaper").is_some() {
+            Some(match integer_property(properties, "InnerWireTaper")? {
+                0 => InnerWireTaper::Inverted,
+                1 => InnerWireTaper::SameAsOuter,
+                _ => return None,
+            })
+        } else {
+            None
         };
         return Some(FeatureDefinition::Extrude {
             profile,
@@ -1709,6 +1764,12 @@ fn extrusion_definition(
             extent,
             op: BooleanOp::NewBody,
             draft: (draft != 0.0).then_some(cadmpeg_ir::features::Angle(draft.to_radians())),
+            reverse_draft: (reverse_draft != 0.0)
+                .then_some(cadmpeg_ir::features::Angle(reverse_draft.to_radians())),
+            direction_source: Some(direction_source),
+            solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
+            face_maker,
+            inner_wire_taper,
         });
     }
     let positive = |name| scalar_named(properties, name).filter(|value| *value > 0.0);
@@ -1786,6 +1847,11 @@ fn extrusion_definition(
             BooleanOp::Join
         },
         draft,
+        reverse_draft: None,
+        direction_source: None,
+        solid: Some(true),
+        face_maker: None,
+        inner_wire_taper: None,
     })
 }
 
@@ -2959,6 +3025,15 @@ fn link_selectors(link: &crate::native::LinkTarget) -> impl Iterator<Item = &str
 
 fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
     property(properties, name).and_then(scalar_value)
+}
+
+fn string_property_value(property: &PropertyRecord) -> Option<&str> {
+    let value = property.values.first()?;
+    value
+        .attributes
+        .get("value")
+        .map(String::as_str)
+        .or(value.text.as_deref())
 }
 
 fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {

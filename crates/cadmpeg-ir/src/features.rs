@@ -399,6 +399,21 @@ pub enum FeatureDefinition {
         /// Draft angle applied to the extruded side walls, when present.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         draft: Option<Angle>,
+        /// Draft angle on the opposite side of a two-sided extrusion.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reverse_draft: Option<Angle>,
+        /// Persisted source used to resolve the extrusion direction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction_source: Option<ExtrusionDirectionSource>,
+        /// Whether the result is a solid (`true`) or sheet (`false`), when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        solid: Option<bool>,
+        /// Native face-building policy used to turn closed wires into faces.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        face_maker: Option<ExtrusionFaceMaker>,
+        /// Taper orientation used for inner wires, when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        inner_wire_taper: Option<InnerWireTaper>,
     },
     /// Revolution of a profile around an axis.
     Revolve {
@@ -1379,6 +1394,41 @@ pub enum Extent {
         /// Angular travel on the second side.
         second: Angle,
     },
+}
+
+/// Persisted source of a resolved linear-extrusion direction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ExtrusionDirectionSource {
+    /// Direction comes from the persisted direction vector.
+    Custom,
+    /// Direction comes from a selected straight edge.
+    Edge {
+        /// Native edge selection used as the direction axis.
+        reference: PathRef,
+    },
+    /// Direction comes from the source profile's plane normal.
+    ProfileNormal,
+}
+
+/// Native face-building policy for a solid linear extrusion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ExtrusionFaceMaker {
+    /// Runtime face-maker class, retained as an extensible semantic identifier.
+    pub class: String,
+    /// Persisted enumeration value corresponding to the class, when carried.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<u32>,
+}
+
+/// Relationship between outer-wire and inner-wire taper directions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum InnerWireTaper {
+    /// Inner wires taper opposite to outer wires.
+    Inverted,
+    /// Inner wires taper in the same direction as outer wires.
+    SameAsOuter,
 }
 
 /// Boolean effect of a solid-producing feature.

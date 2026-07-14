@@ -1336,6 +1336,11 @@ fn project_extrude(
         extent,
         op,
         draft,
+        reverse_draft: None,
+        direction_source: None,
+        solid: Some(true),
+        face_maker: None,
+        inner_wire_taper: None,
     })
 }
 
@@ -4563,7 +4568,23 @@ pub fn sync_neutral_features(
                 extent,
                 op,
                 draft,
+                reverse_draft,
+                direction_source,
+                solid,
+                face_maker,
+                inner_wire_taper,
             } => {
+                if reverse_draft.is_some()
+                    || direction_source.is_some()
+                    || *solid == Some(false)
+                    || face_maker.is_some()
+                    || inner_wire_taper.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses unsupported extrusion construction controls",
+                        feature.id
+                    )));
+                }
                 if *op == BooleanOp::Unresolved && existing.is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} requires retained extrusion operation data",

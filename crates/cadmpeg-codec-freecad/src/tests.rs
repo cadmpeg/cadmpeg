@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "26");
+    assert_eq!(result.ir.ir_version, "27");
     let feature = |name: &str| {
         &result
             .ir
@@ -2472,13 +2472,19 @@ fn transfers_non_default_extrusion_termination_branches() {
     <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
     <Property name="TaperAngle" type="App::PropertyAngle"><Float value="5"/></Property>
   </Properties></Object>
-  <Object name="PartExtrusion"><Properties Count="6">
+  <Object name="PartExtrusion"><Properties Count="12">
     <Property name="Base" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="2" z="0"/></Property>
     <Property name="LengthFwd" type="App::PropertyLength"><Float value="7"/></Property>
     <Property name="LengthRev" type="App::PropertyLength"><Float value="3"/></Property>
     <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
-    <Property name="TaperAngleRev" type="App::PropertyAngle"><Float value="2"/></Property>
+    <Property name="TaperAngleRev" type="App::PropertyAngle"><Float value="4"/></Property>
+    <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+    <Property name="DirLink" type="App::PropertyLinkSub"><Link object="Sketch" sub="Edge1"/></Property>
+    <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
+    <Property name="FaceMakerMode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+    <Property name="InnerWireTaper" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2497,7 +2503,10 @@ fn transfers_non_default_extrusion_termination_branches() {
             .unwrap_or_else(|| panic!("missing {name}"))
             .definition
     };
-    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition};
+    use cadmpeg_ir::features::{
+        Angle, BooleanOp, Extent, ExtrusionDirectionSource, FeatureDefinition, InnerWireTaper,
+        PathRef,
+    };
     assert!(matches!(
         definition("ToLast"),
         FeatureDefinition::Extrude {
@@ -2546,14 +2555,72 @@ fn transfers_non_default_extrusion_termination_branches() {
     assert!(matches!(
         definition("PartExtrusion"),
         FeatureDefinition::Extrude {
+            profile: _,
             direction: Some(direction),
             extent: Extent::TwoSided { first, second },
             draft: Some(Angle(draft)),
+            reverse_draft: Some(Angle(reverse_draft)),
+            direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
+            solid: Some(true),
+            face_maker: Some(face_maker),
+            inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
             op: BooleanOp::NewBody,
-            ..
         } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
             && (*draft - 2_f64.to_radians()).abs() < 1e-12
+            && (*reverse_draft - 4_f64.to_radians()).abs() < 1e-12
+            && reference.ends_with(":property:DirLink")
+            && face_maker.class == "Part::FaceMakerUnified" && face_maker.mode == Some(4)
     ));
+}
+
+#[test]
+fn transfers_part_extrusion_symmetric_direction_magnitude() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+ <Object type="Part::Extrusion" name="Extrusion" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Extrusion"><Properties Count="8">
+  <Property name="Base" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="0" z="12"/></Property>
+  <Property name="DirMode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="LengthFwd" type="App::PropertyLength"><Float value="0"/></Property>
+  <Property name="LengthRev" type="App::PropertyLength"><Float value="0"/></Property>
+  <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="TaperAngle" type="App::PropertyAngle"><Float value="3"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("symmetric Part extrusion");
+    let definition = &result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Extrusion"))
+        .expect("extrusion")
+        .definition;
+    assert!(matches!(
+        definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            extent: cadmpeg_ir::features::Extent::Symmetric { length },
+            direction_source: Some(cadmpeg_ir::features::ExtrusionDirectionSource::ProfileNormal),
+            solid: Some(false),
+            draft: Some(cadmpeg_ir::features::Angle(draft)),
+            reverse_draft: Some(cadmpeg_ir::features::Angle(reverse_draft)),
+            ..
+        } if length.0 == 12.0
+            && (*draft - 3_f64.to_radians()).abs() < 1e-12
+            && (*reverse_draft - 3_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(result.report.losses.is_empty());
 }
 
 #[test]
