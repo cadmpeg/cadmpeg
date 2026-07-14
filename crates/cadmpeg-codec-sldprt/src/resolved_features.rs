@@ -8205,6 +8205,21 @@ fn typed_relation_definition(
             if first == second {
                 return None;
             }
+            if !sketch_entities.is_empty() {
+                let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                    parameter.value.as_ref()?
+                else {
+                    return None;
+                };
+                let first_point = profile_locus_point(&first, sketch_entities)?;
+                let second_point = profile_locus_point(&second, sketch_entities)?;
+                if !same_dimension_length(
+                    (second_point.u - first_point.u).hypot(second_point.v - first_point.v),
+                    expected.0,
+                ) {
+                    return None;
+                }
+            }
             Some(SketchConstraintDefinition::DistanceLoci {
                 first,
                 second,
@@ -8247,6 +8262,23 @@ fn typed_relation_definition(
             if first == second {
                 return None;
             }
+            if !sketch_entities.is_empty() {
+                let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                    parameter.value.as_ref()?
+                else {
+                    return None;
+                };
+                let first_point = profile_locus_point(&first, sketch_entities)?;
+                let second_point = profile_locus_point(&second, sketch_entities)?;
+                let measured = if horizontal {
+                    (second_point.u - first_point.u).abs()
+                } else {
+                    (second_point.v - first_point.v).abs()
+                };
+                if !same_dimension_length(measured, expected.0) {
+                    return None;
+                }
+            }
             Some(match relation.family {
                 PointPointHorizontalDistance => SketchConstraintDefinition::HorizontalDistance {
                     first,
@@ -8279,6 +8311,18 @@ fn typed_relation_definition(
                 ),
                 (None, None) => unique_profile_point_line_pair(sketch, parameter, sketch_entities)?,
             };
+            let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                parameter.value.as_ref()?
+            else {
+                return None;
+            };
+            let point_position = profile_locus_point(&point, sketch_entities)?;
+            let line_entity = sketch_entities.iter().find(|entity| entity.id == line)?;
+            if !point_line_distance_value(point_position, line_entity)
+                .is_some_and(|measured| same_dimension_length(measured, expected.0))
+            {
+                return None;
+            }
             Some(SketchConstraintDefinition::DistanceLoci {
                 first: point,
                 second: SketchLocus::Entity(line),
@@ -8325,16 +8369,36 @@ fn typed_relation_definition(
             if first == second {
                 return None;
             }
+            let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                parameter.value.as_ref()?
+            else {
+                return None;
+            };
+            let first_line = sketch_entities.iter().find(|entity| entity.id == first)?;
+            let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
+            if !line_line_distance(first_line, second_line)
+                .is_some_and(|measured| same_dimension_length(measured, expected.0))
+            {
+                return None;
+            }
             Some(SketchConstraintDefinition::Distance {
                 entities: vec![first, second],
                 parameter: parameter_id,
             })
         }
         Angle => {
-            let first = marker(0)
-                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
-            let second = marker(1)
-                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
+            let curve = |index| {
+                marker(index).and_then(|marker| {
+                    single_marker_curve_entity(
+                        marker,
+                        markers_by_id,
+                        loci_by_marker,
+                        sketch_entities,
+                    )
+                })
+            };
+            let first = curve(0);
+            let second = curve(1);
             let (first, second) = match (first, second) {
                 (Some(first), Some(second)) => (first, second),
                 (Some(known), None) => (
@@ -8347,7 +8411,21 @@ fn typed_relation_definition(
                 ),
                 (None, None) => unique_profile_line_angle_pair(sketch, parameter, sketch_entities)?,
             };
-            (first != second).then_some(SketchConstraintDefinition::Angle {
+            if first == second {
+                return None;
+            }
+            let cadmpeg_ir::features::ParameterValue::Angle(expected) = parameter.value.as_ref()?
+            else {
+                return None;
+            };
+            let first_line = sketch_entities.iter().find(|entity| entity.id == first)?;
+            let second_line = sketch_entities.iter().find(|entity| entity.id == second)?;
+            if !line_line_angle(first_line, second_line)
+                .is_some_and(|measured| same_dimension_angle(measured, expected.0))
+            {
+                return None;
+            }
+            Some(SketchConstraintDefinition::Angle {
                 first,
                 second,
                 parameter: parameter_id,
@@ -8365,12 +8443,46 @@ fn typed_relation_definition(
                 .or_else(|| {
                     marker(0)
                         .and_then(|marker| {
-                            single_marker_entity(marker, markers_by_id, loci_by_marker)
+                            if sketch_entities.is_empty() {
+                                single_marker_entity(marker, markers_by_id, loci_by_marker)
+                            } else {
+                                single_marker_curve_entity(
+                                    marker,
+                                    markers_by_id,
+                                    loci_by_marker,
+                                    sketch_entities,
+                                )
+                            }
                         })
                         .or_else(|| {
                             unique_dimensioned_circle_entity(sketch, sketch_entities, parameter)
                         })
                 })?;
+            if !sketch_entities.is_empty() {
+                let cadmpeg_ir::features::ParameterValue::Length(expected) =
+                    parameter.value.as_ref()?
+                else {
+                    return None;
+                };
+                let geometry = &sketch_entities
+                    .iter()
+                    .find(|candidate| candidate.id == entity)?
+                    .geometry;
+                let radius = match geometry {
+                    SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
+                        radius.0
+                    }
+                    _ => return None,
+                };
+                let expected_radius = match parameter.display {
+                    Some(cadmpeg_ir::features::DimensionDisplay::Radius) => expected.0,
+                    Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => expected.0 * 0.5,
+                    None => return None,
+                };
+                if !same_dimension_length(radius, expected_radius) {
+                    return None;
+                }
+            }
             match parameter.display {
                 Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
                     Some(SketchConstraintDefinition::Radius {
@@ -9649,11 +9761,22 @@ struct MarkerTransform {
     swap: bool,
     u_sign: i8,
     v_sign: i8,
+    affine_matrix: Option<[i64; 4]>,
     translation: (i64, i64),
 }
 
 impl MarkerTransform {
     fn apply_axes(self, point: (i64, i64)) -> Option<(i64, i64)> {
+        if let Some([uu, uv, vu, vv]) = self.affine_matrix {
+            const SCALE: i128 = 1_000_000_000_000;
+            let u = i128::from(uu) * i128::from(point.0) + i128::from(uv) * i128::from(point.1);
+            let v = i128::from(vu) * i128::from(point.0) + i128::from(vv) * i128::from(point.1);
+            let rounded = |value: i128| {
+                let adjustment = if value < 0 { -(SCALE / 2) } else { SCALE / 2 };
+                i64::try_from((value + adjustment) / SCALE).ok()
+            };
+            return Some((rounded(u)?, rounded(v)?));
+        }
         let (u, v) = if self.swap { (point.1, point.0) } else { point };
         Some((
             i64::try_from(i128::from(u) * i128::from(self.u_sign)).ok()?,
@@ -9671,6 +9794,14 @@ impl MarkerTransform {
 }
 
 fn sketch_frame_marker_transform(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    quantum: f64,
+) -> Option<MarkerTransform> {
+    axis_aligned_sketch_frame_marker_transform(sketch, quantum)
+        .or_else(|| affine_sketch_frame_marker_transform(sketch, quantum))
+}
+
+fn axis_aligned_sketch_frame_marker_transform(
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
 ) -> Option<MarkerTransform> {
@@ -9719,9 +9850,79 @@ fn sketch_frame_marker_transform(
         swap,
         u_sign,
         v_sign,
+        affine_matrix: None,
         translation: (
             (-origin[u_axis_index] * f64::from(u_sign) / quantum).round() as i64,
             (-origin[v_axis_index] * f64::from(v_sign) / quantum).round() as i64,
+        ),
+    })
+}
+
+fn affine_sketch_frame_marker_transform(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    quantum: f64,
+) -> Option<MarkerTransform> {
+    const SCALE: f64 = 1_000_000_000_000.0;
+    let normal = [sketch.normal.x, sketch.normal.y, sketch.normal.z];
+    let u_axis = [sketch.u_axis.x, sketch.u_axis.y, sketch.u_axis.z];
+    let v_axis = [
+        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
+        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
+        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+    ];
+    let origin = [sketch.origin.x, sketch.origin.y, sketch.origin.z];
+    if !normal
+        .into_iter()
+        .chain(u_axis)
+        .chain(v_axis)
+        .chain(origin)
+        .all(f64::is_finite)
+        || !(quantum.is_finite() && quantum > 0.0)
+    {
+        return None;
+    }
+    let normal_axis =
+        (0..3).max_by(|left, right| normal[*left].abs().total_cmp(&normal[*right].abs()))?;
+    if normal[normal_axis].abs() <= 1.0e-8 {
+        return None;
+    }
+    let native_axes = (0..3)
+        .filter(|candidate| *candidate != normal_axis)
+        .collect::<Vec<_>>();
+    let [first_axis, second_axis] = native_axes.as_slice() else {
+        return None;
+    };
+    let tangent = |axis: usize| {
+        let mut value = [0.0; 3];
+        value[axis] = 1.0;
+        value[normal_axis] = -normal[axis] / normal[normal_axis];
+        value
+    };
+    let dot = |left: [f64; 3], right: [f64; 3]| {
+        left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+    };
+    let first = tangent(*first_axis);
+    let second = tangent(*second_axis);
+    let matrix = [
+        (dot(first, u_axis) * SCALE).round() as i64,
+        (dot(second, u_axis) * SCALE).round() as i64,
+        (dot(first, v_axis) * SCALE).round() as i64,
+        (dot(second, v_axis) * SCALE).round() as i64,
+    ];
+    let mut zero_world_delta = [0.0; 3];
+    zero_world_delta[*first_axis] = -origin[*first_axis];
+    zero_world_delta[*second_axis] = -origin[*second_axis];
+    zero_world_delta[normal_axis] = -(normal[*first_axis] * zero_world_delta[*first_axis]
+        + normal[*second_axis] * zero_world_delta[*second_axis])
+        / normal[normal_axis];
+    Some(MarkerTransform {
+        swap: false,
+        u_sign: 1,
+        v_sign: 1,
+        affine_matrix: Some(matrix),
+        translation: (
+            (dot(zero_world_delta, u_axis) / quantum).round() as i64,
+            (dot(zero_world_delta, v_axis) / quantum).round() as i64,
         ),
     })
 }
@@ -9743,6 +9944,9 @@ fn select_marker_transforms_by_frame(
     };
     if candidates.contains(&frame) {
         return vec![frame];
+    }
+    if frame.affine_matrix.is_some() {
+        return candidates.to_vec();
     }
     let oriented = candidates
         .iter()
@@ -9863,6 +10067,7 @@ fn dimensioned_circle_transform(
             transform.swap,
             transform.u_sign,
             transform.v_sign,
+            transform.affine_matrix,
             transform.translation,
         )
     })
@@ -9877,6 +10082,7 @@ fn unique_marker_transform(
         swap: false,
         u_sign: 1,
         v_sign: 1,
+        affine_matrix: None,
         translation: (0, 0),
     };
     if let Some(transform) = unique_transform_translation(identity, marker_points, locus_points) {
@@ -9893,6 +10099,7 @@ fn unique_marker_transform(
                     swap,
                     u_sign,
                     v_sign,
+                    affine_matrix: None,
                     translation: (0, 0),
                 };
                 let transformed = marker_points
@@ -9981,6 +10188,7 @@ fn compatible_marker_transform_candidates(
         swap: false,
         u_sign: 1,
         v_sign: 1,
+        affine_matrix: None,
         translation: (0, 0),
     };
     if let Some(transform) = unique_scored_transform(identity, score(identity)) {
@@ -9997,6 +10205,7 @@ fn compatible_marker_transform_candidates(
                     swap,
                     u_sign,
                     v_sign,
+                    affine_matrix: None,
                     translation: (0, 0),
                 };
                 scored.extend(score(axes).into_iter().map(|(translation, count)| {
@@ -10782,6 +10991,96 @@ mod profile_join_tests {
             ),
             Some(SketchConstraintDefinition::Native { .. })
         ));
+    }
+
+    #[test]
+    fn dimension_requires_matching_evaluated_geometry() {
+        let sketch = SketchId("sketch".into());
+        let entities = [
+            SketchEntity {
+                id: SketchEntityId("first".into()),
+                sketch: sketch.clone(),
+                construction: true,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: SketchEntityId("second".into()),
+                sketch: sketch.clone(),
+                construction: true,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(3.0, 4.0),
+                },
+            },
+        ];
+        let first = marker("first-marker", None);
+        let second = marker("second-marker", None);
+        let markers = HashMap::from([(first.id.as_str(), &first), (second.id.as_str(), &second)]);
+        let loci = HashMap::from([
+            (
+                first.id.clone(),
+                vec![SketchLocus::Entity(entities[0].id.clone())],
+            ),
+            (
+                second.id.clone(),
+                vec![SketchLocus::Entity(entities[1].id.clone())],
+            ),
+        ]);
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: Some("scalar".into()),
+            display_scalar_ref: None,
+            operands: [&first, &second]
+                .into_iter()
+                .enumerate()
+                .map(|(index, marker)| FeatureInputOperand {
+                    offset: index as u64,
+                    reference_ref: format!("reference-{index}"),
+                    kind: FeatureInputOperandKind::D6,
+                    entity_index: index as u16,
+                    entity_ref: Some(marker.id.clone()),
+                })
+                .collect(),
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: FeatureId("feature".into()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "4mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(4.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("scalar".into()),
+        };
+
+        assert_eq!(
+            typed_relation_definition(
+                &relation,
+                Some(&parameter),
+                &sketch,
+                &entities,
+                &markers,
+                &loci,
+            ),
+            None
+        );
     }
 
     #[test]
@@ -11910,6 +12209,28 @@ mod profile_join_tests {
         assert_eq!(
             select_marker_transforms_by_frame(&[], &sketch, 1.0e-8),
             vec![transform]
+        );
+    }
+
+    #[test]
+    fn rotated_sketch_frame_projects_native_plane_coordinates() {
+        let diagonal = std::f64::consts::FRAC_1_SQRT_2;
+        let sketch = Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(10.0, 3.0, 20.0),
+            normal: Vector3::new(0.0, -1.0, 0.0),
+            u_axis: Vector3::new(diagonal, 0.0, -diagonal),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let transform = sketch_frame_marker_transform(&sketch, 1.0e-8).expect("rotated frame");
+
+        assert!(transform.affine_matrix.is_some());
+        assert_eq!(
+            transform.apply((1_100_000_000, 1_900_000_000)),
+            Some(((std::f64::consts::SQRT_2 / 1.0e-8).round() as i64, 0))
         );
     }
 
@@ -13172,6 +13493,7 @@ mod profile_join_tests {
                 swap: true,
                 u_sign: 1,
                 v_sign: 1,
+                affine_matrix: None,
                 translation: (0, 0),
             })
         );
@@ -13197,6 +13519,7 @@ mod profile_join_tests {
             swap: false,
             u_sign: 1,
             v_sign: 1,
+            affine_matrix: None,
             translation: (0, 0),
         };
         let swap = MarkerTransform {
