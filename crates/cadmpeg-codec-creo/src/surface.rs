@@ -548,24 +548,9 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
             .iter()
             .enumerate()
             .filter(|(_, token)| {
-                if token.kind != psb::TokenKind::NamedRecord || token.length < 4 {
-                    return false;
-                }
                 let token_offset = close + 2 + token.offset;
-                let Some(&field_type) = payload.get(token_offset + 1) else {
-                    return false;
-                };
-                let name_start = token_offset + 2;
-                let name_end = token_offset + token.length - 1;
-                let Some(name) = payload.get(name_start..name_end) else {
-                    return false;
-                };
-                field_type <= 0x24
-                    && !name.is_empty()
-                    && name[0].is_ascii_alphabetic()
-                    && name.iter().all(|byte| {
-                        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'(' | b')')
-                    })
+                token.kind == psb::TokenKind::NamedRecord
+                    && named_record_length(payload, token_offset) == Some(token.length)
             })
             .collect::<Vec<_>>();
         let mut parameters = Vec::new();
@@ -641,23 +626,36 @@ fn scalar_values(body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
     values
 }
 
-fn named_record_boundary(body: &[u8]) -> Option<usize> {
-    body.iter()
-        .enumerate()
-        .filter(|(_, byte)| **byte == psb::token::NAMED_RECORD)
-        .find_map(|(offset, _)| {
-            let field_type = *body.get(offset + 1)?;
-            (field_type <= 0x24).then_some(())?;
-            let name = body.get(offset + 2..)?;
-            let name_len = name.iter().take(96).position(|byte| *byte == 0)?;
-            let name = name.get(..name_len)?;
-            (!name.is_empty()
-                && name[0].is_ascii_alphabetic()
-                && name
-                    .iter()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'(' | b')')))
-            .then_some(offset)
-        })
+fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
+    (body.get(offset) == Some(&psb::token::NAMED_RECORD)).then_some(())?;
+    let field_type = *body.get(offset + 1)?;
+    (field_type <= 0x24).then_some(())?;
+    let name = body.get(offset + 2..)?;
+    let name_len = name.iter().take(96).position(|byte| *byte == 0)?;
+    let name = name.get(..name_len)?;
+    (!name.is_empty()
+        && name[0].is_ascii_alphabetic()
+        && name
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'(' | b')')))
+    .then_some(name_len + 3)
+}
+
+fn named_record_boundary(body: &[u8], cache: &scalar::ScalarCache) -> Option<usize> {
+    let mut cursor = 0;
+    while cursor < body.len() {
+        if named_record_length(body, cursor).is_some() {
+            return Some(cursor);
+        }
+        if let Some((_, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
+            cursor = next;
+        } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
+            cursor += 7;
+        } else {
+            cursor += 1;
+        }
+    }
+    None
 }
 
 /// Decode bounded parameter bodies for positional `srf_array` rows.
@@ -692,7 +690,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
             body_end = body_start + relative;
             boundary = SurfaceBodyBoundary::CompoundClose;
         }
-        if let Some(relative) = named_record_boundary(&payload[*body_start..body_end]) {
+        if let Some(relative) = named_record_boundary(&payload[*body_start..body_end], &cache) {
             body_end = body_start + relative;
             boundary = SurfaceBodyBoundary::NamedRecord;
         }

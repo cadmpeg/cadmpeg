@@ -348,6 +348,27 @@ fn surface_parameter_body_ignores_invalid_embedded_named_marker() {
 }
 
 #[test]
+fn surface_parameter_body_ignores_valid_looking_header_inside_scalar() {
+    let mut payload = visibgeom_payload(1, 0);
+    let scalar = [0x71, 0xe0, 0x01, b'x', 0, 0, 0, 0];
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&scalar);
+    payload.extend_from_slice(b"\xe0\x01next_record\0");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surface_parameters.len(), 1);
+    assert_eq!(scan.surface_parameters[0].body, scalar);
+    assert_eq!(
+        scan.surface_parameters[0].scalar_values,
+        [f64::from_be_bytes([0x3f, 0xe0, 0x01, b'x', 0, 0, 0, 0])]
+    );
+    assert_eq!(
+        scan.surface_parameters[0].boundary,
+        crate::surface::SurfaceBodyBoundary::NamedRecord
+    );
+}
+
+#[test]
 fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0x24]);
