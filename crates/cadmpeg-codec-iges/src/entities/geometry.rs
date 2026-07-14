@@ -869,6 +869,10 @@ pub(crate) fn project_geometry(
     handled.extend(trimming.handled);
     decoded.extend(trimming.decoded);
     losses.extend(trimming.losses);
+    let brep = super::brep::project(ir, directory, parameters, global);
+    handled.extend(brep.handled);
+    decoded.extend(brep.decoded);
+    losses.extend(brep.losses);
     Projection {
         handled,
         decoded,

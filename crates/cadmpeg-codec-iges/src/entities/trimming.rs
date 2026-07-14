@@ -105,7 +105,7 @@ fn face_vertex(
     vertex_id
 }
 
-fn pcurve_geometry(
+pub(super) fn pcurve_geometry(
     ir: &CadIr,
     sequence: u32,
     support: &SurfaceGeometry,

@@ -1359,6 +1359,144 @@ fn parametrically_bounded_plane_file() -> Vec<u8> {
     bytes
 }
 
+fn explicit_open_shell_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, entity_type, form, label, status) in [
+        (1_u32, 116, 0, "LOCATION", "00010000"),
+        (3, 123, 0, "NORMAL", "00010000"),
+        (5, 190, 0, "SURFACE", "00010000"),
+        (7, 110, 0, "EDGE1", "00010000"),
+        (9, 110, 0, "EDGE2", "00010000"),
+        (11, 110, 0, "EDGE3", "00010000"),
+        (13, 110, 0, "EDGE4", "00010000"),
+        (15, 502, 1, "VERTICES", "00010000"),
+        (17, 504, 1, "EDGES", "00010001"),
+        (19, 508, 1, "LOOP", "00010000"),
+        (21, 510, 1, "FACE", "00010000"),
+        (23, 514, 2, "SHELL", "00000000"),
+    ] {
+        let entity_type = entity_type.to_string();
+        let parameter_start = sequence.div_ceil(2).to_string();
+        let form = form.to_string();
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [&entity_type, "0", "0", "1", &form, "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    for (sequence, parameter_sequence, parameters) in [
+        (1, 1, "116,0,0,0,0;"),
+        (3, 2, "123,0,0,1;"),
+        (5, 3, "190,1,3;"),
+        (7, 4, "110,0,0,0,1,0,0;"),
+        (9, 5, "110,1,0,0,1,1,0;"),
+        (11, 6, "110,1,1,0,0,1,0;"),
+        (13, 7, "110,0,1,0,0,0,0;"),
+        (15, 8, "502,4,0,0,0,1,0,0,1,1,0,0,1,0;"),
+        (
+            17,
+            9,
+            "504,4,7,15,1,15,2,9,15,2,15,3,11,15,3,15,4,13,15,4,15,1;",
+        ),
+        (19, 10, "508,4,0,17,1,1,0,0,17,2,1,0,0,17,3,1,0,0,17,4,1,0;"),
+        (21, 11, "510,5,1,1,19;"),
+        (23, 12, "514,1,21,1;"),
+    ] {
+        bytes.extend(parameter_card(
+            parameters.as_bytes(),
+            sequence,
+            parameter_sequence,
+        ));
+    }
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000024P0000012").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_builds_shared_explicit_open_shell_topology() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let body = result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D23")
+        .unwrap();
+    assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Sheet);
+    let shell = result
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id.0 == "iges:model:shell#D23")
+        .unwrap();
+    assert_eq!(shell.faces.len(), 1);
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id == shell.faces[0])
+        .unwrap();
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    assert_eq!(loop_.coedges.len(), 4);
+    let explicit_edges = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.id.0.starts_with("iges:model:edge#D23:"))
+        .collect::<Vec<_>>();
+    assert_eq!(explicit_edges.len(), 4);
+    assert_eq!(
+        explicit_edges
+            .iter()
+            .flat_map(|edge| [&edge.start, &edge.end])
+            .collect::<std::collections::BTreeSet<_>>()
+            .len(),
+        4
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_builds_a_parametrically_bounded_sheet() {
     let result = IgesCodec

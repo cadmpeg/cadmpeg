@@ -1,0 +1,613 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Explicit IGES B-rep topology projection.
+
+use super::geometry::entity_loss;
+use super::trimming::pcurve_geometry;
+use crate::directory::DirectoryEntry;
+use crate::global::Global;
+use crate::parameter::ParameterRecord;
+use cadmpeg_ir::geometry::Pcurve;
+use cadmpeg_ir::ids::{
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
+    SurfaceId, VertexId,
+};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::report::LossNote;
+use cadmpeg_ir::topology::{
+    Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
+};
+use cadmpeg_ir::CadIr;
+use std::collections::{BTreeMap, BTreeSet};
+
+#[derive(Clone, Copy)]
+struct EdgeDefinition {
+    curve: u32,
+    start_list: u32,
+    start_index: usize,
+    end_list: u32,
+    end_index: usize,
+}
+
+#[derive(Clone, Copy)]
+struct EdgeUse {
+    edge_list: u32,
+    edge_index: usize,
+    sense: Sense,
+    pcurve: Option<u32>,
+}
+
+#[derive(Clone)]
+struct FaceDefinition {
+    surface: u32,
+    loops: Vec<u32>,
+}
+
+fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
+    record.integer(index).and_then(|value| {
+        let sequence = u32::try_from(value).ok()?;
+        (sequence % 2 == 1).then_some(sequence)
+    })
+}
+
+fn list_index(record: &ParameterRecord, index: usize) -> Option<usize> {
+    record
+        .integer(index)
+        .and_then(|value| usize::try_from(value).ok())
+        .and_then(|value| value.checked_sub(1))
+}
+
+pub(super) struct BrepProjection {
+    pub(super) handled: BTreeSet<u32>,
+    pub(super) decoded: BTreeSet<u32>,
+    pub(super) losses: Vec<LossNote>,
+}
+
+pub(super) fn project(
+    ir: &mut CadIr,
+    directory: &[DirectoryEntry],
+    parameters: &[ParameterRecord],
+    global: &Global,
+) -> BrepProjection {
+    let records = parameters
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    let mut handled = BTreeSet::new();
+    let mut decoded = BTreeSet::new();
+    let mut losses = Vec::new();
+    let Some(factor) = global.length_factor_mm() else {
+        return BrepProjection {
+            handled,
+            decoded,
+            losses,
+        };
+    };
+    let mut vertex_lists = BTreeMap::<u32, Vec<Point3>>::new();
+    let mut edge_lists = BTreeMap::<u32, Vec<EdgeDefinition>>::new();
+    let mut loops = BTreeMap::<u32, Vec<EdgeUse>>::new();
+    let mut faces = BTreeMap::<u32, FaceDefinition>::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 502 && entry.form == 1)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "vertex lists cannot carry a transformation",
+            ));
+            continue;
+        }
+        let Some(count) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            losses.push(entity_loss(entry, "vertex-list count is not positive"));
+            continue;
+        };
+        let mut points = Vec::with_capacity(count);
+        for index in 0..count {
+            let start = 2 + index * 3;
+            let values = [
+                record.number(start),
+                record.number(start + 1),
+                record.number(start + 2),
+            ];
+            let [Some(x), Some(y), Some(z)] = values else {
+                points.clear();
+                break;
+            };
+            if !x.is_finite() || !y.is_finite() || !z.is_finite() {
+                points.clear();
+                break;
+            }
+            points.push(Point3::new(x * factor, y * factor, z * factor));
+        }
+        if points.len() != count {
+            losses.push(entity_loss(
+                entry,
+                "vertex-list coordinates are truncated or non-finite",
+            ));
+            continue;
+        }
+        vertex_lists.insert(entry.sequence, points);
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 504 && entry.form == 1)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(count) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            losses.push(entity_loss(entry, "edge-list count is not positive"));
+            continue;
+        };
+        let mut edges = Vec::with_capacity(count);
+        for item in 0..count {
+            let start = 2 + item * 5;
+            let Some(edge) = pointer(record, start)
+                .zip(pointer(record, start + 1))
+                .zip(list_index(record, start + 2))
+                .zip(pointer(record, start + 3))
+                .zip(list_index(record, start + 4))
+                .map(
+                    |((((curve, start_list), start_index), end_list), end_index)| EdgeDefinition {
+                        curve,
+                        start_list,
+                        start_index,
+                        end_list,
+                        end_index,
+                    },
+                )
+            else {
+                edges.clear();
+                break;
+            };
+            if vertex_lists
+                .get(&edge.start_list)
+                .is_none_or(|list| edge.start_index >= list.len())
+                || vertex_lists
+                    .get(&edge.end_list)
+                    .is_none_or(|list| edge.end_index >= list.len())
+            {
+                edges.clear();
+                break;
+            }
+            edges.push(edge);
+        }
+        if edges.len() != count {
+            losses.push(entity_loss(
+                entry,
+                "edge-list tuple is invalid or names a missing vertex",
+            ));
+            continue;
+        }
+        edge_lists.insert(entry.sequence, edges);
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 508 && entry.form == 1)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(count) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            losses.push(entity_loss(entry, "loop edge-use count is not positive"));
+            continue;
+        };
+        let mut index = 2;
+        let mut uses = Vec::with_capacity(count);
+        for _ in 0..count {
+            if record.integer(index) != Some(0) {
+                losses.push(entity_loss(
+                    entry,
+                    "vertex-only loop uses are not projected",
+                ));
+                uses.clear();
+                break;
+            }
+            let Some(edge_list) = pointer(record, index + 1) else {
+                uses.clear();
+                break;
+            };
+            let Some(edge_index) = list_index(record, index + 2) else {
+                uses.clear();
+                break;
+            };
+            let sense = match record.integer(index + 3) {
+                Some(1) => Sense::Forward,
+                Some(0) => Sense::Reversed,
+                _ => {
+                    uses.clear();
+                    break;
+                }
+            };
+            let Some(pcurve_count) = record
+                .integer(index + 4)
+                .and_then(|value| usize::try_from(value).ok())
+            else {
+                uses.clear();
+                break;
+            };
+            if pcurve_count > 1 {
+                losses.push(entity_loss(
+                    entry,
+                    "loop pcurve collection has more than one member",
+                ));
+                uses.clear();
+                break;
+            }
+            let pcurve = if pcurve_count == 1 {
+                if !matches!(record.integer(index + 5), Some(0 | 1)) {
+                    uses.clear();
+                    break;
+                }
+                let Some(sequence) = pointer(record, index + 6) else {
+                    uses.clear();
+                    break;
+                };
+                if entries
+                    .get(&sequence)
+                    .is_none_or(|entry| entry.status.use_flag != 5)
+                {
+                    uses.clear();
+                    break;
+                }
+                Some(sequence)
+            } else {
+                None
+            };
+            if edge_lists
+                .get(&edge_list)
+                .is_none_or(|list| edge_index >= list.len())
+            {
+                uses.clear();
+                break;
+            }
+            uses.push(EdgeUse {
+                edge_list,
+                edge_index,
+                sense,
+                pcurve,
+            });
+            index += 5 + pcurve_count * 2;
+        }
+        if uses.len() != count {
+            losses.push(entity_loss(entry, "loop edge-use tuple is invalid"));
+            continue;
+        }
+        loops.insert(entry.sequence, uses);
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 510 && entry.form == 1)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(surface) = pointer(record, 1) else {
+            losses.push(entity_loss(entry, "face surface pointer is invalid"));
+            continue;
+        };
+        let Some(count) = record
+            .integer(2)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            losses.push(entity_loss(entry, "face loop count is not positive"));
+            continue;
+        };
+        if !matches!(record.integer(3), Some(0 | 1)) {
+            losses.push(entity_loss(entry, "face outer-loop flag is not logical"));
+            continue;
+        }
+        let Some(face_loops) = (0..count)
+            .map(|index| pointer(record, 4 + index))
+            .collect::<Option<Vec<_>>>()
+        else {
+            losses.push(entity_loss(entry, "face loop pointer is invalid"));
+            continue;
+        };
+        if face_loops
+            .iter()
+            .any(|sequence| !loops.contains_key(sequence))
+        {
+            losses.push(entity_loss(entry, "face loop is missing"));
+            continue;
+        }
+        faces.insert(
+            entry.sequence,
+            FaceDefinition {
+                surface,
+                loops: face_loops,
+            },
+        );
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 514 && entry.form == 2)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(count) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            losses.push(entity_loss(entry, "shell face count is not positive"));
+            continue;
+        };
+        let mut face_uses = Vec::with_capacity(count);
+        for index in 0..count {
+            let Some(face) = pointer(record, 2 + index * 2) else {
+                face_uses.clear();
+                break;
+            };
+            let sense = match record.integer(3 + index * 2) {
+                Some(1) => Sense::Forward,
+                Some(0) => Sense::Reversed,
+                _ => {
+                    face_uses.clear();
+                    break;
+                }
+            };
+            if !faces.contains_key(&face) {
+                face_uses.clear();
+                break;
+            }
+            face_uses.push((face, sense));
+        }
+        if face_uses.len() != count {
+            losses.push(entity_loss(entry, "shell face-use tuple is invalid"));
+            continue;
+        }
+        let mut candidate = ir.clone();
+        let stem = format!("D{}", entry.sequence);
+        let body_id = BodyId(format!("iges:model:body#{stem}"));
+        let region_id = RegionId(format!("iges:model:region#{stem}"));
+        let shell_id = ShellId(format!("iges:model:shell#{stem}"));
+        let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
+        let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
+        let mut radial = BTreeMap::<(u32, usize), Vec<CoedgeId>>::new();
+        let mut shell_faces = Vec::new();
+        let mut consumed = BTreeSet::new();
+        let mut valid = true;
+        for (face_sequence, face_sense) in face_uses {
+            let face_definition = faces[&face_sequence].clone();
+            let surface_id = SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
+            let Some(support) = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == surface_id)
+            else {
+                valid = false;
+                break;
+            };
+            let face_id = FaceId(format!("iges:model:face#{stem}:D{face_sequence}"));
+            let mut face_loops = Vec::new();
+            for loop_sequence in face_definition.loops {
+                let uses = loops[&loop_sequence].clone();
+                let loop_id = LoopId(format!("iges:model:loop#{stem}:D{loop_sequence}"));
+                let coedge_ids = (0..uses.len())
+                    .map(|index| {
+                        CoedgeId(format!("iges:model:coedge#{stem}:D{loop_sequence}:{index}"))
+                    })
+                    .collect::<Vec<_>>();
+                for (use_index, edge_use) in uses.into_iter().enumerate() {
+                    let edge_definition = edge_lists[&edge_use.edge_list][edge_use.edge_index];
+                    for (list, index) in [
+                        (edge_definition.start_list, edge_definition.start_index),
+                        (edge_definition.end_list, edge_definition.end_index),
+                    ] {
+                        if let std::collections::btree_map::Entry::Vacant(slot) =
+                            vertex_ids.entry((list, index))
+                        {
+                            let position = vertex_lists[&list][index];
+                            let point_id =
+                                PointId(format!("iges:model:point#{stem}:D{list}:{}", index + 1));
+                            let vertex_id =
+                                VertexId(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1));
+                            candidate.model.points.push(Point {
+                                id: point_id.clone(),
+                                position,
+                            });
+                            candidate.model.vertices.push(Vertex {
+                                id: vertex_id.clone(),
+                                point: point_id,
+                                tolerance: None,
+                            });
+                            slot.insert(vertex_id);
+                        }
+                    }
+                    let edge_key = (edge_use.edge_list, edge_use.edge_index);
+                    let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
+                        id.clone()
+                    } else {
+                        let curve_id =
+                            CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
+                        let Some(source_edge) = ir
+                            .model
+                            .edges
+                            .iter()
+                            .find(|edge| edge.curve.as_ref() == Some(&curve_id))
+                        else {
+                            valid = false;
+                            break;
+                        };
+                        let id = EdgeId(format!(
+                            "iges:model:edge#{stem}:D{}:{}",
+                            edge_key.0,
+                            edge_key.1 + 1
+                        ));
+                        candidate.model.edges.push(Edge {
+                            id: id.clone(),
+                            curve: Some(curve_id),
+                            start: vertex_ids
+                                [&(edge_definition.start_list, edge_definition.start_index)]
+                                .clone(),
+                            end: vertex_ids[&(edge_definition.end_list, edge_definition.end_index)]
+                                .clone(),
+                            param_range: source_edge.param_range,
+                            tolerance: None,
+                        });
+                        edge_ids.insert(edge_key, id.clone());
+                        id
+                    };
+                    let pcurve_id = match edge_use.pcurve {
+                        Some(sequence) => {
+                            let Some((geometry, range)) =
+                                pcurve_geometry(ir, sequence, &support.geometry, factor)
+                            else {
+                                valid = false;
+                                break;
+                            };
+                            let id = PcurveId(format!(
+                                "iges:model:pcurve#{stem}:D{loop_sequence}:{use_index}"
+                            ));
+                            candidate.model.pcurves.push(Pcurve {
+                                id: id.clone(),
+                                geometry,
+                                wrapper_reversed: None,
+                                native_tail_flags: None,
+                                parameter_range: Some(range),
+                                fit_tolerance: None,
+                            });
+                            Some(id)
+                        }
+                        None => None,
+                    };
+                    let coedge_id = coedge_ids[use_index].clone();
+                    radial.entry(edge_key).or_default().push(coedge_id.clone());
+                    candidate.model.coedges.push(Coedge {
+                        id: coedge_id,
+                        owner_loop: loop_id.clone(),
+                        edge: edge_id,
+                        next: coedge_ids[(use_index + 1) % coedge_ids.len()].clone(),
+                        previous: coedge_ids[(use_index + coedge_ids.len() - 1) % coedge_ids.len()]
+                            .clone(),
+                        radial_next: coedge_ids[use_index].clone(),
+                        sense: edge_use.sense,
+                        pcurve: pcurve_id,
+                    });
+                }
+                if !valid {
+                    break;
+                }
+                candidate.model.loops.push(Loop {
+                    id: loop_id.clone(),
+                    face: face_id.clone(),
+                    coedges: coedge_ids,
+                });
+                face_loops.push(loop_id);
+                consumed.insert(loop_sequence);
+            }
+            if !valid {
+                break;
+            }
+            candidate.model.faces.push(Face {
+                id: face_id.clone(),
+                shell: shell_id.clone(),
+                surface: surface_id,
+                sense: face_sense,
+                loops: face_loops,
+                name: None,
+                color: None,
+                tolerance: None,
+            });
+            shell_faces.push(face_id);
+            consumed.insert(face_sequence);
+        }
+        if !valid {
+            losses.push(entity_loss(
+                entry,
+                "open-shell topology references missing geometry",
+            ));
+            continue;
+        }
+        for ring in radial.values() {
+            for (index, id) in ring.iter().enumerate() {
+                if let Some(coedge) = candidate
+                    .model
+                    .coedges
+                    .iter_mut()
+                    .find(|coedge| coedge.id == *id)
+                {
+                    coedge.radial_next = ring[(index + 1) % ring.len()].clone();
+                }
+            }
+        }
+        candidate.model.shells.push(Shell {
+            id: shell_id.clone(),
+            region: region_id.clone(),
+            faces: shell_faces,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        candidate.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id],
+        });
+        candidate.model.bodies.push(Body {
+            id: body_id,
+            kind: BodyKind::Sheet,
+            regions: vec![region_id],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        candidate.model.finalize();
+        if !cadmpeg_ir::validate(&candidate, Vec::new()).is_ok() {
+            losses.push(entity_loss(
+                entry,
+                "open-shell candidate failed neutral validation",
+            ));
+            continue;
+        }
+        *ir = candidate;
+        decoded.insert(entry.sequence);
+        decoded.extend(consumed);
+        decoded.extend(edge_ids.keys().map(|key| key.0));
+        decoded.extend(vertex_ids.keys().map(|key| key.0));
+    }
+
+    BrepProjection {
+        handled,
+        decoded,
+        losses,
+    }
+}
