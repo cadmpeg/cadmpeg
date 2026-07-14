@@ -40,10 +40,11 @@ fn entity_json(ir: &CadIr, id: &str) -> Option<serde_json::Value> {
 
 pub(super) fn check_annotations(
     ir: &CadIr,
+    annotations: &crate::Annotations,
     all_ids: &HashSet<String>,
     findings: &mut Vec<Finding>,
 ) {
-    for (id, provenance) in &ir.annotations.provenance {
+    for (id, provenance) in &annotations.provenance {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,
@@ -52,7 +53,7 @@ pub(super) fn check_annotations(
                 "provenance key does not resolve to an entity",
             );
         }
-        if provenance.stream as usize >= ir.annotations.streams.len() {
+        if provenance.stream as usize >= annotations.streams.len() {
             annotation_finding(
                 findings,
                 Severity::Error,
@@ -61,7 +62,7 @@ pub(super) fn check_annotations(
             );
         }
     }
-    for (id, note) in &ir.annotations.exactness {
+    for (id, note) in &annotations.exactness {
         if !all_ids.contains(id) {
             annotation_finding(
                 findings,

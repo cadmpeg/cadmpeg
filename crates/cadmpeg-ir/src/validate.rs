@@ -70,7 +70,7 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_coedge_pairing(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
-    check_annotations(ir, &all_ids, &mut findings);
+    check_annotations(ir, &ir.annotations, &all_ids, &mut findings);
     check_native_links(ir, &all_ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);
@@ -97,6 +97,7 @@ pub fn validate_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> ValidationReport {
     let mut report = validate(ir, losses);
+    let all_ids = check_identity_and_order(ir, &mut Vec::new());
     if source_fidelity.schema_version != SOURCE_FIDELITY_VERSION {
         report.findings.push(Finding {
             check: Check::Version,
@@ -112,6 +113,12 @@ pub fn validate_with_source_fidelity(
         &source_fidelity.byte_ledger,
         &HashSet::new(),
         Some(&source_fidelity.retained_records),
+        &mut report.findings,
+    );
+    check_annotations(
+        ir,
+        &source_fidelity.annotations,
+        &all_ids,
         &mut report.findings,
     );
     report

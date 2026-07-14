@@ -147,17 +147,19 @@ mod tests {
 
     #[test]
     fn byte_ledger_validation_rejects_a_gap() {
-        let mut sidecar = SourceFidelity::default();
-        sidecar.byte_ledger = ByteLedger {
-            source_length: 4,
-            spans: vec![ByteSpan {
-                start: 1,
-                end: 4,
-                class: ByteSpanClass::Structural,
-                owner: "stream".into(),
-                meaning: "payload".into(),
-                retained_record: None,
-            }],
+        let sidecar = SourceFidelity {
+            byte_ledger: ByteLedger {
+                source_length: 4,
+                spans: vec![ByteSpan {
+                    start: 1,
+                    end: 4,
+                    class: ByteSpanClass::Structural,
+                    owner: "stream".into(),
+                    meaning: "payload".into(),
+                    retained_record: None,
+                }],
+            },
+            ..SourceFidelity::default()
         };
 
         let findings = validate_with_source_fidelity(
@@ -204,5 +206,28 @@ mod tests {
         assert_eq!(sidecar.byte_ledger.spans.len(), 1);
         assert_eq!(sidecar.byte_ledger.spans[0].start, 0);
         assert_eq!(sidecar.byte_ledger.spans[0].end, 4);
+    }
+
+    #[test]
+    fn validates_sidecar_annotations_against_product_entities() {
+        let mut sidecar = SourceFidelity::default();
+        sidecar.annotations.provenance.insert(
+            "missing:entity#0".into(),
+            crate::Provenance {
+                stream: 0,
+                offset: 0,
+                tag: None,
+            },
+        );
+        let report = validate_with_source_fidelity(
+            &CadIr::empty(crate::units::Units::default()),
+            &sidecar,
+            Vec::new(),
+        );
+
+        assert!(report.findings.iter().any(|finding| {
+            finding.check == Check::Annotations
+                && finding.message == "provenance key does not resolve to an entity"
+        }));
     }
 }
