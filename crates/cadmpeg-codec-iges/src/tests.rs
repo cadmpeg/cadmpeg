@@ -1818,6 +1818,152 @@ fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
     owned_test_file(&entities)
 }
 
+fn explicit_cylinder_seam_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "ORIGIN".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "AXIS".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 192,
+            form: 0,
+            label: "CYLINDER".into(),
+            status: "00010000",
+            parameters: "192,1,3,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "SEAMEDGE".into(),
+            status: "00010000",
+            parameters: "110,1,0,0,1,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "VERTICES".into(),
+            status: "00010000",
+            parameters: "502,2,1,0,0,1,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 504,
+            form: 1,
+            label: "EDGES".into(),
+            status: "00010001",
+            parameters: "504,1,7,9,1,9,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "SEAMUV0".into(),
+            status: "00010500",
+            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0,1,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "SEAMUV1".into(),
+            status: "00010500",
+            parameters: format!(
+                "126,1,1,1,0,1,0,0,0,1,1,1,1,{},{},0,{},0,0,0,1,0,0,1;",
+                std::f64::consts::TAU,
+                1,
+                std::f64::consts::TAU
+            ),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "SEAMLOOP".into(),
+            status: "00010000",
+            parameters: "508,2,0,11,1,1,1,1,13,0,11,1,0,1,1,15;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "SEAMFACE".into(),
+            status: "00010000",
+            parameters: "510,5,1,1,17;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 514,
+            form: 2,
+            label: "SEAMSHEL".into(),
+            status: "00000000",
+            parameters: "514,1,19,1;".into(),
+        },
+    ])
+}
+
+#[test]
+fn decode_preserves_two_uses_and_periodic_images_of_a_cylinder_seam() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_cylinder_seam_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.0 == "iges:model:loop#D21:D17")
+        .unwrap();
+    assert_eq!(loop_.coedges.len(), 2);
+    let coedges = loop_
+        .coedges
+        .iter()
+        .map(|id| {
+            result
+                .ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *id)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(coedges[0].edge, coedges[1].edge);
+    assert_ne!(coedges[0].sense, coedges[1].sense);
+    assert_eq!(coedges[0].radial_next, coedges[1].id);
+    assert_eq!(coedges[1].radial_next, coedges[0].id);
+    let seam_u = coedges
+        .iter()
+        .map(|coedge| {
+            let pcurve = result
+                .ir
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+                .unwrap();
+            cadmpeg_ir::eval::pcurve_uv(&pcurve.geometry, 0.0)
+                .unwrap()
+                .u
+        })
+        .collect::<Vec<_>>();
+    assert!((seam_u[0] - 0.0).abs() < 1.0e-12);
+    assert!((seam_u[1] - std::f64::consts::TAU).abs() < 1.0e-12);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
     let result = IgesCodec
