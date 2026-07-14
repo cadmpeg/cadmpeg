@@ -1156,8 +1156,9 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve, fit_rank_one_e5_plane_axes,
-        intersection_line_direction, ordered_range, point_on_known_surface, quintic_jet_pcurve,
-        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
+        include_native_endpoint_pairs, intersection_line_direction, ordered_range,
+        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
+        resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
         standard_pcurve_geometry, unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
@@ -1295,6 +1296,13 @@ mod chart_tests {
             standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0),
             [0]
         );
+    }
+
+    #[test]
+    fn native_endpoint_pairs_extend_geometric_candidate_domains() {
+        let mut candidates = vec![vec![1], Vec::new()];
+        include_native_endpoint_pairs(&mut candidates, &[Some([1, 2]), Some([3, 4])]);
+        assert_eq!(candidates, [vec![1, 2], vec![3, 4]]);
     }
 
     #[test]
@@ -2768,31 +2776,6 @@ fn attach_standard_topology(
     let native_edges = crate::b5::edge_vertex_references(source);
     let graph_endpoint_pairs =
         standard_native_graph_endpoint_pairs(source, &supports, &native_edges, &ir.model.points);
-    if let Some(pairs) = &graph_endpoint_pairs {
-        for (candidates, pair) in endpoint_candidates.iter_mut().zip(pairs) {
-            if let Some(pair) = pair {
-                for point in pair {
-                    if !candidates.contains(point) {
-                        candidates.push(*point);
-                    }
-                }
-            }
-        }
-    }
-    let mut endpoint_options = resolve_standard_endpoint_pairs(
-        ir,
-        bindings,
-        &surface_indices,
-        &supports,
-        &endpoint_candidates,
-    );
-    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &graph_endpoint_pairs) {
-        for (options, pair) in options.iter_mut().zip(pairs) {
-            if let Some(pair) = pair {
-                *options = vec![*pair];
-            }
-        }
-    }
     let native_ports = supports
         .iter()
         .map(|support| native_edges.get(&support.tag).copied())
@@ -2814,6 +2797,27 @@ fn attach_standard_topology(
             })
             .collect::<Option<Vec<_>>>()
     });
+    if let Some(pairs) = &graph_endpoint_pairs {
+        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
+    }
+    if let Some(pairs) = &roster_endpoint_pairs {
+        let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
+        include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
+    }
+    let mut endpoint_options = resolve_standard_endpoint_pairs(
+        ir,
+        bindings,
+        &surface_indices,
+        &supports,
+        &endpoint_candidates,
+    );
+    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &graph_endpoint_pairs) {
+        for (options, pair) in options.iter_mut().zip(pairs) {
+            if let Some(pair) = pair {
+                *options = vec![*pair];
+            }
+        }
+    }
     let graph_propagated_pairs = native_ports
         .as_ref()
         .zip(graph_endpoint_pairs.as_ref())
@@ -3342,6 +3346,18 @@ fn standard_native_graph_endpoint_pairs(
             })
             .collect(),
     )
+}
+
+fn include_native_endpoint_pairs(candidates: &mut [Vec<usize>], pairs: &[Option<[usize; 2]>]) {
+    for (candidates, pair) in candidates.iter_mut().zip(pairs) {
+        if let Some(pair) = pair {
+            for point in pair {
+                if !candidates.contains(point) {
+                    candidates.push(*point);
+                }
+            }
+        }
+    }
 }
 
 fn unique_native_identity_points(
