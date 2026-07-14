@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, DesignParameter, Extent, Feature, FeatureDefinition, FeatureId, Length, ParameterId,
-    ParameterValue, ProfileRef, SketchSpace,
+    BooleanOp, DesignParameter, Extent, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole,
+    Length, ParameterId, ParameterValue, ProfileRef, SketchSpace,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -36,6 +36,20 @@ pub(crate) fn transfer(
         .filter(|object| is_design_object(&object.type_name))
         .map(|object| (object.id.as_str(), feature_id(object)))
         .collect::<HashMap<_, _>>();
+    let parent_by_member = objects
+        .iter()
+        .filter(|object| is_body(&object.type_name))
+        .flat_map(|body| {
+            properties_by_owner
+                .get(body.id.as_str())
+                .into_iter()
+                .flatten()
+                .filter(|property| property.name == "Group")
+                .flat_map(|property| &property.links)
+                .filter_map(|link| link.object.as_deref())
+                .map(move |member| (member, feature_id(body)))
+        })
+        .collect::<HashMap<_, _>>();
     let mut sketch_ids = HashMap::<&str, SketchId>::new();
     let body_ids = ir
         .model
@@ -53,7 +67,11 @@ pub(crate) fn transfer(
             .cloned()
             .unwrap_or_default();
         let id = feature_id(object);
-        let definition = if is_sketch(&object.type_name) {
+        let definition = if is_body(&object.type_name) {
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::SolidBodies,
+            }
+        } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(object, &owned)?;
             let sketch = decoded.sketch;
             let sketch_id = sketch.id.clone();
@@ -140,7 +158,7 @@ pub(crate) fn transfer(
             ordinal: object.order as u64,
             name: Some(object.name.clone()),
             suppressed: bool_property(&owned, "Suppressed").unwrap_or(false),
-            parent: None,
+            parent: parent_by_member.get(object.id.as_str()).cloned(),
             dependencies,
             source_properties: feature_state(&owned),
             source_tag: Some(object.type_name.clone()),
@@ -307,8 +325,11 @@ fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
         .iter()
         .filter(|property| STATE_NAMES.contains(&property.name.as_str()))
         .map(|property| {
-            let value = scalar_text(property)
-                .or_else(|| property.links.first().and_then(|link| link.object.clone()))
+            let value = property
+                .links
+                .first()
+                .and_then(|link| link.object.clone())
+                .or_else(|| scalar_text(property))
                 .unwrap_or_else(|| property.raw_xml.clone());
             (property.name.clone(), value)
         })
@@ -797,6 +818,9 @@ fn is_extrusion(kind: &str) -> bool {
         || kind.contains("PartDesign::Pocket")
         || kind.contains("Part::Extrusion")
 }
+fn is_body(kind: &str) -> bool {
+    kind.contains("PartDesign::Body")
+}
 fn is_design_object(kind: &str) -> bool {
-    is_sketch(kind) || is_extrusion(kind) || kind.contains("PartDesign::Feature")
+    is_body(kind) || is_sketch(kind) || is_extrusion(kind) || kind.contains("PartDesign::Feature")
 }

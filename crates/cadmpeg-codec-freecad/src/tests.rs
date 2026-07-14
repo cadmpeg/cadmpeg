@@ -8,14 +8,19 @@ use crate::FcstdCodec;
 #[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="3">
+<Objects Count="4">
+  <Object type="PartDesign::Body" name="Body" id="1"/>
   <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
   <Object type="PartDesign::Pad" name="Pad" id="2"/>
   <Object type="PartDesign::Pocket" name="Pocket" id="3"/>
   <ObjectDeps Name="Pad"><Dep Name="Sketch"/></ObjectDeps>
   <ObjectDeps Name="Pocket"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
 </Objects>
-<ObjectData Count="3">
+<ObjectData Count="4">
+  <Object name="Body"><Properties Count="2">
+    <Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="Sketch"/><Link value="Pad"/><Link value="Pocket"/></LinkList></Property>
+    <Property name="Tip" type="App::PropertyLink"><Link value="Pocket"/></Property>
+  </Properties></Object>
   <Object name="Sketch"><Properties Count="3">
     <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
       <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="10" EndY="0"/><Construction value="0"/></Geometry>
@@ -53,7 +58,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(result.ir.model.sketches[0].profiles[0].len(), 4);
     assert_eq!(result.ir.model.sketches[0].origin.x, 1.0);
     assert!((result.ir.model.sketches[0].normal.y + 1.0).abs() < 1e-12);
-    assert_eq!(result.ir.model.features.len(), 3);
+    assert_eq!(result.ir.model.features.len(), 4);
     assert_eq!(result.ir.model.sketch_constraints.len(), 2);
     assert_eq!(result.ir.model.parameters.len(), 3);
     assert!(result.ir.model.sketch_constraints.iter().any(|constraint| {
@@ -82,6 +87,19 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Pocket"))
         .expect("pocket");
+    let body = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Body"))
+        .expect("body");
+    assert_eq!(pad.parent.as_ref(), Some(&body.id));
+    assert_eq!(pocket.parent.as_ref(), Some(&body.id));
+    assert_eq!(
+        body.source_properties.get("Tip").map(String::as_str),
+        Some("fcstd:object:Pocket")
+    );
     assert!(pocket.suppressed);
     assert_eq!(
         pocket

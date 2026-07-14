@@ -131,9 +131,12 @@ targets an earlier decoded sketch. Their literal and evaluated length values rem
 owning native property, and the operation records distinguish additive, subtractive, and
 independent-body semantics. Object dependency links establish construction dependencies, and a
 feature's cached shape property links its neutral operation to every transferred result body from
-that payload. This is a typed tracer subset; attachments, expressions, complete sketch constraints,
-feature state, and the remaining Part and PartDesign operation families are still required by the
-L4 gate.
+that payload. PartDesign body containers are structural history nodes: their group links establish
+feature-tree parentage, while the tip link remains separate active-result state. Suppressed, active,
+frozen, invalid, touched, mapping, support, tip, and visibility properties remain individually
+named state rather than being collapsed into one enabled flag. This is a typed tracer subset;
+complete support-frame composition and the remaining Part and PartDesign operation families are
+still required by the L4 gate.
 
 ## Presentation and application records
 
