@@ -9,7 +9,7 @@ use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
     PathRef, PatternKind, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, SketchSpace, SweepMode,
+    RevolutionConstruction, ShellJoin, ShellMode, SketchSpace, SweepMode,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -188,6 +188,12 @@ pub(crate) fn transfer(
                     BooleanOp::Join
                 },
             }
+        } else if object.type_name == "PartDesign::Thickness" {
+            thickness_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if object.type_name.contains("Fillet") {
             FeatureDefinition::Fillet {
                 edges: native_edge_selection(&owned),
@@ -356,7 +362,7 @@ fn append_operation_parameters(
     properties: &[&PropertyRecord],
 ) {
     const NAMES: &[&str] = &[
-        "Angle", "Angle2", "Radius", "Size", "Size2", "Length", "Length2",
+        "Angle", "Angle2", "Radius", "Size", "Size2", "Length", "Length2", "Value",
     ];
     for property in properties
         .iter()
@@ -1267,6 +1273,35 @@ fn native_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
     })
 }
 
+fn thickness_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let thickness = scalar_named(properties, "Value")?;
+    if !thickness.is_finite() || thickness <= 0.0 {
+        return None;
+    }
+    let mode = match integer_property(properties, "Mode").unwrap_or(0) {
+        0 => ShellMode::Skin,
+        1 => ShellMode::Pipe,
+        2 => ShellMode::BothSides,
+        _ => return None,
+    };
+    let join = match integer_property(properties, "Join").unwrap_or(0) {
+        0 => ShellJoin::Arc,
+        1 => ShellJoin::Intersection,
+        _ => return None,
+    };
+    Some(FeatureDefinition::Shell {
+        removed_faces: property(properties, "Base").map_or(
+            cadmpeg_ir::features::FaceSelection::Unresolved,
+            |property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()),
+        ),
+        thickness: Some(Length(thickness)),
+        outward: Some(!bool_property(properties, "Reversed").unwrap_or(false)),
+        mode: Some(mode),
+        join: Some(join),
+        resolve_intersections: Some(bool_property(properties, "Intersection").unwrap_or(false)),
+    })
+}
+
 fn chamfer_spec(properties: &[&PropertyRecord]) -> ChamferSpec {
     let mode = property(properties, "ChamferType")
         .and_then(scalar_value)
@@ -1659,7 +1694,7 @@ fn is_pattern(kind: &str) -> bool {
     )
 }
 fn is_dress_up(kind: &str) -> bool {
-    kind.contains("Fillet") || kind.contains("Chamfer")
+    kind.contains("Fillet") || kind.contains("Chamfer") || kind == "PartDesign::Thickness"
 }
 fn is_body(kind: &str) -> bool {
     kind.contains("PartDesign::Body")

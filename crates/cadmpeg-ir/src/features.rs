@@ -469,6 +469,15 @@ pub enum FeatureDefinition {
         /// as opposed to inward, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         outward: Option<bool>,
+        /// Offset construction used to generate the wall.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mode: Option<ShellMode>,
+        /// Corner continuation law used between offset faces.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        join: Option<ShellJoin>,
+        /// Whether intersecting offset regions are resolved during construction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        resolve_intersections: Option<bool>,
     },
     /// Adds material normal to selected faces.
     Thicken {
@@ -680,6 +689,28 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Geometric offset construction used by a thin-wall shell operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellMode {
+    /// Offsets the selected boundary as a skin.
+    Skin,
+    /// Extends the offset along boundary edges as a pipe-like wall.
+    Pipe,
+    /// Builds wall material on both sides of the original boundary.
+    BothSides,
+}
+
+/// Corner continuation law for adjacent shell offset faces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellJoin {
+    /// Continues corners with rounded arcs.
+    Arc,
+    /// Intersects adjacent offset faces to form sharp corners.
+    Intersection,
 }
 
 /// Canonical dimensions of an analytic solid primitive.

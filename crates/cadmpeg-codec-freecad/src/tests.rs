@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "7");
+    assert_eq!(result.ir.ir_version, "8");
     let feature = |name: &str| {
         &result
             .ir
@@ -501,6 +501,56 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("retained natively but has no neutral semantics")));
+}
+
+#[test]
+fn transfers_complete_thickness_construction_controls() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Box" name="Base" id="1"/>
+ <Object type="PartDesign::Thickness" name="Wall" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Base"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
+ </Properties></Object>
+ <Object name="Wall"><Properties Count="6">
+  <Property name="Base" type="App::PropertyLinkSub"><Link object="Base" sub="Face2 Face4"/></Property>
+  <Property name="Value" type="App::PropertyLength"><Float value="2.5"/></Property>
+  <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Join" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Intersection" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("thickness");
+    let wall = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Wall"))
+        .expect("wall");
+    assert!(matches!(
+        &wall.definition,
+        cadmpeg_ir::features::FeatureDefinition::Shell {
+            removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection),
+            thickness: Some(cadmpeg_ir::features::Length(2.5)),
+            outward: Some(false),
+            mode: Some(cadmpeg_ir::features::ShellMode::BothSides),
+            join: Some(cadmpeg_ir::features::ShellJoin::Intersection),
+            resolve_intersections: Some(true),
+        } if selection.ends_with(":property:Base")
+    ));
+    assert_eq!(wall.dependencies.len(), 1);
+    assert!(result.report.losses.is_empty());
 }
 
 #[test]

@@ -2108,6 +2108,9 @@ fn project_shell(feature: &Feature) -> FeatureDefinition {
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         thickness: thickness.map(Length),
         outward,
+        mode: None,
+        join: None,
+        resolve_intersections: None,
     }
 }
 
@@ -4947,7 +4950,16 @@ pub fn sync_neutral_features(
                 removed_faces,
                 thickness,
                 outward,
+                mode,
+                join,
+                resolve_intersections,
             } => {
+                if mode.is_some() || join.is_some() || resolve_intersections.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported shell construction semantics",
+                        feature.id
+                    )));
+                }
                 let selection = face_selection_value(removed_faces);
                 if selection.is_none()
                     && !(matches!(removed_faces, FaceSelection::Unresolved) && existing.is_some())

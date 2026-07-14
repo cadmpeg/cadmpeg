@@ -2247,6 +2247,9 @@ fn encoder_writes_source_less_native_features() {
             },
             thickness: Some(Length(1.5)),
             outward: Some(true),
+            mode: None,
+            join: None,
+            resolve_intersections: None,
         },
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),
@@ -2659,6 +2662,7 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
+            ..
         }
     ));
     assert!(matches!(
@@ -2723,6 +2727,7 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
             removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
             thickness: None,
             outward: Some(false),
+            ..
         }
     ));
     assert!(matches!(
@@ -7963,6 +7968,7 @@ fn semantic_writer_retains_partial_native_wall_operations() {
             removed_faces: FaceSelection::Native(faces),
             thickness: None,
             outward: None,
+            ..
         } if faces == "face:1"
     ));
     assert!(matches!(
@@ -8024,6 +8030,7 @@ fn semantic_writer_round_trips_typed_shell() {
             removed_faces: FaceSelection::Native(selection),
             thickness: Some(Length(value)),
             outward: Some(false),
+            ..
         } if selection == "face:4" && (*value - 2.032).abs() < 1e-12
     ));
 
@@ -8031,6 +8038,7 @@ fn semantic_writer_round_trips_typed_shell() {
         removed_faces,
         thickness,
         outward,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed shell feature");
