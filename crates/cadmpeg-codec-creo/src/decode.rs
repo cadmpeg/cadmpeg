@@ -242,6 +242,28 @@ struct CreoFeatureOperationState {
     state_offset: usize,
 }
 
+#[derive(Serialize)]
+struct CreoFamilyTableRecord {
+    id: &'static str,
+    pointer_kind: &'static str,
+    table_entity_id: Option<u32>,
+    offset: usize,
+}
+
+fn family_table_record(scan: &ContainerScan) -> Option<CreoFamilyTableRecord> {
+    let record = scan.family_table?;
+    let (pointer_kind, table_entity_id) = match record.pointer {
+        crate::container::FamilyTablePointer::Null => ("null", None),
+        crate::container::FamilyTablePointer::Entity(id) => ("entity_reference", Some(id)),
+    };
+    Some(CreoFamilyTableRecord {
+        id: "creo:family_info:driver_table",
+        pointer_kind,
+        table_entity_id,
+        offset: record.offset,
+    })
+}
+
 fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOperationState> {
     let current_offsets = scan
         .feature_operations
@@ -13556,6 +13578,19 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("feature_operation_states", &feature_operation_states)?;
+    }
+    if let Some(family_table) = family_table_record(scan) {
+        annotate(
+            &mut annotations,
+            family_table.id,
+            "FamilyInf",
+            family_table.offset as u64,
+            "configuration_driver_table_pointer",
+            Exactness::ByteExact,
+        );
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("configuration", &[family_table])?;
     }
     ir.annotations = annotations.build();
     Ok(ir)

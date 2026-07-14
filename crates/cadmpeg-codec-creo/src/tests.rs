@@ -3526,29 +3526,42 @@ fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
 
 #[test]
 fn scan_distinguishes_null_and_referenced_family_tables() {
-    let null = container::scan_bytes(build_prt(
+    let null_data = build_prt(
         "c",
         &[(
             "FamilyInf",
             b"Sld_FamilyInfo\0drv_tbl_ptr\0\xe1\xf1".to_vec(),
         )],
-    ));
+    );
+    let null = container::scan_bytes(null_data.clone());
     assert_eq!(
         null.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Null
     );
+    let decoded = decode::decode(&mut Cursor::new(null_data), &DecodeOptions::default())
+        .expect("decode null family table");
+    let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
+    assert_eq!(configuration.len(), 1);
+    assert_eq!(configuration[0].fields["pointer_kind"], "null");
+    assert!(configuration[0].fields["table_entity_id"].is_null());
 
-    let referenced = container::scan_bytes(build_prt(
+    let referenced_data = build_prt(
         "c",
         &[(
             "FamilyInf",
             b"Sld_FamilyInfo\0drv_tbl_ptr\0\xf7\x81\x23\xf1".to_vec(),
         )],
-    ));
+    );
+    let referenced = container::scan_bytes(referenced_data.clone());
     assert_eq!(
         referenced.family_table.unwrap().pointer,
         crate::container::FamilyTablePointer::Entity(0x0123)
     );
+    let decoded = decode::decode(&mut Cursor::new(referenced_data), &DecodeOptions::default())
+        .expect("decode referenced family table");
+    let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
+    assert_eq!(configuration[0].fields["pointer_kind"], "entity_reference");
+    assert_eq!(configuration[0].fields["table_entity_id"], 0x0123);
 }
 
 #[test]
