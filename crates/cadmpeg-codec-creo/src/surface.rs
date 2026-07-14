@@ -361,6 +361,46 @@ pub fn outline_planes(envelopes: &[PlaneEnvelopeRecord]) -> Vec<OutlinePlane> {
 
 const BOUNDARY_TYPES: &[u8] = &[0x00, 0x01, 0x06, 0xf6];
 
+#[derive(Debug, Clone, Copy)]
+struct SurfaceArrayFrame {
+    start: usize,
+    end: usize,
+    count: usize,
+}
+
+fn surface_array_frames(payload: &[u8]) -> Vec<SurfaceArrayFrame> {
+    const LABEL: &[u8] = b"srf_array\0";
+    let mut labels = Vec::new();
+    let mut search = 0;
+    while let Some(offset) = find(payload, LABEL, search) {
+        labels.push(offset);
+        search = offset + LABEL.len();
+    }
+    let mut frames = Vec::new();
+    for (index, label) in labels.iter().copied().enumerate() {
+        let start = label + LABEL.len();
+        if payload.get(start) != Some(&psb::token::ARRAY_OPEN) {
+            continue;
+        }
+        let (count, after_count) = compact_int(payload, start + 1);
+        if after_count == start + 1 {
+            continue;
+        }
+        let mut end = labels.get(index + 1).copied().unwrap_or(payload.len());
+        for terminator in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
+            if let Some(offset) = find(payload, terminator, after_count) {
+                end = end.min(offset);
+            }
+        }
+        frames.push(SurfaceArrayFrame {
+            start: after_count,
+            end,
+            count: usize::try_from(count).unwrap_or(usize::MAX),
+        });
+    }
+    frames
+}
+
 /// Discover positional rows from every `srf_array` namespace in `payload`.
 /// The scan anchors on the surface-kind byte and validates both adjacent
 /// compact-integer fields and the orientation/boundary discriminators. This
@@ -457,6 +497,37 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
         },
     );
     result.retain(|row| id_counts.get(&row.id) == Some(&1));
+    let prototype_parameter_spans = named_prototype_records(payload)
+        .into_iter()
+        .flat_map(|record| record.parameters)
+        .map(|parameter| {
+            (
+                parameter.value_offset,
+                parameter.value_offset + parameter.body.len(),
+            )
+        })
+        .collect::<Vec<_>>();
+    result.retain(|row| {
+        !prototype_parameter_spans
+            .iter()
+            .any(|(start, end)| row.offset >= *start && row.offset < *end)
+    });
+    let frames = surface_array_frames(payload);
+    if !frames.is_empty() {
+        let unframed = result.clone();
+        let mut framed = Vec::new();
+        for frame in frames {
+            let mut selected = Vec::<SurfaceRow>::with_capacity(frame.count);
+            for row in result
+                .iter()
+                .filter(|row| row.offset >= frame.start && row.offset < frame.end)
+            {
+                selected.push(row.clone());
+            }
+            framed.extend(selected);
+        }
+        result = if framed.is_empty() { unframed } else { framed };
+    }
     result
 }
 
@@ -1252,6 +1323,28 @@ mod tests {
             7, 0x24, 4, 0x01, 0, 0, // second id 7
         ];
         assert!(rows(&duplicate_ids).is_empty());
+    }
+
+    #[test]
+    fn surface_array_frame_excludes_following_curve_namespace_bytes() {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(b"crv_array\0\xf8\x00");
+        payload.extend_from_slice(&[8, 0x24, 5, 0x01, 0, 0]);
+
+        assert_eq!(
+            rows(&payload).iter().map(|row| row.id).collect::<Vec<_>>(),
+            [7]
+        );
+    }
+
+    #[test]
+    fn named_prototype_parameter_body_cannot_start_a_surface_row() {
+        let payload = b"srf_array\0\xf8\x01srf_prim_ptr(torus)\0\xe3\
+            \xe0\x02radius1\0\x07\x26\x04\x01\x00\x00\
+            \xe0\x02radius2\0\xe4\xe3";
+
+        assert!(rows(payload).is_empty());
     }
 
     #[test]
