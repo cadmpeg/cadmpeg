@@ -110,6 +110,14 @@ are connected into deterministic oriented profile chains; circles and arcs retai
 millimetre/radian values, while unsupported geometry families remain explicit native sketch
 entities.
 
+Sketch constraints retain their append-only native family code and ordered geometry-position
+operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
+distance, horizontal/vertical distance, angle, radius, and diameter relations transfer to neutral
+constraints when every operand resolves. Dimensional relations create canonical parameters linked
+to the source constraint property and retain whether the value is driving. Negative external
+indices, unsupported midpoint interpretations, unresolved operands, and future family codes remain
+explicit native relations rather than being guessed.
+
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and

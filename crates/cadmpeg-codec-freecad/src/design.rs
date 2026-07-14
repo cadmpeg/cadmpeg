@@ -11,7 +11,8 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
-    Sketch, SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
 };
 
 use crate::brep::ShapePayloadRecord;
@@ -53,11 +54,14 @@ pub(crate) fn transfer(
             .unwrap_or_default();
         let id = feature_id(object);
         let definition = if is_sketch(&object.type_name) {
-            let (sketch, entities) = parse_sketch(object, &owned)?;
+            let decoded = parse_sketch(object, &owned)?;
+            let sketch = decoded.sketch;
             let sketch_id = sketch.id.clone();
             sketch_ids.insert(object.id.as_str(), sketch_id.clone());
             ir.model.sketches.push(sketch);
-            ir.model.sketch_entities.extend(entities);
+            ir.model.sketch_entities.extend(decoded.entities);
+            ir.model.sketch_constraints.extend(decoded.constraints);
+            ir.model.parameters.extend(decoded.parameters);
             FeatureDefinition::Sketch {
                 space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
@@ -142,10 +146,17 @@ pub(crate) fn transfer(
     Ok(())
 }
 
+struct SketchTransfer {
+    sketch: Sketch,
+    entities: Vec<SketchEntity>,
+    constraints: Vec<SketchConstraint>,
+    parameters: Vec<DesignParameter>,
+}
+
 fn parse_sketch(
     object: &ObjectRecord,
     properties: &[&PropertyRecord],
-) -> Result<(Sketch, Vec<SketchEntity>), CodecError> {
+) -> Result<SketchTransfer, CodecError> {
     let id = SketchId(format!("fcstd:design:sketch#{}", object.name));
     let mut entities = Vec::new();
     if let Some(geometry) = property(properties, "Geometry") {
@@ -191,8 +202,9 @@ fn parse_sketch(
         }
     }
     let profiles = build_profiles(&entities);
-    Ok((
-        Sketch {
+    let (constraints, parameters) = parse_constraints(object, properties, &id, &entities)?;
+    Ok(SketchTransfer {
+        sketch: Sketch {
             id,
             name: Some(object.name.clone()),
             configuration: None,
@@ -203,7 +215,255 @@ fn parse_sketch(
             native_ref: Some(object.id.clone()),
         },
         entities,
-    ))
+        constraints,
+        parameters,
+    })
+}
+
+fn parse_constraints(
+    object: &ObjectRecord,
+    properties: &[&PropertyRecord],
+    sketch: &SketchId,
+    entities: &[SketchEntity],
+) -> Result<(Vec<SketchConstraint>, Vec<DesignParameter>), CodecError> {
+    let Some(property) = property(properties, "Constraints") else {
+        return Ok((Vec::new(), Vec::new()));
+    };
+    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::Malformed(format!(
+            "invalid sketch constraints {}: {error}",
+            property.id
+        ))
+    })?;
+    let mut constraints = Vec::new();
+    let mut parameters = Vec::new();
+    for (index, node) in xml
+        .descendants()
+        .filter(|node| node.has_tag_name("Constrain"))
+        .enumerate()
+    {
+        let type_code = int_attr(node, "Type").unwrap_or(0);
+        let operands = constraint_operands(node);
+        let resolved = operands
+            .iter()
+            .filter_map(|(entity, position)| resolve_operand(*entity, *position, entities))
+            .collect::<Vec<_>>();
+        let all_resolved = resolved.len() == operands.len();
+        let parameter = if matches!(type_code, 6..=9 | 11 | 18 | 19) {
+            node.attribute("Value")
+                .and_then(|value| value.parse::<f64>().ok())
+                .map(|value| {
+                    let id = ParameterId(format!(
+                        "fcstd:design:parameter#{}:constraint:{}",
+                        object.name,
+                        index + 1
+                    ));
+                    let angle = type_code == 9;
+                    parameters.push(DesignParameter {
+                        id: id.clone(),
+                        owner: feature_id(object),
+                        ordinal: index as u32,
+                        name: node
+                            .attribute("Name")
+                            .filter(|name| !name.is_empty())
+                            .map_or_else(|| format!("Constraint{}", index + 1), str::to_owned),
+                        expression: node.attribute("Value").unwrap_or_default().to_owned(),
+                        display: None,
+                        value: Some(if angle {
+                            ParameterValue::Angle(cadmpeg_ir::features::Angle(value))
+                        } else {
+                            ParameterValue::Length(Length(value))
+                        }),
+                        dependencies: Vec::new(),
+                        properties: [(
+                            "is_driving".into(),
+                            node.attribute("IsDriving").unwrap_or("1").to_owned(),
+                        )]
+                        .into(),
+                        pmi: None,
+                        native_ref: Some(property.id.clone()),
+                    });
+                    id
+                })
+        } else {
+            None
+        };
+        let definition = neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
+            .unwrap_or_else(|| SketchConstraintDefinition::Native {
+                native_kind: constraint_kind(type_code).into(),
+                entities: resolved.iter().map(locus_entity).cloned().collect(),
+                parameter,
+                operands: operands
+                    .iter()
+                    .filter_map(|(entity, position)| {
+                        if *entity < 0 || resolve_operand(*entity, *position, entities).is_none() {
+                            Some(SketchNativeOperand {
+                                native_kind: format!("position:{position}"),
+                                object_index: u32::try_from(*entity).unwrap_or(u32::MAX),
+                                native_ref: None,
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                    .collect(),
+            });
+        constraints.push(SketchConstraint {
+            id: SketchConstraintId(format!(
+                "fcstd:design:sketch-constraint#{}:{}",
+                object.name,
+                index + 1
+            )),
+            sketch: sketch.clone(),
+            definition,
+            native_ref: Some(property.id.clone()),
+        });
+    }
+    Ok((constraints, parameters))
+}
+
+fn neutral_constraint(
+    kind: i64,
+    loci: &[SketchLocus],
+    parameter: Option<ParameterId>,
+    complete: bool,
+) -> Option<SketchConstraintDefinition> {
+    if !complete {
+        return None;
+    }
+    let entity = |index| loci.get(index).map(locus_entity).cloned();
+    let pair = || Some((entity(0)?, entity(1)?));
+    Some(match kind {
+        1 => SketchConstraintDefinition::CoincidentLoci {
+            loci: loci.to_vec(),
+        },
+        2 => SketchConstraintDefinition::Horizontal { entity: entity(0)? },
+        3 => SketchConstraintDefinition::Vertical { entity: entity(0)? },
+        4 => {
+            let (first, second) = pair()?;
+            SketchConstraintDefinition::Parallel { first, second }
+        }
+        5 => {
+            let (first, second) = pair()?;
+            SketchConstraintDefinition::Tangent { first, second }
+        }
+        10 => {
+            let (first, second) = pair()?;
+            SketchConstraintDefinition::Perpendicular { first, second }
+        }
+        12 => {
+            let (first, second) = pair()?;
+            SketchConstraintDefinition::Equal { first, second }
+        }
+        17 => SketchConstraintDefinition::Fixed { entity: entity(0)? },
+        6 => SketchConstraintDefinition::Distance {
+            entities: loci.iter().map(locus_entity).cloned().collect(),
+            parameter: parameter?,
+        },
+        7 => SketchConstraintDefinition::HorizontalDistance {
+            first: loci.first()?.clone(),
+            second: loci.get(1)?.clone(),
+            parameter: parameter?,
+        },
+        8 => SketchConstraintDefinition::VerticalDistance {
+            first: loci.first()?.clone(),
+            second: loci.get(1)?.clone(),
+            parameter: parameter?,
+        },
+        9 => SketchConstraintDefinition::Angle {
+            first: entity(0)?,
+            second: entity(1)?,
+            parameter: parameter?,
+        },
+        11 => SketchConstraintDefinition::Radius {
+            entity: entity(0)?,
+            parameter: parameter?,
+        },
+        18 => SketchConstraintDefinition::Diameter {
+            entity: entity(0)?,
+            parameter: parameter?,
+        },
+        _ => return None,
+    })
+}
+
+fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Vec<(i64, i64)> {
+    let ids = node
+        .attribute("ElementIds")
+        .map(split_ints)
+        .unwrap_or_default();
+    let positions = node
+        .attribute("ElementPositions")
+        .map(split_ints)
+        .unwrap_or_default();
+    if !ids.is_empty() && ids.len() == positions.len() {
+        return ids.into_iter().zip(positions).collect();
+    }
+    ["First", "Second", "Third"]
+        .into_iter()
+        .zip(["FirstPos", "SecondPos", "ThirdPos"])
+        .filter_map(|(entity, position)| Some((int_attr(node, entity)?, int_attr(node, position)?)))
+        .filter(|(entity, _)| *entity != -2000)
+        .collect()
+}
+
+fn split_ints(value: &str) -> Vec<i64> {
+    value
+        .split(|character: char| character == ',' || character.is_ascii_whitespace())
+        .filter_map(|part| part.parse().ok())
+        .collect()
+}
+
+fn int_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<i64> {
+    node.attribute(name)?.parse().ok()
+}
+
+fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Option<SketchLocus> {
+    let id = entities.get(usize::try_from(entity).ok()?)?.id.clone();
+    Some(match position {
+        0 => SketchLocus::Entity(id),
+        1 => SketchLocus::Start(id),
+        2 => SketchLocus::End(id),
+        3 => SketchLocus::Center(id),
+        _ => return None,
+    })
+}
+
+fn locus_entity(locus: &SketchLocus) -> &SketchEntityId {
+    match locus {
+        SketchLocus::Entity(entity)
+        | SketchLocus::Start(entity)
+        | SketchLocus::End(entity)
+        | SketchLocus::Center(entity) => entity,
+    }
+}
+
+fn constraint_kind(kind: i64) -> &'static str {
+    match kind {
+        0 => "none",
+        1 => "coincident",
+        2 => "horizontal",
+        3 => "vertical",
+        4 => "parallel",
+        5 => "tangent",
+        6 => "distance",
+        7 => "distance_x",
+        8 => "distance_y",
+        9 => "angle",
+        10 => "perpendicular",
+        11 => "radius",
+        12 => "equal",
+        13 => "point_on_object",
+        14 => "symmetric",
+        15 => "internal_alignment",
+        16 => "snells_law",
+        17 => "block",
+        18 => "diameter",
+        19 => "weight",
+        20 => "group",
+        21 => "text",
+        _ => "unknown_future_constraint",
+    }
 }
 
 fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchGeometry {

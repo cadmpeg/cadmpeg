@@ -16,13 +16,17 @@ fn transfers_sketch_pad_and_pocket_design_history() {
   <ObjectDeps Name="Pocket"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
 </Objects>
 <ObjectData Count="3">
-  <Object name="Sketch"><Properties Count="1">
+  <Object name="Sketch"><Properties Count="2">
     <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
       <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="10" EndY="0"/><Construction value="0"/></Geometry>
       <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="0" EndX="10" EndY="5"/><Construction value="0"/></Geometry>
       <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="5" EndX="0" EndY="5"/><Construction value="0"/></Geometry>
       <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="5" EndX="0" EndY="0"/><Construction value="0"/></Geometry>
     </GeometryList></Property>
+    <Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="2">
+      <Constrain Type="2" First="0" FirstPos="0"/>
+      <Constrain Name="Width" Type="7" Value="10" IsDriving="1" First="0" FirstPos="1" Second="1" SecondPos="1"/>
+    </ConstraintList></Property>
   </Properties></Object>
   <Object name="Pad"><Properties Count="2">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -45,7 +49,20 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(result.ir.model.sketches[0].profiles.len(), 1);
     assert_eq!(result.ir.model.sketches[0].profiles[0].len(), 4);
     assert_eq!(result.ir.model.features.len(), 3);
-    assert_eq!(result.ir.model.parameters.len(), 2);
+    assert_eq!(result.ir.model.sketch_constraints.len(), 2);
+    assert_eq!(result.ir.model.parameters.len(), 3);
+    assert!(result.ir.model.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            constraint.definition,
+            cadmpeg_ir::sketches::SketchConstraintDefinition::Horizontal { .. }
+        )
+    }));
+    assert!(result.ir.model.sketch_constraints.iter().any(|constraint| {
+        matches!(
+            constraint.definition,
+            cadmpeg_ir::sketches::SketchConstraintDefinition::HorizontalDistance { .. }
+        )
+    }));
     let pad = result
         .ir
         .model
