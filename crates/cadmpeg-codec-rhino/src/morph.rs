@@ -277,10 +277,9 @@ fn cage_at(
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
-    let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-    let range = reader.position()..chunk.next_offset;
-    let cage = crate::cage::decode(data, range, scale, archive)?;
-    reader.skip(chunk.next_offset - reader.position())?;
+    let (cage, next) =
+        crate::cage::decode_at(data, reader.position(), reader.end(), scale, archive)?;
+    reader.skip(next - reader.position())?;
     Ok(cage)
 }
 

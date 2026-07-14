@@ -52,9 +52,23 @@ pub(crate) fn decode(
     scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Cage, GeometryError> {
-    let chunk = chunk_at(data, range.start, range.end, archive, false)?;
-    if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != range.end {
+    let (cage, next) = decode_at(data, range.start, range.end, scale, archive)?;
+    if next != range.end {
         return Err(malformed(range.start, "invalid NURBS cage framing"));
+    }
+    Ok(cage)
+}
+
+pub(crate) fn decode_at(
+    data: &[u8],
+    offset: usize,
+    end: usize,
+    scale: f64,
+    archive: ArchiveVersion,
+) -> Result<(Cage, usize), GeometryError> {
+    let chunk = chunk_at(data, offset, end, archive, false)?;
+    if chunk.typecode != ANONYMOUS || chunk.short {
+        return Err(malformed(offset, "invalid NURBS cage framing"));
     }
     let mut reader = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
     let major = reader.i32()?;
@@ -169,8 +183,8 @@ pub(crate) fn decode(
             "NURBS cage has trailing bytes",
         ));
     }
-    Ok(Cage {
-        source_range: range,
+    Ok((Cage {
+        source_range: offset..chunk.next_offset,
         dimension,
         rational,
         orders,
@@ -178,7 +192,7 @@ pub(crate) fn decode(
         knots,
         control_points,
         weights,
-    })
+    }, chunk.next_offset))
 }
 
 #[cfg(test)]
