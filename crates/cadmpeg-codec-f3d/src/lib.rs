@@ -389,6 +389,91 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut operand_group_slots = HashSet::new();
+    let mut operand_group_scopes = HashSet::new();
+    for group in &native.design_extrude_operand_groups {
+        let native_stream = design_stream(&group.id);
+        let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
+        let header = records_by_index.get(&(native_stream, group.record_index));
+        let member_run_length = u64::try_from(group.members.len())
+            .unwrap_or(u64::MAX)
+            .saturating_mul(11);
+        let tail_offset = group
+            .member_count_offset
+            .saturating_add(4)
+            .saturating_add(member_run_length);
+        let valid = group.class_tag.len() == 3
+            && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && group.paired_class_tag.len() == 3
+            && group
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && scope.is_some_and(|scope| {
+                scope.kind == "Extrude"
+                    && usize::try_from(group.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        == Some(&group.record_index)
+                    && group
+                        .members
+                        .iter()
+                        .all(|member| scope.reference_members.contains(member))
+            })
+            && header.is_some_and(|header| {
+                header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
+            })
+            && group.member_count_offset == group.byte_offset.saturating_add(21)
+            && !group.members.is_empty()
+            && group.members.len() == group.member_offsets.len()
+            && group.members.iter().copied().collect::<HashSet<_>>().len() == group.members.len()
+            && group.member_offsets.first() == Some(&group.member_count_offset.saturating_add(5))
+            && group
+                .member_offsets
+                .windows(2)
+                .all(|offsets| offsets[1] == offsets[0].saturating_add(11))
+            && group
+                .members
+                .iter()
+                .all(|member| record_indices.contains(&(native_stream, *member)))
+            && group.identity_record_offset == tail_offset.saturating_add(7)
+            && group.role_offset == tail_offset.saturating_add(17)
+            && group.opaque_index != 0
+            && group.opaque_index_offset == tail_offset.saturating_add(35)
+            && group.opaque_scalar.is_finite()
+            && group.opaque_scalar_offset == tail_offset.saturating_add(39)
+            && group.paired_byte_offset == tail_offset.saturating_add(88)
+            && operand_group_slots.insert((
+                native_stream,
+                group.scope_record_index,
+                group.scope_reference_ordinal,
+            ));
+        if valid {
+            operand_group_scopes.insert((native_stream, group.scope_record_index));
+        } else {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude operand group has an invalid counted frame".into(),
+                entity: Some(group.id.clone()),
+            });
+        }
+    }
+    for scope in native
+        .design_parameter_scopes
+        .iter()
+        .filter(|scope| scope.kind == "Extrude")
+    {
+        let native_stream = design_stream(&scope.id);
+        if !operand_group_scopes.contains(&(native_stream, scope.record_index)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude scope has no counted operand group".into(),
+                entity: Some(scope.id.clone()),
+            });
+        }
+    }
     let members_by_slot = native
         .design_extrude_selection_members
         .iter()

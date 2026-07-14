@@ -11,11 +11,12 @@ use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
     DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignExtrudeOperandGroup, DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -2633,6 +2634,132 @@ pub fn decode_extrude_selection_groups(
     Ok(out)
 }
 
+/// Decode counted construction-operand groups named by Extrude scopes.
+pub fn decode_extrude_operand_groups(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignExtrudeOperandGroup>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for scope in scopes.iter().filter(|scope| scope.kind == "Extrude") {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+            let (Ok(ordinal), Some(header)) =
+                (u32::try_from(ordinal), headers.get(&(stream, record_index)))
+            else {
+                continue;
+            };
+            if let Some(mut group) = parse_extrude_operand_group(bytes, scope, ordinal, header) {
+                group.id = format!(
+                    "f3d:{}:design-extrude-operand-group#{}",
+                    entry.name, header.byte_offset
+                );
+                out.push(group);
+            }
+        }
+    }
+    out.sort_by_key(|group| group.id.clone());
+    Ok(out)
+}
+
+fn parse_extrude_operand_group(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<DesignExtrudeOperandGroup> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10] {
+        return None;
+    }
+    let count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
+    if count == 0 {
+        return None;
+    }
+    let mut position = start.checked_add(25)?;
+    let mut members = Vec::with_capacity(count);
+    let mut member_offsets = Vec::with_capacity(count);
+    for _ in 0..count {
+        if bytes.get(position) != Some(&1) || bytes.get(position + 5..position + 11)? != [0; 6] {
+            return None;
+        }
+        members.push(u32_at(bytes, position + 1)?);
+        member_offsets.push(u64::try_from(position + 1).ok()?);
+        position = position.checked_add(11)?;
+    }
+    if bytes.get(position..position + 2)? != [0; 2]
+        || u32_at(bytes, position + 2)? != 1
+        || bytes.get(position + 6) != Some(&1)
+        || bytes.get(position + 11..position + 17)? != [0; 6]
+        || bytes.get(position + 25..position + 35)? != [0; 10]
+    {
+        return None;
+    }
+    let identity_record_index = u32_at(bytes, position + 7)?;
+    let role = read_u64(bytes, position + 17)?;
+    let opaque_index = u32_at(bytes, position + 35)?;
+    let opaque_scalar = f64_at(bytes, position + 39)?;
+    if opaque_index == 0
+        || !opaque_scalar.is_finite()
+        || u32_at(bytes, position + 47)? != opaque_index
+        || bytes.get(position + 51) != Some(&1)
+        || u32_at(bytes, position + 52)? != header.record_index.checked_add(2)?
+        || bytes.get(position + 56..position + 62)? != [0; 6]
+        || bytes.get(position + 62) != Some(&1)
+        || !matches!(bytes.get(position + 63), Some(0 | 1))
+        || bytes.get(position + 64) != Some(&0)
+        || bytes.get(position + 65) != Some(&1)
+        || u32_at(bytes, position + 66)? != header.record_index.checked_add(1)?
+        || bytes.get(position + 70..position + 77)? != [0; 7]
+        || bytes.get(position + 77) != Some(&1)
+        || u32_at(bytes, position + 78)? != scope.record_index
+        || bytes.get(position + 82..position + 88)? != [0; 6]
+    {
+        return None;
+    }
+    let paired_at = position + 88;
+    let (paired_class_tag, after_tag) = lp_ascii(bytes, paired_at)?;
+    if u32_at(bytes, after_tag)? != header.record_index {
+        return None;
+    }
+    Some(DesignExtrudeOperandGroup {
+        id: String::new(),
+        scope_record_index: scope.record_index,
+        scope_reference_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        member_count_offset: u64::try_from(start + 21).ok()?,
+        members,
+        member_offsets,
+        identity_record_index,
+        identity_record_offset: u64::try_from(position + 7).ok()?,
+        role,
+        role_offset: u64::try_from(position + 17).ok()?,
+        opaque_index,
+        opaque_index_offset: u64::try_from(position + 35).ok()?,
+        opaque_scalar,
+        opaque_scalar_offset: u64::try_from(position + 39).ok()?,
+        variant: bytes[position + 63] != 0,
+        paired_class_tag,
+        paired_byte_offset: u64::try_from(paired_at).ok()?,
+    })
+}
+
 fn parse_extrude_selection_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -4847,11 +4974,11 @@ mod relation_tests {
         bind_dimension_loci, bind_extrude_selection_geometry, bind_sketch_graph,
         find_dimension_locus_pair, identity_matrix, next_indexed_record_offset,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_parameter_companion,
-        parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
-        parse_sketch_relation, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_operand_group,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
@@ -5245,6 +5372,82 @@ mod relation_tests {
         assert_eq!(profile.entity_suffix, 172);
         assert_eq!(profile.entity_id, "0_172");
         assert_eq!(profile.paired_byte_offset, paired_at as u64);
+    }
+
+    #[test]
+    fn extrude_operand_group_has_an_exact_counted_frame() {
+        fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&class_tag);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+        }
+
+        let scope = DesignParameterScope {
+            id: "f3d:Design/BulkStream.dat:scope#12".into(),
+            byte_offset: 1000,
+            class_tag: "301".into(),
+            record_index: 12,
+            frame_length: 200,
+            kind: "Extrude".into(),
+            kind_offset: 1100,
+            reference_count_offset: 1080,
+            reference_members: vec![100, 200, 201],
+            reference_member_offsets: vec![1085, 1096, 1107],
+            extrude_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 1200,
+        };
+        let record = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#100".into(),
+            byte_offset: 0,
+            class_tag: "332".into(),
+            record_index: 100,
+        };
+        let mut bytes = Vec::new();
+        header(&mut bytes, *b"332", 100);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for member in [200u32, 201] {
+            bytes.push(1);
+            bytes.extend_from_slice(&member.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&300u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&0x0000_0008_0000_0000u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&180u32.to_le_bytes());
+        bytes.extend_from_slice(&0.125f64.to_le_bytes());
+        bytes.extend_from_slice(&180u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&102u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&[1, 1, 0, 1]);
+        bytes.extend_from_slice(&101u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 7]);
+        bytes.push(1);
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        let paired_at = bytes.len();
+        header(&mut bytes, *b"259", 100);
+
+        let group = parse_extrude_operand_group(&bytes, &scope, 0, &record)
+            .expect("counted Extrude operand group");
+        assert_eq!(group.member_count_offset, 21);
+        assert_eq!(group.members, [200, 201]);
+        assert_eq!(group.member_offsets, [26, 37]);
+        assert_eq!(group.identity_record_index, 300);
+        assert_eq!(group.role, 0x0000_0008_0000_0000);
+        assert_eq!(group.opaque_index, 180);
+        assert_eq!(group.opaque_scalar, 0.125);
+        assert!(group.variant);
+        assert_eq!(group.paired_byte_offset, paired_at as u64);
     }
 
     #[test]

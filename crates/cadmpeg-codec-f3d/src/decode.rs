@@ -780,6 +780,11 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.design_entity_headers,
     )?;
+    native.design_extrude_operand_groups = crate::design::decode_extrude_operand_groups(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_record_headers,
+    )?;
     native.design_extrude_selection_groups = crate::design::decode_extrude_selection_groups(
         scan,
         &native.design_parameter_scopes,

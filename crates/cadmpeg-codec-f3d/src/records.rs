@@ -597,6 +597,51 @@ pub struct DesignExtrudeSelectionGroup {
     pub paired_byte_offset: u64,
 }
 
+/// Counted construction-operand group owned by an Extrude scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignExtrudeOperandGroup {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning Extrude scope record.
+    pub scope_record_index: u32,
+    /// Position in the scope reference table.
+    pub scope_reference_ordinal: u32,
+    /// Primary indexed-record identity.
+    pub record_index: u32,
+    /// Primary indexed-header byte offset.
+    pub byte_offset: u64,
+    /// Per-file dynamic primary class tag.
+    pub class_tag: String,
+    /// Byte offset of the member count.
+    pub member_count_offset: u64,
+    /// Ordered operand-record references.
+    pub members: Vec<u32>,
+    /// Byte offsets parallel to `members`.
+    pub member_offsets: Vec<u64>,
+    /// Indexed identity-wrapper record.
+    pub identity_record_index: u32,
+    /// Byte offset of `identity_record_index`.
+    pub identity_record_offset: u64,
+    /// Source u64 role code.
+    pub role: u64,
+    /// Byte offset of `role`.
+    pub role_offset: u64,
+    /// Opaque repeated nonzero u32.
+    pub opaque_index: u32,
+    /// Byte offset of the first `opaque_index` copy.
+    pub opaque_index_offset: u64,
+    /// Opaque finite f64.
+    pub opaque_scalar: f64,
+    /// Byte offset of `opaque_scalar`.
+    pub opaque_scalar_offset: u64,
+    /// Boolean tail variant.
+    pub variant: bool,
+    /// Per-file dynamic paired class tag.
+    pub paired_class_tag: String,
+    /// Same-index paired-header byte offset.
+    pub paired_byte_offset: u64,
+}
+
 /// One fixed-width member named by an Extrude selection group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignExtrudeSelectionMember {
