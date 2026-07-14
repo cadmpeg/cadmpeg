@@ -506,7 +506,7 @@ directrix degree, knots, poles, and weights.
 
 Evaluating a closed linear section sweep produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses.
 
-A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
+A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. Each declared entry must decode as a complete entity reference ending at its `e3` close within the bounded feature row. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
 `strong_parents` is the ordered set of earlier modeling features consumed to
 regenerate the owning feature. It is a dependency relation, not feature-tree

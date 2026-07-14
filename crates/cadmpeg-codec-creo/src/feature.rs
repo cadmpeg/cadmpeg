@@ -4609,7 +4609,10 @@ pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityRef
 }
 
 fn read_entries(payload: &[u8], body_start: usize, count: u32) -> Option<Vec<u32>> {
-    let mut entries = Vec::with_capacity(count as usize);
+    let count = usize::try_from(count).ok()?;
+    let remaining = payload.len().checked_sub(body_start)?;
+    (count <= remaining / 2).then_some(())?;
+    let mut entries = Vec::with_capacity(count);
     let mut cursor = body_start;
     for _ in 0..count {
         if payload.get(cursor..cursor + 2) == Some(&[0xf7, 0x1e]) {
@@ -4642,8 +4645,7 @@ pub fn entity_tables(
             continue;
         }
         let (count, after_count) = psb::compact_int(payload, offset + 1);
-        if !(1..=64).contains(&count)
-            || payload.get(after_count..after_count + TABLE_TAG.len()) != Some(TABLE_TAG)
+        if count == 0 || payload.get(after_count..after_count + TABLE_TAG.len()) != Some(TABLE_TAG)
         {
             continue;
         }

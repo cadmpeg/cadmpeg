@@ -518,6 +518,32 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
 }
 
 #[test]
+fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let mut allfeatur = vec![
+        4, 0xeb, 0x04, // feature row for owner 4
+        0xf8, 65, 0xf7, 0x1d, 0xfb, 0xe3,
+    ];
+    allfeatur.extend_from_slice(&[7, 0xe3]);
+    for _ in 1..65 {
+        allfeatur.extend_from_slice(&[9, 0xe3]);
+    }
+    let scan = container::scan_bytes(build_prt(
+        "c",
+        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
+    ));
+
+    let [table] = scan.feature_entity_tables.as_slice() else {
+        panic!("expected one large generated-entity table");
+    };
+    assert_eq!(table.feature_id, Some(4));
+    assert_eq!(table.entry_ids.len(), 65);
+    assert_eq!(table.surface_ids, vec![7]);
+    assert_eq!(table.non_surface_entity_ids.len(), 64);
+}
+
+#[test]
 fn scan_bounds_known_allfeatur_feature_rows() {
     let mut geometry = visibgeom_payload(2, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
