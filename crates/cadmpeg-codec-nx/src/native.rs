@@ -342,6 +342,26 @@ pub struct FeatureSketchReference {
     pub source_offset: u64,
 }
 
+/// Ordered profile reference carried by a bounded extrusion payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureExtrudeProfileReference {
+    /// Globally unique profile-reference identity.
+    pub id: String,
+    /// Owning `EXTRUDE` operation label.
+    pub operation_label: String,
+    /// Zero-based profile-reference order.
+    pub ordinal: u32,
+    /// Whether the payload repeats the complete encoded profile list exactly once.
+    pub witnessed: bool,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -858,6 +878,54 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
                     terminal: ordinal == terminal_ordinal,
                     object_index: reference.object_index,
                     data_block,
+                    source_offset: entry_offset + reference.offset as u64,
+                }
+            }));
+        }
+    }
+    references
+}
+
+/// Decode and resolve the witnessed ordered profile list in extrusion payloads.
+pub fn feature_extrude_profile_references(
+    container: &Container,
+) -> Vec<FeatureExtrudeProfileReference> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut references = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(decoded) = crate::om::extrude_profile_references(record) else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+            let witnessed = decoded.witnessed;
+            references.extend(decoded.references.into_iter().enumerate().map(|(ordinal, reference)| {
+                FeatureExtrudeProfileReference {
+                    id: format!(
+                        "nx:feature-history:extrude-profile-reference#{section_key}-{operation_ordinal}-{ordinal}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    ordinal: ordinal as u32,
+                    witnessed,
+                    object_index: reference.object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
                     source_offset: entry_offset + reference.offset as u64,
                 }
             }));

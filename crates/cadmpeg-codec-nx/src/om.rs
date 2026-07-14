@@ -254,6 +254,24 @@ pub struct SketchPayloadReferenceField {
     pub references: Vec<SketchPayloadReference>,
 }
 
+/// One object index in an extrusion profile-reference field.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExtrudeProfileReference {
+    /// Absolute offset of the width marker.
+    pub offset: usize,
+    /// Decoded object index.
+    pub object_index: u32,
+}
+
+/// Ordered extrusion profile-reference field and its redundant witness state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExtrudeProfileReferenceField {
+    /// Ordered profile object indices.
+    pub references: Vec<ExtrudeProfileReference>,
+    /// Whether a second field repeats the encoded reference list exactly once.
+    pub witnessed: bool,
+}
+
 /// Self-framed NX parameter name in one bounded expression declaration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpressionDeclarationName<'a> {
@@ -658,6 +676,68 @@ fn payload_object_index(bytes: &[u8]) -> Option<(u32, usize)> {
         }
         _ => None,
     }
+}
+
+/// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
+pub fn extrude_profile_references(
+    record: OperationRecord<'_>,
+) -> Option<ExtrudeProfileReferenceField> {
+    if record.label.value != "EXTRUDE" {
+        return None;
+    }
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(6) {
+        if record.payload.get(start..start + 4) != Some(&[0x01, 0x02, 0x16, 0x01]) {
+            continue;
+        }
+        let Some(references) = extrude_profile_reference_field(record, start) else {
+            continue;
+        };
+        matches.push(references);
+    }
+    let [references] = matches.as_slice() else {
+        return None;
+    };
+    Some(references.clone())
+}
+
+fn extrude_profile_reference_field(
+    record: OperationRecord<'_>,
+    start: usize,
+) -> Option<ExtrudeProfileReferenceField> {
+    let count = *record.payload.get(start + 4)?;
+    if count < 2 {
+        return None;
+    }
+    let references_start = start + 5;
+    let mut at = references_start;
+    let mut references = Vec::with_capacity(usize::from(count - 1));
+    for _ in 1..count {
+        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        references.push(ExtrudeProfileReference {
+            offset: record.payload_offset + at,
+            object_index,
+        });
+        at += width;
+    }
+    if record.payload.get(at..at + 3) != Some(&[0x01, 0x03, 0x79]) {
+        return None;
+    }
+    let encoded_references = record.payload.get(references_start..at)?;
+    let witness_len = 2 + encoded_references.len() + 2;
+    let witness_count = record
+        .payload
+        .windows(witness_len)
+        .filter(|candidate| {
+            candidate.starts_with(&[0x01, count])
+                && candidate.get(2..2 + encoded_references.len()) == Some(encoded_references)
+                && candidate.ends_with(&[0x00, 0x00])
+        })
+        .count();
+    Some(ExtrudeProfileReferenceField {
+        references,
+        witnessed: witness_count == 1,
+    })
 }
 
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.

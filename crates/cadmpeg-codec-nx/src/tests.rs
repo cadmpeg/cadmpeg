@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 36);
+    assert_eq!(namespace.version, 37);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1229,6 +1229,53 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
         crate::om::sketch_payload_references(crate::om::OperationRecord {
             label: crate::om::OperationLabel {
                 value: "BLOCK",
+                ..label
+            },
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_extrude_profile_references_require_matching_witness_field() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x01\x02\x16\x01\x03\xf0\xff\xf1\x01\x00\x01\x03\x79\xaa\x01\x03\xf0\xff\xf1\x01\x00\x00\x00";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = crate::om::extrude_profile_references(record).unwrap();
+    assert!(field.witnessed);
+    let references = field.references;
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].object_index, 255);
+    assert_eq!(references[0].offset, 205);
+    assert_eq!(references[1].object_index, 256);
+    assert_eq!(references[1].offset, 207);
+
+    let without_witness = &payload[..14];
+    let field = crate::om::extrude_profile_references(crate::om::OperationRecord {
+        payload: without_witness,
+        bytes: without_witness,
+        ..record
+    })
+    .unwrap();
+    assert!(!field.witnessed);
+    assert_eq!(field.references.len(), 2);
+    assert!(
+        crate::om::extrude_profile_references(crate::om::OperationRecord {
+            label: crate::om::OperationLabel {
+                value: "SKETCH",
                 ..label
             },
             ..record
@@ -3923,7 +3970,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 36);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 37);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
