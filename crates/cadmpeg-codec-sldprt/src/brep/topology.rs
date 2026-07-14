@@ -94,8 +94,12 @@ fn parse_bridge(buf: &[u8], off: usize) -> Option<Record> {
     }
     let attr = attr_at(buf, p)?;
     let owner = u16_be(buf, p + 6)?;
-    let refs = refs_be(buf, p + 16, 5)?;
-    let marker = *buf.get(p + 26)?;
+    let tripled = (0..5).all(|index| buf.get(p + 18 + index * 3) == Some(&1));
+    let (refs, marker) = if tripled {
+        (refs_tripled(buf, p + 16, 5)?, *buf.get(p + 31)?)
+    } else {
+        (refs_be(buf, p + 16, 5)?, *buf.get(p + 26)?)
+    };
     if marker != 0x2b && marker != 0x2d {
         return None;
     }
@@ -390,4 +394,40 @@ fn scan_with_point_framing(body: &[u8], prefixed_points: bool) -> Tables {
         }
     }
     t
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bridge_with_refs(refs: &[u16], tripled: bool) -> Vec<u8> {
+        let mut bytes = vec![0, 0x0e];
+        bytes.extend(0x1234_u16.to_be_bytes());
+        bytes.extend(7_u32.to_be_bytes());
+        bytes.extend(0x4321_u16.to_be_bytes());
+        bytes.extend(MAGIC);
+        for reference in refs {
+            bytes.extend(reference.to_be_bytes());
+            if tripled {
+                bytes.push(1);
+            }
+        }
+        bytes.push(0x2d);
+        bytes.resize(40, 0);
+        bytes
+    }
+
+    #[test]
+    fn bridge_refs_accept_adjacent_and_tripled_cells() {
+        let expected = vec![0x101, 0x202, 0x303, 0x404, 0x505];
+        for tripled in [false, true] {
+            let bytes = bridge_with_refs(&expected, tripled);
+            let bridge = parse_bridge(&bytes, 0)
+                .unwrap_or_else(|| panic!("bridge tripled={tripled} bytes={bytes:02x?}"));
+            assert_eq!(bridge.attr, 0x1234);
+            assert_eq!(bridge.owner, Some(0x4321));
+            assert_eq!(bridge.refs, expected);
+            assert_eq!(bridge.marker, Some(0x2d));
+        }
+    }
 }

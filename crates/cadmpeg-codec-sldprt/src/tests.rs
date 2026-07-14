@@ -6921,10 +6921,12 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             role: FeatureTreeNodeRole::ModelOrigin
         }
     ));
-    assert!(!decoded.ir.model.features.iter().any(|feature| matches!(
-        feature.definition,
-        FeatureDefinition::Sketch { .. }
-    )));
+    assert!(!decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .any(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. })));
     decoded.ir.model.features[0].name = Some("Document annotations".into());
     let mut encoded = Vec::new();
     SldprtCodec.encode(&decoded.ir, &mut encoded).unwrap();
