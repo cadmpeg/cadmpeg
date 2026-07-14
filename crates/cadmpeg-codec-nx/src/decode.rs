@@ -3531,7 +3531,11 @@ fn attach_native_object_model(
     }
     for point_use in &feature_sketch_point_uses {
         annotations
-            .note(&point_use.id, annotation_stream, point_use.source_offset)
+            .note(
+                &point_use.id,
+                annotation_stream,
+                point_use.source_offsets[0],
+            )
             .tag("SKETCH_POINT_USE");
         annotations.exactness(&point_use.id, Exactness::Derived);
     }
@@ -3839,7 +3843,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(126);
+    namespace.version = namespace.version.max(127);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }

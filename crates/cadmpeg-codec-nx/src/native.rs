@@ -1097,14 +1097,16 @@ pub struct FeatureSketchPointUse {
     pub id: String,
     /// Sketch operation carrying both point encodings.
     pub operation_label: String,
-    /// Ordered sketch-reference occurrence.
-    pub sketch_reference: String,
-    /// Name-delimited solved point in the reconstructed sketch payload.
-    pub sketch_point: String,
+    /// Ordered sketch-reference occurrences addressing the named-point span.
+    pub sketch_references: Vec<String>,
+    /// Exact block-use witnesses corresponding to the sketch references.
+    pub block_uses: Vec<String>,
+    /// Name-delimited solved-point witnesses in reconstructed payload order.
+    pub sketch_points: Vec<String>,
     /// Independently framed named-point object addressed by the reference.
     pub named_point: String,
-    /// Absolute source offset of the sketch reference.
-    pub source_offset: u64,
+    /// Absolute source offsets of the sketch references.
+    pub source_offsets: Vec<u64>,
 }
 
 /// Ordered object reference carried by a bounded sketch-operation payload.
@@ -3374,34 +3376,64 @@ pub fn feature_sketch_point_uses(
         .map(|point| (point.id.as_str(), point))
         .collect::<BTreeMap<_, _>>();
     let mut uses = Vec::new();
+    let mut joined = BTreeSet::new();
     for block_use in block_uses {
+        let key = (
+            block_use.operation_label.as_str(),
+            block_use.named_point.as_str(),
+        );
+        if !joined.insert(key) {
+            continue;
+        }
         let Some(named_point) = named_points.get(block_use.named_point.as_str()) else {
             continue;
         };
+        let point_block_uses = block_uses
+            .iter()
+            .filter(|candidate| {
+                candidate.operation_label == block_use.operation_label
+                    && candidate.named_point == block_use.named_point
+            })
+            .collect::<Vec<_>>();
         let candidates = sketch_points
             .iter()
             .filter(|point| {
-                point.operation_label == block_use.operation_label
-                    && point.name == named_point.name
-                    && point
-                        .coordinates
-                        .iter()
-                        .zip(named_point.values)
-                        .all(|(first, second)| first.to_bits() == second.to_bits())
+                point.operation_label == block_use.operation_label && point.name == named_point.name
             })
             .collect::<Vec<_>>();
-        let [sketch_point] = candidates.as_slice() else {
+        if candidates.is_empty()
+            || candidates.iter().any(|point| {
+                point
+                    .coordinates
+                    .iter()
+                    .zip(named_point.values)
+                    .any(|(first, second)| first.to_bits() != second.to_bits())
+            })
+        {
             continue;
-        };
+        }
         uses.push(FeatureSketchPointUse {
             id: block_use
                 .id
                 .replacen("sketch-named-point-block-use", "sketch-point-use", 1),
             operation_label: block_use.operation_label.clone(),
-            sketch_reference: block_use.sketch_reference.clone(),
-            sketch_point: sketch_point.id.clone(),
+            sketch_references: point_block_uses
+                .iter()
+                .map(|block_use| block_use.sketch_reference.clone())
+                .collect(),
+            block_uses: point_block_uses
+                .iter()
+                .map(|block_use| block_use.id.clone())
+                .collect(),
+            sketch_points: candidates
+                .into_iter()
+                .map(|point| point.id.clone())
+                .collect(),
             named_point: named_point.id.clone(),
-            source_offset: block_use.source_offset,
+            source_offsets: point_block_uses
+                .iter()
+                .map(|block_use| block_use.source_offset)
+                .collect(),
         });
     }
     uses
