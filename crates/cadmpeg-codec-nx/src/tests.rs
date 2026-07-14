@@ -681,6 +681,55 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
 }
 
 #[test]
+fn nx_feature_parameter_content_resolves_declarations_in_binding_order() {
+    use crate::native::{Expression, ExpressionUnit, FeatureParameterBinding};
+
+    let expression = |ordinal: u32, declaration: Option<&str>| Expression {
+        id: format!("nx:om-entry-9:expression#{ordinal}"),
+        object_id: None,
+        record: None,
+        declaration: declaration.map(str::to_string),
+        name: format!("p{ordinal}"),
+        parameter_index: Some(ordinal),
+        qualifier: None,
+        unit: ExpressionUnit::Millimeter,
+        expression: ordinal.to_string(),
+        value: Some(f64::from(ordinal)),
+        source_entry: "/Root/UG_PART/UG_PART".to_string(),
+        source_offset: u64::from(ordinal),
+    };
+    let expressions = [
+        expression(4, Some("declaration#4")),
+        expression(7, Some("declaration#7")),
+        expression(8, None),
+    ];
+    let binding = |ordinal: u32, declaration: &str| FeatureParameterBinding {
+        id: format!("binding#{ordinal}"),
+        operation_label: "operation#0".to_string(),
+        input_block: "block#0".to_string(),
+        input_slot: 0,
+        reference_ordinal: ordinal,
+        object_id: ordinal,
+        expression_declaration: declaration.to_string(),
+        source_offset: u64::from(ordinal),
+    };
+    let bindings = [
+        binding(0, "declaration#7"),
+        binding(1, "declaration#4"),
+        binding(2, "declaration#7"),
+        binding(3, "missing"),
+    ];
+    let references = bindings.iter().collect::<Vec<_>>();
+    assert_eq!(
+        crate::decode::feature_parameter_content(&references, &expressions),
+        [
+            cadmpeg_ir::features::ParameterId("nx:om-entry-9:parameter#7".to_string()),
+            cadmpeg_ir::features::ParameterId("nx:om-entry-9:parameter#4".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn segment_order_pairs_delta_across_intervening_non_history_stream() {
     use crate::parasolid::{Stream, StreamKind};
     use std::collections::BTreeSet;

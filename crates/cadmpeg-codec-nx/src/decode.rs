@@ -3061,6 +3061,7 @@ fn attach_native_object_model(
             sketch_references: &feature_sketch_references,
             extrude_profile_references: &feature_extrude_profile_references,
             parameter_bindings: &feature_parameter_bindings,
+            expressions: &expressions,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
             body_bindings: &segment_body_bindings,
@@ -3215,6 +3216,7 @@ struct FeatureOperationSources<'a> {
     sketch_references: &'a [crate::native::FeatureSketchReference],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
+    expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
     body_bindings: &'a [crate::native::SegmentBodyBinding],
@@ -3234,6 +3236,7 @@ fn attach_feature_operations(
         sketch_references,
         extrude_profile_references,
         parameter_bindings,
+        expressions,
         operation_records,
         payload_strings,
         body_bindings,
@@ -3462,6 +3465,28 @@ fn attach_feature_operations(
             .note(&id, stream, label.source_offset)
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
+        let mut source_content = Vec::new();
+        source_content.extend(
+            feature_parameter_content(
+                parameter_bindings_by_operation
+                    .get(label.id.as_str())
+                    .map_or([].as_slice(), Vec::as_slice),
+                expressions,
+            )
+            .into_iter()
+            .map(FeatureSourceContent::Parameter),
+        );
+        source_content.extend(
+            operation_payload_strings
+                .iter()
+                .map(|value| FeatureSourceContent::Text((*value).to_string())),
+        );
+        if source_content
+            .iter()
+            .any(|content| matches!(content, FeatureSourceContent::Parameter(_)))
+        {
+            annotations.derived(&id, "source_content");
+        }
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -3472,10 +3497,7 @@ fn attach_feature_operations(
             source_properties,
             source_tag: Some(label.value.clone()),
             source_text: None,
-            source_content: operation_payload_strings
-                .iter()
-                .map(|value| FeatureSourceContent::Text((*value).to_string()))
-                .collect(),
+            source_content,
             outputs,
             definition,
             native_ref: Some(label.id.clone()),
@@ -3484,6 +3506,33 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn feature_parameter_content(
+    bindings: &[&crate::native::FeatureParameterBinding],
+    expressions: &[crate::native::Expression],
+) -> Vec<ParameterId> {
+    let parameters_by_declaration = expressions
+        .iter()
+        .filter_map(|expression| {
+            let declaration = expression.declaration.as_deref()?;
+            let (section, key) = expression.id.rsplit_once(":expression#")?;
+            Some((
+                declaration,
+                ParameterId(format!("{section}:parameter#{key}")),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut seen = BTreeSet::new();
+    bindings
+        .iter()
+        .filter_map(|binding| {
+            parameters_by_declaration
+                .get(binding.expression_declaration.as_str())
+                .filter(|parameter| seen.insert((*parameter).clone()))
+                .cloned()
+        })
+        .collect()
 }
 
 pub(crate) fn non_boolean_feature_definition(
