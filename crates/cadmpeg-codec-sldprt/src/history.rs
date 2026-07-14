@@ -3825,6 +3825,12 @@ pub fn sync_neutral_features(
                     .unwrap_or_default(),
                 feature.source_properties.clone(),
             ),
+            FeatureDefinition::DerivedGeometry { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported copied-geometry semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Primitive { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported analytic-primitive semantics",
@@ -7229,6 +7235,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::StoredGeometry => "Feature",
+        FeatureDefinition::DerivedGeometry { .. } => "Feature",
         FeatureDefinition::Primitive { .. } => "Primitive",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",

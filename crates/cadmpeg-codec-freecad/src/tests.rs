@@ -535,7 +535,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "36");
+    assert_eq!(result.ir.ir_version, "37");
     let feature = |name: &str| {
         &result
             .ir
@@ -1594,6 +1594,94 @@ fn transfers_uniform_irregular_and_two_axis_patterns() {
 }
 
 #[test]
+fn distinguishes_stored_base_and_application_owned_features() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Feature" name="Source" id="1"/>
+ <Object type="PartDesign::FeatureBase" name="BaseFeature" id="2"/>
+ <Object type="Part::FeaturePython" name="PartExtension" id="3"/>
+ <Object type="PartDesign::FeaturePython" name="DesignExtension" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Source"><Properties Count="0"/></Object>
+ <Object name="BaseFeature"><Properties Count="1"><Property name="BaseFeature" type="App::PropertyLink"><Link value="Source"/></Property></Properties></Object>
+ <Object name="PartExtension"><Properties Count="1"><Property name="ProxyState" type="App::PropertyString"><String value="part-owned"/></Property></Properties></Object>
+ <Object name="DesignExtension"><Properties Count="1"><Property name="ProxyState" type="App::PropertyString"><String value="design-owned"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("stored and derived features");
+    let source = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Source"))
+        .expect("stored source");
+    let base = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
+        .expect("base feature");
+    assert!(matches!(
+        source.definition,
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+    ));
+    assert!(matches!(
+        &base.definition,
+        cadmpeg_ir::features::FeatureDefinition::DerivedGeometry { source }
+            if source.0 == "fcstd:design:feature#Source"
+    ));
+    assert_eq!(base.dependencies, [source.id.clone()]);
+    assert!(result.ir.model.features.iter().all(|feature| {
+        !matches!(
+            feature.name.as_deref(),
+            Some("PartExtension" | "DesignExtension")
+        )
+    }));
+    let namespace = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("native namespace");
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .expect("objects");
+    assert!(objects
+        .iter()
+        .any(|object| object.type_name == "Part::FeaturePython"));
+    assert!(objects
+        .iter()
+        .any(|object| object.type_name == "PartDesign::FeaturePython"));
+    let census = namespace
+        .arena_as::<crate::native::DesignCensusRecord>("design_census")
+        .expect("design census");
+    assert_eq!(census.len(), 2);
+    assert!(census.iter().all(|record| record.neutral));
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
+    let mut corrupted = result.ir.clone();
+    let derived = corrupted
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("BaseFeature"))
+        .expect("derived feature");
+    derived.definition = cadmpeg_ir::features::FeatureDefinition::DerivedGeometry {
+        source: cadmpeg_ir::features::FeatureId("fcstd:design:feature#Missing".into()),
+    };
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("source feature")));
+}
+
+#[test]
 fn resolves_datum_references_for_polar_and_mirror_patterns() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
@@ -2354,7 +2442,7 @@ fn transfers_datum_frames_from_persisted_placements() {
 #[test]
 fn reports_attributable_native_design_blockers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>
+<Objects Count="1"><Object type="PartDesign::FeatureBase" name="Custom" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Custom"><Properties Count="2"><Property name="Refine" type="App::PropertyBool"><Bool value="true"/></Property><Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="0"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let result = FcstdCodec

@@ -2545,6 +2545,30 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
+            FeatureDefinition::DerivedGeometry { source } => {
+                match features.get(source.0.as_str()) {
+                    None => ref_error(findings, &feature.id.0, "source feature", &source.0),
+                    Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "source feature `{}` does not precede its derived geometry",
+                            source.0
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    }),
+                    Some(_) if !feature.dependencies.contains(source) => findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "derived geometry omits source feature `{}` from its dependencies",
+                            source.0
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    }),
+                    Some(_) => {}
+                }
+            }
             FeatureDefinition::PostProcess { .. } => feature_geometry_error(
                 findings,
                 feature,

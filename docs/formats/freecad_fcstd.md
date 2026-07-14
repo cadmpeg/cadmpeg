@@ -397,9 +397,12 @@ disabled, and fuzzy tolerance distinguishes modeling-kernel default, automatic d
 an explicit positive tolerance. Wrapping an attributable native operation does not suppress its
 design-domain loss report.
 
-A plain PartDesign feature is direct stored geometry rather than an unknown parametric operation.
-Its exact shape payload supplies the feature outputs when present; no replay construction is
-fabricated when the stored feature is empty or frozen.
+Plain Part and PartDesign features are direct stored geometry rather than unknown parametric
+operations. Their exact shape payload supplies the feature outputs when present; no replay
+construction is fabricated when a stored feature is empty or frozen. A PartDesign base feature is
+instead a derived-geometry operation whose input is the earlier linked feature. Application-owned
+feature subclasses remain in the complete native object/property graph and are not misclassified
+as built-in modeling operations solely because their type derives from a core feature class.
 
 The native design census contains one record for every object admitted to the design projection.
 Each record binds the persisted object type and neutral feature identity to its CADIR semantic

@@ -477,6 +477,11 @@ pub enum FeatureDefinition {
     ///
     /// The feature's `outputs` identify the retained bodies when geometry is present.
     StoredGeometry,
+    /// Geometry copied from an earlier feature without an additional modeling operation.
+    DerivedGeometry {
+        /// Feature supplying the copied geometry.
+        source: FeatureId,
+    },
     /// Parametric analytic solid primitive.
     Primitive {
         /// Primitive dimensions and angular bounds.

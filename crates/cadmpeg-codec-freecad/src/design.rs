@@ -117,8 +117,19 @@ pub(crate) fn transfer(
                 space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
-        } else if object.type_name == "PartDesign::Feature" {
+        } else if matches!(
+            object.type_name.as_str(),
+            "Part::Feature" | "PartDesign::Feature"
+        ) {
             FeatureDefinition::StoredGeometry
+        } else if object.type_name == "PartDesign::FeatureBase" {
+            feature_base_definition(&owned, &feature_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
         } else if is_part_construction_geometry(&object.type_name) {
             part_construction_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -3549,6 +3560,20 @@ fn operation_boolean(kind: &str) -> BooleanOp {
 fn feature_id(object: &ObjectRecord) -> FeatureId {
     FeatureId(format!("fcstd:design:feature#{}", object.name))
 }
+
+fn feature_base_definition(
+    properties: &[&PropertyRecord],
+    feature_ids: &HashMap<&str, FeatureId>,
+) -> Option<FeatureDefinition> {
+    let source = property(properties, "BaseFeature")?
+        .links
+        .first()?
+        .object
+        .as_deref()?;
+    Some(FeatureDefinition::DerivedGeometry {
+        source: feature_ids.get(source)?.clone(),
+    })
+}
 fn is_sketch(kind: &str) -> bool {
     kind.contains("Sketcher::SketchObject")
 }
@@ -3691,7 +3716,10 @@ fn is_design_object(kind: &str) -> bool {
             kind,
             "Part::RuledSurface" | "Part::Section" | "Part::Mirroring" | "Part::ProjectOnSurface"
         )
-        || kind.contains("PartDesign::Feature")
+        || matches!(
+            kind,
+            "Part::Feature" | "PartDesign::Feature" | "PartDesign::FeatureBase"
+        )
 }
 
 pub(crate) fn census(
