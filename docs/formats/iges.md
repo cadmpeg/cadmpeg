@@ -62,6 +62,10 @@ Type 182 Form 0 selects one connected component of a disjoint Boolean result. It
 
 The `native.iges` `procedural_solids` arena retains sweep kind, form, profile identity, native sweep amount, omitted-versus-present axis fields, and transformation link. Semantic decoding requires a decoded profile carrier and closure consistent with the owning form.
 
+## Product structure
+
+Type 184 Forms 0 and 1 define an ordered solid assembly and have entity-use flag `02`. A positive member count is followed by that many solid-item pointers and a parallel list of the same number of Transformation Matrix pointers. A zero member transformation means identity. Each nonzero member transformation is applied to that member before the assembly's Directory transformation is applied to the complete collection. Assembly references are acyclic. Form 0 members are primitives, solid instances, Boolean trees, or other assemblies. Form 1 contains at least one Manifold Solid B-rep member and otherwise admits the same member classes. The `solid_assemblies` arena preserves definition identity, member order, member-to-transformation pairing, form, and collection placement.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

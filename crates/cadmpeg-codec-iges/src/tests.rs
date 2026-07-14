@@ -1664,6 +1664,7 @@ fn explicit_tetrahedron_solid_file_extended(
         entities.extend([
             (158, 0, "SPHERE", "00000000", "158,1,2,2,2;"),
             (180, 1, "MIXED", "00000000", "180,3,-55,-57,1;"),
+            (184, 1, "ASSEMBLY", "00000200", "184,2,55,57,0,0;"),
         ]);
     }
     let mut bytes = fixed_ascii_with_global(global);
@@ -2150,6 +2151,39 @@ fn procedural_and_boolean_solids_file() -> Vec<u8> {
             label: "SELECT".into(),
             status: "00000300",
             parameters: "182,15,1,0,0;".into(),
+        },
+    ])
+}
+
+fn solid_assembly_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE1".into(),
+            status: "00000000",
+            parameters: "158,1,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE2".into(),
+            status: "00000000",
+            parameters: "158,1,3,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 124,
+            form: 0,
+            label: "MOVE".into(),
+            status: "00010000",
+            parameters: "124,1,0,0,10,0,1,0,0,0,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 184,
+            form: 0,
+            label: "ASSEMBLY".into(),
+            status: "00000200",
+            parameters: "184,2,1,3,0,5;".into(),
         },
     ])
 }
@@ -3114,10 +3148,87 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
         tree.fields["terms"][0]["entity"],
         "iges:entity:directory#55"
     );
+    let assembly = result.ir.native.namespace("iges").unwrap().arenas["solid_assemblies"]
+        .iter()
+        .find(|assembly| assembly.id == "iges:product:solid-assembly#D61")
+        .unwrap();
+    assert_eq!(assembly.fields["form"], 1);
+    assert_eq!(
+        assembly.fields["items"][0]["item"],
+        "iges:entity:directory#55"
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
         result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_ordered_solid_assembly_member_placements() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(solid_assembly_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let assemblies = &result.ir.native.namespace("iges").unwrap().arenas["solid_assemblies"];
+    assert_eq!(assemblies.len(), 1);
+    let items = assemblies[0].fields["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["item"], "iges:entity:directory#1");
+    assert!(items[0]["transformation"].is_null());
+    assert_eq!(items[1]["item"], "iges:entity:directory#3");
+    assert_eq!(items[1]["transformation"], "iges:native:transformation#D5");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_rejects_cyclic_solid_assembly_definitions() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "158,1,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 184,
+            form: 0,
+            label: "ASSEMBL1".into(),
+            status: "00000200",
+            parameters: "184,2,1,5,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 184,
+            form: 0,
+            label: "ASSEMBL2".into(),
+            status: "00000200",
+            parameters: "184,2,1,3,0,0;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        result.ir.native.namespace("iges").unwrap().arenas["solid_assemblies"].len(),
+        2
+    );
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss.message.contains(
+                "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"
+            ))
+            .count(),
+        2
     );
 }
 

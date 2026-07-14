@@ -351,7 +351,7 @@ assertions = ["boolean-tree-link", "selection-point", "placement", "byte-coverag
 [[entity]]
 type = 184
 name = "solid-assembly"
-forms = [0]
+forms = [0, 1]
 domain = "product"
 decoder = "entities::structure::decode_solid_assembly"
 destination = "native.iges.product"

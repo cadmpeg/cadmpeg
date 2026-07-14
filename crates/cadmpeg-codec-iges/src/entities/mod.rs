@@ -12,5 +12,6 @@ pub(crate) mod geometry;
 pub(crate) mod offsets;
 pub(crate) mod presentation;
 pub(crate) mod splines;
+pub(crate) mod structure;
 pub(crate) mod surfaces;
 pub(crate) mod trimming;

@@ -175,6 +175,22 @@ struct NativeSelectedComponent {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeAssemblyItem {
+    item: Option<String>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSolidAssembly {
+    id: String,
+    source_entity: String,
+    form: i64,
+    declared_count: Option<i64>,
+    items: Vec<NativeAssemblyItem>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -636,6 +652,36 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let solid_assemblies = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 184 && matches!(entry.form, 0 | 1))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeSolidAssembly {
+                id: format!("iges:product:solid-assembly#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                declared_count: record.and_then(|record| record.integer(1)),
+                items: (0..count)
+                    .map(|index| NativeAssemblyItem {
+                        item: record
+                            .and_then(|record| record.integer(2 + index))
+                            .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                        transformation: record
+                            .and_then(|record| record.integer(2 + count + index))
+                            .filter(|sequence| *sequence != 0)
+                            .map(|sequence| format!("iges:native:transformation#D{sequence}")),
+                    })
+                    .collect(),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -651,5 +697,6 @@ pub(crate) fn store(
     namespace.set_arena("procedural_solids", &procedural_solids)?;
     namespace.set_arena("boolean_trees", &boolean_trees)?;
     namespace.set_arena("selected_components", &selected_components)?;
+    namespace.set_arena("solid_assemblies", &solid_assemblies)?;
     Ok(())
 }
