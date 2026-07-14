@@ -1515,15 +1515,25 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 == Some(&record.recipe_id)
         });
         let frame_end = record.byte_offset.checked_add(record.frame_length);
+        let program_end = record
+            .program_offset
+            .checked_add((record.program.len() as u64).saturating_mul(4));
         let valid = record.class_tag.len() == 3
             && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && record.frame_length >= 11
+            && !record.program.is_empty()
+            && record.program_offset >= record.byte_offset.saturating_add(11)
+            && program_end == frame_end
             && dimension_companion
             && companion_order_matches
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.byte_offset >= record.byte_offset.saturating_add(11)
                     && frame_end.is_some_and(|end| recipe.byte_offset < end)
+                    && record.program_offset
+                        == recipe.byte_offset.saturating_add(
+                            design::construction_recipe_family_name_len(recipe.kind) as u64,
+                        )
             })
             && dimension_recipe_ids.insert((native_stream, record.recipe_id.as_str()));
         if !valid {

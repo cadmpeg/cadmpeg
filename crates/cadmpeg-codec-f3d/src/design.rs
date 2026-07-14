@@ -40,6 +40,16 @@ const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"vertex_recipe_data", ConstructionRecipeKind::Vertex),
 ];
 
+pub(crate) const fn construction_recipe_family_name_len(kind: ConstructionRecipeKind) -> usize {
+    match kind {
+        ConstructionRecipeKind::Body => b"body_recipe_data".len(),
+        ConstructionRecipeKind::Face => b"face_recipe_data".len(),
+        ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
+        ConstructionRecipeKind::Edge => b"edge_recipe_data".len(),
+        ConstructionRecipeKind::Vertex => b"vertex_recipe_data".len(),
+    }
+}
+
 /// Decode every JSON design-configuration table and rule entry.
 pub fn decode_configurations(scan: &ContainerScan) -> Result<Vec<DesignConfiguration>, CodecError> {
     let configurations = scan
@@ -3556,6 +3566,15 @@ pub fn decode_dimension_recipe_records(
             else {
                 continue;
             };
+            let Some(program_offset) = recipe_offset
+                .checked_add(construction_recipe_family_name_len(recipe.kind))
+                .filter(|offset| *offset < record_end)
+            else {
+                continue;
+            };
+            let Some(program) = contiguous_i32_program(bytes, program_offset, record_end) else {
+                continue;
+            };
             out.push(DesignDimensionRecipeRecord {
                 id: format!(
                     "f3d:{}:design-dimension-recipe-record#{}",
@@ -3568,6 +3587,8 @@ pub fn decode_dimension_recipe_records(
                 class_tag,
                 record_index,
                 frame_length: u64::try_from(record_end - at).unwrap_or(u64::MAX),
+                program_offset: u64::try_from(program_offset).unwrap_or(u64::MAX),
+                program,
             });
         }
     }
@@ -3599,6 +3620,24 @@ fn indexed_record_containing(
         cursor = at + 11;
     }
     containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
+}
+
+fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> Option<Vec<i32>> {
+    let program = bytes.get(start..end)?;
+    if program.is_empty() || !program.len().is_multiple_of(4) {
+        return None;
+    }
+    Some(
+        program
+            .chunks_exact(4)
+            .map(|word| {
+                i32::from_le_bytes(
+                    word.try_into()
+                        .expect("invariant: chunks_exact(4) yields four-byte slices"),
+                )
+            })
+            .collect(),
+    )
 }
 
 /// Decode paired typed sketch loci nested immediately after dimensional
@@ -7803,12 +7842,12 @@ mod relation_tests {
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
         bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
-        closed_sketch_profiles, companion_owned_interval, decode_fillet_radius_groups,
-        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
-        next_indexed_record_offset, null_locus_dimension_definition,
+        closed_sketch_profiles, companion_owned_interval, contiguous_i32_program,
+        decode_fillet_radius_groups, directional_point_dimension, exact_atomic_constraint,
+        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_sketch_entity_id,
+        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -8069,6 +8108,11 @@ mod relation_tests {
             Some((next_offset, "423".into(), 41, bytes.len()))
         );
         assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
+        assert_eq!(
+            contiguous_i32_program(&[u8::MAX; 8], 0, 8),
+            Some(vec![-1, -1])
+        );
+        assert_eq!(contiguous_i32_program(&[0; 7], 0, 7), None);
     }
 
     #[test]
