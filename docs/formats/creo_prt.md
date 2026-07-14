@@ -510,7 +510,9 @@ first endpoint angle advanced by full turns until it exceeds the start. Its neut
 `type`, `value`, `direct`, `aux_value`, and `ext_id`; type `0x0a` is an angular
 dimension whose `value` is in radians. Types `0x01`, `0x02`, `0x03`, `0x04`,
 and `0x05` are linear dimensions whose values use model millimeters. `ext_id` is the dimension identity
-within the owning feature definition. In positional dimension rows, a bare
+within the owning feature definition. Neutral parameter identity includes the
+feature-definition identifier, owning model-feature identifier, and `ext_id`;
+different definitions may reuse the same local `ext_id`. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
 Type `0x03` has radius display semantics.

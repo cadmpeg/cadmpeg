@@ -4577,10 +4577,11 @@ fn section_dimension_constraints(
                         .rows
                         .get(usize::try_from(relation.dimension_id).ok()?)?;
                     dimension.value?;
-                    Some(ParameterId(format!(
-                        "creo:featdefs:parameter#{owner}:{}",
-                        dimension.external_id
-                    )))
+                    Some(feature_dimension_parameter_id(
+                        definition.id,
+                        owner,
+                        dimension.external_id,
+                    ))
                 });
             let typed = (|| {
                 let parameter = parameter.clone()?;
@@ -6106,6 +6107,16 @@ fn transfer_resolved_revolution_surfaces(
     transferred
 }
 
+fn feature_dimension_parameter_id(
+    definition_id: u32,
+    owner_feature_id: u32,
+    external_id: u32,
+) -> ParameterId {
+    ParameterId(format!(
+        "creo:featdefs:parameter#{definition_id}:{owner_feature_id}:{external_id}"
+    ))
+}
+
 fn transfer_feature_dimensions(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -6132,10 +6143,11 @@ fn transfer_feature_dimensions(
             let Some(value) = dimension.value else {
                 continue;
             };
-            let id = ParameterId(format!(
-                "creo:featdefs:parameter#{}:{}",
-                owner_feature_id, dimension.external_id
-            ));
+            let id = feature_dimension_parameter_id(
+                definition.id,
+                owner_feature_id,
+                dimension.external_id,
+            );
             annotate(
                 annotations,
                 &id.0,
@@ -8913,6 +8925,18 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn dimension_identity_includes_its_feature_definition() {
+        assert_ne!(
+            feature_dimension_parameter_id(917, 40, 3),
+            feature_dimension_parameter_id(1104, 40, 3)
+        );
+        assert_eq!(
+            feature_dimension_parameter_id(917, 40, 3).0,
+            "creo:featdefs:parameter#917:40:3"
+        );
+    }
+
+    #[test]
     fn unary_solver_incidences_define_line_orientation() {
         let segment = crate::feature::FeatureSegment {
             kind: crate::feature::FeatureSegmentKind::Line,
@@ -9453,7 +9477,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::End(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
         let mut incidence_distance = distance_definition.clone();
@@ -9493,7 +9517,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::Entity(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:13".to_string(),
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
         incidence_distance
@@ -9514,7 +9538,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::Entity(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:13".to_string(),
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
         let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));
@@ -9523,7 +9547,7 @@ mod resolved_sketch_tests {
             SketchConstraintDefinition::Native {
                 native_kind: "creo:relation:99".to_string(),
                 entities: Vec::new(),
-                parameter: Some(ParameterId("creo:featdefs:parameter#40:42".to_string())),
+                parameter: Some(ParameterId("creo:featdefs:parameter#917:40:42".to_string(),)),
                 operands: vec![SketchNativeOperand {
                     native_kind: "relat_ptr".to_string(),
                     object_index: 8,
