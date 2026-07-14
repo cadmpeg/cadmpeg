@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
-use cadmpeg_ir::{validate, CadIr};
+use cadmpeg_ir::{validate, CadIr, SourceFidelity};
 
 use crate::loader::{self, read_prefix};
 use crate::registry::Registry;
@@ -143,7 +143,15 @@ pub fn decode(
     args: &DecodeArgs,
 ) -> Result<()> {
     let loaded = loader::load_ir(registry, path, args.options(), forced)?;
-    export_ir(registry, &loaded.ir, Format::Cadir, out, path, force)?;
+    export_ir(
+        registry,
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        Format::Cadir,
+        out,
+        path,
+        force,
+    )?;
     if let Some(report) = &loaded.decode_report {
         print_decode_report(&mut io::stderr(), report)?;
     }
@@ -250,7 +258,15 @@ pub fn export(
             format.name()
         )));
     }
-    let report = export_ir(registry, &loaded.ir, format, out, path, force)?;
+    let report = export_ir(
+        registry,
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        format,
+        out,
+        path,
+        force,
+    )?;
     write_command_report(
         path,
         report_path.as_deref(),
@@ -316,7 +332,15 @@ pub fn convert(
             format.name()
         )));
     }
-    let report = export_ir(registry, &loaded.ir, format, out, path, settings.force)?;
+    let report = export_ir(
+        registry,
+        &loaded.ir,
+        loaded.source_fidelity.as_ref(),
+        format,
+        out,
+        path,
+        settings.force,
+    )?;
     write_command_report(
         path,
         settings.report.as_deref(),
@@ -416,6 +440,7 @@ fn resolve_format(explicit: Option<Format>, out: Option<&Path>) -> Result<Format
 fn export_ir(
     registry: &Registry,
     ir: &CadIr,
+    source_fidelity: Option<&SourceFidelity>,
     format: Format,
     out: Option<&Path>,
     input: &Path,
@@ -425,7 +450,7 @@ fn export_ir(
         .encoder_by_id(format.name())
         .ok_or_else(|| anyhow!("no encoder registered for {}", format.name()))?;
     let mut bytes = Vec::new();
-    let report = encoder.encode(ir, &mut bytes)?;
+    let report = encoder.encode_with_source_fidelity(ir, source_fidelity, &mut bytes)?;
     if let Some(path) = out {
         write_output(input, path, &bytes, force)?;
         eprintln!(

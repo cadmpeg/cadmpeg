@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 use cadmpeg_ir::codec::{Confidence, DecodeOptions};
-use cadmpeg_ir::{CadIr, DecodeReport};
+use cadmpeg_ir::{CadIr, DecodeReport, SourceFidelity};
 
 use crate::registry::Registry;
 use crate::ForcedInput;
@@ -18,6 +18,8 @@ pub struct LoadedIr {
     pub ir: CadIr,
     /// Native decode result, or `None` when the input was CADIR JSON.
     pub decode_report: Option<DecodeReport>,
+    /// Decode-time source accounting, absent for neutral CADIR input.
+    pub source_fidelity: Option<SourceFidelity>,
 }
 
 /// Read at most `n` leading bytes for content-based format detection.
@@ -66,6 +68,7 @@ pub fn load_ir(
         return Ok(LoadedIr {
             ir: result.ir,
             decode_report: Some(result.report),
+            source_fidelity: Some(result.source_fidelity),
         });
     }
 
@@ -87,5 +90,6 @@ pub fn load_ir(
     Ok(LoadedIr {
         ir,
         decode_report: None,
+        source_fidelity: None,
     })
 }

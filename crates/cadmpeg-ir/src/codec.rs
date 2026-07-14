@@ -175,6 +175,20 @@ pub trait Encoder {
 
     /// Encode one IR document to the target format.
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError>;
+
+    /// Encode with decode-time source fidelity when the caller retained it.
+    ///
+    /// Encoders that do not consume source accounting use the neutral model
+    /// through [`Encoder::encode`].
+    fn encode_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: Option<&SourceFidelity>,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        let _ = source_fidelity;
+        self.encode(ir, writer)
+    }
 }
 
 /// Encoder for canonical versioned CADIR JSON.
