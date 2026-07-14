@@ -8,6 +8,54 @@ use serde::{Deserialize, Serialize};
 use crate::container::Container;
 use crate::parasolid::{Stream, StreamKind};
 
+/// Complete typed source record for one Parasolid surface-intersection curve.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidIntersectionRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the construction.
+    pub xmt: u32,
+    /// Five ordered common-header references.
+    pub header_references: [u32; 5],
+    /// Serialized orientation sense.
+    pub sense: bool,
+    /// Six ordered support and witness references.
+    pub construction_references: [u32; 6],
+    /// Whether the record uses the single-byte delta-twin tag.
+    pub delta_twin: bool,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode complete typed source records for retained intersection constructions.
+pub fn parasolid_intersection_records(streams: &[Stream]) -> Vec<ParasolidIntersectionRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for construction in crate::intersection::scan(&stream.inflated).constructions {
+            records.push(ParasolidIntersectionRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:intersection-record#{}",
+                    construction.xmt
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: construction.xmt,
+                header_references: construction.header_references,
+                sense: construction.sense,
+                construction_references: construction.references,
+                delta_twin: construction.delta_twin,
+                inflated_offset: construction.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// One row retained from the canonical `UG_PART` segment index.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentIndexRow {

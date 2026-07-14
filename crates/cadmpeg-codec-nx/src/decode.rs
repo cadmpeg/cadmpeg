@@ -548,7 +548,15 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                         })
                     },
                 ),
-                source_object: None,
+                source_object: Some(SourceObjectAssociation {
+                    format: "nx".into(),
+                    object_id: format!("nx:s{si}:intersection-record#{}", construction.xmt),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
             });
             annotations
                 .note(&procedural_id, source_stream, construction.pos as u64)
@@ -3104,6 +3112,8 @@ fn attach_native_object_model(
         crate::native::segment_body_bindings(&scan.container, &scan.streams);
     let parasolid_blend_surface_records =
         crate::native::parasolid_blend_surface_records(&scan.streams);
+    let parasolid_intersection_records =
+        crate::native::parasolid_intersection_records(&scan.streams);
     let parasolid_attribute_definitions =
         crate::native::parasolid_attribute_definitions(&scan.streams);
     let parasolid_entity_51_records = crate::native::parasolid_entity_51_records(&scan.streams);
@@ -3364,6 +3374,7 @@ fn attach_native_object_model(
         && segment_body_bindings.is_empty()
         && segment_body_lineage_statuses.is_empty()
         && parasolid_blend_surface_records.is_empty()
+        && parasolid_intersection_records.is_empty()
         && parasolid_attribute_definitions.is_empty()
         && parasolid_entity_51_records.is_empty()
         && parasolid_entity_52_integer_records.is_empty()
@@ -3478,6 +3489,17 @@ fn attach_native_object_model(
         annotations
             .note(&record.id, source_stream, record.inflated_offset)
             .tag("BLEND_SURF");
+        annotations.exactness(&record.id, Exactness::ByteExact);
+    }
+    for record in &parasolid_intersection_records {
+        let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
+        annotations
+            .note(&record.id, source_stream, record.inflated_offset)
+            .tag(if record.delta_twin {
+                "INTERSECTION_DATA"
+            } else {
+                "INTERSECTION"
+            });
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
     for definition in &parasolid_attribute_definitions {
@@ -3876,7 +3898,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(132);
+    namespace.version = namespace.version.max(133);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3896,6 +3918,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_blend_surface_records",
             &parasolid_blend_surface_records,
+        )?;
+    }
+    if !parasolid_intersection_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_intersection_records",
+            &parasolid_intersection_records,
         )?;
     }
     if !parasolid_attribute_definitions.is_empty() {

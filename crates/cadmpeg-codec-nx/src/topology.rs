@@ -400,8 +400,14 @@ pub struct BlendSurface {
 pub struct CompositeCurve {
     /// Cross-reference index of the curve record.
     pub xmt: u32,
+    /// Five ordered common-header references.
+    pub header_references: [u32; 5],
+    /// Serialized orientation sense.
+    pub sense: bool,
     /// Six ordered construction references.
     pub references: [u32; 6],
+    /// Whether the record uses the single-byte delta-twin tag.
+    pub delta_twin: bool,
     /// Record type-tag offset in the inflated stream.
     pub pos: usize,
 }
@@ -413,7 +419,11 @@ pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
         .filter_map(|node| {
             let mut at = 8 + node.shift;
             let header = read_sequence_at(&node.bytes, &mut at, 5)?;
-            (header[0] == 1 && matches!(node.bytes.get(at), Some(b'+' | b'-'))).then_some(())?;
+            let sense = match node.bytes.get(at) {
+                Some(b'+') => true,
+                Some(b'-') => false,
+                _ => return None,
+            };
             at += 1;
             let references: [u32; 6] =
                 read_sequence_at(&node.bytes, &mut at, 6)?.try_into().ok()?;
@@ -424,7 +434,10 @@ pub fn composite_curves(stream: &[u8]) -> Vec<CompositeCurve> {
                 && (references[0] > 1 || references[1] > 1))
                 .then_some(CompositeCurve {
                     xmt: node.xmt,
+                    header_references: header.try_into().ok()?,
+                    sense,
                     references,
+                    delta_twin: false,
                     pos: node.pos,
                 })
         })
@@ -469,9 +482,11 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
         {
             continue;
         }
-        if !matches!(stream.get(at), Some(b'+' | b'-')) {
-            continue;
-        }
+        let sense = match stream.get(at) {
+            Some(b'+') => true,
+            Some(b'-') => false,
+            _ => continue,
+        };
         at += 1;
         let mut references = [0u32; 6];
         for reference in &mut references {
@@ -491,7 +506,10 @@ pub fn intersection_data_curves(stream: &[u8]) -> Vec<CompositeCurve> {
         {
             out.push(CompositeCurve {
                 xmt,
+                header_references: header_refs,
+                sense,
                 references,
+                delta_twin: true,
                 pos,
             });
         }

@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 132);
+    assert_eq!(namespace.version, 133);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 132);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 133);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7295,6 +7295,21 @@ fn decode_preserves_intersection_curve_as_connected_carrier() {
         .find(|curve| &curve.id == edge_curve)
         .expect("intersection carrier");
     assert!(matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    let records = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidIntersectionRecord>("parasolid_intersection_records")
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(!records[0].delta_twin);
+    assert_eq!(records[0].header_references[0], 1);
+    assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
+    assert_eq!(
+        curve.source_object.as_ref().map(|source| &source.object_id),
+        Some(&records[0].id)
+    );
     assert_eq!(result.ir.model.procedural_curves.len(), 1);
     assert_eq!(result.ir.model.procedural_curves[0].curve, curve.id);
     assert!(result.report.losses.iter().any(|loss| {
@@ -7311,6 +7326,17 @@ fn decode_preserves_deltas_intersection_data_curve() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    let records = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidIntersectionRecord>("parasolid_intersection_records")
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(records[0].delta_twin);
+    assert_eq!(records[0].header_references[0], 1);
+    assert_eq!(records[0].construction_references, [6, 6, 1, 1, 1, 1]);
     assert_eq!(
         result.ir.model.edges[0].curve.as_ref(),
         Some(&result.ir.model.procedural_curves[0].curve)
