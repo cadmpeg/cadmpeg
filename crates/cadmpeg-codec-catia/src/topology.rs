@@ -923,6 +923,8 @@ pub struct MeshEdgePlacementCandidate {
     pub cycle: usize,
     /// First covered boundary-segment index.
     pub start: usize,
+    /// Boundary-segment index immediately after the covered run.
+    pub end: usize,
     /// Number of consecutive boundary segments covered by the edge.
     pub segment_count: usize,
 }
@@ -1091,6 +1093,8 @@ pub fn standard_mesh_missing_edge_placements(
                             cycle: self.gaps[gap].cycle,
                             start: (self.gaps[gap].start + offset)
                                 % self.cycle_lengths[self.gaps[gap].cycle],
+                            end: (self.gaps[gap].start + offset + segment_count)
+                                % self.cycle_lengths[self.gaps[gap].cycle],
                             segment_count,
                         };
                         placed.push(value);
@@ -1152,6 +1156,144 @@ pub fn standard_mesh_missing_edge_placements(
     <[Vec<Vec<MeshEdgePlacementCandidate>>; 1]>::try_from(solutions)
         .ok()
         .map(|[candidates]| candidates)
+}
+
+/// Derive endpoint-pair domains for unmatched rows whose candidate placement
+/// corners are both bound by exact matched edge runs. Input pairs are physical
+/// edge-row ordered; pair orientation is ignored in the returned domains
+/// because a missing placement has not yet selected its traversal direction.
+#[must_use]
+pub fn standard_mesh_placement_endpoint_pairs(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[Option<[usize; 2]>],
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    let edge_rows = standard_edge_rows(bytes)?;
+    if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
+        return None;
+    }
+    let runs = standard_mesh_edge_runs(bytes)?;
+    let placements = standard_mesh_missing_edge_placements(bytes, edge_faces)?;
+    let (face_start, face_count, _) = largest_fbb_run(bytes)?;
+    let cycle_solutions = [1, 2, 3]
+        .into_iter()
+        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
+        .map(|trims| {
+            trims
+                .iter()
+                .map(|trim| {
+                    boundary_cycles(&trim.triangles)
+                        .map(|cycles| cycles.iter().map(Vec::len).collect::<Vec<_>>())
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let [cycle_lengths] = <[Vec<Vec<usize>>; 1]>::try_from(cycle_solutions).ok()?;
+    let mut corner_points = HashMap::<(usize, usize, usize), HashSet<usize>>::new();
+    let mut run_constraints = Vec::new();
+    for run in runs {
+        let Some(pair) = edge_points[run.edge] else {
+            continue;
+        };
+        let candidates = HashSet::from(pair);
+        let positions = [
+            (run.face, run.cycle, run.start),
+            (
+                run.face,
+                run.cycle,
+                run.start.checked_add(run.segment_count)? % cycle_lengths[run.face][run.cycle],
+            ),
+        ];
+        for position in positions {
+            if let Some(stored) = corner_points.get_mut(&position) {
+                stored.retain(|point| candidates.contains(point));
+                if stored.is_empty() {
+                    return None;
+                }
+            } else {
+                corner_points.insert(position, candidates.clone());
+            }
+        }
+        run_constraints.push((positions[0], positions[1], pair));
+    }
+    loop {
+        let before = corner_points.values().map(HashSet::len).sum::<usize>();
+        for &(left, right, pair) in &run_constraints {
+            let left_single = <[usize; 1]>::try_from(
+                corner_points
+                    .get(&left)?
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>(),
+            )
+            .ok()
+            .map(|[point]| point);
+            let right_single = <[usize; 1]>::try_from(
+                corner_points
+                    .get(&right)?
+                    .iter()
+                    .copied()
+                    .collect::<Vec<_>>(),
+            )
+            .ok()
+            .map(|[point]| point);
+            if let Some(point) = left_single {
+                corner_points
+                    .get_mut(&right)?
+                    .retain(|candidate| *candidate != point && pair.contains(candidate));
+            }
+            if let Some(point) = right_single {
+                corner_points
+                    .get_mut(&left)?
+                    .retain(|candidate| *candidate != point && pair.contains(candidate));
+            }
+            if corner_points.get(&left)?.is_empty() || corner_points.get(&right)?.is_empty() {
+                return None;
+            }
+        }
+        let after = corner_points.values().map(HashSet::len).sum::<usize>();
+        if after == before {
+            break;
+        }
+    }
+    let mut domains = vec![Vec::new(); edge_rows.len()];
+    let mut placement_counts = vec![0usize; edge_rows.len()];
+    let mut bound_counts = vec![0usize; edge_rows.len()];
+    for face in placements {
+        for placement in face {
+            placement_counts[placement.edge] += 1;
+            let Some(starts) =
+                corner_points.get(&(placement.face, placement.cycle, placement.start))
+            else {
+                continue;
+            };
+            let Some(ends) = corner_points.get(&(placement.face, placement.cycle, placement.end))
+            else {
+                continue;
+            };
+            bound_counts[placement.edge] += 1;
+            for &start in starts {
+                for &end in ends {
+                    if start == end {
+                        continue;
+                    }
+                    let mut pair = [start, end];
+                    pair.sort_unstable();
+                    if !domains[placement.edge].contains(&pair) {
+                        domains[placement.edge].push(pair);
+                    }
+                }
+            }
+        }
+    }
+    for (edge, domain) in domains.iter_mut().enumerate() {
+        if bound_counts[edge] == placement_counts[edge] {
+            domain.sort_unstable();
+        } else {
+            domain.clear();
+        }
+    }
+    Some(domains)
 }
 
 /// Propagate byte-level endpoint ports through independently resolved physical
@@ -1335,7 +1477,7 @@ pub fn bind_edge_port_candidates(
     search.solution
 }
 
-fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
+pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
     left == right || left == [right[1], right[0]]
 }
 

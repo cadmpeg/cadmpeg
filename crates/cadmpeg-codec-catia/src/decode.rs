@@ -2836,6 +2836,50 @@ fn attach_standard_topology(
             }
         }
     }
+    if let Some(options) = &mut endpoint_options {
+        loop {
+            let seeds = options
+                .iter()
+                .map(|pairs| {
+                    <[[usize; 2]; 1]>::try_from(pairs.as_slice())
+                        .ok()
+                        .map(|[pair]| pair)
+                })
+                .collect::<Vec<_>>();
+            let Some(placement_domains) =
+                topology::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
+            else {
+                break;
+            };
+            let mut changed = false;
+            for (edge, domain) in placement_domains.into_iter().enumerate() {
+                if domain.is_empty() {
+                    continue;
+                }
+                let previous = options[edge].clone();
+                if options[edge].is_empty() {
+                    options[edge] = domain;
+                } else {
+                    options[edge].retain(|pair| {
+                        domain
+                            .iter()
+                            .any(|candidate| topology::same_unordered_pair(*pair, *candidate))
+                    });
+                }
+                changed |= options[edge] != previous;
+            }
+            if !changed {
+                break;
+            }
+        }
+        for (candidates, options) in endpoint_candidates.iter_mut().zip(options) {
+            for point in options.iter().flatten() {
+                if !candidates.contains(point) {
+                    candidates.push(*point);
+                }
+            }
+        }
+    }
     let graph_propagated_pairs = native_ports
         .as_ref()
         .zip(graph_endpoint_pairs.as_ref())

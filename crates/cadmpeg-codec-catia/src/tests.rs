@@ -268,6 +268,13 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     assert_eq!(placements[0].len(), 1);
     assert_eq!(placements[0][0].edge, 0);
     assert_eq!(placements[0][0].segment_count, 2);
+    let endpoint_domains = crate::topology::standard_mesh_placement_endpoint_pairs(
+        &bytes,
+        &[[0, 0]; 4],
+        &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
+    )
+    .expect("gap-corner endpoint domains");
+    assert_eq!(endpoint_domains[0], [[0, 1]]);
 }
 
 #[test]
