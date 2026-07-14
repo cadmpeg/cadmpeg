@@ -222,9 +222,9 @@ pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedI
     lanes
 }
 
-/// One exact shifted-IEEE scalar field in a reconstructed sketch payload.
+/// One exact shifted-IEEE scalar field in a reconstructed construction payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct SketchPayloadScalarField {
+pub struct ConstructionPayloadScalarField {
     /// Payload-relative offset of the `50 59 66` marker.
     pub offset: usize,
     /// Serialized field discriminator following the marker.
@@ -233,8 +233,8 @@ pub struct SketchPayloadScalarField {
     pub value: f64,
 }
 
-/// Decode exact `50 59 66, field_code, 00, shifted-f64` sketch fields.
-pub fn sketch_payload_scalar_fields(bytes: &[u8]) -> Vec<SketchPayloadScalarField> {
+/// Decode exact `50 59 66, field_code, 00, shifted-f64` construction fields.
+pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPayloadScalarField> {
     let mut fields = Vec::new();
     for start in 0..bytes.len().saturating_sub(12) {
         if bytes.get(start..start + 3) != Some(b"PYf")
@@ -247,7 +247,7 @@ pub fn sketch_payload_scalar_fields(bytes: &[u8]) -> Vec<SketchPayloadScalarFiel
         else {
             continue;
         };
-        fields.push(SketchPayloadScalarField {
+        fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
             value,
@@ -256,9 +256,9 @@ pub fn sketch_payload_scalar_fields(bytes: &[u8]) -> Vec<SketchPayloadScalarFiel
     fields
 }
 
-/// One compact-code string field in a reconstructed sketch payload.
+/// One compact-code string field in a reconstructed construction payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SketchPayloadNamedField<'a> {
+pub struct ConstructionPayloadNamedField<'a> {
     /// Payload-relative offset of the `66` marker.
     pub offset: usize,
     /// Decoded non-null compact type code following the marker.
@@ -287,14 +287,14 @@ pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoin
     let mut bytes = Vec::new();
     for (block_ordinal, block) in blocks.iter().enumerate() {
         bytes.extend_from_slice(block);
-        let names = sketch_payload_named_fields(&bytes);
+        let names = construction_payload_named_fields(&bytes);
         let [name] = names.as_slice() else {
             return None;
         };
         if !name.payload_leading || parse_positive_decimal_suffix(name.value, "Point").is_none() {
             return None;
         }
-        let scalars = sketch_payload_scalar_fields(&bytes);
+        let scalars = construction_payload_scalar_fields(&bytes);
         match scalars.as_slice() {
             [] | [_] => {}
             [first_scalar, second_scalar] => {
@@ -321,11 +321,11 @@ fn parse_positive_decimal_suffix(value: &str, prefix: &str) -> Option<u32> {
 }
 
 /// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
-pub fn sketch_payload_named_fields(bytes: &[u8]) -> Vec<SketchPayloadNamedField<'_>> {
+pub fn construction_payload_named_fields(bytes: &[u8]) -> Vec<ConstructionPayloadNamedField<'_>> {
     let mut fields = Vec::new();
     if bytes.first() == Some(&0x03) {
-        if let Some(value) = sketch_payload_name_text(bytes, 1) {
-            fields.push(SketchPayloadNamedField {
+        if let Some(value) = construction_payload_name_text(bytes, 1) {
+            fields.push(ConstructionPayloadNamedField {
                 offset: 0,
                 type_code: None,
                 payload_leading: true,
@@ -346,10 +346,10 @@ pub fn sketch_payload_named_fields(bytes: &[u8]) -> Vec<SketchPayloadNamedField<
         if bytes.get(marker) != Some(&0x03) {
             continue;
         }
-        let Some(value) = sketch_payload_name_text(bytes, marker + 1) else {
+        let Some(value) = construction_payload_name_text(bytes, marker + 1) else {
             continue;
         };
-        fields.push(SketchPayloadNamedField {
+        fields.push(ConstructionPayloadNamedField {
             offset: start,
             type_code: Some(type_code),
             payload_leading: false,
@@ -359,7 +359,7 @@ pub fn sketch_payload_named_fields(bytes: &[u8]) -> Vec<SketchPayloadNamedField<
     fields
 }
 
-fn sketch_payload_name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
+fn construction_payload_name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
     let text_len = usize::from(bytes.get(length_offset).copied()?.checked_sub(2)?);
     let text_start = length_offset.checked_add(1)?;
     let text_end = text_start.checked_add(text_len)?;

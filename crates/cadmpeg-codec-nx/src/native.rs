@@ -3079,7 +3079,7 @@ pub fn feature_sketch_payload_scalars(
                 1,
             );
             Some(
-                crate::om::sketch_payload_scalar_fields(&payload)
+                crate::om::construction_payload_scalar_fields(&payload)
                     .into_iter()
                     .enumerate()
                     .map(|(ordinal, field)| {
@@ -3138,7 +3138,7 @@ pub fn feature_sketch_payload_names(
                 "sketch-construction-payload",
                 1,
             );
-            crate::om::sketch_payload_named_fields(&payload)
+            crate::om::construction_payload_named_fields(&payload)
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, field)| {
@@ -4223,7 +4223,7 @@ pub fn feature_block_payload_scalars(
             else {
                 return Vec::new();
             };
-            crate::om::sketch_payload_scalar_fields(&bytes)
+            crate::om::construction_payload_scalar_fields(&bytes)
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, field)| {
@@ -4263,7 +4263,7 @@ pub fn feature_block_payload_names(
             else {
                 return Vec::new();
             };
-            crate::om::sketch_payload_named_fields(&bytes)
+            crate::om::construction_payload_named_fields(&bytes)
                 .into_iter()
                 .enumerate()
                 .filter_map(|(ordinal, field)| {

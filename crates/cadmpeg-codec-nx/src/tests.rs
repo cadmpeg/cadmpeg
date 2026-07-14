@@ -1335,7 +1335,7 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     let bytes = [
         0xaa, 0x50, 0x59, 0x66, 0x64, 0x00, 0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72, 0xbb,
     ];
-    let fields = crate::om::sketch_payload_scalar_fields(&bytes);
+    let fields = crate::om::construction_payload_scalar_fields(&bytes);
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
@@ -1343,10 +1343,10 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
 
     let mut malformed = bytes;
     malformed[5] = 1;
-    assert!(crate::om::sketch_payload_scalar_fields(&malformed).is_empty());
+    assert!(crate::om::construction_payload_scalar_fields(&malformed).is_empty());
     malformed = bytes;
     malformed[6] = 0x70;
-    assert!(crate::om::sketch_payload_scalar_fields(&malformed).is_empty());
+    assert!(crate::om::construction_payload_scalar_fields(&malformed).is_empty());
 }
 
 #[test]
@@ -1355,7 +1355,7 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
         0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0xaa, 0x66, 0x80, 0x83,
         0x03, 0x07, b'L', b'i', b'n', b'e', b'2', 0x00,
     ];
-    let fields = crate::om::sketch_payload_named_fields(&bytes);
+    let fields = crate::om::construction_payload_named_fields(&bytes);
     assert_eq!(fields.len(), 2);
     assert_eq!(
         (fields[0].offset, fields[0].type_code, fields[0].value),
@@ -1366,11 +1366,11 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
         (12, Some(0x83), "Line2")
     );
 
-    assert!(crate::om::sketch_payload_named_fields(&[
+    assert!(crate::om::construction_payload_named_fields(&[
         0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
     ])
     .is_empty());
-    assert!(crate::om::sketch_payload_named_fields(&[
+    assert!(crate::om::construction_payload_named_fields(&[
         0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',
     ])
     .is_empty());
@@ -1378,7 +1378,7 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
 
 #[test]
 fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
-    let fields = crate::om::sketch_payload_named_fields(&[
+    let fields = crate::om::construction_payload_named_fields(&[
         0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0x04,
     ]);
     assert_eq!(fields.len(), 1);
@@ -1387,7 +1387,7 @@ fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
     assert!(fields[0].payload_leading);
     assert_eq!(fields[0].value, "Point1");
 
-    assert!(crate::om::sketch_payload_named_fields(&[
+    assert!(crate::om::construction_payload_named_fields(&[
         0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',
     ])
     .is_empty());
