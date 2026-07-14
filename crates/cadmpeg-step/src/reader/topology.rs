@@ -114,13 +114,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         ) {
             continue;
         }
-        mark_standalone_geometric_set(
-            id,
-            record,
-            exchange,
-            ir,
-            &mut result.typed_records,
-        );
+        mark_standalone_geometric_set(id, record, exchange, ir, &mut result.typed_records);
     }
     if !ir.model.bodies.is_empty() {
         for (&id, record) in &exchange.records {

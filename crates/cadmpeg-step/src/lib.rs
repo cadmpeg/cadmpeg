@@ -587,6 +587,43 @@ impl<'a> Builder<'a> {
                     .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
             );
         }
+        let bindings = ir.model.appearance_bindings.clone();
+        let mut direct_unstyled = 0usize;
+        for binding in bindings {
+            let Some(color) = appearances
+                .get(binding.appearance.as_str())
+                .copied()
+                .flatten()
+            else {
+                continue;
+            };
+            let (target, style_kind) = match &binding.target {
+                AppearanceTarget::Surface(id) => {
+                    (self.surface_refs.get(id.as_str()).copied(), "surface")
+                }
+                AppearanceTarget::Curve(id) => (self.curve_refs.get(id.as_str()).copied(), "curve"),
+                AppearanceTarget::Edge(id) => (self.edge_refs.get(id.as_str()).copied(), "curve"),
+                AppearanceTarget::Point(id) => (self.point_refs.get(id.as_str()).copied(), "point"),
+                AppearanceTarget::Body(_)
+                | AppearanceTarget::Face(_)
+                | AppearanceTarget::Tessellation(_)
+                | AppearanceTarget::Source { .. } => continue,
+            };
+            let Some(target) = target else {
+                direct_unstyled += 1;
+                continue;
+            };
+            let style = match style_kind {
+                "surface" => self.surface_style(color, &mut style_refs),
+                "curve" => self.curve_style(color, &mut style_refs),
+                "point" => self.point_style(color, &mut style_refs),
+                _ => unreachable!(),
+            };
+            styled.push(
+                self.emitter
+                    .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
+            );
+        }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
         // a face override whose face was skipped, or a body whose faces were all
         // skipped (hidden bodies or faces on unknown surfaces).
@@ -598,7 +635,8 @@ impl<'a> Builder<'a> {
             + body_colors
                 .keys()
                 .filter(|id| !styled_bodies.contains(**id as &str))
-                .count();
+                .count()
+            + direct_unstyled;
         if styled.is_empty() {
             return;
         }
@@ -644,6 +682,63 @@ impl<'a> Builder<'a> {
             .emitter
             .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({usage})"));
         cache.insert(rgb, assignment);
+        assignment
+    }
+
+    fn curve_style(
+        &mut self,
+        color: cadmpeg_ir::topology::Color,
+        cache: &mut HashMap<String, Ref>,
+    ) -> Ref {
+        let rgb = format!(
+            "{},{},{}",
+            real(f64::from(color.r)),
+            real(f64::from(color.g)),
+            real(f64::from(color.b))
+        );
+        let key = format!("curve:{rgb}");
+        if let Some(style) = cache.get(&key) {
+            return *style;
+        }
+        let colour = self.emitter.emit("COLOUR_RGB", &format!("'',{rgb}"));
+        let font = self
+            .emitter
+            .emit("DRAUGHTING_PRE_DEFINED_CURVE_FONT", &string("continuous"));
+        let curve = self.emitter.emit(
+            "CURVE_STYLE",
+            &format!("'',{font},POSITIVE_LENGTH_MEASURE(0.1),{colour}"),
+        );
+        let assignment = self
+            .emitter
+            .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({curve})"));
+        cache.insert(key, assignment);
+        assignment
+    }
+
+    fn point_style(
+        &mut self,
+        color: cadmpeg_ir::topology::Color,
+        cache: &mut HashMap<String, Ref>,
+    ) -> Ref {
+        let rgb = format!(
+            "{},{},{}",
+            real(f64::from(color.r)),
+            real(f64::from(color.g)),
+            real(f64::from(color.b))
+        );
+        let key = format!("point:{rgb}");
+        if let Some(style) = cache.get(&key) {
+            return *style;
+        }
+        let colour = self.emitter.emit("COLOUR_RGB", &format!("'',{rgb}"));
+        let point = self.emitter.emit(
+            "POINT_STYLE",
+            &format!("'',.DOT.,POSITIVE_LENGTH_MEASURE(1.),{colour}"),
+        );
+        let assignment = self
+            .emitter
+            .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({point})"));
+        cache.insert(key, assignment);
         assignment
     }
 

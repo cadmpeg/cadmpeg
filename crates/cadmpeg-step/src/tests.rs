@@ -724,6 +724,15 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         roundtrip.ir.model.presentation_layers[0].name,
         "machined faces"
     );
+    assert!(roundtrip
+        .ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+        )));
     assert_eq!(
         roundtrip
             .ir
@@ -1043,8 +1052,7 @@ fn writer_round_trips_standalone_points_and_curves() {
     ir.model.vertices.clear();
 
     let mut output = Vec::new();
-    write_step(&ir, &mut output, &StepWriteOptions::default())
-        .expect("write standalone geometry");
+    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write standalone geometry");
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode standalone geometry");
