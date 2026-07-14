@@ -204,7 +204,7 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
 
 - **Container and versions: Partial.** The codec detects `#UGC:2`, enumerates sections, identifies ND and DEPDB layouts, and decodes supported PSB compact integers and floats.
 - **Geometry: Partial.** ActDatums and VisibGeom plane carriers transfer in model space. Topology-bound cylinders transfer when cap records establish their complete placement. Other analytic and spline families remain incomplete.
-- **Topology: Partial.** Native half-edges and closed loops decode. Exact planar components transfer as connected body, region, shell, face, loop, coedge, edge, and vertex graphs when each face has one outer loop and zero or more strictly contained inner loops.
+- **Topology: Partial.** Native half-edges and closed loops decode. Components with plane-intersection vertex coordinates transfer as connected body, region, shell, face, loop, coedge, edge, and vertex graphs. Planar multi-loop faces require one strict containment outer boundary; non-planar faces transfer only with one loop until their byte-backed outer/inner discriminator is decoded. Unsolved carriers remain linked opaque geometry rather than being guessed.
 - **Tessellation: None.**
 - **Design intent: Partial.** Named feature operations, dependencies, placed section sketches, line-orientation constraints, dimensions, curve-equation programs, and cylindrical native-axis helix semantics transfer as typed or native design records.
 - **Product structure: None.**

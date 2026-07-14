@@ -6076,6 +6076,13 @@ mod resolved_sketch_tests {
             &disjoint_points,
         )
         .is_none());
+        assert_eq!(
+            ordered_face_loops(vec![&outer], None, &incidence, &disjoint_points),
+            Some(vec![&outer])
+        );
+        assert!(
+            ordered_face_loops(vec![&outer, &inner], None, &incidence, &disjoint_points,).is_none()
+        );
     }
 }
 
@@ -6160,6 +6167,16 @@ fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
         );
     }
     planes
+}
+
+fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<UnknownId> {
+    scan.sections
+        .iter()
+        .filter(|section| section.role == role::GEOMETRY)
+        .find(|section| {
+            offset >= section.offset && offset < section.offset.saturating_add(section.length)
+        })
+        .map(|section| UnknownId(format!("creo:{}:section#{}", section.name, section.offset)))
 }
 
 fn projected_loop_polygon(
@@ -6271,6 +6288,22 @@ fn ordered_planar_face_loops<'a>(
     Some(ordered)
 }
 
+fn ordered_face_loops<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    plane: Option<PlaneEquation>,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    if let Some(plane) = plane {
+        ordered_planar_face_loops(loops, plane, incidence, solved_vertices)
+    } else {
+        let [single] = loops.as_slice() else {
+            return None;
+        };
+        Some(vec![*single])
+    }
+}
+
 fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let planes = placed_planes(scan);
     let half_edges = scan
@@ -6324,7 +6357,10 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
     let eligible_faces = loops_by_face
         .into_iter()
         .filter_map(|(face_id, loops)| {
-            let plane = planes.get(&face_id).copied()?;
+            scan.surface_rows
+                .iter()
+                .any(|row| row.id == face_id)
+                .then_some(())?;
             loops
                 .iter()
                 .all(|lp| {
@@ -6333,10 +6369,13 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                         .all(|half_edge| edge_vertices.contains_key(&half_edge.curve_id))
                 })
                 .then_some(())?;
-            Some((
-                face_id,
-                ordered_planar_face_loops(loops, plane, &incidence, &solved_vertices)?,
-            ))
+            let ordered = ordered_face_loops(
+                loops,
+                planes.get(&face_id).copied(),
+                &incidence,
+                &solved_vertices,
+            )?;
+            Some((face_id, ordered))
         })
         .collect::<BTreeMap<_, _>>();
     if eligible_faces.is_empty() {
@@ -6420,6 +6459,33 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
             param_range: None,
             tolerance: None,
         });
+        let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+        if !ir.model.curves.iter().any(|item| item.id == curve) {
+            let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
+            annotate(
+                annotations,
+                &curve,
+                "VisibGeom",
+                offset as u64,
+                "opaque_native_curve_carrier",
+                Exactness::Unknown,
+            );
+            ir.model.curves.push(Curve {
+                id: curve,
+                geometry: CurveGeometry::Unknown {
+                    record: geometry_section_record(scan, offset),
+                },
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{curve_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
     }
 
     let mut face_adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
@@ -6461,9 +6527,9 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         let region_id = RegionId(format!("creo:visibgeom:region#{}", component_index + 1));
         let shell_id = ShellId(format!("creo:visibgeom:shell#{}", component_index + 1));
         for (id, tag) in [
-            (body_id.to_string(), "plane_sheet_body"),
-            (region_id.to_string(), "plane_sheet_region"),
-            (shell_id.to_string(), "plane_sheet_shell"),
+            (body_id.to_string(), "native_component_body"),
+            (region_id.to_string(), "native_component_region"),
+            (shell_id.to_string(), "native_component_shell"),
         ] {
             annotate(annotations, id, "VisibGeom", 0, tag, Exactness::Derived);
         }
@@ -6526,6 +6592,32 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                 .iter()
                 .find(|row| row.id == *face_id)
                 .map_or(0, |row| row.offset);
+            let surface = SurfaceId(format!("creo:visibgeom:surface#{face_id}"));
+            if !ir.model.surfaces.iter().any(|item| item.id == surface) {
+                annotate(
+                    annotations,
+                    &surface,
+                    "VisibGeom",
+                    face_offset as u64,
+                    "opaque_native_surface_carrier",
+                    Exactness::Unknown,
+                );
+                ir.model.surfaces.push(Surface {
+                    id: surface.clone(),
+                    geometry: SurfaceGeometry::Unknown {
+                        record: geometry_section_record(scan, face_offset),
+                    },
+                    source_object: Some(SourceObjectAssociation {
+                        format: "creo".to_string(),
+                        object_id: format!("VisibGeom:{face_id}"),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                });
+            }
             let face_sense = scan
                 .surface_rows
                 .iter()
@@ -6542,7 +6634,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                 &face,
                 "VisibGeom",
                 face_offset as u64,
-                "plane_face",
+                "native_face",
                 Exactness::Derived,
             );
             for loop_id in &loop_ids {
@@ -6558,7 +6650,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
             ir.model.faces.push(Face {
                 id: face.clone(),
                 shell: shell_id.clone(),
-                surface: SurfaceId(format!("creo:visibgeom:surface#{face_id}")),
+                surface,
                 sense: face_sense,
                 loops: loop_ids.clone(),
                 name: None,
