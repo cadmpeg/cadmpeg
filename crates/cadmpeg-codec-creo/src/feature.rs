@@ -4649,7 +4649,15 @@ pub fn entity_tables(
         {
             continue;
         }
-        let Some(entry_ids) = read_entries(payload, after_count + TABLE_TAG.len(), count) else {
+        let Some(&(_, row_end, feature_id)) = spans
+            .iter()
+            .find(|&&(start, end, _)| start <= offset && offset < end)
+        else {
+            continue;
+        };
+        let Some(entry_ids) =
+            read_entries(&payload[..row_end], after_count + TABLE_TAG.len(), count)
+        else {
             continue;
         };
         let surface_ids = entry_ids
@@ -4665,12 +4673,8 @@ pub fn entity_tables(
             .copied()
             .filter(|id| !surface_ids.contains(id))
             .collect();
-        let feature_id = spans
-            .iter()
-            .find(|&&(start, end, _)| start <= offset && offset < end)
-            .map(|&(_, _, id)| id);
         tables.push(FeatureEntityTable {
-            feature_id,
+            feature_id: Some(feature_id),
             entry_ids,
             surface_ids,
             non_surface_entity_ids,

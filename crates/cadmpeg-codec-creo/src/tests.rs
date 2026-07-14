@@ -544,6 +544,24 @@ fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
 }
 
 #[test]
+fn scan_rejects_feature_entity_table_that_crosses_the_next_feature_row() {
+    let mut geometry = visibgeom_payload(2, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    geometry.extend_from_slice(&[8, 0x22, 9, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0xf8, 2, 0xf7, 0x1d, 0xfb, 0xe3, 7, 0xe3,
+        // The second declared entry is absent before feature 9 starts.
+        9, 0x90, 0x01, 8, 0xe3,
+    ];
+    let scan = container::scan_bytes(build_prt(
+        "c",
+        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
+    ));
+
+    assert!(scan.feature_entity_tables.is_empty());
+}
+
+#[test]
 fn scan_bounds_known_allfeatur_feature_rows() {
     let mut geometry = visibgeom_payload(2, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
