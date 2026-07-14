@@ -1134,6 +1134,130 @@ fn is_full_circle_geometry(geometry: &SketchGeometry) -> bool {
     )
 }
 
+fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> {
+    match geometry {
+        SketchGeometry::Line { start, end } => Some([[start.u, start.v], [end.u, end.v]]),
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } if !is_full_circle_geometry(geometry) => Some([
+            [
+                center.u + radius.0 * start_angle.0.cos(),
+                center.v + radius.0 * start_angle.0.sin(),
+            ],
+            [
+                center.u + radius.0 * end_angle.0.cos(),
+                center.v + radius.0 * end_angle.0.sin(),
+            ],
+        ]),
+        _ => None,
+    }
+}
+
+fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
+    let scale = first
+        .into_iter()
+        .chain(second)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    first
+        .into_iter()
+        .zip(second)
+        .all(|(left, right)| (left - right).abs() <= 1e-9 * scale)
+}
+
+fn saved_profile_chains(
+    definition_id: u32,
+    geometries: &[(u32, SketchGeometry)],
+) -> Vec<Vec<SketchEntityUse>> {
+    let mut profiles = geometries
+        .iter()
+        .filter(|(_, geometry)| is_full_circle_geometry(geometry))
+        .map(|(external_id, _)| {
+            vec![SketchEntityUse {
+                entity: SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{definition_id}:{external_id}"
+                )),
+                reversed: false,
+            }]
+        })
+        .collect::<Vec<_>>();
+    let rows = geometries
+        .iter()
+        .filter_map(|(external_id, geometry)| {
+            Some((*external_id, saved_geometry_endpoints(geometry)?))
+        })
+        .collect::<Vec<_>>();
+    let mut mates = vec![[None; 2]; rows.len()];
+    for (row_index, (_, endpoints)) in rows.iter().enumerate() {
+        for endpoint_index in 0..2 {
+            let matches = rows
+                .iter()
+                .enumerate()
+                .flat_map(|(candidate_row, (_, candidate_endpoints))| {
+                    (0..2).map(move |candidate_endpoint| {
+                        (candidate_row, candidate_endpoint, candidate_endpoints)
+                    })
+                })
+                .filter(|(candidate_row, candidate_endpoint, candidate_endpoints)| {
+                    (*candidate_row != row_index || *candidate_endpoint != endpoint_index)
+                        && saved_points_coincide(
+                            endpoints[endpoint_index],
+                            candidate_endpoints[*candidate_endpoint],
+                        )
+                })
+                .map(|(candidate_row, candidate_endpoint, _)| (candidate_row, candidate_endpoint))
+                .collect::<Vec<_>>();
+            if let [mate] = matches.as_slice() {
+                mates[row_index][endpoint_index] = Some(*mate);
+            }
+        }
+    }
+    let mut remaining = (0..rows.len()).collect::<BTreeSet<_>>();
+    while let Some(seed) = remaining
+        .iter()
+        .min_by_key(|index| rows[**index].0)
+        .copied()
+    {
+        if mates[seed].iter().any(Option::is_none) {
+            remaining.remove(&seed);
+            continue;
+        }
+        let mut uses = Vec::new();
+        let mut used = BTreeSet::new();
+        let mut row = seed;
+        let mut reversed = false;
+        loop {
+            if !used.insert(row) {
+                break;
+            }
+            uses.push(SketchEntityUse {
+                entity: SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{definition_id}:{}",
+                    rows[row].0
+                )),
+                reversed,
+            });
+            let outgoing = usize::from(!reversed);
+            let Some((next_row, next_endpoint)) = mates[row][outgoing] else {
+                break;
+            };
+            row = next_row;
+            reversed = next_endpoint == 1;
+            if row == seed {
+                if !reversed {
+                    profiles.push(uses);
+                }
+                break;
+            }
+        }
+        remaining.retain(|index| !used.contains(index));
+    }
+    profiles
+}
+
 fn resolved_section_segment_geometry(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -4429,6 +4553,7 @@ fn transfer_resolved_sketches(
             });
         }
         let mut saved_section_geometries = Vec::new();
+        let mut generated_saved_geometries = Vec::new();
         for (internal_id, geometry, offset) in definition
             .saved_section
             .iter()
@@ -4473,11 +4598,8 @@ fn transfer_resolved_sketches(
                 "saved_section_entity",
                 Exactness::Derived,
             );
-            if generated && is_full_circle_geometry(&geometry) {
-                profiles.push(vec![SketchEntityUse {
-                    entity: entity_id.clone(),
-                    reversed: false,
-                }]);
+            if generated {
+                generated_saved_geometries.push((external_id, geometry.clone()));
             }
             entities.push(SketchEntity {
                 id: entity_id,
@@ -4490,6 +4612,10 @@ fn transfer_resolved_sketches(
             });
             saved_section_geometries.push((external_id, geometry, offset, curve_id));
         }
+        profiles.extend(saved_profile_chains(
+            definition.id,
+            &generated_saved_geometries,
+        ));
         for spline in definition
             .saved_section
             .iter()
@@ -6759,6 +6885,54 @@ mod resolved_sketch_tests {
         let (_, geometry, _) =
             saved_section_entity_geometry(&entity).expect("complete saved circle");
         assert!(is_full_circle_geometry(&geometry));
+    }
+
+    #[test]
+    fn generated_saved_geometry_forms_closed_profiles() {
+        let line = |external_id: u32, start: (f64, f64), end: (f64, f64)| {
+            (
+                external_id,
+                SketchGeometry::Line {
+                    start: Point2::new(start.0, start.1),
+                    end: Point2::new(end.0, end.1),
+                },
+            )
+        };
+        let geometries = vec![
+            line(12, (0.0, 1.0), (1.0, 1.0)),
+            line(10, (0.0, 0.0), (1.0, 0.0)),
+            line(13, (0.0, 0.0), (0.0, 1.0)),
+            line(11, (1.0, 1.0), (1.0, 0.0)),
+            line(20, (5.0, 5.0), (6.0, 5.0)),
+            (
+                30,
+                SketchGeometry::Arc {
+                    center: Point2::new(8.0, 8.0),
+                    radius: Length(2.0),
+                    start_angle: Angle(0.0),
+                    end_angle: Angle(std::f64::consts::TAU),
+                },
+            ),
+        ];
+
+        let profiles = saved_profile_chains(917, &geometries);
+
+        assert_eq!(profiles.len(), 2);
+        assert_eq!(
+            profiles[0][0].entity.0,
+            "creo:featdefs:sketch_entity#917:30"
+        );
+        assert_eq!(profiles[1].len(), 4);
+        assert_eq!(
+            profiles[1][0].entity.0,
+            "creo:featdefs:sketch_entity#917:10"
+        );
+        assert!(!profiles[1][0].reversed);
+        assert!(profiles[1][1..].iter().all(|entity| entity.reversed));
+        assert!(profiles
+            .iter()
+            .flatten()
+            .all(|entity| !entity.entity.0.ends_with(":20")));
     }
 
     #[test]

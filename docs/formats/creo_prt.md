@@ -781,6 +781,12 @@ that generated-carrier binding, the evaluated geometry remains a construction
 entity and does not establish solved trim membership.
 A generated saved circle is a closed one-entity profile. Its traversal uses the
 stored increasing full-turn parameterization.
+Generated saved lines and arcs use their evaluated section-space endpoints as
+an incidence graph. A connected component is a closed profile when every
+endpoint has exactly one coincident endpoint on another entity and traversal
+consumes the component before returning to its starting endpoint. Open,
+branched, self-incident, and incomplete components remain construction
+geometry. Traversal reversal is recorded independently for each entity.
 
 The named `entity(arc)` record is followed by positional generated-entity
 rows. Each row begins after `e3` with its saved entity identifier and a header
