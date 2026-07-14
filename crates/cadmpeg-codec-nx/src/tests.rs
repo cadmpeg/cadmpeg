@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 124);
+    assert_eq!(namespace.version, 125);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1468,6 +1468,64 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
     assert_eq!(uses[0].reference_ordinal, 1);
     assert_eq!(uses[0].point_block_ordinal, 1);
     assert_eq!(uses[0].data_block, "block-11");
+}
+
+#[test]
+fn sketch_point_uses_require_one_bit_identical_payload_point() {
+    use crate::native::{
+        feature_sketch_point_uses, FeatureSketchNamedPointBlockUse, FeatureSketchPoint,
+        OffsetStoreNamedPoint,
+    };
+
+    let operation_label = "nx:feature-history:operation-label#1-4".to_string();
+    let point = FeatureSketchPoint {
+        id: "payload-point".to_string(),
+        operation_label: operation_label.clone(),
+        named_record: "named-record".to_string(),
+        name: "Point1".to_string(),
+        coordinates: [1.0, 2.0],
+        scalar_fields: ["scalar-1".to_string(), "scalar-2".to_string()],
+    };
+    let named_point = OffsetStoreNamedPoint {
+        id: "named-point".to_string(),
+        name: "Point1".to_string(),
+        data_blocks: vec!["block-10".to_string()],
+        values: [1.0, 2.0],
+        value_source_offsets: [200, 220],
+        source_offset: 190,
+    };
+    let block_use = FeatureSketchNamedPointBlockUse {
+        id: "nx:feature-history:sketch-named-point-block-use#1-4-0".to_string(),
+        operation_label,
+        sketch_reference: "reference".to_string(),
+        reference_ordinal: 0,
+        named_point: named_point.id.clone(),
+        data_block: "block-10".to_string(),
+        point_block_ordinal: 0,
+        source_offset: 300,
+    };
+
+    let uses = feature_sketch_point_uses(
+        std::slice::from_ref(&point),
+        std::slice::from_ref(&named_point),
+        std::slice::from_ref(&block_use),
+    );
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].sketch_point, point.id);
+    assert_eq!(uses[0].named_point, named_point.id);
+    assert_eq!(uses[0].sketch_reference, "reference");
+
+    let mut different = point.clone();
+    different.coordinates[1] = f64::from_bits(2.0_f64.to_bits() + 1);
+    assert!(feature_sketch_point_uses(
+        &[different],
+        std::slice::from_ref(&named_point),
+        std::slice::from_ref(&block_use),
+    )
+    .is_empty());
+    assert!(
+        feature_sketch_point_uses(&[point.clone(), point], &[named_point], &[block_use]).is_empty()
+    );
 }
 
 #[test]
@@ -6300,7 +6358,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 124);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 125);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

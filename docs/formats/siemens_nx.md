@@ -612,6 +612,8 @@ An offset-store named point object begins at a bounded data block whose offset z
 
 A sketch named-point block use exists when one resolved reference in the sketch's counted field addresses a block in a typed named-point span. It retains the sketch reference and ordinal, named-point identity, shared block, and block position within the point span. The relation assigns no ownership when the reference field does not address the point span.
 
+A sketch named-point block use and a reconstructed sketch point identify the same solved two-dimensional point when they belong to the same sketch operation, their `Point<positive decimal>` names are identical, and their two scalar values are bit-identical in order. The identity relation retains both point encodings and the ordered sketch reference. No identity is assigned when zero, two, or more reconstructed points satisfy the relation.
+
 An `EXTRUDE` operation carries an ordered profile-reference field `01 02 16 01, count:u8, reference[count-1], 01 03 79`, with `count >= 2`. The payload may repeat the identical ordered encoded references as `01, count, reference[count-1], 00 00`; an exact unique repetition is retained as an independent witness of the list. Profile indices use the same canonical `f0` and `f1` widths and resolve against offset-only OM data blocks under the same uniqueness rule.
 
 The extrusion payload begins `0f 00 00 01 00` followed by two shifted-IEEE scalars. A shifted-IEEE scalar occupies eight bytes: adding `0x10` to its first byte and retaining the following seven bytes verbatim produces one big-endian IEEE-754 binary64 value. Overflow of the first-byte addition and non-finite reconstructed values invalidate the scalar header atomically.
