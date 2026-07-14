@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 133);
+    assert_eq!(namespace.version, 134);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 133);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 134);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7029,15 +7029,34 @@ fn decode_emits_offset_surface_construction() {
     assert!(extension_flags.is_empty());
     assert_ne!(procedural.surface, *support);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
+    let records = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidOffsetSurfaceRecord>("parasolid_offset_surface_records")
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].discriminator, 'V');
+    assert!(records[0].true_offset);
+    assert_eq!(records[0].support_xmt, 6);
+    assert_eq!(records[0].distance, 2.5);
+    let carrier = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == procedural.surface)
+        .expect("offset carrier");
+    assert_eq!(
+        carrier
+            .source_object
+            .as_ref()
+            .map(|source| &source.object_id),
+        Some(&records[0].id)
+    );
     assert!(matches!(
-        &result
-            .ir
-            .model
-            .surfaces
-            .iter()
-            .find(|surface| surface.id == procedural.surface)
-            .expect("offset carrier")
-            .geometry,
+        &carrier.geometry,
         SurfaceGeometry::Procedural { construction } if construction == &procedural.id
     ));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());

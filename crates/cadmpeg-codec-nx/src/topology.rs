@@ -370,6 +370,10 @@ pub struct SurfaceCurve {
 pub struct OffsetSurface {
     /// Cross-reference index of the offset surface record.
     pub xmt: u32,
+    /// Serialized `V`, `I`, or `U` discriminator.
+    pub discriminator: char,
+    /// Serialized true-offset flag.
+    pub true_offset: bool,
     /// Cross-reference index of the support surface.
     pub support: u32,
     /// Signed offset distance in millimetres.
@@ -558,15 +562,26 @@ pub fn offset_surfaces(stream: &[u8]) -> Vec<OffsetSurface> {
         .of_kind(60)
         .filter_map(|node| {
             let mut at = node.compact_tail_offset()?;
-            matches!(node.bytes.get(at)?, b'V' | b'I' | b'U').then_some(())?;
+            let discriminator = match node.bytes.get(at)? {
+                b'V' => 'V',
+                b'I' => 'I',
+                b'U' => 'U',
+                _ => return None,
+            };
             at += 1;
-            matches!(node.bytes.get(at)?, 0 | 1).then_some(())?;
+            let true_offset = match node.bytes.get(at)? {
+                0 => false,
+                1 => true,
+                _ => return None,
+            };
             at += 1;
             let support = read_and_advance(&node.bytes, &mut at)?;
             let distance = be::f64_at(&node.bytes, at)?;
             (support > 1 && distance.is_finite() && distance.abs() <= 1_000.0).then_some(
                 OffsetSurface {
                     xmt: node.xmt,
+                    discriminator,
+                    true_offset,
                     support,
                     distance: distance * 1000.0,
                     pos: node.pos,

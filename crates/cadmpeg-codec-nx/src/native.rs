@@ -8,6 +8,51 @@ use serde::{Deserialize, Serialize};
 use crate::container::Container;
 use crate::parasolid::{Stream, StreamKind};
 
+/// Complete typed source record for one Parasolid offset surface.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidOffsetSurfaceRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the offset surface.
+    pub xmt: u32,
+    /// Serialized `V`, `I`, or `U` discriminator.
+    pub discriminator: char,
+    /// Serialized true-offset flag.
+    pub true_offset: bool,
+    /// Cross-reference index of the support surface.
+    pub support_xmt: u32,
+    /// Signed offset distance in millimetres.
+    pub distance: f64,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode complete typed source records for Parasolid offset surfaces.
+pub fn parasolid_offset_surface_records(streams: &[Stream]) -> Vec<ParasolidOffsetSurfaceRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for offset in crate::topology::offset_surfaces(&stream.inflated) {
+            records.push(ParasolidOffsetSurfaceRecord {
+                id: format!("nx:s{stream_ordinal}:offset-surface-record#{}", offset.xmt),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: offset.xmt,
+                discriminator: offset.discriminator,
+                true_offset: offset.true_offset,
+                support_xmt: offset.support,
+                distance: offset.distance,
+                inflated_offset: offset.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidIntersectionRecord {
