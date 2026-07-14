@@ -4012,6 +4012,7 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
     assert_eq!(native.design_objects.len(), 2);
     assert_eq!(native.design_objects[0].owner_ordinal, 1);
     assert_eq!(native.design_objects[0].fields.len(), 2);
+    assert!(native.design_objects[0].field_classes.is_empty());
     let graph = &native.object_graphs[0];
     assert_eq!(
         graph.records[0].design_object.as_deref(),
@@ -4048,6 +4049,11 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
     assert_eq!(graph.catalog_pos, Some(catalog_pos));
     assert_eq!(graph.records[0].class_name.as_deref(), Some(""));
     assert_eq!(graph.records[1].class_name.as_deref(), Some("Sketch"));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(
+        native.design_objects[0].field_classes,
+        [String::new(), "Sketch".to_string()]
+    );
 }
 
 #[test]

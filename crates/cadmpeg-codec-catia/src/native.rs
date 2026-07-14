@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 14;
+pub const CATIA_NATIVE_VERSION: u32 = 15;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -243,6 +243,9 @@ pub struct CatiaDesignObject {
     pub owner_record: Option<String>,
     /// Field records carrying this owner ordinal, in serialized order.
     pub fields: Vec<String>,
+    /// Distinct resolved field classes, in first field order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub field_classes: Vec<String>,
     /// Referenced design objects, in first field-reference order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<String>,
@@ -289,6 +292,15 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                     owner_ordinal,
                     owner_record,
                     fields: records.iter().map(|record| record.id.clone()).collect(),
+                    field_classes: records
+                        .iter()
+                        .filter_map(|record| record.class_name.clone())
+                        .fold(Vec::new(), |mut classes, class| {
+                            if !classes.contains(&class) {
+                                classes.push(class);
+                            }
+                            classes
+                        }),
                     dependencies: dependency_owners
                         .into_iter()
                         .map(|owner| format!("{}:owner#{owner}", graph.id))
