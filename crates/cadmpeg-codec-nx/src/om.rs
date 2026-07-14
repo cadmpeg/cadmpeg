@@ -2050,6 +2050,26 @@ pub fn offset_store_control_values(bytes: &[u8]) -> Option<Vec<u32>> {
         .collect()
 }
 
+/// Decode the aligned little-endian value array preceding one product record.
+pub fn offset_store_index_values(bytes: &[u8]) -> Option<(usize, Vec<u32>)> {
+    let matches = (0..bytes.len())
+        .filter(|offset| is_root_record(&bytes[*offset..]))
+        .collect::<Vec<_>>();
+    let [product_offset] = matches.as_slice() else {
+        return None;
+    };
+    let prefix_len = (0..=3).find(|prefix_len| {
+        *product_offset > *prefix_len
+            && (*product_offset - *prefix_len).is_multiple_of(4)
+            && bytes[..*prefix_len].iter().all(|byte| *byte == 0)
+    })?;
+    let values = bytes[prefix_len..*product_offset]
+        .chunks_exact(4)
+        .map(|word| u32::from_le_bytes(word.try_into().expect("four-byte chunk")))
+        .collect();
+    Some((prefix_len, values))
+}
+
 fn type_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<TypeDefinition<'_>> {
     let mut out = Vec::new();
     let mut at = start;

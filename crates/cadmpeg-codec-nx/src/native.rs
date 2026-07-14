@@ -2544,6 +2544,23 @@ pub struct DataBlockControlValue {
     pub source_offset: u64,
 }
 
+/// Ordered little-endian value preceding a control-block product record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockControlIndexValue {
+    /// Globally unique value identity.
+    pub id: String,
+    /// Owning control block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based value order in the aligned prefix array.
+    pub ordinal: u32,
+    /// Number of leading zero bytes before the aligned array.
+    pub prefix_byte_len: u8,
+    /// Unsigned little-endian value.
+    pub value: u32,
+    /// Absolute file offset of the four-byte value.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by an offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockReference {
@@ -3212,6 +3229,44 @@ pub fn data_block_control_values(container: &Container) -> Vec<DataBlockControlV
                     ordinal: ordinal as u32,
                     value,
                     source_offset: entry_offset + control.offset as u64 + ordinal as u64 * 4,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode aligned index arrays ending at a unique control-block product record.
+pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockControlIndexValue> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(control) = section.control else {
+                return Vec::new();
+            };
+            let Some((prefix_byte_len, values)) =
+                crate::om::offset_store_index_values(control.bytes)
+            else {
+                return Vec::new();
+            };
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+            values
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, value)| DataBlockControlIndexValue {
+                    id: format!(
+                        "nx:om-data-block-control-index-values-{section_ordinal}:value#{ordinal}"
+                    ),
+                    data_block: data_block.clone(),
+                    ordinal: ordinal as u32,
+                    prefix_byte_len: prefix_byte_len as u8,
+                    value,
+                    source_offset: entry_offset
+                        + control.offset as u64
+                        + prefix_byte_len as u64
+                        + ordinal as u64 * 4,
                 })
                 .collect()
         })
