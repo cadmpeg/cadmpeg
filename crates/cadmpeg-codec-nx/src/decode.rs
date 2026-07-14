@@ -2053,6 +2053,7 @@ fn emit_topology(
 
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
     complete_intersection_supports_from_edge_incidence(ir);
+    complete_intersection_pcurves_from_coedge_incidence(ir);
 
     let owned_edges: BTreeSet<_> = ir
         .model
@@ -2158,6 +2159,78 @@ pub(crate) fn complete_intersection_supports_from_edge_incidence(ir: &mut CadIr)
             continue;
         };
         context.sides[missing[0]].surface = Some((*surface).clone());
+    }
+}
+
+pub(crate) fn complete_intersection_pcurves_from_coedge_incidence(ir: &mut CadIr) {
+    let loop_faces = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.clone(), loop_.face.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let face_surfaces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.clone(), face.surface.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let edge_curves = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut incident_pcurves = BTreeMap::<(CurveId, SurfaceId), Vec<PcurveId>>::new();
+    for coedge in &ir.model.coedges {
+        let Some(curve) = edge_curves.get(&coedge.edge) else {
+            continue;
+        };
+        let Some(surface) = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face| face_surfaces.get(face))
+        else {
+            continue;
+        };
+        let Some(pcurve) = &coedge.pcurve else {
+            continue;
+        };
+        let pcurves = incident_pcurves
+            .entry((curve.clone(), surface.clone()))
+            .or_default();
+        if !pcurves.contains(pcurve) {
+            pcurves.push(pcurve.clone());
+        }
+    }
+
+    for procedural in &mut ir.model.procedural_curves {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
+        else {
+            continue;
+        };
+        for side in &mut context.sides {
+            if side.pcurve.is_some() {
+                continue;
+            }
+            let Some(surface) = &side.surface else {
+                continue;
+            };
+            let Some([pcurve]) = incident_pcurves
+                .get(&(procedural.curve.clone(), surface.clone()))
+                .map(Vec::as_slice)
+            else {
+                continue;
+            };
+            let Some(carrier) = ir
+                .model
+                .pcurves
+                .iter()
+                .find(|carrier| &carrier.id == pcurve)
+            else {
+                continue;
+            };
+            side.pcurve = Some(carrier.geometry.clone());
+        }
     }
 }
 

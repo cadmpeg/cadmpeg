@@ -4037,8 +4037,10 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
 
 #[test]
 fn intersection_support_completion_requires_one_unique_incident_complement() {
-    use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve};
-    use cadmpeg_ir::ids::ProceduralCurveId;
+    use cadmpeg_ir::geometry::{
+        IntcurveSupportContext, IntcurveSupportSide, Pcurve, ProceduralCurve,
+    };
+    use cadmpeg_ir::ids::{PcurveId, ProceduralCurveId};
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let edge = ir.model.edges[0].clone();
@@ -4094,6 +4096,50 @@ fn intersection_support_completion_requires_one_unique_incident_complement() {
         panic!("intersection");
     };
     assert_eq!(context.sides[1].surface.as_ref(), Some(&incident[1]));
+
+    let pcurve_id = PcurveId("nx:test:pcurve#0".into());
+    let pcurve_geometry = PcurveGeometry::Line {
+        origin: Point2::new(0.0, 0.0),
+        direction: Point2::new(1.0, 0.0),
+    };
+    ir.model.pcurves.push(Pcurve {
+        id: pcurve_id.clone(),
+        geometry: pcurve_geometry.clone(),
+        wrapper_reversed: None,
+        native_tail_flags: None,
+        parameter_range: Some([0.0, 1.0]),
+        fit_tolerance: None,
+    });
+    let second_face = ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.surface == incident[1])
+        .expect("second incident face")
+        .id
+        .clone();
+    let second_loop = ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.face == second_face)
+        .expect("second incident loop")
+        .id
+        .clone();
+    ir.model
+        .coedges
+        .iter_mut()
+        .find(|coedge| coedge.edge == edge.id && coedge.owner_loop == second_loop)
+        .expect("second incident coedge")
+        .pcurve = Some(pcurve_id);
+
+    crate::decode::complete_intersection_pcurves_from_coedge_incidence(&mut ir);
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        panic!("intersection");
+    };
+    assert_eq!(context.sides[1].pcurve.as_ref(), Some(&pcurve_geometry));
 }
 
 #[test]

@@ -457,6 +457,11 @@ surface not already named by the construction. That unique complement occupies
 the null support slot. Two null slots or more than one unmatched incident
 surface do not establish support order and remain unresolved.
 
+After support completion, an incident FIN supplies a missing support-UV chart
+when its coedge has a validated pcurve, its owning face uses that exact support
+surface, and no second distinct pcurve satisfies the same curve/surface pair.
+The pcurve geometry transfers into the matching construction side.
+
 **CHART_s (`0x28`):** branch selector and native-parameter certificate:
 
 ```text
