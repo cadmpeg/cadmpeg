@@ -153,6 +153,23 @@ pub struct FeatureOperationLabel {
     pub source_offset: u64,
 }
 
+/// Exactly bounded feature-history operation record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Zero-based record order within the feature-history section.
+    pub ordinal: u32,
+    /// Exact record byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the complete operation record.
+    pub sha256: String,
+    /// Absolute file offset of the fixed operation-header marker.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -298,6 +315,44 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
         }
     }
     operations
+}
+
+/// Decode exact feature-operation record boundaries and byte identities.
+pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationRecord> {
+    let sections = container.om_sections();
+    let mut records = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        records.extend(section.operation_records().into_iter().enumerate().map(
+            |(ordinal, record)| {
+                let operation_label =
+                    format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
+                FeatureOperationRecord {
+                    id: format!("nx:feature-history:operation-record#{section_key}-{ordinal}"),
+                    operation_label,
+                    ordinal: ordinal as u32,
+                    byte_len: record.bytes.len() as u64,
+                    sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                    source_offset: entry_offset + record.offset as u64,
+                }
+            },
+        ));
+    }
+    records
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

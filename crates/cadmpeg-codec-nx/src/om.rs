@@ -198,12 +198,25 @@ pub struct Section<'a> {
 /// A feature operation name in a size-framed feature-history record area.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationLabel<'a> {
+    /// Absolute offset of the fixed operation-header marker.
+    pub header_offset: usize,
     /// Absolute offset of the `03` label tag within the containing entry.
     pub offset: usize,
     /// Printable operation name without its terminating NUL.
     pub value: &'a str,
     /// Four object-index slots in header order; `None` is the `ff` sentinel.
     pub object_indices: [Option<u32>; 4],
+}
+
+/// One operation record bounded by consecutive validated operation headers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationRecord<'a> {
+    /// Absolute offset of the fixed operation-header marker.
+    pub offset: usize,
+    /// Complete record bytes through the next operation header or section end.
+    pub bytes: &'a [u8],
+    /// Label decoded from this record's header.
+    pub label: OperationLabel<'a>,
 }
 
 /// Boolean operation kind stored after an operation label.
@@ -349,6 +362,17 @@ impl<'a> Section<'a> {
         };
         boolean_operations(bytes, base_offset)
     }
+
+    /// Bound operation records by consecutive validated operation headers.
+    pub fn operation_records(&self) -> Vec<OperationRecord<'a>> {
+        let Some(bytes) = self.record_area else {
+            return Vec::new();
+        };
+        let Some(base_offset) = self.record_area_offset else {
+            return Vec::new();
+        };
+        operation_records(bytes, base_offset)
+    }
 }
 
 /// Decode complete feature-operation headers and their label frames.
@@ -401,12 +425,33 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
             continue;
         };
         labels.push(OperationLabel {
+            header_offset: base_offset + marker,
             offset: base_offset + at,
             value,
             object_indices,
         });
     }
     labels
+}
+
+/// Bound every validated operation header through its successor or area end.
+pub fn operation_records(bytes: &[u8], base_offset: usize) -> Vec<OperationRecord<'_>> {
+    let labels = operation_labels(bytes, base_offset);
+    labels
+        .iter()
+        .enumerate()
+        .filter_map(|(ordinal, label)| {
+            let start = label.header_offset.checked_sub(base_offset)?;
+            let end = labels
+                .get(ordinal + 1)
+                .map_or(bytes.len(), |next| next.header_offset - base_offset);
+            Some(OperationRecord {
+                offset: label.header_offset,
+                bytes: bytes.get(start..end)?,
+                label: *label,
+            })
+        })
+        .collect()
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
