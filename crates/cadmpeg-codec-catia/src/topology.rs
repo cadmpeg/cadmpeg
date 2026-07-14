@@ -1024,16 +1024,16 @@ pub fn standard_mesh_face_coverage(
         .map(|[coverage]| coverage)
 }
 
-/// Retain every complete span-consistent placement for edge rows that have no
-/// exact interior-handle occurrence. Rows with stored interiors cover exactly
-/// `arity - 1` segments. Arity-two rows carry no interior discretization and
-/// may cover any positive remaining span. The result is atomic when a face has
-/// more than 65,536 complete assignments.
+/// Retain every complete span-consistent assignment for edge rows that have no
+/// exact interior-handle occurrence. The outer vector is face order; each face
+/// contains complete assignments, and each assignment contains one placement
+/// per missing edge use. The result is atomic when a face has more than 65,536
+/// complete assignments.
 #[must_use]
-pub fn standard_mesh_missing_edge_placements(
+pub fn standard_mesh_missing_edge_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
-) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
 
     fn enumerate_face(
@@ -1042,7 +1042,7 @@ pub fn standard_mesh_missing_edge_placements(
         cycle_lengths: &[usize],
         missing: &[usize],
         rows: &[EdgeRow],
-    ) -> Option<Vec<MeshEdgePlacementCandidate>> {
+    ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
         struct Search<'a> {
             face: usize,
             gaps: &'a [MeshBoundaryGap],
@@ -1050,7 +1050,7 @@ pub fn standard_mesh_missing_edge_placements(
             missing: &'a [usize],
             rows: &'a [EdgeRow],
             assignments: usize,
-            candidates: HashSet<MeshEdgePlacementCandidate>,
+            complete: Vec<Vec<MeshEdgePlacementCandidate>>,
         }
         impl Search<'_> {
             fn walk(
@@ -1066,7 +1066,7 @@ pub fn standard_mesh_missing_edge_placements(
                 if gap == self.gaps.len() {
                     if used.count_ones() as usize == self.missing.len() {
                         self.assignments += 1;
-                        self.candidates.extend(placed.iter().copied());
+                        self.complete.push(placed.clone());
                     }
                     return Some(());
                 }
@@ -1116,15 +1116,13 @@ pub fn standard_mesh_missing_edge_placements(
             missing,
             rows,
             assignments: 0,
-            candidates: HashSet::new(),
+            complete: Vec::new(),
         };
         search.walk(0, 0, 0, &mut Vec::new())?;
         if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
             return None;
         }
-        let mut candidates = search.candidates.into_iter().collect::<Vec<_>>();
-        candidates.sort_unstable();
-        Some(candidates)
+        Some(search.complete)
     }
 
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
@@ -1139,7 +1137,7 @@ pub fn standard_mesh_missing_edge_placements(
             .iter()
             .map(|trim| boundary_cycles(&trim.triangles))
             .collect::<Option<Vec<_>>>()?;
-        let candidates = coverage
+        let assignments = coverage
             .iter()
             .map(|face| {
                 enumerate_face(
@@ -1151,11 +1149,36 @@ pub fn standard_mesh_missing_edge_placements(
                 )
             })
             .collect::<Option<Vec<_>>>()?;
-        solutions.push(candidates);
+        solutions.push(assignments);
     }
-    <[Vec<Vec<MeshEdgePlacementCandidate>>; 1]>::try_from(solutions)
+    <[Vec<Vec<Vec<MeshEdgePlacementCandidate>>>; 1]>::try_from(solutions)
         .ok()
-        .map(|[candidates]| candidates)
+        .map(|[assignments]| assignments)
+}
+
+/// Project complete unmatched-edge assignments to the placement domain for
+/// each face. Rows with stored interiors cover exactly `arity - 1` segments;
+/// arity-two rows may cover any positive remaining span.
+#[must_use]
+pub fn standard_mesh_missing_edge_placements(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+    standard_mesh_missing_edge_assignments(bytes, edge_faces).map(|faces| {
+        faces
+            .into_iter()
+            .map(|assignments| {
+                let mut placements = assignments
+                    .into_iter()
+                    .flatten()
+                    .collect::<HashSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>();
+                placements.sort_unstable();
+                placements
+            })
+            .collect()
+    })
 }
 
 /// Derive endpoint-pair domains for unmatched rows whose candidate placement
