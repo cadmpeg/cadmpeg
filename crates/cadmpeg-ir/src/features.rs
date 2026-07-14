@@ -473,6 +473,10 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SketchId>,
     },
+    /// Directly stored geometry with no replayable parametric construction.
+    ///
+    /// The feature's `outputs` identify the retained bodies when geometry is present.
+    StoredGeometry,
     /// Parametric analytic solid primitive.
     Primitive {
         /// Primitive dimensions and angular bounds.

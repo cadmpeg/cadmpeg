@@ -526,7 +526,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "34");
+    assert_eq!(result.ir.ir_version, "35");
     let feature = |name: &str| {
         &result
             .ir
@@ -1464,6 +1464,10 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
             .expect("feature")
     };
     assert!(matches!(
+        &feature("Seed").definition,
+        cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+    ));
+    assert!(matches!(
         &feature("Uniform").definition,
         cadmpeg_ir::features::FeatureDefinition::Pattern {
             seeds,
@@ -1480,9 +1484,17 @@ fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() 
             if kind == "PartDesign::LinearPattern"
     ));
     assert_eq!(feature("Uniform").dependencies.len(), 1);
-    assert!(result.report.losses.iter().any(|loss| loss
+    assert_eq!(result.report.losses.len(), 1);
+    assert!(result.report.losses[0]
         .message
-        .contains("retained natively but has no neutral semantics")));
+        .contains("retained natively but has no neutral semantics"));
+    assert_eq!(
+        result.report.losses[0]
+            .provenance
+            .as_ref()
+            .and_then(|provenance| provenance.tag.as_deref()),
+        Some("fcstd:object:Custom")
+    );
 }
 
 #[test]

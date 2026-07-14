@@ -2513,6 +2513,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::StoredGeometry
             | FeatureDefinition::Native { .. } => {}
             FeatureDefinition::PostProcess { .. } => feature_geometry_error(
                 findings,

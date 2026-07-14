@@ -117,6 +117,8 @@ pub(crate) fn transfer(
                 space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
+        } else if object.type_name == "PartDesign::Feature" {
+            FeatureDefinition::StoredGeometry
         } else if is_part_construction_geometry(&object.type_name) {
             part_construction_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {

@@ -3815,6 +3815,16 @@ pub fn sync_neutral_features(
                 merged.extend(properties.clone());
                 (kind.clone(), parameters.clone(), merged)
             }
+            FeatureDefinition::StoredGeometry => (
+                existing
+                    .as_deref()
+                    .map_or_else(|| "Feature".into(), |record| record.kind.clone()),
+                existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default(),
+                feature.source_properties.clone(),
+            ),
             FeatureDefinition::Primitive { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported analytic-primitive semantics",
@@ -7211,6 +7221,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Helix { .. } | FeatureDefinition::HelixNativeAxis { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
+        FeatureDefinition::StoredGeometry => "Feature",
         FeatureDefinition::Primitive { .. } => "Primitive",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
