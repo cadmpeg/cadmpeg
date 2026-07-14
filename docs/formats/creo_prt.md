@@ -352,6 +352,8 @@ A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci coincide.
 A one-item type-one incidence makes the referenced entity horizontal. A
 one-item type-two incidence makes the referenced entity vertical.
+A three-item type-fourteen incidence stores a sense-zero line followed by two
+endpoint-selected loci. The loci are symmetric about the line, in stored order.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values

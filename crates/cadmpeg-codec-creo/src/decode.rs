@@ -3967,6 +3967,24 @@ fn section_skamp_constraints(
                         second: section_skamp_endpoint(definition.id, &segments.rows, second)?,
                     }
                 }
+                (14, [axis, first, second])
+                    if axis.sense == 0
+                        && section_skamp_segment(&segments.rows, axis)?.kind
+                            == crate::feature::FeatureSegmentKind::Line
+                        && section_skamp_endpoint(definition.id, &segments.rows, first)
+                            .is_some()
+                        && section_skamp_endpoint(definition.id, &segments.rows, second)
+                            .is_some() =>
+                {
+                    SketchConstraintDefinition::Symmetric {
+                        first: section_skamp_endpoint(definition.id, &segments.rows, first)?,
+                        second: section_skamp_endpoint(definition.id, &segments.rows, second)?,
+                        axis: SketchEntityId(format!(
+                            "creo:featdefs:sketch_entity#{}:{}",
+                            definition.id, axis.entity_id
+                        )),
+                    }
+                }
                 _ => {
                     let entities = skamp
                         .items
@@ -7221,6 +7239,27 @@ mod resolved_sketch_tests {
                     ],
                     offset: 73,
                 },
+                crate::feature::FeatureSkamp {
+                    id: 9,
+                    kind: 14,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 2,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 13,
+                            sense: 3,
+                        },
+                    ],
+                    offset: 74,
+                },
             ],
             triples: Vec::new(),
             offset: 45,
@@ -7308,6 +7347,18 @@ mod resolved_sketch_tests {
                 second: SketchLocus::End(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:13".to_string()
                 )),
+            }
+        );
+        assert_eq!(
+            constraints[6].0.definition,
+            SketchConstraintDefinition::Symmetric {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string()
+                )),
+                axis: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             }
         );
         let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));
