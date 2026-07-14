@@ -1205,6 +1205,106 @@ fn pointer_defined_surface_file(entity_type: i64, form: i64) -> Vec<u8> {
     bytes
 }
 
+fn trimmed_plane_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, entity_type, form, label, status) in [
+        (1_u32, 108, 0, "PLANE", "00010000"),
+        (3, 106, 63, "MODEL", "00010000"),
+        (5, 106, 63, "PCURVE", "00010500"),
+        (7, 142, 0, "ON_SURF", "00010000"),
+        (9, 144, 0, "TRIMMED", "00000000"),
+    ] {
+        let entity_type = entity_type.to_string();
+        let parameter_start = sequence.div_ceil(2).to_string();
+        let form = form.to_string();
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [&entity_type, "0", "0", "1", &form, "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"108,0,0,1,0,0,0,0,0,0;", 1, 1));
+    let square = b"106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
+    bytes.extend(parameter_card(square, 3, 2));
+    bytes.extend(parameter_card(square, 5, 3));
+    bytes.extend(parameter_card(b"142,0,1,5,3,3;", 7, 4));
+    bytes.extend(parameter_card(b"144,1,1,0,7;", 9, 5));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000010P0000005").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_builds_a_valid_face_local_trimmed_sheet() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let sheet = result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D9")
+        .unwrap();
+    assert_eq!(sheet.kind, cadmpeg_ir::topology::BodyKind::Sheet);
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D9")
+        .unwrap();
+    assert_eq!(face.surface.0, "iges:model:surface#D1");
+    assert_eq!(face.loops.len(), 1);
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    assert_eq!(loop_.coedges.len(), 1);
+    let coedge = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == loop_.coedges[0])
+        .unwrap();
+    assert_eq!(coedge.radial_next, coedge.id);
+    assert!(coedge.pcurve.is_some());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_projects_all_pointer_defined_analytic_surface_forms() {
     for entity_type in [190, 192, 194, 196, 198] {

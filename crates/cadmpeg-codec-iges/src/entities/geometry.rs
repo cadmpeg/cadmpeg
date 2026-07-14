@@ -865,6 +865,10 @@ pub(crate) fn project_geometry(
             free_vertices,
         });
     }
+    let trimming = super::trimming::project(ir, directory, parameters, global);
+    handled.extend(trimming.handled);
+    decoded.extend(trimming.decoded);
+    losses.extend(trimming.losses);
     Projection {
         handled,
         decoded,

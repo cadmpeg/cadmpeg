@@ -9,3 +9,4 @@ pub(crate) mod geometry;
 pub(crate) mod offsets;
 pub(crate) mod splines;
 pub(crate) mod surfaces;
+pub(crate) mod trimming;
