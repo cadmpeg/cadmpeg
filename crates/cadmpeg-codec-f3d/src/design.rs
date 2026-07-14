@@ -12,14 +12,15 @@ use crate::records::{
     DesignBodyMember, DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
-    PersistentReference, PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEdgeRecipeSide,
+    DesignEdgeRecipeStructure, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
+    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -6768,6 +6769,7 @@ fn parse_edge_operand(
     if recipe_program.get(0..7) != Some(&[-1, -1, 2, 0, -1, 1, -1]) {
         return None;
     }
+    let recipe_structure = edge_recipe_structure(&recipe_program);
     Some(DesignEdgeOperand {
         id: format!(
             "f3d:{}:design-edge-operand#{}",
@@ -6786,6 +6788,7 @@ fn parse_edge_operand(
         recipe_id: recipe.id.clone(),
         recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
         recipe_program,
+        recipe_structure,
         candidate_faces: Vec::new(),
         preceding_candidate_faces: Vec::new(),
         changed_candidate_faces: Vec::new(),
@@ -6793,6 +6796,44 @@ fn parse_edge_operand(
         changed_boundary_edge_slots: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
+    })
+}
+
+pub(crate) fn edge_recipe_structure(program: &[i32]) -> Option<DesignEdgeRecipeStructure> {
+    let runs = program
+        .get(7..)?
+        .split(|word| *word == -1)
+        .filter(|run| !run.is_empty())
+        .collect::<Vec<_>>();
+    if runs.len() != 9
+        || runs[0].len() != 1
+        || runs[1].len() != 2
+        || runs[2].len() != 1
+        || runs[3].len() != 1
+        || runs[4].is_empty()
+        || runs[5].len() != 2
+        || runs[6].len() != 1
+        || runs[7].len() != 1
+        || runs[8].is_empty()
+    {
+        return None;
+    }
+    Some(DesignEdgeRecipeStructure {
+        root: runs[0][0],
+        sides: [
+            DesignEdgeRecipeSide {
+                header: [runs[1][0], runs[1][1]],
+                first: runs[2][0],
+                second: runs[3][0],
+                payload: runs[4].to_vec(),
+            },
+            DesignEdgeRecipeSide {
+                header: [runs[5][0], runs[5][1]],
+                first: runs[6][0],
+                second: runs[7][0],
+                payload: runs[8].to_vec(),
+            },
+        ],
     })
 }
 
@@ -11024,6 +11065,19 @@ mod relation_tests {
             recipe_name_at as u64 + 16
         );
         assert_eq!(edge_operand.recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
+        assert!(edge_operand.recipe_structure.is_none());
+        let structured = super::edge_recipe_structure(&[
+            -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 1, 1, 5, 4, 4, -1, 3, 0, -1,
+            1, -1, 3, -1, 0, 1, 2, 5, 3, 3, -1,
+        ])
+        .expect("standard two-side recipe structure");
+        assert_eq!(structured.root, 2);
+        assert_eq!(structured.sides[0].header, [3, 0]);
+        assert_eq!(structured.sides[0].first, 2);
+        assert_eq!(structured.sides[0].second, 1);
+        assert_eq!(structured.sides[0].payload, [0, 1, 1, 5, 4, 4]);
+        assert_eq!(structured.sides[1].header, [3, 0]);
+        assert_eq!(structured.sides[1].payload, [0, 1, 2, 5, 3, 3]);
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(

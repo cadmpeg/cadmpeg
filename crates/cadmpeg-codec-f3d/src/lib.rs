@@ -1204,6 +1204,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && recipe.byte_offset > operand.recipe_record_byte_offset
                     && recipe.byte_offset < operand.next_byte_offset
             })
+            && design::edge_recipe_structure(&operand.recipe_program) == operand.recipe_structure
             && expected_faces.as_ref() == Some(&operand.candidate_faces)
             && expected_edge_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_operand_slots.insert((

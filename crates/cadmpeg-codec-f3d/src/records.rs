@@ -1050,6 +1050,9 @@ pub struct DesignEdgeOperand {
     pub recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
     pub recipe_program: Vec<i32>,
+    /// Standard two-side structure decoded from the recipe program.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recipe_structure: Option<DesignEdgeRecipeStructure>,
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
@@ -1071,6 +1074,28 @@ pub struct DesignEdgeOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+/// Standard delimiter structure following an edge recipe's common prologue.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeRecipeStructure {
+    /// Scalar before the first `-1` delimiter.
+    pub root: i32,
+    /// Two ordered side clauses.
+    pub sides: [DesignEdgeRecipeSide; 2],
+}
+
+/// One delimiter-bounded side clause in a standard edge recipe.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeRecipeSide {
+    /// Two words before the clause's first delimiter.
+    pub header: [i32; 2],
+    /// Scalar between the first and second clause delimiters.
+    pub first: i32,
+    /// Scalar between the second and third clause delimiters.
+    pub second: i32,
+    /// Nonempty words after the third clause delimiter.
+    pub payload: Vec<i32>,
 }
 
 /// Face-selection operand owned by an Extrude parameter scope.
