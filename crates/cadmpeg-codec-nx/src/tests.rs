@@ -534,25 +534,32 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
 #[test]
 fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SKETCH"),
+        crate::decode::non_boolean_feature_definition("SKETCH", &[]),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: None,
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SIMPLE HOLE"),
+        crate::decode::non_boolean_feature_definition(
+            "SIMPLE HOLE",
+            &["Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer"],
+        ),
         cadmpeg_ir::features::FeatureDefinition::Hole {
             face: None,
             position: None,
             direction: None,
             kind: cadmpeg_ir::features::HoleKind::Simple,
             diameter: None,
-            extent: None,
+            extent: Some(cadmpeg_ir::features::Extent::ThroughAll),
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("DATUM_PLANE"),
+        crate::decode::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"]),
+        cadmpeg_ir::features::FeatureDefinition::Hole { extent: None, .. }
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[]),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind == "DATUM_PLANE"
     ));

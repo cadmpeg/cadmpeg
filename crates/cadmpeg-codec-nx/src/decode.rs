@@ -3231,8 +3231,11 @@ fn attach_feature_operations(
                 input.data_block.clone(),
             );
         }
+        let operation_payload_strings = payload_strings_by_operation
+            .get(label.id.as_str())
+            .map_or([].as_slice(), Vec::as_slice);
         let definition = booleans.get(label.id.as_str()).map_or_else(
-            || non_boolean_feature_definition(&label.value),
+            || non_boolean_feature_definition(&label.value, operation_payload_strings),
             |operation| FeatureDefinition::Combine {
                 target: feature_body_selection(
                     &[operation.target_object_index],
@@ -3273,10 +3276,8 @@ fn attach_feature_operations(
             source_properties,
             source_tag: Some(label.value.clone()),
             source_text: None,
-            source_content: payload_strings_by_operation
-                .get(label.id.as_str())
-                .into_iter()
-                .flatten()
+            source_content: operation_payload_strings
+                .iter()
                 .map(|value| FeatureSourceContent::Text((*value).to_string()))
                 .collect(),
             outputs,
@@ -3289,7 +3290,10 @@ fn attach_feature_operations(
     }
 }
 
-pub(crate) fn non_boolean_feature_definition(kind: &str) -> FeatureDefinition {
+pub(crate) fn non_boolean_feature_definition(
+    kind: &str,
+    payload_strings: &[&str],
+) -> FeatureDefinition {
     match kind {
         "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Planar,
@@ -3301,7 +3305,7 @@ pub(crate) fn non_boolean_feature_definition(kind: &str) -> FeatureDefinition {
             direction: None,
             kind: HoleKind::Simple,
             diameter: None,
-            extent: None,
+            extent: simple_hole_extent(payload_strings),
         },
         _ => FeatureDefinition::Native {
             kind: kind.to_string(),
@@ -3309,6 +3313,17 @@ pub(crate) fn non_boolean_feature_definition(kind: &str) -> FeatureDefinition {
             properties: BTreeMap::new(),
         },
     }
+}
+
+fn simple_hole_extent(payload_strings: &[&str]) -> Option<cadmpeg_ir::features::Extent> {
+    payload_strings.iter().find_map(|value| {
+        let mut fields = value.split('_');
+        (fields.next() == Some("Hole")
+            && fields.next() == Some("GeneralHole")
+            && fields.next() == Some("Simple")
+            && fields.next() == Some("Through"))
+        .then_some(cadmpeg_ir::features::Extent::ThroughAll)
+    })
 }
 
 pub(crate) fn feature_body_selection(
