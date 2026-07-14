@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 10;
+pub const CATIA_NATIVE_VERSION: u32 = 11;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -177,6 +177,9 @@ pub struct CatiaObjectRecord {
     pub id: String,
     /// Containing [`CatiaObjectGraph`] identity.
     pub parent: String,
+    /// Design object selected by this record's owner ordinal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_object: Option<String>,
     /// Stable serialized order within the graph.
     pub ordinal: u64,
     /// Byte offset of the `7C09` record.
@@ -200,6 +203,9 @@ pub struct CatiaObjectRecord {
     pub payload: ObjectPayload,
     /// Structural payload classification.
     pub subtype: PayloadSubtype,
+    /// Exact same-graph records selected by typed payload references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub references: Vec<String>,
 }
 
 /// One serialized design object formed by a shared `7C09` owner ordinal.
@@ -636,12 +642,13 @@ impl From<catalog::Catalog> for CatiaCatalog {
 impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
     fn from(graph: object_graph::ObjectGraph) -> Self {
         let id = format!("catia:outer:object-graph#{:010}", graph.pos);
-        let records = graph
+        let mut records = graph
             .records
             .into_iter()
             .map(|record| CatiaObjectRecord {
                 id: format!("catia:outer:object-record#{:010}", record.pos),
                 parent: id.clone(),
+                design_object: None,
                 ordinal: record.index as u64,
                 byte_offset: record.pos as u64,
                 byte_len: record.total_len as u64,
@@ -653,8 +660,32 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
                 storage_ref: record.storage_ref,
                 payload: record.payload,
                 subtype: record.subtype,
+                references: Vec::new(),
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let record_ids = records
+            .iter()
+            .map(|record| record.id.clone())
+            .collect::<Vec<_>>();
+        let owners = records
+            .iter()
+            .filter_map(|record| record.owner_ref)
+            .collect::<Vec<_>>();
+        for record in &mut records {
+            record.design_object = record
+                .owner_ref
+                .filter(|owner| owners.contains(owner))
+                .map(|owner| format!("{id}:owner#{owner}"));
+            record.references = payload_references(&record.payload)
+                .filter_map(|reference| {
+                    usize::try_from(reference)
+                        .ok()
+                        .and_then(|ordinal| ordinal.checked_sub(1))
+                        .and_then(|index| record_ids.get(index))
+                        .cloned()
+                })
+                .collect();
+        }
         Self {
             id,
             byte_offset: graph.pos as u64,

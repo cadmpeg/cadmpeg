@@ -4012,6 +4012,15 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
     assert_eq!(native.design_objects.len(), 2);
     assert_eq!(native.design_objects[0].owner_ordinal, 1);
     assert_eq!(native.design_objects[0].fields.len(), 2);
+    let graph = &native.object_graphs[0];
+    assert_eq!(
+        graph.records[0].design_object.as_deref(),
+        Some(native.design_objects[0].id.as_str())
+    );
+    assert_eq!(
+        graph.records[0].references,
+        vec![graph.records[2].id.clone()]
+    );
     assert_eq!(
         native.design_objects[0].dependencies,
         vec![native.design_objects[1].id.clone()]
