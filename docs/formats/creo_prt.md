@@ -560,6 +560,11 @@ DICT prefixes. Entity references may also follow the sixth coordinate before
 the row-closing `e3`. Consecutive `18 18` bytes are two standalone zero scalar
 slots; the first `18` does not consume the second as a dictionary index.
 
+`save_entity_ptr(spline)` carries `i_pnts f9 <count> 03` followed by exactly
+`count` section-space XYZ triples. Every coordinate is a scalar-lane value.
+The saved spline identifier is null when the spline is not assigned an
+`order_table.int_id`.
+
 A saved-line family may contain a named `entity(point)` prototype between
 positional line rows. Positional line replay resumes after that prototype's
 `f1 f7 <ref> e3` close. A line row may end directly at the following named

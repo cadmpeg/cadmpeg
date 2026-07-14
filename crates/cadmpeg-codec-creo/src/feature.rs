@@ -809,6 +809,17 @@ pub struct FeatureSavedCircle {
     pub offset: usize,
 }
 
+/// One saved interpolation spline retained in section coordinates.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FeatureSavedSpline {
+    /// Saved-section entity identifier, when stored.
+    pub entity_id: Option<u32>,
+    /// Complete interpolation points in stored parameter order.
+    pub interpolation_points: Vec<[f64; 3]>,
+    /// Byte offset of the entity label in the original stream.
+    pub offset: usize,
+}
+
 /// One saved placeholder entity without analytic geometry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSavedDummy {
@@ -827,6 +838,8 @@ pub enum FeatureSavedEntity {
     Arc(FeatureSavedArc),
     /// Saved full-circle entity.
     Circle(FeatureSavedCircle),
+    /// Saved interpolation-spline entity.
+    Spline(FeatureSavedSpline),
     /// Saved non-geometric placeholder.
     Dummy(FeatureSavedDummy),
 }
@@ -2677,11 +2690,71 @@ fn saved_dummy_entities(payload: &[u8], start: usize, end: usize) -> Vec<Feature
     entities
 }
 
+fn saved_spline_entities(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Vec<FeatureSavedEntity> {
+    const LABEL: &[u8] = b"\xe0\x00save_entity_ptr(spline)\0";
+    const POINTS: &[u8] = b"\xe0\x02i_pnts\0\xf9";
+    let mut entities = Vec::new();
+    let mut search = start;
+    while let Some(entity_offset) = find_bytes(payload, LABEL, search, end) {
+        let body_start = entity_offset + LABEL.len();
+        let body_end = find_bytes(payload, LABEL, body_start, end).unwrap_or(end);
+        let Some(points_label) = find_bytes(payload, POINTS, body_start, body_end) else {
+            search = body_start;
+            continue;
+        };
+        let dimensions = points_label + POINTS.len();
+        let (Some(&point_count), Some(&coordinate_count)) =
+            (payload.get(dimensions), payload.get(dimensions + 1))
+        else {
+            search = body_start;
+            continue;
+        };
+        if coordinate_count != 3 {
+            search = body_start;
+            continue;
+        }
+        let mut cursor = dimensions + 2;
+        let mut points = Vec::with_capacity(usize::from(point_count));
+        for _ in 0..point_count {
+            let mut point = [0.0; 3];
+            let mut complete = true;
+            for coordinate in &mut point {
+                let Some((value, next)) = scalar::decode_in_lane(payload, cursor, cache) else {
+                    complete = false;
+                    break;
+                };
+                *coordinate = value;
+                cursor = next;
+            }
+            if !complete {
+                points.clear();
+                break;
+            }
+            points.push(point);
+        }
+        if points.len() == usize::from(point_count) {
+            entities.push(FeatureSavedEntity::Spline(FeatureSavedSpline {
+                entity_id: saved_entity_id(payload, body_start, points_label),
+                interpolation_points: points,
+                offset: entity_offset,
+            }));
+        }
+        search = body_start;
+    }
+    entities
+}
+
 fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
     match entity {
         FeatureSavedEntity::Line(entity) => entity.offset,
         FeatureSavedEntity::Arc(entity) => entity.offset,
         FeatureSavedEntity::Circle(entity) => entity.offset,
+        FeatureSavedEntity::Spline(entity) => entity.offset,
         FeatureSavedEntity::Dummy(entity) => entity.offset,
     }
 }
@@ -2708,6 +2781,7 @@ fn saved_section(
         segments,
     ));
     entities.extend(saved_dummy_entities(payload, table, table_end));
+    entities.extend(saved_spline_entities(payload, start, end, cache));
     entities.sort_by_key(saved_entity_offset);
     (!entities.is_empty()).then_some(FeatureSavedSection {
         entities,
@@ -3881,5 +3955,25 @@ mod tests {
         assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Extrude));
         assert_eq!(operations[1].root_schema_class, Some(917));
         assert_eq!(operations[1].parent_feature_id, Some(8051));
+    }
+
+    #[test]
+    fn decodes_count_bounded_saved_spline_interpolation_points() {
+        let payload = b"\xe0\x00save_entity_ptr(spline)\0\xe3\
+            \xe0\x01id\0\x07\
+            \xe0\x02i_pnts\0\xf9\x02\x03\
+            \xe4\x0f\x0d\x0f\xe4\x0f\
+            \xe0\x01tan_cond\0\x00";
+
+        let entities =
+            saved_spline_entities(payload, 0, payload.len(), &scalar::ScalarCache::default());
+        let [FeatureSavedEntity::Spline(spline)] = entities.as_slice() else {
+            panic!("saved spline");
+        };
+        assert_eq!(spline.entity_id, Some(7));
+        assert_eq!(
+            spline.interpolation_points,
+            [[1.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
+        );
     }
 }

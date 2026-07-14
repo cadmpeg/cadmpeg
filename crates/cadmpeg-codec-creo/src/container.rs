@@ -911,6 +911,7 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
                 feature::FeatureSavedEntity::Line(line) => line.offset += section_offset,
                 feature::FeatureSavedEntity::Arc(arc) => arc.offset += section_offset,
                 feature::FeatureSavedEntity::Circle(circle) => circle.offset += section_offset,
+                feature::FeatureSavedEntity::Spline(spline) => spline.offset += section_offset,
                 feature::FeatureSavedEntity::Dummy(dummy) => dummy.offset += section_offset,
             }
         }
