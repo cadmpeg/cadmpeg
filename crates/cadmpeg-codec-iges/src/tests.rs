@@ -44,7 +44,7 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
     let mut admitted = BTreeMap::<i64, Option<Vec<i64>>>::new();
     for entity in matrix["entity"].as_array().unwrap() {
         let entity_type = entity["type"].as_integer().unwrap();
-        let forms = if entity["forms"].as_str() == Some("all") {
+        let forms = if entity["forms"].as_str() == Some("implementor-defined") {
             None
         } else {
             Some(
@@ -73,7 +73,7 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
             let expected = admitted.get(&entity_type).is_some_and(|forms| {
                 forms
                     .as_ref()
-                    .map_or(form >= 0, |forms| forms.contains(&form))
+                    .map_or(matches!(form, 5001..=9999), |forms| forms.contains(&form))
             });
             assert_eq!(
                 crate::profile::envelope_a_admits(entity_type, form),
@@ -82,8 +82,11 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
             );
         }
     }
-    for form in [101, 5001, 9999] {
-        assert_eq!(crate::profile::envelope_a_admits(302, form), form >= 0);
+    for form in [101, 5000, 5001, 9999, 10000] {
+        assert_eq!(
+            crate::profile::envelope_a_admits(302, form),
+            matches!(form, 5001..=9999)
+        );
     }
 }
 

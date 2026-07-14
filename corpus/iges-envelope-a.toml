@@ -4,7 +4,7 @@ representation = "fixed-ascii"
 specification_version = "5.3"
 approval = "pending-maintainer"
 
-# `forms = "all"` admits every standard form defined for the type. An explicit
+# `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
 # list is closed and admits only those forms. Obsolete and finite-element-only
 # branches are not part of this mechanical/document envelope.
 
@@ -573,7 +573,7 @@ assertions = ["boundary-links", "fill-pattern", "byte-coverage"]
 [[entity]]
 type = 302
 name = "associativity-definition"
-forms = "all"
+forms = "implementor-defined"
 domain = "structure"
 decoder = "entities::structure::decode_associativity_definition"
 destination = "native.iges.associativities"
