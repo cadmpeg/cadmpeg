@@ -5511,6 +5511,36 @@ mod resolved_sketch_tests {
     use super::*;
 
     #[test]
+    fn geometry_signal_excludes_opaque_carriers() {
+        let mut ir = CadIr::empty(Units::default());
+        let surface_id = SurfaceId("surface".to_string());
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        ir.model.curves.push(Curve {
+            id: CurveId("curve".to_string()),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+
+        assert!(!has_transferred_geometry(&ir));
+
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: ProceduralSurfaceId("procedural".to_string()),
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Exact {
+                parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+                extension: 0,
+            },
+            cache_fit_tolerance: None,
+        });
+
+        assert!(has_transferred_geometry(&ir));
+    }
+
+    #[test]
     fn fc05_row_frame_maps_cyclically_onto_each_model_axis() {
         let center = [11.0, 13.0];
         let reference = [0.6, 0.8];
@@ -10521,13 +10551,30 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
 fn has_transferred_geometry(ir: &CadIr) -> bool {
     let model = &ir.model;
     !model.points.is_empty()
-        || !model.surfaces.is_empty()
-        || !model.curves.is_empty()
+        || model
+            .surfaces
+            .iter()
+            .any(|surface| !matches!(&surface.geometry, SurfaceGeometry::Unknown { .. }))
+        || model
+            .curves
+            .iter()
+            .any(|curve| !matches!(&curve.geometry, CurveGeometry::Unknown { .. }))
         || !model.subds.is_empty()
         || !model.pcurves.is_empty()
-        || !model.procedural_surfaces.is_empty()
-        || !model.procedural_curves.is_empty()
-        || !model.sketch_entities.is_empty()
+        || model.procedural_surfaces.iter().any(|surface| {
+            !matches!(
+                &surface.definition,
+                ProceduralSurfaceDefinition::Unknown { .. }
+            )
+        })
+        || model
+            .procedural_curves
+            .iter()
+            .any(|curve| !matches!(&curve.definition, ProceduralCurveDefinition::Unknown { .. }))
+        || model
+            .sketch_entities
+            .iter()
+            .any(|entity| !matches!(&entity.geometry, SketchGeometry::Native { .. }))
         || !model.tessellations.is_empty()
 }
 
