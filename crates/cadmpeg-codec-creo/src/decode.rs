@@ -32,7 +32,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
@@ -2381,6 +2381,98 @@ fn line_orientation_definition(
     }
 }
 
+fn section_point_locus(
+    definition_id: u32,
+    segments: &[crate::feature::FeatureSegment],
+    point_id: u32,
+) -> Option<SketchLocus> {
+    let segment = segments
+        .iter()
+        .filter(|segment| segment.point_ids.contains(&point_id))
+        .min_by_key(|segment| segment.external_id)?;
+    let entity = SketchEntityId(format!(
+        "creo:featdefs:sketch_entity#{definition_id}:{}",
+        segment.external_id
+    ));
+    if segment.point_ids[0] == point_id {
+        Some(SketchLocus::Start(entity))
+    } else {
+        Some(SketchLocus::End(entity))
+    }
+}
+
+fn section_dimension_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let (Some(owner), Some(segments), Some(dimensions), Some(relations)) = (
+        definition.owner_feature_id,
+        &definition.segments,
+        &definition.dimensions,
+        &definition.relations,
+    ) else {
+        return Vec::new();
+    };
+    relations
+        .rows
+        .iter()
+        .filter_map(|relation| {
+            if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
+                return None;
+            }
+            let vectors = relation.operand_vectors?;
+            if vectors[0][2..] != [None, Some(1)]
+                || vectors[1] != [Some(1), Some(1), Some(0), Some(1)]
+                || vectors[2] != [Some(15), Some(16), Some(15), Some(1)]
+            {
+                return None;
+            }
+            let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
+                return None;
+            };
+            let measured = segments.rows.iter().find(|segment| {
+                segment.point_ids == [first_id, second_id]
+                    || segment.point_ids == [second_id, first_id]
+            })?;
+            let dimension = dimensions
+                .rows
+                .get(usize::try_from(relation.dimension_id).ok()?)?;
+            dimension.value?;
+            let first = section_point_locus(definition.id, &segments.rows, first_id)?;
+            let second = section_point_locus(definition.id, &segments.rows, second_id)?;
+            let parameter = ParameterId(format!(
+                "creo:featdefs:parameter#{owner}:{}",
+                dimension.external_id
+            ));
+            let constraint_definition = match measured.vertical_horizontal {
+                Some(0) => SketchConstraintDefinition::VerticalDistance {
+                    first,
+                    second,
+                    parameter,
+                },
+                Some(1) => SketchConstraintDefinition::HorizontalDistance {
+                    first,
+                    second,
+                    parameter,
+                },
+                _ => return None,
+            };
+            Some((
+                SketchConstraint {
+                    id: SketchConstraintId(format!(
+                        "creo:featdefs:sketch_constraint#{}:relation:{}",
+                        definition.id, relation.relation_id
+                    )),
+                    sketch: sketch.clone(),
+                    definition: constraint_definition,
+                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                },
+                relation.offset,
+            ))
+        })
+        .collect()
+}
+
 fn resolved_profile_chains(
     definition: &crate::feature::FeatureDefinition,
     emitted: &BTreeSet<u32>,
@@ -2715,6 +2807,49 @@ fn transfer_resolved_sketches(
                 })
             })
             .collect::<Vec<_>>();
+        for segment in segments
+            .rows
+            .iter()
+            .filter(|segment| !emitted.contains(&segment.external_id))
+        {
+            let id = SketchEntityId(format!(
+                "creo:featdefs:sketch_entity#{}:{}",
+                definition.id, segment.external_id
+            ));
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                "unresolved_section_segment",
+                Exactness::ByteExact,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                geometry_ref: None,
+                endpoint_refs: match segment.kind {
+                    crate::feature::FeatureSegmentKind::Arc => {
+                        vec![segment.point_ids[1], segment.point_ids[0]]
+                    }
+                    crate::feature::FeatureSegmentKind::Line => segment.point_ids.to_vec(),
+                    crate::feature::FeatureSegmentKind::Point => vec![segment.point_ids[0]],
+                }
+                .into_iter()
+                .map(|point| format!("creo:featdefs:sketch#{}:point#{point}", definition.id))
+                .collect(),
+                geometry: SketchGeometry::Native {
+                    native_kind: match segment.kind {
+                        crate::feature::FeatureSegmentKind::Line => "line",
+                        crate::feature::FeatureSegmentKind::Arc => "arc",
+                        crate::feature::FeatureSegmentKind::Point => "point",
+                    }
+                    .to_string(),
+                },
+            });
+        }
         for spline in definition
             .saved_section
             .iter()
@@ -2853,10 +2988,9 @@ fn transfer_resolved_sketches(
                 }),
             });
         }
-        let constraints = segments
+        let mut constraints = segments
             .rows
             .iter()
-            .filter(|segment| emitted.contains(&segment.external_id))
             .filter_map(|segment| {
                 let entity = SketchEntityId(format!(
                     "creo:featdefs:sketch_entity#{}:{}",
@@ -2883,6 +3017,17 @@ fn transfer_resolved_sketches(
                 })
             })
             .collect::<Vec<_>>();
+        for (constraint, offset) in section_dimension_constraints(definition, &sketch_id) {
+            annotate(
+                annotations,
+                &constraint.id.0,
+                "FeatDefs",
+                offset as u64,
+                "section_dimension_constraint",
+                Exactness::ByteExact,
+            );
+            constraints.push(constraint);
+        }
         ir.model.sketch_entities.extend(entities);
         ir.model.sketch_constraints.extend(constraints);
         annotate(
@@ -3798,6 +3943,30 @@ mod resolved_sketch_tests {
                 start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
             })
+        );
+    }
+
+    #[test]
+    fn section_point_locus_uses_deterministic_segment_endpoint() {
+        let segment = |external_id, point_ids| crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids,
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            offset: 0,
+        };
+        let segments = [segment(9, [4, 7]), segment(3, [2, 4])];
+
+        assert_eq!(
+            section_point_locus(12, &segments, 4),
+            Some(SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#12:3".to_string()
+            )))
         );
     }
 

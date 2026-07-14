@@ -352,6 +352,10 @@ Its dimension selector is a zero-based index into `dimtab_ptr`. `verhor=1`
 selects the section `u` difference and `verhor=0` selects the section `v`
 difference. Sign `1` defines `second-first=+value`; sign `f6` defines
 `second-first=-value`; sign zero stores only the unsigned magnitude.
+The two point identifiers denote endpoint loci shared by every incident
+`segtab` entity. The selected `dimtab_ptr` row is the driving parameter for the
+horizontal or vertical distance constraint independently of whether both
+endpoint coordinates are evaluated.
 
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the
@@ -385,6 +389,9 @@ A `segtab` line whose two endpoint identifiers each have complete type-1 and
 type-2 `var_arr` values is the bounded segment between those two `[u, v]`
 points. It is construction geometry when its `ext_id` is absent from
 `ent_tab`.
+Every `segtab` row remains a section design entity when its carrier coordinates
+are incomplete; incomplete coordinates affect evaluation, not entity identity
+or attached constraints.
 For relation-backed endpoint ordinates, `dir[0] = 0` and two equal defined
 endpoint `u` values define a vertical carrier; `dir[1] = 0` and two equal
 defined endpoint `v` values define a horizontal carrier. The carrier remains
