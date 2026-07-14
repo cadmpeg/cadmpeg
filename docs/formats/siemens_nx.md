@@ -110,6 +110,9 @@ operation depends on the preceding operation in its primary-body lineage. A
 Boolean additionally depends on the preceding operation in each tool-body
 lineage, preserving tool order and omitting duplicate dependencies.
 
+An operation label equal to `SKETCH` denotes a planar sketch history node. Its
+position in the operation sequence is the sketch's history position.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |

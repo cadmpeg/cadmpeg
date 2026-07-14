@@ -19,7 +19,7 @@ use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
     Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId,
-    ParameterValue,
+    ParameterValue, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -2615,10 +2615,10 @@ fn build_geometry_report(
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
-                "This part is composed of {} sub-body partition(s); the final solid is the \
-                 feature-history Boolean composition of them, whose union order and operand binding \
-                 live in undecoded NX object-model records. Carriers from all sub-bodies are emitted \
-                 without the Boolean that would remove interior/construction faces.",
+                "This part is composed of {} sub-body partition(s); its decoded feature-history \
+                 Booleans do not resolve every intermediate body object to a partition image. \
+                 Carriers from all sub-bodies are emitted without the unresolved composition that \
+                 would remove interior/construction faces.",
                 scan.count(StreamKind::Partition)
             ),
             provenance: None,
@@ -2629,7 +2629,7 @@ fn build_geometry_report(
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Materials, appearances, entity-owned attributes, complete feature parameters, \
-                  sketches, constraints, and assembly occurrence placements were not transferred: \
+                  sketch geometry, constraints, and assembly occurrence placements were not transferred: \
                   they live in NX object-model per-class field serialization that is not decoded."
             .to_string(),
         provenance: None,
@@ -3024,11 +3024,7 @@ fn attach_feature_operations(
             );
         }
         let definition = booleans.get(label.id.as_str()).map_or_else(
-            || FeatureDefinition::Native {
-                kind: label.value.clone(),
-                parameters: BTreeMap::new(),
-                properties: BTreeMap::new(),
-            },
+            || non_boolean_feature_definition(&label.value),
             |operation| FeatureDefinition::Combine {
                 target: feature_body_selection(
                     &[operation.target_object_index],
@@ -3076,6 +3072,21 @@ fn attach_feature_operations(
         });
         if let Some(body) = body_references.get(label.id.as_str()) {
             last_body_writer.insert(*body, id);
+        }
+    }
+}
+
+pub(crate) fn non_boolean_feature_definition(kind: &str) -> FeatureDefinition {
+    if kind == "SKETCH" {
+        FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: None,
+        }
+    } else {
+        FeatureDefinition::Native {
+            kind: kind.to_string(),
+            parameters: BTreeMap::new(),
+            properties: BTreeMap::new(),
         }
     }
 }
