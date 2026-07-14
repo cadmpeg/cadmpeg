@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "30");
+    assert_eq!(result.ir.ir_version, "31");
     let feature = |name: &str| {
         &result
             .ir
@@ -694,6 +694,90 @@ fn transfers_partdesign_refine_and_fuzzy_post_processing() {
             fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(0.01),
         } if matches!(operation.as_ref(), cadmpeg_ir::features::FeatureDefinition::Primitive { .. })
     ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_part_construction_geometry_features() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+ <Object type="Part::Vertex" name="Vertex" id="1"/>
+ <Object type="Part::Line" name="Line" id="2"/>
+ <Object type="Part::Circle" name="Circle" id="3"/>
+ <Object type="Part::Ellipse" name="Ellipse" id="4"/>
+ <Object type="Part::Polygon" name="Polyline" id="5"/>
+ <Object type="Part::RegularPolygon" name="Regular" id="6"/>
+ <Object type="Part::Plane" name="Plane" id="7"/>
+ <Object type="Part::Face" name="Face" id="8"/>
+</Objects>
+<ObjectData Count="8">
+ <Object name="Vertex"><Properties Count="3"><Property name="X" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Y" type="App::PropertyDistance"><Float value="2"/></Property><Property name="Z" type="App::PropertyDistance"><Float value="3"/></Property></Properties></Object>
+ <Object name="Line"><Properties Count="6"><Property name="X1" type="App::PropertyDistance"><Float value="0"/></Property><Property name="Y1" type="App::PropertyDistance"><Float value="1"/></Property><Property name="Z1" type="App::PropertyDistance"><Float value="2"/></Property><Property name="X2" type="App::PropertyDistance"><Float value="3"/></Property><Property name="Y2" type="App::PropertyDistance"><Float value="4"/></Property><Property name="Z2" type="App::PropertyDistance"><Float value="5"/></Property></Properties></Object>
+ <Object name="Circle"><Properties Count="3"><Property name="Radius" type="App::PropertyLength"><Float value="4"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="30"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="300"/></Property></Properties></Object>
+ <Object name="Ellipse"><Properties Count="4"><Property name="MajorRadius" type="App::PropertyLength"><Float value="6"/></Property><Property name="MinorRadius" type="App::PropertyLength"><Float value="2"/></Property><Property name="Angle1" type="App::PropertyAngle"><Float value="15"/></Property><Property name="Angle2" type="App::PropertyAngle"><Float value="270"/></Property></Properties></Object>
+ <Object name="Polyline"><Properties Count="2"><Property name="Nodes" type="App::PropertyVectorList"><VectorList count="3"><Vector x="0" y="0" z="0"/><Vector x="2" y="0" z="0"/><Vector x="1" y="1" z="0"/></VectorList></Property><Property name="Close" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Regular"><Properties Count="2"><Property name="Polygon" type="App::PropertyInteger"><Integer value="7"/></Property><Property name="Circumradius" type="App::PropertyLength"><Float value="8"/></Property></Properties></Object>
+ <Object name="Plane"><Properties Count="2"><Property name="Length" type="App::PropertyLength"><Float value="9"/></Property><Property name="Width" type="App::PropertyLength"><Float value="10"/></Property></Properties></Object>
+ <Object name="Face"><Properties Count="2"><Property name="Sources" type="App::PropertyLinkList"><LinkList count="2"><Link value="Line"/><Link value="Circle"/></LinkList></Property><Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("Part construction geometry");
+    let feature = |name: &str| {
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+    };
+    use cadmpeg_ir::features::FeatureDefinition;
+    assert!(
+        matches!(feature("Vertex").definition, FeatureDefinition::PointGeometry { position } if position == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+    );
+    assert!(
+        matches!(feature("Line").definition, FeatureDefinition::LineSegment { start, end } if start == cadmpeg_ir::math::Point3::new(0.0, 1.0, 2.0) && end == cadmpeg_ir::math::Point3::new(3.0, 4.0, 5.0))
+    );
+    assert!(matches!(
+        feature("Circle").definition,
+        FeatureDefinition::CircularArc {
+            radius: cadmpeg_ir::features::Length(4.0),
+            ..
+        }
+    ));
+    assert!(matches!(
+        feature("Ellipse").definition,
+        FeatureDefinition::EllipticArc {
+            major_radius: cadmpeg_ir::features::Length(6.0),
+            minor_radius: cadmpeg_ir::features::Length(2.0),
+            ..
+        }
+    ));
+    assert!(
+        matches!(&feature("Polyline").definition, FeatureDefinition::Polyline { points, closed: true } if points.len() == 3)
+    );
+    assert!(matches!(
+        feature("Regular").definition,
+        FeatureDefinition::RegularPolygonCurve {
+            sides: 7,
+            circumradius: cadmpeg_ir::features::Length(8.0)
+        }
+    ));
+    assert!(matches!(
+        feature("Plane").definition,
+        FeatureDefinition::PlanarPatch {
+            length: cadmpeg_ir::features::Length(9.0),
+            width: cadmpeg_ir::features::Length(10.0)
+        }
+    ));
+    assert!(
+        matches!(&feature("Face").definition, FeatureDefinition::FaceFromShapes { sources: cadmpeg_ir::features::BodySelection::Native(source), face_maker_class } if source.ends_with(":property:Sources") && face_maker_class == "Part::FaceMakerUnified")
+    );
+    assert_eq!(feature("Face").dependencies.len(), 2);
     assert!(result.report.losses.is_empty());
 }
 

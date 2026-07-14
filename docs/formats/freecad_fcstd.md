@@ -397,6 +397,12 @@ disabled, and fuzzy tolerance distinguishes modeling-kernel default, automatic d
 an explicit positive tolerance. Wrapping an attributable native operation does not suppress its
 design-domain loss report.
 
+Part construction geometry transfers as neutral history rather than relying on cached result
+shapes. This includes standalone vertices, line segments, circular and elliptic angular arcs,
+open or closed ordered polylines, regular polygons, bounded rectangular planes, and faces built
+from ordered source shapes with an extensible face-maker class. Invalid dimensions, coincident
+line endpoints, undersized point lists, and empty face sources remain attributable and native.
+
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class

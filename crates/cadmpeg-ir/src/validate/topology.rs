@@ -7,6 +7,7 @@ use crate::features::{
     ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
     PatternStageCombination, PrimitiveSolid, RadiusSpec,
 };
+use crate::math::Point3;
 
 fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
     match pattern {
@@ -2416,6 +2417,89 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "wrap depth is invalid");
                 }
             }
+            FeatureDefinition::PointGeometry { position } => {
+                if !finite_feature_point(*position) {
+                    feature_geometry_error(findings, feature, "point geometry is invalid");
+                }
+            }
+            FeatureDefinition::LineSegment { start, end } => {
+                if !finite_feature_point(*start) || !finite_feature_point(*end) || *start == *end {
+                    feature_geometry_error(findings, feature, "line segment is invalid");
+                }
+            }
+            FeatureDefinition::CircularArc {
+                center,
+                normal,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                if !finite_feature_point(*center)
+                    || !valid_feature_direction(*normal)
+                    || !positive_feature_length(*radius)
+                    || !start_angle.0.is_finite()
+                    || !end_angle.0.is_finite()
+                    || start_angle == end_angle
+                {
+                    feature_geometry_error(findings, feature, "circular arc is invalid");
+                }
+            }
+            FeatureDefinition::EllipticArc {
+                center,
+                normal,
+                major_axis,
+                major_radius,
+                minor_radius,
+                start_angle,
+                end_angle,
+            } => {
+                if !finite_feature_point(*center)
+                    || !valid_feature_direction(*normal)
+                    || !valid_feature_direction(*major_axis)
+                    || (normal.x * major_axis.x + normal.y * major_axis.y + normal.z * major_axis.z)
+                        .abs()
+                        > 1e-9
+                    || !positive_feature_length(*major_radius)
+                    || !positive_feature_length(*minor_radius)
+                    || minor_radius.0 > major_radius.0
+                    || !start_angle.0.is_finite()
+                    || !end_angle.0.is_finite()
+                    || start_angle == end_angle
+                {
+                    feature_geometry_error(findings, feature, "elliptic arc is invalid");
+                }
+            }
+            FeatureDefinition::Polyline { points, closed } => {
+                if points.len() < 2
+                    || (*closed && points.len() < 3)
+                    || points.iter().any(|point| !finite_feature_point(*point))
+                    || points.windows(2).any(|pair| pair[0] == pair[1])
+                {
+                    feature_geometry_error(findings, feature, "polyline is invalid");
+                }
+            }
+            FeatureDefinition::RegularPolygonCurve {
+                sides,
+                circumradius,
+            } => {
+                if *sides < 3 || !positive_feature_length(*circumradius) {
+                    feature_geometry_error(findings, feature, "regular polygon is invalid");
+                }
+            }
+            FeatureDefinition::PlanarPatch { length, width } => {
+                if !positive_feature_length(*length) || !positive_feature_length(*width) {
+                    feature_geometry_error(findings, feature, "planar patch is invalid");
+                }
+            }
+            FeatureDefinition::FaceFromShapes {
+                sources,
+                face_maker_class,
+            } => {
+                body_selections.push(sources);
+                if face_maker_class.is_empty() {
+                    feature_geometry_error(findings, feature, "face construction is invalid");
+                }
+            }
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }
@@ -2574,6 +2658,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
 
 fn positive_feature_length(value: Length) -> bool {
     value.0.is_finite() && value.0 > 0.0
+}
+
+fn finite_feature_point(value: Point3) -> bool {
+    [value.x, value.y, value.z].into_iter().all(f64::is_finite)
 }
 
 fn valid_feature_direction(value: Vector3) -> bool {

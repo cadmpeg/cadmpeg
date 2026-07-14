@@ -5031,6 +5031,19 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::PointGeometry { .. }
+            | FeatureDefinition::LineSegment { .. }
+            | FeatureDefinition::CircularArc { .. }
+            | FeatureDefinition::EllipticArc { .. }
+            | FeatureDefinition::Polyline { .. }
+            | FeatureDefinition::RegularPolygonCurve { .. }
+            | FeatureDefinition::PlanarPatch { .. }
+            | FeatureDefinition::FaceFromShapes { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported construction-geometry semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Compound { .. }
             | FeatureDefinition::RefineShape { .. }
             | FeatureDefinition::ReverseShape { .. }
@@ -7214,6 +7227,14 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         } => "Mirror",
         FeatureDefinition::Pattern { .. } => "Pattern",
         FeatureDefinition::PostProcess { .. } => "Feature",
+        FeatureDefinition::PointGeometry { .. } => "Point",
+        FeatureDefinition::LineSegment { .. } => "Line",
+        FeatureDefinition::CircularArc { .. } => "Circle",
+        FeatureDefinition::EllipticArc { .. } => "Ellipse",
+        FeatureDefinition::Polyline { .. } => "Polyline",
+        FeatureDefinition::RegularPolygonCurve { .. } => "Polygon",
+        FeatureDefinition::PlanarPatch { .. } => "Plane",
+        FeatureDefinition::FaceFromShapes { .. } => "Face",
         FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
         FeatureDefinition::Native { .. } => "Feature",

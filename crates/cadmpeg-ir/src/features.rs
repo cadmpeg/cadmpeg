@@ -278,6 +278,76 @@ pub enum FeatureDefinition {
         /// Point position in model space.
         position: Point3,
     },
+    /// Standalone model vertex constructed at one point.
+    PointGeometry {
+        /// Vertex position in the feature's local construction frame.
+        position: Point3,
+    },
+    /// Straight edge between two finite points.
+    LineSegment {
+        /// Start point.
+        start: Point3,
+        /// End point.
+        end: Point3,
+    },
+    /// Circular edge over an angular interval.
+    CircularArc {
+        /// Circle center in the feature's local construction frame.
+        center: Point3,
+        /// Circle-plane normal.
+        normal: Vector3,
+        /// Circle radius.
+        radius: Length,
+        /// Start parameter angle.
+        start_angle: Angle,
+        /// End parameter angle.
+        end_angle: Angle,
+    },
+    /// Elliptic edge over an angular interval.
+    EllipticArc {
+        /// Ellipse center in the feature's local construction frame.
+        center: Point3,
+        /// Circle-plane normal.
+        normal: Vector3,
+        /// Major-axis direction in the ellipse plane.
+        major_axis: Vector3,
+        /// Major semiaxis radius.
+        major_radius: Length,
+        /// Minor semiaxis radius.
+        minor_radius: Length,
+        /// Start parameter angle.
+        start_angle: Angle,
+        /// End parameter angle.
+        end_angle: Angle,
+    },
+    /// Ordered straight-edge chain.
+    Polyline {
+        /// Ordered vertices in the feature's local construction frame.
+        points: Vec<Point3>,
+        /// Whether the last point connects back to the first.
+        closed: bool,
+    },
+    /// Regular planar polygon centered at the local origin.
+    RegularPolygonCurve {
+        /// Number of polygon sides.
+        sides: u32,
+        /// Center-to-vertex distance.
+        circumradius: Length,
+    },
+    /// Rectangular bounded planar face in the local XY plane.
+    PlanarPatch {
+        /// Length along the local x-axis.
+        length: Length,
+        /// Width along the local y-axis.
+        width: Length,
+    },
+    /// Faces built from an ordered set of source shapes.
+    FaceFromShapes {
+        /// Complete ordered source-shape selection.
+        sources: BodySelection,
+        /// Extensible native face-building algorithm identifier.
+        face_maker_class: String,
+    },
     /// Constructed model-space coordinate system.
     DatumCoordinateSystem {
         /// Frame origin.

@@ -117,6 +117,14 @@ pub(crate) fn transfer(
                 space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
+        } else if is_part_construction_geometry(&object.type_name) {
+            part_construction_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
         } else if is_primitive(&object.type_name) {
             primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -1718,6 +1726,111 @@ fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3
     ))
 }
 
+fn vector_list_property(properties: &[&PropertyRecord], name: &str) -> Option<Vec<Point3>> {
+    let property = property(properties, name)?;
+    property
+        .values
+        .iter()
+        .filter(|value| value.attributes.contains_key("x") || value.attributes.contains_key("X"))
+        .map(|value| {
+            let component = |lower: &str, upper: &str| {
+                value
+                    .attributes
+                    .get(lower)
+                    .or_else(|| value.attributes.get(upper))?
+                    .parse::<f64>()
+                    .ok()
+                    .filter(|component| component.is_finite())
+            };
+            Some(Point3::new(
+                component("x", "X")?,
+                component("y", "Y")?,
+                component("z", "Z")?,
+            ))
+        })
+        .collect()
+}
+
+fn part_construction_geometry_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Option<FeatureDefinition> {
+    let point = |x: &str, y: &str, z: &str| {
+        Some(Point3::new(
+            scalar_named(properties, x)?,
+            scalar_named(properties, y)?,
+            scalar_named(properties, z)?,
+        ))
+    };
+    let angle = |name: &str| {
+        scalar_named(properties, name)
+            .filter(|value| value.is_finite())
+            .map(|value| cadmpeg_ir::features::Angle(value.to_radians()))
+    };
+    match kind {
+        "Part::Vertex" => Some(FeatureDefinition::PointGeometry {
+            position: point("X", "Y", "Z")?,
+        }),
+        "Part::Line" => Some(FeatureDefinition::LineSegment {
+            start: point("X1", "Y1", "Z1")?,
+            end: point("X2", "Y2", "Z2")?,
+        }),
+        "Part::Circle" => Some(FeatureDefinition::CircularArc {
+            center: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            radius: Length(scalar_named(properties, "Radius").filter(|value| *value > 0.0)?),
+            start_angle: angle("Angle1")?,
+            end_angle: angle("Angle2")?,
+        }),
+        "Part::Ellipse" => {
+            let major = scalar_named(properties, "MajorRadius").filter(|value| *value > 0.0)?;
+            let minor = scalar_named(properties, "MinorRadius")
+                .filter(|value| *value > 0.0 && *value <= major)?;
+            Some(FeatureDefinition::EllipticArc {
+                center: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                major_axis: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: Length(major),
+                minor_radius: Length(minor),
+                start_angle: angle("Angle1")?,
+                end_angle: angle("Angle2")?,
+            })
+        }
+        "Part::Polygon" => {
+            let points = vector_list_property(properties, "Nodes")?;
+            let closed = bool_property(properties, "Close").unwrap_or(false);
+            if points.len() < 2 || (closed && points.len() < 3) {
+                return None;
+            }
+            Some(FeatureDefinition::Polyline { points, closed })
+        }
+        "Part::RegularPolygon" => Some(FeatureDefinition::RegularPolygonCurve {
+            sides: u32::try_from(integer_property(properties, "Polygon")?)
+                .ok()
+                .filter(|value| *value >= 3)?,
+            circumradius: Length(
+                scalar_named(properties, "Circumradius").filter(|value| *value > 0.0)?,
+            ),
+        }),
+        "Part::Plane" => Some(FeatureDefinition::PlanarPatch {
+            length: Length(scalar_named(properties, "Length").filter(|value| *value > 0.0)?),
+            width: Length(scalar_named(properties, "Width").filter(|value| *value > 0.0)?),
+        }),
+        "Part::Face" => {
+            let sources = property(properties, "Sources")?;
+            if sources.links.is_empty() {
+                return None;
+            }
+            Some(FeatureDefinition::FaceFromShapes {
+                sources: BodySelection::Native(sources.id.clone()),
+                face_maker_class: string_property_value(property(properties, "FaceMakerClass")?)?
+                    .to_owned(),
+            })
+        }
+        _ => None,
+    }
+}
+
 fn parametric_helix_definition(
     kind: &str,
     properties: &[&PropertyRecord],
@@ -3265,6 +3378,19 @@ fn is_primitive(kind: &str) -> bool {
     .any(|primitive| kind.ends_with(primitive))
         && (kind.starts_with("Part::") || kind.starts_with("PartDesign::"))
 }
+fn is_part_construction_geometry(kind: &str) -> bool {
+    matches!(
+        kind,
+        "Part::Vertex"
+            | "Part::Line"
+            | "Part::Circle"
+            | "Part::Ellipse"
+            | "Part::Polygon"
+            | "Part::RegularPolygon"
+            | "Part::Plane"
+            | "Part::Face"
+    )
+}
 fn is_boolean(kind: &str) -> bool {
     if kind == "PartDesign::Boolean" {
         return true;
@@ -3332,6 +3458,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_datum(kind)
         || is_sketch(kind)
         || is_primitive(kind)
+        || is_part_construction_geometry(kind)
         || is_boolean(kind)
         || is_loft(kind)
         || is_sweep(kind)
