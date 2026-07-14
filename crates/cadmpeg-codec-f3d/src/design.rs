@@ -6904,15 +6904,24 @@ fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
         return None;
     }
     let payload = runs.last()?;
-    if payload.len() < 2 || (payload.len() - 2) % 8 != 0 {
+    if payload.len() < 2 || (payload.len() - 2) % 8 != 0 || payload[0] != 0 {
+        return None;
+    }
+    let field_count = std::num::NonZeroU32::new(u32::try_from(runs.len() - 1).ok()?)?;
+    if i32::try_from(field_count.get()).ok()? != runs[0][0] {
+        return None;
+    }
+    let payload_entry_count = u32::try_from((payload.len() - 2) / 8).ok()?;
+    if i32::try_from(payload_entry_count).ok()? != payload[1] {
         return None;
     }
     Some(DesignTopologyRecipeSide {
-        header: [runs[0][0], runs[0][1]],
+        field_count,
+        header_value: runs[0][1],
         first: runs[1][0],
         second: runs[2][0],
         third: (runs.len() == 5).then_some(runs[3][0]),
-        payload_prefix: [payload[0], payload[1]],
+        payload_entry_count,
         entries: edge_recipe_entries(&payload[2..])?,
     })
 }
@@ -11189,11 +11198,12 @@ mod relation_tests {
         ])
         .expect("standard two-side recipe structure");
         assert_eq!(structured.root, 2);
-        assert_eq!(structured.sides[0].header, [3, 0]);
+        assert_eq!(structured.sides[0].field_count.get(), 3);
+        assert_eq!(structured.sides[0].header_value, 0);
         assert_eq!(structured.sides[0].first, 2);
         assert_eq!(structured.sides[0].second, 1);
         assert_eq!(structured.sides[0].third, None);
-        assert_eq!(structured.sides[0].payload_prefix, [0, 1]);
+        assert_eq!(structured.sides[0].payload_entry_count, 1);
         assert_eq!(structured.sides[0].entries[0].selector, 1);
         assert_eq!(structured.sides[0].entries[0].boundary_edge_count.get(), 5);
         assert_eq!(
@@ -11216,9 +11226,10 @@ mod relation_tests {
             structured.sides[0].entries[0].topology_triplets[1].middle,
             3
         );
-        assert_eq!(structured.sides[1].header, [3, 0]);
+        assert_eq!(structured.sides[1].field_count.get(), 3);
+        assert_eq!(structured.sides[1].header_value, 0);
         assert_eq!(structured.sides[1].third, None);
-        assert_eq!(structured.sides[1].payload_prefix, [0, 1]);
+        assert_eq!(structured.sides[1].payload_entry_count, 1);
         assert_eq!(structured.sides[1].entries[0].selector, 2);
         assert_eq!(structured.sides[1].entries[0].boundary_edge_count.get(), 5);
         assert_eq!(
@@ -11248,6 +11259,7 @@ mod relation_tests {
         .expect("recipe structure with a third scalar on its second side");
         assert_eq!(extended.sides[0].third, None);
         assert_eq!(extended.sides[1].third, Some(4));
+        assert_eq!(extended.sides[1].field_count.get(), 4);
         assert!(extended.sides[0].entries.is_empty());
         assert!(extended.sides[1].entries.is_empty());
         let face = super::face_recipe_structure(&[
@@ -11256,10 +11268,12 @@ mod relation_tests {
         .expect("face node topology recipe structure");
         assert_eq!(face.root, 0);
         assert_eq!(face.prelude, [1, 2]);
-        assert_eq!(face.sides[0].header, [3, 0]);
+        assert_eq!(face.sides[0].field_count.get(), 3);
+        assert_eq!(face.sides[0].header_value, 0);
         assert_eq!(face.sides[0].first, 2);
         assert_eq!(face.sides[0].second, 1);
-        assert_eq!(face.sides[1].header, [3, 0]);
+        assert_eq!(face.sides[1].field_count.get(), 3);
+        assert_eq!(face.sides[1].header_value, 0);
         assert_eq!(face.sides[1].first, 1);
         assert_eq!(face.sides[1].second, 3);
         assert_eq!(

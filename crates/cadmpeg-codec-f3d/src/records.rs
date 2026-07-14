@@ -1093,8 +1093,11 @@ pub struct DesignEdgeRecipeStructure {
 /// One delimiter-bounded side clause in a standard edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignTopologyRecipeSide {
-    /// Two words before the clause's first delimiter.
-    pub header: [i32; 2],
+    /// Encoded number of fields after the header count: two or three scalar
+    /// runs plus the payload.
+    pub field_count: NonZeroU32,
+    /// Second word of the side header.
+    pub header_value: i32,
     /// Scalar between the first and second clause delimiters.
     pub first: i32,
     /// Scalar between the second and third clause delimiters.
@@ -1102,8 +1105,8 @@ pub struct DesignTopologyRecipeSide {
     /// Optional scalar between the third and fourth clause delimiters.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub third: Option<i32>,
-    /// Two-word prefix after the final scalar delimiter.
-    pub payload_prefix: [i32; 2],
+    /// Encoded number of eight-word payload entries following the zero tag.
+    pub payload_entry_count: u32,
     /// Ordered eight-word payload entries.
     pub entries: Vec<DesignTopologyRecipeEntry>,
 }
