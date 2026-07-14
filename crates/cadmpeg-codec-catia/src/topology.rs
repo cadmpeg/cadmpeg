@@ -1501,7 +1501,7 @@ fn reconstruct(
 }
 
 fn parse_fbb_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize, usize)> {
-    [3, 2]
+    [3, 2, 1]
         .into_iter()
         .find_map(|handle_width| parse_fbb_edge_tables_width(bytes, position, handle_width))
 }
@@ -1558,7 +1558,7 @@ fn parse_fbb_edge_tables_width(
             {
                 delimiter[1] >> 4
             }
-            3 if delimiter == EDGE_DELIMITER => 0x02,
+            1 | 3 if delimiter == EDGE_DELIMITER => 0x02,
             _ => return None,
         };
         if delimiter_family
@@ -1836,6 +1836,7 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
     let mut handles = Vec::with_capacity(stored_count);
     for _ in 0..stored_count {
         let handle = match width {
+            1 => u32::from(*bytes.get(position)?),
             2 => u32::from(u16::from_be_bytes(
                 bytes.get(position..position + 2)?.try_into().ok()?,
             )),

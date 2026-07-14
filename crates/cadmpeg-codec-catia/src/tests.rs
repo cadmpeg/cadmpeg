@@ -408,6 +408,36 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
 }
 
 #[test]
+fn fbb_topology_reads_u8_mesh_and_edge_handles() {
+    let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 6, 0, 0, 0, 6];
+    bytes.extend_from_slice(&[1, 0x10, 0x11, 0x12, 0x13, 0x10]);
+    bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
+    for (kind, rows) in [
+        (1, [[0x10u8, 0x11], [0x11, 0x12]]),
+        (2, [[0x12u8, 0x13], [0x13, 0x10]]),
+    ] {
+        bytes.extend_from_slice(&[0x01, kind, 2]);
+        for row in rows {
+            bytes.extend_from_slice(&[0x02, 2]);
+            bytes.extend_from_slice(&row);
+        }
+        bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
+    }
+    bytes.extend_from_slice(&[0x01, 0x06, 4]);
+    for index in 0..4 {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in [index as f32, 0.0, 0.0] {
+            bytes.extend_from_slice(&le_f32(value));
+        }
+    }
+
+    let topology = crate::topology::parse_fbb(&bytes).expect("valid u8 FBB topology");
+    assert_eq!(topology.edge_rows()[0].handles, vec![0x10, 0x11]);
+    assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
+    assert_eq!(topology.vertex_points().len(), 4);
+}
+
+#[test]
 fn fbb_topology_requires_one_u16_delimiter_family() {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 6, 0, 0, 0, 6];
     for handle in [1u16, 0x1010, 0x1011, 0x1012, 0x1013, 0x1010] {

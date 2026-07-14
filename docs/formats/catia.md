@@ -13,7 +13,7 @@ A file stores its geometry in one of six families; the family determines the rec
 | Variant                          | Detection                                                                                                            | Geometry source                                                                               |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | **Standard nested `V5_CFV2`**    | Outer file contains a nested `V5_CFV2` container, no coherent overriding E5 stream                                   | Inner-body BREP spine, trim mesh records, `00 33 <kind>` surface markers, `05 08 01` vertices |
-| **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows and trim `H` handles share a selected `u16be` or `u24be` width |
+| **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows and trim `H` handles share a selected `u8`, `u16be`, or `u24be` width |
 | **E5 `0D 03` stream**            | Coherent walked E5 record stream in the preamble or a FINJPL segment                                                 | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers        |
 | **Zero-entity `a9 03`**          | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                                      | Outer-preamble `a9 03` records                                                                |
 | **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no `30 04 04 ff` FBB spine, large vertex/object-graph/float populations                        | Object-stream (`b5 03` / `a8 03`) records; surface-kind markers only for the pure marker case |
@@ -154,7 +154,7 @@ vertex_table := count_header(kind=0x06) vertex_record{count}
 vertex_record:= 05 08 01 <x_f32le> <y_f32le> <z_f32le>
 ```
 
-Spine invariants: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are big-endian handles. A standard-spine row's first and last handles are graph endpoint ports. An FBB-only row uses its family's selected `u16` or `u24` width and its first and last handles are the endpoints of its complete trim-boundary run. The counted `01 06` table is the vertex coordinate source; body count = number of contiguous FBB runs. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
+Spine invariants: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are big-endian handles. A standard-spine row's first and last handles are graph endpoint ports. An FBB-only row uses its family's selected `u8`, `u16`, or `u24` width and its first and last handles are the endpoints of its complete trim-boundary run. The counted `01 06` table is the vertex coordinate source; body count = number of contiguous FBB runs. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
 
 ### 5.3 Trim records (indexed triangle-mesh packets)
 
@@ -523,7 +523,7 @@ For plane-carrier `0xa0` cases, evaluating the UV jet on its `0xc8` plane produc
 
 ## 10. FBB-only partial-spine variant
 
-A nested-`V5_CFV2` file with a valid FBB face group and `05 08 01` vertices whose post-FBB edge tables and trim packets use one common selected handle width `W∈{2,3}` across **two** edge tables (`kind=0x01` then `kind=0x02`). A width-2 delimiter is `10 F4 04 ff ff 00 00 00`, where the high nibble `F` is a nonzero family discriminator other than `2`; both delimiters carry the same discriminator. The width-3 delimiter is `10 24 04 ff ff 00 00 00`. The table walk selects the width/delimiter pair that lands exactly on both delimiters and the counted vertex table.
+A nested-`V5_CFV2` file with a valid FBB face group and `05 08 01` vertices whose post-FBB edge tables and trim packets use one common selected handle width `W∈{1,2,3}` across **two** edge tables (`kind=0x01` then `kind=0x02`). Widths 1 and 3 use delimiter `10 24 04 ff ff 00 00 00`. A width-2 delimiter is `10 F4 04 ff ff 00 00 00`, where the high nibble `F` is a nonzero family discriminator other than `2`; both delimiters carry the same discriminator. The table walk selects the width/delimiter pair that lands exactly on both delimiters and the counted vertex table.
 
 ```text
 edge_table := 01 <kind∈{0x01,0x02}> count(row_count) edge_row{row_count}
