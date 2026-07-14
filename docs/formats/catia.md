@@ -411,6 +411,8 @@ connected graph.
 
 ## 7. Outer schema and object records
 
+Construction-operation records are consecutive `7C09` members of a bounded `7C08` graph. The second head reference selects a UTF-8 class name from the graph's adjacent `7C02` catalog. Exact operation class names include `PRTSketch`, `Sketch`, `Pad`, `Pocket`, `Shaft`, `Groove`, `Hole`, `EdgeFillet`, `Chamfer`, `Draft`, `Shell`, `Rib`, `CircPattern`, `RectPattern`, `UserPattern`, and `Mirror`. Their serialized `7C09` order is construction order. The first head reference is the owner ordinal. References in `7C0A` reference fields and reference-valued list items name operation operands when their targets are operation records in the same graph.
+
 ### 7.1 `7C02` source-schema catalogs
 
 ```text

@@ -1515,6 +1515,23 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
     file
 }
 
+fn standard_catpart_with_design_graph() -> Vec<u8> {
+    let mut stream = object_graph_stream();
+    stream.extend(value_block_stream(&[0x81]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
 fn standard_catpart_with_value_block() -> Vec<u8> {
     let mut stream = value_block_stream(&[0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]);
     stream.extend(catalog_stream(&[
@@ -3901,6 +3918,29 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
     assert_eq!(native.catalogs[0].entries[4].value, "Sketch");
     assert_eq!(native.catalogs[0].entries[5].value, "Pad");
     assert!(decoded.ir.model.features.is_empty());
+}
+
+#[test]
+fn decode_promotes_catalog_bound_construction_operations() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_design_graph()),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated design graph part");
+
+    assert_eq!(decoded.ir.model.features.len(), 1);
+    let feature = &decoded.ir.model.features[0];
+    assert_eq!(feature.ordinal, 0);
+    assert_eq!(feature.source_tag.as_deref(), Some("Sketch"));
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "sketch"
+    ));
+    assert!(feature
+        .native_ref
+        .as_deref()
+        .is_some_and(|reference| reference.starts_with("catia:outer:object-record#")));
 }
 
 #[test]

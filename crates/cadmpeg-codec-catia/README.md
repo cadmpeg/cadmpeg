@@ -61,8 +61,10 @@ logical streams without decoding entities. Set `DecodeOptions::container_only`
 when only source metadata and container diagnostics are needed.
 
 The crate reads parts only. It does not write `.CATPart` files or decode
-assemblies, design history, tessellation, appearances, materials, persistent
-object tags, or general document metadata beyond the embedded JPEG preview. The [format support matrix][support]
+assemblies, feature parameters, sketch geometry and constraints, tessellation,
+appearances, materials, persistent object tags, or general document metadata
+beyond the embedded JPEG preview. Catalog-bound construction records transfer as
+an ordered native-operation inventory with owner and operand relationships. The [format support matrix][support]
 tracks coverage by model layer.
 
 ## Reference
