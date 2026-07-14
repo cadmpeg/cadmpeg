@@ -4,6 +4,7 @@
 mod brep;
 mod container;
 mod design;
+mod drawing;
 mod element_map;
 mod gui;
 mod joint;
@@ -96,6 +97,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
     let joints = match namespace.arena_as::<native::JointRecord>("joints") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let drawings = match namespace.arena_as::<native::DrawingRecord>("drawings") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
@@ -243,6 +248,35 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     joint.id
                 ),
                 Some(joint.id.clone()),
+            ));
+        }
+    }
+    for drawing in &drawings {
+        let missing_object = !object_ids.contains(drawing.object.as_str())
+            || drawing
+                .views
+                .iter()
+                .any(|view| !object_ids.contains(view.as_str()))
+            || drawing
+                .template
+                .as_ref()
+                .is_some_and(|template| !object_ids.contains(template.as_str()))
+            || drawing.sources.iter().any(|source| {
+                source.document.is_none()
+                    && source
+                        .object
+                        .as_ref()
+                        .is_some_and(|object| !object_ids.contains(object.as_str()))
+            });
+        let missing_entry = drawing
+            .side_entries
+            .iter()
+            .any(|entry| !entry_names.contains(entry.as_str()));
+        if missing_object || missing_entry {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!("{} has a missing drawing object or side entry", drawing.id),
+                Some(drawing.id.clone()),
             ));
         }
     }
@@ -668,6 +702,10 @@ impl Codec for FcstdCodec {
             namespace.set_arena(
                 "joints",
                 &joint::transfer(&graph.objects, &graph.properties),
+            )?;
+            namespace.set_arena(
+                "drawings",
+                &drawing::transfer(&graph.objects, &graph.properties),
             )?;
             let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer =

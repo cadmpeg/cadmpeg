@@ -158,6 +158,16 @@ linear, limit-enable, detach, and suppression values remain independently named 
 `Sub` elements belong to their enclosing cross-link and are not separate object references. Joint
 Python proxy payloads remain inert native properties; decoding never imports their module.
 
+## Drawing graph
+
+Native namespace version 7 adds a `drawings` arena for every TechDraw page, template, view,
+dimension, and annotation subtype. Pages retain ordered view membership and template identity.
+Views and dimensions retain ordered local or external source objects with their subelement paths.
+Position, scale, projection, direction, rotation, caption, format, measurement, and lock fields keep
+their exact value XML by property name. Template and drawing side entries remain linked assets.
+Validation rejects missing local page, template, view, source, or side-entry targets while leaving
+unknown TechDraw subclasses available through their complete native object/property records.
+
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and

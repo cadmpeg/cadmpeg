@@ -300,6 +300,68 @@ fn recovers_assembly_joint_operands_frames_and_state() {
 }
 
 #[test]
+fn recovers_techdraw_page_template_and_view_graph() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Feature" name="Model" id="1"/>
+ <Object type="TechDraw::DrawPage" name="Page" id="2"/>
+ <Object type="TechDraw::DrawSVGTemplate" name="Template" id="3"/>
+ <Object type="TechDraw::DrawViewPart" name="View" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Model"><Properties Count="0"/></Object>
+ <Object name="Page"><Properties Count="2">
+  <Property name="Template" type="App::PropertyLink"><Link value="Template"/></Property>
+  <Property name="Views" type="App::PropertyLinkList"><LinkList count="1"><Link value="View"/></LinkList></Property>
+ </Properties></Object>
+ <Object name="Template"><Properties Count="1"><Property name="Template" type="App::PropertyFileIncluded"><FileIncluded file="page.svg"/></Property></Properties></Object>
+ <Object name="View"><Properties Count="5">
+  <Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property>
+  <Property name="X" type="App::PropertyDistance"><Float value="25"/></Property>
+  <Property name="Y" type="App::PropertyDistance"><Float value="40"/></Property>
+  <Property name="Scale" type="App::PropertyFloatConstraint"><Float value="2"/></Property>
+  <Property name="Direction" type="App::PropertyVector"><PropertyVector valueX="0" valueY="0" valueZ="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("page.svg", b"<svg/>"),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("TechDraw");
+    let drawings = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::DrawingRecord>("drawings")
+        .expect("drawings");
+    assert_eq!(drawings.len(), 3);
+    let page = drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with(":Page"))
+        .expect("page");
+    let template = drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with(":Template"))
+        .expect("template");
+    let view = drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with(":View"))
+        .expect("view");
+    assert_eq!(page.template.as_deref(), Some("fcstd:object:Template"));
+    assert_eq!(page.views, ["fcstd:object:View"]);
+    assert_eq!(template.side_entries, ["page.svg"]);
+    assert_eq!(
+        view.sources[0].object.as_deref(),
+        Some("fcstd:object:Model")
+    );
+    assert!(view.parameters.contains_key("Direction"));
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -703,7 +765,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 6);
+    assert_eq!(namespace.version, 7);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");

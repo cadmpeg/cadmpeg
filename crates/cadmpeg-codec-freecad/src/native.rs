@@ -5,7 +5,28 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 6;
+pub const VERSION: u32 = 7;
+
+/// One `TechDraw` page, template, view, dimension, or annotation record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DrawingRecord {
+    /// Stable drawing-record identity.
+    pub id: String,
+    /// Owning application object.
+    pub object: String,
+    /// Persisted `TechDraw` runtime type.
+    pub kind: String,
+    /// Ordered page views for a page record.
+    pub views: Vec<String>,
+    /// Page template object, when linked.
+    pub template: Option<String>,
+    /// Ordered source object and subelement references for a view or dimension.
+    pub sources: Vec<LinkTarget>,
+    /// Typed scalar/vector/string drawing fields retained by property name.
+    pub parameters: BTreeMap<String, String>,
+    /// Referenced template or drawing side entries.
+    pub side_entries: Vec<String>,
+}
 
 /// One assembly joint or grounded-object constraint.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
