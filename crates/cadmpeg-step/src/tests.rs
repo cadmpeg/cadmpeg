@@ -663,14 +663,18 @@ fn procedural_step_geometry_round_trips_as_native_entities() {
         )
         .expect("decode curve-bounded surface");
     let mut bytes = Vec::new();
-    write_step(&bounded.ir, &mut bytes, &StepWriteOptions::default())
+    let report = write_step(&bounded.ir, &mut bytes, &StepWriteOptions::default())
         .expect("write curve-bounded surface");
     let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
-    assert!(text.contains("CURVE_BOUNDED_SURFACE"));
+    assert!(!text.contains("CURVE_BOUNDED_SURFACE"));
+    assert!(text.contains("GEOMETRIC_SET"));
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains("reduced to their solved STEP carriers")));
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written curve-bounded surface");
-    assert!(decoded
+    assert!(!decoded
         .ir
         .model
         .procedural_surfaces
@@ -679,6 +683,17 @@ fn procedural_step_geometry_round_trips_as_native_entities() {
             surface.definition,
             cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { .. }
         )));
+    let mut rejected = Vec::new();
+    assert!(write_step(
+        &bounded.ir,
+        &mut rejected,
+        &StepWriteOptions {
+            unsupported: StepUnsupportedPolicy::Reject,
+            ..StepWriteOptions::default()
+        }
+    )
+    .is_err());
+    assert!(rejected.is_empty());
 }
 
 #[test]

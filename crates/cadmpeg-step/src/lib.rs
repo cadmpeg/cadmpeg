@@ -942,6 +942,51 @@ impl<'a> Builder<'a> {
         );
 
         let products = self.ir.model.products.clone();
+        let occurrences = self.ir.model.occurrences.clone();
+        let occurrence_products = occurrences
+            .iter()
+            .map(|occurrence| (occurrence.id.clone(), occurrence.product.clone()))
+            .collect::<HashMap<OccurrenceId, ProductId>>();
+        let mut product_origins = HashMap::<ProductId, Ref>::new();
+        for product in &products {
+            product_origins.insert(
+                product.id.clone(),
+                geometry::placement(
+                    &mut self.emitter,
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                    cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                ),
+            );
+        }
+        let mut representation_placements = HashMap::<ProductId, Vec<Ref>>::new();
+        let mut occurrence_placements = HashMap::<OccurrenceId, (Ref, Ref)>::new();
+        for occurrence in &occurrences {
+            let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent else {
+                continue;
+            };
+            let Some(parent_product) = occurrence_products.get(parent) else {
+                continue;
+            };
+            let Some(&from) = product_origins.get(&occurrence.product) else {
+                continue;
+            };
+            if !is_rigid_transform(&occurrence.transform.rows) {
+                continue;
+            }
+            let rows = occurrence.transform.rows;
+            let to = geometry::placement(
+                &mut self.emitter,
+                cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
+                cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
+                cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
+            );
+            representation_placements
+                .entry(parent_product.clone())
+                .or_default()
+                .push(to);
+            occurrence_placements.insert(occurrence.id.clone(), (from, to));
+        }
         let mut definitions = HashMap::<ProductId, Ref>::new();
         let mut representations = HashMap::<ProductId, Ref>::new();
         for product in products {
@@ -968,11 +1013,17 @@ impl<'a> Builder<'a> {
             let shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
-            let body_items = product
+            let mut body_items = product
                 .bodies
                 .iter()
                 .filter_map(|body| self.body_shape_refs.get(body.as_str()).copied())
                 .collect::<Vec<_>>();
+            if let Some(origin) = product_origins.get(&product.id) {
+                body_items.push(*origin);
+            }
+            if let Some(placements) = representation_placements.get(&product.id) {
+                body_items.extend(placements);
+            }
             let representation = self.emitter.emit(
                 "SHAPE_REPRESENTATION",
                 &format!("{},{},{context}", string(name), refs(&body_items)),
@@ -985,11 +1036,6 @@ impl<'a> Builder<'a> {
             representations.insert(product.id, representation);
         }
 
-        let occurrences = self.ir.model.occurrences.clone();
-        let occurrence_products = occurrences
-            .iter()
-            .map(|occurrence| (occurrence.id.clone(), occurrence.product.clone()))
-            .collect::<HashMap<OccurrenceId, ProductId>>();
         for occurrence in occurrences {
             let OccurrenceParent::Occurrence { occurrence: parent } = occurrence.parent else {
                 if !is_identity(&occurrence.transform.rows) {
@@ -1046,19 +1092,9 @@ impl<'a> Builder<'a> {
             let usage_shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{usage}"));
-            let from = geometry::placement(
-                &mut self.emitter,
-                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            );
-            let rows = occurrence.transform.rows;
-            let to = geometry::placement(
-                &mut self.emitter,
-                cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
-                cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
-                cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
-            );
+            let Some(&(from, to)) = occurrence_placements.get(&occurrence.id) else {
+                continue;
+            };
             let transform = self
                 .emitter
                 .emit("ITEM_DEFINED_TRANSFORMATION", &format!("'','',{from},{to}"));
@@ -1531,6 +1567,7 @@ impl<'a> Builder<'a> {
             }
         }
         if bound_refs.is_empty() {
+            self.surface_refs.remove(&surface_id);
             return None;
         }
         let flag = if same_sense { ".T." } else { ".F." };
@@ -1761,25 +1798,6 @@ impl<'a> Builder<'a> {
                         "'',{support},{},{}",
                         real(*distance),
                         logical(*self_intersect)
-                    ),
-                ))
-            }
-            ProceduralSurfaceDefinition::CurveBounded {
-                support,
-                boundaries,
-                implicit_outer,
-            } if !boundaries.is_empty() => {
-                let support = self.emit_surface(support.as_str())?;
-                let boundaries = boundaries
-                    .iter()
-                    .map(|curve| self.emit_curve(curve.as_str()))
-                    .collect::<Option<Vec<_>>>()?;
-                Some(self.emitter.emit(
-                    "CURVE_BOUNDED_SURFACE",
-                    &format!(
-                        "'',{support},{},{}",
-                        refs(&boundaries),
-                        if *implicit_outer { ".T." } else { ".F." }
                     ),
                 ))
             }
