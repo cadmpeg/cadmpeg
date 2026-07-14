@@ -291,6 +291,8 @@ When a spline row has no decoded 3D carrier, or a line row has no locally decisi
 
 Interleaved in face order with the 47-byte freeform cores. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`.
 
+Cylinder and torus payloads store a face-side witness point as three little-endian f32 values immediately after their big-endian carrier parameters: cylinder at marker-relative `+27`, torus at `+31`. For a circle whose centre lies on a cylinder axis and whose radius equals the cylinder radius, exactly one complementary endpoint arc contains the witness direction; that interval is the face's angular branch.
+
 | Surface  | kind   | prebyte | length | sign byte |
 | -------- | ------ | ------- | -----: | --------- |
 | plane    | `0x32` | `0x02`  |     49 | start+48  |

@@ -4307,6 +4307,27 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
     }
 }
 
+/// Read the face-side witness point following a standard cylinder or torus
+/// carrier's big-endian parameter block.
+#[must_use]
+pub fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<Point3> {
+    let kind = *brep.get(marker_pos + 2)?;
+    let offset = match kind {
+        0x33 => 27,
+        0x38 => 31,
+        _ => return None,
+    };
+    let values = [
+        f32_le(brep, marker_pos + offset),
+        f32_le(brep, marker_pos + offset + 4),
+        f32_le(brep, marker_pos + offset + 8),
+    ];
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then(|| pt(values[0], values[1], values[2]))
+}
+
 fn pt(x: f32, y: f32, z: f32) -> Point3 {
     Point3::new(x as f64, y as f64, z as f64)
 }

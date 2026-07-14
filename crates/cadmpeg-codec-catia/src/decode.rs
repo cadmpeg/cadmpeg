@@ -1423,6 +1423,7 @@ mod chart_tests {
             &support,
             Point3::new(2.0, 4.0, 3.0),
             Point3::new(5.0, 8.0, 3.0),
+            None,
         )
         .expect("plane line pcurve");
         assert_eq!(range, [0.0, 1.0]);
@@ -1461,6 +1462,7 @@ mod chart_tests {
             &support,
             Point3::new(radius, 0.0, 2.0),
             Point3::new(0.0, radius, 2.0),
+            None,
         )
         .expect("cone latitude pcurve");
         assert_eq!(range, [0.0, 1.0]);
@@ -1469,6 +1471,40 @@ mod chart_tests {
             PcurveGeometry::Line {
                 origin: cadmpeg_ir::math::Point2::new(0.0, 2.0),
                 direction: cadmpeg_ir::math::Point2::new(std::f64::consts::FRAC_PI_2, 0.0),
+            }
+        );
+    }
+
+    #[test]
+    fn standard_cylinder_witness_selects_complementary_arc() {
+        let surface = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 3.0),
+                radius: 2.0,
+            },
+        };
+        let (geometry, _) = standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(2.0, 0.0, 3.0),
+            Point3::new(0.0, 2.0, 3.0),
+            Some(Point3::new(-2.0, 0.0, 3.0)),
+        )
+        .expect("witnessed cylinder section");
+        assert_eq!(
+            geometry,
+            PcurveGeometry::Line {
+                origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
+                direction: cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0,),
             }
         );
     }
@@ -1499,6 +1535,7 @@ mod chart_tests {
             &support,
             Point3::new(ring, 0.0, height),
             Point3::new(0.0, ring, height),
+            None,
         )
         .expect("sphere latitude pcurve");
         let PcurveGeometry::Line { origin, direction } = geometry else {
@@ -3367,6 +3404,7 @@ fn attach_standard_topology(
                     support,
                     start,
                     end,
+                    geometry::standard_face_witness(brep, bindings[face_index].2),
                 )
                 .map(|(geometry, range)| {
                     let id = PcurveId(format!(
@@ -3746,6 +3784,7 @@ fn standard_pcurve_geometry(
     support: &geometry::StandardCurveSupport,
     start: Point3,
     end: Point3,
+    witness: Option<Point3>,
 ) -> Option<(PcurveGeometry, [f64; 2])> {
     let mut uv = [
         analytic_surface_uv(surface, start)?,
@@ -3753,6 +3792,38 @@ fn standard_pcurve_geometry(
     ];
     let reference_uv = uv[0];
     unwrap_standard_uv(surface, &mut uv[1], reference_uv);
+
+    if let (
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius: surface_radius,
+            ..
+        },
+        geometry::StandardCurveGeometry::Circle { center, radius },
+        Some(witness),
+    ) = (surface, &support.geometry, witness)
+    {
+        let center_offset = point_delta(*center, *origin);
+        let axis_distance = vector_norm(cross_vector(center_offset, *axis));
+        let witness_offset = point_delta(witness, *origin);
+        let witness_axial = axis_dot(witness_offset, *axis);
+        let witness_radial = Vector3::new(
+            witness_offset.x - witness_axial * axis.x,
+            witness_offset.y - witness_axial * axis.y,
+            witness_offset.z - witness_axial * axis.z,
+        );
+        if axis_distance <= 2e-3
+            && (radius - surface_radius).abs() <= 2e-3
+            && (vector_norm(witness_radial) - surface_radius).abs() <= 2e-3
+        {
+            if let Some(end) = analytic_surface_uv(surface, witness)
+                .and_then(|witness| witness_arc_end(uv[0].u, uv[1].u, witness.u))
+            {
+                uv[1].u = end;
+            }
+        }
+    }
 
     if let (
         SurfaceGeometry::Plane { .. },
@@ -3787,6 +3858,25 @@ fn standard_pcurve_geometry(
         },
         [0.0, 1.0],
     ))
+}
+
+fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
+    let delta = short_end - start;
+    if delta.abs() <= 1e-9 || (delta.abs() - std::f64::consts::PI).abs() <= 1e-9 {
+        return None;
+    }
+    let long_end = short_end - delta.signum() * std::f64::consts::TAU;
+    let contains = |end: f64| {
+        (-2..=2).any(|turn| {
+            let witness = witness + f64::from(turn) * std::f64::consts::TAU;
+            witness >= start.min(end) + 1e-6 && witness <= start.max(end) - 1e-6
+        })
+    };
+    match (contains(short_end), contains(long_end)) {
+        (true, false) => Some(short_end),
+        (false, true) => Some(long_end),
+        _ => None,
+    }
 }
 
 fn ordered_range(range: [f64; 2]) -> [f64; 2] {
