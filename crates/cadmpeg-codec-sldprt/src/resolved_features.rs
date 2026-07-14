@@ -3666,7 +3666,8 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
-    let marker_transforms = marker_transform_candidates_by_feature(features, entities, lanes);
+    let marker_transforms =
+        marker_transform_candidates_by_feature(features, sketches, entities, lanes);
     let transforms = sketches_by_feature
         .iter()
         .filter_map(|(feature, sketch_id)| {
@@ -3754,7 +3755,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)
                 .map_or(candidates.clone(), |sketch| {
-                    constrain_dimensioned_circle_transforms(&candidates, sketch, QUANTUM)
+                    constrain_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
                 });
             dimensioned_circle_transform(&candidates, &circles)
                 .map(|transform| ((*feature).to_string(), transform))
@@ -3869,6 +3870,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 pub(crate) fn project_relation_point_geometry(
     entities: &mut Vec<SketchEntity>,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) {
@@ -3888,7 +3890,7 @@ pub(crate) fn project_relation_point_geometry(
             Some((feature.native_ref.as_deref()?, sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
-    let transforms = marker_transform_candidates_by_feature(features, entities, lanes);
+    let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
     let referenced = lanes
         .iter()
         .flat_map(|lane| {
@@ -4008,6 +4010,7 @@ fn implicit_circle_marker<'a>(
 /// Project owned native relation bindings into their neutral sketches.
 pub(crate) fn project_relation_bindings(
     constraints: &mut Vec<SketchConstraint>,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
     features: &[cadmpeg_ir::features::Feature],
     sketch_entities: &[SketchEntity],
     parameters: &[cadmpeg_ir::features::DesignParameter],
@@ -4026,7 +4029,7 @@ pub(crate) fn project_relation_bindings(
             Some((feature.native_ref.as_deref()?, sketch))
         })
         .collect::<HashMap<_, _>>();
-    let loci_by_marker = profile_loci_by_marker(features, sketch_entities, lanes);
+    let loci_by_marker = profile_loci_by_marker(features, sketches, sketch_entities, lanes);
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
@@ -4641,6 +4644,7 @@ fn single_marker_entity(
 
 fn profile_loci_by_marker(
     features: &[cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<SketchLocus>> {
@@ -4666,7 +4670,8 @@ fn profile_loci_by_marker(
         .iter()
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
-    let transforms = marker_transform_candidates_by_feature(features, sketch_entities, lanes);
+    let transforms =
+        marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -4816,6 +4821,7 @@ fn point_on_quantized_segment(point: (i64, i64), start: (i64, i64), end: (i64, i
 
 fn marker_transform_candidates_by_feature(
     features: &[cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, Vec<MarkerTransform>> {
@@ -4913,6 +4919,12 @@ fn marker_transform_candidates_by_feature(
             } else {
                 fallback
             };
+            let candidates = sketches
+                .iter()
+                .find(|candidate| candidate.id == **sketch)
+                .map_or(candidates.clone(), |sketch| {
+                    constrain_marker_transforms_by_frame(&candidates, sketch, QUANTUM)
+                });
             if !candidates.is_empty() {
                 result.insert(feature.to_string(), candidates);
             }
@@ -5046,7 +5058,7 @@ fn sketch_frame_marker_transform(
     })
 }
 
-fn constrain_dimensioned_circle_transforms(
+fn constrain_marker_transforms_by_frame(
     candidates: &[MarkerTransform],
     sketch: &cadmpeg_ir::sketches::Sketch,
     quantum: f64,
@@ -5519,7 +5531,7 @@ fn marker_entities_inner(
 mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, bind_detached_relation_drivers,
-        constrain_dimensioned_circle_transforms, dimensioned_circle_surface_transforms,
+        constrain_marker_transforms_by_frame, dimensioned_circle_surface_transforms,
         dimensioned_circle_transform, implicit_circle_marker, marker_entities,
         profile_loci_by_marker, project_dimensioned_sketch_geometry,
         project_relation_point_geometry, relation_parameter_by_display_name,
@@ -5708,10 +5720,10 @@ mod profile_join_tests {
             ..transform
         };
         assert_eq!(
-            constrain_dimensioned_circle_transforms(&[other, transform], &sketch, 1.0e-8),
+            constrain_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
             vec![transform]
         );
-        assert!(constrain_dimensioned_circle_transforms(&[], &sketch, 1.0e-8).is_empty());
+        assert!(constrain_marker_transforms_by_frame(&[], &sketch, 1.0e-8).is_empty());
     }
 
     #[test]
@@ -5947,7 +5959,7 @@ mod profile_join_tests {
             sketch_entities: vec![marker_a, marker_b, marker_c, display, reference.clone()],
         };
 
-        let joins = profile_loci_by_marker(&[feature], &entities, std::slice::from_ref(&lane));
+        let joins = profile_loci_by_marker(&[feature], &[], &entities, std::slice::from_ref(&lane));
         assert!(joins.contains_key("marker-a"));
         assert!(joins.contains_key("marker-b"));
         assert!(joins.contains_key("marker-c"));
@@ -6444,7 +6456,7 @@ mod profile_join_tests {
             sketch_entities: markers,
         };
 
-        let joins = profile_loci_by_marker(&[feature], &entities, std::slice::from_ref(&lane));
+        let joins = profile_loci_by_marker(&[feature], &[], &entities, std::slice::from_ref(&lane));
         for (marker, entity) in [
             ("horizontal-marker", &line_ids[0]),
             ("vertical-marker", &line_ids[1]),
@@ -6529,7 +6541,7 @@ mod profile_join_tests {
 
         let mut entities = vec![entity];
         entities.extend(points);
-        let joins = profile_loci_by_marker(&[feature], &entities, &[lane]);
+        let joins = profile_loci_by_marker(&[feature], &[], &entities, &[lane]);
         assert_eq!(
             joins["circle-marker"],
             vec![cadmpeg_ir::sketches::SketchLocus::Entity(circle)]
@@ -6634,7 +6646,7 @@ mod profile_join_tests {
             references: Vec::new(),
             sketch_entities: markers,
         };
-        project_relation_point_geometry(&mut entities, &[feature], &[lane]);
+        project_relation_point_geometry(&mut entities, &[], &[feature], &[lane]);
         assert!(entities.iter().any(|entity| {
             entity.construction
                 && entity.native_ref.as_deref() == Some("relation-point")
