@@ -312,6 +312,7 @@ fn scan_preserves_linear_extrusion_type_variants() {
 #[test]
 fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[
         9, 0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7, 32, 0xfb, 0xe2,
         0xf7, 36,
@@ -326,7 +327,6 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         payload.extend_from_slice(&separator);
     }
-    payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 

@@ -1128,7 +1128,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
     records
 }
 
-/// Decode the cubic curve replay that precedes a positional
+/// Decode the cubic curve replay owned by the preceding positional
 /// `geom_type = 2c` tabulated-cylinder row.
 pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinderCurveReplay> {
     const SIGNATURE: &[u8] = &[
@@ -1144,6 +1144,10 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
     }
     let mut replays = Vec::new();
     for (index, signature) in signatures.iter().copied().enumerate() {
+        let owner_lower_bound = index
+            .checked_sub(1)
+            .and_then(|previous| signatures.get(previous).copied())
+            .unwrap_or(0);
         let limit = signatures.get(index + 1).copied().unwrap_or(payload.len());
         let Some((curve_id, replay_offset)) = id_ending_at(payload, signature) else {
             continue;
@@ -1192,7 +1196,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
                     .flatten()
             })
             .collect::<Vec<_>>();
-        let [(terminal, terminal_end, terminal_reference)] = terminals.as_slice() else {
+        let [(terminal, _terminal_end, terminal_reference)] = terminals.as_slice() else {
             continue;
         };
         let middle_separators = (*first_body_start..*terminal)
@@ -1219,10 +1223,9 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
                 .then_some([first, second])
         };
         let control_points = std::array::from_fn(|index| decode_point(&bodies[index]));
-        let Some(owner) = surface_rows
-            .iter()
-            .find(|row| row.offset >= *terminal_end && row.offset < limit && row.type_byte == 0x2c)
-        else {
+        let Some(owner) = surface_rows.iter().rev().find(|row| {
+            row.offset > owner_lower_bound && row.offset < replay_offset && row.type_byte == 0x2c
+        }) else {
             continue;
         };
         let Some(last_control_point) = control_point_start.checked_add(3) else {
