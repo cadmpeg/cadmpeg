@@ -273,7 +273,7 @@ pub fn intersection_curve(
     let supports = edge.occurrences.map(|occurrence| occurrence.support_index);
     let ranges = supports.map(|index| support_parameter_range(&topology.supports[index]));
     let [Some(first_range), Some(second_range)] = ranges else {
-        return None;
+        return degenerate_plane_torus_intersection(topology, edge, supports);
     };
     if first_range[0] >= first_range[1]
         || first_range
@@ -317,6 +317,204 @@ pub fn intersection_curve(
         },
         fit_tolerance: FIT_TOLERANCE + radial_error,
     })
+}
+
+fn degenerate_plane_torus_intersection(
+    topology: &ZeroEntityTopology,
+    edge: &ZeroResolvedEdge,
+    supports: [usize; 2],
+) -> Option<ZeroIntersectionCurve> {
+    const FIT_TOLERANCE: f64 = 1e-4;
+    const MAX_DEPTH: u8 = 20;
+
+    if supports
+        .iter()
+        .any(|index| topology.records[topology.supports[*index].record_ordinal].tag != [0x21, 0x18])
+    {
+        return None;
+    }
+    let surfaces = supports.map(|index| support_surface(topology, index));
+    let [Some(first), Some(second)] = surfaces else {
+        return None;
+    };
+    let (plane, torus) = match (first, second) {
+        (SurfaceGeometry::Plane { .. }, SurfaceGeometry::Torus { .. }) => (first, second),
+        (SurfaceGeometry::Torus { .. }, SurfaceGeometry::Plane { .. }) => (second, first),
+        _ => return None,
+    };
+    let SurfaceGeometry::Plane { origin, normal, .. } = plane else {
+        unreachable!();
+    };
+    let SurfaceGeometry::Torus {
+        center,
+        axis,
+        major_radius,
+        minor_radius,
+        ..
+    } = torus
+    else {
+        unreachable!();
+    };
+    if dot(*normal, *axis).abs() > 1e-10 || *major_radius <= 0.0 || *minor_radius <= 0.0 {
+        return None;
+    }
+    let transverse = normalize(cross(*axis, *normal))?;
+    let plane_offset = dot(point_vector(*center, *origin), *normal);
+    let endpoint_data = edge.endpoints.map(|point| {
+        let point = Point3::new(point[0], point[1], point[2]);
+        let relative = point_vector(*center, point);
+        let transverse_coordinate = dot(relative, transverse);
+        let radial = (transverse_coordinate.powi(2) + plane_offset.powi(2)).sqrt();
+        (
+            (dot(relative, *axis)).atan2(radial - major_radius),
+            transverse_coordinate,
+        )
+    });
+    let branch_sign = endpoint_data[0].1.signum();
+    if branch_sign == 0.0 || endpoint_data[1].1.signum() != branch_sign {
+        return None;
+    }
+    let mut delta = endpoint_data[1].0 - endpoint_data[0].0;
+    if delta > std::f64::consts::PI {
+        delta -= std::f64::consts::TAU;
+    } else if delta < -std::f64::consts::PI {
+        delta += std::f64::consts::TAU;
+    }
+    let extent = delta.abs();
+    if extent <= 1e-12 {
+        return None;
+    }
+    let direction = delta.signum();
+    let evaluate = |parameter| {
+        plane_torus_section_point(
+            *center,
+            *axis,
+            *normal,
+            transverse,
+            *major_radius,
+            *minor_radius,
+            plane_offset,
+            branch_sign,
+            endpoint_data[0].0 + direction * parameter,
+        )
+    };
+    let first = evaluate(0.0)?;
+    let last = evaluate(extent)?;
+    if point_distance([first.x, first.y, first.z], edge.endpoints[0]) > 2e-3
+        || point_distance([last.x, last.y, last.z], edge.endpoints[1]) > 2e-3
+    {
+        return None;
+    }
+    let mut samples = vec![(0.0, first)];
+    subdivide_parametric_curve(
+        &evaluate,
+        0.0,
+        first,
+        extent,
+        last,
+        FIT_TOLERANCE,
+        MAX_DEPTH,
+        &mut samples,
+    )?;
+    let mut knots = Vec::with_capacity(samples.len() + 2);
+    knots.push(0.0);
+    knots.extend(samples.iter().map(|(parameter, _)| *parameter));
+    knots.push(extent);
+    Some(ZeroIntersectionCurve {
+        supports,
+        parameter_range: [0.0, extent],
+        cache: NurbsCurve {
+            degree: 1,
+            knots,
+            control_points: samples.into_iter().map(|(_, point)| point).collect(),
+            weights: None,
+            periodic: false,
+        },
+        fit_tolerance: FIT_TOLERANCE,
+    })
+}
+
+fn support_surface(
+    topology: &ZeroEntityTopology,
+    support_index: usize,
+) -> Option<&SurfaceGeometry> {
+    let support = topology.supports.get(support_index)?;
+    topology
+        .carrier_runs
+        .iter()
+        .find(|run| run.carrier_ordinal == support.owner_carrier_ordinal)?
+        .geometry
+        .as_ref()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn plane_torus_section_point(
+    center: Point3,
+    axis: Vector3,
+    normal: Vector3,
+    transverse: Vector3,
+    major_radius: f64,
+    minor_radius: f64,
+    plane_offset: f64,
+    branch_sign: f64,
+    minor_angle: f64,
+) -> Option<Point3> {
+    let radial = major_radius + minor_radius * minor_angle.cos();
+    let transverse_coordinate = branch_sign * (radial.powi(2) - plane_offset.powi(2)).sqrt();
+    transverse_coordinate.is_finite().then(|| {
+        let point = translate(center, normal, plane_offset);
+        let point = translate(point, transverse, transverse_coordinate);
+        translate(point, axis, minor_radius * minor_angle.sin())
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn subdivide_parametric_curve(
+    evaluate: &impl Fn(f64) -> Option<Point3>,
+    start_parameter: f64,
+    start: Point3,
+    end_parameter: f64,
+    end: Point3,
+    tolerance: f64,
+    depth: u8,
+    output: &mut Vec<(f64, Point3)>,
+) -> Option<()> {
+    let fractions = [0.25, 0.5, 0.75];
+    let probes = fractions.map(|fraction| {
+        let parameter = start_parameter + fraction * (end_parameter - start_parameter);
+        Some((parameter, evaluate(parameter)?))
+    });
+    let probes = probes.into_iter().collect::<Option<Vec<_>>>()?;
+    if probes.iter().zip(fractions).all(|((_, point), fraction)| {
+        point_lerp_distance(*point, start, end, fraction) <= tolerance
+    }) {
+        output.push((end_parameter, end));
+        return Some(());
+    }
+    if depth == 0 {
+        return None;
+    }
+    let (middle_parameter, middle) = probes[1];
+    subdivide_parametric_curve(
+        evaluate,
+        start_parameter,
+        start,
+        middle_parameter,
+        middle,
+        tolerance,
+        depth - 1,
+        output,
+    )?;
+    subdivide_parametric_curve(
+        evaluate,
+        middle_parameter,
+        middle,
+        end_parameter,
+        end,
+        tolerance,
+        depth - 1,
+        output,
+    )
 }
 
 fn support_parameter_range(support: &ZeroSupport) -> Option<[f64; 2]> {
@@ -612,6 +810,14 @@ fn cross(left: Vector3, right: Vector3) -> Vector3 {
         left.z * right.x - left.x * right.z,
         left.x * right.y - left.y * right.x,
     )
+}
+
+fn dot(left: Vector3, right: Vector3) -> f64 {
+    left.x * right.x + left.y * right.y + left.z * right.z
+}
+
+fn point_vector(origin: Point3, point: Point3) -> Vector3 {
+    Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z)
 }
 
 fn scale(vector: Vector3, factor: f64) -> Vector3 {
@@ -1746,6 +1952,94 @@ mod occurrence_tests {
             Point3::new(0.0, 0.004, 0.0)
         );
         assert!((intersection.fit_tolerance - 0.0041).abs() < 1e-12);
+    }
+
+    #[test]
+    fn degenerate_support_pair_retains_plane_torus_intersection_branch() {
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 7.7, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let torus = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 8.2,
+            minor_radius: 2.0,
+        };
+        let start = [6.689_544_080_129_829, 7.7, 0.0];
+        let end = [2.819_574_435_974_341, 7.7, -2.0];
+        let mut supports = [
+            support(0, Some([start, end])),
+            support(1, Some([start, end])),
+        ];
+        supports[0].owner_carrier_ordinal = 10;
+        supports[1].owner_carrier_ordinal = 11;
+        let topology = ZeroEntityTopology {
+            records: vec![
+                ZeroEntityRecord {
+                    ordinal: 0,
+                    offset: 0,
+                    tag: [0x21, 0x18],
+                    bytes: Vec::new(),
+                },
+                ZeroEntityRecord {
+                    ordinal: 1,
+                    offset: 0,
+                    tag: [0x21, 0x18],
+                    bytes: Vec::new(),
+                },
+            ],
+            faces: Vec::new(),
+            loops: Vec::new(),
+            carrier_runs: vec![
+                ZeroCarrierRun {
+                    carrier_ordinal: 10,
+                    support_ordinals: vec![0],
+                    geometry: Some(plane),
+                },
+                ZeroCarrierRun {
+                    carrier_ordinal: 11,
+                    support_ordinals: vec![1],
+                    geometry: Some(torus),
+                },
+            ],
+            supports: supports.into(),
+            physical_edges: Vec::new(),
+            coedge_twins: Vec::new(),
+            side_pairs: Vec::new(),
+            vertices: Vec::new(),
+        };
+        let edge = ZeroResolvedEdge {
+            endpoints: [start, end],
+            occurrences: [
+                ZeroResolvedOccurrence {
+                    loop_index: 0,
+                    member_index: 0,
+                    support_index: 0,
+                },
+                ZeroResolvedOccurrence {
+                    loop_index: 1,
+                    member_index: 0,
+                    support_index: 1,
+                },
+            ],
+            occurrence_endpoints: [[start, end], [start, end]],
+        };
+
+        let intersection = intersection_curve(&topology, &edge).expect("plane-torus branch");
+        assert!((intersection.parameter_range[1] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        let first = intersection
+            .cache
+            .control_points
+            .first()
+            .expect("cache start");
+        let last = intersection.cache.control_points.last().expect("cache end");
+        assert!(point_distance([first.x, first.y, first.z], start) < 1e-12);
+        assert!(point_distance([last.x, last.y, last.z], end) < 1e-12);
+        assert!(intersection.cache.control_points.len() > 2);
+        assert_eq!(intersection.fit_tolerance, 1e-4);
     }
 
     #[test]
