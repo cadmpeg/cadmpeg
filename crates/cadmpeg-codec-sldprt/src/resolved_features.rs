@@ -3119,6 +3119,129 @@ pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
     value.starts_with("sldprt:feature-input:body-ids:")
 }
 
+/// Materialize dimensioned circular sketch geometry omitted by a selected-profile stream.
+pub(crate) fn project_dimensioned_sketch_geometry(
+    entities: &mut Vec<SketchEntity>,
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+    lanes: &[FeatureInputLane],
+) {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    let sketches_by_feature = features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.native_ref.as_deref()?, sketch.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let parameters_by_scalar = parameters
+        .iter()
+        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
+        .collect::<HashMap<_, _>>();
+    let markers_by_id = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    let transforms = marker_transforms_by_feature(features, entities, lanes);
+    for lane in lanes {
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        for relation in &lane.relation_instances {
+            if relation.family != FeatureInputRelationFamily::CircleDiameter {
+                continue;
+            }
+            let (Some(sketch), Some(transform), [operand]) = (
+                sketches_by_feature.get(relation.feature_ref.as_str()),
+                transforms.get(relation.feature_ref.as_str()),
+                relation.operands.as_slice(),
+            ) else {
+                continue;
+            };
+            let Some(marker) = operand
+                .entity_ref
+                .as_deref()
+                .and_then(|id| markers_by_id.get(id).copied())
+            else {
+                continue;
+            };
+            if !matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ) {
+                continue;
+            }
+            let (Some([u, v]), Some(parameter)) = (
+                marker.coordinates_m,
+                relation
+                    .parameter_scalar_ref
+                    .as_deref()
+                    .and_then(|id| parameters_by_scalar.get(id).copied()),
+            ) else {
+                continue;
+            };
+            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
+                parameter.value.as_ref()
+            else {
+                continue;
+            };
+            let radius = match parameter.display {
+                Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+                Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                None => continue,
+            };
+            if !(radius.is_finite() && radius > 0.0) {
+                continue;
+            }
+            let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+            let Some(center) = transform.apply(native) else {
+                continue;
+            };
+            let center = Point2::new(center.0 as f64 * QUANTUM, center.1 as f64 * QUANTUM);
+            if entities.iter().any(|entity| {
+                entity.sketch == *sketch
+                    && match &entity.geometry {
+                        SketchGeometry::Circle {
+                            center: existing,
+                            radius: existing_radius,
+                        } => {
+                            quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
+                                && same_dimension_length(existing_radius.0, radius)
+                        }
+                        _ => false,
+                    }
+            }) {
+                continue;
+            }
+            entities.push(SketchEntity {
+                id: SketchEntityId(format!(
+                    "sldprt:model:sketch-entity#dimension:{lane_key}:{}",
+                    relation.offset
+                )),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: Some(marker.id.clone()),
+                geometry_ref: Some(relation.id.clone()),
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Circle {
+                    center,
+                    radius: cadmpeg_ir::features::Length(radius),
+                },
+            });
+        }
+    }
+}
+
 /// Project owned native relation bindings into their neutral sketches.
 pub(crate) fn project_relation_bindings(
     constraints: &mut Vec<SketchConstraint>,
@@ -3568,9 +3691,23 @@ fn typed_relation_definition(
             parameter: parameter_id,
         }),
         CircleDiameter => {
-            let entity = marker(0)
-                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker))
-                .or_else(|| unique_dimensioned_circle_entity(sketch, sketch_entities, parameter))?;
+            let entity = sketch_entities
+                .iter()
+                .find(|entity| {
+                    entity.sketch == *sketch
+                        && entity.geometry_ref.as_deref() == Some(relation.id.as_str())
+                        && matches!(entity.geometry, SketchGeometry::Circle { .. })
+                })
+                .map(|entity| entity.id.clone())
+                .or_else(|| {
+                    marker(0)
+                        .and_then(|marker| {
+                            single_marker_entity(marker, markers_by_id, loci_by_marker)
+                        })
+                        .or_else(|| {
+                            unique_dimensioned_circle_entity(sketch, sketch_entities, parameter)
+                        })
+                })?;
             match parameter.display {
                 Some(cadmpeg_ir::features::DimensionDisplay::Radius) => {
                     Some(SketchConstraintDefinition::Radius {
@@ -3686,6 +3823,7 @@ fn profile_loci_by_marker(
         .iter()
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
+    let transforms = marker_transforms_by_feature(features, sketch_entities, lanes);
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -3701,13 +3839,7 @@ fn profile_loci_by_marker(
             let Some(feature) = marker.feature_ref.as_deref() else {
                 continue;
             };
-            let Some(offset) = usize::try_from(marker.offset).ok() else {
-                continue;
-            };
-            if marker.coordinates_m.is_some()
-                && marker_is_geometry_locus(&lane.native_payload, offset)
-                && sketches_by_feature.contains_key(feature)
-            {
+            if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
                 markers_by_feature.entry(feature).or_default().push(marker);
             }
         }
@@ -3718,36 +3850,7 @@ fn profile_loci_by_marker(
             let Some(loci) = profile_loci.get(sketch) else {
                 continue;
             };
-            let mut compatible_locus_points = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
-            for marker in &markers {
-                if !matches!(
-                    marker.kind,
-                    SketchInputKind::Point
-                        | SketchInputKind::LineOrCircle
-                        | SketchInputKind::Arc
-                        | SketchInputKind::ConstrainedPoint
-                ) {
-                    continue;
-                }
-                let Some([u, v]) = marker.coordinates_m else {
-                    continue;
-                };
-                let marker_point =
-                    quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                for (point, locus) in loci {
-                    if geometry_by_entity
-                        .get(&locus_entity(locus))
-                        .is_some_and(|geometry| marker_accepts_locus(marker.kind, geometry))
-                    {
-                        compatible_locus_points
-                            .entry(marker_point)
-                            .or_default()
-                            .insert(quantize(*point, QUANTUM));
-                    }
-                }
-            }
-            let Some(transform) = unique_compatible_marker_transform(&compatible_locus_points)
-            else {
+            let Some(&transform) = transforms.get(feature) else {
                 continue;
             };
             let loci_by_point = loci.iter().fold(
@@ -3787,6 +3890,139 @@ fn profile_loci_by_marker(
         }
     }
     result
+}
+
+fn marker_transforms_by_feature(
+    features: &[cadmpeg_ir::features::Feature],
+    sketch_entities: &[SketchEntity],
+    lanes: &[FeatureInputLane],
+) -> HashMap<String, MarkerTransform> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    let sketches_by_feature = features
+        .iter()
+        .filter_map(|feature| {
+            let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            Some((feature.native_ref.as_deref()?, sketch))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut result = HashMap::new();
+    for lane in lanes {
+        let mut markers_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
+        for marker in &lane.sketch_entities {
+            let Some(feature) = marker.feature_ref.as_deref() else {
+                continue;
+            };
+            if marker.coordinates_m.is_some() && sketches_by_feature.contains_key(feature) {
+                markers_by_feature.entry(feature).or_default().push(marker);
+            }
+        }
+        for (feature, markers) in markers_by_feature {
+            let Some(sketch) = sketches_by_feature.get(feature) else {
+                continue;
+            };
+            if !sketch_entities
+                .iter()
+                .any(|entity| entity.sketch == **sketch)
+            {
+                continue;
+            }
+            let compatible = |primary_only: bool| {
+                let mut points = HashMap::<(i64, i64), HashSet<(i64, i64)>>::new();
+                for marker in &markers {
+                    if !matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::LineOrCircle
+                            | SketchInputKind::Arc
+                            | SketchInputKind::ConstrainedPoint
+                    ) {
+                        continue;
+                    }
+                    let Some([u, v]) = marker.coordinates_m else {
+                        continue;
+                    };
+                    if primary_only
+                        && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                            !marker_is_geometry_locus(&lane.native_payload, offset)
+                        })
+                    {
+                        continue;
+                    }
+                    let marker_point =
+                        quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                    let anchors = sketch_entities
+                        .iter()
+                        .filter(|entity| entity.sketch == **sketch)
+                        .flat_map(|entity| {
+                            if primary_only {
+                                sketch_entity_loci(entity)
+                                    .into_iter()
+                                    .filter_map(|(point, locus)| {
+                                        marker_accepts_locus(marker.kind, &entity.geometry)
+                                            .then_some((point, locus))
+                                    })
+                                    .map(|(point, _)| point)
+                                    .collect::<Vec<_>>()
+                            } else {
+                                marker_geometry_anchors(marker.kind, &entity.geometry)
+                            }
+                        });
+                    for point in anchors {
+                        points
+                            .entry(marker_point)
+                            .or_default()
+                            .insert(quantize(point, QUANTUM));
+                    }
+                }
+                points
+            };
+            let transform = unique_compatible_marker_transform(&compatible(true))
+                .or_else(|| unique_compatible_marker_transform(&compatible(false)));
+            if let Some(transform) = transform {
+                result.insert(feature.to_string(), transform);
+            }
+        }
+    }
+    result
+}
+
+fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> Vec<Point2> {
+    match (kind, geometry) {
+        (
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
+            SketchGeometry::Point { position },
+        ) => vec![*position],
+        (
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
+            SketchGeometry::Line { start, end },
+        ) => vec![*start, *end],
+        (
+            SketchInputKind::Point | SketchInputKind::ConstrainedPoint,
+            SketchGeometry::Circle { center, .. }
+            | SketchGeometry::Arc { center, .. }
+            | SketchGeometry::Ellipse { center, .. },
+        ) => vec![*center],
+        (SketchInputKind::LineOrCircle, SketchGeometry::Line { start, end }) => {
+            vec![Point2::new(
+                (start.u + end.u) * 0.5,
+                (start.v + end.v) * 0.5,
+            )]
+        }
+        (
+            SketchInputKind::LineOrCircle,
+            SketchGeometry::Circle { center, .. } | SketchGeometry::Ellipse { center, .. },
+        )
+        | (SketchInputKind::Arc, SketchGeometry::Arc { center, .. }) => vec![*center],
+        _ => Vec::new(),
+    }
 }
 
 fn marker_accepts_locus(kind: SketchInputKind, geometry: &SketchGeometry) -> bool {
@@ -3887,11 +4123,18 @@ fn unique_marker_transform(
         .map(|(_, count)| *count)
         .max()
         .filter(|count| *count >= 2)?;
-    let mut candidates = scored
+    let candidates = scored
         .into_iter()
-        .filter_map(|(transform, count)| (count == maximum).then_some(transform));
-    let first = candidates.next()?;
-    candidates.next().is_none().then_some(first)
+        .filter_map(|(transform, count)| (count == maximum).then_some(transform))
+        .collect::<Vec<_>>();
+    if let [transform] = candidates.as_slice() {
+        return Some(*transform);
+    }
+    let mut zero_translation = candidates
+        .into_iter()
+        .filter(|transform| transform.translation == (0, 0));
+    let first = zero_translation.next()?;
+    zero_translation.next().is_none().then_some(first)
 }
 
 fn unique_compatible_marker_transform(
@@ -3955,11 +4198,18 @@ fn unique_compatible_marker_transform(
         .map(|(_, count)| *count)
         .max()
         .filter(|count| *count >= 2)?;
-    let mut candidates = scored
+    let candidates = scored
         .into_iter()
-        .filter_map(|(transform, count)| (count == maximum).then_some(transform));
-    let first = candidates.next()?;
-    candidates.next().is_none().then_some(first)
+        .filter_map(|(transform, count)| (count == maximum).then_some(transform))
+        .collect::<Vec<_>>();
+    if let [transform] = candidates.as_slice() {
+        return Some(*transform);
+    }
+    let mut zero_translation = candidates
+        .into_iter()
+        .filter(|transform| transform.translation == (0, 0));
+    let first = zero_translation.next()?;
+    zero_translation.next().is_none().then_some(first)
 }
 
 fn unique_scored_transform(
@@ -4119,8 +4369,9 @@ fn marker_entities(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        marker_entities, profile_loci_by_marker, typed_marker_relation_definition,
-        typed_relation_definition, unique_compatible_marker_transform, unique_marker_transform,
+        marker_entities, profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        typed_marker_relation_definition, typed_relation_definition,
+        unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -4151,6 +4402,122 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn dimensioned_circle_materializes_from_an_alternate_handle_frame() {
+        let sketch = SketchId("sketch".into());
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch.clone()),
+            },
+            native_ref: Some("feature-native".into()),
+        };
+        let mut entities = vec![
+            SketchEntity {
+                id: SketchEntityId("horizontal".into()),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(10.0, 20.0),
+                    end: Point2::new(30.0, 20.0),
+                },
+            },
+            SketchEntity {
+                id: SketchEntityId("vertical".into()),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(30.0, 20.0),
+                    end: Point2::new(30.0, 50.0),
+                },
+            },
+        ];
+        let mut horizontal = marker("horizontal-marker", Some([0.020, 0.020]));
+        horizontal.kind = SketchInputKind::LineOrCircle;
+        horizontal.offset = 0;
+        let mut vertical = marker("vertical-marker", Some([0.035, 0.030]));
+        vertical.kind = SketchInputKind::LineOrCircle;
+        vertical.offset = 32;
+        let mut center = marker("circle-center", Some([0.040, 0.015]));
+        center.offset = 64;
+        let mut native_payload = vec![0; 96];
+        for offset in [0, 32, 64] {
+            native_payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        }
+        let relation = FeatureInputRelationInstance {
+            id: "circle-relation".into(),
+            parent: "lane".into(),
+            feature_ref: "feature-native".into(),
+            ordinal: 0,
+            offset: 80,
+            family: FeatureInputRelationFamily::CircleDiameter,
+            class_ref: "circle-class".into(),
+            parameter_scalar_ref: Some("circle-scalar".into()),
+            display_scalar_ref: None,
+            operands: vec![FeatureInputOperand {
+                offset: 81,
+                reference_ref: "circle-reference".into(),
+                kind: FeatureInputOperandKind::Native(0x8ab6),
+                entity_index: 0,
+                entity_ref: Some("circle-center".into()),
+            }],
+            scalar_refs: Vec::new(),
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: vec![relation],
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![horizontal, vertical, center],
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("diameter".into()),
+            owner: FeatureId("feature".into()),
+            name: "D1".into(),
+            ordinal: 0,
+            expression: String::new(),
+            value: Some(ParameterValue::Length(Length(8.0))),
+            display: Some(DimensionDisplay::Diameter),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some("circle-scalar".into()),
+            dependencies: Vec::new(),
+        };
+
+        project_dimensioned_sketch_geometry(&mut entities, &[feature], &[parameter], &[lane]);
+        assert!(matches!(
+            &entities[2].geometry,
+            SketchGeometry::Circle { center, radius }
+                if *center == Point2::new(15.0, 40.0) && *radius == Length(4.0)
+        ));
+        assert!(!entities[2].construction);
     }
 
     #[test]
@@ -4597,10 +4964,18 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn symmetric_axis_swaps_remain_unbound() {
+    fn unique_zero_translation_resolves_symmetric_axis_swaps() {
         let markers = [(0, 0), (48, 0), (48, 24), (0, 24)].into_iter().collect();
         let loci = [(0, 0), (24, 0), (24, 48), (0, 48)].into_iter().collect();
-        assert_eq!(unique_marker_transform(&markers, &loci), None);
+        assert_eq!(
+            unique_marker_transform(&markers, &loci),
+            Some(MarkerTransform {
+                swap: true,
+                u_sign: 1,
+                v_sign: 1,
+                translation: (0, 0),
+            })
+        );
     }
 
     #[test]

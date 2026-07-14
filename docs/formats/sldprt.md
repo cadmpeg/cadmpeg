@@ -131,6 +131,8 @@ A point operand projects to a typed sketch constraint only when its marker ident
 
 A circular dimension whose operand marker does not identify a profile locus selects the unique circle or circular arc in the owning sketch whose solved radius equals the radius parameter or half the diameter parameter. Zero or multiple radius matches leave the relation native.
 
+A circular dimension with one point-handle operand, one length parameter with radius or diameter display, and a unique feature-input-to-sketch coordinate transform carries a full circle centered at the transformed handle coordinate. When no equal circle exists, the circle is added to the sketch without adding it to a selected profile chain. The relation record is the circle's native geometry carrier.
+
 A non-coordinate marker with type code `12` is a midpoint relation. It has exactly two linked markers: one point or constrained-point marker and one line, circle, or arc marker. Link order is not significant. Each linked marker must identify exactly one profile locus; the point locus is constrained to the midpoint of the entity owning the other locus.
 
 Non-coordinate marker codes `18`, `19`, and `20` constrain one resolved circular-arc entity to positive angles π/2, π, and 3π/2 radians respectively. The relation remains native unless all linked loci identify the same single profile entity.
@@ -177,7 +179,7 @@ Point-reference object indices address sketch-marker local identifiers within th
 
 Operand tags `80d6`, `80cc`, `837b`, `8ab6`, `8dcb`, `929d`, `bc7c`, and `bd69` select point or constrained-point markers. Tags `80e1`, `8386`, `83fe`, `8dda`, and `bc87` select line-or-circle markers.
 
-Feature-input geometry-handle coordinates and the nested Parasolid profile differ by a signed axis permutation and constant translation per sketch feature. A unique transform mapping at least two distinct geometry-handle coordinates onto profile loci binds every matching geometry or relation marker coordinate to those loci. Relation-marker coordinates do not participate in selecting the frame. The identity axis permutation has precedence when it has a unique translation. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
+Feature-input geometry-handle coordinates and the nested Parasolid profile differ by a signed axis permutation and constant translation per sketch feature. A unique transform mapping at least two distinct geometry-handle coordinates onto compatible profile anchors binds every matching geometry or relation marker coordinate to those loci. Profile loci are the primary anchors. When they do not determine a frame, point handles admit entity endpoints and centers, line-or-circle handles admit line midpoints and circular centers, and arc handles admit arc centers. Relation-marker coordinates do not participate in selecting the frame. The identity axis permutation has precedence when it has a unique translation. When equally scoring signed axis permutations contain exactly one zero-translation transform, that transform has precedence. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
 
 Point-distance operands select explicit profile loci. Line-distance and angular operands select the profile entity shared by their linked endpoint markers. A relation with resolved operands and one driving scalar maps to the corresponding neutral distance, horizontal-distance, vertical-distance, angle, radius, or diameter constraint.
 
