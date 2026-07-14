@@ -1666,6 +1666,26 @@ fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> O
     ))
 }
 
+fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {
+    let name_offset = usize::try_from(name.offset).ok()?;
+    let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
+    let trailer = name_offset.checked_add(6 + name_bytes)?;
+    let bytes = lane.native_payload.get(trailer..trailer + 19)?;
+    if bytes[..4] != [0; 4]
+        || bytes[5] != 1
+        || bytes[8..12] != name.object_id?.to_le_bytes()
+        || bytes[12..16] != [0; 4]
+        || bytes[16..19] != [0xff, 0xfe, 0xff]
+    {
+        return None;
+    }
+    match bytes[6] {
+        0 => Some(BooleanOp::Join),
+        2 => Some(BooleanOp::Cut),
+        _ => None,
+    }
+}
+
 /// Project the feature-input operation discriminator onto typed extrusions.
 pub(crate) fn bind_extrusion_operations(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -1693,6 +1713,11 @@ pub(crate) fn bind_extrusion_operations(
         };
         let mut operations = lanes.iter().filter_map(|lane| {
             let name = feature_object_name(history, lane)?;
+            if history.input_class.as_deref() == Some("moICE_c") {
+                if let Some(operation) = feature_inline_operation(lane, name) {
+                    return Some(operation);
+                }
+            }
             match (
                 history.input_class.as_deref(),
                 feature_operation_code(lane, name)?,

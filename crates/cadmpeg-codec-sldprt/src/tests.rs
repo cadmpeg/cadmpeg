@@ -14258,6 +14258,17 @@ fn decode_projects_feature_input_extrusion_operations() {
         payload
     }
 
+    fn inline_operation_payload(operation: u8, object_id: u32) -> Vec<u8> {
+        let mut payload = operation_payload(14, object_id, "Extrude1", "moICE_c", true, 8);
+        payload.truncate(payload.len() - 12);
+        payload.extend_from_slice(&[0; 4]);
+        payload.extend_from_slice(&[0xca, 1, operation, 0x40]);
+        payload.extend_from_slice(&object_id.to_le_bytes());
+        payload.extend_from_slice(&[0; 4]);
+        payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
+        payload
+    }
+
     for (code, expected, class_name, layouts) in [
         (
             3,
@@ -14358,6 +14369,37 @@ fn decode_projects_feature_input_extrusion_operations() {
                 op: cadmpeg_ir::features::BooleanOp::Unresolved,
                 ..
             }
+        ));
+    }
+
+    for (operation, expected) in [
+        (0, cadmpeg_ir::features::BooleanOp::Join),
+        (2, cadmpeg_ir::features::BooleanOp::Cut),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Extrusion Name="Extrude1" Type="Extrusion" id="8"><Dimension Name="D1">25</Dimension></Extrusion></Keywords>"#,
+        ));
+        source.extend(make_block(
+            0x45,
+            "Contents/Config-0-ResolvedFeatures",
+            &inline_operation_payload(operation, 8),
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let feature = decoded
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Extrude1"))
+            .expect("projected extrusion feature");
+        assert!(matches!(
+            &feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::Extrude { op, .. } if *op == expected
         ));
     }
 }

@@ -89,9 +89,11 @@ Keywords feature attributes that contain object identifiers use the feature's `i
 
 Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order.
 
-An extrusion feature-input object stores a little-endian u32 operation discriminator before its object-name record. A direct class declaration is preceded by the discriminator and four or eight zero bytes. A repeated-class name is preceded by the discriminator, four or eight zero bytes, and its little-endian u16 class token. The padding width is selected by the record schema and is self-delimiting because every padding byte is zero. For class `moICE_c`, discriminators `1`, `2`, `10`, and `11` subtract the extrusion result and discriminator `3` joins it. For class `moExtrusion_c`, discriminator `1` joins the extrusion result.
+An extrusion feature-input object stores a little-endian u32 form code before its object-name record. A direct class declaration is preceded by the form code and four or eight zero bytes. A repeated-class name is preceded by the form code, four or eight zero bytes, and its little-endian u16 class token. The padding width is selected by the record schema and is self-delimiting because every padding byte is zero.
 
-An extrusion object without an `EndCondition` attribute and without an owned `Depth` or `D1` scalar has an unresolved extent. The class, profile reference, direction, draft, and Boolean discriminator remain independently meaningful.
+An `moICE_c` object-name record is followed by four zero bytes, one class byte, byte `01`, a one-byte Boolean operation, one schema byte, the repeated little-endian u32 object identifier, four zero bytes, and `ff fe ff`. Operation `00` joins the extrusion result and operation `02` subtracts it. Sparse objects without this trailer use class-scoped form semantics: `moICE_c` form codes `1`, `2`, `10`, and `11` subtract and form code `3` joins; `moExtrusion_c` form code `1` joins.
+
+An extrusion object without an `EndCondition` attribute and without an owned `Depth` or `D1` scalar has an unresolved extent. The class, profile reference, direction, draft, and Boolean operation remain independently meaningful.
 
 An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile. A nested profile stream owned by that extrusion resolves the profile to its transferred sketch.
 
