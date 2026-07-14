@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 98);
+    assert_eq!(namespace.version, 99);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1467,7 +1467,6 @@ fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
     assert_eq!(pairs[0].offset, 4);
     assert_eq!(pairs[0].value_offsets, [22, 31]);
     assert_eq!(pairs[0].values, [10.0, -20.0]);
-
     bytes[10] ^= 1;
     assert!(crate::om::datum_plane_object_scalar_pairs(&bytes).is_empty());
 }
@@ -1506,6 +1505,19 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
     assert_eq!(pairs[0].offset, 6);
     assert_eq!(pairs[0].value_offsets, [21, 30]);
     assert_eq!(pairs[0].values, [10.0, -20.0]);
+    assert_eq!(pairs[0].discriminator.len(), 15);
+
+    let mut extended = vec![
+        0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
+        0x03,
+    ];
+    extended.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+    extended.push(0);
+    extended.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+    let extended_pairs = crate::om::object_payload_scalar_pairs(&extended);
+    assert_eq!(extended_pairs.len(), 1);
+    assert_eq!(extended_pairs[0].discriminator.len(), 16);
+    assert_eq!(extended_pairs[0].value_offsets, [16, 25]);
 
     bytes[29] = 1;
     assert!(crate::om::object_payload_scalar_pairs(&bytes).is_empty());
@@ -5352,7 +5364,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 98);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 99);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

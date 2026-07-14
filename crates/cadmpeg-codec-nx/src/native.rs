@@ -469,6 +469,8 @@ pub struct FeatureDatumCsysPayloadScalarPair {
     pub source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
     pub value_source_offsets: [u64; 2],
+    /// Exact discriminator selecting the scalar-pair branch.
+    pub discriminator: Vec<u8>,
 }
 
 /// Typed descriptor from one of the final three datum-CSYS construction lanes.
@@ -753,6 +755,8 @@ pub struct FeatureSketchPayloadCoordinatePair {
     pub source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
     pub value_source_offsets: [u64; 2],
+    /// Exact discriminator selecting the coordinate-pair branch.
+    pub discriminator: Vec<u8>,
 }
 
 /// Exact framed scalar retained from one reconstructed sketch payload.
@@ -2118,6 +2122,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                             source_offset(pair.value_offsets[0])?,
                             source_offset(pair.value_offsets[1])?,
                         ],
+                        discriminator: pair.discriminator,
                     })
                 })
                 .collect()
@@ -2535,6 +2540,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
                             source_offset(pair.value_offsets[0])?,
                             source_offset(pair.value_offsets[1])?,
                         ],
+                        discriminator: pair.discriminator,
                     })
                 })
                 .collect()

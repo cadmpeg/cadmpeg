@@ -508,7 +508,7 @@ pub struct DatumPlaneDescriptorBlock {
 }
 
 /// Exact scalar pair following a datum-coordinate-system discriminator.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ObjectPayloadScalarPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
@@ -516,6 +516,8 @@ pub struct ObjectPayloadScalarPair {
     pub values: [f64; 2],
     /// Payload-relative offsets of the two scalar encodings.
     pub value_offsets: [usize; 2],
+    /// Exact discriminator selecting the scalar-pair branch.
+    pub discriminator: Vec<u8>,
 }
 
 /// One bounded datum-CSYS descriptor block with a unique hexadecimal identity.
@@ -1878,27 +1880,40 @@ pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<DatumPlaneDescriptor
 
 /// Decode every exactly framed scalar pair in a reconstructed object payload.
 pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
-    const DISCRIMINATOR: [u8; 15] = [
+    const SHORT: [u8; 15] = [
         0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
     ];
-    bytes
-        .windows(DISCRIMINATOR.len())
-        .enumerate()
-        .filter_map(|(offset, window)| {
-            (window == DISCRIMINATOR).then_some(())?;
-            let first = offset + DISCRIMINATOR.len();
+    const EXTENDED: [u8; 16] = [
+        0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
+        0x03,
+    ];
+    let mut pairs = Vec::new();
+    for discriminator in [SHORT.as_slice(), EXTENDED.as_slice()] {
+        for (offset, window) in bytes.windows(discriminator.len()).enumerate() {
+            if window != discriminator {
+                continue;
+            }
+            let first = offset + discriminator.len();
             let second = first + 9;
-            (bytes.get(first + 8) == Some(&0x00)).then_some(())?;
-            Some(ObjectPayloadScalarPair {
+            let Some(values) = bytes
+                .get(first..first + 8)
+                .and_then(shifted_ieee_f64)
+                .zip(bytes.get(second..second + 8).and_then(shifted_ieee_f64))
+                .filter(|_| bytes.get(first + 8) == Some(&0x00))
+                .map(|(first, second)| [first, second])
+            else {
+                continue;
+            };
+            pairs.push(ObjectPayloadScalarPair {
                 offset,
-                values: [
-                    shifted_ieee_f64(bytes.get(first..first + 8)?)?,
-                    shifted_ieee_f64(bytes.get(second..second + 8)?)?,
-                ],
+                values,
                 value_offsets: [first, second],
-            })
-        })
-        .collect()
+                discriminator: discriminator.to_vec(),
+            });
+        }
+    }
+    pairs.sort_by_key(|pair| pair.offset);
+    pairs
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
