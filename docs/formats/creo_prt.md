@@ -337,6 +337,13 @@ its item `e2`, and the final row may end at the following named record. Solver
 integer fields extend the compact-integer lattice with `c0..df XX YY`, equal
 to `((head-c0)<<16)|(XX<<8)|YY`.
 
+For a two-item type-zero incidence, sense `2` selects the native first endpoint
+and sense `3` selects the native second endpoint; the selected loci coincide.
+For an `arcorient = 0` arc these map to the neutral end and start loci,
+respectively, because the analytic arc orientation is reversed. A two-item
+type-four incidence makes the referenced entities tangent at their selected
+endpoint loci.
+
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
 the last row may terminate directly at the next structural or named record.

@@ -2473,6 +2473,74 @@ fn section_dimension_constraints(
         .collect()
 }
 
+fn section_skamp_locus(
+    definition_id: u32,
+    segments: &[crate::feature::FeatureSegment],
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SketchLocus> {
+    let segment = segments
+        .iter()
+        .find(|segment| segment.external_id == item.entity_id)?;
+    let entity = SketchEntityId(format!(
+        "creo:featdefs:sketch_entity#{definition_id}:{}",
+        segment.external_id
+    ));
+    match (segment.kind, item.sense) {
+        (_, 0) => Some(SketchLocus::Entity(entity)),
+        (crate::feature::FeatureSegmentKind::Arc, 2) => Some(SketchLocus::End(entity)),
+        (crate::feature::FeatureSegmentKind::Arc, 3) => Some(SketchLocus::Start(entity)),
+        (_, 2) => Some(SketchLocus::Start(entity)),
+        (_, 3) => Some(SketchLocus::End(entity)),
+        _ => None,
+    }
+}
+
+fn section_skamp_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let (Some(segments), Some(relations)) = (&definition.segments, &definition.relations) else {
+        return Vec::new();
+    };
+    relations
+        .skamps
+        .iter()
+        .filter_map(|skamp| {
+            let constraint_definition = match (skamp.kind, skamp.items.as_slice()) {
+                (0, [first, second]) => SketchConstraintDefinition::CoincidentLoci {
+                    loci: vec![
+                        section_skamp_locus(definition.id, &segments.rows, first)?,
+                        section_skamp_locus(definition.id, &segments.rows, second)?,
+                    ],
+                },
+                (4, [first, second]) => SketchConstraintDefinition::Tangent {
+                    first: SketchEntityId(format!(
+                        "creo:featdefs:sketch_entity#{}:{}",
+                        definition.id, first.entity_id
+                    )),
+                    second: SketchEntityId(format!(
+                        "creo:featdefs:sketch_entity#{}:{}",
+                        definition.id, second.entity_id
+                    )),
+                },
+                _ => return None,
+            };
+            Some((
+                SketchConstraint {
+                    id: SketchConstraintId(format!(
+                        "creo:featdefs:sketch_constraint#{}:skamp:{}",
+                        definition.id, skamp.id
+                    )),
+                    sketch: sketch.clone(),
+                    definition: constraint_definition,
+                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                },
+                skamp.offset,
+            ))
+        })
+        .collect()
+}
+
 fn resolved_profile_chains(
     definition: &crate::feature::FeatureDefinition,
     emitted: &BTreeSet<u32>,
@@ -3024,6 +3092,17 @@ fn transfer_resolved_sketches(
                 "FeatDefs",
                 offset as u64,
                 "section_dimension_constraint",
+                Exactness::ByteExact,
+            );
+            constraints.push(constraint);
+        }
+        for (constraint, offset) in section_skamp_constraints(definition, &sketch_id) {
+            annotate(
+                annotations,
+                &constraint.id.0,
+                "FeatDefs",
+                offset as u64,
+                "section_solver_constraint",
                 Exactness::ByteExact,
             );
             constraints.push(constraint);
