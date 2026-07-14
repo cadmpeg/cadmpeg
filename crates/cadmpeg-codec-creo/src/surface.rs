@@ -285,7 +285,7 @@ pub struct LineExtrusionFrame {
 
 /// One positional cubic B-spline replay bound to a following tabulated-
 /// cylinder surface row.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TabulatedCylinderCurveReplay {
     /// Owning `geom_type = 2c` surface identifier.
     pub surface_id: u32,
@@ -307,6 +307,9 @@ pub struct TabulatedCylinderCurveReplay {
     pub successor_reference: u32,
     /// Four individually bounded packed control-point bodies.
     pub control_point_bodies: [Vec<u8>; 4],
+    /// Two-coordinate control points when both scalar tokens consume their
+    /// complete packed bodies.
+    pub control_points: [Option<[f64; 2]>; 4],
     /// Reference in the terminal control-point trailer.
     pub terminal_reference: u32,
     /// Byte offset of the replay curve identifier.
@@ -1131,6 +1134,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
     const SIGNATURE: &[u8] = &[
         0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7,
     ];
+    let cache = scalar::ScalarCache::from_section(payload);
     let surface_rows = rows(payload);
     let mut signatures = Vec::new();
     let mut search = 0;
@@ -1206,6 +1210,13 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
         if bodies.iter().any(Vec::is_empty) {
             continue;
         }
+        let decode_point = |body: &[u8]| {
+            let (first, after_first) = scalar::decode_in_surface_row_lane(body, 0, &cache)?;
+            let (second, end) = scalar::decode_in_surface_row_lane(body, after_first, &cache)?;
+            (end == body.len() && first.is_finite() && second.is_finite())
+                .then_some([first, second])
+        };
+        let control_points = std::array::from_fn(|index| decode_point(&bodies[index]));
         let Some(owner) = surface_rows
             .iter()
             .find(|row| row.offset >= *terminal_end && row.offset < limit && row.type_byte == 0x2c)
@@ -1231,6 +1242,7 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
             ],
             successor_reference,
             control_point_bodies: bodies,
+            control_points,
             terminal_reference: *terminal_reference,
             offset: replay_offset,
             surface_row_offset: owner.offset,

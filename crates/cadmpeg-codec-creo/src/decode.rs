@@ -449,6 +449,7 @@ struct CreoTabulatedCylinderCurveReplayRecord {
     control_point_ids: [u32; 4],
     successor_reference: u32,
     control_point_bodies: [Vec<u8>; 4],
+    control_points: [Option<[f64; 2]>; 4],
     terminal_reference: u32,
     offset: usize,
     surface_row_offset: usize,
@@ -675,6 +676,7 @@ fn tabulated_cylinder_curve_replay_records(
             control_point_ids: record.control_point_ids,
             successor_reference: record.successor_reference,
             control_point_bodies: record.control_point_bodies.clone(),
+            control_points: record.control_points,
             terminal_reference: record.terminal_reference,
             offset: record.offset,
             surface_row_offset: record.surface_row_offset,
@@ -14791,6 +14793,14 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_tabulated_cylinder_curve_replay_count".to_string(),
         scan.tabulated_cylinder_curve_replays.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_tabulated_cylinder_control_point_set_count".to_string(),
+        scan.tabulated_cylinder_curve_replays
+            .iter()
+            .filter(|replay| replay.control_points.iter().all(Option::is_some))
+            .count()
+            .to_string(),
     );
     attributes.insert(
         "decoded_curve_prototype_count".to_string(),

@@ -282,6 +282,9 @@ separators, and the reference-bearing terminal trailer. A replay binds the
 first following `geom_type = 2c` surface row before the next replay signature;
 intervening rows from other surface families do not consume it. Ambiguous
 separators or an intervening replay leave the bytes opaque.
+Each packed point body contains two directrix coordinates. A control point is
+numeric only when two defined scalar tokens consume its entire bounded body;
+partial scalar matches do not assign either coordinate.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
