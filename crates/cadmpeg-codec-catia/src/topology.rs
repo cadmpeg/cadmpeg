@@ -3984,6 +3984,15 @@ impl MeshSelectionSearch<'_> {
                 if supported.next().is_some() {
                     continue;
                 }
+                let unknown_directions = assignment
+                    .boundaries
+                    .iter()
+                    .flatten()
+                    .filter(|use_| use_.reversed.is_none())
+                    .count();
+                if unknown_directions > 8 {
+                    continue;
+                }
                 let options = quotient.assignment_options(assignment, self.edge_candidates);
                 let Some((first_directions, _)) = options.first() else {
                     return false;
@@ -4130,6 +4139,9 @@ impl MeshSelectionSearch<'_> {
             return;
         }
         let mut measured = quotient.clone();
+        if !self.propagate_forced_face_equations(&mut measured) {
+            return;
+        }
         let root_count = measured.root_count();
         if root_count < self.vertex_points.len() {
             return;
@@ -4222,7 +4234,7 @@ impl MeshSelectionSearch<'_> {
             })
             .min();
         let Some((_, supported, _, _, _, face)) = next else {
-            let mut quotient = quotient.clone();
+            let mut quotient = measured.clone();
             let Some(root_points) =
                 quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
             else {
@@ -4325,7 +4337,7 @@ impl MeshSelectionSearch<'_> {
             }
             let assignment = &self.assignments[face][assignment_index];
             options.extend(
-                quotient
+                measured
                     .assignment_options_limited(assignment, self.edge_candidates, remaining)
                     .into_iter()
                     .map(|(directions, next_quotient)| {
@@ -4490,9 +4502,6 @@ pub fn parse_standard_mesh_endpoint_candidates(
         ambiguous: false,
         exhausted: false,
     };
-    if !search.propagate_forced_face_equations(&mut quotient) {
-        return None;
-    }
     search.search(&quotient);
     (!search.ambiguous && !search.exhausted)
         .then_some(search.solution)
