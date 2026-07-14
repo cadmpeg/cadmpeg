@@ -119,21 +119,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             warnings.push(format!("STYLED_ITEM #{style_id} has no resolved target"));
             continue;
         };
-        let mut null_style_records = BTreeSet::new();
         if style
             .parameter(1)
             .and_then(ValueExt::list)
             .is_some_and(<[Value]>::is_empty)
         {
             typed.insert(style_id);
-            continue;
-        }
-        if style
-            .parameter(1)
-            .is_some_and(|value| has_null_style(value, exchange, &mut null_style_records))
-        {
-            typed.insert(style_id);
-            typed.extend(null_style_records);
             continue;
         }
         let mut visited = BTreeSet::new();
@@ -143,11 +134,17 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             .into_iter()
             .flatten()
             .flat_map(references)
-            .find_map(|reference| find_color(reference, exchange, &mut visited))
+            .find_map(|reference| find_color(reference, exchange, &mut visited, 0))
         else {
-            warnings.push(format!(
-                "STYLED_ITEM #{style_id} has no resolved surface color"
-            ));
+            let mut visited = BTreeSet::new();
+            if !style
+                .parameter(1)
+                .is_some_and(|value| contains_null_style(value, exchange, &mut visited, 0))
+            {
+                warnings.push(format!(
+                    "STYLED_ITEM #{style_id} has no resolved surface color"
+                ));
+            }
             continue;
         };
         let appearance_id = appearance_ids
@@ -385,7 +382,11 @@ fn find_color(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
+    depth: usize,
 ) -> Option<(u64, Color, Option<String>)> {
+    if depth >= 256 {
+        return None;
+    }
     if !visited.insert(id) {
         return None;
     }
@@ -420,25 +421,30 @@ fn find_color(
             .parameters()
             .iter()
             .flat_map(references)
-            .find_map(|reference| find_color(reference, exchange, visited)),
+            .find_map(|reference| find_color(reference, exchange, visited, depth + 1)),
     }
 }
 
-fn has_null_style(value: &Value, exchange: &Exchange, visited: &mut BTreeSet<u64>) -> bool {
+fn contains_null_style(
+    value: &Value,
+    exchange: &Exchange,
+    visited: &mut BTreeSet<u64>,
+    depth: usize,
+) -> bool {
+    if depth >= 256 {
+        return false;
+    }
     match value {
         Value::Typed(name, _) if name == "NULL_STYLE" => true,
-        Value::Typed(_, value) => has_null_style(value, exchange, visited),
+        Value::Typed(_, value) => contains_null_style(value, exchange, visited, depth + 1),
         Value::List(values) => values
             .iter()
-            .any(|value| has_null_style(value, exchange, visited)),
-        Value::Reference(id) if visited.insert(*id) => {
-            exchange.records.get(id).is_some_and(|record| {
-                record
-                    .parameters()
-                    .iter()
-                    .any(|value| has_null_style(value, exchange, visited))
-            })
-        }
+            .any(|value| contains_null_style(value, exchange, visited, depth + 1)),
+        Value::Reference(id) if visited.insert(*id) => exchange.records.get(id).is_some_and(|r| {
+            r.parameters()
+                .iter()
+                .any(|value| contains_null_style(value, exchange, visited, depth + 1))
+        }),
         _ => false,
     }
 }

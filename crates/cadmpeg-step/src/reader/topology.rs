@@ -486,10 +486,15 @@ fn build(
     };
     let mut used_v = BTreeSet::new();
     let mut used_e = BTreeSet::new();
+    let mut used_shells = BTreeSet::new();
+    let mut used_faces = BTreeSet::new();
     let mut radial = BTreeMap::<u64, Vec<usize>>::new();
     for shell_reference in shell_steps {
         let (shell_step, shell_forward) =
             resolve_shell(shell_reference, exchange, &mut built.typed)?;
+        if !used_shells.insert(shell_step) {
+            continue;
+        }
         let sr = exchange.records.get(&shell_step)?;
         if !matches!(sr.simple_name(), Some("OPEN_SHELL") | Some("CLOSED_SHELL")) {
             return None;
@@ -497,6 +502,9 @@ fn build(
         let sid = ShellId(format!("step:data:shell#{shell_step}"));
         let mut face_ids = vec![];
         for face_step in refs(sr.parameter(1)?)? {
+            if !used_faces.insert(face_step) {
+                continue;
+            }
             let fr = exchange.records.get(&face_step)?;
             if fr.simple_name() != Some("ADVANCED_FACE") {
                 return None;

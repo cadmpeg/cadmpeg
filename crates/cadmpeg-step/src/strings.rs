@@ -76,6 +76,23 @@ pub fn decode(input: &[u8]) -> Result<String, StringError> {
 
 fn decode_page_byte(page: u8, byte: u8, offset: usize) -> Result<char, StringError> {
     let part = page - b'A' + 1;
+    if byte < 0xa0 || part == 1 {
+        return char::from_u32(u32::from(byte)).ok_or_else(|| StringError {
+            offset,
+            message: "invalid ISO 8859 scalar".into(),
+        });
+    }
+    if part == 9 {
+        return Ok(match byte {
+            0xd0 => '\u{011e}',
+            0xdd => '\u{0130}',
+            0xde => '\u{015e}',
+            0xf0 => '\u{011f}',
+            0xfd => '\u{0131}',
+            0xfe => '\u{015f}',
+            _ => char::from(byte),
+        });
+    }
     let label = format!("iso-8859-{part}");
     let encoding =
         encoding_rs::Encoding::for_label(label.as_bytes()).ok_or_else(|| StringError {

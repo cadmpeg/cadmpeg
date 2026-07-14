@@ -282,7 +282,7 @@ fn apply_body_placements(
             warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
             continue;
         };
-        for body in representation_bodies(representation, exchange, &mut BTreeSet::new()) {
+        for body in representation_bodies(representation, exchange, &mut BTreeSet::new(), 0) {
             if let Some(index) = body_indices.get(&body) {
                 ir.model.bodies[*index].transform = Some(transform);
             }
@@ -332,7 +332,7 @@ fn shape_binding(
     let definition = *pds.get(&record.parameter(0)?.reference()?)?;
     let product = *definitions.get(&definition)?;
     let representation = record.parameter(1)?.reference()?;
-    let bodies = representation_bodies(representation, exchange, &mut BTreeSet::new());
+    let bodies = representation_bodies(representation, exchange, &mut BTreeSet::new(), 0);
     Some((product, bodies))
 }
 
@@ -340,7 +340,11 @@ fn representation_bodies(
     representation: u64,
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
+    depth: usize,
 ) -> Vec<BodyId> {
+    if depth >= 256 {
+        return Vec::new();
+    }
     if !active.insert(representation) {
         return Vec::new();
     }
@@ -370,7 +374,12 @@ fn representation_bodies(
                     .and_then(|map| map.parameter(1))
                     .and_then(ValueExt::reference);
                 if let Some(mapped_representation) = mapped_representation {
-                    return representation_bodies(mapped_representation, exchange, active);
+                    return representation_bodies(
+                        mapped_representation,
+                        exchange,
+                        active,
+                        depth + 1,
+                    );
                 }
             }
             Vec::new()

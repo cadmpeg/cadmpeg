@@ -167,6 +167,10 @@ impl StepSchema {
         self.supports_tessellation()
     }
 
+    const fn supports_visibility(self) -> bool {
+        !matches!(self, Self::Ap203Edition1)
+    }
+
     const fn application_protocol(self) -> (&'static str, &'static str, i32) {
         match self {
             Self::Ap203Edition1 => (
@@ -340,6 +344,7 @@ struct Builder<'a> {
     default_product_definition_shape: Option<Ref>,
     /// Emitted representation item for each body.
     body_shape_refs: HashMap<String, Ref>,
+    body_item_refs: HashMap<String, Vec<Ref>>,
     tessellation_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
     /// Display colors that could not be attached to an emitted STEP item.
@@ -426,6 +431,7 @@ impl<'a> Builder<'a> {
             body_step_refs: HashMap::new(),
             default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
+            body_item_refs: HashMap::new(),
             tessellation_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
             unstyled_colors: 0,
@@ -1034,7 +1040,13 @@ impl<'a> Builder<'a> {
             let mut body_items = product
                 .bodies
                 .iter()
-                .filter_map(|body| self.body_shape_refs.get(body.as_str()).copied())
+                .flat_map(|body| {
+                    self.body_item_refs
+                        .get(body.as_str())
+                        .into_iter()
+                        .flatten()
+                        .copied()
+                })
                 .collect::<Vec<_>>();
             if let Some(origin) = product_origins.get(&product.id) {
                 body_items.push(*origin);
@@ -1193,6 +1205,10 @@ impl<'a> Builder<'a> {
                     self.body_shape_refs
                         .entry(region.body.0.clone())
                         .or_insert(shape_item);
+                    self.body_item_refs
+                        .entry(region.body.0.clone())
+                        .or_default()
+                        .push(shape_item);
                     self.body_step_refs
                         .entry(region.body.0.clone())
                         .or_insert(item);
@@ -1200,14 +1216,24 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
-            let shell_refs: Vec<Ref> = region
-                .shells
+            let Some((outer_id, void_ids)) = region.shells.split_first() else {
+                continue;
+            };
+            let Some(outer) = self.emit_shell(outer_id.as_str(), closed) else {
+                self.loss(
+                    LossCategory::Topology,
+                    Severity::Error,
+                    format!("region {} has no writable outer shell", region.id),
+                );
+                continue;
+            };
+            let voids: Vec<Ref> = void_ids
                 .iter()
                 .filter_map(|sid| self.emit_shell(sid.as_str(), closed))
                 .collect();
-            let Some((outer, voids)) = shell_refs.split_first() else {
-                continue;
-            };
+            let mut shell_refs = Vec::with_capacity(1 + voids.len());
+            shell_refs.push(outer);
+            shell_refs.extend_from_slice(&voids);
             let item = if !closed {
                 self.emitter.emit(
                     "SHELL_BASED_SURFACE_MODEL",
@@ -1234,9 +1260,13 @@ impl<'a> Builder<'a> {
             self.body_shape_refs
                 .entry(region.body.0.clone())
                 .or_insert(shape_item);
+            self.body_item_refs
+                .entry(region.body.0.clone())
+                .or_default()
+                .push(shape_item);
             self.body_step_refs
                 .entry(region.body.0.clone())
-                .or_insert(if closed { item } else { *outer });
+                .or_insert(if closed { item } else { outer });
         }
         items
     }
@@ -1292,6 +1322,9 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_visibility(&mut self) {
+        if !self.schema.supports_visibility() {
+            return;
+        }
         let hidden = self
             .ir
             .model
@@ -1770,30 +1803,34 @@ impl<'a> Builder<'a> {
         if !self.active_surfaces.insert(surface_id.to_string()) {
             return None;
         }
-        let surf = self.surfaces.get(surface_id).copied()?;
-        let procedural = self
-            .ir
-            .model
-            .procedural_surfaces
-            .iter()
-            .find(|procedural| procedural.surface.as_str() == surface_id)
-            .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
-        let emitted = procedural.and_then(|(id, definition)| {
-            self.emit_procedural_surface(&surf.geometry, &definition)
-                .map(|reference| (id, reference))
-        });
-        let r = if let Some((id, reference)) = emitted {
-            self.written_procedural_surfaces.insert(id);
-            reference
-        } else if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
-            self.active_surfaces.remove(surface_id);
-            return None;
-        } else {
-            geometry::surface(&mut self.emitter, &surf.geometry)
-        };
+        let result = (|| {
+            let surf = self.surfaces.get(surface_id).copied()?;
+            let procedural = self
+                .ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .find(|procedural| procedural.surface.as_str() == surface_id)
+                .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
+            let emitted = procedural.and_then(|(id, definition)| {
+                self.emit_procedural_surface(&surf.geometry, &definition)
+                    .map(|reference| (id, reference))
+            });
+            let r = if let Some((id, reference)) = emitted {
+                self.written_procedural_surfaces.insert(id);
+                reference
+            } else if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
+                return None;
+            } else {
+                geometry::surface(&mut self.emitter, &surf.geometry)
+            };
+            Some(r)
+        })();
         self.active_surfaces.remove(surface_id);
-        self.surface_refs.insert(surface_id.to_string(), r);
-        Some(r)
+        if let Some(r) = result {
+            self.surface_refs.insert(surface_id.to_string(), r);
+        }
+        result
     }
 
     fn emit_procedural_surface(
@@ -2101,6 +2138,7 @@ impl<'a> Builder<'a> {
                         ))
                     })
                     .collect::<Vec<_>>();
+                let complete = compartments.len() == groups.len();
                 let system = self.emitter.emit(
                     "DATUM_SYSTEM",
                     &format!(
@@ -2110,7 +2148,7 @@ impl<'a> Builder<'a> {
                     ),
                 );
                 annotation_refs.insert(annotation.id.clone(), system);
-                self.written_pmi += usize::from(targets_exact(annotation));
+                self.written_pmi += usize::from(targets_exact(annotation) && complete);
             }
         }
         for annotation in &annotations {
@@ -2272,11 +2310,7 @@ impl<'a> Builder<'a> {
             );
             let literal = self.emitter.emit(
                 "TEXT_LITERAL",
-                &format!(
-                    "{},{},{placement},'left',.RIGHT.,{font}",
-                    string(annotation.name.as_deref().unwrap_or("")),
-                    string(text)
-                ),
+                &format!("{},{placement},'left',.RIGHT.,{font}", string(text)),
             );
             let semantic_refs = semantics
                 .iter()

@@ -37,12 +37,45 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
         .collect::<HashSet<_>>();
-    let points = ir
+    let mut points = ir
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.0.as_str())
         .collect::<HashSet<_>>();
+    for binding in &ir.model.appearance_bindings {
+        match &binding.target {
+            crate::appearance::AppearanceTarget::Surface(id) => {
+                surfaces.insert(id.0.as_str());
+            }
+            crate::appearance::AppearanceTarget::Curve(id) => {
+                curves.insert(id.0.as_str());
+            }
+            crate::appearance::AppearanceTarget::Point(id) => {
+                points.insert(id.0.as_str());
+            }
+            _ => {}
+        }
+    }
+    for item in ir
+        .model
+        .presentation_layers
+        .iter()
+        .flat_map(|layer| &layer.items)
+    {
+        match item {
+            crate::presentation::PresentationItem::Surface { surface } => {
+                surfaces.insert(surface.0.as_str());
+            }
+            crate::presentation::PresentationItem::Curve { curve } => {
+                curves.insert(curve.0.as_str());
+            }
+            crate::presentation::PresentationItem::Point { point } => {
+                points.insert(point.0.as_str());
+            }
+            _ => {}
+        }
+    }
 
     for procedural in &ir.model.procedural_surfaces {
         surfaces.insert(&procedural.surface.0);

@@ -11,7 +11,7 @@ DATA;
 #4=DIRECTION('',(0.,0.,1.));
 #5=DIRECTION('',(1.,0.,0.));
 #6=AXIS2_PLACEMENT_3D('note placement',#3,#4,#5);
-#7=TEXT_LITERAL('inspection note','inspect surface',#6,'left',.RIGHT.,$);
+#7=TEXT_LITERAL('inspect surface',#6,'left',.RIGHT.,$);
 #8=ANNOTATION_TEXT_OCCURRENCE('surface note',(),#7);
 #9=ANNOTATION_PLANE('front annotation plane',#6,(#8));
 #10=DRAUGHTING_MODEL('PMI presentation',(#8,#9),#2);

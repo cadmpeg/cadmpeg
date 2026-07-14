@@ -93,6 +93,23 @@ fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
 }
 
 #[test]
+fn parser_bounds_exponential_anchor_expansion() {
+    let mut anchors = String::from("<a0>=(1,1);\n");
+    for index in 1..40 {
+        anchors.push_str(&format!(
+            "<a{index}>=(<a{}>,<a{}>);\n",
+            index - 1,
+            index - 1
+        ));
+    }
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'3;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;ANCHOR;{anchors}ENDSEC;DATA;#1=ITEM(<a39>);ENDSEC;END-ISO-10303-21;"
+    );
+    let error = crate::parse::parse(source.as_bytes()).unwrap_err();
+    assert!(error.to_string().contains("expanded anchor value exceeds"));
+}
+
+#[test]
 fn codec_detects_and_inspects_ap242_exchange_structure() {
     let bytes = include_bytes!("../tests/fixtures/ap242_minimal.p21");
     let codec = StepCodec::default();
@@ -1440,6 +1457,13 @@ fn decode_transfers_ap242_semantic_pmi() {
     assert_eq!(nominal.unwrap().value, 12.0);
     assert_eq!(lower_deviation.unwrap().value, -0.1);
     assert_eq!(upper_deviation.unwrap().value, 0.2);
+    assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            dimension: cadmpeg_ir::pmi::DimensionKind::Diameter,
+            ..
+        }
+    )));
     let fit = limits_and_fits.as_ref().expect("limits and fits");
     assert_eq!(fit.form_variance, "H");
     assert_eq!(fit.grade, "7");
@@ -1517,7 +1541,10 @@ fn decode_transfers_ap242_semantic_pmi() {
     assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
         annotation.definition,
         PmiDefinition::Dimension {
-            nominal: Some(cadmpeg_ir::PmiValue { value: 12.0, .. }),
+            nominal: Some(cadmpeg_ir::PmiValue {
+                value: 12.0,
+                quantity: PmiQuantity::Length,
+            }),
             lower_deviation: Some(cadmpeg_ir::PmiValue { value: -0.1, .. }),
             upper_deviation: Some(cadmpeg_ir::PmiValue { value: 0.2, .. }),
             ..
@@ -1621,6 +1648,17 @@ fn overriding_style_suppresses_the_base_binding() {
         .expect("overriding appearance");
     let color = appearance.base_color.expect("override color");
     assert_eq!((color.r, color.g, color.b), (1.0, 0.0, 0.0));
+}
+
+#[test]
+fn null_style_branch_does_not_suppress_a_sibling_color() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=COLOUR_RGB('red',1.,0.,0.);
+#3=PRESENTATION_STYLE_ASSIGNMENT((NULL_STYLE(.NULL.),#2));
+#4=STYLED_ITEM('',(#3),#1);",
+    );
+    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
 }
 
 #[test]
@@ -1742,6 +1780,33 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("invalid pnindex")));
+}
+
+#[test]
+fn malformed_complex_strip_does_not_discard_valid_strips() {
+    let result = decode_inline(
+        "#1=COORDINATES_LIST('',4,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.),(1.,1.,0.)));
+#2=COMPLEX_TRIANGULATED_SURFACE_SET('',#1,4,$,$,((1,2),(1,2,3,4)),());",
+    );
+    assert_eq!(result.ir.model.tessellations.len(), 1);
+    assert_eq!(result.ir.model.tessellations[0].triangles.len(), 2);
+}
+
+#[test]
+fn ap203e1_does_not_emit_invisibility_entities() {
+    let mut ir = unit_cube();
+    ir.model.bodies[0].visible = Some(false);
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap203Edition1,
+            ..StepWriteOptions::default()
+        },
+    )
+    .unwrap();
+    assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
 }
 
 #[test]
@@ -1968,6 +2033,19 @@ fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
 }
 
 #[test]
+fn every_region_of_a_body_is_retained_as_a_shape_item() {
+    let mut ir = unit_cube();
+    let body = ir.model.bodies[0].id.clone();
+    let mut region = ir.model.regions[0].clone();
+    region.id.0 = "zzzz:test:region#second".into();
+    ir.model.bodies[0].regions.push(region.id.clone());
+    ir.model.regions.push(region);
+    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
+    builder.build();
+    assert_eq!(builder.body_item_refs[body.as_str()].len(), 2);
+}
+
+#[test]
 fn ap242_dimension_kinds_emit_concrete_schema_entities() {
     use cadmpeg_ir::ids::PmiId;
     use cadmpeg_ir::pmi::{DimensionKind, GeometricToleranceKind, PmiDefinition};
@@ -2132,6 +2210,44 @@ fn common_datum_compartment_round_trips_as_one_precedence() {
                 && references.iter().all(|reference| reference.common_group == Some(1))
                 && references[0].modifiers != references[1].modifiers
     )));
+}
+
+#[test]
+fn rejected_step_write_detects_incomplete_datum_system() {
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21")),
+            &DecodeOptions::default(),
+        )
+        .unwrap()
+        .ir;
+    let system = ir
+        .model
+        .pmi
+        .iter_mut()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. }))
+        .unwrap();
+    let PmiDefinition::DatumSystem { references } = &mut system.definition else {
+        unreachable!()
+    };
+    references[0].datum = PmiId("test:model:pmi#missing".into());
+    let mut output = Vec::new();
+    assert!(matches!(
+        write_step(
+            &ir,
+            &mut output,
+            &StepWriteOptions {
+                schema: StepSchema::Ap242Edition3,
+                unsupported: StepUnsupportedPolicy::Reject,
+                ..StepWriteOptions::default()
+            }
+        ),
+        Err(StepError::Unsupported(_))
+    ));
+    assert!(output.is_empty());
 }
 
 #[test]

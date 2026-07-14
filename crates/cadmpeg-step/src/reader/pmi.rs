@@ -105,7 +105,15 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         };
         let name = record.parameters().iter().find_map(ValueExt::text);
         if matches!(kind, DimensionKind::Size) {
-            kind = match name.as_deref().map(str::to_ascii_lowercase).as_deref() {
+            let category = if record
+                .simple_name()
+                .is_some_and(|name| name.starts_with("DIMENSIONAL_SIZE_WITH_DATUM_FEATURE"))
+            {
+                record.parameters().iter().rev().find_map(ValueExt::text)
+            } else {
+                name.clone()
+            };
+            kind = match category.as_deref().map(str::to_ascii_lowercase).as_deref() {
                 Some("diameter") => DimensionKind::Diameter,
                 Some("radius") => DimensionKind::Radius,
                 _ => kind,
@@ -286,14 +294,13 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(definition) = record.parameter(2).and_then(ValueExt::reference) else {
             continue;
         };
-        let Some(item) = record.parameter(4).and_then(ValueExt::reference) else {
-            continue;
-        };
         if annotations.contains_key(&definition) {
-            presentation_semantics
-                .entry(item)
-                .or_default()
-                .push(definition);
+            for item in record.parameter(4).into_iter().flat_map(references) {
+                presentation_semantics
+                    .entry(item)
+                    .or_default()
+                    .push(definition);
+            }
             typed.insert(id);
         }
     }
@@ -411,6 +418,7 @@ fn mark_characteristic_representations(
                                     "LENGTH_MEASURE_WITH_UNIT"
                                         | "PLANE_ANGLE_MEASURE_WITH_UNIT"
                                         | "MEASURE_WITH_UNIT"
+                                        | "MEASURE_REPRESENTATION_ITEM"
                                 )
                             )
                         })
@@ -585,7 +593,7 @@ fn find_annotation_text(
         record.simple_name(),
         Some("TEXT_LITERAL" | "TEXT_LITERAL_WITH_ASSOCIATED_CURVES")
     ) {
-        return record.parameter(1).and_then(ValueExt::text);
+        return record.parameter(0).and_then(ValueExt::text);
     }
     record
         .parameters()
@@ -786,13 +794,20 @@ fn measure_inner(
                 return None;
             }
             let record = exchange.records.get(id)?;
-            let quantity = if record.display_name().contains("LENGTH") {
-                PmiQuantity::Length
-            } else if record.display_name().contains("ANGLE") {
-                PmiQuantity::Angle
-            } else {
-                PmiQuantity::Ratio
-            };
+            let quantity = record
+                .partials
+                .iter()
+                .flat_map(|partial| &partial.parameters)
+                .find_map(measure_quantity)
+                .unwrap_or_else(|| {
+                    if record.display_name().contains("LENGTH") {
+                        PmiQuantity::Length
+                    } else if record.display_name().contains("ANGLE") {
+                        PmiQuantity::Angle
+                    } else {
+                        PmiQuantity::Ratio
+                    }
+                });
             let unit = record
                 .partials
                 .iter()
@@ -838,6 +853,24 @@ fn measure_inner(
         Value::List(values) => values
             .iter()
             .find_map(|value| measure_inner(value, exchange, length_scale, angle_scale, active)),
+        _ => None,
+    }
+}
+
+fn measure_quantity(value: &Value) -> Option<PmiQuantity> {
+    match value {
+        Value::Typed(name, value) => {
+            if name.contains("LENGTH") {
+                Some(PmiQuantity::Length)
+            } else if name.contains("ANGLE") {
+                Some(PmiQuantity::Angle)
+            } else if name.contains("RATIO") {
+                Some(PmiQuantity::Ratio)
+            } else {
+                measure_quantity(value)
+            }
+        }
+        Value::List(values) => values.iter().find_map(measure_quantity),
         _ => None,
     }
 }

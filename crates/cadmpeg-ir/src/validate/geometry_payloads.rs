@@ -375,7 +375,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             if ![direction.x, direction.y, direction.z]
                 .into_iter()
                 .all(f64::is_finite)
-                || direction.norm() == 0.0
+                || degenerate(direction)
             {
                 bounds_err(findings, &procedural.id.0, "invalid linear-sweep direction");
             }

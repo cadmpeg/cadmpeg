@@ -2555,7 +2555,12 @@ fn check_composite_cycle<'a>(
         return;
     }
     if !active.insert(curve) {
-        ref_error(findings, curve, "acyclic composite curve", curve);
+        findings.push(Finding {
+            check: Check::ReferentialIntegrity,
+            severity: Severity::Error,
+            message: "composite curve graph contains a cycle".into(),
+            entity: Some(curve.into()),
+        });
         return;
     }
     if let Some(children) = segments.get(curve) {

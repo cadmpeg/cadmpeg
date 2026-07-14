@@ -1296,11 +1296,13 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
     let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
+    let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
     let knots = expand_knots(
         knot_leaf.parameters.get(tail)?,
         knot_leaf.parameters.get(tail + 1)?,
+        expected_knots,
     )?;
-    if knots.len() != control_points.len() + degree as usize + 1 {
+    if knots.len() != expected_knots {
         return None;
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
@@ -1336,11 +1338,13 @@ fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<Pc
     let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(3)?;
+    let expected_knots = control_points.len().checked_add(degree as usize + 1)?;
     let knots = expand_knots(
         knot_leaf.parameters.get(tail)?,
         knot_leaf.parameters.get(tail + 1)?,
+        expected_knots,
     )?;
-    if knots.len() != control_points.len() + degree as usize + 1 {
+    if knots.len() != expected_knots {
         return None;
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
@@ -1415,14 +1419,19 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
     let v_periodic = logical_value(base.parameters.get(offset + 5)?)?.unwrap_or(false);
     let knot_leaf = record.partial("B_SPLINE_SURFACE_WITH_KNOTS")?;
     let tail = knot_leaf.parameters.len().checked_sub(5)?;
-    let u_knots = expand_knots(&knot_leaf.parameters[tail], &knot_leaf.parameters[tail + 2])?;
+    let expected_u = u_count as usize + u_degree as usize + 1;
+    let expected_v = v_count as usize + v_degree as usize + 1;
+    let u_knots = expand_knots(
+        &knot_leaf.parameters[tail],
+        &knot_leaf.parameters[tail + 2],
+        expected_u,
+    )?;
     let v_knots = expand_knots(
         &knot_leaf.parameters[tail + 1],
         &knot_leaf.parameters[tail + 3],
+        expected_v,
     )?;
-    if u_knots.len() != u_count as usize + u_degree as usize + 1
-        || v_knots.len() != v_count as usize + v_degree as usize + 1
-    {
+    if u_knots.len() != expected_u || v_knots.len() != expected_v {
         return None;
     }
     let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_SURFACE") {
@@ -1456,17 +1465,21 @@ fn nurbs_surface(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<N
     })
 }
 
-fn expand_knots(multiplicities: &Value, distinct: &Value) -> Option<Vec<f64>> {
+fn expand_knots(multiplicities: &Value, distinct: &Value, expected: usize) -> Option<Vec<f64>> {
     let multiplicities = multiplicities.list()?;
     let distinct = distinct.list()?;
     if multiplicities.len() != distinct.len() {
         return None;
     }
     let mut knots = Vec::new();
+    knots.try_reserve_exact(expected).ok()?;
     for (multiplicity, knot) in multiplicities.iter().zip(distinct) {
         let count = usize::try_from(multiplicity.integer()?).ok()?;
         let knot = knot.number()?;
         if count == 0 || !knot.is_finite() {
+            return None;
+        }
+        if knots.len().checked_add(count)? > expected {
             return None;
         }
         knots.extend(std::iter::repeat_n(knot, count));

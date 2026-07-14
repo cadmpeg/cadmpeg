@@ -323,18 +323,20 @@ fn complex_triangles(
 }
 
 fn index_rows(value: Option<&Value>) -> Option<Vec<Vec<u32>>> {
-    value?
-        .list()?
-        .iter()
-        .map(|row| {
-            let indices = row
-                .list()?
-                .iter()
-                .map(|value| u32::try_from(value.integer()?).ok())
-                .collect::<Option<Vec<_>>>()?;
-            (indices.len() >= 3).then_some(indices)
-        })
-        .collect()
+    Some(
+        value?
+            .list()?
+            .iter()
+            .filter_map(|row| {
+                let indices = row
+                    .list()?
+                    .iter()
+                    .map(|value| u32::try_from(value.integer()?).ok())
+                    .collect::<Option<Vec<_>>>()?;
+                (indices.len() >= 3).then_some(indices)
+            })
+            .collect(),
+    )
 }
 
 fn normal_rows(value: Option<&Value>) -> Option<Vec<Vector3>> {
