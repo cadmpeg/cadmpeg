@@ -1262,9 +1262,9 @@ pub(crate) fn bind_extrude_profile_selections(
                 group,
                 members,
                 sketch,
-                resolution.entities,
-                resolution.histories,
-                resolution.linear_tolerance,
+                resolution,
+                scope.history_state_id,
+                scope.previous_history_state_id,
             )
         } else {
             ProfileRef::SketchSelection {
@@ -1283,9 +1283,9 @@ fn resolved_extrude_profile_selection(
     group: &DesignExtrudeSelectionGroup,
     members: &[DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::Sketch,
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-    histories: &[crate::history_records::AsmHistory],
-    linear_tolerance: f64,
+    resolution: ExtrudeProfileResolution<'_>,
+    history_state_id: Option<i64>,
+    previous_history_state_id: Option<i64>,
 ) -> cadmpeg_ir::features::ProfileRef {
     use cadmpeg_ir::features::ProfileRef;
 
@@ -1327,17 +1327,29 @@ fn resolved_extrude_profile_selection(
         }
         (!selected.is_empty()).then_some(selected)
     });
-    let resolved_profiles = resolved_profiles.flatten().or_else(|| {
-        exact_member_run.then(|| {
-            historical_selection_profiles(
-                &selection_members,
+    let resolved_profiles = resolved_profiles
+        .flatten()
+        .or_else(|| {
+            exact_member_run.then(|| {
+                historical_selection_profiles(
+                    &selection_members,
+                    sketch,
+                    resolution.entities,
+                    resolution.histories,
+                    resolution.linear_tolerance,
+                )
+            })?
+        })
+        .or_else(|| {
+            transition_profile_selection(
                 sketch,
-                entities,
-                histories,
-                linear_tolerance,
+                resolution.entities,
+                resolution.histories,
+                history_state_id?,
+                previous_history_state_id?,
+                resolution.linear_tolerance,
             )
-        })?
-    });
+        });
     match resolved_profiles {
         Some(profiles) => ProfileRef::SketchProfiles {
             sketch: sketch_id.clone(),
@@ -1348,6 +1360,92 @@ fn resolved_extrude_profile_selection(
             selections: vec![group.id.clone()],
         },
     }
+}
+
+fn transition_profile_selection(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    histories: &[crate::history_records::AsmHistory],
+    state_id: i64,
+    previous_state_id: i64,
+    linear_tolerance: f64,
+) -> Option<Vec<u32>> {
+    let mut states = histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .filter(|state| state.state_id == state_id);
+    let state = states.next()?;
+    if states.next().is_some()
+        || state
+            .transition
+            .as_ref()
+            .and_then(|transition| transition.previous_state_id)
+            != Some(previous_state_id)
+    {
+        return None;
+    }
+    let topology = state.topology.as_ref()?;
+    let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
+    let tolerance = linear_tolerance.max(1.0e-7);
+    let mut profiles = Vec::new();
+    for face in inserted_faces {
+        let Some(points) = historical_face_points(*face, topology) else {
+            continue;
+        };
+        let Some(matches) = profiles_containing_points(sketch, entities, &points, tolerance) else {
+            continue;
+        };
+        let [profile] = matches.as_slice() else {
+            continue;
+        };
+        if !profiles.contains(profile) {
+            profiles.push(*profile);
+        }
+    }
+    (profiles.len() == 1).then_some(profiles)
+}
+
+fn historical_face_points(
+    face: i64,
+    topology: &crate::history_records::AsmHistoricalTopology,
+) -> Option<Vec<Point3>> {
+    let loops = topology
+        .face_loops
+        .iter()
+        .find(|relation| relation.owner_ref == face)?;
+    let mut positions = Vec::new();
+    for loop_ref in &loops.member_refs {
+        let coedges = topology
+            .loop_coedges
+            .iter()
+            .find(|relation| relation.owner_ref == *loop_ref)?;
+        for coedge_ref in &coedges.member_refs {
+            let coedge = topology
+                .coedge_topology
+                .iter()
+                .find(|coedge| coedge.coedge == *coedge_ref)?;
+            let edge = topology
+                .edge_vertices
+                .iter()
+                .find(|edge| edge.edge == coedge.edge)?;
+            for vertex_ref in [edge.start_vertex, edge.end_vertex] {
+                let point_ref = topology
+                    .vertex_points
+                    .iter()
+                    .find(|binding| binding.entity == vertex_ref)?
+                    .carrier;
+                let position = topology
+                    .point_positions
+                    .iter()
+                    .find(|point| point.point == point_ref)?
+                    .position;
+                if !positions.contains(&position) {
+                    positions.push(position);
+                }
+            }
+        }
+    }
+    (positions.len() >= 3).then_some(positions)
 }
 
 fn historical_selection_profiles(
@@ -8758,6 +8856,109 @@ mod relation_tests {
     }
 
     #[test]
+    fn historical_face_points_require_complete_boundary_topology() {
+        let mut topology = crate::history_records::AsmHistoricalTopology {
+            faces: vec![10],
+            loops: vec![11],
+            coedges: vec![12, 13, 14],
+            edges: vec![20, 21, 22],
+            vertices: vec![30, 31, 32],
+            points: vec![40, 41, 42],
+            face_loops: vec![crate::history_records::AsmHistoricalRelation {
+                owner_ref: 10,
+                member_refs: vec![11],
+            }],
+            loop_coedges: vec![crate::history_records::AsmHistoricalRelation {
+                owner_ref: 11,
+                member_refs: vec![12, 13, 14],
+            }],
+            coedge_topology: vec![
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 12,
+                    owner_loop: 11,
+                    edge: 20,
+                    next: 13,
+                    previous: 14,
+                    radial_next: 12,
+                },
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 13,
+                    owner_loop: 11,
+                    edge: 21,
+                    next: 14,
+                    previous: 12,
+                    radial_next: 13,
+                },
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 14,
+                    owner_loop: 11,
+                    edge: 22,
+                    next: 12,
+                    previous: 13,
+                    radial_next: 14,
+                },
+            ],
+            edge_vertices: vec![
+                crate::history_records::AsmHistoricalEdge {
+                    edge: 20,
+                    start_vertex: 30,
+                    end_vertex: 31,
+                },
+                crate::history_records::AsmHistoricalEdge {
+                    edge: 21,
+                    start_vertex: 31,
+                    end_vertex: 32,
+                },
+                crate::history_records::AsmHistoricalEdge {
+                    edge: 22,
+                    start_vertex: 32,
+                    end_vertex: 30,
+                },
+            ],
+            vertex_points: vec![
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 30,
+                    carrier: 40,
+                },
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 31,
+                    carrier: 41,
+                },
+                crate::history_records::AsmHistoricalCarrierBinding {
+                    entity: 32,
+                    carrier: 42,
+                },
+            ],
+            point_positions: vec![
+                crate::history_records::AsmHistoricalPoint {
+                    point: 40,
+                    position: Point3::new(0.0, 0.0, 0.0),
+                },
+                crate::history_records::AsmHistoricalPoint {
+                    point: 41,
+                    position: Point3::new(2.0, 0.0, 0.0),
+                },
+                crate::history_records::AsmHistoricalPoint {
+                    point: 42,
+                    position: Point3::new(0.0, 1.0, 0.0),
+                },
+            ],
+            ..crate::history_records::AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            super::historical_face_points(10, &topology),
+            Some(vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ])
+        );
+
+        topology.point_positions.pop();
+        assert_eq!(super::historical_face_points(10, &topology), None);
+    }
+
+    #[test]
     fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         let sketch = SketchId("sketch".into());
         let entity = |geometry| SketchEntity {
@@ -9987,9 +10188,13 @@ mod relation_tests {
                 &group,
                 std::slice::from_ref(&member),
                 &sketch,
-                &[],
-                &[],
-                1.0e-6,
+                super::ExtrudeProfileResolution {
+                    entities: &[],
+                    histories: &[],
+                    linear_tolerance: 1.0e-6,
+                },
+                None,
+                None,
             ),
             cadmpeg_ir::features::ProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
@@ -10003,9 +10208,13 @@ mod relation_tests {
                 &group,
                 std::slice::from_ref(&member),
                 &sketch,
-                &[],
-                &[],
-                1.0e-6,
+                super::ExtrudeProfileResolution {
+                    entities: &[],
+                    histories: &[],
+                    linear_tolerance: 1.0e-6,
+                },
+                None,
+                None,
             ),
             cadmpeg_ir::features::ProfileRef::SketchSelection {
                 sketch: ref actual_sketch,
