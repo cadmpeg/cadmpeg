@@ -69,6 +69,12 @@ A segment-index word can also point directly to an OM section signature, or to
 four-byte separator. The row ordinal and word position order the pointed OM
 section relative to the compressed stream wrappers in the same segment index.
 
+Linked OM registries define their schema role by exact declarations:
+`UGS::Solid::Topol` marks the model store, `UGS::FEATURE_RECORD` marks feature
+history, `UGS::EXP_expression` marks expressions, and
+`UGS::OM::SaveAuditTrail` marks audit data when no preceding specialized marker
+applies.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |

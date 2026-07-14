@@ -89,12 +89,30 @@ pub struct SegmentOmLink {
     pub row: String,
     /// Row word containing the section offset.
     pub slot: SegmentIndexSlot,
+    /// Role established by exact class declarations in the pointed registry.
+    pub schema_role: OmSchemaRole,
     /// Bytes from the pointed offset to the OM section signature.
     pub separator_byte_len: u32,
     /// Absolute file offset of the pointed location.
     pub source_offset: u64,
     /// Absolute file offset of the `ff ff ff ff` OM signature.
     pub section_offset: u64,
+}
+
+/// Semantic family declared by a linked OM section's class registry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OmSchemaRole {
+    /// General part object model declaring `UGS::Solid::Topol`.
+    Model,
+    /// Construction/history model declaring `UGS::FEATURE_RECORD`.
+    FeatureHistory,
+    /// Expression model declaring `UGS::EXP_expression`.
+    Expressions,
+    /// Audit model declaring `UGS::OM::SaveAuditTrail`.
+    AuditTrail,
+    /// No role marker from the defined families occurs in the registry.
+    Other,
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.
@@ -104,12 +122,31 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
     };
     let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
     let entry_start = usize::try_from(entry_offset).expect("in-bounds directory offset");
-    let section_offsets = container
+    let sections = container
         .om_sections()
         .into_iter()
         .filter(|(candidate, _)| candidate.name == entry.name)
-        .map(|(_, section)| section.offset)
-        .collect::<std::collections::BTreeSet<_>>();
+        .map(|(_, section)| {
+            let has = |name| {
+                section
+                    .types
+                    .iter()
+                    .any(|definition| definition.name == name)
+            };
+            let role = if has("UGS::FEATURE_RECORD") {
+                OmSchemaRole::FeatureHistory
+            } else if has("UGS::EXP_expression") {
+                OmSchemaRole::Expressions
+            } else if has("UGS::Solid::Topol") {
+                OmSchemaRole::Model
+            } else if has("UGS::OM::SaveAuditTrail") {
+                OmSchemaRole::AuditTrail
+            } else {
+                OmSchemaRole::Other
+            };
+            (section.offset, role)
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
     let mut links = Vec::new();
     for (row_ordinal, row) in index.rows.into_iter().enumerate() {
         for (slot, relative) in [
@@ -118,15 +155,17 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
             (SegmentIndexSlot::Value, row.value),
         ] {
             let relative = relative as usize;
-            let separator_byte_len = if section_offsets.contains(&relative) {
-                0usize
+            let (separator_byte_len, schema_role) = if let Some(role) = sections.get(&relative) {
+                (0usize, *role)
             } else if container
                 .data
                 .get(entry_start + relative..entry_start + relative + 4)
                 == Some(&[0xc0, 0xd1, 0xf1, 0xed])
-                && section_offsets.contains(&(relative + 4))
             {
-                4
+                let Some(role) = sections.get(&(relative + 4)) else {
+                    continue;
+                };
+                (4, *role)
             } else {
                 continue;
             };
@@ -134,6 +173,7 @@ pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
                 id: format!("nx:segment-om-links:link#{}", links.len()),
                 row: format!("nx:segment-index:row#{row_ordinal}"),
                 slot,
+                schema_role,
                 separator_byte_len: separator_byte_len as u32,
                 source_offset: entry_offset + relative as u64,
                 section_offset: entry_offset + relative as u64 + separator_byte_len as u64,

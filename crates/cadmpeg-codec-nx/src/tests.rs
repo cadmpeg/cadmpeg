@@ -349,7 +349,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 13);
+    assert_eq!(namespace.version, 14);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -425,6 +425,10 @@ fn decode_links_segment_index_words_to_direct_and_separated_om_sections() {
         assert_eq!(links.len(), 1);
         assert_eq!(links[0].row, "nx:segment-index:row#0");
         assert_eq!(links[0].slot, crate::native::SegmentIndexSlot::TypeCode);
+        assert_eq!(
+            links[0].schema_role,
+            crate::native::OmSchemaRole::FeatureHistory
+        );
         assert_eq!(links[0].separator_byte_len, expected_separator);
         assert_eq!(
             links[0].section_offset,
@@ -3123,7 +3127,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 13);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 14);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
