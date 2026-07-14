@@ -2150,6 +2150,14 @@ fn generated_rational_surface_block() -> Vec<u8> {
 }
 
 fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
+    synthetic_cyl_spl_sur_with_cache_smbh(true)
+}
+
+fn synthetic_cacheless_cyl_spl_sur_smbh() -> Vec<u8> {
+    synthetic_cyl_spl_sur_with_cache_smbh(false)
+}
+
+fn synthetic_cyl_spl_sur_with_cache_smbh(include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -2170,8 +2178,10 @@ fn synthetic_cyl_spl_sur_smbh() -> Vec<u8> {
     t_vec(&mut surface, [0.0, 0.0, 2.0]);
     t_pos(&mut surface, [4.0, 5.0, 6.0]);
     surface.extend_from_slice(&generated_curve_block());
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.002);
+    if include_cache {
+        surface.extend_from_slice(&generated_surface_block());
+        t_dbl(&mut surface, 0.002);
+    }
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old_offset..old_offset + old_len, surface);
@@ -6130,6 +6140,58 @@ fn generated_source_less_writes_translational_extrusion_definition() {
         *native_position,
         Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
     );
+}
+
+#[test]
+fn generated_cacheless_translational_extrusion_retains_exact_construction() {
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_cacheless_cyl_spl_sur_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated cache-less extrusion decode");
+
+    assert_eq!(decoded.ir.model.procedural_surfaces.len(), 1);
+    let procedural = &decoded.ir.model.procedural_surfaces[0];
+    assert_eq!(procedural.cache_fit_tolerance, None);
+    let ProceduralSurfaceDefinition::Extrusion {
+        directrix,
+        direction,
+        parameter_interval,
+        native_position,
+    } = &procedural.definition
+    else {
+        panic!("expected extrusion definition")
+    };
+    assert_eq!(*parameter_interval, Some([0.25, 0.75]));
+    assert_eq!(*direction, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 20.0));
+    assert_eq!(
+        *native_position,
+        Some(cadmpeg_ir::math::Point3::new(40.0, 50.0, 60.0))
+    );
+    let directrix_geometry = decoded
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == *directrix)
+        .map(|curve| &curve.geometry);
+    assert!(
+        matches!(directrix_geometry, Some(CurveGeometry::Nurbs(_))),
+        "unexpected extrusion directrix: {directrix_geometry:?}"
+    );
+    assert!(matches!(
+        decoded
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == procedural.surface)
+            .map(|surface| &surface.geometry),
+        Some(SurfaceGeometry::Unknown { .. })
+    ));
 }
 
 #[test]

@@ -544,7 +544,7 @@ cyl_spl_sur :=
   0x10
 ```
 
-`u_start` and `u_end` are directrix parameters. `extrusion_direction` is length-bearing. `POSITION` is stored in model-space length units and is retained independently of the directrix. The final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length. Native generation writes the stored interval and position without deriving or replacing either field.
+`u_start` and `u_end` are directrix parameters. `extrusion_direction` is length-bearing. `POSITION` is stored in model-space length units and is retained independently of the directrix. The optional final `surface-cache` is the solved NURBS surface, and `cache_fit_tolerance` is a length. Without that cache, the directrix, parameter interval, direction, and position still define and retain the exact translational-extrusion construction. Native generation writes the stored interval and position without deriving or replacing either field.
 
 ```
 rb_blend_spl_sur :=

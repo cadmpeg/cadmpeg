@@ -3342,14 +3342,11 @@ fn decode_cyl_spl_sur_at(
     let decoded_cache = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_surface_block(span, at, int_width))
-        .next_back()?;
-    let _v_range = [
-        *decoded_cache.surface.v_knots.first()?,
-        *decoded_cache.surface.v_knots.last()?,
-    ];
-    let cache_fit_tolerance = (span.get(decoded_cache.end) == Some(&0x06))
-        .then(|| read_f64(span, decoded_cache.end + 1).map(|v| v * LEN_TO_MM))
-        .flatten();
+        .next_back();
+    let cache_fit_tolerance = decoded_cache
+        .as_ref()
+        .filter(|cache| span.get(cache.end) == Some(&0x06))
+        .and_then(|cache| read_f64(span, cache.end + 1).map(|v| v * LEN_TO_MM));
 
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Extrusion {
@@ -7006,6 +7003,36 @@ mod width_tests {
                     7.0
                 );
             }
+        }
+    }
+
+    #[test]
+    fn extrusion_definition_decodes_without_a_solved_surface_cache() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "cyl_spl_sur");
+            push_f64(&mut bytes, -2.0);
+            push_f64(&mut bytes, 3.0);
+            push_vector(&mut bytes, [4.0, 5.0, 6.0]);
+            push_position(&mut bytes, [7.0, 8.0, 9.0]);
+            bytes.extend_from_slice(&curve_block(int_width));
+            bytes.push(0x10);
+
+            let decoded = decode_cyl_spl_sur_at(&bytes, int_width)
+                .unwrap_or_else(|| panic!("cache-less extrusion at width {int_width}"));
+            assert_eq!(decoded.cache_fit_tolerance, None);
+            let DecodedProceduralSurfaceDefinition::Extrusion {
+                parameter_interval,
+                direction,
+                native_position,
+                ..
+            } = decoded.definition
+            else {
+                panic!("expected extrusion definition")
+            };
+            assert_eq!(parameter_interval, [-2.0, 3.0]);
+            assert_eq!(direction, Vector3::new(40.0, 50.0, 60.0));
+            assert_eq!(native_position, Point3::new(70.0, 80.0, 90.0));
         }
     }
 
