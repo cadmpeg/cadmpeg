@@ -2981,6 +2981,11 @@ fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
         [0x0100, 0x0103, 0x0106, 0x0109, 0x010c]
     );
     assert_eq!(records[0].scalar, 42.5);
+
+    let mut short = vec![0xb2, 0x03, 0x61, 27, 0x05];
+    short.extend_from_slice(&[0; 27]);
+    short[13] = 0x06;
+    assert!(crate::geometry::b2_long_61(&short).is_empty());
 }
 
 #[test]
