@@ -95,6 +95,8 @@ An `moICE_c` object-name record is followed by four zero bytes, one class byte, 
 
 A repeated compact extrusion end-spec child begins with its lane-scoped class token. Token +2 through +17 are `00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00`. The little-endian u32 termination code is at token +18. Code `0` is blind and code `1` is through-all. A through-all child has two zero u32 words after the code, `01 00 00 01`, 56 zero bytes, `00 00 01 00`, and 10 zero bytes.
 
+Termination code `4` is to-face. Bytes +22 through +29 are zero and +30 through +32 are `01 01 00`. The following child is an `moSingleFaceRef_w`, either as a direct class declaration or as a repeated lane-scoped class token followed by `2d 80 2b 80 02 00 00 00 40 00 00`. Its selection vector uses the duplicated 16-byte component marker. Marker −12 stores a positive little-endian u32 path-entry count, marker −8 begins `00 02 00 00`, and marker +16 is zero. The ordered native path identifies the terminating face.
+
 An extrusion object without an `EndCondition` attribute, without an owned `Depth` or `D1` scalar, and without a decoded compact end-spec termination has an unresolved extent. The class, profile reference, direction, draft, and Boolean operation remain independently meaningful.
 
 An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile. A nested profile stream owned by that extrusion resolves the profile to its transferred sketch.

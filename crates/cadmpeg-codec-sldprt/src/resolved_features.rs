@@ -245,9 +245,10 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
-        compact_edge_selection_at, compact_extrusion_through_all_at, compact_surface_selection_at,
-        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names, unique_locus,
+        compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
+        compact_surface_selection_at, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, unique_locus,
         unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::SketchRelationKind;
@@ -295,6 +296,23 @@ mod marker_tests {
         payload[18] = 1;
         payload[103] = 1;
         assert!(!compact_extrusion_through_all_at(&payload, 0));
+    }
+
+    #[test]
+    fn compact_extrusion_to_face_requires_a_single_face_reference_child() {
+        let mut payload = vec![0; 200];
+        payload[4] = 1;
+        payload[18] = 4;
+        payload[30..33].copy_from_slice(&[1, 1, 0]);
+        payload[33..35].copy_from_slice(&[0x7f, 0x9d]);
+        payload[35..46].copy_from_slice(&[0x2d, 0x80, 0x2b, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+        payload[88..92].copy_from_slice(&1u32.to_le_bytes());
+        payload[92..96].copy_from_slice(&[0, 2, 0, 0]);
+        payload[100..116].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+
+        payload[88..92].fill(0);
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
     }
 
     #[test]
@@ -2409,7 +2427,7 @@ pub(crate) fn enrich_history_extrusion_terminations(
             })
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|object| object.0);
-        let mut through_all = HashSet::new();
+        let mut terminations = HashMap::new();
         for (index, (start, feature_id)) in objects.iter().enumerate() {
             let Some(feature) = histories
                 .iter()
@@ -2419,35 +2437,66 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 continue;
             };
             if feature.xml_tag != "Extrusion"
-                || (!feature.parameters.is_empty()
-                    && (feature.parameters.contains_key("Depth")
-                        || feature.parameters.contains_key("D1")))
+                || feature.parameters.contains_key("Depth")
+                || feature.parameters.contains_key("D1")
             {
                 continue;
             }
             let Ok(start) = usize::try_from(*start) else {
                 continue;
             };
+            let mut end_index = index + 1;
+            if let Some((_, next_id)) = objects.get(end_index) {
+                let next_is_profile = histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .find(|feature| feature.id == *next_id)
+                    .is_some_and(|feature| {
+                        native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                            == NativeClassKind::ProfileFeature
+                    });
+                if next_is_profile {
+                    end_index += 1;
+                }
+            }
             let end = objects
-                .get(index + 1)
+                .get(end_index)
                 .and_then(|object| usize::try_from(object.0).ok())
                 .unwrap_or(lane.native_payload.len());
             let candidates = (start..end.saturating_sub(103))
-                .filter(|offset| compact_extrusion_through_all_at(&lane.native_payload, *offset))
-                .count();
-            if candidates == 1 {
-                through_all.insert(feature_id.clone());
+                .filter_map(|offset| {
+                    if compact_extrusion_through_all_at(&lane.native_payload, offset) {
+                        Some(("ThroughAll", None))
+                    } else {
+                        compact_extrusion_to_face_at(&lane.native_payload, offset)
+                            .map(|reference| ("ToFace", Some(reference)))
+                    }
+                })
+                .collect::<Vec<_>>();
+            if let [(condition, reference)] = candidates.as_slice() {
+                terminations.insert(feature_id.clone(), (*condition, *reference));
             }
         }
         for feature in histories
             .iter_mut()
             .flat_map(|history| &mut history.features)
         {
-            if through_all.contains(&feature.id) && !feature.properties.contains_key("EndCondition")
-            {
+            let Some(&(condition, reference)) = terminations.get(&feature.id) else {
+                continue;
+            };
+            if !feature.properties.contains_key("EndCondition") {
                 feature
                     .properties
-                    .insert("EndCondition".into(), "ThroughAll".into());
+                    .insert("EndCondition".into(), condition.into());
+            }
+            if let Some(offset) = reference {
+                feature.properties.entry("Face".into()).or_insert_with(|| {
+                    let lane_key = lane
+                        .id
+                        .rsplit_once('#')
+                        .map_or(lane.id.as_str(), |(_, key)| key);
+                    format!("sldprt:feature-input:single-face-ref:{lane_key}:{offset}")
+                });
             }
         }
     }
@@ -2464,6 +2513,44 @@ pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) ->
         && payload
             .get(offset + 94..offset + 104)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+}
+
+pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> {
+    if payload.get(offset + 2..offset + 18)
+        != Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + 18..offset + 30) != Some(&[4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        || payload.get(offset + 30..offset + 33) != Some(&[1, 1, 0])
+    {
+        return None;
+    }
+    let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
+    let body = b"\x2d\x80\x2b\x80\x02\x00\x00\x00\x40\x00\x00";
+    let child = offset + 33;
+    let body_offset = if payload.get(child..child + declaration.len()) == Some(declaration) {
+        child + declaration.len()
+    } else if payload.get(child + 2..child + 2 + body.len()) == Some(body) {
+        child + 2
+    } else {
+        return None;
+    };
+    if payload.get(body_offset..body_offset + body.len()) != Some(body) {
+        return None;
+    }
+    (body_offset..body_offset.saturating_add(160))
+        .find(|marker| compact_single_face_reference_at(payload, *marker))
+}
+
+fn compact_single_face_reference_at(payload: &[u8], marker: usize) -> bool {
+    let count = marker.checked_sub(12).and_then(|offset| {
+        Some(u32::from_le_bytes(
+            payload.get(offset..offset + 4)?.try_into().ok()?,
+        ))
+    });
+    matches!(count, Some(1..=64))
+        && payload.get(marker..marker + 16) == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        && payload.get(marker - 8..marker - 4) == Some(&[0, 2, 0, 0])
+        && payload.get(marker + 16..marker + 18) == Some(&[0, 0])
+        && payload.get(marker + 22..marker + 38).is_some()
 }
 
 pub(crate) fn compact_surface_selection_value(ids: &[u32]) -> String {
