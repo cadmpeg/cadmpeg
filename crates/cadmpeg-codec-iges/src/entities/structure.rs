@@ -194,6 +194,131 @@ fn entity_parameter_end(
         .map_or(record.tokens.len(), |groups| groups.token_start)
 }
 
+fn existing_pointer(
+    record: &ParameterRecord,
+    index: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<u32> {
+    record
+        .integer(index)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|sequence| sequence % 2 == 1 && entries.contains_key(sequence))
+}
+
+fn predefined_associativity_valid(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> bool {
+    let end = entity_parameter_end(record, entries);
+    match entry.form {
+        5 => {
+            let Some(count) = record
+                .integer(1)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0)
+            else {
+                return false;
+            };
+            end == 2 + count * 7
+                && (0..count).all(|offset| {
+                    let start = 2 + offset * 7;
+                    existing_pointer(record, start, entries).is_some_and(|sequence| {
+                        entries
+                            .get(&sequence)
+                            .is_some_and(|target| target.entity_type == 410)
+                    }) && (start + 1..=start + 3)
+                        .all(|index| record.number(index).is_some_and(f64::is_finite))
+                        && existing_pointer(record, start + 4, entries).is_some_and(|sequence| {
+                            entries
+                                .get(&sequence)
+                                .is_some_and(|target| target.entity_type == 214)
+                        })
+                        && record.integer(start + 5).is_some_and(|level| level >= 0)
+                        && existing_pointer(record, start + 6, entries).is_some()
+                })
+        }
+        9 => {
+            let child_count = record
+                .integer(2)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            let members = child_count.and_then(|count| {
+                (3..4 + count)
+                    .map(|index| existing_pointer(record, index, entries))
+                    .collect::<Option<Vec<_>>>()
+            });
+            record.integer(1) == Some(1)
+                && child_count.is_some_and(|count| end == 4 + count)
+                && members.is_some_and(|members| {
+                    members.iter().all(|sequence| {
+                        records.get(sequence).is_some_and(|member| {
+                            has_association_back_pointer(member, entry.sequence, entries)
+                        })
+                    })
+                })
+        }
+        12 => {
+            let count = record
+                .integer(1)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            count.is_some_and(|count| {
+                end == 2 + count * 2
+                    && (0..count).all(|offset| {
+                        let start = 2 + offset * 2;
+                        record.string(start).is_some_and(|name| !name.is_empty())
+                            && existing_pointer(record, start + 1, entries).is_some()
+                    })
+            })
+        }
+        13 => {
+            let geometry_count = record
+                .integer(2)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            let dimension = existing_pointer(record, 3, entries);
+            record.integer(1) == Some(1)
+                && geometry_count.is_some_and(|count| {
+                    end == 4 + count
+                        && (0..count)
+                            .all(|offset| existing_pointer(record, 4 + offset, entries).is_some())
+                })
+                && dimension.is_some_and(|sequence| {
+                    entries.get(&sequence).is_some_and(|target| {
+                        matches!(target.entity_type, 202 | 206 | 216 | 218 | 220 | 222)
+                    }) && records.get(&sequence).is_some_and(|member| {
+                        has_association_back_pointer(member, entry.sequence, entries)
+                    })
+                })
+        }
+        16 => {
+            let count = record
+                .integer(2)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            let transform_valid = match record.integer(3) {
+                Some(0) => true,
+                Some(_) => existing_pointer(record, 3, entries).is_some_and(|sequence| {
+                    entries
+                        .get(&sequence)
+                        .is_some_and(|target| target.entity_type == 124 && target.form == 0)
+                }),
+                None => false,
+            };
+            record.integer(1) == Some(1)
+                && transform_valid
+                && count.is_some_and(|count| {
+                    end == 4 + count
+                        && (0..count)
+                            .all(|offset| existing_pointer(record, 4 + offset, entries).is_some())
+                })
+        }
+        _ => false,
+    }
+}
+
 fn assembly_cycle(
     sequence: u32,
     definitions: &BTreeMap<u32, SolidAssembly>,
@@ -476,6 +601,26 @@ pub(super) fn project(
             losses.push(entity_loss(
                 entry,
                 "group member list or required association back pointer is invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        if entry.structure == 0 && predefined_associativity_valid(entry, record, &entries, &records)
+        {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "predefined associativity counts, class layout, links, back pointers, or structure are invalid",
             ));
         }
     }

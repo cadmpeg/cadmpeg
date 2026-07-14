@@ -332,6 +332,21 @@ struct NativeAssociativityClassDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeLabelPlacement {
+    view: Option<String>,
+    text_location: [Option<f64>; 3],
+    leader: Option<String>,
+    label_level: Option<i64>,
+    entity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeExternalIndexEntry {
+    symbolic_name: Option<Vec<u8>>,
+    entity: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 enum NativeAssociativity {
     Definition {
@@ -340,6 +355,36 @@ enum NativeAssociativity {
         associativity_form: i64,
         declared_class_count: Option<i64>,
         classes: Vec<NativeAssociativityClassDefinition>,
+    },
+    LabelDisplay {
+        id: String,
+        source_entity: String,
+        declared_count: Option<i64>,
+        placements: Vec<NativeLabelPlacement>,
+    },
+    SingleParent {
+        id: String,
+        source_entity: String,
+        parent: Option<String>,
+        children: Vec<Option<String>>,
+    },
+    ExternalReferenceIndex {
+        id: String,
+        source_entity: String,
+        declared_count: Option<i64>,
+        entries: Vec<NativeExternalIndexEntry>,
+    },
+    DimensionedGeometry {
+        id: String,
+        source_entity: String,
+        dimension: Option<String>,
+        geometry: Vec<Option<String>>,
+    },
+    Planar {
+        id: String,
+        source_entity: String,
+        plane_transform: Option<String>,
+        entities: Vec<Option<String>>,
     },
 }
 
@@ -1607,7 +1652,7 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
-    let associativities = directory
+    let mut associativities = directory
         .iter()
         .filter(|entry| entry.entity_type == 302)
         .map(|entry| {
@@ -1650,6 +1695,114 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    associativities.extend(
+        directory
+            .iter()
+            .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16))
+            .map(|entry| {
+                let record = by_directory.get(&entry.sequence).copied();
+                let id = format!("iges:structure:associativity#D{}", entry.sequence);
+                let source_entity = format!("iges:entity:directory#{}", entry.sequence);
+                let entity_link = |index| {
+                    record
+                        .and_then(|record| record.integer(index))
+                        .filter(|sequence| *sequence != 0)
+                        .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                };
+                match entry.form {
+                    5 => {
+                        let count = record
+                            .and_then(|record| record.integer(1))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAssociativity::LabelDisplay {
+                            id,
+                            source_entity,
+                            declared_count: record.and_then(|record| record.integer(1)),
+                            placements: (0..count)
+                                .map(|offset| {
+                                    let start = 2 + offset * 7;
+                                    NativeLabelPlacement {
+                                        view: entity_link(start),
+                                        text_location: [
+                                            record.and_then(|record| record.number(start + 1)),
+                                            record.and_then(|record| record.number(start + 2)),
+                                            record.and_then(|record| record.number(start + 3)),
+                                        ],
+                                        leader: entity_link(start + 4),
+                                        label_level: record
+                                            .and_then(|record| record.integer(start + 5)),
+                                        entity: entity_link(start + 6),
+                                    }
+                                })
+                                .collect(),
+                        }
+                    }
+                    9 => {
+                        let count = record
+                            .and_then(|record| record.integer(2))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAssociativity::SingleParent {
+                            id,
+                            source_entity,
+                            parent: entity_link(3),
+                            children: (0..count).map(|offset| entity_link(4 + offset)).collect(),
+                        }
+                    }
+                    12 => {
+                        let count = record
+                            .and_then(|record| record.integer(1))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAssociativity::ExternalReferenceIndex {
+                            id,
+                            source_entity,
+                            declared_count: record.and_then(|record| record.integer(1)),
+                            entries: (0..count)
+                                .map(|offset| {
+                                    let start = 2 + offset * 2;
+                                    NativeExternalIndexEntry {
+                                        symbolic_name: record
+                                            .and_then(|record| record.string(start))
+                                            .map(<[u8]>::to_vec),
+                                        entity: entity_link(start + 1),
+                                    }
+                                })
+                                .collect(),
+                        }
+                    }
+                    13 => {
+                        let count = record
+                            .and_then(|record| record.integer(2))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAssociativity::DimensionedGeometry {
+                            id,
+                            source_entity,
+                            dimension: entity_link(3),
+                            geometry: (0..count).map(|offset| entity_link(4 + offset)).collect(),
+                        }
+                    }
+                    16 => {
+                        let count = record
+                            .and_then(|record| record.integer(2))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .unwrap_or_default();
+                        NativeAssociativity::Planar {
+                            id,
+                            source_entity,
+                            plane_transform: record
+                                .and_then(|record| record.integer(3))
+                                .filter(|sequence| *sequence != 0)
+                                .map(|sequence| format!("iges:native:transformation#D{sequence}")),
+                            entities: (0..count).map(|offset| entity_link(4 + offset)).collect(),
+                        }
+                    }
+                    _ => unreachable!("filtered predefined associativity form"),
+                }
+            }),
+    );
     let attribute_table_definitions = directory
         .iter()
         .filter(|entry| entry.entity_type == 322 && matches!(entry.form, 0..=2))

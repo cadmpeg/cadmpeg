@@ -2724,6 +2724,102 @@ fn associativity_definition_file() -> Vec<u8> {
     }])
 }
 
+fn bounded_associativity_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "LABELARR".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "LABELED".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 5,
+            label: "LABELDSP".into(),
+            status: "00000200",
+            parameters: "402,1,1,1,2,3,3,0,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "PARENT".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,13,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "CHILD".into(),
+            status: "00000000",
+            parameters: "116,1,0,0,0,1,13,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 9,
+            label: "PARENTCH".into(),
+            status: "00000200",
+            parameters: "402,1,1,9,11;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 12,
+            label: "EXTINDEX".into(),
+            status: "00000200",
+            parameters: "402,1,4HNAME,9;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "DIMNOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HD;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "DIMARR".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 0,
+            label: "DIMENS".into(),
+            status: "00000100",
+            parameters: "216,17,19,19,0,0,1,23,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 13,
+            label: "DIMGEOM".into(),
+            status: "00000200",
+            parameters: "402,1,1,21,9;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 16,
+            label: "PLANAR".into(),
+            status: "00000200",
+            parameters: "402,1,2,0,9,11;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4326,6 +4422,50 @@ fn decode_preserves_implementor_associativity_class_grammar() {
     );
     assert_eq!(definition.fields["classes"][1]["ordered"], false);
     assert_eq!(definition.fields["classes"][1]["item_types"][0], 3);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_bounded_predefined_associativity_roles() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_associativity_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let associativities = &result.ir.native.namespace("iges").unwrap().arenas["associativities"];
+    assert_eq!(associativities.len(), 5);
+    let parent = associativities
+        .iter()
+        .find(|value| value.fields["kind"] == "single_parent")
+        .unwrap();
+    assert_eq!(parent.fields["parent"], "iges:entity:directory#9");
+    assert_eq!(parent.fields["children"][0], "iges:entity:directory#11");
+    let labels = associativities
+        .iter()
+        .find(|value| value.fields["kind"] == "label_display")
+        .unwrap();
+    assert_eq!(
+        labels.fields["placements"][0]["view"],
+        "iges:entity:directory#1"
+    );
+    assert_eq!(labels.fields["placements"][0]["text_location"][2], 3.0);
+    let dimension = associativities
+        .iter()
+        .find(|value| value.fields["kind"] == "dimensioned_geometry")
+        .unwrap();
+    assert_eq!(dimension.fields["dimension"], "iges:entity:directory#21");
+    assert_eq!(dimension.fields["geometry"][0], "iges:entity:directory#9");
+    let planar = associativities
+        .iter()
+        .find(|value| value.fields["kind"] == "planar")
+        .unwrap();
+    assert!(planar.fields["plane_transform"].is_null());
+    assert_eq!(planar.fields["entities"].as_array().unwrap().len(), 2);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
