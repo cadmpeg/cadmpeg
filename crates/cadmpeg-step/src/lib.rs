@@ -294,6 +294,7 @@ struct Builder<'a> {
     schema: StepSchema,
     emitter: Emitter,
     losses: Vec<LossNote>,
+    notes: Vec<String>,
 
     // Lookup indices from the flat IR arenas.
     points: HashMap<&'a str, &'a Point>,
@@ -369,6 +370,7 @@ impl<'a> Builder<'a> {
             schema,
             emitter: Emitter::new(),
             losses: Vec::new(),
+            notes: Vec::new(),
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
             vertices: ir
                 .model
@@ -429,13 +431,8 @@ impl<'a> Builder<'a> {
         let mut shape_items = self.emit_shape_items(context);
         shape_items.extend(self.emit_standalone_geometry());
         if shape_items.is_empty() {
-            self.loss(
-                LossCategory::Topology,
-                Severity::Warning,
-                "no exportable solids: the IR document contains no body/region/shell \
-                 geometry, so the STEP representation is empty"
-                    .to_string(),
-            );
+            self.notes
+                .push("STEP representation contains no shape items".to_string());
         }
 
         let mut items = shape_items;
@@ -2256,7 +2253,7 @@ impl<'a> Builder<'a> {
             entity_counts: self.emitter.counts(),
             total_entities: self.emitter.total(),
             losses: self.losses.clone(),
-            notes: Vec::new(),
+            notes: self.notes.clone(),
         }
     }
 }
