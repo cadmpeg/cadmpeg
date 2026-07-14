@@ -230,8 +230,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             AttributeTarget::Body(id) if !ids.bodies.contains(&id.0) => {
                 ref_error(findings, owner, "body", &id.0);
             }
+            AttributeTarget::Shell(id) if !ids.shells.contains(&id.0) => {
+                ref_error(findings, owner, "shell", &id.0);
+            }
             AttributeTarget::Face(id) if !ids.faces.contains(&id.0) => {
                 ref_error(findings, owner, "face", &id.0);
+            }
+            AttributeTarget::Loop(id) if !ids.loops.contains(&id.0) => {
+                ref_error(findings, owner, "loop", &id.0);
             }
             AttributeTarget::Coedge(id) if !ids.coedges.contains(&id.0) => {
                 ref_error(findings, owner, "coedge", &id.0);

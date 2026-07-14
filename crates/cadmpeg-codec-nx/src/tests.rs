@@ -4214,7 +4214,7 @@ fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
 #[test]
 fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
-    use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::ids::{FaceId, LoopId, ShellId};
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::{
@@ -4223,16 +4223,20 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.shells[0].id = ShellId("nx:s3:shell#58".into());
     ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
-    let reference = ParasolidTopologyAttributeListReference {
-        id: "topology-reference".into(),
-        stream_ordinal: 3,
-        topology_type: 14,
-        topology_xmt: 60,
-        attribute_list_xmt: 50,
-        attribute_list_record: Some("entity".into()),
-        inflated_offset: 300,
-    };
+    ir.model.loops[0].id = LoopId("nx:s3:loop#59".into());
+    let references = [(13, 58), (14, 60), (15, 59)].map(|(topology_type, topology_xmt)| {
+        ParasolidTopologyAttributeListReference {
+            id: format!("topology-reference-{topology_type}"),
+            stream_ordinal: 3,
+            topology_type,
+            topology_xmt,
+            attribute_list_xmt: 50,
+            attribute_list_record: Some("entity".into()),
+            inflated_offset: 300,
+        }
+    });
     let integer = ParasolidEntity52IntegerRecord {
         id: "integers".into(),
         stream_ordinal: 3,
@@ -4276,7 +4280,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     crate::decode::attach_parasolid_topology_numeric_attributes(
         &mut ir,
         &crate::decode::ParasolidNumericAttributeSources {
-            topology_references: &[reference],
+            topology_references: &references,
             numeric_uses: &uses,
             integers: &[integer],
             doubles: &[double],
@@ -4290,10 +4294,10 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         .iter()
         .filter(|attribute| attribute.id.0.contains("topology-numeric-attribute"))
         .collect::<Vec<_>>();
-    assert_eq!(attributes.len(), 2);
+    assert_eq!(attributes.len(), 6);
     assert_eq!(
         attributes[0].target,
-        AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+        AttributeTarget::Shell(ShellId("nx:s3:shell#58".into()))
     );
     assert_eq!(attributes[0].name, "parasolid_type_integer_reference_3");
     assert_eq!(
@@ -4303,10 +4307,28 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
             AttributeValue::Integer(i64::from(u32::MAX))
         ]
     );
-    assert_eq!(
-        attributes[1].values,
-        [AttributeValue::Float(0.25), AttributeValue::Float(7.5)]
-    );
+    for (attributes, target) in [
+        (
+            &attributes[0..2],
+            AttributeTarget::Shell(ShellId("nx:s3:shell#58".into())),
+        ),
+        (
+            &attributes[2..4],
+            AttributeTarget::Face(FaceId("nx:s3:face#60".into())),
+        ),
+        (
+            &attributes[4..6],
+            AttributeTarget::Loop(LoopId("nx:s3:loop#59".into())),
+        ),
+    ] {
+        assert!(attributes
+            .iter()
+            .all(|attribute| attribute.target == target));
+        assert_eq!(
+            attributes[1].values,
+            [AttributeValue::Float(0.25), AttributeValue::Float(7.5)]
+        );
+    }
 }
 
 #[test]

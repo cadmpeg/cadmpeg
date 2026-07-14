@@ -11,7 +11,8 @@ use crate::geometry::{
     ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use crate::ids::{
-    CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, SurfaceId, UnknownId,
+    AttributeId, CoedgeId, CurveId, EdgeId, LoopId, ProceduralCurveId, ProceduralSurfaceId,
+    ShellId, SubdId, SurfaceId, UnknownId,
 };
 use crate::math::{Point3, Vector3};
 use crate::native::NativeRecord;
@@ -1247,6 +1248,52 @@ fn new_topology_references_are_validated() {
     assert!(messages
         .iter()
         .any(|message| message.contains("coedge(radial_next)")));
+}
+
+#[test]
+fn shell_and_loop_attribute_targets_round_trip_and_validate() {
+    use crate::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+
+    let mut ir = unit_cube();
+    let shell = ir.model.shells[0].id.clone();
+    let loop_ = ir.model.loops[0].id.clone();
+    ir.model.attributes.extend([
+        SourceAttribute {
+            id: AttributeId("synthetic:cube:attribute#shell".into()),
+            target: AttributeTarget::Shell(shell),
+            name: "shell_value".into(),
+            values: vec![AttributeValue::Integer(1)],
+        },
+        SourceAttribute {
+            id: AttributeId("synthetic:cube:attribute#loop".into()),
+            target: AttributeTarget::Loop(loop_),
+            name: "loop_value".into(),
+            values: vec![AttributeValue::Integer(2)],
+        },
+    ]);
+    ir.model
+        .attributes
+        .sort_by(|first, second| first.id.cmp(&second.id));
+
+    let json = serde_json::to_string(&ir).unwrap();
+    let round_trip: CadIr = serde_json::from_str(&json).unwrap();
+    assert_eq!(round_trip.model.attributes, ir.model.attributes);
+    let report = validate(&round_trip, Vec::new());
+    assert!(report.is_ok(), "findings: {:?}", report.findings);
+
+    ir.model.attributes[0].target = AttributeTarget::Loop(LoopId("missing-loop".into()));
+    ir.model.attributes[1].target = AttributeTarget::Shell(ShellId("missing-shell".into()));
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.message.contains("shell")
+            && finding.message.contains("missing-shell")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::ReferentialIntegrity
+            && finding.message.contains("loop")
+            && finding.message.contains("missing-loop")
+    }));
 }
 
 #[test]

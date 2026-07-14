@@ -5844,12 +5844,8 @@ fn attach_parasolid_topology_string_attributes(
     let mut references_by_target =
         BTreeMap::<String, Vec<&crate::native::ParasolidTopologyAttributeListReference>>::new();
     for reference in topology_references {
-        let kind = match reference.topology_type {
-            14 => "face",
-            16 => "edge",
-            17 => "fin",
-            18 => "vertex",
-            _ => continue,
+        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
+            continue;
         };
         references_by_target
             .entry(format!(
@@ -5859,31 +5855,7 @@ fn attach_parasolid_topology_string_attributes(
             .or_default()
             .push(reference);
     }
-    let mut emitted_targets = BTreeMap::<String, AttributeTarget>::new();
-    emitted_targets.extend(
-        ir.model
-            .faces
-            .iter()
-            .map(|face| (face.id.0.clone(), AttributeTarget::Face(face.id.clone()))),
-    );
-    emitted_targets.extend(
-        ir.model
-            .edges
-            .iter()
-            .map(|edge| (edge.id.0.clone(), AttributeTarget::Edge(edge.id.clone()))),
-    );
-    emitted_targets.extend(ir.model.coedges.iter().map(|coedge| {
-        (
-            coedge.id.0.clone(),
-            AttributeTarget::Coedge(coedge.id.clone()),
-        )
-    }));
-    emitted_targets.extend(ir.model.vertices.iter().map(|vertex| {
-        (
-            vertex.id.0.clone(),
-            AttributeTarget::Vertex(vertex.id.clone()),
-        )
-    }));
+    let emitted_targets = parasolid_topology_attribute_targets(ir);
     for (target_key, references) in references_by_target {
         let [reference] = references.as_slice() else {
             continue;
@@ -5934,6 +5906,56 @@ pub(crate) struct ParasolidNumericAttributeSources<'a> {
     pub(crate) doubles: &'a [crate::native::ParasolidEntity53DoubleRecord],
 }
 
+fn parasolid_topology_kind(topology_type: u8) -> Option<&'static str> {
+    match topology_type {
+        13 => Some("shell"),
+        14 => Some("face"),
+        15 => Some("loop"),
+        16 => Some("edge"),
+        17 => Some("fin"),
+        18 => Some("vertex"),
+        _ => None,
+    }
+}
+
+fn parasolid_topology_attribute_targets(ir: &CadIr) -> BTreeMap<String, AttributeTarget> {
+    ir.model
+        .shells
+        .iter()
+        .map(|shell| (shell.id.0.clone(), AttributeTarget::Shell(shell.id.clone())))
+        .chain(
+            ir.model
+                .faces
+                .iter()
+                .map(|face| (face.id.0.clone(), AttributeTarget::Face(face.id.clone()))),
+        )
+        .chain(
+            ir.model
+                .loops
+                .iter()
+                .map(|loop_| (loop_.id.0.clone(), AttributeTarget::Loop(loop_.id.clone()))),
+        )
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .map(|edge| (edge.id.0.clone(), AttributeTarget::Edge(edge.id.clone()))),
+        )
+        .chain(ir.model.coedges.iter().map(|coedge| {
+            (
+                coedge.id.0.clone(),
+                AttributeTarget::Coedge(coedge.id.clone()),
+            )
+        }))
+        .chain(ir.model.vertices.iter().map(|vertex| {
+            (
+                vertex.id.0.clone(),
+                AttributeTarget::Vertex(vertex.id.clone()),
+            )
+        }))
+        .collect()
+}
+
 pub(crate) fn attach_parasolid_topology_numeric_attributes(
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
@@ -5963,12 +5985,8 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
     let mut references_by_target =
         BTreeMap::<String, Vec<&crate::native::ParasolidTopologyAttributeListReference>>::new();
     for reference in sources.topology_references {
-        let kind = match reference.topology_type {
-            14 => "face",
-            16 => "edge",
-            17 => "fin",
-            18 => "vertex",
-            _ => continue,
+        let Some(kind) = parasolid_topology_kind(reference.topology_type) else {
+            continue;
         };
         references_by_target
             .entry(format!(
@@ -5978,31 +5996,7 @@ pub(crate) fn attach_parasolid_topology_numeric_attributes(
             .or_default()
             .push(reference);
     }
-    let mut emitted_targets = BTreeMap::<String, AttributeTarget>::new();
-    emitted_targets.extend(
-        ir.model
-            .faces
-            .iter()
-            .map(|face| (face.id.0.clone(), AttributeTarget::Face(face.id.clone()))),
-    );
-    emitted_targets.extend(
-        ir.model
-            .edges
-            .iter()
-            .map(|edge| (edge.id.0.clone(), AttributeTarget::Edge(edge.id.clone()))),
-    );
-    emitted_targets.extend(ir.model.coedges.iter().map(|coedge| {
-        (
-            coedge.id.0.clone(),
-            AttributeTarget::Coedge(coedge.id.clone()),
-        )
-    }));
-    emitted_targets.extend(ir.model.vertices.iter().map(|vertex| {
-        (
-            vertex.id.0.clone(),
-            AttributeTarget::Vertex(vertex.id.clone()),
-        )
-    }));
+    let emitted_targets = parasolid_topology_attribute_targets(ir);
 
     for (target_key, references) in references_by_target {
         let [reference] = references.as_slice() else {
