@@ -348,7 +348,11 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert_eq!(placed.position.x, 1.0);
     assert_eq!(placed.position.y, 2.0);
     assert_eq!(placed.position.z, 3.0);
-    assert_eq!(result.ir.model.curves.len(), 7);
+    assert_eq!(result.ir.model.curves.len(), 8);
+    assert!(result.ir.model.curves.iter().any(|curve| {
+        curve.id.as_str() == "step:data:curve#45"
+            && matches!(curve.geometry, CurveGeometry::Composite { .. })
+    }));
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Line { origin, direction }

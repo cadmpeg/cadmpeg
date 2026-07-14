@@ -321,11 +321,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             pending_composites.remove(&id);
         }
     }
-    for id in pending_composites {
-        warnings.push(format!(
-            "COMPOSITE_CURVE #{id} has invalid, cyclic, or unresolved segments"
-        ));
-    }
     let curve_geometries = ir
         .model
         .curves
@@ -375,6 +370,43 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             cache_fit_tolerance: Some(0.0),
         });
         typed.insert(id);
+    }
+
+    loop {
+        let decoded_curve_ids = ir
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.id.clone())
+            .collect::<BTreeSet<_>>();
+        let ready = pending_composites
+            .iter()
+            .filter_map(|&id| {
+                composite_curve(exchange.records.get(&id)?, exchange, &decoded_curve_ids)
+                    .map(|definition| (id, definition))
+            })
+            .collect::<Vec<_>>();
+        if ready.is_empty() {
+            break;
+        }
+        for (id, (segments, self_intersect)) in ready {
+            typed.extend(segments.iter().map(|(id, _)| *id));
+            ir.model.curves.push(Curve {
+                id: CurveId(format!("step:data:curve#{id}")),
+                geometry: CurveGeometry::Composite {
+                    segments: segments.into_iter().map(|(_, segment)| segment).collect(),
+                    self_intersect,
+                },
+                source_object: None,
+            });
+            typed.insert(id);
+            pending_composites.remove(&id);
+        }
+    }
+    for id in pending_composites {
+        warnings.push(format!(
+            "COMPOSITE_CURVE #{id} has invalid, cyclic, or unresolved segments"
+        ));
     }
 
     let offset_sources = ir
