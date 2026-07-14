@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 47);
+    assert_eq!(namespace.version, 48);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1611,6 +1611,48 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
             .map(|value| value.object_index)
             .collect::<Vec<_>>(),
         [670, 68]
+    );
+}
+
+#[test]
+fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
+    use crate::native::{
+        FeatureExtrudeProfileReference, FeatureOperationBodyReferenceLane,
+        FeatureOperationBodyReferenceLaneEncoding,
+    };
+
+    let references = [10, 11].map(|ordinal| FeatureExtrudeProfileReference {
+        id: format!("profile-{ordinal}"),
+        operation_label: "operation".to_string(),
+        ordinal: ordinal - 10,
+        witnessed: true,
+        object_index: ordinal + 90,
+        data_block: Some(format!("block-{ordinal}")),
+        source_offset: u64::from(ordinal),
+    });
+    let lane = FeatureOperationBodyReferenceLane {
+        id: "lane".to_string(),
+        operation_label: "operation".to_string(),
+        body_reference_ordinal: 0,
+        body_object_index: 42,
+        branch: 0x11,
+        encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
+        object_indices: vec![100, 101],
+        source_offsets: vec![20, 21],
+    };
+    let profiles = crate::native::feature_extrude_construction_profiles(
+        &references,
+        std::slice::from_ref(&lane),
+    );
+    assert_eq!(profiles.len(), 1);
+    assert_eq!(profiles[0].body_object_index, 42);
+    assert_eq!(profiles[0].object_indices, [100, 101]);
+    assert_eq!(profiles[0].data_blocks, ["block-10", "block-11"]);
+
+    let mut mismatched = lane;
+    mismatched.object_indices[1] = 102;
+    assert!(
+        crate::native::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty()
     );
 }
 
@@ -4379,7 +4421,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 47);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 48);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

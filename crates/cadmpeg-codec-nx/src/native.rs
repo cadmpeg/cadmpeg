@@ -494,6 +494,25 @@ pub struct FeatureOperationBodyReferenceLane {
     pub source_offsets: Vec<u64>,
 }
 
+/// Atomically witnessed extrusion construction profile.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureExtrudeConstructionProfile {
+    /// Globally unique construction-profile identity.
+    pub id: String,
+    /// Owning `EXTRUDE` operation label.
+    pub operation_label: String,
+    /// Body object anchoring the branch-`11` construction clause.
+    pub body_object_index: u32,
+    /// Ordered serialized profile object indices.
+    pub object_indices: Vec<u32>,
+    /// Ordered uniquely resolved profile data blocks.
+    pub data_blocks: Vec<String>,
+    /// Source offsets from the independently encoded profile field.
+    pub profile_source_offsets: Vec<u64>,
+    /// Source offsets from the body-clause reference lane.
+    pub body_lane_source_offsets: Vec<u64>,
+}
+
 /// Structured `32` branch following an extrusion body-reference field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureExtrudePayload32Branch {
@@ -1404,6 +1423,68 @@ pub fn feature_operation_body_reference_lanes(
         }
     }
     lanes
+}
+
+/// Join the two exact encodings of an extrusion construction profile.
+pub fn feature_extrude_construction_profiles(
+    references: &[FeatureExtrudeProfileReference],
+    lanes: &[FeatureOperationBodyReferenceLane],
+) -> Vec<FeatureExtrudeConstructionProfile> {
+    let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureExtrudeProfileReference>>::new();
+    for reference in references {
+        references_by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
+    }
+    let mut profiles = Vec::new();
+    for (operation_label, mut operation_references) in references_by_operation {
+        operation_references.sort_by_key(|reference| reference.ordinal);
+        if operation_references.is_empty()
+            || operation_references
+                .iter()
+                .any(|reference| !reference.witnessed)
+        {
+            continue;
+        }
+        let object_indices = operation_references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>();
+        let matching_lanes = lanes
+            .iter()
+            .filter(|lane| {
+                lane.operation_label == operation_label
+                    && lane.branch == 0x11
+                    && lane.encoding
+                        == FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
+                    && lane.object_indices == object_indices
+            })
+            .collect::<Vec<_>>();
+        let [lane] = matching_lanes.as_slice() else {
+            continue;
+        };
+        let Some(data_blocks) = operation_references
+            .iter()
+            .map(|reference| reference.data_block.clone())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        profiles.push(FeatureExtrudeConstructionProfile {
+            id: operation_label.replacen("operation-label", "extrude-construction-profile", 1),
+            operation_label: operation_label.to_string(),
+            body_object_index: lane.body_object_index,
+            object_indices,
+            data_blocks,
+            profile_source_offsets: operation_references
+                .iter()
+                .map(|reference| reference.source_offset)
+                .collect(),
+            body_lane_source_offsets: lane.source_offsets.clone(),
+        });
+    }
+    profiles
 }
 
 /// Decode structured `32` branches following extrusion body-reference fields.
