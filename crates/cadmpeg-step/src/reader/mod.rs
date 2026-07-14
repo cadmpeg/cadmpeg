@@ -58,9 +58,9 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
     let topology = topology::decode(&exchange, &mut ir);
     let product = product::decode(&exchange, &geometry, &mut ir);
     let tessellation = tessellation::decode(&exchange, &geometry, &mut ir);
+    let pmi = pmi::decode(&exchange, &geometry, &mut ir);
     let presentation = presentation::decode(&exchange, &mut ir);
     let validation = validation::decode(&exchange, &geometry, &mut ir);
-    let pmi = pmi::decode(&exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
     report.geometry_transferred = !ir.model.points.is_empty()

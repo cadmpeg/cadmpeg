@@ -20,23 +20,51 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|annotation| (annotation.id.as_str(), &annotation.definition))
         .collect::<HashMap<_, _>>();
+    let bodies = ir
+        .model
+        .bodies
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    let vertices = ir
+        .model
+        .vertices
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    let products = ir
+        .model
+        .products
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    let occurrences = ir
+        .model
+        .occurrences
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
     for annotation in &ir.model.pmi {
         for target in &annotation.targets {
             let resolved = match target {
-                PmiTarget::Body { body } => ir.model.bodies.iter().any(|item| item.id == *body),
-                PmiTarget::Face { face } => ir.model.faces.iter().any(|item| item.id == *face),
-                PmiTarget::Edge { edge } => ir.model.edges.iter().any(|item| item.id == *edge),
-                PmiTarget::Vertex { vertex } => {
-                    ir.model.vertices.iter().any(|item| item.id == *vertex)
-                }
-                PmiTarget::Product { product } => {
-                    ir.model.products.iter().any(|item| item.id == *product)
-                }
-                PmiTarget::Occurrence { occurrence } => ir
-                    .model
-                    .occurrences
-                    .iter()
-                    .any(|item| item.id == *occurrence),
+                PmiTarget::Body { body } => bodies.contains(body.as_str()),
+                PmiTarget::Face { face } => faces.contains(face.as_str()),
+                PmiTarget::Edge { edge } => edges.contains(edge.as_str()),
+                PmiTarget::Vertex { vertex } => vertices.contains(vertex.as_str()),
+                PmiTarget::Product { product } => products.contains(product.as_str()),
+                PmiTarget::Occurrence { occurrence } => occurrences.contains(occurrence.as_str()),
                 PmiTarget::ShapeAspect { source_id } => !source_id.is_empty(),
             };
             if !resolved {
@@ -84,10 +112,7 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         && compartment.len() >= 2
                         && compartment
                             .iter()
-                            .all(|reference| reference.common_group == common_group)
-                        && compartment
-                            .iter()
-                            .all(|reference| reference.modifiers == compartment[0].modifiers);
+                            .all(|reference| reference.common_group == common_group);
                     if compartment.len() != 1 && !common
                         || compartment.len() == 1 && common_group.is_some()
                     {
@@ -134,7 +159,18 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
-            PmiDefinition::Presentation { semantics, .. } => {
+            PmiDefinition::Presentation {
+                semantics,
+                placement,
+                ..
+            } => {
+                if placement.is_some_and(|transform| !transform.is_finite()) {
+                    invalid(
+                        findings,
+                        annotation.id.as_str(),
+                        "presentation placement contains a non-finite coefficient",
+                    );
+                }
                 if semantics.iter().any(|id| !ids.contains(id.as_str())) {
                     invalid(
                         findings,

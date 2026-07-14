@@ -367,7 +367,10 @@ impl RecordExt for RawRecord {
         (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
     }
     fn parameters(&self) -> &[Value] {
-        &self.partials[0].parameters
+        self.partials
+            .first()
+            .map(|partial| partial.parameters.as_slice())
+            .unwrap_or_default()
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.parameters().get(index)

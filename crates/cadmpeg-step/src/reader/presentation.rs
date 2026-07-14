@@ -67,6 +67,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             ));
             continue;
         };
+        if name.is_empty() {
+            warnings.push(format!(
+                "PRESENTATION_LAYER_ASSIGNMENT #{layer_id} has an empty name"
+            ));
+            continue;
+        }
         let description = layer
             .parameter(1)
             .and_then(ValueExt::text)
@@ -333,10 +339,13 @@ fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationIt
             occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
         },
         Some(name)
-            if name == "DATUM"
+            if (name == "DATUM"
                 || name == "DATUM_SYSTEM"
                 || name.starts_with("DIMENSIONAL_")
-                || name.ends_with("_TOLERANCE") =>
+                || name.ends_with("_TOLERANCE"))
+                && ir.model.pmi.iter().any(|annotation| {
+                    annotation.id.as_str() == format!("step:presentation:pmi#{id}")
+                }) =>
         {
             PresentationItem::Pmi {
                 annotation: PmiId(format!("step:presentation:pmi#{id}")),
@@ -466,7 +475,10 @@ impl RecordExt for RawRecord {
         (self.partials.len() == 1).then(|| self.partials[0].name.as_str())
     }
     fn parameters(&self) -> &[Value] {
-        &self.partials[0].parameters
+        self.partials
+            .first()
+            .map(|partial| partial.parameters.as_slice())
+            .unwrap_or_default()
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.parameters().get(index)

@@ -4,16 +4,15 @@
 
 The STEP codec reads ISO 10303-21 clear-text exchange structures whose
 `FILE_SCHEMA` identifies AP203, AP214, or AP242. AP242 editions 1 through 3
-form the primary band. AP203 editions 1 and 2 and AP214 form the compatibility
-band. Part 28 XML, Part 26 binary, AP242 BO-Model XML sidecars, and ZIP
-containers are distinct encodings and are rejected by name.
+and AP203 editions 1 and 2 and AP214 use this exchange structure. Part 28 XML,
+Part 26 binary, AP242 BO-Model XML sidecars, and ZIP containers are distinct
+encodings.
 
 Part 21 AP203, AP214, and AP242 documents describe exchanged product shape and
-product structure. They do not encode the originating application's ordered
-sketch, constraint, parameter, or feature-replay history. Design-record and
-design-complete ladder gates are therefore inapplicable. Product occurrence
-relationships carry identity and placement but no assembly mates or assembly
-constraint solver state; the mate gate is inapplicable.
+product structure. Product occurrence relationships carry identity and
+placement. The clear-text exchange structure contains no originating
+application's ordered feature-replay history or assembly constraint-solver
+state unless an application protocol entity explicitly carries that data.
 
 ## 2. Byte repertoire and exchange framing
 
@@ -86,8 +85,8 @@ surrounding prose.
 encodes a sequence of four-hex-digit UTF-16 code units. Valid surrogate pairs
 combine into one scalar value; isolated surrogates are invalid. `\X4\hhhhhhhh
 ...\X0\` encodes eight-hex-digit Unicode scalar values. Hexadecimal digits are
-case-insensitive. Encoders use direct ASCII where permitted and `\X2\` or
-`\X4\` for other scalar values.
+case-insensitive. Direct ASCII, `\X2\`, and `\X4\` forms denote the same scalar
+values where their permitted repertoires overlap.
 
 ## 5. Values and records
 

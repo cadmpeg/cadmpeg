@@ -127,6 +127,7 @@ pub fn parse(input: &[u8]) -> Result<Exchange, ParseError> {
     Parser {
         tokens: lex(input)?,
         at: 0,
+        depth: 0,
     }
     .exchange()
 }
@@ -134,6 +135,7 @@ pub fn parse(input: &[u8]) -> Result<Exchange, ParseError> {
 struct Parser {
     tokens: Vec<Token>,
     at: usize,
+    depth: usize,
 }
 
 impl Parser {
@@ -201,10 +203,11 @@ impl Parser {
             let mut ids = Vec::new();
             while !self.peek_name("ENDSEC") {
                 let record = self.record()?;
-                if records.insert(record.id, record.clone()).is_some() {
+                let id = record.id;
+                if records.insert(id, record).is_some() {
                     return self.err("duplicate instance name");
                 }
-                ids.push(record.id);
+                ids.push(id);
             }
             self.name("ENDSEC")?;
             self.punct(TokenKind::Semicolon)?;
@@ -320,6 +323,17 @@ impl Parser {
     }
 
     fn parameters(&mut self) -> Result<Vec<Value>, ParseError> {
+        const MAX_VALUE_DEPTH: usize = 256;
+        if self.depth >= MAX_VALUE_DEPTH {
+            return self.err("parameter nesting exceeds 256 levels");
+        }
+        self.depth += 1;
+        let result = self.parameters_inner();
+        self.depth -= 1;
+        result
+    }
+
+    fn parameters_inner(&mut self) -> Result<Vec<Value>, ParseError> {
         self.punct(TokenKind::LParen)?;
         let mut values = Vec::new();
         if self.peek(&TokenKind::RParen) {

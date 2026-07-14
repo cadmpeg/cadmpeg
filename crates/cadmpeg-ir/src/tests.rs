@@ -70,6 +70,16 @@ fn product_occurrence_tree_validates_references_and_cycles() {
     ir.finalize();
     assert!(crate::validate(&ir, Vec::new()).is_ok());
 
+    ir.model.occurrences[1].transform.rows[0][0] = f64::INFINITY;
+    assert!(crate::validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == crate::report::Check::ProductStructure
+                && finding.message.contains("non-finite")
+        }));
+    ir.model.occurrences[1].transform = Transform::identity();
+
     ir.model.occurrences[1].parent = OccurrenceParent::Occurrence {
         occurrence: OccurrenceId("test:product:occurrence#child".into()),
     };
@@ -78,6 +88,17 @@ fn product_occurrence_tree_validates_references_and_cycles() {
         .findings
         .iter()
         .any(|finding| finding.check == crate::report::Check::ProductStructure));
+}
+
+#[test]
+fn non_finite_body_transform_is_invalid() {
+    let mut ir = unit_cube();
+    let mut transform = crate::transform::Transform::identity();
+    transform.rows[2][3] = f64::NAN;
+    ir.model.bodies[0].transform = Some(transform);
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::Bounds && finding.message.contains("non-finite")
+    }));
 }
 
 /// Replace the surface of the cube's first face with an unknown surface,

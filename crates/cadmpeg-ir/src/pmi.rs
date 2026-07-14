@@ -336,4 +336,25 @@ mod tests {
                 >= 2
         );
     }
+
+    #[test]
+    fn non_finite_presentation_placement_is_invalid() {
+        let mut ir = CadIr::empty(Units::default());
+        let mut placement = Transform::identity();
+        placement.rows[0][3] = f64::INFINITY;
+        ir.model.pmi.push(PmiAnnotation {
+            id: PmiId("test:model:pmi#graphic".into()),
+            name: None,
+            targets: Vec::new(),
+            definition: PmiDefinition::Presentation {
+                text: None,
+                placement: Some(placement),
+                semantics: Vec::new(),
+            },
+        });
+        assert!(validate(&ir, Vec::new())
+            .findings
+            .iter()
+            .any(|finding| finding.check == Check::Pmi && finding.message.contains("non-finite")));
+    }
 }

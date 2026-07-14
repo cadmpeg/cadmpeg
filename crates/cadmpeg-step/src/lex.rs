@@ -277,7 +277,7 @@ impl Lexer<'_> {
         loop {
             match self.input.get(self.at).copied() {
                 Some(b'\'') if self.input.get(self.at + 1) == Some(&b'\'') => {
-                    bytes.push(b'\'');
+                    bytes.extend_from_slice(b"''");
                     self.at += 2;
                 }
                 Some(b'\'') => {

@@ -45,6 +45,21 @@ fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
 }
 
 #[test]
+fn writer_and_lexer_preserve_apostrophes_and_backslashes_once() {
+    use crate::lex::{lex, TokenKind};
+
+    let source = "O'Brien \\ fixtures";
+    let encoded = crate::writer::string(source);
+    let tokens = lex(encoded.as_bytes()).expect("lex encoded string");
+    let TokenKind::String(bytes) = &tokens[0].kind else {
+        panic!("encoded text did not lex as a string")
+    };
+    assert_eq!(crate::strings::decode(bytes).unwrap(), source);
+    assert!(encoded.contains("O''Brien"));
+    assert!(encoded.contains("\\\\"));
+}
+
+#[test]
 fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
     use crate::lex::{lex, BinaryValue, TokenKind};
 
@@ -65,6 +80,16 @@ fn lexer_decodes_binary_literals_and_rejects_invalid_bit_boundaries() {
     for invalid in [b"\"\"".as_slice(), b"\"4FF\"", b"\"17F\"", b"\"3A7\""] {
         assert!(lex(invalid).is_err(), "accepted {invalid:?}");
     }
+}
+
+#[test]
+fn parser_rejects_excessive_parameter_nesting_without_recursing_unboundedly() {
+    let nested = format!("{}1{}", "(".repeat(300), ")".repeat(300));
+    let source = format!(
+        "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('','','',(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=ITEM({nested});ENDSEC;END-ISO-10303-21;"
+    );
+    let error = crate::parse::parse(source.as_bytes()).unwrap_err();
+    assert!(error.to_string().contains("nesting exceeds 256 levels"));
 }
 
 #[test]
@@ -1366,15 +1391,16 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
         .notes
         .iter()
         .any(|note| note
-            == "geometric validation surface area triangle sheet: expected 50, computed 50"));
+            == "geometric validation surface area triangle sheet: expected 50, tessellation approximation 50"));
     assert!(result.report.notes.iter().any(|note| note.starts_with(
-        "geometric validation centroid triangle centroid: expected (3.333333333333333,3.333333333333333,0), computed distance"
+        "geometric validation centroid triangle centroid: expected (3.333333333333333,3.333333333333333,0), tessellation approximation distance"
     )));
     assert!(result.report.notes.iter().any(
-        |note| note == "geometric validation volume open sheet volume: expected 0, computed 0"
+        |note| note == "geometric validation volume open sheet volume: expected 0, tessellation approximation 0"
     ));
-    assert!(result.report.losses.iter().any(|loss| loss.message
-        == "geometric validation surface area intentional mismatch does not match transferred tessellation"));
+    assert!(!result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("does not match transferred tessellation")));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
@@ -1623,6 +1649,32 @@ fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
 }
 
 #[test]
+fn typed_pmi_measure_uses_its_explicit_conversion_unit() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#6=DATUM_FEATURE('feature','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'width');
+#30=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(25.4),#1);
+#31=(CONVERSION_BASED_UNIT('inch',#30) LENGTH_UNIT() NAMED_UNIT(*));
+#13=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(5.0),#31);
+#14=SHAPE_DIMENSION_REPRESENTATION('width value',(#13),#2);
+#15=DIMENSIONAL_CHARACTERISTIC_REPRESENTATION(#10,#14);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            nominal: Some(cadmpeg_ir::PmiValue { value, .. }),
+            ..
+        } if (value - 127.0).abs() < 1.0e-12
+    )));
+}
+
+#[test]
 fn repeated_subassembly_instances_each_receive_the_subtree() {
     use cadmpeg_ir::product::OccurrenceParent;
 
@@ -1751,6 +1803,34 @@ fn placement_reference_is_projected_and_angular_trims_use_context_units() {
 }
 
 #[test]
+fn line_numeric_trim_uses_vector_magnitude_and_length_unit() {
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1)) REPRESENTATION_CONTEXT('model','3D'));
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=CARTESIAN_POINT('',(2.,0.,0.));
+#12=DIRECTION('',(1.,0.,0.));
+#13=VECTOR('',#12,2.);
+#14=LINE('',#10,#13);
+#15=TRIMMED_CURVE('',#14,(#11),(PARAMETER_VALUE(1.)),.T.,.UNSPECIFIED.);
+#16=GEOMETRIC_CURVE_SET('',(#15));
+#17=SHAPE_REPRESENTATION('',(#16),#2);",
+    );
+    assert!(result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| matches!(
+            curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range: [start, end],
+                ..
+            } if (start - 2.0).abs() < 1.0e-12 && (end - 2.0).abs() < 1.0e-12
+        )));
+}
+
+#[test]
 fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
     use cadmpeg_ir::geometry::{
         CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
@@ -1797,6 +1877,94 @@ fn standalone_geometry_uses_general_shape_representation() {
     let output = export(&ir);
     assert!(output.contains("SHAPE_REPRESENTATION('',"));
     assert!(!output.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
+}
+
+#[test]
+fn face_outer_bound_is_canonicalized_ahead_of_inner_bounds() {
+    use cadmpeg_ir::ids::LoopId;
+    use cadmpeg_ir::topology::Loop;
+
+    let mut ir = unit_cube();
+    let face = ir.model.faces[0].id.clone();
+    let vertex = ir.model.vertices[0].id.clone();
+    let inner = LoopId("zzzz:test:loop#inner".into());
+    ir.model.loops.push(Loop {
+        id: inner.clone(),
+        face: face.clone(),
+        coedges: Vec::new(),
+        vertex: Some(vertex),
+    });
+    ir.model.faces[0].loops.push(inner);
+    let output = export(&ir);
+    let exchange = crate::parse::parse(output.as_bytes()).unwrap();
+    let (face_step, outer_bound, inner_bound, outer_loop) = exchange
+        .records
+        .iter()
+        .find_map(|(&face_step, record)| {
+            let partial = record.partials.first()?;
+            if partial.name != "ADVANCED_FACE" {
+                return None;
+            }
+            let crate::parse::Value::List(bounds) = partial.parameters.get(1)? else {
+                return None;
+            };
+            if bounds.len() != 2 {
+                return None;
+            }
+            let crate::parse::Value::Reference(first) = bounds[0] else {
+                return None;
+            };
+            let crate::parse::Value::Reference(second) = bounds[1] else {
+                return None;
+            };
+            let first_record = exchange.records.get(&first)?.partials.first()?;
+            let second_record = exchange.records.get(&second)?.partials.first()?;
+            let (outer, inner) = if first_record.name == "FACE_OUTER_BOUND" {
+                (first, second)
+            } else if second_record.name == "FACE_OUTER_BOUND" {
+                (second, first)
+            } else {
+                return None;
+            };
+            let crate::parse::Value::Reference(outer_loop) = exchange.records.get(&outer)?.partials
+                [0]
+            .parameters
+            .get(1)?
+            else {
+                return None;
+            };
+            Some((face_step, outer, inner, outer_loop))
+        })
+        .expect("face with outer and inner bounds");
+    let ordered = format!("(#{outer_bound},#{inner_bound})");
+    let reversed = format!("(#{inner_bound},#{outer_bound})");
+    let reordered = output.replacen(&ordered, &reversed, 1);
+    assert_ne!(reordered, output);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(reordered), &DecodeOptions::default())
+        .expect("decode reversed face bounds");
+    let face = decoded
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.as_str() == format!("step:data:face#{face_step}"))
+        .expect("decoded face");
+    assert_eq!(
+        face.loops[0].as_str(),
+        format!("step:data:loop#{outer_loop}-face-{face_step}")
+    );
+}
+
+#[test]
+fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
+    let mut ir = unit_cube();
+    ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
+    ir.model.faces[0].loops.clear();
+    let output = export(&ir);
+    // Five face-owned surfaces remain after sharing, and the displaced carrier
+    // is retained once as standalone construction geometry.
+    assert_eq!(output.matches("= PLANE(").count(), 6);
 }
 
 #[test]
@@ -1936,7 +2104,7 @@ fn common_datum_compartment_round_trips_as_one_precedence() {
             datum: datum_b.id,
             precedence: 1,
             common_group: Some(7),
-            modifiers,
+            modifiers: vec!["least_material_requirement".into()],
         },
     ];
     let validation = cadmpeg_ir::validate(&ir, Vec::new());
@@ -1962,7 +2130,40 @@ fn common_datum_compartment_round_trips_as_one_precedence() {
             if references.len() == 2
                 && references.iter().all(|reference| reference.precedence == 1)
                 && references.iter().all(|reference| reference.common_group == Some(1))
+                && references[0].modifiers != references[1].modifiers
     )));
+}
+
+#[test]
+fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+    use cadmpeg_ir::presentation::PresentationItem;
+
+    let result = decode_inline(
+        "#1=PRESENTATION_LAYER_ASSIGNMENT('','',());
+#5=PRODUCT_DEFINITION_SHAPE('PMI shape','',#99);
+#7=DATUM('',$,#5,.F.,'A');
+#8=DATUM_SYSTEM('system','',#5,.F.,(#20));
+#20=DATUM_REFERENCE_COMPARTMENT('',$,#5,.F.,COMMON_DATUM_LIST((#21)),());
+#21=DATUM_REFERENCE_ELEMENT('',$,#5,.F.,#7,());
+#30=PLUS_MINUS_TOLERANCE(#31,#32);
+#31=UNKNOWN_LIMIT();
+#32=UNKNOWN_CHARACTERISTIC();
+#40=PRESENTATION_LAYER_ASSIGNMENT('inspection','',(#30));
+#99=UNRESOLVED_PRODUCT();",
+    );
+    assert_eq!(result.ir.model.presentation_layers.len(), 1);
+    assert!(matches!(
+        result.ir.model.presentation_layers[0].items.as_slice(),
+        [PresentationItem::Source { source_id }] if source_id == "#30"
+    ));
+    assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 1 && references[0].common_group.is_none()
+    )));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
@@ -2638,6 +2839,27 @@ fn hidden_body_geometry_and_visibility_round_trip() {
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(s.into_bytes()), &DecodeOptions::default())
         .expect("decode hidden body");
+    assert_eq!(decoded.ir.model.bodies[0].visible, Some(false));
+
+    let mut transformed = unit_cube();
+    transformed.model.bodies[0].visible = Some(false);
+    transformed.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
+        rows: [
+            [1.0, 0.0, 0.0, 10.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    });
+    let transformed_text = export(&transformed);
+    assert!(transformed_text.contains("MAPPED_ITEM"));
+    assert!(!transformed_text.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(transformed_text),
+            &DecodeOptions::default(),
+        )
+        .expect("decode hidden transformed body");
     assert_eq!(decoded.ir.model.bodies[0].visible, Some(false));
 
     // An explicitly visible body exports unchanged.

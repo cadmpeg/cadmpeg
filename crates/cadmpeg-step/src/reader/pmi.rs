@@ -442,15 +442,58 @@ fn datum_references(
         return Vec::new();
     }
     typed.insert(compartment_id);
-    let modifiers = compartment
+    let compartment_modifiers = compartment
         .parameter(5)
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
         .filter_map(|modifier| modifier_text(modifier, exchange, typed, length_scale, angle_scale))
         .collect::<Vec<_>>();
-    let common_group = is_common_datum_list(compartment.parameter(4)).then_some(precedence);
-    datum_ids(compartment.parameter(4))
+    let base = compartment.parameter(4);
+    if is_common_datum_list(base) {
+        let Some(Value::Typed(_, members)) = base else {
+            return Vec::new();
+        };
+        let element_ids = members
+            .list()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(ValueExt::reference)
+            .collect::<Vec<_>>();
+        let common_group = (element_ids.len() >= 2).then_some(precedence);
+        return element_ids
+            .into_iter()
+            .filter_map(|element_id| {
+                let element = exchange.records.get(&element_id)?;
+                if element.simple_name() != Some("DATUM_REFERENCE_ELEMENT") {
+                    return None;
+                }
+                let datum = element.parameter(4).and_then(ValueExt::reference)?;
+                if !annotations.contains_key(&datum) {
+                    return None;
+                }
+                let mut modifiers = compartment_modifiers.clone();
+                modifiers.extend(
+                    element
+                        .parameter(5)
+                        .and_then(ValueExt::list)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|modifier| {
+                            modifier_text(modifier, exchange, typed, length_scale, angle_scale)
+                        }),
+                );
+                typed.extend([element_id, datum]);
+                Some(DatumReference {
+                    datum: pmi_id(datum),
+                    precedence,
+                    common_group,
+                    modifiers,
+                })
+            })
+            .collect();
+    }
+    datum_ids(base)
         .into_iter()
         .filter(|datum| annotations.contains_key(datum))
         .map(|datum| {
@@ -458,8 +501,8 @@ fn datum_references(
             DatumReference {
                 datum: pmi_id(datum),
                 precedence,
-                common_group,
-                modifiers: modifiers.clone(),
+                common_group: None,
+                modifiers: compartment_modifiers.clone(),
             }
         })
         .collect()
@@ -780,8 +823,7 @@ fn measure_inner(
                 .iter()
                 .flat_map(|partial| &partial.parameters)
                 .find_map(|parameter| {
-                    parameter
-                        .number()
+                    scalar_number(parameter)
                         .map(|number| PmiValue {
                             value: number * scale,
                             quantity,
@@ -796,6 +838,15 @@ fn measure_inner(
         Value::List(values) => values
             .iter()
             .find_map(|value| measure_inner(value, exchange, length_scale, angle_scale, active)),
+        _ => None,
+    }
+}
+
+fn scalar_number(value: &Value) -> Option<f64> {
+    match value {
+        Value::Integer(value) => Some(*value as f64),
+        Value::Real(value) => Some(*value),
+        Value::Typed(_, value) => scalar_number(value),
         _ => None,
     }
 }

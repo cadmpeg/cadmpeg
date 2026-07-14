@@ -35,6 +35,14 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for occurrence in &ir.model.occurrences {
+        if !occurrence.transform.is_finite() {
+            findings.push(Finding {
+                check: Check::ProductStructure,
+                severity: Severity::Error,
+                message: "occurrence transform contains a non-finite coefficient".into(),
+                entity: Some(occurrence.id.0.clone()),
+            });
+        }
         if !products.contains(occurrence.product.as_str()) {
             missing(
                 findings,

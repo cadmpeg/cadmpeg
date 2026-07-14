@@ -526,7 +526,7 @@ fn build(
                         coedges: Vec::new(),
                         vertex: Some(VertexId(format!("step:data:vertex#{vertex_step}"))),
                     });
-                    loop_ids.push(lid);
+                    loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
                     used_v.insert(vertex_step);
                     built.typed.extend([bound_step, loop_step]);
                     continue;
@@ -582,9 +582,11 @@ fn build(
                     coedges: coedge_ids,
                     vertex: None,
                 });
-                loop_ids.push(lid);
+                loop_ids.push((br.simple_name() == Some("FACE_OUTER_BOUND"), lid));
                 built.typed.extend([bound_step, loop_step]);
             }
+            loop_ids.sort_by_key(|(outer, _)| !outer);
+            let loop_ids = loop_ids.into_iter().map(|(_, id)| id).collect();
             let face_forward = fr.parameter(3)?.logical()? == shell_forward;
             built.faces.push(Face {
                 id: fid.clone(),

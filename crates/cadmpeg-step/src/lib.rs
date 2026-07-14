@@ -470,6 +470,10 @@ impl<'a> Builder<'a> {
             self.default_product_definition_shape = Some(product_def_shape);
             let representation_kind = if !has_standalone_geometry
                 && !self.ir.model.bodies.is_empty()
+                && self.ir.model.bodies.iter().all(|body| {
+                    body.transform
+                        .is_none_or(|transform| is_identity(&transform.rows))
+                })
                 && self
                     .ir
                     .model
@@ -1294,7 +1298,7 @@ impl<'a> Builder<'a> {
             .bodies
             .iter()
             .filter(|body| body.visible == Some(false))
-            .filter_map(|body| self.body_shape_refs.get(body.id.as_str()).copied())
+            .filter_map(|body| self.body_step_refs.get(body.id.as_str()).copied())
             .collect::<Vec<_>>();
         if !hidden.is_empty() {
             self.emitter.emit("INVISIBILITY", &refs(&hidden));
@@ -1617,7 +1621,6 @@ impl<'a> Builder<'a> {
             }
         }
         if bound_refs.is_empty() {
-            self.surface_refs.remove(&surface_id);
             return None;
         }
         let flag = if same_sense { ".T." } else { ".F." };
@@ -1648,8 +1651,7 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
-            // Pcurves (coedge.pcurve) are intentionally dropped; the aggregate
-            // loss note is recorded in `note_unrepresented`.
+            // The edge carrier emits the coedge pcurve through SURFACE_CURVE.
             let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
                 continue;
             };
@@ -2070,35 +2072,29 @@ impl<'a> Builder<'a> {
                             .iter()
                             .map(|reference| annotation_refs.get(&reference.datum).copied())
                             .collect::<Option<Vec<_>>>()?;
-                        let datum = if group[0].common_group.is_some() {
-                            format!("COMMON_DATUM_LIST({})", refs(&datum_refs))
+                        let (datum, modifiers) = if group[0].common_group.is_some() {
+                            let elements = group
+                                .iter()
+                                .zip(datum_refs)
+                                .map(|(reference, datum)| {
+                                    let modifiers =
+                                        self.emit_datum_modifiers(&reference.modifiers)?;
+                                    Some(self.emitter.emit(
+                                        "DATUM_REFERENCE_ELEMENT",
+                                        &format!("'',$,{pds},.F.,{datum},({modifiers})"),
+                                    ))
+                                })
+                                .collect::<Option<Vec<_>>>()?;
+                            (
+                                format!("COMMON_DATUM_LIST({})", refs(&elements)),
+                                String::new(),
+                            )
                         } else {
-                            datum_refs[0].to_string()
+                            (
+                                datum_refs[0].to_string(),
+                                self.emit_datum_modifiers(&group[0].modifiers)?,
+                            )
                         };
-                        let mut modifiers = Vec::new();
-                        for modifier in &group[0].modifiers {
-                            if let Some((kind, value)) = modifier.split_once(':') {
-                                let value = value.parse::<f64>().ok()?;
-                                let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
-                                    value,
-                                    quantity: cadmpeg_ir::PmiQuantity::Length,
-                                });
-                                modifiers.push(
-                                    self.emitter
-                                        .emit(
-                                            "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
-                                            &format!(
-                                                ".{},{measure}",
-                                                format!("{}.", kind.to_ascii_uppercase())
-                                            ),
-                                        )
-                                        .to_string(),
-                                );
-                            } else {
-                                modifiers.push(format!(".{}.", modifier.to_ascii_uppercase()));
-                            }
-                        }
-                        let modifiers = modifiers.join(",");
                         Some(self.emitter.emit(
                             "DATUM_REFERENCE_COMPARTMENT",
                             &format!("'',$,{pds},.F.,{datum},({modifiers})"),
@@ -2322,6 +2318,30 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+    }
+
+    fn emit_datum_modifiers(&mut self, source: &[String]) -> Option<String> {
+        let mut modifiers = Vec::with_capacity(source.len());
+        for modifier in source {
+            if let Some((kind, value)) = modifier.split_once(':') {
+                let value = value.parse::<f64>().ok()?;
+                let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
+                    value,
+                    quantity: cadmpeg_ir::PmiQuantity::Length,
+                });
+                modifiers.push(
+                    self.emitter
+                        .emit(
+                            "DATUM_REFERENCE_MODIFIER_WITH_VALUE",
+                            &format!(".{}.,{measure}", kind.to_ascii_uppercase()),
+                        )
+                        .to_string(),
+                );
+            } else {
+                modifiers.push(format!(".{}.", modifier.to_ascii_uppercase()));
+            }
+        }
+        Some(modifiers.join(","))
     }
 
     fn emit_pmi_measure(&mut self, value: cadmpeg_ir::PmiValue) -> Ref {

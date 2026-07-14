@@ -366,12 +366,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             warnings.push(format!("TRIMMED_CURVE #{id} has no decoded basis curve"));
             continue;
         };
-        let start = record
-            .parameter(2)
-            .and_then(|value| trim_parameter(value, &points, &geometry, angle_scale));
-        let end = record
-            .parameter(3)
-            .and_then(|value| trim_parameter(value, &points, &geometry, angle_scale));
+        let linear_parameter_scale = line_parameter_scale(exchange, basis_step, scale);
+        let start = record.parameter(2).and_then(|value| {
+            trim_parameter(
+                value,
+                &points,
+                &geometry,
+                angle_scale,
+                linear_parameter_scale,
+            )
+        });
+        let end = record.parameter(3).and_then(|value| {
+            trim_parameter(
+                value,
+                &points,
+                &geometry,
+                angle_scale,
+                linear_parameter_scale,
+            )
+        });
         let Some((start, end)) = start.zip(end) else {
             warnings.push(format!(
                 "TRIMMED_CURVE #{id} has trim selectors incompatible with its basis curve"
@@ -1038,30 +1051,55 @@ fn trim_parameter(
     points: &BTreeMap<u64, Point3>,
     geometry: &CurveGeometry,
     angle_scale: f64,
+    linear_parameter_scale: f64,
 ) -> Option<f64> {
     match value {
-        Value::Integer(value) => Some(parameter_scale(geometry, angle_scale) * *value as f64),
-        Value::Real(value) => Some(parameter_scale(geometry, angle_scale) * *value),
-        Value::Typed(_, value) => trim_parameter(value, points, geometry, angle_scale),
+        Value::Integer(value) => {
+            Some(parameter_scale(geometry, angle_scale, linear_parameter_scale) * *value as f64)
+        }
+        Value::Real(value) => {
+            Some(parameter_scale(geometry, angle_scale, linear_parameter_scale) * *value)
+        }
+        Value::Typed(_, value) => {
+            trim_parameter(value, points, geometry, angle_scale, linear_parameter_scale)
+        }
         Value::Reference(id) => points
             .get(id)
             .and_then(|point| curve_parameter_at_point(geometry, *point)),
-        Value::List(values) => values
-            .iter()
-            .find_map(|value| trim_parameter(value, points, geometry, angle_scale)),
+        Value::List(values) => values.iter().find_map(|value| {
+            trim_parameter(value, points, geometry, angle_scale, linear_parameter_scale)
+        }),
         _ => None,
     }
 }
 
-fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64) -> f64 {
+fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64, linear_parameter_scale: f64) -> f64 {
     if matches!(
         geometry,
         CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
     ) {
         angle_scale
+    } else if matches!(geometry, CurveGeometry::Line { .. }) {
+        linear_parameter_scale
     } else {
         1.0
     }
+}
+
+fn line_parameter_scale(exchange: &Exchange, curve: u64, length_scale: f64) -> f64 {
+    exchange
+        .records
+        .get(&curve)
+        .filter(|record| record.simple_name() == Some("LINE"))
+        .and_then(|record| record.parameter(2))
+        .and_then(ValueExt::reference)
+        .and_then(|vector| exchange.records.get(&vector))
+        .filter(|record| record.simple_name() == Some("VECTOR"))
+        .and_then(|record| record.parameter(2))
+        .and_then(ValueExt::number)
+        .map(|magnitude| magnitude * length_scale)
+        .filter(|scale| scale.is_finite() && *scale > 0.0)
+        .unwrap_or(length_scale)
 }
 
 fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {

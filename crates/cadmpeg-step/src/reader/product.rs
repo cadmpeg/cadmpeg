@@ -118,6 +118,7 @@ pub(super) fn decode(
     let placements = occurrence_placements(exchange, geometry, &usages);
     let mut expanded = BTreeSet::<(u64, OccurrenceId)>::new();
     let mut usage_instances = BTreeMap::<u64, usize>::new();
+    const MAX_OCCURRENCES: usize = 100_000;
     loop {
         let ready = usages
             .iter()
@@ -156,6 +157,12 @@ pub(super) fn decode(
             format!("-instance-{instance}")
         };
         let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
+        if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+            warnings.push(format!(
+                "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
+            ));
+            break;
+        }
         ir.model.occurrences.push(ProductOccurrence {
             id: id.clone(),
             product: product_ir_id(product),

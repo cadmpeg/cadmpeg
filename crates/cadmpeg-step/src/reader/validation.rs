@@ -112,22 +112,13 @@ pub(super) fn decode(
             ),
         };
         if let Some(actual) = actual {
-            let mismatch = match expected {
-                Expected::Area(value) | Expected::Volume(value) => !close(value, actual),
-                Expected::Centroid(_) => actual > geometry.length_scale.max(1.0) * 1.0e-6,
-            };
             let actual_text = match expected {
                 Expected::Centroid(_) => format!("distance {actual}"),
                 _ => actual.to_string(),
             };
             notes.push(format!(
-                "geometric validation {kind} {description}: expected {expected_text}, computed {actual_text}"
+                "geometric validation {kind} {description}: expected {expected_text}, tessellation approximation {actual_text}"
             ));
-            if mismatch {
-                warnings.push(format!(
-                    "geometric validation {kind} {description} does not match transferred tessellation"
-                ));
-            }
         } else {
             notes.push(format!(
                 "geometric validation {kind} {description}: expected {expected_text}"
@@ -301,10 +292,6 @@ fn mesh_properties(ir: &CadIr) -> Option<MeshProperties> {
         volume: signed_volume.abs(),
         centroid,
     })
-}
-
-fn close(expected: f64, actual: f64) -> bool {
-    (expected - actual).abs() <= expected.abs().max(actual.abs()).max(1.0) * 1.0e-6
 }
 
 fn step_id(id: &str) -> u64 {
