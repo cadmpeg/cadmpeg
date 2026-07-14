@@ -98,6 +98,13 @@ pub enum SketchGeometry {
         /// Segment end.
         end: Point2,
     },
+    /// Unbounded construction or reference line.
+    ReferenceLine {
+        /// Point on the line.
+        origin: Point2,
+        /// Non-zero direction in sketch coordinates.
+        direction: Point2,
+    },
     /// Full circle.
     Circle {
         /// Circle center.

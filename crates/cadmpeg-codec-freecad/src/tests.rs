@@ -110,14 +110,20 @@ fn transfers_bounded_rational_sketch_nurbs() {
 #[test]
 fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Objects Count="2"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/><Object type="Part::Feature" name="Source" id="2"/></Objects>
+<ObjectData Count="2"><Object name="Sketch"><Properties Count="4">
 <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
 </GeometryList></Property>
-<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="9">
+<Property name="ExternalGeometry" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Source" sub="Edge1"/></LinkList></Property>
+<Property name="ExternalGeo" type="Part::PropertyGeometryList"><GeometryList count="3">
+ <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+ <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="0" EndY="1"/></Geometry>
+ <Geometry type="Part::GeomCircle"><Circle CenterX="4" CenterY="5" Radius="2"/></Geometry>
+</GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="12">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
  <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
  <Constrain Name="OnAxis" MetaData="reviewed" Type="13" Orientation="4" Value="0" LabelDistance="2.5" LabelPosition="0.25" IsDriving="0" IsInVirtualSpace="1" IsVisible="0" IsActive="1" First="0" FirstPos="1" Second="2" SecondPos="0"/>
@@ -127,19 +133,31 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
  <Constrain Type="20" ElementIds="2 0 1" ElementPositions="0 0 0"/>
  <Constrain Type="21" MetaData="{&quot;text&quot;:&quot;R42&quot;,&quot;font&quot;:&quot;Mono&quot;,&quot;isTextHeight&quot;:false}" ElementIds="2 0" ElementPositions="0 0"/>
  <Constrain Type="0" IsActive="0"/>
+ <Constrain Type="13" First="0" FirstPos="1" Second="-1" SecondPos="0"/>
+ <Constrain Type="6" First="-1" FirstPos="1" Second="0" SecondPos="1" Value="2" IsDriving="1"/>
+ <Constrain Type="13" First="0" FirstPos="2" Second="-3" SecondPos="0"/>
 </ConstraintList></Property>
-</Properties></Object></ObjectData></Document>"#;
+</Properties></Object><Object name="Source"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let result = FcstdCodec
         .decode(
             &mut Cursor::new(archive(document)),
             &DecodeOptions::default(),
         )
         .expect("sketch constraints");
+    let constraint = |index: usize| {
+        result
+            .ir
+            .model
+            .sketch_constraints
+            .iter()
+            .find(|constraint| constraint.id.0.ends_with(&format!(":{index}")))
+            .expect("constraint index")
+    };
     assert!(matches!(
-        result.ir.model.sketch_constraints[0].definition,
+        constraint(1).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::Symmetric { .. }
     ));
-    let point_on_object = &result.ir.model.sketch_constraints[2];
+    let point_on_object = constraint(3);
     assert_eq!(point_on_object.name.as_deref(), Some("OnAxis"));
     assert_eq!(point_on_object.metadata.as_deref(), Some("reviewed"));
     assert_eq!(point_on_object.orientation, Some(4));
@@ -150,23 +168,37 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     assert_eq!(point_on_object.visible, Some(false));
     assert_eq!(point_on_object.active, Some(true));
     assert!(matches!(
-        result.ir.model.sketch_constraints[3].definition,
+        constraint(4).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw { .. }
     ));
     assert!(matches!(
-        result.ir.model.sketch_constraints[4].definition,
+        constraint(5).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::Weight { .. }
     ));
     assert!(matches!(
-        result.ir.model.parameters[1].value,
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.0.ends_with(":constraint:4"))
+            .expect("Snell parameter")
+            .value,
         Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 1.33).abs() < 1e-12
     ));
     assert!(matches!(
-        result.ir.model.parameters[2].value,
+        result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id.0.ends_with(":constraint:5"))
+            .expect("weight parameter")
+            .value,
         Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1e-12
     ));
     assert!(matches!(
-        result.ir.model.sketch_constraints[5].definition,
+        constraint(6).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::InternalAlignment {
             alignment: cadmpeg_ir::sketches::SketchInternalAlignment::BsplineControlPoint,
             index: Some(2),
@@ -174,12 +206,12 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         }
     ));
     assert!(matches!(
-        result.ir.model.sketch_constraints[6].definition,
+        constraint(7).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::Group { ref elements }
             if elements.len() == 3
     ));
     assert!(matches!(
-        result.ir.model.sketch_constraints[7].definition,
+        constraint(8).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::Text {
             ref text,
             font: Some(ref font),
@@ -188,15 +220,56 @@ fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
         } if text == "R42" && font == "Mono"
     ));
     assert!(matches!(
-        result.ir.model.sketch_constraints[8].definition,
+        constraint(9).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::Disabled
     ));
     assert!(matches!(
-        result.ir.model.sketch_constraints[1].definition,
+        constraint(10).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject { .. }
+    ));
+    assert!(matches!(
+        constraint(11).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }
     ));
     assert!(matches!(
-        result.ir.model.sketch_constraints[2].definition,
+        constraint(12).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject { .. }
+    ));
+    assert!(result.ir.model.sketch_entities.iter().any(|entity| {
+        entity.id.0.ends_with(":reference-horizontal-axis")
+            && matches!(
+                entity.geometry,
+                cadmpeg_ir::sketches::SketchGeometry::ReferenceLine { .. }
+            )
+    }));
+    assert!(result
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .any(|entity| entity.id.0.ends_with(":reference-root-point")));
+    let external = result
+        .ir
+        .model
+        .sketch_entities
+        .iter()
+        .find(|entity| entity.id.0.ends_with(":external:0"))
+        .expect("external geometry");
+    assert!(matches!(
+        external.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Circle { .. }
+    ));
+    assert!(external
+        .geometry_ref
+        .as_deref()
+        .is_some_and(|reference| reference.ends_with(":property:ExternalGeometry")));
+    assert_eq!(external.endpoint_refs, ["Edge1"]);
+    assert!(matches!(
+        constraint(2).definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }
+    ));
+    assert!(matches!(
+        constraint(3).definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject {
             point: cadmpeg_ir::sketches::SketchLocus::Start(_),
             ..

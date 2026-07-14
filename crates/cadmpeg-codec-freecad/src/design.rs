@@ -543,6 +543,106 @@ fn parse_sketch(
             });
         }
     }
+    if let Some(external_geometry) = property(properties, "ExternalGeo") {
+        let xml = roxmltree::Document::parse(&external_geometry.raw_xml).map_err(|error| {
+            CodecError::Malformed(format!(
+                "invalid external sketch geometry {}: {error}",
+                external_geometry.id
+            ))
+        })?;
+        validate_declared_count(&xml, "GeometryList", "Geometry", &external_geometry.id)?;
+        let references = property(properties, "ExternalGeometry");
+        for (external_index, node) in xml
+            .descendants()
+            .filter(|node| node.has_tag_name("Geometry"))
+            .skip(2)
+            .enumerate()
+        {
+            let carrier = node
+                .children()
+                .find(|child| child.is_element() && !child.has_tag_name("Construction"));
+            let native_kind = node
+                .attribute("type")
+                .or_else(|| carrier.map(|child| child.tag_name().name()))
+                .unwrap_or("unknown")
+                .to_owned();
+            let attributes = carrier.map_or_else(BTreeMap::new, |child| {
+                child
+                    .attributes()
+                    .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+                    .collect()
+            });
+            let geometry = carrier
+                .and_then(|carrier| sketch_nurbs(&native_kind, carrier))
+                .unwrap_or_else(|| sketch_geometry(&native_kind, &attributes));
+            let reference = references.and_then(|property| property.links.get(external_index));
+            entities.push(SketchEntity {
+                id: SketchEntityId(format!(
+                    "fcstd:design:sketch-entity#{}:external:{external_index}",
+                    object.name
+                )),
+                sketch: id.clone(),
+                construction: true,
+                native_ref: Some(external_geometry.id.clone()),
+                geometry_ref: references.map(|property| property.id.clone()),
+                endpoint_refs: reference
+                    .map(|reference| reference.subelements.clone())
+                    .unwrap_or_default(),
+                geometry,
+            });
+        }
+    }
+    let (horizontal_axis, vertical_axis, root_point) = builtin_reference_usage(properties);
+    if horizontal_axis {
+        entities.push(SketchEntity {
+            id: SketchEntityId(format!(
+                "fcstd:design:sketch-entity#{}:reference-horizontal-axis",
+                object.name
+            )),
+            sketch: id.clone(),
+            construction: true,
+            native_ref: Some(object.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(1.0, 0.0),
+            },
+        });
+    }
+    if vertical_axis {
+        entities.push(SketchEntity {
+            id: SketchEntityId(format!(
+                "fcstd:design:sketch-entity#{}:reference-vertical-axis",
+                object.name
+            )),
+            sketch: id.clone(),
+            construction: true,
+            native_ref: Some(object.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::ReferenceLine {
+                origin: Point2::new(0.0, 0.0),
+                direction: Point2::new(0.0, 1.0),
+            },
+        });
+    }
+    if root_point {
+        entities.push(SketchEntity {
+            id: SketchEntityId(format!(
+                "fcstd:design:sketch-entity#{}:reference-root-point",
+                object.name
+            )),
+            sketch: id.clone(),
+            construction: true,
+            native_ref: Some(object.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        });
+    }
     let profiles = build_profiles(&entities);
     let (constraints, parameters) = parse_constraints(object, properties, &id, &entities)?;
     let (origin, normal, u_axis) = sketch_frame(properties);
@@ -561,6 +661,32 @@ fn parse_sketch(
         constraints,
         parameters,
     })
+}
+
+fn builtin_reference_usage(properties: &[&PropertyRecord]) -> (bool, bool, bool) {
+    let Some(property) = property(properties, "Constraints") else {
+        return (false, false, false);
+    };
+    let Ok(xml) = roxmltree::Document::parse(&property.raw_xml) else {
+        return (false, false, false);
+    };
+    let mut horizontal = false;
+    let mut vertical = false;
+    let mut root = false;
+    for node in xml
+        .descendants()
+        .filter(|node| node.has_tag_name("Constrain"))
+    {
+        let Ok(operands) = constraint_operands(node) else {
+            continue;
+        };
+        for (entity, position) in operands {
+            horizontal |= entity == -1 && position == 0;
+            root |= entity == -1 && position == 1;
+            vertical |= entity == -2 && position == 0;
+        }
+    }
+    (horizontal, vertical, root)
 }
 
 fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeometry> {
@@ -1192,6 +1318,34 @@ fn int_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<i64> {
 }
 
 fn resolve_operand(entity: i64, position: i64, entities: &[SketchEntity]) -> Option<SketchLocus> {
+    let reference = |suffix: &str| {
+        entities
+            .iter()
+            .find(|candidate| candidate.id.0.ends_with(suffix))
+            .map(|candidate| SketchLocus::Entity(candidate.id.clone()))
+    };
+    match (entity, position) {
+        (-1, 0) => return reference(":reference-horizontal-axis"),
+        (-1, 1) => return reference(":reference-root-point"),
+        (-2, 0) => return reference(":reference-vertical-axis"),
+        _ => {}
+    }
+    if entity <= -3 {
+        let external_index = usize::try_from(-entity - 3).ok()?;
+        let suffix = format!(":external:{external_index}");
+        let id = entities
+            .iter()
+            .find(|candidate| candidate.id.0.ends_with(&suffix))?
+            .id
+            .clone();
+        return Some(match position {
+            0 => SketchLocus::Entity(id),
+            1 => SketchLocus::Start(id),
+            2 => SketchLocus::End(id),
+            3 => SketchLocus::Center(id),
+            _ => return None,
+        });
+    }
     let id = entities.get(usize::try_from(entity).ok()?)?.id.clone();
     Some(match position {
         0 => SketchLocus::Entity(id),

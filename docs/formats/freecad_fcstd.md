@@ -307,7 +307,11 @@ interface entity, and dimensionless index ratio. Spline weights remain dimension
 and internal-alignment helpers retain their conic or spline family plus control-point or knot index.
 Group relations retain their ordered handle and member loci. Text relations additionally decode
 their JSON metadata into text, font, and height-versus-width control while retaining the original
-metadata string. Dimension parameters keep their driving flag
+metadata string. When a relation addresses the implicit horizontal axis, vertical axis, or root
+point, that negative source operand resolves to an exact construction-only reference line or point;
+no finite axis segment is synthesized. External-geometry ids begin after those two implicit axes.
+They resolve to the corresponding cached external carrier while retaining the ordered object and
+subelement link as its source reference. Dimension parameters keep their driving flag
 and native identity. Every relation independently retains its name, metadata, solver-active,
 visible, virtual-space and driving flags, orientation bits, and finite label placement. Angular
 values use radians, geometric distances use model lengths, and spline-weight values are

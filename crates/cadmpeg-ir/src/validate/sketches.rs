@@ -105,6 +105,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     finding(findings, Check::Bounds, id, "sketch line is not finite");
                 }
             }
+            SketchGeometry::ReferenceLine { origin, direction } => {
+                if !finite2(*origin)
+                    || !finite2(*direction)
+                    || direction.u.hypot(direction.v) <= f64::EPSILON
+                {
+                    finding(findings, Check::Bounds, id, "invalid sketch reference line");
+                }
+            }
             SketchGeometry::Circle { center, radius }
             | SketchGeometry::Arc { center, radius, .. } => {
                 if !finite2(*center) || nonpositive(radius.0) {
