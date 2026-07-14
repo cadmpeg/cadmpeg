@@ -18,7 +18,7 @@ use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, HoleKind, Length, ParameterId, ParameterValue,
-    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    PatternForm, PatternKind, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -5913,6 +5913,14 @@ fn named_feature_definition(
         _ => None,
     } {
         return Some(IrFeatureDefinition::TreeNode { role });
+    }
+    if kind == "Mirror" {
+        return Some(IrFeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved {
+                form: Some(PatternForm::Mirror),
+            },
+        });
     }
     let schema_class = match kind {
         "Datum Plane" | "Bezugsebene" => 923,

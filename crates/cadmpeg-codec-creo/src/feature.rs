@@ -132,7 +132,7 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
             continue;
         }
         let (status_prefix, family) = match family {
-            [prefix @ (b'x' | b'y'), first, ..] if first.is_ascii_uppercase() => {
+            [prefix @ (b'o' | b'x' | b'y'), first, ..] if first.is_ascii_uppercase() => {
                 offset += 1;
                 (Some(*prefix), &family[1..])
             }
