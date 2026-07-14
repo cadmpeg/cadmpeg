@@ -70,7 +70,12 @@ pub(crate) fn transfer(
             .cloned()
             .unwrap_or_default();
         let id = feature_id(object);
-        let definition = if is_body(&object.type_name) {
+        let definition = if is_spreadsheet(&object.type_name) {
+            append_spreadsheet_parameters(&mut ir.model.parameters, object, &owned)?;
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::Equations,
+            }
+        } else if is_body(&object.type_name) {
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::SolidBodies,
             }
@@ -204,6 +209,91 @@ pub(crate) fn transfer(
         });
     }
     bind_parameter_dependencies(&mut ir.model.parameters, objects);
+    Ok(())
+}
+
+fn append_spreadsheet_parameters(
+    parameters: &mut Vec<DesignParameter>,
+    object: &ObjectRecord,
+    properties: &[&PropertyRecord],
+) -> Result<(), CodecError> {
+    let Some(property) = properties
+        .iter()
+        .copied()
+        .find(|property| property.type_name.contains("PropertySheet") || property.name == "cells")
+    else {
+        return Ok(());
+    };
+    let xml = roxmltree::Document::parse(&property.raw_xml).map_err(|error| {
+        CodecError::Malformed(format!("invalid spreadsheet {}: {error}", property.id))
+    })?;
+    let Some(cells) = xml.descendants().find(|node| node.has_tag_name("Cells")) else {
+        return Err(CodecError::Malformed(format!(
+            "{} has no Cells value",
+            property.id
+        )));
+    };
+    let declared = cells
+        .attribute("Count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| CodecError::Malformed(format!("{} has invalid Cells Count", property.id)))?;
+    if declared > MAX_SKETCH_RECORDS {
+        return Err(CodecError::Malformed(format!(
+            "{} cell count exceeds {MAX_SKETCH_RECORDS}",
+            property.id
+        )));
+    }
+    let records = cells
+        .children()
+        .filter(|node| node.has_tag_name("Cell"))
+        .collect::<Vec<_>>();
+    if declared != records.len() {
+        return Err(CodecError::Malformed(format!(
+            "{} declares {declared} cells but contains {}",
+            property.id,
+            records.len()
+        )));
+    }
+    for (index, cell) in records.into_iter().enumerate() {
+        let address = cell
+            .attribute("address")
+            .ok_or_else(|| CodecError::Malformed(format!("{} cell has no address", property.id)))?;
+        let content = cell.attribute("content").unwrap_or_default();
+        let name = cell.attribute("alias").unwrap_or(address);
+        let mut retained = BTreeMap::from([("address".into(), address.to_owned())]);
+        for attribute in [
+            "alias",
+            "alignment",
+            "style",
+            "foregroundColor",
+            "backgroundColor",
+            "displayUnit",
+            "rowSpan",
+            "colSpan",
+        ] {
+            if let Some(value) = cell.attribute(attribute) {
+                retained.insert(attribute.into(), value.to_owned());
+            }
+        }
+        parameters.push(DesignParameter {
+            id: ParameterId(format!(
+                "fcstd:design:parameter#{}:cell:{address}",
+                object.name
+            )),
+            owner: feature_id(object),
+            ordinal: index as u32,
+            name: name.to_owned(),
+            expression: content.to_owned(),
+            display: None,
+            value: (!content.starts_with('='))
+                .then(|| content.parse::<f64>().ok().map(ParameterValue::Real))
+                .flatten(),
+            dependencies: Vec::new(),
+            properties: retained,
+            pmi: None,
+            native_ref: Some(property.id.clone()),
+        });
+    }
     Ok(())
 }
 
@@ -1053,8 +1143,12 @@ fn is_dress_up(kind: &str) -> bool {
 fn is_body(kind: &str) -> bool {
     kind.contains("PartDesign::Body")
 }
+fn is_spreadsheet(kind: &str) -> bool {
+    kind.contains("Spreadsheet::Sheet")
+}
 fn is_design_object(kind: &str) -> bool {
-    is_body(kind)
+    is_spreadsheet(kind)
+        || is_body(kind)
         || is_sketch(kind)
         || is_extrusion(kind)
         || is_revolution(kind)

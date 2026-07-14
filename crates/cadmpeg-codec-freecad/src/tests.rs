@@ -132,6 +132,62 @@ fn reports_attributable_native_design_blockers() {
 }
 
 #[test]
+fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Spreadsheet::Sheet" name="Sheet" id="1"/>
+ <Object type="PartDesign::Pad" name="Pad" id="2"/>
+ <ObjectDeps Name="Pad"><Dep Name="Sheet"/></ObjectDeps>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2" xlink="1">
+  <Cell address="A1" content="5" alias="width" displayUnit="mm"/>
+  <Cell address="A2" content="=width * 3" alias="height" style="bold"/>
+ </Cells></Property></Properties></Object>
+ <Object name="Pad"><Properties Count="2">
+  <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="ExpressionEngine" type="App::PropertyExpressionEngine"><ExpressionEngine count="1"><Expression path="Length" expression="Sheet.width * 2"/></ExpressionEngine></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("spreadsheet");
+    let width = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "width")
+        .expect("width cell");
+    assert_eq!(
+        width.value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(5.0))
+    );
+    assert_eq!(
+        width.properties.get("address").map(String::as_str),
+        Some("A1")
+    );
+    let pad = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pad"))
+        .expect("pad");
+    let length = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == pad.id && parameter.name == "Length")
+        .expect("pad length");
+    assert_eq!(length.dependencies, vec![width.id.clone()]);
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

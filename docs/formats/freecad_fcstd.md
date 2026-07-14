@@ -126,6 +126,14 @@ identity, expression-engine identity, and dependencies on other decoded paramete
 or same-owner identifiers resolve unambiguously. Unresolved symbols remain expression text and do
 not create fabricated parameter identities.
 
+Spreadsheet sheets are equation-tree nodes. Every persisted used cell becomes an ordered design
+parameter whose identity includes its sheet and address. Address and alias remain separate;
+content, display unit, alignment, style, colors, and spans are retained independently. Plain numeric
+content supplies a dimensionless evaluated value, while formula content remains an expression.
+Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet and feature
+parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
+match their declared framing.
+
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and
