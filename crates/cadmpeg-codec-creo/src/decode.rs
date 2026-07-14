@@ -19,7 +19,7 @@ use cadmpeg_ir::features::{
     FeatureId as IrFeatureId, Length, ParameterId, ParameterValue, ProfileRef, RevolutionAxis,
     RevolutionConstruction,
 };
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
@@ -1130,6 +1130,18 @@ fn section_point_in_model(
     })
 }
 
+fn section_xyz_in_model(
+    transform: &crate::placement::FeatureSectionTransform,
+    point: [f64; 3],
+) -> [f64; 3] {
+    std::array::from_fn(|axis| {
+        transform.origin[axis]
+            + point[0] * transform.u_axis[axis]
+            + point[1] * transform.v_axis[axis]
+            + point[2] * transform.normal[axis]
+    })
+}
+
 fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
     let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
     (magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
@@ -1223,6 +1235,145 @@ fn placed_section_geometry_curve(
         }
         _ => None,
     }
+}
+
+fn bspline_basis(index: usize, degree: usize, parameter: f64, knots: &[f64], count: usize) -> f64 {
+    if parameter == *knots.last().expect("nonempty knots") {
+        return if index + 1 == count { 1.0 } else { 0.0 };
+    }
+    if degree == 0 {
+        return if knots[index] <= parameter && parameter < knots[index + 1] {
+            1.0
+        } else {
+            0.0
+        };
+    }
+    let left_denominator = knots[index + degree] - knots[index];
+    let right_denominator = knots[index + degree + 1] - knots[index + 1];
+    let left = if left_denominator > 0.0 {
+        (parameter - knots[index]) / left_denominator
+            * bspline_basis(index, degree - 1, parameter, knots, count)
+    } else {
+        0.0
+    };
+    let right = if right_denominator > 0.0 {
+        (knots[index + degree + 1] - parameter) / right_denominator
+            * bspline_basis(index + 1, degree - 1, parameter, knots, count)
+    } else {
+        0.0
+    };
+    left + right
+}
+
+fn bspline_basis_derivative(
+    index: usize,
+    degree: usize,
+    parameter: f64,
+    knots: &[f64],
+    count: usize,
+) -> f64 {
+    let left_denominator = knots[index + degree] - knots[index];
+    let right_denominator = knots[index + degree + 1] - knots[index + 1];
+    let left = if left_denominator > 0.0 {
+        degree as f64 / left_denominator * bspline_basis(index, degree - 1, parameter, knots, count)
+    } else {
+        0.0
+    };
+    let right = if right_denominator > 0.0 {
+        degree as f64 / right_denominator
+            * bspline_basis(index + 1, degree - 1, parameter, knots, count)
+    } else {
+        0.0
+    };
+    left - right
+}
+
+fn solve_vector_system(
+    mut matrix: Vec<Vec<f64>>,
+    mut values: Vec<[f64; 3]>,
+) -> Option<Vec<[f64; 3]>> {
+    let count = matrix.len();
+    (values.len() == count && matrix.iter().all(|row| row.len() == count)).then_some(())?;
+    for column in 0..count {
+        let pivot = (column..count).max_by(|left, right| {
+            matrix[*left][column]
+                .abs()
+                .total_cmp(&matrix[*right][column].abs())
+        })?;
+        (matrix[pivot][column].abs() > 1e-14).then_some(())?;
+        matrix.swap(column, pivot);
+        values.swap(column, pivot);
+        let scale = matrix[column][column];
+        for value in &mut matrix[column][column..] {
+            *value /= scale;
+        }
+        values[column] = values[column].map(|value| value / scale);
+        let pivot_row = matrix[column].clone();
+        let pivot_value = values[column];
+        for row in 0..count {
+            if row == column {
+                continue;
+            }
+            let factor = matrix[row][column];
+            if factor == 0.0 {
+                continue;
+            }
+            for (entry, pivot_entry) in matrix[row][column..].iter_mut().zip(&pivot_row[column..]) {
+                *entry -= factor * pivot_entry;
+            }
+            for (value, pivot) in values[row].iter_mut().zip(pivot_value) {
+                *value -= factor * pivot;
+            }
+        }
+    }
+    Some(values)
+}
+
+fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<NurbsCurve> {
+    const DEGREE: usize = 3;
+    let parameters = spline.parameters.as_ref()?;
+    let tangents = spline.endpoint_tangents?;
+    let point_count = spline.interpolation_points.len();
+    (point_count >= 2 && parameters.len() == point_count).then_some(())?;
+    parameters
+        .windows(2)
+        .all(|pair| pair[0].is_finite() && pair[0] < pair[1])
+        .then_some(())?;
+    parameters.last()?.is_finite().then_some(())?;
+    let control_count = point_count + 2;
+    let mut knots = vec![parameters[0]; DEGREE + 1];
+    knots.extend_from_slice(&parameters[1..point_count - 1]);
+    knots.extend(std::iter::repeat_n(parameters[point_count - 1], DEGREE + 1));
+    let mut matrix = Vec::with_capacity(control_count);
+    for parameter in parameters {
+        matrix.push(
+            (0..control_count)
+                .map(|index| bspline_basis(index, DEGREE, *parameter, &knots, control_count))
+                .collect(),
+        );
+    }
+    for parameter in [parameters[0], parameters[point_count - 1]] {
+        matrix.push(
+            (0..control_count)
+                .map(|index| {
+                    bspline_basis_derivative(index, DEGREE, parameter, &knots, control_count)
+                })
+                .collect(),
+        );
+    }
+    let mut values = spline.interpolation_points.clone();
+    values.extend(tangents);
+    let control_points = solve_vector_system(matrix, values)?
+        .into_iter()
+        .map(|point| Point3::new(point[0], point[1], point[2]))
+        .collect();
+    Some(NurbsCurve {
+        degree: DEGREE as u32,
+        knots,
+        control_points,
+        weights: None,
+        periodic: false,
+    })
 }
 
 fn transfer_feature_extrusion_surfaces(
@@ -2067,7 +2218,7 @@ fn transfer_resolved_sketches(
             .collect::<BTreeSet<_>>();
         let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
-        let entities = segments
+        let mut entities = segments
             .rows
             .iter()
             .filter_map(|segment| {
@@ -2120,6 +2271,100 @@ fn transfer_resolved_sketches(
                 })
             })
             .collect::<Vec<_>>();
+        for spline in definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(|entity| match entity {
+                crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+                _ => None,
+            })
+        {
+            let Some(nurbs) = saved_spline_nurbs(spline) else {
+                continue;
+            };
+            if nurbs
+                .control_points
+                .iter()
+                .any(|point| point.z.abs() > 1e-12)
+            {
+                continue;
+            }
+            let suffix = spline.entity_id.map_or_else(
+                || format!("offset{}", spline.offset),
+                |entity_id| entity_id.to_string(),
+            );
+            let entity_id = SketchEntityId(format!(
+                "creo:featdefs:saved_spline#{}:{suffix}",
+                definition.id
+            ));
+            let curve_id = CurveId(format!(
+                "creo:featdefs:saved_spline_curve#{}:{suffix}",
+                definition.id
+            ));
+            annotate(
+                annotations,
+                &entity_id.0,
+                "FeatDefs",
+                spline.offset as u64,
+                "saved_interpolation_spline",
+                Exactness::Derived,
+            );
+            annotate(
+                annotations,
+                &curve_id,
+                "FeatDefs",
+                spline.offset as u64,
+                "placed_saved_interpolation_spline",
+                Exactness::Derived,
+            );
+            entities.push(SketchEntity {
+                id: entity_id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: Some(format!("creo:featdefs:saved_spline#{suffix}")),
+                geometry_ref: Some(curve_id.0.clone()),
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Nurbs {
+                    degree: nurbs.degree,
+                    knots: nurbs.knots.clone(),
+                    control_points: nurbs
+                        .control_points
+                        .iter()
+                        .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
+                        .collect(),
+                    weights: None,
+                    periodic: false,
+                },
+            });
+            ir.model.curves.push(Curve {
+                id: curve_id,
+                geometry: CurveGeometry::Nurbs(NurbsCurve {
+                    degree: nurbs.degree,
+                    knots: nurbs.knots,
+                    control_points: nurbs
+                        .control_points
+                        .into_iter()
+                        .map(|point| {
+                            let placed =
+                                section_xyz_in_model(transform, [point.x, point.y, point.z]);
+                            Point3::new(placed[0], placed[1], placed[2])
+                        })
+                        .collect(),
+                    weights: None,
+                    periodic: false,
+                }),
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("FeatDefs:saved_spline#{suffix}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
         if entities.is_empty() {
             continue;
         }
@@ -3760,6 +4005,58 @@ mod resolved_sketch_tests {
         let axis = resolved_revolution_axis(&definition, &transform).expect("axis");
         assert_eq!(axis.origin, Point3::new(5.0, 7.0, 9.0));
         assert_eq!(axis.direction, Vector3::new(0.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn saved_spline_collocation_interpolates_points_and_endpoint_derivatives() {
+        let spline = crate::feature::FeatureSavedSpline {
+            entity_id: Some(7),
+            interpolation_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            endpoint_tangents: Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+            parameters: Some(vec![0.0, 1.0, 2.0]),
+            offset: 10,
+        };
+        let nurbs = saved_spline_nurbs(&spline).expect("clamped interpolation spline");
+        for (parameter, expected) in [(0.0, 0.0), (1.0, 1.0), (2.0, 2.0)] {
+            let point = nurbs.control_points.iter().enumerate().fold(
+                [0.0; 3],
+                |mut point, (index, control)| {
+                    let basis = bspline_basis(
+                        index,
+                        nurbs.degree as usize,
+                        parameter,
+                        &nurbs.knots,
+                        nurbs.control_points.len(),
+                    );
+                    point[0] += basis * control.x;
+                    point[1] += basis * control.y;
+                    point[2] += basis * control.z;
+                    point
+                },
+            );
+            assert!((point[0] - expected).abs() < 1e-12);
+            assert!(point[1].abs() < 1e-12 && point[2].abs() < 1e-12);
+        }
+        for parameter in [0.0, 2.0] {
+            let derivative = nurbs.control_points.iter().enumerate().fold(
+                [0.0; 3],
+                |mut derivative, (index, control)| {
+                    let basis = bspline_basis_derivative(
+                        index,
+                        nurbs.degree as usize,
+                        parameter,
+                        &nurbs.knots,
+                        nurbs.control_points.len(),
+                    );
+                    derivative[0] += basis * control.x;
+                    derivative[1] += basis * control.y;
+                    derivative[2] += basis * control.z;
+                    derivative
+                },
+            );
+            assert!((derivative[0] - 1.0).abs() < 1e-12);
+            assert!(derivative[1].abs() < 1e-12 && derivative[2].abs() < 1e-12);
+        }
     }
 }
 

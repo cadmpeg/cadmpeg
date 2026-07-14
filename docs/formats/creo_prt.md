@@ -569,6 +569,10 @@ point. The first parameter is zero and each later parameter is the cumulative
 section-space chord length through `i_pnts`. In the `params` lane, `18` before
 a parameter prefix is standalone zero; `6d`, `85`, `93`, and `9e` use the
 positive DICT head rule; and `2d <tail7>` reconstructs `40 <tail7>`.
+The neutral curve is the clamped cubic interpolation spline with four endpoint
+knots, one simple knot at each internal stored parameter, `count + 2` poles,
+point interpolation at every stored parameter, and first derivatives equal to
+the two stored endpoint tangent vectors.
 
 A saved-line family may contain a named `entity(point)` prototype between
 positional line rows. Positional line replay resumes after that prototype's
