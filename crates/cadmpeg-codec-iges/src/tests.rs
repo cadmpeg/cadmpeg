@@ -2548,6 +2548,131 @@ fn variable_schema_property_forms_file() -> Vec<u8> {
     ])
 }
 
+fn dimension_property_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "DIMNOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "ARROW".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 216,
+            form: 0,
+            label: "DIMENS".into(),
+            status: "00000100",
+            parameters: "216,1,3,3,0,0,0,3,7,9,11;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 28,
+            label: "DIMUNITS".into(),
+            status: "00000000",
+            parameters: "406,6,0,2,1,2HMM,0,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 29,
+            label: "DIMTOL".into(),
+            status: "00000000",
+            parameters: "406,8,0,2,2,0.1,-0.1,0,0,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 31,
+            label: "BASICDIM".into(),
+            status: "00010000",
+            parameters: "406,8,0,0,2,0,2,1,0,1;".into(),
+        },
+    ])
+}
+
+fn drawing_metadata_property_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00020000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 32,
+            label: "APPROVAL".into(),
+            status: "00000000",
+            parameters: "406,3,4HJANE,3HENG,15H20260714.123456;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 33,
+            label: "SHEETID".into(),
+            status: "00000000",
+            parameters: "406,2,2,1HC;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 404,
+            form: 1,
+            label: "DRAWING".into(),
+            status: "00000000",
+            parameters: "404,1,1,0,0,0,0,0,2,3,5;".into(),
+        },
+    ])
+}
+
+fn text_score_property_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00010100",
+            parameters: "212,1,5,1,1,1,1.5707963267948966,0,0,0,0,0,0,5HABCDE,0,2,3,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 34,
+            label: "UNDER".into(),
+            status: "00010000",
+            parameters: "406,4,1,1,2,4;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 35,
+            label: "OVER".into(),
+            status: "00010000",
+            parameters: "406,4,1,1,3,5;".into(),
+        },
+    ])
+}
+
+fn closure_property_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "CIRCLE".into(),
+            status: "00000000",
+            parameters: "100,0,0,0,1,0,0,1,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 36,
+            label: "CLOSURE".into(),
+            status: "00010000",
+            parameters: "406,1,2;".into(),
+        },
+    ])
+}
+
 fn view_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4546,6 +4671,34 @@ fn decode_types_tabular_and_generic_data_properties() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_types_dimension_drawing_text_and_closure_properties() {
+    let decode = |bytes| {
+        IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap()
+    };
+    for (bytes, expected_forms) in [
+        (dimension_property_forms_file(), vec![28, 29, 31]),
+        (drawing_metadata_property_forms_file(), vec![32, 33]),
+        (text_score_property_forms_file(), vec![34, 35]),
+        (closure_property_file(), vec![36]),
+    ] {
+        let result = decode(bytes);
+        let properties = &result.ir.native.namespace("iges").unwrap().arenas["properties"];
+        for form in &expected_forms {
+            assert!(properties
+                .iter()
+                .any(|property| property.fields["form"] == *form));
+        }
+        assert!(
+            result.report.losses.is_empty(),
+            "forms {expected_forms:?}: {:#?}",
+            result.report.losses
+        );
+    }
 }
 
 #[test]

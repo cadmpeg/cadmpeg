@@ -609,6 +609,53 @@ enum NativePropertyValue {
         name: Option<Vec<u8>>,
         values: Vec<NativeGenericPropertyValue>,
     },
+    DimensionUnits {
+        secondary_position: Option<i64>,
+        units_indicator: Option<i64>,
+        character_set: Option<i64>,
+        suffix: Option<Vec<u8>>,
+        fraction_flag: Option<i64>,
+        precision: Option<i64>,
+    },
+    DimensionTolerance {
+        secondary_flag: Option<i64>,
+        tolerance_type: Option<i64>,
+        placement: Option<i64>,
+        upper: Option<f64>,
+        lower: Option<f64>,
+        suppress_plus: Option<bool>,
+        fraction_flag: Option<i64>,
+        precision: Option<i64>,
+    },
+    BasicDimension {
+        corners: Vec<[Option<f64>; 2]>,
+    },
+    DrawingSheetApproval {
+        name: Option<Vec<u8>>,
+        organization: Option<Vec<u8>>,
+        date: Option<Vec<u8>>,
+    },
+    DrawingSheetId {
+        sheet_number: Option<i64>,
+        revision: Option<Vec<u8>>,
+    },
+    Underscore {
+        ranges: Vec<NativeTextScoreRange>,
+    },
+    Overscore {
+        ranges: Vec<NativeTextScoreRange>,
+    },
+    Closure {
+        u: Option<i64>,
+        v: Option<i64>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeTextScoreRange {
+    text_index: Option<i64>,
+    first_character: Option<i64>,
+    last_character: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2363,7 +2410,9 @@ pub(crate) fn store(
         .collect::<Vec<_>>();
     let properties = directory
         .iter()
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=27))
+        .filter(|entry| {
+            entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=29 | 31..=36)
+        })
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
             let bounded_count = |index| {
@@ -2554,6 +2603,62 @@ pub(crate) fn store(
                             .collect(),
                     }
                 }
+                28 => NativePropertyValue::DimensionUnits {
+                    secondary_position: record.integer(2),
+                    units_indicator: record.integer(3),
+                    character_set: record.integer(4),
+                    suffix: record.string(5).map(<[u8]>::to_vec),
+                    fraction_flag: record.integer(6),
+                    precision: record.integer(7),
+                },
+                29 => NativePropertyValue::DimensionTolerance {
+                    secondary_flag: record.integer(2),
+                    tolerance_type: record.integer(3),
+                    placement: record.integer(4),
+                    upper: record.number(5),
+                    lower: record.number(6),
+                    suppress_plus: record.integer(7).map(|value| value == 1),
+                    fraction_flag: record.integer(8),
+                    precision: record.integer(9),
+                },
+                31 => NativePropertyValue::BasicDimension {
+                    corners: (0..4)
+                        .map(|offset| {
+                            [record.number(2 + offset * 2), record.number(3 + offset * 2)]
+                        })
+                        .collect(),
+                },
+                32 => NativePropertyValue::DrawingSheetApproval {
+                    name: record.string(2).map(<[u8]>::to_vec),
+                    organization: record.string(3).map(<[u8]>::to_vec),
+                    date: record.string(4).map(<[u8]>::to_vec),
+                },
+                33 => NativePropertyValue::DrawingSheetId {
+                    sheet_number: record.integer(2),
+                    revision: record.string(3).map(<[u8]>::to_vec),
+                },
+                34 | 35 => {
+                    let range_count = bounded_count(2);
+                    let ranges = (0..range_count)
+                        .map(|offset| {
+                            let start = 3 + offset * 3;
+                            NativeTextScoreRange {
+                                text_index: record.integer(start),
+                                first_character: record.integer(start + 1),
+                                last_character: record.integer(start + 2),
+                            }
+                        })
+                        .collect();
+                    if entry.form == 34 {
+                        NativePropertyValue::Underscore { ranges }
+                    } else {
+                        NativePropertyValue::Overscore { ranges }
+                    }
+                }
+                36 => NativePropertyValue::Closure {
+                    u: record.integer(2),
+                    v: record.integer(3),
+                },
                 _ => return None,
             };
             Some(NativeProperty {

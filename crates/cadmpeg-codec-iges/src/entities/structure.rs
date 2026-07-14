@@ -244,6 +244,39 @@ fn generic_property_value_valid(
     }
 }
 
+fn dimension_entity_type(entity_type: i64) -> bool {
+    matches!(entity_type, 202 | 206 | 216 | 218 | 220 | 222)
+}
+
+fn closure_owner_dimension(entity_type: i64) -> Option<usize> {
+    if matches!(
+        entity_type,
+        100 | 102 | 104 | 106 | 110 | 112 | 126 | 130 | 142
+    ) {
+        Some(1)
+    } else if matches!(
+        entity_type,
+        108 | 114 | 118 | 120 | 122 | 128 | 140 | 190 | 192 | 194 | 196 | 198
+    ) {
+        Some(2)
+    } else {
+        None
+    }
+}
+
+fn iges_datetime_valid(value: &[u8]) -> bool {
+    let dot = match value.len() {
+        13 => 6,
+        15 => 8,
+        _ => return false,
+    };
+    value.get(dot) == Some(&b'.')
+        && value
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == dot || byte.is_ascii_digit())
+}
+
 fn property_fields_valid(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
@@ -429,6 +462,70 @@ fn property_fields_valid(
                         })
                     })
             }),
+        28 => {
+            let units_valid = record
+                .integer(3)
+                .is_some_and(|value| matches!(value, 0..=11 | 100..=106));
+            let charset_valid = record
+                .integer(4)
+                .is_some_and(|value| matches!(value, 1 | 1001..=1003));
+            let fraction = record.integer(6);
+            exact(6)
+                && integer_range(2, 0..=4)
+                && units_valid
+                && charset_valid
+                && record.string(5).is_some()
+                && fraction.is_some_and(|value| matches!(value, 0..=1))
+                && record
+                    .integer(7)
+                    .is_some_and(|value| value >= 0 && (fraction != Some(1) || value > 0))
+        }
+        29 => {
+            let fraction = record.integer(8);
+            exact(8)
+                && integer_range(2, 0..=2)
+                && integer_range(3, 1..=10)
+                && integer_range(4, 1..=4)
+                && (5..=6).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && integer_range(7, 0..=1)
+                && fraction.is_some_and(|value| matches!(value, 0..=2))
+                && record
+                    .integer(9)
+                    .is_some_and(|value| value >= 0 && (fraction == Some(0) || value > 0))
+        }
+        31 => exact(8) && (2..=9).all(|index| record.number(index).is_some_and(f64::is_finite)),
+        32 => {
+            exact(3)
+                && record.string(2).is_some_and(|value| !value.is_empty())
+                && record.string(3).is_some()
+                && record.string(4).is_some_and(iges_datetime_valid)
+        }
+        33 => {
+            exact(2)
+                && record.integer(2).is_some_and(|value| value > 0)
+                && record.string(3).is_some_and(|value| !value.is_empty())
+        }
+        34 | 35 => record
+            .integer(2)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0 && *count <= end)
+            .is_some_and(|count| {
+                exact(i64::try_from(1 + count * 3).unwrap_or_default())
+                    && (0..count).all(|offset| {
+                        let start = 3 + offset * 3;
+                        record.integer(start).is_some_and(|value| value > 0)
+                            && record
+                                .integer(start + 1)
+                                .zip(record.integer(start + 2))
+                                .is_some_and(|(first, last)| first > 0 && last >= first)
+                    })
+            }),
+        36 => {
+            matches!(record.integer(1), Some(1 | 2))
+                && end == record.integer(1).unwrap_or_default() as usize + 2
+                && integer_range(2, 0..=2)
+                && (record.integer(1) == Some(1) || integer_range(3, 0..=2))
+        }
         _ => false,
     }
 }
@@ -824,10 +921,9 @@ pub(super) fn project(
         })
         .collect::<BTreeMap<_, _>>();
 
-    for entry in directory
-        .iter()
-        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=27))
-    {
+    for entry in directory.iter().filter(|entry| {
+        entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=29 | 31..=36)
+    }) {
         handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -880,6 +976,90 @@ pub(super) fn project(
                     })
             }
             27 => entry.status.subordinate == 1 && owners.len() == 1,
+            28 | 29 => {
+                !owners.is_empty()
+                    && owners.iter().all(|owner| {
+                        entries
+                            .get(owner)
+                            .is_some_and(|owner| dimension_entity_type(owner.entity_type))
+                    })
+            }
+            31 => {
+                entry.status.subordinate == 1
+                    && owners.len() == 1
+                    && entries
+                        .get(&owners[0])
+                        .is_some_and(|owner| dimension_entity_type(owner.entity_type))
+            }
+            32 => {
+                !owners.is_empty()
+                    && owners.iter().all(|owner| {
+                        entries
+                            .get(owner)
+                            .is_some_and(|owner| owner.entity_type == 404)
+                    })
+            }
+            33 => {
+                let identity = record.integer(2).zip(record.string(3));
+                let unique_identity = identity.is_some_and(|identity| {
+                    directory
+                        .iter()
+                        .filter(|candidate| candidate.entity_type == 406 && candidate.form == 33)
+                        .filter(|candidate| {
+                            records.get(&candidate.sequence).is_some_and(|candidate| {
+                                candidate.integer(2).zip(candidate.string(3)) == Some(identity)
+                            })
+                        })
+                        .count()
+                        == 1
+                });
+                let sole_sheet_id = owners.first().is_some_and(|owner| {
+                    records.get(owner).is_some_and(|owner_record| {
+                        trailing_pointer_groups(owner_record, &entries).is_some_and(|groups| {
+                            groups
+                                .properties
+                                .iter()
+                                .filter(|sequence| {
+                                    entries.get(sequence).is_some_and(|property| {
+                                        property.entity_type == 406 && property.form == 33
+                                    })
+                                })
+                                .count()
+                                == 1
+                        })
+                    })
+                });
+                owners.len() == 1
+                    && entries
+                        .get(&owners[0])
+                        .is_some_and(|owner| owner.entity_type == 404)
+                    && unique_identity
+                    && sole_sheet_id
+            }
+            34 => {
+                owners.len() == 1
+                    && entries
+                        .get(&owners[0])
+                        .is_some_and(|owner| owner.entity_type == 212)
+            }
+            35 => {
+                owners.len() == 1
+                    && entries
+                        .get(&owners[0])
+                        .is_some_and(|owner| matches!(owner.entity_type, 212 | 312))
+            }
+            36 => {
+                let arity = record
+                    .integer(1)
+                    .and_then(|value| usize::try_from(value).ok());
+                !owners.is_empty()
+                    && owners.iter().all(|owner| {
+                        entries
+                            .get(owner)
+                            .and_then(|owner| closure_owner_dimension(owner.entity_type))
+                            == arity
+                    })
+            }
             _ => true,
         };
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
