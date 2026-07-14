@@ -418,7 +418,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
     }
     payload.push(0xe3);
     let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
         &DecodeOptions::default(),
     )
     .expect("decode");
@@ -498,7 +498,7 @@ fn decode_preserves_type_2c_direction_before_named_record() {
     payload.extend_from_slice(&[0x00, 0x0c, 0x9a]);
     payload.extend_from_slice(b"\xe0\x01next_record\0");
     let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
         &DecodeOptions::default(),
     )
     .expect("decode");
@@ -3051,39 +3051,23 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
 }
 
 #[test]
-fn decode_places_first_cylinder_instance_from_named_prototype() {
+fn decode_withholds_unplaced_cylinder_prototype_frame() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
     push_named_analytic_prototype(&mut payload, "cylinder", &[("radius", 1.0)]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
         &DecodeOptions::default(),
     )
     .expect("decode");
-    let cylinder = result
+    assert!(result
         .ir
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
-        .expect("first cylinder instance");
-
-    assert_eq!(
-        cylinder.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-            radius: 1.0,
-        }
-    );
-    assert_eq!(
-        result.ir.source.as_ref().unwrap().attributes
-            ["transferred_first_instance_prototype_surface_count"],
-        "1"
-    );
+        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#7"));
 }
 
 #[test]
@@ -3098,7 +3082,7 @@ fn decode_places_direct_two_direction_named_prototype_frame() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
         &DecodeOptions::default(),
     )
     .expect("decode");
@@ -3130,7 +3114,7 @@ fn decode_places_first_plane_instance_from_named_prototype() {
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode::decode(
-        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
         &DecodeOptions::default(),
     )
     .expect("decode");
@@ -3158,21 +3142,8 @@ fn decode_places_first_plane_instance_from_named_prototype() {
 }
 
 #[test]
-fn decode_places_first_cone_sphere_and_torus_instances_from_named_prototypes() {
+fn decode_places_first_sphere_and_torus_instances_from_named_prototypes() {
     let cases = [
-        (
-            0x25,
-            "cone",
-            vec![("half_angle", 0.5)],
-            cadmpeg_ir::geometry::SurfaceGeometry::Cone {
-                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-                axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
-                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-                radius: 0.0,
-                ratio: 1.0,
-                half_angle: f64::from_be_bytes([0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23]),
-            },
-        ),
         (
             0x26,
             "torus",
@@ -3204,7 +3175,7 @@ fn decode_places_first_cone_sphere_and_torus_instances_from_named_prototypes() {
         push_named_analytic_prototype(&mut payload, family, &fields);
         payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
         let result = decode::decode(
-            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &mut Cursor::new(build_prt("c", &[("ND:0:VisibGeom:0", payload)])),
             &DecodeOptions::default(),
         )
         .expect("decode");

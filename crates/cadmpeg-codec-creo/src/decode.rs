@@ -13168,14 +13168,13 @@ fn transfer_first_instance_prototype_surfaces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
+    if scan.layout != crate::container::Layout::Nd {
+        return 0;
+    }
     let mut transferred = 0;
     for record in &scan.surface_prototype_records {
         let row_kind = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => crate::surface::SurfaceKind::Plane,
-            crate::surface::SurfacePrototypeFamily::Cylinder => {
-                crate::surface::SurfaceKind::Cylinder
-            }
-            crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
             crate::surface::SurfacePrototypeFamily::Torus => {
                 crate::surface::SurfaceKind::TorusOrSphere
             }
@@ -13218,34 +13217,6 @@ fn transfer_first_instance_prototype_surfaces(
                 normal: axis,
                 u_axis: reference,
             },
-            crate::surface::SurfacePrototypeFamily::Cylinder => {
-                let Some(radius) = prototype_scalar(record, "radius")
-                    .filter(|radius| radius.is_finite() && *radius > 0.0)
-                else {
-                    continue;
-                };
-                SurfaceGeometry::Cylinder {
-                    origin: point,
-                    axis,
-                    ref_direction: reference,
-                    radius,
-                }
-            }
-            crate::surface::SurfacePrototypeFamily::Cone => {
-                let Some(half_angle) = prototype_scalar(record, "half_angle").filter(|angle| {
-                    angle.is_finite() && *angle > 0.0 && *angle < std::f64::consts::FRAC_PI_2
-                }) else {
-                    continue;
-                };
-                SurfaceGeometry::Cone {
-                    origin: point,
-                    axis,
-                    ref_direction: reference,
-                    radius: 0.0,
-                    ratio: 1.0,
-                    half_angle,
-                }
-            }
             crate::surface::SurfacePrototypeFamily::Torus => {
                 let Some(radius1) = prototype_scalar(record, "radius1")
                     .filter(|radius| radius.is_finite() && *radius >= 0.0)
