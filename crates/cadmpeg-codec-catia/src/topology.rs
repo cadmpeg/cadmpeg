@@ -3982,7 +3982,7 @@ impl MeshSelectionSearch<'_> {
             .flatten()
             .map(|use_| use_.edge)
             .collect::<HashSet<_>>();
-        let next = self
+        let mut candidates = self
             .selected
             .iter()
             .enumerate()
@@ -3991,7 +3991,7 @@ impl MeshSelectionSearch<'_> {
                 self.face_work[face]?;
                 let assignments = &self.assignments[face];
                 if assignments.is_empty() {
-                    return Some((0, 0, 0, 0, 0, face));
+                    return Some((0, 0, 0, 0, face));
                 }
                 let direction_work = assignments
                     .iter()
@@ -4005,18 +4005,6 @@ impl MeshSelectionSearch<'_> {
                         1usize.checked_shl(unknown as u32).unwrap_or(usize::MAX)
                     })
                     .fold(0usize, usize::saturating_add);
-                let can_merge = if assignments.len() == 1 && direction_work == 1 {
-                    mesh_assignment_can_merge(&assignments[0], &mut measured)
-                } else {
-                    assignments.iter().any(|assignment| {
-                        mesh_assignment_has_merge_option(
-                            assignment,
-                            quotient,
-                            self.edge_candidates,
-                            root_count,
-                        )
-                    })
-                };
                 let assignment = &assignments[0];
                 let selected_incidence = assignment
                     .boundaries
@@ -4036,7 +4024,6 @@ impl MeshSelectionSearch<'_> {
                     })
                     .count();
                 Some((
-                    if can_merge { 1 } else { 2 },
                     assignments.len(),
                     direction_work,
                     usize::MAX - selected_incidence,
@@ -4044,8 +4031,34 @@ impl MeshSelectionSearch<'_> {
                     face,
                 ))
             })
-            .min();
-        let Some((_, supported, _, _, _, face)) = next else {
+            .collect::<Vec<_>>();
+        candidates.sort_unstable();
+        let mut fallback = None;
+        let next = candidates.into_iter().find(|candidate| {
+            let &(supported, direction_work, _, _, face) = candidate;
+            if supported == 0 {
+                return true;
+            }
+            let assignments = &self.assignments[face];
+            let can_merge = if supported == 1 && direction_work == 1 {
+                mesh_assignment_can_merge(&assignments[0], &mut measured)
+            } else {
+                assignments.iter().any(|assignment| {
+                    mesh_assignment_has_merge_option(
+                        assignment,
+                        quotient,
+                        self.edge_candidates,
+                        root_count,
+                    )
+                })
+            };
+            if !can_merge && fallback.is_none() {
+                fallback = Some(*candidate);
+            }
+            can_merge
+        });
+        let next = next.or(fallback);
+        let Some((supported, _, _, _, face)) = next else {
             let mut quotient = quotient.clone();
             let Some(root_points) =
                 quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
@@ -4150,6 +4163,7 @@ impl MeshSelectionSearch<'_> {
                     }),
             );
         }
+        options.retain_mut(|(_, _, quotient)| quotient.root_count() >= self.vertex_points.len());
         if options.is_empty() {
             return;
         }
@@ -5520,6 +5534,58 @@ mod motif_tests {
 
         assert!(!search.exhausted);
         assert_eq!(search.states, 512);
+    }
+
+    #[test]
+    fn overmerged_face_options_do_not_consume_the_branch_budget() {
+        let assignments = vec![vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 0,
+                    reversed: None,
+                },
+            ]],
+        }]];
+        let edge_candidates = vec![Vec::new(); 2];
+        let edge_rows = vec![
+            EdgeRow {
+                kind: 1,
+                handles: vec![0],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            };
+            2
+        ];
+        let mut search = MeshSelectionSearch {
+            assignments: &assignments,
+            face_work: vec![Some(1)],
+            edge_candidates: &edge_candidates,
+            edge_rows: &edge_rows,
+            vertex_points: &[[0.0, 0.0, 0.0]; 3],
+            selected: vec![None],
+            states: 512,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+        let quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![HashSet::from([0, 1, 2]); 4],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+
+        search.search(&quotient);
+
+        assert!(!search.exhausted);
+        assert_eq!(search.states, 512);
+        assert!(search.solution.is_none());
     }
 
     #[test]
