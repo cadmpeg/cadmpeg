@@ -274,6 +274,18 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && !scope.kind.is_empty()
+            && match (
+                scope.kind.as_str(),
+                scope.extrude_operation,
+                scope.extrude_operation_offset,
+            ) {
+                ("Extrude", Some(_), Some(offset)) => {
+                    offset > scope.byte_offset && offset < scope.reference_count_offset
+                }
+                ("Extrude", _, _) => false,
+                (_, None, None) => true,
+                _ => false,
+            }
             && scope.frame_length > 89
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
@@ -513,6 +525,34 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 message: "Fusion Design feature scope has no counted operand group".into(),
                 entity: Some(scope.id.clone()),
             });
+        }
+        if scope.kind == "Extrude" {
+            let has_body_operands = native
+                .design_construction_operand_groups
+                .iter()
+                .any(|group| {
+                    design_stream(&group.id) == native_stream
+                        && group.scope_record_index == scope.record_index
+                        && group.extrude_role == Some(records::DesignExtrudeOperandRole::Bodies)
+                });
+            let operation_matches_operands = match scope.extrude_operation {
+                Some(records::DesignExtrudeOperation::NewBody) => !has_body_operands,
+                Some(
+                    records::DesignExtrudeOperation::Join
+                    | records::DesignExtrudeOperation::Cut
+                    | records::DesignExtrudeOperation::Intersect,
+                ) => has_body_operands,
+                None => false,
+            };
+            if !operation_matches_operands {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion Design Extrude operation conflicts with its body operands"
+                        .into(),
+                    entity: Some(scope.id.clone()),
+                });
+            }
         }
     }
     let construction_groups_by_index = native

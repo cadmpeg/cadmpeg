@@ -496,6 +496,20 @@ pub struct DesignDimensionLocusGroup {
     pub next_byte_offset: u64,
 }
 
+/// Boolean result operation stored by an Extrude parameter scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignExtrudeOperation {
+    /// Union the swept volume with the selected bodies.
+    Join,
+    /// Subtract the swept volume from the selected bodies.
+    Cut,
+    /// Retain the intersection of the swept volume and selected bodies.
+    Intersect,
+    /// Create an independent body.
+    NewBody,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -513,6 +527,12 @@ pub struct DesignParameterScope {
     pub kind: String,
     /// Byte offset of the kind's UTF-16LE code units.
     pub kind_offset: u64,
+    /// Extrude result operation from the fixed scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_operation: Option<DesignExtrudeOperation>,
+    /// Byte offset of the Extrude operation enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_operation_offset: Option<u64>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.
