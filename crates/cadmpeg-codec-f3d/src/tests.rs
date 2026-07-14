@@ -7718,6 +7718,14 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate_native(&ir).is_empty());
 
+    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 6;
+    assert!(crate::validate_native(&ir).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && finding.entity.as_deref() == Some("generated:design-parameter#0")
+            && finding.message.contains("family discriminator")
+    }));
+    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 0;
+
     {
         let mut native = f3d_native_mut(&mut ir);
         native.design_parameters[0].kind = crate::records::DesignParameterKind::Feature;

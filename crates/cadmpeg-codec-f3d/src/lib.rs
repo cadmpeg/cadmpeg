@@ -1828,6 +1828,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && parameter.unit.as_ref().is_none_or(|unit| !unit.is_empty())
             && parameter.unit.is_some() == parameter.unit_offset.is_some()
             && parameter.evaluated_value.is_finite()
+            && parameter.prefix_value == design::design_parameter_prefix(&parameter.source_kind)
             && parameter.kind == expected_kind
             && owner_shape_valid
             && offsets_ordered
@@ -1837,7 +1838,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design parameter has an invalid frame, family, or owner".into(),
+                message:
+                    "Fusion Design parameter has an invalid frame, family discriminator, or owner"
+                        .into(),
                 entity: Some(parameter.id.clone()),
             });
         }
