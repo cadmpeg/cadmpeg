@@ -112,6 +112,14 @@ pub struct ParasolidAttributeDefinition {
     pub xmt: u16,
     /// Exact printable attribute class name.
     pub name: String,
+    /// Declared number of fields.
+    pub field_count: u32,
+    /// Stream-local identity of the following field record.
+    pub field_record_xmt: u16,
+    /// Ordered catalog references in the field-record header.
+    pub field_record_references: [u16; 2],
+    /// Two field-record header words following the catalog references.
+    pub field_record_header_words: [u16; 2],
     /// Offset of the declaration in the inflated stream.
     pub inflated_offset: u64,
 }
@@ -796,6 +804,10 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                     stream_ordinal: stream_ordinal as u32,
                     xmt: definition.xmt,
                     name: definition.name.to_string(),
+                    field_count: definition.field_count,
+                    field_record_xmt: definition.field_record_xmt,
+                    field_record_references: definition.field_record_references,
+                    field_record_header_words: definition.field_record_header_words,
                     inflated_offset: definition.offset as u64,
                 })
         })

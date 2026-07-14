@@ -62,6 +62,14 @@ pub struct AttributeDefinition<'a> {
     pub xmt: u16,
     /// Exact printable class name.
     pub name: &'a str,
+    /// Declared number of fields in the following `00 50` record.
+    pub field_count: u32,
+    /// Stream-local identity of the field record.
+    pub field_record_xmt: u16,
+    /// Ordered catalog references in the field-record header.
+    pub field_record_references: [u16; 2],
+    /// Two field-record header words following the catalog references.
+    pub field_record_header_words: [u16; 2],
 }
 
 /// Decode length-bounded `00 4f` attribute-class declarations.
@@ -91,11 +99,15 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             at += 1;
             continue;
         };
+        let Some(field_header) = bytes.get(name_end..name_end + 16) else {
+            at += 1;
+            continue;
+        };
         if name_len == 0
             || !name_bytes
                 .iter()
                 .all(|byte| byte.is_ascii_graphic() && !byte.is_ascii_control())
-            || bytes.get(name_end..name_end + 2) != Some(&[0x00, 0x50])
+            || field_header.get(0..2) != Some(&[0x00, 0x50])
         {
             at += 1;
             continue;
@@ -108,6 +120,16 @@ pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
             offset: at,
             xmt: u16::from_be_bytes([identity[0], identity[1]]),
             name,
+            field_count: u32::from_be_bytes(field_header[2..6].try_into().expect("four bytes")),
+            field_record_xmt: u16::from_be_bytes(field_header[6..8].try_into().expect("two bytes")),
+            field_record_references: [
+                u16::from_be_bytes(field_header[8..10].try_into().expect("two bytes")),
+                u16::from_be_bytes(field_header[10..12].try_into().expect("two bytes")),
+            ],
+            field_record_header_words: [
+                u16::from_be_bytes(field_header[12..14].try_into().expect("two bytes")),
+                u16::from_be_bytes(field_header[14..16].try_into().expect("two bytes")),
+            ],
         });
         at = name_end;
     }

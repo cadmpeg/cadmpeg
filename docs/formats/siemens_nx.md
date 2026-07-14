@@ -613,7 +613,7 @@ The B-spline form code does not determine whether a control grid is rational. Th
 
 ### 9.4 Attributes and expressions
 
-Parasolid attribute definitions use a two-record catalog entry. `00 4f [ff] name_len:u32 BE, class_xmt:u16 BE, name[name_len]` declares a non-empty printable ASCII class name; `ff` is the optional record-envelope escape. The declaration is valid only when `00 50` begins immediately after the declared name. `class_xmt` is stream-local. The `00 50` record contains the field declaration. Type code `0x05` denotes a component/reference or string field, `0x06` a double field, and `0x00` a void or flag field.
+Parasolid attribute definitions use a two-record catalog entry. `00 4f [ff] name_len:u32 BE, class_xmt:u16 BE, name[name_len]` declares a non-empty printable ASCII class name; `ff` is the optional record-envelope escape. The field record follows immediately as `00 50, field_count:u32 BE, field_xmt:u16 BE, reference[2]:u16 BE, header_word[2]:u16 BE, payload`. Both XMT identities and the ordered references are stream-local. The header words are retained verbatim; their second value includes `2328`, `1f67`, and `1f44`. A truncated header invalidates the declaration pair atomically. Type code `0x05` in the field payload denotes a component/reference or string field, `0x06` a double field, and `0x00` a void or flag field.
 
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 

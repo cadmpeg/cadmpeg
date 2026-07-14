@@ -419,7 +419,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 26);
+    assert_eq!(namespace.version, 27);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3585,7 +3585,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 26);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 27);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -3893,11 +3893,19 @@ fn parasolid_attribute_definition_requires_declared_printable_name_and_field_rec
     bytes.extend_from_slice(&0x012au16.to_be_bytes());
     bytes.extend_from_slice(b"SDL/TYSA_DENSITY");
     bytes.extend_from_slice(&[0x00, 0x50, 0x00, 0x00, 0x00, 0x01]);
+    bytes.extend_from_slice(&0x012bu16.to_be_bytes());
+    bytes.extend_from_slice(&0x0030u16.to_be_bytes());
+    bytes.extend_from_slice(&0x0031u16.to_be_bytes());
+    bytes.extend_from_slice(&[0x00, 0x00, 0x23, 0x28]);
     let definitions = crate::parasolid::attribute_definitions(&bytes);
     assert_eq!(definitions.len(), 1);
     assert_eq!(definitions[0].offset, 1);
     assert_eq!(definitions[0].xmt, 0x12a);
     assert_eq!(definitions[0].name, "SDL/TYSA_DENSITY");
+    assert_eq!(definitions[0].field_count, 1);
+    assert_eq!(definitions[0].field_record_xmt, 0x12b);
+    assert_eq!(definitions[0].field_record_references, [0x30, 0x31]);
+    assert_eq!(definitions[0].field_record_header_words, [0, 0x2328]);
 
     bytes[20] = 0;
     assert!(crate::parasolid::attribute_definitions(&bytes).is_empty());
