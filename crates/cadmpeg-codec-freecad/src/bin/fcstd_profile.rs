@@ -61,6 +61,8 @@ struct Observed {
     feature_operations: BTreeSet<String>,
     feature_branches: BTreeSet<String>,
     sketch_constraint_definitions: BTreeSet<String>,
+    product_constructs: BTreeSet<String>,
+    joint_kinds: BTreeSet<String>,
     application_types: BTreeSet<String>,
     native_arenas: BTreeSet<String>,
     neutral_arenas: BTreeSet<String>,
@@ -289,6 +291,85 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     for record in namespace.arenas.get("applications").into_iter().flatten() {
         insert_string(&record.fields, "type_name", &mut observed.application_types);
     }
+    let product_nodes = namespace
+        .arenas
+        .get("product_nodes")
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    for record in &product_nodes {
+        if let Some(Value::String(kind)) = record.fields.get("kind") {
+            observed.product_constructs.insert(kind.clone());
+        }
+        if record
+            .fields
+            .get("element_count")
+            .and_then(Value::as_i64)
+            .is_some_and(|count| count > 1)
+        {
+            observed.product_constructs.insert("link_array".into());
+        }
+        if record
+            .fields
+            .get("external_document")
+            .is_some_and(|value| !value.is_null())
+        {
+            observed
+                .product_constructs
+                .insert("external_occurrence".into());
+        }
+        if record
+            .fields
+            .get("linked_subelements")
+            .and_then(Value::as_array)
+            .is_some_and(|values| !values.is_empty())
+        {
+            observed
+                .product_constructs
+                .insert("linked_subelements".into());
+        }
+        let prototype = record.fields.get("prototype").and_then(Value::as_str);
+        if prototype.is_some_and(|prototype| {
+            product_nodes.iter().any(|candidate| {
+                candidate.fields.get("object").and_then(Value::as_str) == Some(prototype)
+                    && candidate.fields.get("kind").and_then(Value::as_str) == Some("occurrence")
+            })
+        }) {
+            observed
+                .product_constructs
+                .insert("nested_occurrence".into());
+        }
+    }
+    for record in namespace.arenas.get("joints").into_iter().flatten() {
+        insert_string(&record.fields, "kind", &mut observed.joint_kinds);
+        if record
+            .fields
+            .get("references")
+            .and_then(Value::as_array)
+            .is_some_and(|references| {
+                references.iter().any(|reference| {
+                    reference
+                        .get("subelements")
+                        .and_then(Value::as_array)
+                        .is_some_and(|values| !values.is_empty())
+                })
+            })
+        {
+            observed
+                .product_constructs
+                .insert("persistent_joint_operands".into());
+        }
+        if record
+            .fields
+            .get("parameters")
+            .and_then(Value::as_object)
+            .is_some_and(|parameters| {
+                parameters.contains_key("AngleMin") && parameters.contains_key("AngleMax")
+            })
+        {
+            observed.product_constructs.insert("joint_limits".into());
+        }
+    }
     for feature in &ir.model.features {
         if let Ok(Value::Object(definition)) = serde_json::to_value(&feature.definition) {
             insert_string(&definition, "definition", &mut observed.feature_definitions);
@@ -514,6 +595,28 @@ fn gates(
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
+    let required_product_constructs = BTreeSet::from([
+        "part",
+        "group",
+        "link_group",
+        "occurrence",
+        "nested_occurrence",
+        "link_array",
+        "external_occurrence",
+        "persistent_joint_operands",
+        "joint_limits",
+    ]);
+    let product_constructs = observed
+        .product_constructs
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_joint_kinds = BTreeSet::from(["grounded", "Revolute"]);
+    let joint_kinds = observed
+        .joint_kinds
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     let mut gates = vec![
         gate(
             "L0",
@@ -658,17 +761,26 @@ fn gates(
         ),
         gate(
             "L7",
-            vec![assertion(
-                "product_and_joints",
-                count("components") > 0 && count("occurrences") > 0 && count("assembly_joints") > 0,
-                format!(
-                    "components={}, occurrences={}, joints={}",
-                    count("components"),
-                    count("occurrences"),
-                    count("assembly_joints")
+            vec![
+                assertion(
+                    "product_structure_matrix",
+                    count("components") > 0
+                        && count("occurrences") > 0
+                        && required_product_constructs.is_subset(&product_constructs),
+                    format!(
+                        "components={}, occurrences={}, constructs={product_constructs:?}",
+                        count("components"),
+                        count("occurrences")
+                    ),
+                    format!("{required_product_constructs:?}"),
                 ),
-                "components, occurrences, and joints",
-            )],
+                assertion(
+                    "assembly_joint_matrix",
+                    count("assembly_joints") > 0 && required_joint_kinds.is_subset(&joint_kinds),
+                    format!("joints={}, kinds={joint_kinds:?}", count("assembly_joints")),
+                    format!("{required_joint_kinds:?}"),
+                ),
+            ],
         ),
         gate(
             "L8",

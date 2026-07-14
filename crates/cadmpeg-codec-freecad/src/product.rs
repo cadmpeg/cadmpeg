@@ -125,7 +125,8 @@ pub(crate) fn transfer_neutral(
             .iter()
             .flat_map(|joint| &joint.references)
             .filter(|reference| reference.document.is_none())
-            .filter_map(|reference| reference.object.clone()),
+            .filter_map(|reference| reference.object.clone())
+            .filter(|object| !object.is_empty() && !occurrence_objects.contains(object.as_str())),
     );
     component_objects.sort();
     component_objects.dedup();

@@ -5,7 +5,8 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
 use cadmpeg_ir::products::{
-    AssemblyJoint, Component, JointId, JointKind, JointLimits, JointOperand,
+    AssemblyJoint, Component, ComponentReference, JointId, JointKind, JointLimits, JointOperand,
+    Occurrence,
 };
 
 pub(crate) fn transfer(
@@ -111,6 +112,7 @@ pub(crate) fn transfer(
 pub(crate) fn transfer_neutral(
     records: &[JointRecord],
     components: &[Component],
+    occurrences: &[Occurrence],
 ) -> Vec<AssemblyJoint> {
     let component_by_native = components
         .iter()
@@ -119,6 +121,16 @@ pub(crate) fn transfer_neutral(
                 .native_ref
                 .as_deref()
                 .map(|native| (native, &component.id))
+        })
+        .collect::<HashMap<_, _>>();
+    let component_by_occurrence_native = occurrences
+        .iter()
+        .filter_map(|occurrence| {
+            let native = occurrence.native_ref.as_deref()?;
+            let ComponentReference::Local { component } = &occurrence.prototype else {
+                return None;
+            };
+            Some((native, component))
         })
         .collect::<HashMap<_, _>>();
     records
@@ -165,7 +177,12 @@ pub(crate) fn transfer_neutral(
                         component: reference
                             .object
                             .as_deref()
-                            .and_then(|object| component_by_native.get(object).copied())
+                            .and_then(|object| {
+                                component_by_native
+                                    .get(object)
+                                    .copied()
+                                    .or_else(|| component_by_occurrence_native.get(object).copied())
+                            })
                             .cloned(),
                         external_document: reference.document.as_deref().map(|document| {
                             crate::product::external_document_reference(
@@ -259,7 +276,20 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
     properties
         .iter()
         .find(|property| property.name == name)
-        .map(|property| property.links.clone())
+        .map(|property| {
+            property
+                .links
+                .iter()
+                .filter(|link| {
+                    link.document.is_some()
+                        || link
+                            .object
+                            .as_deref()
+                            .is_some_and(|object| !object.is_empty())
+                })
+                .cloned()
+                .collect()
+        })
         .unwrap_or_default()
 }
 

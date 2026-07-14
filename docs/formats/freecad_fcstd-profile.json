@@ -1,7 +1,7 @@
 {
   "profile_version": 2,
   "format": "fcstd",
-  "manifest_sha256": "d8dc9ad4376aea45fe9324a461f82a2fcc0761b2380cd474938f6d62b134440d",
+  "manifest_sha256": "2eea655a4813f4ee23505265f878dced96ef9d4eb2e245358e25e4cb4690c5fb",
   "manifest_verified": true,
   "envelope": {
     "container": "ZIP-packaged FCStd",
@@ -435,6 +435,68 @@
       }
     },
     {
+      "filename": "product_assembly.FCStd",
+      "sha256": "ddc1565528a622a143cc959d767d1d328fee97f05f874ae506858c7b98520fdc",
+      "canonical_cadir_sha256": "2962ffcd11e6d88fccd9ef2006f0d865ff4eccddd88222ffe8b1d81b25fecd65",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 2,
+        "attributes": 0,
+        "bodies": 2,
+        "coedges": 30,
+        "components": 5,
+        "configurations": 0,
+        "curves": 15,
+        "drawings": 0,
+        "edges": 15,
+        "faces": 9,
+        "features": 2,
+        "loops": 9,
+        "native.fcstd.applications": 16,
+        "native.fcstd.attachments": 14,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 2,
+        "native.fcstd.design_census": 2,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 7,
+        "native.fcstd.extensions": 4,
+        "native.fcstd.joints": 2,
+        "native.fcstd.logical_ledger": 397,
+        "native.fcstd.objects": 16,
+        "native.fcstd.physical_ledger": 50,
+        "native.fcstd.product_nodes": 3,
+        "native.fcstd.properties": 195,
+        "native.fcstd.shape_payloads": 2,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 2,
+        "parameters": 0,
+        "pcurves": 30,
+        "points": 10,
+        "presentation_documents": 0,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "regions": 2,
+        "semantic_annotations": 0,
+        "shells": 2,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 9,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 10,
+        "view_presentations": 0
+      }
+    },
+    {
       "filename": "sketch_constraints.FCStd",
       "sha256": "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f",
       "canonical_cadir_sha256": "1fa2d1912af9861b7d159985a785570ce26cabf26b8f34ad9e4151ab0a562752",
@@ -764,6 +826,16 @@
       "vertical_distance",
       "weight"
     ],
+    "product_constructs": [
+      "joint_limits",
+      "occurrence",
+      "part",
+      "persistent_joint_operands"
+    ],
+    "joint_kinds": [
+      "Revolute",
+      "grounded"
+    ],
     "application_types": [
       "App::FeaturePython",
       "App::Line",
@@ -772,6 +844,7 @@
       "App::Part",
       "App::Plane",
       "App::Point",
+      "Assembly::AssemblyObject",
       "Mesh::Feature",
       "Part::Box",
       "Part::Chamfer",
@@ -822,6 +895,7 @@
       "gui_documents",
       "gui_properties",
       "gui_view_providers",
+      "joints",
       "logical_ledger",
       "objects",
       "physical_ledger",
@@ -834,6 +908,7 @@
     "neutral_arenas": [
       "appearance_bindings",
       "appearances",
+      "assembly_joints",
       "bodies",
       "coedges",
       "components",
@@ -890,13 +965,13 @@
         {
           "id": "application_graph",
           "passed": true,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"joints\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "objects and properties arenas"
         },
         {
           "id": "asset_inventory",
           "passed": true,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"joints\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "entries arena"
         }
       ]
@@ -920,7 +995,7 @@
         {
           "id": "application_geometry",
           "passed": true,
-          "observed": "tessellations=1, points=438",
+          "observed": "tessellations=1, points=448",
           "required": "mesh tessellation and point data"
         }
       ]
@@ -938,7 +1013,7 @@
         {
           "id": "persistent_names",
           "passed": true,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"joints\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "element_maps arena"
         }
       ]
@@ -950,7 +1025,7 @@
         {
           "id": "design_records",
           "passed": true,
-          "observed": "features=66, sketches=12, constraints=41, parameters=46",
+          "observed": "features=68, sketches=12, constraints=41, parameters=46",
           "required": "nonempty feature, sketch, constraint, and parameter graphs"
         },
         {
@@ -1002,10 +1077,16 @@
       "passed": false,
       "assertions": [
         {
-          "id": "product_and_joints",
+          "id": "product_structure_matrix",
           "passed": false,
-          "observed": "components=6, occurrences=1, joints=0",
-          "required": "components, occurrences, and joints"
+          "observed": "components=11, occurrences=3, constructs={\"joint_limits\", \"occurrence\", \"part\", \"persistent_joint_operands\"}",
+          "required": "{\"external_occurrence\", \"group\", \"joint_limits\", \"link_array\", \"link_group\", \"nested_occurrence\", \"occurrence\", \"part\", \"persistent_joint_operands\"}"
+        },
+        {
+          "id": "assembly_joint_matrix",
+          "passed": true,
+          "observed": "joints=2, kinds={\"Revolute\", \"grounded\"}",
+          "required": "{\"Revolute\", \"grounded\"}"
         }
       ]
     },
@@ -1022,13 +1103,13 @@
         {
           "id": "gui_state",
           "passed": true,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"joints\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "GUI document state"
         },
         {
           "id": "application_retention",
           "passed": true,
-          "observed": "application types={\"App::FeaturePython\", \"App::Line\", \"App::Link\", \"App::Origin\", \"App::Part\", \"App::Plane\", \"App::Point\", \"Mesh::Feature\", \"Part::Box\", \"Part::Chamfer\", \"Part::Cut\", \"Part::Cylinder\", \"Part::Extrusion\", \"Part::Feature\", \"Part::Fillet\", \"Part::Loft\", \"Part::Mirroring\", \"Part::Revolution\", \"Part::Sweep\", \"Part::Thickness\", \"PartDesign::AdditiveBox\", \"PartDesign::Body\", \"PartDesign::CoordinateSystem\", \"PartDesign::Draft\", \"PartDesign::Feature\", \"PartDesign::Fillet\", \"PartDesign::Hole\", \"PartDesign::Line\", \"PartDesign::LinearPattern\", \"PartDesign::Pad\", \"PartDesign::Plane\", \"PartDesign::Pocket\", \"PartDesign::Point\", \"Points::Feature\", \"Sketcher::SketchObject\", \"Spreadsheet::Sheet\", \"TechDraw::DrawPage\", \"TechDraw::DrawSVGTemplate\", \"TechDraw::DrawViewAnnotation\", \"TechDraw::DrawViewPart\", \"TechDraw::DrawViewSymbol\"}, exact=true",
+          "observed": "application types={\"App::FeaturePython\", \"App::Line\", \"App::Link\", \"App::Origin\", \"App::Part\", \"App::Plane\", \"App::Point\", \"Assembly::AssemblyObject\", \"Mesh::Feature\", \"Part::Box\", \"Part::Chamfer\", \"Part::Cut\", \"Part::Cylinder\", \"Part::Extrusion\", \"Part::Feature\", \"Part::Fillet\", \"Part::Loft\", \"Part::Mirroring\", \"Part::Revolution\", \"Part::Sweep\", \"Part::Thickness\", \"PartDesign::AdditiveBox\", \"PartDesign::Body\", \"PartDesign::CoordinateSystem\", \"PartDesign::Draft\", \"PartDesign::Feature\", \"PartDesign::Fillet\", \"PartDesign::Hole\", \"PartDesign::Line\", \"PartDesign::LinearPattern\", \"PartDesign::Pad\", \"PartDesign::Plane\", \"PartDesign::Pocket\", \"PartDesign::Point\", \"Points::Feature\", \"Sketcher::SketchObject\", \"Spreadsheet::Sheet\", \"TechDraw::DrawPage\", \"TechDraw::DrawSVGTemplate\", \"TechDraw::DrawViewAnnotation\", \"TechDraw::DrawViewPart\", \"TechDraw::DrawViewSymbol\"}, exact=true",
           "required": "application records and exact byte coverage"
         }
       ]
