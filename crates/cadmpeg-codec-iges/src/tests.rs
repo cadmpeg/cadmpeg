@@ -7265,7 +7265,10 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
     let source_length = u64::try_from(bytes.len()).unwrap();
 
     let result = IgesCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
         .unwrap();
 
     assert_eq!(result.ir.byte_ledger.source_length, source_length);
@@ -7276,6 +7279,28 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
     assert_eq!(
         result.ir.native.namespace("iges").unwrap().arenas["cards"].len(),
         8
+    );
+    let span = result
+        .ir
+        .byte_ledger
+        .spans
+        .iter()
+        .find(|span| span.meaning == "post_terminate_bytes")
+        .unwrap();
+    assert_eq!(span.class, cadmpeg_ir::ByteSpanClass::Opaque);
+    assert_eq!(span.end - span.start, 17);
+    let retained = result.ir.native.namespace("iges").unwrap().arenas["opaque_bytes"]
+        .iter()
+        .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
+        .unwrap();
+    assert_eq!(
+        retained.fields["bytes"],
+        serde_json::json!(b"transport padding")
+    );
+    assert_eq!(retained.fields["byte_length"], 17);
+    assert_eq!(
+        retained.fields["sha256"],
+        cadmpeg_ir::hash::sha256_hex(b"transport padding")
     );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
