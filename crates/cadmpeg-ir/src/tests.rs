@@ -2731,3 +2731,54 @@ fn body_selections_round_trip_through_json() {
         selections
     );
 }
+
+#[test]
+fn analytic_surface_parameters_invert_surface_points() {
+    use crate::eval::{analytic_surface_parameters, surface_point};
+
+    let origin = Point3::new(2.0, 3.0, 5.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let surfaces = [
+        SurfaceGeometry::Plane {
+            origin,
+            normal: axis,
+            u_axis: reference,
+        },
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction: reference,
+            radius: -4.0,
+        },
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction: reference,
+            radius: 4.0,
+            ratio: 0.5,
+            half_angle: 0.2,
+        },
+        SurfaceGeometry::Sphere {
+            center: origin,
+            axis,
+            ref_direction: reference,
+            radius: -4.0,
+        },
+        SurfaceGeometry::Torus {
+            center: origin,
+            axis,
+            ref_direction: reference,
+            major_radius: 8.0,
+            minor_radius: 2.0,
+        },
+    ];
+    for surface in surfaces {
+        let expected = surface_point(&surface, 1.1, 0.4).unwrap();
+        let parameters = analytic_surface_parameters(&surface, expected).unwrap();
+        let actual = surface_point(&surface, parameters.u, parameters.v).unwrap();
+        assert!((actual.x - expected.x).abs() < 1.0e-12);
+        assert!((actual.y - expected.y).abs() < 1.0e-12);
+        assert!((actual.z - expected.z).abs() < 1.0e-12);
+    }
+}

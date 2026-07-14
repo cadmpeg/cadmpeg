@@ -410,6 +410,93 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
     }
 }
 
+/// Recover an analytic surface's native `(u, v)` parameters for a model-space
+/// point. The point is not required to lie on the carrier; callers that need a
+/// membership test must evaluate the returned parameters and apply their own
+/// geometric tolerance.
+pub fn analytic_surface_parameters(geometry: &SurfaceGeometry, point: Point3) -> Option<Point2> {
+    let components = |origin: Point3, axis: Vector3, reference: Vector3| {
+        let delta = Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+        let transverse = cross(axis, reference);
+        (
+            delta.x * reference.x + delta.y * reference.y + delta.z * reference.z,
+            delta.x * transverse.x + delta.y * transverse.y + delta.z * transverse.z,
+            delta.x * axis.x + delta.y * axis.y + delta.z * axis.z,
+        )
+    };
+    let parameters = match geometry {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let (u, v, _) = components(*origin, *normal, *u_axis);
+            Point2::new(u, v)
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            Point2::new((y / radius).atan2(x / radius), v)
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let (x, y, v) = components(*origin, *axis, *ref_direction);
+            let local_radius = radius + v * half_angle.tan();
+            if local_radius == 0.0 || *ratio == 0.0 {
+                return None;
+            }
+            Point2::new((y / (local_radius * ratio)).atan2(x / local_radius), v)
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if *radius == 0.0 {
+                return None;
+            }
+            let (x, y, z) = components(*center, *axis, *ref_direction);
+            let (x, y, z) = (x / radius, y / radius, z / radius);
+            Point2::new(y.atan2(x), z.atan2(x.hypot(y)))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            if *minor_radius == 0.0 {
+                return None;
+            }
+            let (x, y, z) = components(*center, *axis, *ref_direction);
+            let radial = x.hypot(y);
+            Point2::new(
+                y.atan2(x),
+                (z / minor_radius).atan2((radial - major_radius) / minor_radius),
+            )
+        }
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Procedural { .. }
+        | SurfaceGeometry::Unknown { .. } => return None,
+    };
+    (parameters.u.is_finite() && parameters.v.is_finite()).then_some(parameters)
+}
+
 fn unit(vector: Vector3) -> Option<Vector3> {
     let norm = vector.norm();
     (norm.is_finite() && norm > 0.0)
