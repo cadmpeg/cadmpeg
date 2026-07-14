@@ -83,13 +83,15 @@ pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
-pub use source_fidelity::{SourceFidelity, SOURCE_FIDELITY_VERSION};
+pub use source_fidelity::{
+    RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION,
+};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
 pub use unknown::UnknownRecord;
-pub use validate::validate;
+pub use validate::{validate, validate_with_source_fidelity};
 
 pub mod unknown;
 

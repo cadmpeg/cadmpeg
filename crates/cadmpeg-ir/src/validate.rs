@@ -20,6 +20,7 @@ use crate::geometry::{
 };
 use crate::math::Vector3;
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
+use crate::source_fidelity::{SourceFidelity, SOURCE_FIDELITY_VERSION};
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::LengthUnit;
@@ -63,7 +64,7 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     // The identity walk enumerates every entity id in the document; annotation
     // and link targets resolve against that set.
     let all_ids = check_identity_and_order(ir, &mut findings);
-    check_byte_ledger(ir, &all_ids, &mut findings);
+    check_byte_ledger(&ir.byte_ledger, &all_ids, None, &mut findings);
     check_units(ir, &mut findings);
     check_references(ir, &ids, &mut findings);
     check_loops(ir, &mut findings);
@@ -88,4 +89,31 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
         findings,
         losses,
     }
+}
+
+/// Validate a neutral product model together with its decode-time source sidecar.
+pub fn validate_with_source_fidelity(
+    ir: &CadIr,
+    source_fidelity: &SourceFidelity,
+    losses: Vec<LossNote>,
+) -> ValidationReport {
+    let mut report = validate(ir, losses);
+    if source_fidelity.schema_version != SOURCE_FIDELITY_VERSION {
+        report.findings.push(Finding {
+            check: Check::Version,
+            severity: Severity::Error,
+            message: format!(
+                "unsupported source fidelity version {:?}; expected {:?}",
+                source_fidelity.schema_version, SOURCE_FIDELITY_VERSION
+            ),
+            entity: None,
+        });
+    }
+    check_byte_ledger(
+        &source_fidelity.byte_ledger,
+        &HashSet::new(),
+        Some(&source_fidelity.retained_records),
+        &mut report.findings,
+    );
+    report
 }

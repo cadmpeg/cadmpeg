@@ -2,9 +2,10 @@
 //! Source-byte ledger validation.
 
 use crate::byte_ledger::ByteSpanClass;
-use crate::document::CadIr;
+use crate::byte_ledger::ByteLedger;
 use crate::report::{Check, Finding, Severity};
-use std::collections::HashSet;
+use crate::source_fidelity::RetainedSourceRecord;
+use std::collections::{BTreeMap, HashSet};
 
 fn finding(findings: &mut Vec<Finding>, message: impl Into<String>) {
     findings.push(Finding {
@@ -16,11 +17,41 @@ fn finding(findings: &mut Vec<Finding>, message: impl Into<String>) {
 }
 
 pub(super) fn check_byte_ledger(
-    ir: &CadIr,
-    retained_ids: &HashSet<String>,
+    ledger: &ByteLedger,
+    legacy_retained_ids: &HashSet<String>,
+    retained_records: Option<&[RetainedSourceRecord]>,
     findings: &mut Vec<Finding>,
 ) {
-    let ledger = &ir.byte_ledger;
+    let mut retained_by_id = BTreeMap::new();
+    for record in retained_records.unwrap_or_default() {
+        if record.id.is_empty() {
+            finding(findings, "retained source record has an empty id");
+        }
+        if retained_by_id.insert(record.id.as_str(), record).is_some() {
+            finding(
+                findings,
+                format!("duplicate retained source record {:?}", record.id),
+            );
+        }
+        if record.stream.is_empty() {
+            finding(
+                findings,
+                format!("retained source record {:?} has an empty stream", record.id),
+            );
+        }
+        if record.byte_len != record.data.len() as u64 {
+            finding(
+                findings,
+                format!("retained source record {:?} byte length disagrees with its data", record.id),
+            );
+        }
+        if crate::hash::sha256_hex(&record.data) != record.sha256 {
+            finding(
+                findings,
+                format!("retained source record {:?} digest disagrees with its data", record.id),
+            );
+        }
+    }
     if ledger.source_length == 0 {
         if !ledger.spans.is_empty() {
             finding(findings, "empty source byte ledger contains spans");
@@ -79,18 +110,24 @@ pub(super) fn check_byte_ledger(
             ),
             _ => {}
         }
-        if span
-            .retained_record
-            .as_ref()
-            .is_some_and(|id| !retained_ids.contains(id))
-        {
-            finding(
-                findings,
-                format!(
-                    "byte ledger retained record {:?} does not resolve",
-                    span.retained_record.as_deref().unwrap_or_default()
-                ),
-            );
+        if let Some(id) = span.retained_record.as_deref() {
+            if let Some(record) = retained_by_id.get(id) {
+                let record_end = record.offset.checked_add(record.byte_len);
+                if record.stream != "source"
+                    || record.offset != span.start
+                    || record_end != Some(span.end)
+                {
+                    finding(
+                        findings,
+                        format!("opaque byte ledger span and retained record {id:?} ranges disagree"),
+                    );
+                }
+            } else if retained_records.is_some() || !legacy_retained_ids.contains(id) {
+                finding(
+                    findings,
+                    format!("byte ledger retained record {id:?} does not resolve"),
+                );
+            }
         }
         expected_start = expected_start.max(span.end);
     }
