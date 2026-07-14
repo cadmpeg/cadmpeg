@@ -403,7 +403,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 23);
+    assert_eq!(namespace.version, 24);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -500,6 +500,52 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind == "DATUM_PLANE"
     ));
+}
+
+#[test]
+fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
+    use crate::native::{FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord};
+
+    let label = FeatureOperationLabel {
+        id: "nx:feature-history:operation-label#0-7".to_string(),
+        section_link: "nx:feature-history#0".to_string(),
+        ordinal: 7,
+        value: "SKETCH".to_string(),
+        object_indices: [Some(45), None, Some(81), None],
+        source_offset: 700,
+    };
+    let record = FeatureOperationRecord {
+        id: "nx:feature-history:operation-record#0-7".to_string(),
+        operation_label: label.id.clone(),
+        ordinal: 7,
+        byte_len: 173,
+        sha256: "00".repeat(32),
+        source_offset: 700,
+    };
+    let input = |slot, index| FeatureInputBlock {
+        id: format!("nx:feature-history:input-block#0-7-{slot}"),
+        operation_label: label.id.clone(),
+        input_slot: slot,
+        object_index: index,
+        data_block: format!("nx:om-data-blocks-2:block#{index}"),
+        source_offset: 710 + u64::from(slot),
+    };
+    let inputs = [input(2, 81), input(0, 45)];
+
+    let sketches = crate::native::feature_sketch_records(&[label], &[record], &inputs);
+    assert_eq!(sketches.len(), 1);
+    assert_eq!(sketches[0].ordinal, 7);
+    assert_eq!(
+        sketches[0].operation_record,
+        "nx:feature-history:operation-record#0-7"
+    );
+    assert_eq!(
+        sketches[0].input_blocks,
+        [
+            "nx:feature-history:input-block#0-7-0",
+            "nx:feature-history:input-block#0-7-2"
+        ]
+    );
 }
 
 #[test]
@@ -3494,7 +3540,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 23);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 24);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

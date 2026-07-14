@@ -115,7 +115,11 @@ Boolean additionally depends on the preceding operation in each tool-body
 lineage, preserving tool order and omitting duplicate dependencies.
 
 An operation label equal to `SKETCH` denotes a planar sketch history node. Its
-position in the operation sequence is the sketch's history position.
+position in the operation sequence is the sketch's history position. The
+sketch record consists of that label, the operation record beginning at the
+same header, and its uniquely resolved non-null input blocks in header-slot
+order. A missing operation boundary prevents formation of the sketch record;
+an unresolved input slot remains absent without reordering the other slots.
 
 ### 2.1 Stream inventory
 

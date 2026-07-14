@@ -217,6 +217,23 @@ pub struct FeatureInputBlock {
     pub source_offset: u64,
 }
 
+/// Ordered sketch-history record and its exact native input lanes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchRecord {
+    /// Globally unique sketch-record identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Zero-based order within the feature-history area.
+    pub ordinal: u32,
+    /// Exact bounded operation record.
+    pub operation_record: String,
+    /// Resolved input bindings in header-slot order.
+    pub input_blocks: Vec<String>,
+    /// Absolute file offset of the operation label.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -541,6 +558,39 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
         }
     }
     inputs
+}
+
+/// Join each sketch operation to its bounded record and ordered input blocks.
+pub fn feature_sketch_records(
+    labels: &[FeatureOperationLabel],
+    records: &[FeatureOperationRecord],
+    inputs: &[FeatureInputBlock],
+) -> Vec<FeatureSketchRecord> {
+    labels
+        .iter()
+        .filter(|label| label.value == "SKETCH")
+        .filter_map(|label| {
+            let record = records
+                .iter()
+                .find(|record| record.operation_label == label.id)?;
+            let mut input_blocks = inputs
+                .iter()
+                .filter(|input| input.operation_label == label.id)
+                .collect::<Vec<_>>();
+            input_blocks.sort_by_key(|input| input.input_slot);
+            Some(FeatureSketchRecord {
+                id: label.id.replacen("operation-label", "sketch-record", 1),
+                operation_label: label.id.clone(),
+                ordinal: label.ordinal,
+                operation_record: record.id.clone(),
+                input_blocks: input_blocks
+                    .into_iter()
+                    .map(|input| input.id.clone())
+                    .collect(),
+                source_offset: label.source_offset,
+            })
+        })
+        .collect()
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

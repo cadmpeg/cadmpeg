@@ -2753,6 +2753,11 @@ fn attach_native_object_model(
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
     let feature_body_references = crate::native::feature_body_references(&scan.container);
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
+    let feature_sketch_records = crate::native::feature_sketch_records(
+        &feature_operation_labels,
+        &feature_operation_records,
+        &feature_input_blocks,
+    );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
@@ -2778,6 +2783,7 @@ fn attach_native_object_model(
         && feature_operation_records.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
+        && feature_sketch_records.is_empty()
         && feature_boolean_operations.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
@@ -2832,6 +2838,12 @@ fn attach_native_object_model(
             .note(&label.id, annotation_stream, label.source_offset)
             .tag("FEATURE_OPERATION_LABEL");
         annotations.exactness(&label.id, Exactness::ByteExact);
+    }
+    for sketch in &feature_sketch_records {
+        annotations
+            .note(&sketch.id, annotation_stream, sketch.source_offset)
+            .tag("FEATURE_SKETCH_RECORD");
+        annotations.exactness(&sketch.id, Exactness::Derived);
     }
     for record in &feature_operation_records {
         annotations
@@ -2969,7 +2981,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(23);
+    namespace.version = namespace.version.max(24);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2996,6 +3008,9 @@ fn attach_native_object_model(
     }
     if !feature_input_blocks.is_empty() {
         namespace.set_arena("feature_input_blocks", &feature_input_blocks)?;
+    }
+    if !feature_sketch_records.is_empty() {
+        namespace.set_arena("feature_sketch_records", &feature_sketch_records)?;
     }
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
