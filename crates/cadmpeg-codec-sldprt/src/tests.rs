@@ -1810,6 +1810,53 @@ fn parasolid_extracts_every_direct_stream_in_block() {
 }
 
 #[test]
+fn parasolid_mesh_polyline_decodes_counted_xyz_array() {
+    let description = b"boundary_polyline mesh";
+    let schema = b"SCH_3201255_32001_13006";
+    let mut stream = b"PS\0\0".to_vec();
+    stream.extend((description.len() as u16).to_be_bytes());
+    stream.extend(description);
+    stream.push(schema.len() as u8);
+    stream.extend(schema);
+    stream.extend([0xff, 0xff, 0xff, 0xff, 0x00, 0x22]);
+    stream.extend(6u32.to_be_bytes());
+    stream.extend([0x00, 0x22]);
+    for value in [1.0f64, 2.0, 3.0, 4.0, 5.0, 6.0] {
+        stream.extend(value.to_be_bytes());
+    }
+    assert_eq!(
+        crate::parasolid::mesh_polyline(&stream),
+        Some(vec![
+            cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+            cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0),
+        ])
+    );
+}
+
+#[test]
+fn helix_polyline_fit_recovers_axis_radius_and_rise() {
+    let points = (0..=64)
+        .map(|index| {
+            let t = f64::from(index) / 64.0;
+            let angle = std::f64::consts::FRAC_PI_2 * t;
+            cadmpeg_ir::math::Point3::new(
+                10.0 + 3.5 * angle.cos(),
+                20.0 - 3.2 * t,
+                30.0 + 3.5 * angle.sin(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let (origin, axis, radius, rise) =
+        crate::resolved_features::fit_helix_polyline(&points, 0.25, false).unwrap();
+    assert!((origin.x - 10.0).abs() < 1.0e-9);
+    assert!((origin.y - 20.0).abs() < 1.0e-9);
+    assert!((origin.z - 30.0).abs() < 1.0e-9);
+    assert_eq!(axis, cadmpeg_ir::math::Vector3::new(0.0, -1.0, 0.0));
+    assert!((radius - 3.5).abs() < 1.0e-9);
+    assert!((rise - 3.2).abs() < 1.0e-9);
+}
+
+#[test]
 fn inspect_enumerates_every_structure() {
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);

@@ -11,7 +11,7 @@ use crate::records::{
     SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PathRef, PatternKind};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, PathRef, PatternKind};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
@@ -2044,6 +2044,317 @@ pub(crate) fn bind_scalar_operands(
         lane.edge_selections = compact_edge_selections(histories, lane);
         lane.surface_selections = compact_surface_selections(histories, lane);
     }
+}
+
+/// Resolve helix placement from the counted curve mesh stored in its feature
+/// object. Promotion requires one mesh stream and a circular-helix fit whose
+/// residual is small relative to its radius.
+pub(crate) fn project_helix_axes(
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let records = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    for model_feature in model_features {
+        let FeatureDefinition::HelixNativeAxis {
+            axial_rise,
+            revolutions,
+            start_angle,
+            clockwise,
+            ..
+        } = &model_feature.definition
+        else {
+            continue;
+        };
+        let Some(native_ref) = model_feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(record) = records.get(native_ref).copied() else {
+            continue;
+        };
+        let mut meshes = Vec::new();
+        for lane in lanes {
+            let Some(name) = feature_object_name(record, lane) else {
+                continue;
+            };
+            let start = usize::try_from(name.offset).ok();
+            let end = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .filter_map(|feature| feature_object_name(feature, lane))
+                .filter(|candidate| candidate.offset > name.offset)
+                .map(|candidate| candidate.offset)
+                .min()
+                .and_then(|offset| usize::try_from(offset).ok())
+                .unwrap_or(lane.native_payload.len());
+            let Some(object) = start.and_then(|start| lane.native_payload.get(start..end)) else {
+                continue;
+            };
+            meshes.extend(
+                crate::parasolid::extract_streams(object)
+                    .into_iter()
+                    .filter_map(|stream| crate::parasolid::mesh_polyline(&stream)),
+            );
+        }
+        let [points] = meshes.as_slice() else {
+            continue;
+        };
+        let Some((axis_origin, mut axis_direction, radius, fitted_rise)) =
+            fit_helix_polyline(points, *revolutions, *clockwise)
+        else {
+            continue;
+        };
+        if fitted_rise * axial_rise.0 < 0.0 {
+            axis_direction = Vector3::new(-axis_direction.x, -axis_direction.y, -axis_direction.z);
+        }
+        let signed_rise = dot(
+            Vector3::new(
+                points.last().unwrap().x - points[0].x,
+                points.last().unwrap().y - points[0].y,
+                points.last().unwrap().z - points[0].z,
+            ),
+            axis_direction,
+        );
+        model_feature.definition = FeatureDefinition::Helix {
+            axis_origin,
+            axis_direction,
+            radius: Length(radius),
+            pitch: Length(signed_rise / *revolutions),
+            revolutions: *revolutions,
+            start_angle: *start_angle,
+            clockwise: *clockwise,
+        };
+    }
+}
+
+pub(crate) fn fit_helix_polyline(
+    points: &[Point3],
+    revolutions: f64,
+    clockwise: bool,
+) -> Option<(Point3, Vector3, f64, f64)> {
+    if points.len() < 6 || !revolutions.is_finite() || revolutions <= 0.0 {
+        return None;
+    }
+    let mut parameters = Vec::with_capacity(points.len());
+    parameters.push(0.0);
+    for pair in points.windows(2) {
+        let delta = Vector3::new(
+            pair[1].x - pair[0].x,
+            pair[1].y - pair[0].y,
+            pair[1].z - pair[0].z,
+        );
+        parameters.push(parameters.last().copied()? + dot(delta, delta).sqrt());
+    }
+    let total = *parameters.last()?;
+    if !total.is_finite() || total <= 0.0 {
+        return None;
+    }
+    let angle = std::f64::consts::TAU * revolutions * if clockwise { -1.0 } else { 1.0 };
+    let mut normal = [[0.0; 4]; 4];
+    let mut rhs = [[0.0; 3]; 4];
+    for (point, distance) in points.iter().zip(parameters) {
+        let t = distance / total;
+        let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
+        for i in 0..4 {
+            for j in 0..4 {
+                normal[i][j] += row[i] * row[j];
+            }
+            rhs[i][0] += row[i] * point.x;
+            rhs[i][1] += row[i] * point.y;
+            rhs[i][2] += row[i] * point.z;
+        }
+    }
+    let x = solve_four(normal, rhs)?;
+    let cosine = Vector3::new(x[2][0], x[2][1], x[2][2]);
+    let sine = Vector3::new(x[3][0], x[3][1], x[3][2]);
+    let mut axis = cross(cosine, sine);
+    let axis_length = dot(axis, axis).sqrt();
+    if !axis_length.is_finite() || axis_length <= 0.0 {
+        return None;
+    }
+    axis = Vector3::new(
+        axis.x / axis_length,
+        axis.y / axis_length,
+        axis.z / axis_length,
+    );
+    let radial_cosine = subtract_axis(cosine, axis);
+    let radial_sine = subtract_axis(sine, axis);
+    let radius_estimate =
+        (dot(radial_cosine, radial_cosine).sqrt() + dot(radial_sine, radial_sine).sqrt()) * 0.5;
+    if !radius_estimate.is_finite() || radius_estimate <= 0.0 {
+        return None;
+    }
+    let mut max_error = 0.0f64;
+    for (point, distance) in
+        points.iter().zip(
+            std::iter::once(0.0).chain(points.windows(2).scan(0.0, |sum, pair| {
+                let delta = Vector3::new(
+                    pair[1].x - pair[0].x,
+                    pair[1].y - pair[0].y,
+                    pair[1].z - pair[0].z,
+                );
+                *sum += dot(delta, delta).sqrt();
+                Some(*sum)
+            })),
+        )
+    {
+        let t = distance / total;
+        let row = [1.0, t, (angle * t).cos(), (angle * t).sin()];
+        for (coordinate, actual) in [point.x, point.y, point.z].into_iter().enumerate() {
+            let fitted = (0..4).map(|i| row[i] * x[i][coordinate]).sum::<f64>();
+            max_error = max_error.max((fitted - actual).abs());
+        }
+    }
+    if max_error > radius_estimate * 5.0e-4 {
+        return None;
+    }
+    let snap = (max_error / radius_estimate * 20.0).max(1.0e-10);
+    for component in [&mut axis.x, &mut axis.y, &mut axis.z] {
+        if component.abs() < snap {
+            *component = 0.0;
+        }
+    }
+    let normalized = dot(axis, axis).sqrt();
+    axis = Vector3::new(
+        axis.x / normalized,
+        axis.y / normalized,
+        axis.z / normalized,
+    );
+    let (origin, radius) = fit_circle_on_axis(points, axis)?;
+    let displacement = Vector3::new(
+        points.last()?.x - points[0].x,
+        points.last()?.y - points[0].y,
+        points.last()?.z - points[0].z,
+    );
+    Some((origin, axis, radius, dot(displacement, axis)))
+}
+
+fn fit_circle_on_axis(points: &[Point3], axis: Vector3) -> Option<(Point3, f64)> {
+    let helper = if axis.x.abs() <= axis.y.abs() && axis.x.abs() <= axis.z.abs() {
+        Vector3::new(1.0, 0.0, 0.0)
+    } else if axis.y.abs() <= axis.z.abs() {
+        Vector3::new(0.0, 1.0, 0.0)
+    } else {
+        Vector3::new(0.0, 0.0, 1.0)
+    };
+    let mut u = cross(axis, helper);
+    let u_length = dot(u, u).sqrt();
+    u = Vector3::new(u.x / u_length, u.y / u_length, u.z / u_length);
+    let v = cross(axis, u);
+    let reference = points[0];
+    let mut normal = [[0.0; 3]; 3];
+    let mut rhs = [0.0; 3];
+    for point in points {
+        let delta = Vector3::new(
+            point.x - reference.x,
+            point.y - reference.y,
+            point.z - reference.z,
+        );
+        let x = dot(delta, u);
+        let y = dot(delta, v);
+        let row = [x, y, 1.0];
+        let target = -(x * x + y * y);
+        for i in 0..3 {
+            rhs[i] += row[i] * target;
+            for j in 0..3 {
+                normal[i][j] += row[i] * row[j];
+            }
+        }
+    }
+    let solution = solve_three(normal, rhs)?;
+    let center_u = -solution[0] * 0.5;
+    let center_v = -solution[1] * 0.5;
+    let radius_squared = center_u * center_u + center_v * center_v - solution[2];
+    if !radius_squared.is_finite() || radius_squared <= 0.0 {
+        return None;
+    }
+    Some((
+        Point3::new(
+            reference.x + center_u * u.x + center_v * v.x,
+            reference.y + center_u * u.y + center_v * v.y,
+            reference.z + center_u * u.z + center_v * v.z,
+        ),
+        radius_squared.sqrt(),
+    ))
+}
+
+fn solve_three(mut matrix: [[f64; 3]; 3], mut rhs: [f64; 3]) -> Option<[f64; 3]> {
+    for column in 0..3 {
+        let pivot = (column..3).max_by(|left, right| {
+            matrix[*left][column]
+                .abs()
+                .total_cmp(&matrix[*right][column].abs())
+        })?;
+        if matrix[pivot][column].abs() <= 1.0e-14 {
+            return None;
+        }
+        matrix.swap(column, pivot);
+        rhs.swap(column, pivot);
+        let scale = matrix[column][column];
+        for value in &mut matrix[column][column..] {
+            *value /= scale;
+        }
+        rhs[column] /= scale;
+        for row in 0..3 {
+            if row == column {
+                continue;
+            }
+            let factor = matrix[row][column];
+            for index in column..3 {
+                matrix[row][index] -= factor * matrix[column][index];
+            }
+            rhs[row] -= factor * rhs[column];
+        }
+    }
+    Some(rhs)
+}
+
+fn subtract_axis(vector: Vector3, axis: Vector3) -> Vector3 {
+    let axial = dot(vector, axis);
+    Vector3::new(
+        vector.x - axial * axis.x,
+        vector.y - axial * axis.y,
+        vector.z - axial * axis.z,
+    )
+}
+
+fn solve_four(mut matrix: [[f64; 4]; 4], mut rhs: [[f64; 3]; 4]) -> Option<[[f64; 3]; 4]> {
+    for column in 0..4 {
+        let pivot = (column..4).max_by(|left, right| {
+            matrix[*left][column]
+                .abs()
+                .total_cmp(&matrix[*right][column].abs())
+        })?;
+        if matrix[pivot][column].abs() <= 1.0e-14 {
+            return None;
+        }
+        matrix.swap(column, pivot);
+        rhs.swap(column, pivot);
+        let scale = matrix[column][column];
+        for value in &mut matrix[column][column..] {
+            *value /= scale;
+        }
+        for value in &mut rhs[column] {
+            *value /= scale;
+        }
+        for row in 0..4 {
+            if row == column {
+                continue;
+            }
+            let factor = matrix[row][column];
+            for index in column..4 {
+                matrix[row][index] -= factor * matrix[column][index];
+            }
+            for index in 0..3 {
+                rhs[row][index] -= factor * rhs[column][index];
+            }
+        }
+    }
+    Some(rhs)
 }
 
 pub(crate) fn resolve_scalar_operand_markers<'a>(

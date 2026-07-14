@@ -1157,6 +1157,11 @@ fn project_design_history(
         &semantic_projection,
         lanes,
     );
+    crate::resolved_features::project_helix_axes(
+        &mut ir.model.features,
+        &semantic_projection,
+        lanes,
+    );
     crate::resolved_features::project_adjacent_extrusion_profiles(
         &mut ir.model.features,
         &semantic_projection,

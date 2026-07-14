@@ -273,6 +273,8 @@ Point-distance operands select explicit profile loci. Line-distance and angular 
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the signed total axial rise, `D4` is the signed axial rise per revolution, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis and radius.
 
+The corresponding feature-input object contains one nested schema-format `13006` Parasolid mesh stream. Its polyline coordinate array is a big-endian u32 scalar count, the `00 22` array tag, and `count / 3` consecutive big-endian f64 xyz triples. The ordered points sample the helix from start to end. Their circular projection determines the axis placement and radius; their signed displacement along that axis determines total rise and pitch.
+
 An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object and followed by its path feature object. The preceding object identifies the repeated neutral feature. When the following object is an `moProfileFeature_c` sketch with one resolved neutral sketch, that sketch is the curve-driven pattern path. A missing or multiply addressed adjacent object, or a following object that is not a resolved sketch, leaves both pattern inputs unresolved.
 
 An `moLineRef_w` declaration has two direction layouts. When two consecutive `c7 cf ff ff` words occur at declaration offsets `+136` and `+140` and `f8 2a 00 00` occurs at `+148`, three little-endian f64 values at `+200`, `+208`, and `+216` store its unit xyz direction. When three consecutive `c7 cf ff ff` words occur at `+144`, `+148`, and `+152` and `f8 2a 00 00` occurs at `+160`, the unit xyz direction is at `+220`, `+228`, and `+236`.

@@ -3292,6 +3292,7 @@ pub fn prepare_features_for_write(
         validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
         validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
         validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
+        validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
         return sync_neutral_features(
             &ir.model.features,
             &ir.model.parameters,
@@ -3319,6 +3320,7 @@ pub fn prepare_features_for_write(
             validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
             validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
             validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
+            validate_embedded_helix_edits(&ir.model.features, native.as_ref())?;
             sync_neutral_features(
                 &ir.model.features,
                 &ir.model.parameters,
@@ -3327,6 +3329,45 @@ pub fn prepare_features_for_write(
             )
         }
     }
+}
+
+fn validate_embedded_helix_edits(
+    features: &[cadmpeg_ir::features::Feature],
+    native: Option<&crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let Some(native) = native else {
+        return Ok(());
+    };
+    let embedded = project_features(&native.feature_histories)
+        .into_iter()
+        .filter_map(|feature| {
+            matches!(
+                feature.definition,
+                FeatureDefinition::HelixNativeAxis { .. }
+            )
+            .then_some(feature.id)
+        })
+        .collect::<HashSet<_>>();
+    let expected = project_features_with_native_inputs(native)
+        .into_iter()
+        .filter_map(|feature| {
+            (embedded.contains(&feature.id)
+                && matches!(feature.definition, FeatureDefinition::Helix { .. }))
+            .then_some((feature.id, feature.definition))
+        })
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let Some(expected) = expected.get(&feature.id) else {
+            continue;
+        };
+        if &feature.definition != expected {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes embedded helix geometry",
+                feature.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_surface_sweep_profile_edits(
@@ -3418,6 +3459,11 @@ fn project_features_with_native_inputs(
         &native.feature_input_lanes,
     );
     crate::resolved_features::project_surface_sweep_profiles(
+        &mut features,
+        &histories,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::project_helix_axes(
         &mut features,
         &histories,
         &native.feature_input_lanes,
