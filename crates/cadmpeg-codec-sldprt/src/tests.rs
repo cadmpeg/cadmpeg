@@ -95,6 +95,30 @@ fn native_version_one_migrates_the_body_selection_arena() {
 }
 
 #[test]
+fn native_version_two_migrates_the_edge_selection_arena() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    legacy.version = 2;
+    legacy.arenas.remove("feature_input_edge_selections");
+
+    let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
+    assert_eq!(migrated.version, crate::native::SLDPRT_NATIVE_VERSION);
+    assert!(migrated
+        .feature_input_lanes
+        .iter()
+        .all(|lane| lane.edge_selections.is_empty()));
+    let mut current = cadmpeg_ir::NativeNamespace::default();
+    migrated.store(&mut current).unwrap();
+    assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
+    assert!(current.arenas.contains_key("feature_input_edge_selections"));
+}
+
+#[test]
 fn native_future_version_remains_rejected() {
     let decoded = SldprtCodec
         .decode(

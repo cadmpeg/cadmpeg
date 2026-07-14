@@ -5,13 +5,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::records::{
-    FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputLane,
-    FeatureInputName, FeatureInputReference, FeatureInputRelationBinding,
+    FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
+    FeatureInputLane, FeatureInputName, FeatureInputReference, FeatureInputRelationBinding,
     FeatureInputRelationInstance, FeatureInputScalar, PmiDimension,
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 2;
+pub const SLDPRT_NATIVE_VERSION: u32 = 3;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -23,6 +23,7 @@ pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "feature_histories",
     "feature_input_body_selections",
     "feature_input_classes",
+    "feature_input_edge_selections",
     "feature_input_lanes",
     "feature_input_names",
     "feature_input_references",
@@ -92,6 +93,15 @@ impl SldprtNative {
         } else {
             namespace.arena_as("feature_input_body_selections")?
         };
+        let edge_selections: Vec<FeatureInputEdgeSelection> = if namespace.version <= 2
+            && !namespace
+                .arenas
+                .contains_key("feature_input_edge_selections")
+        {
+            Vec::new()
+        } else {
+            namespace.arena_as("feature_input_edge_selections")?
+        };
         let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
         let references: Vec<FeatureInputReference> =
             namespace.arena_as("feature_input_references")?;
@@ -156,6 +166,15 @@ impl SldprtNative {
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input body selection {} references {}",
+                record.id, record.parent
+            )));
+        }
+        if let Some(record) = edge_selections
+            .iter()
+            .find(|record| !lane_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature-input edge selection {} references {}",
                 record.id, record.parent
             )));
         }
@@ -227,6 +246,16 @@ impl SldprtNative {
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input body selection {} has unresolved ownership",
+                record.id
+            )));
+        }
+        if let Some(record) = edge_selections.iter().find(|record| {
+            !name_ids.contains(record.object_name_ref.as_str())
+                || !feature_ids.contains(record.feature_ref.as_str())
+                || record.local_edge_ids.is_empty()
+        }) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature-input edge selection {} has unresolved ownership",
                 record.id
             )));
         }
@@ -403,6 +432,25 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            lane.edge_selections = edge_selections
+                .iter()
+                .filter(|record| record.parent == lane.id)
+                .cloned()
+                .collect();
+            lane.edge_selections.sort_by_key(|record| record.ordinal);
+            if let Some(record) = lane.edge_selections.iter().find(|record| {
+                usize::try_from(record.offset).ok().and_then(|offset| {
+                    crate::resolved_features::compact_edge_selection_at(
+                        &lane.native_payload,
+                        offset,
+                    )
+                }) != Some(record.local_edge_ids.clone())
+            }) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature-input edge selection {} disagrees with its payload",
+                    record.id
+                )));
+            }
             lane.sketch_entities = entities
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -498,6 +546,23 @@ impl SldprtNative {
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input body selection {} has inconsistent ownership",
+                    record.id
+                )));
+            }
+            if let Some(record) = lane.edge_selections.iter().find(|record| {
+                record.parent != lane.id
+                    || !name_ids.contains(record.object_name_ref.as_str())
+                    || !feature_ids.contains(record.feature_ref.as_str())
+                    || record.local_edge_ids.is_empty()
+                    || usize::try_from(record.offset).ok().and_then(|offset| {
+                        crate::resolved_features::compact_edge_selection_at(
+                            &lane.native_payload,
+                            offset,
+                        )
+                    }) != Some(record.local_edge_ids.clone())
+            }) {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature-input edge selection {} has inconsistent ownership",
                     record.id
                 )));
             }
@@ -785,6 +850,7 @@ impl SldprtNative {
                 lane.relation_bindings.clear();
                 lane.relation_instances.clear();
                 lane.body_selections.clear();
+                lane.edge_selections.clear();
                 lane.references.clear();
                 lane.sketch_entities.clear();
                 lane
@@ -797,6 +863,14 @@ impl SldprtNative {
                 .feature_input_lanes
                 .iter()
                 .flat_map(|lane| lane.body_selections.clone())
+                .collect::<Vec<_>>(),
+        )?;
+        namespace.set_arena(
+            "feature_input_edge_selections",
+            &self
+                .feature_input_lanes
+                .iter()
+                .flat_map(|lane| lane.edge_selections.clone())
                 .collect::<Vec<_>>(),
         )?;
         namespace.set_arena(

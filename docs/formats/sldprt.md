@@ -137,6 +137,8 @@ A repeated class instance stores a little-endian u16 class token immediately bef
 
 A compact `moDeleteBody_c` object ends with a little-endian u32 schema word `11000`, two zero u32 words, a u32 selection count, that many ordered u32 feature-local body identifiers, the sentinel `ff ff ff ff`, and three zero u32 words. The object trailer after those zero words is empty, `6a cb`, or one zero u32 word.
 
+A declared `moCompEdge_c` child carries an ordered compact edge-selection vector. The vector marker is `7d c3 94 25 ad 49 b2 54 7d c3 94 25 ad 49 b2 54`. A little-endian u32 count occurs at marker −12, followed at marker −8 by `00 02 00 00 00 00 00 00`. Two zero bytes follow the marker. Each selected edge entry contains a four-byte instance cell, a 12-byte type signature shared by every entry in the vector, and a little-endian u32 feature-local edge identifier. Consecutive entries are adjacent or separated by four zero bytes, eight zero bytes, or `ff ff ff ff 00 00 00 00`. The first vector following the child declaration belongs to the enclosing fillet or chamfer feature object.
+
 `moExtrusion_c` and `moICE_c` are extrusion feature classes. `moProfileFeature_c` and `mo3DProfileFeature_c` are planar and spatial sketch feature classes. `moCombineBodies_c` is the body-Boolean feature class. `moConstSurfRef_w`, `moEndPointRef_w`, `moGeneralCurveRef_w`, `moLineRef_w`, `moSingleFaceRef_w`, `moSolidRef_w`, `moCompReferenceCurve_c`, and `moCompSurfaceBody_c` identify reference objects rather than feature operations.
 
 `moSweep_c` produces a solid sweep. Its Boolean operation remains independently unresolved when no operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.

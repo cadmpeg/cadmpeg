@@ -887,6 +887,7 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::project_compact_body_selections(&mut ir.model.features, lanes);
+    crate::resolved_features::project_compact_edge_selections(&mut ir.model.features, lanes);
     ir.model.configurations = crate::history::project_configurations(&semantic_projection);
     let mut parameter_projection = histories.to_vec();
     crate::resolved_features::enrich_history_parameters(&mut parameter_projection, lanes, false);
