@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 112);
+    assert_eq!(namespace.version, 113);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1299,6 +1299,45 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
     let mut zero = first;
     zero[7] = b'0';
     assert!(crate::om::offset_store_named_point(&[&zero, &second]).is_none());
+}
+
+#[test]
+fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
+    use crate::native::{
+        feature_sketch_named_point_block_uses, FeatureSketchReference, OffsetStoreNamedPoint,
+    };
+
+    let point = OffsetStoreNamedPoint {
+        id: "nx:offset-store:named-point#2-10".to_string(),
+        name: "Point1".to_string(),
+        data_blocks: vec!["block-10".to_string(), "block-11".to_string()],
+        values: [1.0, 2.0],
+        value_source_offsets: [100, 120],
+        source_offset: 90,
+    };
+    let reference = |id: &str, ordinal: u32, block: Option<&str>| FeatureSketchReference {
+        id: id.to_string(),
+        operation_label: "nx:feature-history:operation-label#1-4".to_string(),
+        ordinal,
+        declared_count: 2,
+        terminal: ordinal == 1,
+        object_index: 10 + ordinal,
+        data_block: block.map(str::to_string),
+        source_offset: 200 + u64::from(ordinal),
+    };
+    let uses = feature_sketch_named_point_block_uses(
+        &[
+            reference("miss", 0, Some("block-9")),
+            reference("hit", 1, Some("block-11")),
+            reference("unresolved", 2, None),
+        ],
+        &[point],
+    );
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].sketch_reference, "hit");
+    assert_eq!(uses[0].reference_ordinal, 1);
+    assert_eq!(uses[0].point_block_ordinal, 1);
+    assert_eq!(uses[0].data_block, "block-11");
 }
 
 #[test]
@@ -5537,7 +5576,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 112);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 113);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

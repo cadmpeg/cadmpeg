@@ -874,6 +874,27 @@ pub struct OffsetStoreNamedPoint {
     pub source_offset: u64,
 }
 
+/// Exact reuse of one named-point block by a sketch reference.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchNamedPointBlockUse {
+    /// Globally unique block-use identity.
+    pub id: String,
+    /// Sketch operation carrying the reference.
+    pub operation_label: String,
+    /// Typed sketch-reference occurrence.
+    pub sketch_reference: String,
+    /// Reference order within the sketch field.
+    pub reference_ordinal: u32,
+    /// Typed named-point object containing the block.
+    pub named_point: String,
+    /// Shared offset-store block.
+    pub data_block: String,
+    /// Block position within the named-point span.
+    pub point_block_ordinal: u32,
+    /// Absolute source offset of the sketch reference.
+    pub source_offset: u64,
+}
+
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchReference {
@@ -2971,6 +2992,50 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
         }
     }
     points
+}
+
+/// Join sketch references to named points through exact shared block identity.
+pub fn feature_sketch_named_point_block_uses(
+    references: &[FeatureSketchReference],
+    points: &[OffsetStoreNamedPoint],
+) -> Vec<FeatureSketchNamedPointBlockUse> {
+    let mut uses = Vec::new();
+    for reference in references {
+        let Some(data_block) = reference.data_block.as_deref() else {
+            continue;
+        };
+        for point in points {
+            let Some(point_block_ordinal) = point
+                .data_blocks
+                .iter()
+                .position(|block| block == data_block)
+            else {
+                continue;
+            };
+            let operation_key = reference
+                .operation_label
+                .rsplit_once('#')
+                .map_or(reference.operation_label.as_str(), |(_, key)| key);
+            let point_key = point
+                .id
+                .rsplit_once('#')
+                .map_or(point.id.as_str(), |(_, key)| key);
+            uses.push(FeatureSketchNamedPointBlockUse {
+                id: format!(
+                    "nx:feature-history:sketch-named-point-block-use#{operation_key}-{}-{point_key}-{point_block_ordinal}",
+                    reference.ordinal
+                ),
+                operation_label: reference.operation_label.clone(),
+                sketch_reference: reference.id.clone(),
+                reference_ordinal: reference.ordinal,
+                named_point: point.id.clone(),
+                data_block: data_block.to_string(),
+                point_block_ordinal: point_block_ordinal as u32,
+                source_offset: reference.source_offset,
+            });
+        }
+    }
+    uses
 }
 
 pub(crate) fn parse_sketch_point_name(value: &str) -> Option<u32> {

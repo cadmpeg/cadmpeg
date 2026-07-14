@@ -2906,6 +2906,11 @@ fn attach_native_object_model(
         &feature_sketch_payload_scalars,
     );
     let offset_store_named_points = crate::native::offset_store_named_points(&scan.container);
+    let feature_sketch_named_point_block_uses =
+        crate::native::feature_sketch_named_point_block_uses(
+            &feature_sketch_references,
+            &offset_store_named_points,
+        );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expression_declarations = crate::native::expression_declarations(&scan.container);
     let data_block_object_frames = crate::native::data_block_object_frames(&scan.container);
@@ -2994,6 +2999,7 @@ fn attach_native_object_model(
         && feature_sketch_payload_named_records.is_empty()
         && feature_sketch_points.is_empty()
         && offset_store_named_points.is_empty()
+        && feature_sketch_named_point_block_uses.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
         && data_block_object_frames.is_empty()
@@ -3060,6 +3066,12 @@ fn attach_native_object_model(
             .note(&point.id, annotation_stream, point.source_offset)
             .tag("OFFSET_STORE_NAMED_POINT");
         annotations.exactness(&point.id, Exactness::ByteExact);
+    }
+    for block_use in &feature_sketch_named_point_block_uses {
+        annotations
+            .note(&block_use.id, annotation_stream, block_use.source_offset)
+            .tag("SKETCH_NAMED_POINT_BLOCK_USE");
+        annotations.exactness(&block_use.id, Exactness::ByteExact);
     }
     for group in &feature_input_block_identity_groups {
         annotations
@@ -3298,6 +3310,7 @@ fn attach_native_object_model(
             datum_plane_payloads: &feature_datum_plane_payloads,
             datum_plane_csys_identity_uses: &feature_datum_plane_csys_identity_uses,
             sketch_references: &feature_sketch_references,
+            sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
             extrude_profile_references: &feature_extrude_profile_references,
             extrude_construction_profiles: &feature_extrude_construction_profiles,
             operation_body_operands: &feature_operation_body_operands,
@@ -3324,7 +3337,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(112);
+    namespace.version = namespace.version.max(113);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3583,6 +3596,12 @@ fn attach_native_object_model(
     if !offset_store_named_points.is_empty() {
         namespace.set_arena("offset_store_named_points", &offset_store_named_points)?;
     }
+    if !feature_sketch_named_point_block_uses.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_named_point_block_uses",
+            &feature_sketch_named_point_block_uses,
+        )?;
+    }
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
     }
@@ -3693,6 +3712,7 @@ struct FeatureOperationSources<'a> {
     datum_plane_payloads: &'a [crate::native::FeatureDatumPlanePayload],
     datum_plane_csys_identity_uses: &'a [crate::native::FeatureDatumPlaneCsysIdentityUse],
     sketch_references: &'a [crate::native::FeatureSketchReference],
+    sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
     operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
@@ -3731,6 +3751,7 @@ fn attach_feature_operations(
         datum_plane_payloads,
         datum_plane_csys_identity_uses,
         sketch_references,
+        sketch_named_point_block_uses,
         extrude_profile_references,
         extrude_construction_profiles,
         operation_body_operands,
@@ -3837,6 +3858,14 @@ fn attach_feature_operations(
             .entry(reference.operation_label.as_str())
             .or_default()
             .push(reference);
+    }
+    let mut sketch_named_point_uses_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureSketchNamedPointBlockUse>>::new();
+    for block_use in sketch_named_point_block_uses {
+        sketch_named_point_uses_by_operation
+            .entry(block_use.operation_label.as_str())
+            .or_default()
+            .push(block_use);
     }
     let mut extrude_profile_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureExtrudeProfileReference>>::new();
@@ -4153,6 +4182,17 @@ fn attach_feature_operations(
                     .data_block
                     .clone()
                     .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        for (ordinal, block_use) in sketch_named_point_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("sketch_named_point_block_use.{ordinal}"),
+                block_use.id.clone(),
             );
         }
         for reference in extrude_profile_references_by_operation
