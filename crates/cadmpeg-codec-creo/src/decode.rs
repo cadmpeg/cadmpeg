@@ -6397,6 +6397,14 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         );
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
+        let parent = operation.parent_feature_id.and_then(|parent_feature_id| {
+            let parent = IrFeatureId(format!("creo:model:feature#{parent_feature_id}"));
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.id == parent)
+                .then_some(parent)
+        });
         let operation_section = scan
             .sections
             .iter()
@@ -6424,7 +6432,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                 .display_name_stored
                 .then(|| format!("{} id {}", operation.kind, operation.feature_id)),
             suppressed: false,
-            parent: None,
+            parent,
             dependencies,
             source_properties,
             source_tag: operation.recipe.map(|recipe| match recipe {

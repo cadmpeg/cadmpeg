@@ -2446,13 +2446,17 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
 
 #[test]
 fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
-    let depdb = b"\xe3\
+    let depdb = b"\xe3K\xc3\xb6rper ID 8051\0\xe3\
         \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", depdb)]);
     let scan = container::scan_bytes(data.clone());
-    assert_eq!(scan.feature_operations.len(), 1);
-    assert_eq!(scan.feature_operations[0].feature_id, 8053);
+    assert_eq!(scan.feature_operations.len(), 2);
+    let operation = scan
+        .feature_operations
+        .iter()
+        .find(|operation| operation.feature_id == 8053)
+        .expect("recipe operation");
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let feature = result
@@ -2463,6 +2467,21 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
         .expect("recipe feature");
     assert_eq!(feature.name, None);
+    assert_eq!(
+        feature
+            .parent
+            .as_ref()
+            .map(cadmpeg_ir::features::FeatureId::as_str),
+        Some("creo:model:feature#8051")
+    );
+    assert_eq!(
+        feature
+            .dependencies
+            .iter()
+            .map(cadmpeg_ir::features::FeatureId::as_str)
+            .collect::<Vec<_>>(),
+        ["creo:model:feature#8051"]
+    );
     assert_eq!(feature.source_tag.as_deref(), Some("protextrude"));
     assert_eq!(
         feature.source_properties.get("recipe").map(String::as_str),
@@ -2472,7 +2491,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         &result.ir,
         "creo:model:feature#8053",
         "creo:DEPDB_DATA",
-        scan.feature_operations[0].offset as u64,
+        operation.offset as u64,
         "feature_recipe",
         Exactness::ByteExact,
     );
