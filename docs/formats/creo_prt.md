@@ -341,6 +341,11 @@ The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
 the last row may terminate directly at the next structural or named record.
 
+Within the three four-slot `relat_ptr` operand vectors, `e5` expands to two
+zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
+and `f6` is a null operand. Expansion is bounded independently at four slots
+for each of `a`, `b`, and `c`.
+
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
 Positional rows may insert the two-byte `c0 80` wrapper before `type`. The
 wrapper does not change the following field layout. A compact `ext_id` value of

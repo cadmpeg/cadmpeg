@@ -738,6 +738,8 @@ pub struct FeatureRelation {
     pub used: u32,
     /// Exact encoded `a`, `b`, and `c` operand-vector block.
     pub operands: Vec<u8>,
+    /// Decoded four-slot `a`, `b`, and `c` operand vectors.
+    pub operand_vectors: Option<[[Option<u32>; 4]; 3]>,
     /// Stored relation sign selector.
     pub sign: u32,
     /// Stored dimension selector.
@@ -2282,6 +2284,45 @@ fn feature_relation_triples(
     rows
 }
 
+fn relation_operand_vectors(bytes: &[u8]) -> Option<[[Option<u32>; 4]; 3]> {
+    let mut values = Vec::with_capacity(12);
+    let mut cursor = 0;
+    while cursor < bytes.len() && values.len() < 12 {
+        match bytes[cursor] {
+            0xe4 => {
+                values.push(Some(1));
+                cursor += 1;
+            }
+            0xe5 => {
+                values.extend([Some(0); 2]);
+                cursor += 1;
+            }
+            0xe6 => {
+                values.extend([Some(0); 3]);
+                cursor += 1;
+            }
+            0xf6 => {
+                values.push(None);
+                cursor += 1;
+            }
+            _ => {
+                let value = next_solver_int(bytes, &mut cursor)?;
+                values.push(Some(value));
+            }
+        }
+    }
+    if cursor != bytes.len() || values.len() != 12 {
+        return None;
+    }
+    let mut chunks = values.chunks_exact(4);
+    let result = [
+        chunks.next()?.try_into().ok()?,
+        chunks.next()?.try_into().ok()?,
+        chunks.next()?.try_into().ok()?,
+    ];
+    chunks.next().is_none().then_some(result)
+}
+
 fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRelationTable> {
     let table = find_bytes(payload, b"relat_ptr\0", start, end)?;
     let mut cursor = table + b"relat_ptr\0".len();
@@ -2332,10 +2373,12 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         let [(suffix_start, sign, dimension_id, relation_type)] = suffixes.as_slice() else {
             return None;
         };
+        let operands = payload[after_used..*suffix_start].to_vec();
         rows.push(FeatureRelation {
             relation_id,
             used,
-            operands: payload[after_used..*suffix_start].to_vec(),
+            operand_vectors: relation_operand_vectors(&operands),
+            operands,
             sign: *sign,
             dimension_id: *dimension_id,
             relation_type: *relation_type,

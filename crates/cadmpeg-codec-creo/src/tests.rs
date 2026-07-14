@@ -1368,6 +1368,14 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
         relations.rows[0].operands,
         [0x05, 0x01, 0xf6, 0xe4, 0x00, 0xe6, 0x0f, 0x10, 0x0f, 0xe4]
     );
+    assert_eq!(
+        relations.rows[0].operand_vectors,
+        Some([
+            [Some(5), Some(1), None, Some(1)],
+            [Some(0), Some(0), Some(0), Some(0)],
+            [Some(15), Some(16), Some(15), Some(1)],
+        ])
+    );
     assert_eq!(relations.rows[0].sign, 0);
     assert_eq!(relations.rows[0].dimension_id, 0);
     assert_eq!(relations.rows[0].relation_type, 0);
