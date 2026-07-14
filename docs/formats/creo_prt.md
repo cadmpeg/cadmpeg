@@ -435,6 +435,8 @@ the second.
 
 In a round-feature generated-entity table, a rowless face-use entry is a cylinder only when the table's following materialized `srf_array` entry is a cylinder. The table class token alone does not identify the surface kind.
 
+A cylinder coaxial with a torus intersects it in one tangent circle when the cylinder radius equals the torus outer radius `R + r` or its positive inner radius `|R - r|`. The circle lies in the torus central plane, has the common axis, and has the cylinder radius. Other coaxial radii produce multiple or no circle components and remain unresolved without a native branch binding.
+
 ## 6. Features and datums
 
 `MdlStatus` names encode feature kinds as `<Kind> id <N>`. Defined names include

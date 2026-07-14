@@ -6570,6 +6570,23 @@ mod resolved_sketch_tests {
                 if center == Point3::new(0.0, 0.0, 2.0) && radius == 5.0
         ));
         assert!(carrier_intersection_curve(equator, torus).is_none());
+        let outer_tangent_cylinder = parallel_cylinder([0.0, 0.0, 0.0], 7.0);
+        assert!(matches!(
+            carrier_intersection_curve(outer_tangent_cylinder, torus),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_torus_tangent_circle"))
+                if center == Point3::new(0.0, 0.0, 0.0) && radius == 7.0
+        ));
+        let outer_circle_tangent = CarrierEquation::Plane(PlaneEquation {
+            origin: [7.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[outer_tangent_cylinder, torus, outer_circle_tangent]),
+            Some([7.0, 0.0, 0.0])
+        );
+        assert!(
+            carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 6.0), torus).is_none()
+        );
         assert!(point_on_carrier([5.0, 0.0, 2.0], torus));
         assert!(!point_on_carrier([5.0, 0.0, 0.0], torus));
         assert_eq!(
@@ -7055,6 +7072,21 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                                         radius,
                                     ));
                                 }
+                            }
+                        }
+                    }
+                } else if let ([plane], [cylinder], [torus]) =
+                    (planes.as_slice(), cylinders.as_slice(), tori.as_slice())
+                {
+                    if cones.is_empty() && spheres.is_empty() {
+                        if let Some((geometry, _)) = carrier_intersection_curve(
+                            CarrierEquation::Cylinder(*cylinder),
+                            CarrierEquation::Torus(*torus),
+                        ) {
+                            if let Some((center, axis, radius)) = circle_parameters(&geometry) {
+                                candidates.extend(intersect_plane_with_circle(
+                                    *plane, center, axis, radius,
+                                ));
                             }
                         }
                     }
@@ -8325,13 +8357,57 @@ fn carrier_intersection_curve(
                 "coaxial_cylinder_sphere_circle",
             ))
         }
+        (CarrierEquation::Cylinder(cylinder), CarrierEquation::Torus(torus))
+        | (CarrierEquation::Torus(torus), CarrierEquation::Cylinder(cylinder)) => {
+            let cylinder_axis = normalized(cylinder.axis)?;
+            let torus_axis = normalized(torus.axis)?;
+            if (dot(cylinder_axis, torus_axis).abs() - 1.0).abs() > 1e-10 {
+                return None;
+            }
+            let relative: [f64; 3] =
+                std::array::from_fn(|index| torus.center[index] - cylinder.origin[index]);
+            let axial = dot(relative, cylinder_axis);
+            let transverse: [f64; 3] =
+                std::array::from_fn(|index| relative[index] - axial * cylinder_axis[index]);
+            let scale = torus
+                .major_radius
+                .max(torus.minor_radius)
+                .max(cylinder.radius)
+                .max(1.0);
+            if dot(transverse, transverse).sqrt() > 1e-9 * scale {
+                return None;
+            }
+            let outer_radius = torus.major_radius + torus.minor_radius;
+            let inner_radius = (torus.major_radius - torus.minor_radius).abs();
+            if (cylinder.radius - outer_radius).abs() > 1e-9 * scale
+                && (inner_radius <= 1e-12 || (cylinder.radius - inner_radius).abs() > 1e-9 * scale)
+            {
+                return None;
+            }
+            let reference = normalized(cylinder.ref_direction)?;
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(torus.center[0], torus.center[1], torus.center[2]),
+                    axis: Vector3::new(cylinder_axis[0], cylinder_axis[1], cylinder_axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius: cylinder.radius,
+                },
+                "coaxial_cylinder_torus_tangent_circle",
+            ))
+        }
         (
             CarrierEquation::Cone(_),
-            CarrierEquation::Sphere(_) | CarrierEquation::Cylinder(_) | CarrierEquation::Cone(_),
+            CarrierEquation::Sphere(_)
+            | CarrierEquation::Cylinder(_)
+            | CarrierEquation::Cone(_)
+            | CarrierEquation::Torus(_),
         )
-        | (CarrierEquation::Sphere(_) | CarrierEquation::Cylinder(_), CarrierEquation::Cone(_))
-        | (CarrierEquation::Torus(_), _)
-        | (_, CarrierEquation::Torus(_)) => None,
+        | (
+            CarrierEquation::Sphere(_) | CarrierEquation::Cylinder(_) | CarrierEquation::Torus(_),
+            CarrierEquation::Cone(_),
+        )
+        | (CarrierEquation::Torus(_), CarrierEquation::Sphere(_) | CarrierEquation::Torus(_))
+        | (CarrierEquation::Sphere(_), CarrierEquation::Torus(_)) => None,
     }
 }
 
