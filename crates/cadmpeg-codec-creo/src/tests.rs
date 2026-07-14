@@ -949,6 +949,19 @@ fn decode_types_named_german_round_without_a_schema_row() {
 }
 
 #[test]
+fn decode_types_named_annotation_feature_as_a_tree_node() {
+    let data = build_prt("c", &[("MdlStatus", b"Annotation Feature id 4\0".to_vec())]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
+        }
+    ));
+}
+
+#[test]
 fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

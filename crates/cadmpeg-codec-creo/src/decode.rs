@@ -17,8 +17,8 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
-    FeatureSourceContent, HoleKind, Length, ParameterId, ParameterValue, ProfileRef, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction,
+    FeatureSourceContent, FeatureTreeNodeRole, HoleKind, Length, ParameterId, ParameterValue,
+    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -5907,6 +5907,11 @@ fn named_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
+    if kind == "Annotation Feature" {
+        return Some(IrFeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::Annotations,
+        });
+    }
     let schema_class = match kind {
         "Hole" => 911,
         "Round" | "Rundung" => 913,
