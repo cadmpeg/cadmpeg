@@ -153,6 +153,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .features
         .iter()
         .filter(|feature| match &feature.definition {
+            FeatureDefinition::Sketch { sketch, .. } => sketch.is_none(),
+            FeatureDefinition::HelixNativeAxis { .. } => true,
             FeatureDefinition::Extrude {
                 profile,
                 extent,

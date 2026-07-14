@@ -11580,6 +11580,10 @@ fn semantic_writer_round_trips_native_axis_helix() {
             clockwise: false,
         } if axis_native_ref == native_ref
     ));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.message
+            == "1 typed feature(s) retain native or unresolved required operation operands."
+    }));
     let findings = cadmpeg_ir::validate(&decoded.ir, Vec::new()).findings;
     assert!(findings.is_empty(), "{findings:#?}");
 
