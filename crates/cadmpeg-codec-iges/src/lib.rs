@@ -9,6 +9,7 @@ mod graph;
 mod layout;
 mod native;
 mod parameter;
+mod profile;
 mod reader;
 
 use cadmpeg_ir::codec::{

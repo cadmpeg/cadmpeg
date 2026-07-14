@@ -391,7 +391,7 @@ assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 [[entity]]
 type = 192
 name = "right-circular-cylindrical-surface"
-forms = [0]
+forms = [0, 1]
 domain = "geometry"
 decoder = "entities::surfaces::decode_cylindrical_surface"
 destination = "model.surfaces"
@@ -401,7 +401,7 @@ assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 [[entity]]
 type = 194
 name = "right-circular-conical-surface"
-forms = [0]
+forms = [0, 1]
 domain = "geometry"
 decoder = "entities::surfaces::decode_conical_surface"
 destination = "model.surfaces"
@@ -411,7 +411,7 @@ assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 [[entity]]
 type = 196
 name = "spherical-surface"
-forms = [0]
+forms = [0, 1]
 domain = "geometry"
 decoder = "entities::surfaces::decode_spherical_surface"
 destination = "model.surfaces"
@@ -421,7 +421,7 @@ assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
 [[entity]]
 type = 198
 name = "toroidal-surface"
-forms = [0]
+forms = [0, 1]
 domain = "geometry"
 decoder = "entities::surfaces::decode_toroidal_surface"
 destination = "model.surfaces"

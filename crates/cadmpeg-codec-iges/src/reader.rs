@@ -84,15 +84,24 @@ pub(crate) fn decode(
             directory
                 .iter()
                 .filter(|entry| {
-                    entry.entity_type != 0 && !projection.handled.contains(&entry.sequence)
+                    entry.entity_type != 0
+                        && (!crate::profile::envelope_a_admits(entry.entity_type, entry.form)
+                            || !projection.handled.contains(&entry.sequence))
                 })
                 .map(|entry| LossNote {
                     category: LossCategory::Other,
                     severity: Severity::Warning,
-                    message: format!(
-                        "IGES entity type {} form {} retained without neutral projection",
-                        entry.entity_type, entry.form
-                    ),
+                    message: if crate::profile::envelope_a_admits(entry.entity_type, entry.form) {
+                        format!(
+                            "IGES entity type {} form {} retained without neutral projection",
+                            entry.entity_type, entry.form
+                        )
+                    } else {
+                        format!(
+                            "IGES entity type {} form {} is outside the Fixed ASCII mechanical/document envelope",
+                            entry.entity_type, entry.form
+                        )
+                    },
                     provenance: None,
                 }),
         );

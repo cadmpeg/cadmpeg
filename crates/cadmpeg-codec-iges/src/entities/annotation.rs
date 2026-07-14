@@ -296,18 +296,17 @@ fn dimension_valid(
                 parameterized_curve_type(curve)
                     && curve.status.subordinate == 1
                     && curve.status.use_flag == 1
-            })
-                && match record.integer(3) {
-                    Some(0) => true,
-                    Some(_) => curve_entries[1].is_some_and(|curve| {
-                        parameterized_curve_type(curve)
-                            && curve.status.subordinate == 1
-                            && curve.status.use_flag == 1
-                            && !(curve.entity_type == 110
-                                && curve_entries[0].is_some_and(|first| first.entity_type == 110))
-                    }),
-                    None => false,
-                };
+            }) && match record.integer(3) {
+                Some(0) => true,
+                Some(_) => curve_entries[1].is_some_and(|curve| {
+                    parameterized_curve_type(curve)
+                        && curve.status.subordinate == 1
+                        && curve.status.use_flag == 1
+                        && !(curve.entity_type == 110
+                            && curve_entries[0].is_some_and(|first| first.entity_type == 110))
+                }),
+                None => false,
+            };
             let leaders = [pointer(record, 4, entries), pointer(record, 5, entries)];
             let leaders_valid = leaders.iter().all(|leader| {
                 leader.is_some_and(|sequence| {
