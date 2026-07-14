@@ -788,7 +788,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
 #[test]
 fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SKETCH", &[], None, None),
+        crate::decode::non_boolean_feature_definition("SKETCH", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Sketch {
             space: cadmpeg_ir::features::SketchSpace::Planar,
             sketch: None,
@@ -798,6 +798,7 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         crate::decode::non_boolean_feature_definition(
             "SIMPLE HOLE",
             &["Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer"],
+            None,
             None,
             None,
         ),
@@ -824,16 +825,28 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("SIMPLE HOLE", &["unrelated"], None, None),
+        crate::decode::non_boolean_feature_definition(
+            "SIMPLE HOLE",
+            &["unrelated"],
+            None,
+            None,
+            None,
+        ),
         cadmpeg_ir::features::FeatureDefinition::Hole { extent: None, .. }
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None, None),
+        crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind == "DATUM_PLANE"
     ));
     assert!(matches!(
-        crate::decode::non_boolean_feature_definition("BLOCK", &[], Some([10.0, 20.0, 30.0]), None,),
+        crate::decode::non_boolean_feature_definition(
+            "BLOCK",
+            &[],
+            Some([10.0, 20.0, 30.0]),
+            None,
+            None,
+        ),
         cadmpeg_ir::features::FeatureDefinition::Block {
             dimensions: [
                 cadmpeg_ir::features::Length(10.0),
@@ -843,6 +856,54 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
             placement: None,
         }
     ));
+}
+
+#[test]
+fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let dimensions = [10.0, 20.0, 30.0];
+    for axis in 0..3 {
+        let mut surfaces = ir
+            .model
+            .surfaces
+            .iter_mut()
+            .filter_map(|surface| {
+                let SurfaceGeometry::Plane { origin, normal, .. } = &mut surface.geometry else {
+                    return None;
+                };
+                let components = [normal.x.abs(), normal.y.abs(), normal.z.abs()];
+                (components[axis] > 0.5).then_some(origin)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(surfaces.len(), 2);
+        surfaces.sort_by(|first, second| {
+            [first.x, first.y, first.z][axis].total_cmp(&[second.x, second.y, second.z][axis])
+        });
+        match axis {
+            0 => {
+                surfaces[0].x = 0.0;
+                surfaces[1].x = dimensions[axis];
+            }
+            1 => {
+                surfaces[0].y = 0.0;
+                surfaces[1].y = dimensions[axis];
+            }
+            2 => {
+                surfaces[0].z = 0.0;
+                surfaces[1].z = dimensions[axis];
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    assert_eq!(
+        crate::decode::block_placement(&ir, dimensions),
+        Some(cadmpeg_ir::transform::Transform::identity())
+    );
+    assert_eq!(
+        crate::decode::block_placement(&ir, [10.0, 10.0, 30.0]),
+        None
+    );
 }
 
 #[test]
