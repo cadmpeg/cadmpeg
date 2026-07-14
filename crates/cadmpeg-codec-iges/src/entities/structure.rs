@@ -1184,7 +1184,12 @@ pub(super) fn project(
                 .filter(|value| matches!(value, 1..=6));
             let value_count = match record.tokens.get(cursor + 2).map(|token| &token.value) {
                 None | Some(TokenValue::Omitted) => Some(1),
-                Some(TokenValue::Integer(_)) => record.count(cursor + 2),
+                Some(TokenValue::Integer(value)) => {
+                    usize::try_from(*value).ok().and_then(|count| {
+                        (entry.form == 0 || count <= record.tokens.len().saturating_sub(cursor + 3))
+                            .then_some(count)
+                    })
+                }
                 Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
             };
             cursor += 3;

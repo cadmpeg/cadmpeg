@@ -1549,8 +1549,7 @@ pub(crate) fn store(
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
             let count = parameters
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             NativeDefinitionLevels {
                 id: format!("iges:presentation:definition-levels#D{}", entry.sequence),
@@ -1817,13 +1816,11 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let member_count = record
-                .and_then(|record| record.integer(3))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(3))
                 .unwrap_or_default();
             let connect_count_index = 7 + member_count;
             let connect_count = record
-                .and_then(|record| record.integer(connect_count_index))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(connect_count_index))
                 .unwrap_or_default();
             NativeNetworkDefinition {
                 id: format!("iges:product:network-definition#D{}", entry.sequence),
@@ -1867,8 +1864,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let connect_count = record
-                .and_then(|record| record.integer(11))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(11))
                 .unwrap_or_default();
             NativeNetworkInstance {
                 id: format!("iges:product:network-instance#D{}", entry.sequence),
@@ -1953,8 +1949,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(11))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(11))
                 .unwrap_or_default();
             NativeRectangularArray {
                 id: format!("iges:product:rectangular-array#D{}", entry.sequence),
@@ -1988,8 +1983,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(9))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(9))
                 .unwrap_or_default();
             NativeCircularArray {
                 id: format!("iges:product:circular-array#D{}", entry.sequence),
@@ -2058,8 +2052,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             NativeGroup {
                 id: format!("iges:product:group#D{}", entry.sequence),
@@ -2083,15 +2076,13 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let class_count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let mut cursor = 2;
             let classes = (0..class_count)
                 .map(|_| {
                     let item_count = record
-                        .and_then(|record| record.integer(cursor + 2))
-                        .and_then(|value| usize::try_from(value).ok())
+                        .and_then(|record| record.count(cursor + 2))
                         .unwrap_or_default();
                     let class = NativeAssociativityClassDefinition {
                         back_pointers_required: record
@@ -2140,8 +2131,7 @@ pub(crate) fn store(
                 match entry.form {
                     5 => {
                         let count = record
-                            .and_then(|record| record.integer(1))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(1))
                             .unwrap_or_default();
                         NativeAssociativity::LabelDisplay {
                             id,
@@ -2168,8 +2158,7 @@ pub(crate) fn store(
                     }
                     9 => {
                         let count = record
-                            .and_then(|record| record.integer(2))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(2))
                             .unwrap_or_default();
                         NativeAssociativity::SingleParent {
                             id,
@@ -2180,8 +2169,7 @@ pub(crate) fn store(
                     }
                     12 => {
                         let count = record
-                            .and_then(|record| record.integer(1))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(1))
                             .unwrap_or_default();
                         NativeAssociativity::ExternalReferenceIndex {
                             id,
@@ -2202,8 +2190,7 @@ pub(crate) fn store(
                     }
                     13 => {
                         let count = record
-                            .and_then(|record| record.integer(2))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(2))
                             .unwrap_or_default();
                         NativeAssociativity::DimensionedGeometry {
                             id,
@@ -2214,8 +2201,7 @@ pub(crate) fn store(
                     }
                     16 => {
                         let count = record
-                            .and_then(|record| record.integer(2))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(2))
                             .unwrap_or_default();
                         NativeAssociativity::Planar {
                             id,
@@ -2231,8 +2217,7 @@ pub(crate) fn store(
                         let counts = (2..=7)
                             .map(|index| {
                                 record
-                                    .and_then(|record| record.integer(index))
-                                    .and_then(|value| usize::try_from(value).ok())
+                                    .and_then(|record| record.count(index))
                                     .unwrap_or_default()
                             })
                             .collect::<Vec<_>>();
@@ -2277,8 +2262,7 @@ pub(crate) fn store(
                     }
                     21 => {
                         let count = record
-                            .and_then(|record| record.integer(2))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(2))
                             .unwrap_or_default();
                         NativeAssociativity::RecalculableDimension {
                             id,
@@ -2321,15 +2305,19 @@ pub(crate) fn store(
                 let attribute_type = record.and_then(|record| record.integer(cursor));
                 let value_data_type = record.and_then(|record| record.integer(cursor + 1));
                 let declared_value_count = record.and_then(|record| record.integer(cursor + 2));
-                let value_count = match record
-                    .and_then(|record| record.tokens.get(cursor + 2))
-                    .map(|token| &token.value)
-                {
-                    None | Some(TokenValue::Omitted) => 1,
-                    Some(TokenValue::Integer(_)) => record
-                        .and_then(|record| record.count(cursor + 2))
-                        .unwrap_or_default(),
-                    Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                let value_count = if entry.form == 0 {
+                    0
+                } else {
+                    match record
+                        .and_then(|record| record.tokens.get(cursor + 2))
+                        .map(|token| &token.value)
+                    {
+                        None | Some(TokenValue::Omitted) => 1,
+                        Some(TokenValue::Integer(_)) => record
+                            .and_then(|record| record.count(cursor + 2))
+                            .unwrap_or_default(),
+                        Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                    }
                 };
                 cursor += 3;
                 let mut values = Vec::with_capacity(value_count);
@@ -2384,13 +2372,12 @@ pub(crate) fn store(
             let definition_record =
                 definition_sequence.and_then(|sequence| by_directory.get(&sequence).copied());
             let attribute_count = definition_record
-                .and_then(|record| record.integer(3))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(3))
                 .unwrap_or_default();
             let values_per_row = (0..attribute_count)
-                .map(|index| {
+                .try_fold(0_usize, |total, index| {
                     let count_index = 6 + index * 3;
-                    match definition_record
+                    let count = match definition_record
                         .and_then(|record| record.tokens.get(count_index))
                         .map(|token| &token.value)
                     {
@@ -2399,18 +2386,26 @@ pub(crate) fn store(
                             usize::try_from(*value).unwrap_or_default()
                         }
                         Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
-                    }
+                    };
+                    total.checked_add(count)
                 })
-                .sum::<usize>();
+                .unwrap_or_default();
             let row_count = if entry.form == 0 {
                 usize::from(values_per_row > 0)
             } else {
                 record
-                    .and_then(|record| record.integer(1))
-                    .and_then(|value| usize::try_from(value).ok())
+                    .and_then(|record| record.count(1))
                     .unwrap_or_default()
             };
             let value_start = if entry.form == 0 { 1 } else { 2 };
+            let row_count = record.map_or(0, |record| {
+                let available = record.tokens.len().saturating_sub(value_start);
+                if values_per_row == 0 || row_count > available / values_per_row {
+                    0
+                } else {
+                    row_count
+                }
+            });
             let rows = (0..row_count)
                 .map(|row| {
                     (0..values_per_row)
@@ -2776,8 +2771,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let owners = by_directory
                 .iter()
