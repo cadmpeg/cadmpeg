@@ -18,8 +18,8 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
-    Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, HoleKind, Length, ParameterId,
-    ParameterValue, SketchSpace,
+    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleKind,
+    Length, ParameterId, ParameterValue, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -2763,6 +2763,7 @@ fn attach_native_object_model(
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
+    let feature_payload_strings = crate::native::feature_payload_strings(&scan.container);
     let feature_body_references = crate::native::feature_body_references(&scan.container);
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
     let feature_sketch_records = crate::native::feature_sketch_records(
@@ -2794,6 +2795,7 @@ fn attach_native_object_model(
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
         && feature_operation_records.is_empty()
+        && feature_payload_strings.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
         && feature_sketch_records.is_empty()
@@ -2870,6 +2872,12 @@ fn attach_native_object_model(
             .note(&record.id, annotation_stream, record.source_offset)
             .tag("FEATURE_OPERATION_RECORD");
         annotations.exactness(&record.id, Exactness::ByteExact);
+    }
+    for value in &feature_payload_strings {
+        annotations
+            .note(&value.id, annotation_stream, value.source_offset)
+            .tag("FEATURE_PAYLOAD_STRING");
+        annotations.exactness(&value.id, Exactness::ByteExact);
     }
     for reference in &feature_body_references {
         annotations
@@ -2989,11 +2997,15 @@ fn attach_native_object_model(
     }
     attach_feature_operations(
         ir,
-        &feature_operation_labels,
-        &feature_boolean_operations,
-        &feature_body_references,
-        &feature_input_blocks,
-        &segment_body_bindings,
+        FeatureOperationSources {
+            labels: &feature_operation_labels,
+            booleans: &feature_boolean_operations,
+            body_references: &feature_body_references,
+            input_blocks: &feature_input_blocks,
+            operation_records: &feature_operation_records,
+            payload_strings: &feature_payload_strings,
+            body_bindings: &segment_body_bindings,
+        },
         annotations,
     );
     attach_expression_parameters(ir, &expressions, annotations);
@@ -3001,7 +3013,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(29);
+    namespace.version = namespace.version.max(30);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3028,6 +3040,9 @@ fn attach_native_object_model(
     }
     if !feature_operation_records.is_empty() {
         namespace.set_arena("feature_operation_records", &feature_operation_records)?;
+    }
+    if !feature_payload_strings.is_empty() {
+        namespace.set_arena("feature_payload_strings", &feature_payload_strings)?;
     }
     if !feature_body_references.is_empty() {
         namespace.set_arena("feature_body_references", &feature_body_references)?;
@@ -3083,15 +3098,31 @@ fn attach_native_object_model(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct FeatureOperationSources<'a> {
+    labels: &'a [crate::native::FeatureOperationLabel],
+    booleans: &'a [crate::native::FeatureBooleanOperation],
+    body_references: &'a [crate::native::FeatureBodyReference],
+    input_blocks: &'a [crate::native::FeatureInputBlock],
+    operation_records: &'a [crate::native::FeatureOperationRecord],
+    payload_strings: &'a [crate::native::FeaturePayloadString],
+    body_bindings: &'a [crate::native::SegmentBodyBinding],
+}
+
 fn attach_feature_operations(
     ir: &mut CadIr,
-    labels: &[crate::native::FeatureOperationLabel],
-    booleans: &[crate::native::FeatureBooleanOperation],
-    body_references: &[crate::native::FeatureBodyReference],
-    input_blocks: &[crate::native::FeatureInputBlock],
-    body_bindings: &[crate::native::SegmentBodyBinding],
+    sources: FeatureOperationSources<'_>,
     annotations: &mut AnnotationBuilder,
 ) {
+    let FeatureOperationSources {
+        labels,
+        booleans,
+        body_references,
+        input_blocks,
+        operation_records,
+        payload_strings,
+        body_bindings,
+    } = sources;
     let stream = annotations.stream("nx:container");
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
@@ -3118,6 +3149,21 @@ fn attach_feature_operations(
             .entry(input.operation_label.as_str())
             .or_default()
             .push(input);
+    }
+    let operation_labels_by_record = operation_records
+        .iter()
+        .map(|record| (record.id.as_str(), record.operation_label.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut payload_strings_by_operation = BTreeMap::<&str, Vec<&str>>::new();
+    for value in payload_strings {
+        let Some(operation) = operation_labels_by_record.get(value.operation_record.as_str())
+        else {
+            continue;
+        };
+        payload_strings_by_operation
+            .entry(operation)
+            .or_default()
+            .push(value.value.as_str());
     }
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
     for binding in body_bindings {
@@ -3227,7 +3273,12 @@ fn attach_feature_operations(
             source_properties,
             source_tag: Some(label.value.clone()),
             source_text: None,
-            source_content: Vec::new(),
+            source_content: payload_strings_by_operation
+                .get(label.id.as_str())
+                .into_iter()
+                .flatten()
+                .map(|value| FeatureSourceContent::Text((*value).to_string()))
+                .collect(),
             outputs,
             definition,
             native_ref: Some(label.id.clone()),

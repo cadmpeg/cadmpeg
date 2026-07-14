@@ -227,6 +227,15 @@ pub struct OperationRecord<'a> {
     pub label: OperationLabel<'a>,
 }
 
+/// One length-framed UTF-8 string in a bounded operation payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationPayloadString<'a> {
+    /// Absolute offset of the `04` marker.
+    pub offset: usize,
+    /// Exact non-empty string value.
+    pub value: &'a str,
+}
+
 /// Primary body-object reference carried by one bounded operation record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OperationBodyReference {
@@ -492,6 +501,43 @@ pub fn operation_records(bytes: &[u8], base_offset: usize) -> Vec<OperationRecor
             })
         })
         .collect()
+}
+
+/// Decode ordered `04, length, text, 00` strings from one operation payload.
+pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPayloadString<'_>> {
+    let mut strings = Vec::new();
+    let mut at = 0usize;
+    while at + 4 <= record.payload.len() {
+        if record.payload[at] != 0x04 {
+            at += 1;
+            continue;
+        }
+        let declared = usize::from(record.payload[at + 1]);
+        let Some(end) = at.checked_add(declared) else {
+            at += 1;
+            continue;
+        };
+        let Some(raw) = record.payload.get(at + 2..end) else {
+            at += 1;
+            continue;
+        };
+        let Some(value) = std::str::from_utf8(raw).ok().filter(|value| {
+            !value.is_empty() && value.chars().all(|character| !character.is_control())
+        }) else {
+            at += 1;
+            continue;
+        };
+        if declared < 3 || record.payload.get(end) != Some(&0) {
+            at += 1;
+            continue;
+        }
+        strings.push(OperationPayloadString {
+            offset: record.payload_offset + at,
+            value,
+        });
+        at = end + 1;
+    }
+    strings
 }
 
 /// Decode the unique `01 02 10 index ff` primary-body field in one operation.

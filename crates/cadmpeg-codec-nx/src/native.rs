@@ -220,6 +220,21 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
+/// Ordered length-framed string from one bounded feature-operation payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeaturePayloadString {
+    /// Globally unique string identity.
+    pub id: String,
+    /// Owning exact feature-operation record.
+    pub operation_record: String,
+    /// Zero-based string order within the post-label payload.
+    pub ordinal: u32,
+    /// Exact UTF-8 string value.
+    pub value: String,
+    /// Absolute file offset of the `04` marker.
+    pub source_offset: u64,
+}
+
 /// Primary body object read or written by one feature-history operation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureBodyReference {
@@ -453,6 +468,48 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         ));
     }
     records
+}
+
+/// Decode ordered self-framed strings from feature-operation payloads.
+pub fn feature_payload_strings(container: &Container) -> Vec<FeaturePayloadString> {
+    let sections = container.om_sections();
+    let mut strings = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let operation_record =
+                format!("nx:feature-history:operation-record#{section_key}-{operation_ordinal}");
+            strings.extend(
+                crate::om::operation_payload_strings(record)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, value)| FeaturePayloadString {
+                        id: format!(
+                            "nx:feature-history:payload-string#{section_key}-{operation_ordinal}-{ordinal}"
+                        ),
+                        operation_record: operation_record.clone(),
+                        ordinal: ordinal as u32,
+                        value: value.value.to_string(),
+                        source_offset: entry_offset + value.offset as u64,
+                    }),
+            );
+        }
+    }
+    strings
 }
 
 /// Decode primary body lineage references from feature-history operations.

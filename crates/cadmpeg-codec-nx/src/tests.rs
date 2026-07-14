@@ -419,7 +419,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 29);
+    assert_eq!(namespace.version, 30);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -985,6 +985,30 @@ fn om_operation_records_use_consecutive_validated_headers() {
     assert_eq!(records[1].label.value, "SKETCH");
     assert!(records[1].bytes.ends_with(b"tail"));
     assert_eq!(records[1].payload, b"tail");
+}
+
+#[test]
+fn om_operation_payload_strings_require_complete_utf8_frames() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SIMPLE HOLE",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x00\x04\x07BLOCK\0\x04\x04\xc3\x97\0\x04\x07BROKEN";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let strings = crate::om::operation_payload_strings(record);
+    assert_eq!(strings.len(), 2);
+    assert_eq!(strings[0].offset, 201);
+    assert_eq!(strings[0].value, "BLOCK");
+    assert_eq!(strings[1].value, "×");
 }
 
 #[test]
@@ -3653,7 +3677,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 29);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 30);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
