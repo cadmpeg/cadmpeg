@@ -1997,14 +1997,47 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for profile in profiles {
-            if let ProfileRef::Faces(faces) = profile {
-                check_ids(
+            match profile {
+                ProfileRef::Faces(faces) => check_ids(
                     findings,
                     &feature.id.0,
                     "profile face",
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
-                );
+                ),
+                ProfileRef::Feature(producer) => match features.get(producer.0.as_str()) {
+                    None => ref_error(findings, &feature.id.0, "profile feature", &producer.0),
+                    Some(ordinal)
+                        if *ordinal >= feature.ordinal
+                            || !feature.dependencies.contains(producer) =>
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "profile feature is not a preceding dependency",
+                        );
+                    }
+                    Some(_) => {}
+                },
+                ProfileRef::Generated { curves, native } => {
+                    if curves.is_empty()
+                        || native.trim().is_empty()
+                        || curves.iter().any(|curve| {
+                            curve.local_id.trim().is_empty()
+                                || features
+                                    .get(curve.feature.0.as_str())
+                                    .is_none_or(|ordinal| *ordinal >= feature.ordinal)
+                                || !feature.dependencies.contains(&curve.feature)
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated profile curve is invalid",
+                        );
+                    }
+                }
+                ProfileRef::Unresolved(_) | ProfileRef::Native(_) | ProfileRef::Sketch(_) => {}
             }
         }
         for path in paths {

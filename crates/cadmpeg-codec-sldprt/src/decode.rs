@@ -1152,6 +1152,11 @@ fn project_design_history(
     );
     crate::resolved_features::project_compact_edge_selections(&mut ir.model.features, lanes);
     crate::resolved_features::project_compact_surface_selections(&mut ir.model.features, lanes);
+    crate::resolved_features::project_surface_sweep_profiles(
+        &mut ir.model.features,
+        &semantic_projection,
+        lanes,
+    );
     crate::resolved_features::project_adjacent_extrusion_profiles(
         &mut ir.model.features,
         &semantic_projection,

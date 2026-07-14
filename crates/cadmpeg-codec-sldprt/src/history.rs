@@ -3290,6 +3290,7 @@ pub fn prepare_features_for_write(
         validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
         validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
         validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
+        validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
         return sync_neutral_features(
             &ir.model.features,
             &ir.model.parameters,
@@ -3316,6 +3317,7 @@ pub fn prepare_features_for_write(
             validate_compact_body_selection_edits(&ir.model.features, native.as_ref())?;
             validate_compact_edge_selection_edits(&ir.model.features, native.as_ref())?;
             validate_compact_surface_selection_edits(&ir.model.features, native.as_ref())?;
+            validate_surface_sweep_profile_edits(&ir.model.features, native.as_ref())?;
             sync_neutral_features(
                 &ir.model.features,
                 &ir.model.parameters,
@@ -3324,6 +3326,50 @@ pub fn prepare_features_for_write(
             )
         }
     }
+}
+
+fn validate_surface_sweep_profile_edits(
+    features: &[cadmpeg_ir::features::Feature],
+    native: Option<&crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let Some(native) = native else {
+        return Ok(());
+    };
+    let expected = project_features_with_native_inputs(native)
+        .into_iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Sweep {
+                profile: Some(profile @ (ProfileRef::Feature(_) | ProfileRef::Generated { .. })),
+                ..
+            } = feature.definition
+            else {
+                return None;
+            };
+            Some((feature.id, profile))
+        })
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let Some(expected) = expected.get(&feature.id) else {
+            continue;
+        };
+        let FeatureDefinition::Sweep {
+            profile: Some(profile),
+            ..
+        } = &feature.definition
+        else {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes a reference-curve sweep profile",
+                feature.id
+            )));
+        };
+        if profile != expected {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes a reference-curve sweep profile",
+                feature.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn project_features_with_native_inputs(
@@ -3368,6 +3414,11 @@ fn project_features_with_native_inputs(
     );
     crate::resolved_features::project_compact_surface_selections(
         &mut features,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::project_surface_sweep_profiles(
+        &mut features,
+        &histories,
         &native.feature_input_lanes,
     );
     crate::resolved_features::project_adjacent_extrusion_profiles(
@@ -6700,6 +6751,11 @@ pub fn sync_neutral_features(
                     )));
                 }
                 let profile_source = match profile {
+                    Some(ProfileRef::Feature(_) | ProfileRef::Generated { .. })
+                        if existing.is_some() =>
+                    {
+                        None
+                    }
                     Some(profile) => Some(
                         profile_source(profile, &record_sources, &sketch_sources).ok_or_else(
                             || {
@@ -7244,7 +7300,7 @@ pub fn sync_neutral_features(
         &mut native.feature_input_lanes,
         &changed_parameters,
     )?;
-    let projected_features = project_features(&native.feature_histories);
+    let projected_features = project_features_with_native_inputs(native);
     let desired_sketches = features
         .iter()
         .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
@@ -7483,6 +7539,7 @@ fn profile_source(
         ProfileRef::Unresolved(_) => None,
         ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
+        ProfileRef::Feature(_) | ProfileRef::Generated { .. } => None,
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()

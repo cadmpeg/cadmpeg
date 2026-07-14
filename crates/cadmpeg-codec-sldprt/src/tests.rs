@@ -13627,6 +13627,181 @@ fn decode_projects_native_surface_sweep_class_without_localized_type() {
 }
 
 #[test]
+fn decode_projects_surface_sweep_reference_curve_profile() {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Helix1" Type="Helix/Spiral" id="119"/>
+            <Feature Name="Surface-Sweep1" Type="Surface-Sweep" id="137"/>
+        </Keywords>"#,
+    ));
+    let mut resolved = resolved_feature_classes_with_ids(&[
+        ("moHelix_c", "Helix1", 119),
+        ("moSweepRefSurface_c", "Surface-Sweep1", 137),
+    ]);
+    resolved.extend_from_slice(&[0xdd, 0x94, 0xff, 0xff, 1, 0]);
+    let class = b"moCompReferenceCurve_c";
+    resolved.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(class);
+    let prefix = resolved.len();
+    resolved.resize(prefix + 133, 0);
+    resolved[prefix..prefix + 10].copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]);
+    resolved[prefix + 45..prefix + 61].fill(0xff);
+    let reference = prefix + 81;
+    resolved[reference..reference + 4].copy_from_slice(&119u32.to_le_bytes());
+    resolved[reference + 4..reference + 8].copy_from_slice(&0x5edf_5674u32.to_le_bytes());
+    resolved[reference + 16..reference + 20].copy_from_slice(&0x65u32.to_le_bytes());
+    resolved[reference + 24..reference + 28].fill(0xff);
+    for offset in [reference + 32, reference + 36, reference + 40] {
+        resolved[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+    }
+    resolved[reference + 48..reference + 52].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved,
+    ));
+
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let helix = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Helix1"))
+        .unwrap();
+    let sweep = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
+        .unwrap();
+    assert!(matches!(
+        &sweep.definition,
+        FeatureDefinition::Sweep {
+            profile: Some(ProfileRef::Feature(feature)),
+            ..
+        } if feature == &helix.id
+    ));
+    assert!(sweep.dependencies.contains(&helix.id));
+
+    decoded
+        .ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
+        .unwrap()
+        .name = Some("Renamed surface sweep".into());
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        regenerated
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Renamed surface sweep"))
+            .map(|feature| &feature.definition),
+        Some(FeatureDefinition::Sweep {
+            profile: Some(ProfileRef::Feature(_)),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn decode_projects_generated_surface_sweep_profile_path() {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Feature Name="Surface-Sweep1" Type="Surface-Sweep" id="137"/>
+            <Feature Name="Surface-Sweep2" Type="Surface-Sweep" id="211"/>
+        </Keywords>"#,
+    ));
+    let mut resolved =
+        resolved_feature_classes_with_ids(&[("moSweepRefSurface_c", "Surface-Sweep1", 137)]);
+    resolved.extend_from_slice(&[0xdd, 0x94, 0xff, 0xff, 1, 0]);
+    let class = b"moCompReferenceCurve_c";
+    resolved.extend_from_slice(&(class.len() as u16).to_le_bytes());
+    resolved.extend_from_slice(class);
+    resolved.extend_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]);
+    resolved.extend(resolved_feature_classes_with_ids(&[(
+        "moSweepRefSurface_c",
+        "Surface-Sweep2",
+        211,
+    )]));
+    let wrapper = resolved.len();
+    resolved.extend_from_slice(&[0xdd, 0x94, 0xa3, 0x92, 0x2b, 0x80, 0x02, 0, 0, 4, 0, 0]);
+    let marker = resolved.len() + 12;
+    resolved.resize(marker + 18, 0);
+    resolved[marker - 12..marker - 8].copy_from_slice(&2u32.to_le_bytes());
+    resolved[marker - 8..marker - 4].copy_from_slice(&[4, 2, 0, 0]);
+    resolved[marker..marker + 16].copy_from_slice(&[
+        0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2,
+        0x54,
+    ]);
+    let entry = marker + 18;
+    resolved.resize(entry + 32, 0);
+    resolved[entry..entry + 2].copy_from_slice(&0x8c20u16.to_le_bytes());
+    resolved[entry + 4..entry + 8].copy_from_slice(&[0x34, 0x80, 0x37, 0]);
+    resolved[entry + 8..entry + 12].copy_from_slice(&137u32.to_le_bytes());
+    resolved[entry + 12..entry + 16].copy_from_slice(&0x5edf_56e2u32.to_le_bytes());
+    resolved[entry + 16..entry + 20].copy_from_slice(&7u32.to_le_bytes());
+    resolved[entry + 28..entry + 32].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let first = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Surface-Sweep1"))
+        .unwrap();
+    let second = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Surface-Sweep2"))
+        .unwrap();
+    assert!(matches!(
+        &second.definition,
+        FeatureDefinition::Sweep {
+            profile: Some(ProfileRef::Generated { curves, native }),
+            ..
+        } if curves.len() == 1
+            && curves[0].feature == first.id
+            && curves[0].local_id == "7"
+            && native.ends_with(&wrapper.to_string())
+    ));
+    assert!(second.dependencies.contains(&first.id));
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_loft() {
     use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PathRef, ProfileRef};
 

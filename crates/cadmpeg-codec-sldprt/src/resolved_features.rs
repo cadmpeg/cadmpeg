@@ -258,12 +258,12 @@ mod marker_tests {
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_surface_selection_at, component_path_features, component_path_terminal_feature,
-        component_profile_source_at, coordinate_marker_local_links, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
-        SCALAR_HEADER,
+        component_profile_source_at, component_reference_curve_path_at,
+        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, marker_object_index, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
+        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -858,6 +858,37 @@ mod marker_tests {
         assert_eq!(component_profile_source_at(&payload, prefix), Some(134));
         payload[source + 40] ^= 1;
         assert_eq!(component_profile_source_at(&payload, prefix), None);
+    }
+
+    #[test]
+    fn component_reference_curve_accepts_count_minus_one_with_instance_separator() {
+        let marker = 24;
+        let mut payload = vec![0; 180];
+        payload[marker - 12..marker - 8].copy_from_slice(&5u32.to_le_bytes());
+        payload[marker - 8..marker - 4].copy_from_slice(&[4, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let mut cursor = marker + 18;
+        let mut signature = [0u8; 12];
+        signature[4..8].copy_from_slice(&137u32.to_le_bytes());
+        for (index, instance) in [0x8c20u16, 0x8c25, 0x8c1a, 0x8c15].into_iter().enumerate() {
+            if index == 1 {
+                payload[cursor..cursor + 6].copy_from_slice(&[1, 0, 0, 0, 0, 0]);
+                cursor += 6;
+            }
+            payload[cursor..cursor + 2].copy_from_slice(&instance.to_le_bytes());
+            payload[cursor + 4..cursor + 16].copy_from_slice(&signature);
+            payload[cursor + 16..cursor + 20].copy_from_slice(&1u32.to_le_bytes());
+            cursor += 20;
+        }
+        payload[cursor + 8..cursor + 12].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+
+        let components = component_reference_curve_path_at(&payload, marker).unwrap();
+        assert_eq!(components.len(), 4);
+        assert_eq!(components[0].instance, 0x8c20);
+        assert!(components.iter().all(|component| component.local_id == 1));
+
+        payload[cursor + 8] ^= 1;
+        assert_eq!(component_reference_curve_path_at(&payload, marker), None);
     }
 
     #[test]
@@ -3048,6 +3079,68 @@ fn component_profile_source_at(payload: &[u8], prefix: usize) -> Option<u32> {
     });
     let source = sources.next()?;
     sources.next().is_none().then_some(source)
+}
+
+fn component_reference_curve_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker - 8..marker - 4)? != [0x04, 0x02, 0, 0]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| (1..=64).contains(count))?;
+    let parse = |count: usize| {
+        let mut cursor = marker + 18;
+        let signature: [u8; 12] = payload.get(cursor + 4..cursor + 16)?.try_into().ok()?;
+        let mut components = Vec::with_capacity(count);
+        for index in 0..count {
+            if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice()) {
+                return None;
+            }
+            components.push(FeatureInputComponentPathEntry {
+                instance: u16::from_le_bytes(payload.get(cursor..cursor + 2)?.try_into().ok()?),
+                type_signature: signature,
+                local_id: u32::from_le_bytes(
+                    payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
+                ),
+            });
+            cursor += 20;
+            if index + 1 != count {
+                let gaps = [0usize, 6]
+                    .into_iter()
+                    .filter(|gap| {
+                        payload.get(cursor + gap + 4..cursor + gap + 16)
+                            == Some(signature.as_slice())
+                            && match *gap {
+                                0 => true,
+                                6 => {
+                                    payload.get(cursor..cursor + 2) != Some(&[0, 0])
+                                        && payload.get(cursor + 2..cursor + 6) == Some(&[0; 4])
+                                }
+                                _ => false,
+                            }
+                    })
+                    .collect::<Vec<_>>();
+                let [gap] = gaps.as_slice() else {
+                    return None;
+                };
+                cursor += gap;
+            }
+        }
+        Some((components, cursor))
+    };
+    parse(count).map(|(components, _)| components).or_else(|| {
+        let (components, end) = (count > 1).then(|| parse(count - 1)).flatten()?;
+        (payload.get(end..end + 12) == Some(&[0, 0, 0, 0, 0, 0, 0, 0, 0xf8, 0x2a, 0, 0]))
+            .then_some(components)
+    })
 }
 
 fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
@@ -5461,6 +5554,177 @@ pub(crate) fn enrich_history_sweep_paths(
                 .properties
                 .entry("Path".into())
                 .or_insert_with(|| path.clone());
+        }
+    }
+}
+
+/// Bind reference-curve cross sections consumed by surface sweeps.
+pub(crate) fn project_surface_sweep_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    use cadmpeg_ir::features::{GeneratedCurveRef, ProfileRef};
+
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .cloned()
+        .collect::<Vec<_>>();
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
+    let mut projections = HashMap::new();
+    for lane in lanes {
+        let Some(reference_class) = lane
+            .classes
+            .iter()
+            .find(|class| class.name == "moCompReferenceCurve_c")
+        else {
+            continue;
+        };
+        let Some(class_offset) = usize::try_from(reference_class.offset).ok() else {
+            continue;
+        };
+        let Some(wrapper_token) = class_offset
+            .checked_sub(2)
+            .and_then(|offset| lane.native_payload.get(offset..offset + 2))
+        else {
+            continue;
+        };
+        let wrapper_token = [wrapper_token[0], wrapper_token[1]];
+        let declared_prefix = class_offset.checked_add(6 + reference_class.name.len());
+        let lane_key = lane
+            .id
+            .rsplit_once('#')
+            .map_or(lane.id.as_str(), |(_, key)| key);
+        let mut objects = history_features
+            .iter()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        for (index, &(start, feature)) in objects.iter().enumerate() {
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::SweepReferenceSurface
+            {
+                continue;
+            }
+            let (Ok(start), end) = (
+                usize::try_from(start),
+                objects
+                    .get(index + 1)
+                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                    .unwrap_or(lane.native_payload.len()),
+            ) else {
+                continue;
+            };
+            let direct = declared_prefix
+                .filter(|prefix| (start..end).contains(prefix))
+                .and_then(|prefix| component_profile_source_at(&lane.native_payload, prefix))
+                .and_then(|source| {
+                    let native = history_features.iter().find(|candidate| {
+                        candidate
+                            .source_id
+                            .as_deref()
+                            .and_then(|value| value.parse::<u32>().ok())
+                            == Some(source)
+                    })?;
+                    feature_ids_by_native
+                        .get(native.id.as_str())
+                        .cloned()
+                        .map(ProfileRef::Feature)
+                });
+            let generated = (start..end.saturating_sub(6))
+                .filter(|offset| {
+                    lane.native_payload.get(*offset..*offset + 2) == Some(&wrapper_token)
+                        && lane.native_payload.get(*offset + 4..*offset + 9)
+                            == Some(&[0x2b, 0x80, 0x02, 0, 0])
+                        && offset.checked_sub(2).is_none_or(|prefix| {
+                            lane.native_payload.get(prefix..*offset) != Some(&[1, 0])
+                        })
+                })
+                .filter_map(|wrapper| {
+                    let candidates = (wrapper + 4..end.saturating_sub(16))
+                        .filter(|marker| {
+                            lane.native_payload.get(*marker..*marker + 16)
+                                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+                        })
+                        .filter_map(|marker| {
+                            component_reference_curve_path_at(&lane.native_payload, marker)
+                                .map(|components| (marker, components))
+                        })
+                        .collect::<Vec<_>>();
+                    let [(_, components)] = candidates.as_slice() else {
+                        return None;
+                    };
+                    let owner = component_path_terminal_feature(&components, &history_features)?;
+                    let feature_id = feature_ids_by_native.get(owner.as_str())?.clone();
+                    let local_id = components
+                        .iter()
+                        .map(|component| component.local_id.to_string())
+                        .collect::<Vec<_>>()
+                        .join(",");
+                    let native = format!(
+                        "sldprt:feature-input:component-reference-curve:{lane_key}:{wrapper}"
+                    );
+                    Some((
+                        ProfileRef::Generated {
+                            curves: vec![GeneratedCurveRef {
+                                feature: feature_id,
+                                local_id,
+                            }],
+                            native,
+                        },
+                        components.clone(),
+                    ))
+                })
+                .collect::<Vec<_>>();
+            let profile = match (direct, generated.as_slice()) {
+                (Some(profile), []) => profile,
+                (None, [(profile, _)]) => profile.clone(),
+                _ => continue,
+            };
+            let mut dependencies = match generated.as_slice() {
+                [(_, components)] => component_path_features(components, &history_features)
+                    .into_iter()
+                    .filter_map(|native| feature_ids_by_native.get(native.as_str()).cloned())
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            };
+            match &profile {
+                ProfileRef::Feature(feature) => dependencies.push(feature.clone()),
+                ProfileRef::Generated { curves, .. } => {
+                    dependencies.extend(curves.iter().map(|curve| curve.feature.clone()));
+                }
+                _ => {}
+            }
+            projections.insert(feature.id.clone(), (profile, dependencies));
+        }
+    }
+    for feature in features {
+        let Some((profile, dependencies)) = feature
+            .native_ref
+            .as_ref()
+            .and_then(|native| projections.remove(native))
+        else {
+            continue;
+        };
+        let FeatureDefinition::Sweep {
+            profile: profile_slot,
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if profile_slot.is_some() {
+            continue;
+        }
+        *profile_slot = Some(profile);
+        for dependency in dependencies {
+            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                feature.dependencies.push(dependency);
+            }
         }
     }
 }

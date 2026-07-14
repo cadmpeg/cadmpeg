@@ -1182,8 +1182,27 @@ pub enum ProfileRef {
     Native(String),
     /// Solved neutral sketch profile.
     Sketch(crate::sketches::SketchId),
+    /// Complete curve result of an earlier construction-history feature.
+    Feature(FeatureId),
+    /// Curves in an intermediate regenerated feature result, paired with the
+    /// format-native persistent reference required for rewrite.
+    Generated {
+        /// Persistent feature-local curve identities.
+        curves: Vec<GeneratedCurveRef>,
+        /// Format-native persistent profile reference.
+        native: String,
+    },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
+}
+
+/// Persistent identity of a curve in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedCurveRef {
+    /// Feature whose regenerated result owns the curve.
+    pub feature: FeatureId,
+    /// Complete ordered feature-local component identity.
+    pub local_id: String,
 }
 
 /// Trajectory consumed by a sweep or path-driven operation.
