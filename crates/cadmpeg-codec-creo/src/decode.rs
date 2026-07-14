@@ -5771,12 +5771,10 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 913 {
-        if let Some(edges) = feature_edge_selection(scan, feature_id) {
-            return IrFeatureDefinition::Fillet {
-                edges,
-                radius: RadiusSpec::Unresolved { form: None },
-            };
-        }
+        return IrFeatureDefinition::Fillet {
+            edges: feature_edge_selection(scan, feature_id).unwrap_or(EdgeSelection::Unresolved),
+            radius: RadiusSpec::Unresolved { form: None },
+        };
     }
     if schema_class == 914 {
         return IrFeatureDefinition::Chamfer {

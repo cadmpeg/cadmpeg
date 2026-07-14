@@ -896,6 +896,32 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
 }
 
 #[test]
+fn decode_types_class_913_without_an_edge_array() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+    ];
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
+        }
+    ));
+}
+
+#[test]
 fn scan_decodes_complete_allfeatur_f9_scalar_slots() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
