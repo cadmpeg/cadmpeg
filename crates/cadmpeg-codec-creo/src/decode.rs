@@ -5901,6 +5901,27 @@ fn schema_feature_definition(
     }
 }
 
+fn named_feature_definition(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    feature_id: u32,
+    kind: &str,
+) -> Option<IrFeatureDefinition> {
+    let schema_class = match kind {
+        "Hole" => 911,
+        "Round" => 913,
+        "Chamfer" => 914,
+        _ => return None,
+    };
+    Some(schema_feature_definition(
+        scan,
+        ir,
+        feature_id,
+        schema_class,
+        kind,
+    ))
+}
+
 fn retain_native_feature_parameters(
     source_properties: &mut BTreeMap<String, String>,
     definition: &IrFeatureDefinition,
@@ -10864,10 +10885,13 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             .and_then(|row| row.root_schema_class)
             .or(operation.root_schema_class);
         let definition = schema_class.map_or_else(
-            || IrFeatureDefinition::Native {
-                kind: operation.kind.clone(),
-                parameters: parameters.clone(),
-                properties: BTreeMap::new(),
+            || {
+                named_feature_definition(scan, &ir, operation.feature_id, &operation.kind)
+                    .unwrap_or_else(|| IrFeatureDefinition::Native {
+                        kind: operation.kind.clone(),
+                        parameters: parameters.clone(),
+                        properties: BTreeMap::new(),
+                    })
             },
             |schema_class| {
                 schema_feature_definition(

@@ -886,13 +886,22 @@ fn scan_decodes_allfeatur_choice_field_wrappers() {
         crate::feature::FeatureFieldValue::CompactIntArray(vec![3, 4])
     );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } =
-        &result.ir.model.features[0].definition
-    else {
-        panic!("native round feature");
-    };
-    assert_eq!(parameters["choice.blend_choice.count"], "7");
-    assert_eq!(parameters["choice.blend_choice.refs"], "3,4");
+    let feature = &result.ir.model.features[0];
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
+        }
+    ));
+    assert_eq!(
+        feature.source_properties["native_parameter.choice.blend_choice.count"],
+        "7"
+    );
+    assert_eq!(
+        feature.source_properties["native_parameter.choice.blend_choice.refs"],
+        "3,4"
+    );
 }
 
 #[test]
@@ -2871,7 +2880,21 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(result.ir.model.features[1].ordinal, 0);
     assert!(matches!(
         &result.ir.model.features[0].definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Hole"
+        cadmpeg_ir::features::FeatureDefinition::Hole {
+            face: None,
+            position: None,
+            direction: None,
+            diameter: None,
+            extent: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &result.ir.model.features[1].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
+        }
     ));
     assert_eq!(
         result
