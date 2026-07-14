@@ -576,19 +576,41 @@ pub fn project_parameter_design(
             ))
         })
         .collect::<HashMap<_, _>>();
-    let mut aliases = HashMap::<(&str, String), Option<ParameterId>>::new();
+    let mut document_aliases = HashMap::<(&str, String), Option<ParameterId>>::new();
+    let mut feature_aliases =
+        HashMap::<(&str, cadmpeg_ir::features::FeatureId, String), Option<ParameterId>>::new();
+    let mut owned_aliases = HashMap::<(&str, String), Option<ParameterId>>::new();
     for parameter in &parameters {
         let scope = parameter_scopes[&parameter.id];
-        aliases
-            .entry((scope, parameter.name.clone()))
-            .and_modify(|candidate| *candidate = None)
-            .or_insert_with(|| Some(parameter.id.clone()));
+        if let Some(owner) = &parameter.owner {
+            feature_aliases
+                .entry((scope, owner.clone(), parameter.name.clone()))
+                .and_modify(|candidate| *candidate = None)
+                .or_insert_with(|| Some(parameter.id.clone()));
+            owned_aliases
+                .entry((scope, parameter.name.clone()))
+                .and_modify(|candidate| *candidate = None)
+                .or_insert_with(|| Some(parameter.id.clone()));
+        } else {
+            document_aliases
+                .entry((scope, parameter.name.clone()))
+                .and_modify(|candidate| *candidate = None)
+                .or_insert_with(|| Some(parameter.id.clone()));
+        }
     }
     for parameter in &mut parameters {
         let scope = parameter_scopes[&parameter.id];
         let mut seen = HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
-            .filter_map(|identifier| aliases.get(&(scope, identifier)).and_then(Clone::clone))
+            .filter_map(|identifier| {
+                let local = parameter.owner.as_ref().and_then(|owner| {
+                    feature_aliases.get(&(scope, owner.clone(), identifier.clone()))
+                });
+                let candidate = local
+                    .or_else(|| document_aliases.get(&(scope, identifier.clone())))
+                    .or_else(|| owned_aliases.get(&(scope, identifier)))?;
+                candidate.clone()
+            })
             .filter(|dependency| dependency != &parameter.id && seen.insert(dependency.clone()))
             .collect();
     }
@@ -11061,6 +11083,119 @@ mod relation_tests {
                 .get("source_kind")
                 .map(String::as_str),
             Some("AlongDistance")
+        );
+    }
+
+    #[test]
+    fn parameter_dependencies_resolve_feature_scope_before_document_scope() {
+        let parameter = |owner, record_index, expression: &str, name: &str| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                owner,
+                expression,
+                if owner.is_some() {
+                    "FeatureInput"
+                } else {
+                    "User Parameter"
+                },
+                Some("mm"),
+                name,
+                1.0,
+            ))
+            .unwrap();
+            parameter.id = format!("f3d:Design/BulkStream.dat:parameter#{record_index}");
+            parameter.record_index = record_index;
+            parameter
+        };
+        let owner =
+            |record_index, parameter_record_index, scope_record_index| DesignParameterOwner {
+                id: format!("f3d:Design/BulkStream.dat:owner#{record_index}"),
+                byte_offset: 0,
+                class_tag: "292".into(),
+                record_index,
+                scope_record_index,
+                local_ordinal: 0,
+                evaluated_value: 1.0,
+                evaluated_value_offset: 0,
+                parameter_record_index,
+                owned_ordinal: 0,
+                variant: 0,
+                companion_record_index: record_index + 1,
+            };
+        let scope = |record_index| DesignParameterScope {
+            id: format!("f3d:Design/BulkStream.dat:scope#{record_index}"),
+            byte_offset: u64::from(record_index),
+            class_tag: "301".into(),
+            record_index,
+            frame_length: 100,
+            kind: "CustomFeature".into(),
+            kind_offset: 0,
+            extrude_operation: None,
+            extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
+            extrude_direction_reversed: None,
+            extrude_direction_reversed_offset: None,
+            extrude_start: None,
+            extrude_start_offset: None,
+            feature_ordinal: record_index,
+            feature_ordinal_offset: 0,
+            history_state_id: None,
+            history_state_id_offset: 0,
+            previous_history_state_id: None,
+            previous_history_state_id_offset: 0,
+            reference_count_offset: 0,
+            reference_members: Vec::new(),
+            reference_member_offsets: Vec::new(),
+            extrude_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "302".into(),
+            paired_byte_offset: u64::from(record_index) + 100,
+        };
+
+        let document_width = parameter(None, 20, "60 mm", "Width");
+        let local_width = parameter(Some(101), 21, "20 mm", "Width");
+        let local_half = parameter(Some(102), 22, "Width / 2", "Half");
+        let remote_half = parameter(Some(103), 23, "Width / 2", "Half");
+        let (_, parameters) = project_parameter_design(
+            &[document_width, local_width, local_half, remote_half],
+            &[
+                owner(101, 21, 201),
+                owner(102, 22, 201),
+                owner(103, 23, 202),
+            ],
+            &[scope(201), scope(202)],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        let by_name_and_owner = |name: &str, owner_record_index: u32| {
+            parameters
+                .iter()
+                .find(|parameter| {
+                    parameter.name == name
+                        && parameter.native_ref.as_deref()
+                            == Some(
+                                format!(
+                                    "f3d:Design/BulkStream.dat:parameter#{}",
+                                    owner_record_index
+                                )
+                                .as_str(),
+                            )
+                })
+                .unwrap()
+        };
+        let document = by_name_and_owner("Width", 20);
+        let local = by_name_and_owner("Width", 21);
+        assert_eq!(
+            by_name_and_owner("Half", 22).dependencies,
+            [local.id.clone()]
+        );
+        assert_eq!(
+            by_name_and_owner("Half", 23).dependencies,
+            [document.id.clone()]
         );
     }
 
