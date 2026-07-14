@@ -1149,6 +1149,29 @@ pub struct FeatureBlockConstruction {
     pub terminal_data_block: String,
 }
 
+/// Exact logical payload reconstructed from one complete `BLOCK` construction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBlockConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Construction defining serialized block order.
+    pub construction: String,
+    /// Ordered member blocks followed by the terminal block.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative source-block starts.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact source-block lengths.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute source-block offsets.
+    pub block_source_offsets: Vec<u64>,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -3546,6 +3569,36 @@ pub fn feature_block_constructions(
         });
     }
     constructions
+}
+
+/// Reconstruct complete `BLOCK` construction payloads in reference order.
+pub fn feature_block_construction_payloads(
+    container: &Container,
+    constructions: &[FeatureBlockConstruction],
+) -> Vec<FeatureBlockConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    constructions
+        .iter()
+        .filter_map(|construction| {
+            let mut data_blocks = construction.member_data_blocks.clone();
+            data_blocks.push(construction.terminal_data_block.clone());
+            let (bytes, block_payload_offsets, block_byte_lengths, block_source_offsets) =
+                join_data_block_bytes(&data_blocks, &blocks)?;
+            Some(FeatureBlockConstructionPayload {
+                id: construction
+                    .id
+                    .replacen("block-construction", "block-construction-payload", 1),
+                operation_label: construction.operation_label.clone(),
+                construction: construction.id.clone(),
+                data_blocks,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets,
+                block_byte_lengths,
+                block_source_offsets,
+            })
+        })
+        .collect()
 }
 
 fn unique_offset_data_block(

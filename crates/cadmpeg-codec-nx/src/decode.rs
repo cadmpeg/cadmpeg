@@ -2862,6 +2862,10 @@ fn attach_native_object_model(
         crate::native::feature_block_construction_references(&scan.container);
     let feature_block_constructions =
         crate::native::feature_block_constructions(&feature_block_construction_references);
+    let feature_block_construction_payloads = crate::native::feature_block_construction_payloads(
+        &scan.container,
+        &feature_block_constructions,
+    );
     let feature_sketch_records = crate::native::feature_sketch_records(
         &feature_operation_labels,
         &feature_operation_records,
@@ -3277,7 +3281,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(99);
+    namespace.version = namespace.version.max(100);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3475,6 +3479,12 @@ fn attach_native_object_model(
     }
     if !feature_block_constructions.is_empty() {
         namespace.set_arena("feature_block_constructions", &feature_block_constructions)?;
+    }
+    if !feature_block_construction_payloads.is_empty() {
+        namespace.set_arena(
+            "feature_block_construction_payloads",
+            &feature_block_construction_payloads,
+        )?;
     }
     if !feature_sketch_records.is_empty() {
         namespace.set_arena("feature_sketch_records", &feature_sketch_records)?;
