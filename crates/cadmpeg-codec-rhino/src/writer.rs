@@ -82,9 +82,7 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         .iter()
         .map(|prepared| {
             let scope = &prepared.scope;
-            attributed_object_record(
-                0x10,
-                BREP_CLASS,
+            brep_object_record(
                 &prepared.payload,
                 &scope.body.id.0,
                 scope.body.name.as_deref(),
@@ -270,7 +268,12 @@ struct BrepScope {
 
 struct PreparedBrep {
     scope: BrepScope,
-    payload: Vec<u8>,
+    payload: BrepPayload,
+}
+
+struct BrepPayload {
+    body: Vec<u8>,
+    direct: Vec<u8>,
 }
 
 struct WritePlan {
@@ -830,7 +833,7 @@ fn json_array_empty(record: &cadmpeg_ir::NativeRecord, name: &str) -> bool {
         .is_some_and(Vec::is_empty)
 }
 
-fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
+fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
 
     let model = &ir.model;
@@ -1086,6 +1089,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
     }
 
     let mut payload = vec![0x32];
+    let mut direct = vec![0x32];
     let c2 = (0..edge_count)
         .map(|index| {
             if let Some((origin, _, u_axis, v_axis)) = plane_frame {
@@ -1252,13 +1256,20 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
         [a[0].max(p.x), a[1].max(p.y), a[2].max(p.z)]
     });
     for value in min.into_iter().chain(max) {
-        payload.extend(value.to_le_bytes());
+        let bytes = value.to_le_bytes();
+        payload.extend(bytes);
+        direct.extend(bytes);
     }
     let mesh_presence = vec![0; model.faces.len()];
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
-    payload.extend(0_i32.to_le_bytes());
-    Ok(Some(payload))
+    let solid = 0_i32.to_le_bytes();
+    payload.extend(solid);
+    direct.extend(solid);
+    Ok(Some(BrepPayload {
+        body: payload,
+        direct,
+    }))
 }
 
 #[derive(Clone, Copy)]
@@ -1275,7 +1286,7 @@ enum WritableFaceSurface<'a> {
 fn multi_face_brep_payload(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<BrepPayload, CodecError> {
     use cadmpeg_ir::topology::{BodyKind, Sense};
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1732,6 +1743,7 @@ fn multi_face_brep_payload(
     }
 
     let mut payload = vec![0x32];
+    let mut direct = vec![0x32];
     let c2 = model
         .coedges
         .iter()
@@ -1919,13 +1931,20 @@ fn multi_face_brep_payload(
         [a[0].max(point.x), a[1].max(point.y), a[2].max(point.z)]
     });
     for value in min.into_iter().chain(max) {
-        payload.extend(value.to_le_bytes());
+        let bytes = value.to_le_bytes();
+        payload.extend(bytes);
+        direct.extend(bytes);
     }
     let mesh_presence = vec![0; model.faces.len()];
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
-    payload.extend(i32::from(body.kind == BodyKind::Solid).to_le_bytes());
-    Ok(payload)
+    let solid = i32::from(body.kind == BodyKind::Solid).to_le_bytes();
+    payload.extend(solid);
+    direct.extend(solid);
+    Ok(BrepPayload {
+        body: payload,
+        direct,
+    })
 }
 
 fn validate_planar_edge(
@@ -3258,6 +3277,23 @@ fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, 
     ))
 }
 
+fn brep_object_record(
+    payload: &BrepPayload,
+    identity: &str,
+    name: Option<&str>,
+    color: Option<cadmpeg_ir::topology::Color>,
+    visible: Option<bool>,
+) -> Result<Vec<u8>, CodecError> {
+    check_object_attributes(identity, name, color)?;
+    Ok(framed_object_record(
+        0x10,
+        BREP_CLASS,
+        &payload.body,
+        Some(&payload.direct),
+        Some(object_attributes_payload(identity, name, color, visible)),
+    ))
+}
+
 fn framed_object_record(
     object_type: i64,
     class_uuid: [u8; 16],
@@ -3271,8 +3307,6 @@ fn framed_object_record(
     let uuid = long_chunk(TCODE_CLASS_UUID, &uuid_body);
     let class_data = if let Some(direct) = direct_class_data {
         crc_chunk_with_direct(TCODE_CLASS_DATA, payload, direct)
-    } else if class_uuid == BREP_CLASS {
-        brep_class_data_chunk(payload)
     } else {
         crc_chunk(TCODE_CLASS_DATA, payload)
     };
@@ -3285,30 +3319,6 @@ fn framed_object_record(
     }
     body.extend(object_end);
     zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
-}
-
-fn brep_class_data_chunk(payload: &[u8]) -> Vec<u8> {
-    let mut direct = vec![payload[0]];
-    let mut cursor = 1;
-    for _ in 0..8 {
-        cursor = nested_chunk_end(payload, cursor);
-    }
-    direct.extend(&payload[cursor..cursor + 48]);
-    cursor += 48;
-    for _ in 0..2 {
-        cursor = nested_chunk_end(payload, cursor);
-    }
-    direct.extend(&payload[cursor..]);
-    crc_chunk_with_direct(TCODE_CLASS_DATA, payload, &direct)
-}
-
-fn nested_chunk_end(bytes: &[u8], offset: usize) -> usize {
-    let length = i64::from_le_bytes(
-        bytes[offset + 4..offset + 12]
-            .try_into()
-            .expect("generated nested chunk header width"),
-    );
-    offset + 12 + usize::try_from(length).expect("generated nested chunk length")
 }
 
 fn check_object_attributes(
