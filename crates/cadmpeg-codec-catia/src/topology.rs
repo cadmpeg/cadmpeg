@@ -513,7 +513,7 @@ impl IncidenceCandidateSearch<'_> {
         // Candidate incidence is a fallback after native-port and trim-mesh
         // propagation. Keep it bounded so unresolved geometric ambiguity
         // declines atomically instead of making container decode unbounded.
-        const MAX_STATES: usize = 8_192;
+        const MAX_STATES: usize = 1_024;
         if self.solution.is_some() || self.states >= MAX_STATES {
             return;
         }
@@ -1104,7 +1104,10 @@ impl PortCandidateSearch<'_> {
     }
 
     fn search(&mut self) {
-        const MAX_STATES: usize = 65_536;
+        // Native-port binding precedes geometric incidence fallback but can
+        // still contain symmetric coordinate assignments. Ambiguity beyond
+        // this bound is retained for later paths rather than partially bound.
+        const MAX_STATES: usize = 1_024;
         if self.solution.is_some() || self.states >= MAX_STATES {
             return;
         }

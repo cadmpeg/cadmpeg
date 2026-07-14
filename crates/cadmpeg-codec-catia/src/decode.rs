@@ -2599,9 +2599,26 @@ fn attach_standard_topology(
         .map(|support| native_edges.get(&support.tag).copied())
         .collect::<Option<Vec<_>>>();
     let native_endpoint_pairs = endpoint_options.as_ref().and_then(|options| {
-        native_ports
-            .as_ref()
-            .and_then(|ports| topology::bind_edge_port_candidates(ports, options))
+        const MAX_NATIVE_PORT_CHOICES: usize = 8_192;
+
+        let ports = native_ports.as_ref()?;
+        let seeds = options
+            .iter()
+            .map(|choices| {
+                <[[usize; 2]; 1]>::try_from(choices.as_slice())
+                    .ok()
+                    .map(|[pair]| pair)
+            })
+            .collect::<Vec<_>>();
+        let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
+        if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
+            return Some(complete);
+        }
+        // Exhaustive binding is a fallback after exact identity propagation.
+        // Large symmetric choice sets remain unresolved and continue through
+        // trim-mesh and incidence paths instead of making decode unbounded.
+        (options.iter().map(Vec::len).sum::<usize>() <= MAX_NATIVE_PORT_CHOICES)
+            .then(|| topology::bind_edge_port_candidates(ports, options))?
     });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
