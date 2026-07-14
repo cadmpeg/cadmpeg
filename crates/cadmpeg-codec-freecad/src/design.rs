@@ -1544,7 +1544,14 @@ fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Featur
 }
 
 fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
-    let op = if kind.ends_with("Cut") {
+    let op = if kind == "PartDesign::Boolean" {
+        match integer_property(properties, "Type").unwrap_or(0) {
+            0 => BooleanOp::Join,
+            1 => BooleanOp::Cut,
+            2 => BooleanOp::Intersect,
+            _ => return None,
+        }
+    } else if kind.ends_with("Cut") {
         BooleanOp::Cut
     } else if kind.ends_with("Common") || kind.ends_with("MultiCommon") {
         BooleanOp::Intersect
@@ -1553,7 +1560,26 @@ fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Feat
     } else {
         return None;
     };
-    let (target, tools) = if let (Some(base), Some(tool)) =
+    let (target, tools) = if kind == "PartDesign::Boolean" {
+        let group = property(properties, "Group")?;
+        if group.links.is_empty() {
+            return None;
+        }
+        if let Some(base) =
+            property(properties, "BaseFeature").filter(|base| !base.links.is_empty())
+        {
+            (
+                BodySelection::Native(base.id.clone()),
+                BodySelection::Native(group.id.clone()),
+            )
+        } else {
+            let last = group.links.len() - 1;
+            (
+                BodySelection::Native(format!("{}#link:{last}", group.id)),
+                BodySelection::Native(format!("{}#links:0..{last}", group.id)),
+            )
+        }
+    } else if let (Some(base), Some(tool)) =
         (property(properties, "Base"), property(properties, "Tool"))
     {
         if base.links.is_empty() || tool.links.is_empty() {
@@ -2048,6 +2074,9 @@ fn is_primitive(kind: &str) -> bool {
         && (kind.starts_with("Part::") || kind.starts_with("PartDesign::"))
 }
 fn is_boolean(kind: &str) -> bool {
+    if kind == "PartDesign::Boolean" {
+        return true;
+    }
     ["Cut", "Fuse", "MultiFuse", "Common", "MultiCommon"]
         .iter()
         .any(|operation| kind == format!("Part::{operation}"))

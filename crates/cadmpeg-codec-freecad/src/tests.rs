@@ -373,6 +373,56 @@ fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
 }
 
 #[test]
+fn transfers_partdesign_boolean_base_and_group_rules() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="Part::Box" name="A" id="1"/><Object type="Part::Box" name="B" id="2"/><Object type="Part::Box" name="C" id="3"/>
+ <Object type="PartDesign::Boolean" name="Fuse" id="4"/><Object type="PartDesign::Boolean" name="Cut" id="5"/>
+</Objects>
+<ObjectData Count="5">
+ <Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="C"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Fuse"><Properties Count="2"><Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="Group" type="App::PropertyLinkList"><LinkList count="3"><Link value="A"/><Link value="B"/><Link value="C"/></LinkList></Property></Properties></Object>
+ <Object name="Cut"><Properties Count="3"><Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property><Property name="BaseFeature" type="App::PropertyLink"><Link value="A"/></Property><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="B"/><Link value="C"/></LinkList></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("PartDesign booleans");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("boolean")
+            .definition
+    };
+    assert!(matches!(
+        definition("Fuse"),
+        cadmpeg_ir::features::FeatureDefinition::Combine {
+            target: cadmpeg_ir::features::BodySelection::Native(target),
+            tools: cadmpeg_ir::features::BodySelection::Native(tools),
+            op: cadmpeg_ir::features::BooleanOp::Join,
+        } if target.ends_with(":property:Group#link:2")
+            && tools.ends_with(":property:Group#links:0..2")
+    ));
+    assert!(matches!(
+        definition("Cut"),
+        cadmpeg_ir::features::FeatureDefinition::Combine {
+            target: cadmpeg_ir::features::BodySelection::Native(target),
+            tools: cadmpeg_ir::features::BodySelection::Native(tools),
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+        } if target.ends_with(":property:BaseFeature") && tools.ends_with(":property:Group")
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
