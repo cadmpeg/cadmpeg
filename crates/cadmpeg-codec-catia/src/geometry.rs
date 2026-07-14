@@ -705,6 +705,20 @@ pub struct B2ReferenceList {
     pub references: Vec<u32>,
 }
 
+/// Nine-reference owner packet stored in a `b2/b3/b4 03 62` record with a
+/// 62-byte numeric tail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B2OwnerPacket {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Nine compact persistent identities following the `0x89` count.
+    pub references: [u32; 9],
+    /// Fixed-width numeric tail retained byte-exactly.
+    pub numeric_tail: [u8; 62],
+}
+
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B2ConeFace {
@@ -911,6 +925,33 @@ pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
             (at == refs_end).then_some(B2ReferenceList {
                 pos: frame.pos,
                 references,
+            })
+        })
+        .collect()
+}
+
+/// Decode width-coded class-`0x62` owner packets whose counted references and
+/// fixed numeric tail consume the complete frame.
+#[must_use]
+pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
+    b_family_frames(data, 0x62)
+        .into_iter()
+        .filter_map(|frame| {
+            if frame.end - frame.payload != 0x52 || data.get(frame.payload) != Some(&0x89) {
+                return None;
+            }
+            let mut at = frame.payload + 1;
+            let references: [u32; 9] = (0..9)
+                .map(|_| persistent_ref(data, &mut at))
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            let numeric_tail = data.get(at..frame.end)?.try_into().ok()?;
+            Some(B2OwnerPacket {
+                pos: frame.pos,
+                header_token: frame.header_token,
+                references,
+                numeric_tail,
             })
         })
         .collect()
@@ -3877,6 +3918,16 @@ fn compact_int(bytes: &[u8], at: &mut usize) -> Option<u32> {
         Some(value)
     } else {
         None
+    }
+}
+
+fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    if bytes.get(*at) == Some(&0x0a) {
+        let value = u32::from(u16_le(bytes, *at + 1)?);
+        *at += 3;
+        Some(value)
+    } else {
+        compact_int(bytes, at)
     }
 }
 

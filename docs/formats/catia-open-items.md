@@ -27,6 +27,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - Standard-path line equations, multi-body shell membership, annular-cap orientation, and plane-normal sign.
 - The standard-path arc branch is unspecified for torus-witnessed arcs and arcs with no witnessed adjacent face.
 - The `a5 03 20` `op1` or persistent-tag reference to serialized-record mapping is unspecified.
+- The field split within the 62-byte numeric tail of `b2/b3/b4 03 62` owner packets and the owner packet's binding to a face record are unspecified.
 
 ## Object stream
 

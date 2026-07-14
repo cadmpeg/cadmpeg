@@ -940,6 +940,23 @@ fn b2_reference_list_stream() -> Vec<u8> {
     record
 }
 
+fn b2_owner_packet_stream() -> Vec<u8> {
+    let mut record = vec![0xb2, 0x03, 0x62, 0x52, 0x05, 0x89];
+    for (index, value) in [1000u16, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
+        .into_iter()
+        .enumerate()
+    {
+        if index % 2 == 0 {
+            record.push(0x0a);
+            record.extend_from_slice(&value.to_le_bytes());
+        } else {
+            record.push(4 * u8::try_from(value).unwrap() + 1);
+        }
+    }
+    record.extend(0u8..62);
+    record
+}
+
 fn b2_cone_face_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
     for value in 0u8..16 {
@@ -2851,6 +2868,18 @@ fn b2_reference_list_parser_reads_compact_refs_and_unit_tail() {
     let records = crate::geometry::b2_reference_lists(&b2_reference_list_stream());
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].references, (0u32..26).collect::<Vec<_>>());
+}
+
+#[test]
+fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
+    let packets = crate::geometry::b2_owner_packets(&b2_owner_packet_stream());
+    assert_eq!(packets.len(), 1);
+    assert_eq!(packets[0].header_token, 5);
+    assert_eq!(
+        packets[0].references,
+        [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
+    );
+    assert_eq!(packets[0].numeric_tail, std::array::from_fn(|i| i as u8));
 }
 
 #[test]
