@@ -2479,10 +2479,8 @@ pub(crate) fn bind_parameter_scalars(
             .collect::<HashMap<_, _>>();
         let mut starts = Vec::<(u64, &crate::records::Feature)>::new();
         for feature in native_features.values() {
-            let Some(name) = feature_object_name(feature, lane) else {
-                continue;
-            };
-            starts.push((name.offset, feature));
+            let start = feature_object_name(feature, lane).map_or(u64::MAX, |name| name.offset);
+            starts.push((start, feature));
         }
         starts.sort_by_key(|start| start.0);
         for (index, &(start, native_feature)) in starts.iter().enumerate() {
@@ -2497,7 +2495,10 @@ pub(crate) fn bind_parameter_scalars(
                 let scalars = lane
                     .scalars
                     .iter()
-                    .filter(|scalar| scalar.offset > start && scalar.offset < end)
+                    .filter(|scalar| match scalar.feature_ref.as_deref() {
+                        Some(owner) => owner == native_feature.id,
+                        None => scalar.offset > start && scalar.offset < end,
+                    })
                     .filter(|scalar| {
                         names_by_id.get(scalar.name.as_str()).copied()
                             == Some(parameter.name.as_str())

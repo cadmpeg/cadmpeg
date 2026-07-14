@@ -293,6 +293,12 @@ fn build_geometry_ir(
         &ir.model.features,
         &pmi_dimensions,
     );
+    crate::resolved_features::bind_parameter_scalars(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        &histories,
+        &lanes,
+    );
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, mut sketch_entities, mut sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
@@ -918,12 +924,6 @@ fn project_design_history(
     crate::resolved_features::enrich_history_parameters(&mut parameter_projection, lanes, false);
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
-    crate::resolved_features::bind_parameter_scalars(
-        &mut ir.model.parameters,
-        &ir.model.features,
-        histories,
-        lanes,
-    );
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_sha256".into(),
