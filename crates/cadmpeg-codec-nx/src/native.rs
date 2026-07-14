@@ -404,7 +404,7 @@ pub struct FeatureSketchConstructionPayload {
     pub operation_label: String,
     /// Complete construction-input record defining block order.
     pub construction_inputs: String,
-    /// Ordered leading member blocks; the separated terminal is not payload.
+    /// Ordered leading member blocks followed by the separated terminal block.
     pub data_blocks: Vec<String>,
     /// Exact concatenated payload length.
     pub byte_len: u64,
@@ -1440,7 +1440,8 @@ pub fn feature_sketch_construction_payloads(
     constructions
         .iter()
         .filter_map(|construction| {
-            let data_blocks = construction.member_data_blocks.clone();
+            let mut data_blocks = construction.member_data_blocks.clone();
+            data_blocks.push(construction.terminal_data_block.clone());
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&data_blocks, &blocks)?;
             Some(FeatureSketchConstructionPayload {
@@ -1497,7 +1498,8 @@ pub fn feature_sketch_payload_scalars(
     constructions
         .iter()
         .filter_map(|construction| {
-            let data_blocks = construction.member_data_blocks.clone();
+            let mut data_blocks = construction.member_data_blocks.clone();
+            data_blocks.push(construction.terminal_data_block.clone());
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&data_blocks, &blocks)?;
             let construction_payload = construction.id.replacen(
@@ -1548,7 +1550,8 @@ pub fn feature_sketch_payload_names(
     constructions
         .iter()
         .flat_map(|construction| {
-            let data_blocks = construction.member_data_blocks.clone();
+            let mut data_blocks = construction.member_data_blocks.clone();
+            data_blocks.push(construction.terminal_data_block.clone());
             let Some((payload, block_payload_offsets, block_byte_lengths, block_source_offsets)) =
                 join_data_block_bytes(&data_blocks, &blocks)
             else {

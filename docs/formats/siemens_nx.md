@@ -567,7 +567,7 @@ A `SKETCH` operation carries one ordered counted-reference field beginning `01 0
 
 A complete sketch construction-input record requires one joined sketch record, a consistent declared count, contiguous reference ordinals, exactly `max(declared_count-1, 0)` leading member references, one final terminal reference, and unique data-block resolution for every reference. It retains the leading member lane and separated terminal reference as distinct ordered fields. Any missing, inconsistent, noncontiguous, multiply terminal, or unresolved field is rejected atomically.
 
-The logical sketch construction payload is the bytewise concatenation of the resolved leading member blocks. The separated terminal reference does not contribute payload bytes. Block boundaries do not delimit values. The payload retains its exact concatenated byte length and hash, ordered source-block identities, each block's payload offset and byte length, and each block's absolute source offset.
+The logical sketch construction payload is the bytewise concatenation of the resolved leading member blocks followed by the resolved terminal block. Block boundaries do not delimit values or named-record boundaries. The payload retains its exact concatenated byte length and hash, ordered source-block identities, each block's payload offset and byte length, and each block's absolute source offset.
 
 A sketch payload scalar field is `50 59 66, field_code:u8, 00, shifted_f64`. The shifted binary64 uses the extrusion shifted-IEEE transform. Each complete finite field retains its discriminator, decoded value, payload-relative marker offset, and absolute source offset. The field frame does not assign a geometric or constraint role to the value.
 
