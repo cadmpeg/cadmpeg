@@ -5016,7 +5016,10 @@ fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> 
 fn marker_accepts_locus(kind: SketchInputKind, geometry: &SketchGeometry) -> bool {
     match kind {
         SketchInputKind::Arc => matches!(geometry, SketchGeometry::Arc { .. }),
-        SketchInputKind::LineOrCircle => !matches!(geometry, SketchGeometry::Arc { .. }),
+        SketchInputKind::LineOrCircle => matches!(
+            geometry,
+            SketchGeometry::Line { .. } | SketchGeometry::Circle { .. }
+        ),
         SketchInputKind::Point
         | SketchInputKind::ConstrainedPoint
         | SketchInputKind::Relation(_)
@@ -6517,6 +6520,34 @@ mod profile_join_tests {
                 vec![cadmpeg_ir::sketches::SketchLocus::Entity(entity.clone())]
             );
         }
+    }
+
+    #[test]
+    fn curve_handles_reject_point_geometry() {
+        let point = SketchGeometry::Point {
+            position: Point2::new(0.0, 0.0),
+        };
+        let line = SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        };
+        let circle = SketchGeometry::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(1.0),
+        };
+
+        assert!(!super::marker_accepts_locus(
+            SketchInputKind::LineOrCircle,
+            &point
+        ));
+        assert!(super::marker_accepts_locus(
+            SketchInputKind::LineOrCircle,
+            &line
+        ));
+        assert!(super::marker_accepts_locus(
+            SketchInputKind::LineOrCircle,
+            &circle
+        ));
     }
 
     #[test]
