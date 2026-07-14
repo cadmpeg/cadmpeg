@@ -1627,18 +1627,25 @@ fn exact_atomic_constraint(
         SketchConstraintKind::Colinear => {
             lines().map(|(first, second)| Definition::Collinear { first, second })
         }
-        SketchConstraintKind::Concentric
+        SketchConstraintKind::Concentric => {
             if entities.len() == 2
                 && entities.iter().all(|entity| {
                     matches!(
                         entity.geometry,
                         Geometry::Circle { .. } | Geometry::Arc { .. } | Geometry::Ellipse { .. }
                     )
-                }) =>
-        {
-            Some(Definition::Concentric {
-                first: entities[0].id.clone(),
-                second: entities[1].id.clone(),
+                })
+            {
+                return Some(Definition::Concentric {
+                    first: entities[0].id.clone(),
+                    second: entities[1].id.clone(),
+                });
+            }
+            let (first, second, axis) = reflected_symmetry(entities)?;
+            Some(Definition::Symmetric {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id.clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id.clone()),
+                axis: axis.id.clone(),
             })
         }
         SketchConstraintKind::EqualLength => {
@@ -1703,6 +1710,114 @@ fn exact_atomic_constraint(
         }),
         _ => None,
     }
+}
+
+fn reflected_symmetry<'a>(
+    entities: &[&'a cadmpeg_ir::sketches::SketchEntity],
+) -> Option<(
+    &'a cadmpeg_ir::sketches::SketchEntity,
+    &'a cadmpeg_ir::sketches::SketchEntity,
+    &'a cadmpeg_ir::sketches::SketchEntity,
+)> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    if entities.len() != 3 {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for axis_ordinal in 0..entities.len() {
+        let axis = entities[axis_ordinal];
+        let SketchGeometry::Line {
+            start: axis_start,
+            end: axis_end,
+        } = &axis.geometry
+        else {
+            continue;
+        };
+        let others = entities
+            .iter()
+            .enumerate()
+            .filter(|(ordinal, _)| *ordinal != axis_ordinal)
+            .map(|(_, entity)| *entity)
+            .collect::<Vec<_>>();
+        if reflected_geometry_matches(
+            &others[0].geometry,
+            &others[1].geometry,
+            axis_start,
+            axis_end,
+        ) {
+            candidates.push((others[0], others[1], axis));
+        }
+    }
+    (candidates.len() == 1).then(|| candidates.remove(0))
+}
+
+fn reflected_geometry_matches(
+    first: &cadmpeg_ir::sketches::SketchGeometry,
+    second: &cadmpeg_ir::sketches::SketchGeometry,
+    axis_start: &Point2,
+    axis_end: &Point2,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    match (first, second) {
+        (
+            SketchGeometry::Point {
+                position: first_position,
+            },
+            SketchGeometry::Point {
+                position: second_position,
+            },
+        ) => reflect_point(*first_position, *axis_start, *axis_end)
+            .is_some_and(|reflected| sketch_points_close(reflected, *second_position)),
+        (
+            SketchGeometry::Line {
+                start: first_start,
+                end: first_end,
+            },
+            SketchGeometry::Line {
+                start: second_start,
+                end: second_end,
+            },
+        ) => {
+            let Some(reflected_start) = reflect_point(*first_start, *axis_start, *axis_end) else {
+                return false;
+            };
+            let Some(reflected_end) = reflect_point(*first_end, *axis_start, *axis_end) else {
+                return false;
+            };
+            sketch_points_close(reflected_start, *second_start)
+                && sketch_points_close(reflected_end, *second_end)
+                || sketch_points_close(reflected_start, *second_end)
+                    && sketch_points_close(reflected_end, *second_start)
+        }
+        _ => false,
+    }
+}
+
+fn reflect_point(point: Point2, axis_start: Point2, axis_end: Point2) -> Option<Point2> {
+    let du = axis_end.u - axis_start.u;
+    let dv = axis_end.v - axis_start.v;
+    let norm_squared = du * du + dv * dv;
+    (norm_squared > 1.0e-18).then(|| {
+        let projection =
+            ((point.u - axis_start.u) * du + (point.v - axis_start.v) * dv) / norm_squared;
+        Point2::new(
+            2.0 * (axis_start.u + projection * du) - point.u,
+            2.0 * (axis_start.v + projection * dv) - point.v,
+        )
+    })
+}
+
+fn sketch_points_close(first: Point2, second: Point2) -> bool {
+    let scale = 1.0
+        + first
+            .u
+            .abs()
+            .max(first.v.abs())
+            .max(second.u.abs())
+            .max(second.v.abs());
+    (first.u - second.u).abs() <= scale * 1.0e-9 && (first.v - second.v).abs() <= scale * 1.0e-9
 }
 
 fn relation_operand_index(operand: &SketchRelationOperand) -> u32 {
@@ -5895,8 +6010,8 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_sketch_graph, companion_owned_interval,
-        decode_fillet_radius_groups, find_dimension_locus_groups, find_dimension_locus_pair,
-        identity_matrix, neutral_sketch_id, next_indexed_record_offset,
+        decode_fillet_radius_groups, exact_atomic_constraint, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, neutral_sketch_id, next_indexed_record_offset,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -5919,7 +6034,9 @@ mod relation_tests {
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId,
+    };
     use std::collections::HashSet;
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
@@ -7148,6 +7265,67 @@ mod relation_tests {
             constraints[3].definition,
             SketchConstraintDefinition::Midpoint { .. }
         ));
+    }
+
+    #[test]
+    fn three_member_concentric_state_projects_unique_reflection_symmetry() {
+        let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let first = entity(
+            "generated:point#left",
+            SketchGeometry::Point {
+                position: Point2::new(-2.0, 3.0),
+            },
+        );
+        let axis_entity = entity(
+            "generated:line#axis",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, -5.0),
+                end: Point2::new(0.0, 5.0),
+            },
+        );
+        let second = entity(
+            "generated:point#right",
+            SketchGeometry::Point {
+                position: Point2::new(2.0, 3.0),
+            },
+        );
+
+        let definition = exact_atomic_constraint(
+            SketchConstraintKind::Concentric,
+            &[&first, &axis_entity, &second],
+        )
+        .unwrap();
+        assert!(matches!(
+            definition,
+            SketchConstraintDefinition::Symmetric {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
+                axis: ref axis_id,
+            } if first_id == &first.id
+                && second_id == &second.id
+                && axis_id == &axis_entity.id
+        ));
+
+        let off_axis = entity(
+            "generated:line#off-axis",
+            SketchGeometry::Line {
+                start: Point2::new(1.0, -5.0),
+                end: Point2::new(1.0, 5.0),
+            },
+        );
+        assert!(exact_atomic_constraint(
+            SketchConstraintKind::Concentric,
+            &[&first, &off_axis, &second],
+        )
+        .is_none());
     }
 
     #[test]
