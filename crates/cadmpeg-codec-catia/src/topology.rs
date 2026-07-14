@@ -3991,8 +3991,11 @@ impl MeshSelectionSearch<'_> {
                 self.face_work[face]?;
                 let assignments = &self.assignments[face];
                 if assignments.is_empty() {
-                    return Some((0, 0, 0, 0, face));
+                    return Some((0, 0, 0, 0, 0, face));
                 }
+                let can_merge = assignments
+                    .iter()
+                    .any(|assignment| mesh_assignment_can_merge(assignment, &mut measured));
                 let direction_work = assignments
                     .iter()
                     .map(|assignment| {
@@ -4024,6 +4027,7 @@ impl MeshSelectionSearch<'_> {
                     })
                     .count();
                 Some((
+                    if can_merge { 1 } else { 2 },
                     assignments.len(),
                     direction_work,
                     usize::MAX - selected_incidence,
@@ -4032,7 +4036,7 @@ impl MeshSelectionSearch<'_> {
                 ))
             })
             .min();
-        let Some((supported, _, _, _, face)) = next else {
+        let Some((_, supported, _, _, _, face)) = next else {
             let mut quotient = quotient.clone();
             let Some(root_points) =
                 quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
@@ -4159,6 +4163,36 @@ impl MeshSelectionSearch<'_> {
             }
         }
     }
+}
+
+fn mesh_assignment_can_merge(
+    assignment: &MeshFaceBoundaryAssignment,
+    quotient: &mut MeshQuotient,
+) -> bool {
+    fn possible_ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
+        let port = |reversed: bool| {
+            use_.edge
+                .checked_mul(2)?
+                .checked_add(usize::from(reversed != end))
+        };
+        match use_.reversed {
+            Some(reversed) => [port(reversed), None],
+            None => [port(false), port(true)],
+        }
+    }
+
+    assignment.boundaries.iter().any(|boundary| {
+        (0..boundary.len()).any(|index| {
+            let left = possible_ports(boundary[index], true);
+            let right = possible_ports(boundary[(index + 1) % boundary.len()], false);
+            left.into_iter().flatten().any(|left| {
+                right
+                    .into_iter()
+                    .flatten()
+                    .any(|right| quotient.union.find(left) != quotient.union.find(right))
+            })
+        })
+    })
 }
 
 fn mesh_edge_points_compatible(
@@ -4856,10 +4890,10 @@ mod motif_tests {
 
     use super::{
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments,
-        mesh_edge_points_compatible, motif_port_points, parse_trim_chain,
-        propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
-        reconstruct_incidence_candidates, unique_coordinate_bijection, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
+        mesh_assignment_can_merge, mesh_edge_points_compatible, motif_port_points,
+        parse_trim_chain, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
+        reconstruct_incidence, reconstruct_incidence_candidates, unique_coordinate_bijection,
+        Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
         MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
         TrimRecord, UnionFind,
     };
@@ -5382,6 +5416,36 @@ mod motif_tests {
         };
 
         assert!(!search.fixed_remaining_faces_are_orientable());
+    }
+
+    #[test]
+    fn mesh_assignment_distinguishes_quotient_work_from_direction_only_work() {
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: Some(false),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 0,
+                    reversed: Some(false),
+                },
+            ]],
+        };
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![HashSet::from([0, 1]); 4],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+
+        assert!(mesh_assignment_can_merge(&assignment, &mut quotient));
+        quotient.merge(1, 2).expect("first boundary corner");
+        quotient.merge(3, 0).expect("second boundary corner");
+        assert!(!mesh_assignment_can_merge(&assignment, &mut quotient));
     }
 
     #[test]
