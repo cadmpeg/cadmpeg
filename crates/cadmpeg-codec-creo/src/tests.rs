@@ -2704,6 +2704,40 @@ fn decode_transfers_exact_datum_plane_carrier() {
 }
 
 #[test]
+fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
+    let mut datum = vec![4, 0x22, 4, 1, 0, 0];
+    datum.extend([0x0f; 4]);
+    for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
+        if value == 0.0 {
+            datum.push(0x0f);
+        } else {
+            let mut bytes = value.to_be_bytes();
+            bytes[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
+            datum.extend(bytes);
+        }
+    }
+    let data = build_prt(
+        "c",
+        &[
+            ("ActDatums", datum),
+            ("MdlStatus", b"Datum Plane id 4\0".to_vec()),
+        ],
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert_eq!(result.ir.model.features.len(), 1);
+    let feature = &result.ir.model.features[0];
+    assert_eq!(feature.id.as_str(), "creo:model:feature#4");
+    assert_eq!(feature.name.as_deref(), Some("Datum Plane id 4"));
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+    ));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn decode_annotations_cover_every_emitted_entity() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);

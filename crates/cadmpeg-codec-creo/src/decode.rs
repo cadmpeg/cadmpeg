@@ -10067,6 +10067,41 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                     && operation.offset < section.offset.saturating_add(section.length)
             })
             .map_or("MdlStatus", |section| section.name.as_str());
+        let name = operation
+            .display_name_stored
+            .then(|| format!("{} id {}", operation.kind, operation.feature_id));
+        let source_tag = operation.recipe.map(|recipe| match recipe {
+            crate::feature::FeatureRecipeKind::Extrude => "protextrude".to_string(),
+            crate::feature::FeatureRecipeKind::Revolve => "protrevolve".to_string(),
+        });
+        if let Some(existing) = ir
+            .model
+            .features
+            .iter_mut()
+            .find(|feature| feature.id == id)
+        {
+            if name.is_some() {
+                existing.name = name;
+            }
+            if existing.parent.is_none() {
+                existing.parent = parent;
+            }
+            for dependency in dependencies {
+                if !existing.dependencies.contains(&dependency) {
+                    existing.dependencies.push(dependency);
+                }
+            }
+            existing.source_properties.extend(source_properties);
+            if source_tag.is_some() {
+                existing.source_tag = source_tag;
+            }
+            for output in outputs {
+                if !existing.outputs.contains(&output) {
+                    existing.outputs.push(output);
+                }
+            }
+            continue;
+        }
         annotate(
             &mut annotations,
             &id,
@@ -10082,17 +10117,12 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         ir.model.features.push(Feature {
             id,
             ordinal: (operation_ordinal_base + operation_index) as u64,
-            name: operation
-                .display_name_stored
-                .then(|| format!("{} id {}", operation.kind, operation.feature_id)),
+            name,
             suppressed: false,
             parent,
             dependencies,
             source_properties,
-            source_tag: operation.recipe.map(|recipe| match recipe {
-                crate::feature::FeatureRecipeKind::Extrude => "protextrude".to_string(),
-                crate::feature::FeatureRecipeKind::Revolve => "protrevolve".to_string(),
-            }),
+            source_tag,
             source_text: None,
             source_content: Vec::new(),
             outputs,
