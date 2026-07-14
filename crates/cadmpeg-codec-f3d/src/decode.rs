@@ -147,6 +147,12 @@ pub fn decode(
                     &native.sketch_points,
                     &native.sketch_curve_identities,
                 )?;
+            crate::design::remove_dimension_frame_relations(
+                &mut native.sketch_relations,
+                &native.design_dimension_locus_pairs,
+                &native.design_dimension_locus_groups,
+                &native.design_dimension_null_locus_pairs,
+            );
             crate::design::bind_dimension_loci(
                 &native.design_sketch_placements,
                 &native.design_parameter_owners,
@@ -322,6 +328,12 @@ pub fn decode(
         &native.sketch_points,
         &native.sketch_curve_identities,
     )?;
+    crate::design::remove_dimension_frame_relations(
+        &mut native.sketch_relations,
+        &native.design_dimension_locus_pairs,
+        &native.design_dimension_locus_groups,
+        &native.design_dimension_null_locus_pairs,
+    );
     crate::design::bind_dimension_loci(
         &native.design_sketch_placements,
         &native.design_parameter_owners,

@@ -1427,6 +1427,34 @@ pub fn project_dimension_constraints(
     constraints
 }
 
+/// Remove generic relation parses whose exact stream position is owned by a
+/// typed dimension frame.
+pub fn remove_dimension_frame_relations(
+    relations: &mut Vec<SketchRelation>,
+    pairs: &[DesignDimensionLocusPair],
+    groups: &[DesignDimensionLocusGroup],
+    null_pairs: &[DesignDimensionNullLocusPair],
+) {
+    let dimension_frames =
+        pairs
+            .iter()
+            .filter_map(|pair| Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset)))
+            .chain(groups.iter().filter_map(|group| {
+                Some((native_stream(&group.id)?.to_owned(), group.byte_offset))
+            }))
+            .chain(
+                null_pairs.iter().filter_map(|pair| {
+                    Some((native_stream(&pair.id)?.to_owned(), pair.byte_offset))
+                }),
+            )
+            .collect::<HashSet<_>>();
+    relations.retain(|relation| {
+        native_stream(&relation.id).is_none_or(|scope| {
+            !dimension_frames.contains(&(scope.to_owned(), relation.byte_offset))
+        })
+    });
+}
+
 /// Bind geometry referenced only by dimensional companions to the sketch
 /// reached through the parameter scope or the counted frame's explicit owner.
 pub fn bind_dimension_loci(
@@ -5876,6 +5904,7 @@ mod relation_tests {
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
         parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
         project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -6205,6 +6234,35 @@ mod relation_tests {
         assert_eq!(group.return_members, [217, 175]);
         assert_eq!(group.next_class_tag, "314");
         assert_eq!(group.next_record_index, 250);
+
+        let relation_at = |stream: &str, byte_offset| SketchRelation {
+            id: format!("f3d:{stream}:sketch-relation#{byte_offset}"),
+            record_index: 249,
+            class_tag: "286".into(),
+            byte_offset,
+            state_offset: 66,
+            owner_reference: 172,
+            owner_entity_id: "0_172".into(),
+            auxiliary_references: Vec::new(),
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![175, 217],
+            resolved_members: Vec::new(),
+            member_offsets: vec![25, 40],
+            owner_reference_offset: 56,
+            state: 0,
+            constraint_kinds: vec![SketchConstraintKind::Coincident],
+            unknown_constraint_bits: 0,
+            return_members: vec![217, 175],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: vec![79, 90],
+            raw_bytes: bytes[..101].to_vec(),
+        };
+        let mut relations = vec![relation_at("native", 0), relation_at("other", 0)];
+        let mut group = group;
+        group.id = "f3d:native:design-dimension-locus-group#0".into();
+        remove_dimension_frame_relations(&mut relations, &[], &[group], &[]);
+        assert_eq!(relations.len(), 1);
+        assert!(relations[0].id.starts_with("f3d:other:"));
 
         let body = bytes[11..101].to_vec();
         bytes.extend_from_slice(&body);
