@@ -2216,6 +2216,16 @@ fn saved_arc_scalar(
     end: usize,
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
+    if payload.get(offset) == Some(&0x18)
+        && payload.get(offset + 1).is_some_and(|next| {
+            matches!(
+                next,
+                0x28 | 0x5e | 0x64 | 0xad | 0xcc | 0xd0 | 0xd2 | 0xd5 | 0xde | 0xdf
+            )
+        })
+    {
+        return (Some(0.0), offset + 1);
+    }
     if payload.get(offset) == Some(&0x28) && offset + 8 <= end {
         let mut raw = [0; 8];
         raw[0] = 0x3f;
@@ -2223,6 +2233,7 @@ fn saved_arc_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
     let arc_dict = match payload.get(offset).copied() {
+        Some(0x5e) => Some([0x3f, 0xd3]),
         Some(0x64) => Some([0x3f, 0xd9]),
         Some(0xad) => Some([0x3f, 0xd9]),
         Some(0xcc) => Some([0xbf, 0xf9]),
@@ -3418,6 +3429,7 @@ mod tests {
     #[test]
     fn saved_arc_negative_dict_forms_supply_ieee_high_bytes() {
         for (bytes, head) in [
+            ([0x5e, 1, 2, 3, 4, 5, 6], [0x3f, 0xd3]),
             ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
@@ -3448,6 +3460,20 @@ mod tests {
         assert_eq!(
             saved_arc_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
             (Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])), 8)
+        );
+    }
+
+    #[test]
+    fn saved_arc_zero_does_not_consume_arc_scalar_opener() {
+        let bytes = [0x18, 0x5e, 1, 2, 3, 4, 5, 6];
+        let cache = scalar::ScalarCache::default();
+        assert_eq!(
+            saved_arc_scalar(&bytes, 0, bytes.len(), &cache),
+            (Some(0.0), 1)
+        );
+        assert_eq!(
+            saved_arc_scalar(&bytes, 1, bytes.len(), &cache),
+            (Some(f64::from_be_bytes([0x3f, 0xd3, 1, 2, 3, 4, 5, 6])), 8)
         );
     }
 
