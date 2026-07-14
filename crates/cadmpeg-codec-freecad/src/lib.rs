@@ -181,6 +181,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         ));
     }
     for object in &objects {
+        let valid_object_bytes = match (&object.raw_xml, object.byte_start, object.byte_end) {
+            (Some(raw), Some(start), Some(end)) => {
+                start < end && end - start == raw.len() as u64
+            }
+            _ => false,
+        };
+        if !valid_object_bytes {
+            findings.push(finding(
+                Check::PayloadIntegrity,
+                format!("{} has inconsistent retained object bytes", object.id),
+                Some(object.id.clone()),
+            ));
+        }
         for dependency in &object.dependencies {
             if !object_ids.contains(dependency.as_str()) {
                 findings.push(finding(
@@ -203,6 +216,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|record| record.object.as_str())
         .collect::<HashSet<_>>();
+    if applications != application::transfer(&objects, &properties, &entries) {
+        findings.push(finding(
+            Check::PayloadIntegrity,
+            "FCStd application preservation records do not match authoritative bytes",
+            None,
+        ));
+    }
     if application_objects.len() != applications.len()
         || application_objects.len() != objects.len()
         || application_objects != object_ids
@@ -1014,7 +1034,7 @@ impl Codec for FcstdCodec {
             namespace.set_arena("annotations", &annotations)?;
             namespace.set_arena(
                 "applications",
-                &application::transfer(&graph.objects, &graph.properties),
+                &application::transfer(&graph.objects, &graph.properties, &entry_records),
             )?;
             namespace.set_arena(
                 "attachments",

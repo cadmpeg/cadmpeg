@@ -65,9 +65,8 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
         let name = required_attr(node, "name")?;
         let type_name = required_attr(node, "type")?;
         let id = object_id(&name);
-        let raw_xml = data_by_name
-            .get(&name)
-            .map(|data| text[data.range()].to_owned());
+        let data_node = data_by_name.get(&name);
+        let raw_xml = data_node.map(|data| text[data.range()].to_owned());
         let attributes = node
             .attributes()
             .filter(|attribute| !matches!(attribute.name(), "name" | "type" | "id" | "ViewType"))
@@ -83,6 +82,8 @@ pub fn parse(bytes: &[u8]) -> Result<Graph, CodecError> {
             dependencies: dependency_map.remove(&name).unwrap_or_default(),
             order,
             raw_xml,
+            byte_start: data_node.map(|data| data.range().start as u64),
+            byte_end: data_node.map(|data| data.range().end as u64),
         });
     }
 

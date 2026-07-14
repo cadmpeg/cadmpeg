@@ -300,6 +300,15 @@ an inert payload when it owns a Python-object property. Decoding never imports, 
 executes serialized application code. Validation derives the census again from the authoritative
 object/property graph and rejects missing, duplicate, reordered, or cross-owned records.
 
+Native namespace version 18 makes application preservation independently auditable. Every
+application record now retains its object-data order, exact `Document.xml` span and bytes, length,
+and SHA-256. Every owned property has a nested preservation record containing owner and property
+identity, runtime type, typed persistence family, order, links, exact span and bytes, length,
+SHA-256, inert-code classification, and complete referenced payload records. Each payload retains
+its global entry identity, exact name, complete logical bytes, length, and SHA-256. Validation
+reconstructs the complete preservation graph from authoritative object, property, and entry arenas
+and rejects any byte, digest, ownership, ordering, link, or payload mismatch.
+
 Native namespace version 9 separates semantic annotation records from their drawing presentation.
 Annotation, dimension, balloon, leader, and symbol objects retain ordered visible text, all model
 and subelement references grouped by source property, exact parameter records, and referenced

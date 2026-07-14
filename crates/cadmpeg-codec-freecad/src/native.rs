@@ -59,7 +59,7 @@ mod tests {
 }
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -200,6 +200,68 @@ pub struct ApplicationRecord {
     pub side_entries: Vec<String>,
     /// Whether the object owns serialized code-backed data that must remain inert.
     pub inert_payload: bool,
+    /// Source order among application objects.
+    pub order: usize,
+    /// Inclusive `Document.xml` byte offset of the object-data record.
+    pub byte_start: u64,
+    /// Exclusive `Document.xml` byte offset of the object-data record.
+    pub byte_end: u64,
+    /// Exact object-data byte length.
+    pub byte_len: u64,
+    /// Lowercase SHA-256 of exact object-data bytes.
+    pub sha256: String,
+    /// Exact retained object-data bytes.
+    pub data: Vec<u8>,
+    /// Auditable preservation records for every owned property.
+    pub property_records: Vec<ApplicationPropertyRecord>,
+}
+
+/// Exact application-property preservation record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplicationPropertyRecord {
+    /// Stable preservation identity.
+    pub id: String,
+    /// Owning application object.
+    pub object: String,
+    /// Authoritative native property identity.
+    pub property: String,
+    /// Exact property runtime type.
+    pub type_name: String,
+    /// Typed persistence family.
+    pub family: PropertyFamily,
+    /// Source order within the object.
+    pub order: usize,
+    /// Ordered object and subelement links.
+    pub links: Vec<LinkTarget>,
+    /// Inclusive `Document.xml` byte offset.
+    pub byte_start: u64,
+    /// Exclusive `Document.xml` byte offset.
+    pub byte_end: u64,
+    /// Exact property byte length.
+    pub byte_len: u64,
+    /// Lowercase SHA-256 of exact property bytes.
+    pub sha256: String,
+    /// Exact retained property bytes.
+    pub data: Vec<u8>,
+    /// Complete retained referenced payloads.
+    pub payloads: Vec<ApplicationPayloadRecord>,
+    /// Whether the property carries inert serialized code-backed data.
+    pub inert: bool,
+}
+
+/// Complete named payload retained for an application property.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplicationPayloadRecord {
+    /// Global native entry identity.
+    pub entry: String,
+    /// Exact archive entry name.
+    pub name: String,
+    /// Logical byte length.
+    pub byte_len: u64,
+    /// Lowercase SHA-256 of complete logical bytes.
+    pub sha256: String,
+    /// Complete retained logical bytes.
+    pub data: Vec<u8>,
 }
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
@@ -394,6 +456,10 @@ pub struct ObjectRecord {
     pub order: usize,
     /// Exact object-data XML, when present.
     pub raw_xml: Option<String>,
+    /// Inclusive byte offset of object-data XML.
+    pub byte_start: Option<u64>,
+    /// Exclusive byte offset of object-data XML.
+    pub byte_end: Option<u64>,
 }
 
 /// One dynamic object extension.
