@@ -259,6 +259,53 @@ fn transfer_zero_entity_topology(
     topology: &crate::zero_entity::ZeroEntityTopology,
 ) -> bool {
     const TOLERANCE: f64 = 2e-3;
+    let Some(loop_owner) = unique_index_owners(
+        &topology
+            .faces
+            .iter()
+            .map(|face| face.loop_indices.clone())
+            .collect::<Vec<_>>(),
+        topology.loops.len(),
+    ) else {
+        return false;
+    };
+    if topology.carrier_runs.iter().any(|run| {
+        run.carrier_ordinal >= topology.records.len()
+            || run
+                .support_ordinals
+                .iter()
+                .any(|ordinal| *ordinal >= topology.records.len())
+    }) || topology.supports.iter().any(|support| {
+        support.record_ordinal >= topology.records.len()
+            || support.owner_carrier_ordinal >= topology.records.len()
+    }) || topology.faces.iter().any(|face| {
+        face.record_ordinal >= topology.records.len()
+            || face
+                .carrier_run
+                .is_some_and(|run| run >= topology.carrier_runs.len())
+            || !matches!(
+                face.loop_indices
+                    .iter()
+                    .filter_map(|loop_index| {
+                        let loop_ = &topology.loops[*loop_index];
+                        (!loop_.inner).then_some(loop_.loop_class)
+                    })
+                    .collect::<Vec<_>>()
+                    .as_slice(),
+                [0x41 | 0xc1]
+            )
+    }) || topology.loops.iter().any(|loop_| {
+        loop_.record_ordinal >= topology.records.len()
+            || loop_.member_ids.is_empty()
+            || loop_.member_ids.len() != loop_.support_indices.len()
+            || loop_
+                .support_indices
+                .iter()
+                .flatten()
+                .any(|support| *support >= topology.supports.len())
+    }) {
+        return false;
+    }
     let edges = crate::zero_entity::resolve_occurrence_edges(topology);
     if edges.len() != topology.physical_edges.len()
         || topology.faces.len() != topology.carrier_runs.len()
@@ -294,19 +341,10 @@ fn transfer_zero_entity_topology(
     {
         return false;
     }
-    let loop_owner: HashMap<usize, usize> = topology
-        .faces
-        .iter()
-        .enumerate()
-        .flat_map(|(face, value)| value.loop_indices.iter().map(move |loop_| (*loop_, face)))
-        .collect();
-    if loop_owner.len() != topology.loops.len() {
-        return false;
-    }
     let mut face_parents: Vec<usize> = (0..topology.faces.len()).collect();
     for edge in &edges {
-        let left = loop_owner[&edge.occurrences[0].loop_index];
-        let right = loop_owner[&edge.occurrences[1].loop_index];
+        let left = loop_owner[edge.occurrences[0].loop_index];
+        let right = loop_owner[edge.occurrences[1].loop_index];
         union_indices(&mut face_parents, left, right);
     }
     let mut component_by_root = BTreeMap::<usize, usize>::new();
@@ -651,10 +689,7 @@ fn transfer_zero_entity_topology(
         annotations.derived(&id, "face").derived(&id, "coedges");
         ir.model.loops.push(Loop {
             id: id.clone(),
-            face: FaceId(format!(
-                "catia:zero-entity:face#{}",
-                loop_owner[&loop_index]
-            )),
+            face: FaceId(format!("catia:zero-entity:face#{}", loop_owner[loop_index])),
             coedges: coedges.clone(),
         });
         for member in 0..coedges.len() {
@@ -718,6 +753,22 @@ fn transfer_zero_entity_topology(
         }
     }
     true
+}
+
+fn unique_index_owners(groups: &[Vec<usize>], member_count: usize) -> Option<Vec<usize>> {
+    let mut owners = vec![None; member_count];
+    for (owner, members) in groups.iter().enumerate() {
+        if members.is_empty() {
+            return None;
+        }
+        for member in members {
+            let slot = owners.get_mut(*member)?;
+            if slot.replace(owner).is_some() {
+                return None;
+            }
+        }
+    }
+    owners.into_iter().collect()
 }
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
@@ -1163,7 +1214,8 @@ mod chart_tests {
         intersection_line_direction, ordered_range, point_distance, point_on_known_surface,
         quintic_jet_pcurve, rational_pcurve_arc, resolve_standard_endpoint_pairs,
         reverse_e5_pcurve_geometry, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
+        standard_circle_param_range, standard_pcurve_geometry, unique_index_owners,
+        unique_native_identity_points,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
@@ -1180,6 +1232,18 @@ mod chart_tests {
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
+
+    #[test]
+    fn index_ownership_requires_a_complete_partition() {
+        assert_eq!(
+            unique_index_owners(&[vec![0, 2], vec![1]], 3),
+            Some(vec![0, 1, 0])
+        );
+        assert!(unique_index_owners(&[vec![0], vec![0]], 1).is_none());
+        assert!(unique_index_owners(&[vec![0]], 2).is_none());
+        assert!(unique_index_owners(&[vec![1]], 1).is_none());
+        assert!(unique_index_owners(&[Vec::new()], 0).is_none());
+    }
 
     #[test]
     fn e5_body_kinds_require_complete_single_body_edge_ownership() {
