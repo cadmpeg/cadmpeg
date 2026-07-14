@@ -6475,28 +6475,50 @@ pub fn decode(
     Ok(DecodeResult::new(ir, report))
 }
 
-fn preserve_geometry_sections(
+fn preserve_passthrough_sections(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), CodecError> {
-    for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
+    for section in scan
+        .sections
+        .iter()
+        .filter(|section| section.role == role::GEOMETRY || section.role == role::THUMBNAIL)
+    {
         let end = (section.offset + section.length).min(scan.data.len());
-        let bytes = &scan.data[section.offset..end];
-        let id = UnknownId(format!("creo:{}:section#{}", section.name, section.offset));
+        let section_bytes = &scan.data[section.offset..end];
+        let payload_start = if section.role == role::THUMBNAIL {
+            let Some(offset) = section_bytes
+                .windows(3)
+                .position(|window| window == [0xff, 0xd8, 0xff])
+            else {
+                continue;
+            };
+            offset
+        } else {
+            0
+        };
+        let bytes = &section_bytes[payload_start..];
+        let offset = section.offset + payload_start;
+        let id = UnknownId(format!("creo:{}:section#{}", section.name, offset));
+        let (tag, exactness) = if section.role == role::THUMBNAIL {
+            ("jpeg_thumbnail", Exactness::ByteExact)
+        } else {
+            ("psb_geometry_section", Exactness::Unknown)
+        };
         annotate(
             annotations,
             &id,
             &section.name,
-            section.offset as u64,
-            "psb_geometry_section",
-            Exactness::Unknown,
+            offset as u64,
+            tag,
+            exactness,
         );
         ir.push_native_unknown(
             "creo",
             UnknownRecord {
                 id,
-                offset: section.offset as u64,
+                offset: offset as u64,
                 byte_len: bytes.len() as u64,
                 sha256: sha256_hex(bytes),
                 data: Some(bytes.to_vec()),
@@ -6511,7 +6533,7 @@ fn build_container_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_geometry_sections(scan, &mut ir, &mut annotations)?;
+    preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
     ir.annotations = annotations.build();
     Ok(ir)
 }
@@ -6521,7 +6543,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_geometry_sections(scan, &mut ir, &mut annotations)?;
+    preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
     for plane in &scan.datum_planes {
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
         annotate(

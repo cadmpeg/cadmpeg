@@ -178,6 +178,31 @@ fn scan_enumerates_and_classifies_sections() {
 }
 
 #[test]
+fn decode_extracts_jpeg_thumbnail_as_native_asset() {
+    let data = build_prt("c", &[("THMB_IMG_MAIN", jpeg_payload())]);
+    let result = decode::decode(
+        &mut Cursor::new(data),
+        &DecodeOptions {
+            container_only: true,
+        },
+    )
+    .expect("decode thumbnail");
+
+    assert!(!result.report.geometry_transferred);
+    let unknowns = result.ir.native_unknowns("creo").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    assert_eq!(unknowns[0].data.as_deref(), Some(jpeg_payload().as_slice()));
+    assert_annotation(
+        &result.ir,
+        unknowns[0].id.as_str(),
+        "creo:THMB_IMG_MAIN",
+        unknowns[0].offset,
+        "jpeg_thumbnail",
+        Exactness::ByteExact,
+    );
+}
+
+#[test]
 fn scan_reads_namespace_counts() {
     let data = build_prt("c", &[("VisibGeom", visibgeom_payload(5, 12))]);
     let scan = container::scan_bytes(data);
