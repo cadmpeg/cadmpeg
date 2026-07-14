@@ -384,6 +384,15 @@ pub struct DesignParameterCompanion {
     pub opaque_value: u64,
     /// Byte offset of `opaque_value`.
     pub opaque_value_offset: u64,
+    /// First byte owned after the fixed companion prefix.
+    #[serde(default)]
+    pub payload_byte_offset: u64,
+    /// Number of bytes owned before the next sibling Design record.
+    #[serde(default)]
+    pub payload_byte_length: u64,
+    /// Construction recipes contained by the owned payload, in byte order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub owned_recipe_ids: Vec<String>,
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.

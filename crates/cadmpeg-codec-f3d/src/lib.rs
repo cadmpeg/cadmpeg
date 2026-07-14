@@ -1280,6 +1280,25 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut companion_owners = HashSet::new();
     for companion in &native.design_parameter_companions {
         let native_stream = design_stream(&companion.id);
+        let payload_end = companion
+            .payload_byte_offset
+            .checked_add(companion.payload_byte_length);
+        let mut expected_recipes = native
+            .construction_recipes
+            .iter()
+            .filter(|recipe| {
+                design_stream(&recipe.id) == native_stream
+                    && payload_end.is_some_and(|end| {
+                        recipe.byte_offset >= companion.payload_byte_offset
+                            && recipe.byte_offset < end
+                    })
+            })
+            .collect::<Vec<_>>();
+        expected_recipes.sort_by_key(|recipe| recipe.byte_offset);
+        let expected_recipe_ids = expected_recipes
+            .into_iter()
+            .map(|recipe| recipe.id.as_str())
+            .collect::<Vec<_>>();
         let unique_index = companion_indices.insert((native_stream, companion.record_index));
         let unique_owner = companion_owners.insert((native_stream, companion.owner_record_index));
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index));
@@ -1290,6 +1309,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|byte| byte.is_ascii_digit())
             && companion.opaque_value != 0
             && companion.opaque_value_offset == companion.byte_offset.saturating_add(42)
+            && companion.payload_byte_offset == companion.byte_offset.saturating_add(58)
+            && payload_end.is_some()
+            && companion
+                .owned_recipe_ids
+                .iter()
+                .map(String::as_str)
+                .eq(expected_recipe_ids)
             && record_indices.contains(&(native_stream, companion.record_index))
             && owner.is_some_and(|owner| owner.companion_record_index == companion.record_index)
             && unique_index

@@ -3403,6 +3403,7 @@ pub fn decode_parameter_companions(
         );
         companion.byte_offset = header.byte_offset;
         companion.opaque_value_offset += header.byte_offset;
+        companion.payload_byte_offset += header.byte_offset;
         out.push(companion);
     }
     out.sort_by_key(|companion| companion.id.clone());
@@ -3434,7 +3435,53 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> 
         owner_record_index: u32_at(prefix, 32)?,
         opaque_value,
         opaque_value_offset: 42,
+        payload_byte_offset: 58,
+        payload_byte_length: 0,
+        owned_recipe_ids: Vec::new(),
     })
+}
+
+/// Bind each companion to its exact owned byte interval and the construction
+/// recipes nested in that interval.
+pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
+    companions: &mut [DesignParameterCompanion],
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+    stream_lengths: &HashMap<String, usize, S>,
+) {
+    for companion in companions {
+        let Some(stream) = native_stream(&companion.id) else {
+            continue;
+        };
+        let Some(stream_length) = stream_lengths.get(stream).copied() else {
+            continue;
+        };
+        let Some((start, end)) = companion_owned_interval(
+            companion,
+            parameters.iter(),
+            owners,
+            scopes,
+            headers,
+            stream_length,
+        ) else {
+            continue;
+        };
+        companion.payload_byte_offset = u64::try_from(start).unwrap_or(u64::MAX);
+        companion.payload_byte_length = u64::try_from(end - start).unwrap_or(u64::MAX);
+        let mut owned = recipes
+            .iter()
+            .filter(|recipe| {
+                native_stream(&recipe.id) == Some(stream)
+                    && usize::try_from(recipe.byte_offset)
+                        .is_ok_and(|offset| offset >= start && offset < end)
+            })
+            .collect::<Vec<_>>();
+        owned.sort_by_key(|recipe| recipe.byte_offset);
+        companion.owned_recipe_ids = owned.into_iter().map(|recipe| recipe.id.clone()).collect();
+    }
 }
 
 /// Decode paired typed sketch loci nested immediately after dimensional
@@ -3971,7 +4018,7 @@ fn find_dimension_locus_groups(
     candidates
 }
 
-fn companion_owned_interval<'a>(
+pub(crate) fn companion_owned_interval<'a>(
     companion: &DesignParameterCompanion,
     parameters: impl IntoIterator<Item = &'a DesignParameter>,
     owners: &[DesignParameterOwner],
@@ -4035,7 +4082,7 @@ fn companion_owned_interval<'a>(
         )
         .min()
         .unwrap_or(stream_length);
-    (start < end && end <= stream_length).then_some((start, end))
+    (start <= end && end <= stream_length).then_some((start, end))
 }
 
 fn parse_dimension_locus_group(
@@ -7360,21 +7407,22 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
-        bind_face_operand_candidates, bind_lost_edge_groups, bind_sketch_graph,
-        closed_sketch_profiles, companion_owned_interval, decode_fillet_radius_groups,
-        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indirect_angular_lines,
-        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
-        null_locus_dimension_definition, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, remove_dimension_frame_relations,
-        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
+        bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
+        bind_sketch_graph, closed_sketch_profiles, companion_owned_interval,
+        decode_fillet_radius_groups, directional_point_dimension, exact_atomic_constraint,
+        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
+        next_indexed_record_offset, null_locus_dimension_definition,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
+        two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7841,7 +7889,7 @@ mod relation_tests {
         assert_eq!(scope.paired_class_tag, "261");
         assert_eq!(scope.paired_byte_offset, paired_at as u64);
 
-        let companion = DesignParameterCompanion {
+        let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),
             byte_offset: 0,
             class_tag: "300".into(),
@@ -7849,6 +7897,9 @@ mod relation_tests {
             owner_record_index: 10,
             opaque_value: 1,
             opaque_value_offset: 42,
+            payload_byte_offset: 58,
+            payload_byte_length: 0,
+            owned_recipe_ids: Vec::new(),
         };
         scope.id = "f3d:native:parameter-scope#12".into();
         scope.byte_offset = 58;
@@ -7861,7 +7912,7 @@ mod relation_tests {
                 &[],
                 100,
             ),
-            None
+            Some((58, 58))
         );
         scope.byte_offset = 80;
         assert_eq!(
@@ -7909,6 +7960,29 @@ mod relation_tests {
             companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100,),
             Some((58, 65))
         );
+        let recipe = ConstructionRecipe {
+            id: "f3d:native:construction-recipe#60".into(),
+            byte_offset: 60,
+            record_index_offset: None,
+            kind: ConstructionRecipeKind::Edge,
+            design_id: None,
+            design_id_offset: None,
+            design_id_binary_u32: false,
+            recipe_index: 0,
+            record_index: 303,
+        };
+        bind_parameter_companion_payloads(
+            std::slice::from_mut(&mut companion),
+            std::slice::from_ref(&parameter),
+            &[],
+            &[],
+            &[],
+            std::slice::from_ref(&recipe),
+            &HashMap::from([("f3d:native".into(), 100)]),
+        );
+        assert_eq!(companion.payload_byte_offset, 58);
+        assert_eq!(companion.payload_byte_length, 7);
+        assert_eq!(companion.owned_recipe_ids, [recipe.id]);
     }
 
     #[test]

@@ -990,6 +990,24 @@ fn extend_related_design_records(
     );
     native.design_sketch_placements =
         crate::design::decode_sketch_placements(scan, &native.design_parameter_scopes)?;
+    let stream_lengths: std::collections::HashMap<String, usize> = scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == container::role::BULKSTREAM && entry.name.contains("Design"))
+        .map(|entry| {
+            scan.entry_bytes(&entry.name)
+                .map(|bytes| (format!("f3d:{}", entry.name), bytes.len()))
+        })
+        .collect::<Result<_, _>>()?;
+    crate::design::bind_parameter_companion_payloads(
+        &mut native.design_parameter_companions,
+        &native.design_parameters,
+        &native.design_parameter_owners,
+        &native.design_parameter_scopes,
+        &native.design_record_headers,
+        &native.construction_recipes,
+        &stream_lengths,
+    );
     Ok(())
 }
 
