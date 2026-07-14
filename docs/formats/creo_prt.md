@@ -473,8 +473,9 @@ A plane through a circular cone's apex is tangent to the cone when the absolute 
 `MdlStatus` names encode feature kinds as `<Kind> id <N>`. Defined names include
 `Annotation Feature`, `Cross Section`, `Datum Plane`, `Round`, `Chamfer`,
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
-`Surface`. The German operation-family name `Rundung` denotes the same round
-family as `Round`. `Annotation Feature` is a non-modeling annotation container.
+`Surface`. The German operation-family names `Bezugsebene` and `Rundung`
+denote the same datum-plane and round families as `Datum Plane` and `Round`,
+respectively. `Annotation Feature` is a non-modeling annotation container.
 `Cross Section` and its German operation-family name `Querschnitt` are
 non-modeling cross-section definitions.
 

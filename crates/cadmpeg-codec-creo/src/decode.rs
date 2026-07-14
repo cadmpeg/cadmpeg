@@ -5915,6 +5915,7 @@ fn named_feature_definition(
         return Some(IrFeatureDefinition::TreeNode { role });
     }
     let schema_class = match kind {
+        "Datum Plane" | "Bezugsebene" => 923,
         "Hole" => 911,
         "Round" | "Rundung" => 913,
         "Chamfer" => 914,

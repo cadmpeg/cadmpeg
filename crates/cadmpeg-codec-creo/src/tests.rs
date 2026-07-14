@@ -2824,6 +2824,42 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
 }
 
 #[test]
+fn decode_types_schema_less_datum_plane_names() {
+    for name in ["Datum Plane", "Bezugsebene"] {
+        let mut payload = b"srf_array\0geom_id\0\x05geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\x01next_geom_ptr\0\0\
+            outline\0\xf9\x02\x03"
+            .to_vec();
+        payload.extend_from_slice(&[0xe4, 0x0f, 0x2f, 0, 0, 0x0d, 0x0f, 0x48, 0, 0]);
+        let stored_name = format!("{name} id 4\0");
+        let data = build_prt(
+            "c",
+            &[
+                ("VisibGeom", payload),
+                ("MdlStatus", stored_name.as_bytes().to_vec()),
+            ],
+        );
+
+        let result =
+            decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+        let feature = result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+            .expect("named datum feature");
+        assert_eq!(
+            feature.name.as_deref(),
+            Some(format!("{name} id 4").as_str())
+        );
+        assert!(matches!(
+            feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
+        ));
+    }
+}
+
+#[test]
 fn decode_annotations_cover_every_emitted_entity() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);
