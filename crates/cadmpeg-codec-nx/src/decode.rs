@@ -2780,6 +2780,7 @@ fn attach_native_object_model(
     let fields = crate::native::field_definitions(&scan.container);
     let object_records = crate::native::object_records(&scan.container);
     let data_blocks = crate::native::data_blocks(&scan.container);
+    let data_block_references = crate::native::data_block_references(&scan.container);
     let store_headers = crate::native::store_headers(&scan.container);
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
@@ -2809,6 +2810,7 @@ fn attach_native_object_model(
         && fields.is_empty()
         && object_records.is_empty()
         && data_blocks.is_empty()
+        && data_block_references.is_empty()
         && store_headers.is_empty()
         && string_values.is_empty()
         && object_references.is_empty()
@@ -2916,6 +2918,12 @@ fn attach_native_object_model(
             )
             .tag("EXPRESSION_DECLARATION");
         annotations.exactness(&declaration.id, Exactness::ByteExact);
+    }
+    for reference in &data_block_references {
+        annotations
+            .note(&reference.id, annotation_stream, reference.source_offset)
+            .tag("OM_DATA_BLOCK_REFERENCE");
+        annotations.exactness(&reference.id, Exactness::ByteExact);
     }
     for header in &store_headers {
         annotations
@@ -3034,7 +3042,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(32);
+    namespace.version = namespace.version.max(33);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3100,6 +3108,9 @@ fn attach_native_object_model(
     }
     if !data_blocks.is_empty() {
         namespace.set_arena("data_blocks", &data_blocks)?;
+    }
+    if !data_block_references.is_empty() {
+        namespace.set_arena("data_block_references", &data_block_references)?;
     }
     if !store_headers.is_empty() {
         namespace.set_arena("store_headers", &store_headers)?;

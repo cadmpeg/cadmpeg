@@ -1176,6 +1176,27 @@ pub struct DataBlock {
     pub source_offset: u64,
 }
 
+/// Ordered object reference carried by an offset-only OM data block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based reference order within the block.
+    pub ordinal: u32,
+    /// Referenced persistent OM object ID.
+    pub object_id: u32,
+    /// Uniquely resolved object record in the same directory entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_record: Option<String>,
+    /// Uniquely resolved parameter declaration carrying this object ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_expression_declaration: Option<String>,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreHeader {
@@ -1752,6 +1773,81 @@ pub fn data_blocks(container: &Container) -> Vec<DataBlock> {
                     sha256: cadmpeg_ir::hash::sha256_hex(block.bytes),
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + block.offset as u64,
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode framed object references from offset-only OM data blocks.
+pub fn data_block_references(container: &Container) -> Vec<DataBlockReference> {
+    let mut records = BTreeMap::<(String, u32), Vec<String>>::new();
+    for record in object_records(container) {
+        let Some(object_id) = record.object_id else {
+            continue;
+        };
+        records
+            .entry((record.source_entry, object_id))
+            .or_default()
+            .push(record.id);
+    }
+    let mut declarations = BTreeMap::<(String, u32), Vec<String>>::new();
+    for declaration in expression_declarations(container) {
+        declarations
+            .entry((declaration.source_entry, declaration.object_id))
+            .or_default()
+            .push(declaration.id);
+    }
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            if section
+                .records
+                .first()
+                .is_none_or(|record| record.object_id.is_some())
+            {
+                return Vec::new();
+            }
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let mut source_blocks = Vec::with_capacity(section.records.len() + 1);
+            if let Some(control) = section.control {
+                source_blocks.push(control);
+            }
+            source_blocks.extend(section.records);
+            source_blocks
+                .into_iter()
+                .enumerate()
+                .flat_map(|(block_ordinal, block)| {
+                    crate::om::data_block_object_references(block.bytes)
+                        .into_iter()
+                        .enumerate()
+                        .map(|(ordinal, reference)| {
+                            let key = (entry.name.clone(), reference.object_index);
+                            let unique = |candidates: Option<&Vec<String>>| {
+                                let [target] = candidates?.as_slice() else {
+                                    return None;
+                                };
+                                Some(target.clone())
+                            };
+                            DataBlockReference {
+                                id: format!(
+                                    "nx:om-data-block-references-{section_ordinal}-{block_ordinal}:reference#{ordinal}"
+                                ),
+                                data_block: format!(
+                                    "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
+                                ),
+                                ordinal: ordinal as u32,
+                                object_id: reference.object_index,
+                                target_record: unique(records.get(&key)),
+                                target_expression_declaration: unique(declarations.get(&key)),
+                                source_offset: entry_offset
+                                    + block.offset as u64
+                                    + reference.offset as u64,
+                            }
+                        })
+                        .collect::<Vec<_>>()
                 })
                 .collect()
         })

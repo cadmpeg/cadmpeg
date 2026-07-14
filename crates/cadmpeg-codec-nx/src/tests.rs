@@ -320,6 +320,7 @@ fn offset_only_indexed_om_section() -> Vec<u8> {
     bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0hostglobalvariables");
     let second = bytes.len();
     let text = b"(Number [mm]) length: 25; ";
+    bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
     bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
     bytes.extend_from_slice(text);
     bytes.push(0);
@@ -426,7 +427,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 32);
+    assert_eq!(namespace.version, 33);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -802,6 +803,17 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         result.ir.model.features[0].source_properties["input_block.0"],
         inputs[0].data_block
     );
+    let references = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::DataBlockReference>("data_block_references")
+        .unwrap();
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].data_block, inputs[0].data_block);
+    assert_eq!(references[0].object_id, 42);
+    assert_eq!(references[0].target_record, None);
 }
 
 #[test]
@@ -876,6 +888,35 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
             label,
         })
         .is_none()
+    );
+}
+
+#[test]
+fn om_data_block_object_references_require_complete_field_frames() {
+    let bytes = [
+        0x04, 0x00, 0x2a, 0x02, 0x0b, 0xff, 0x04, 0x00, 0x80, 0xc9, 0x02, 0x0b, 0x04, 0x00, 0x90,
+        0x19, 0x42, 0x02, 0x0b,
+    ];
+    assert_eq!(
+        crate::om::data_block_object_references(&bytes),
+        [
+            crate::om::DataBlockObjectReference {
+                offset: 2,
+                object_index: 42,
+            },
+            crate::om::DataBlockObjectReference {
+                offset: 8,
+                object_index: 201,
+            },
+            crate::om::DataBlockObjectReference {
+                offset: 14,
+                object_index: 6466,
+            },
+        ]
+    );
+    assert_eq!(
+        crate::om::data_block_object_references(&bytes[..bytes.len() - 1]).len(),
+        2
     );
 }
 
@@ -3739,7 +3780,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 32);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 33);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -258,6 +258,15 @@ pub struct OperationBodyReference {
     pub object_index: u32,
 }
 
+/// Object-index reference in one bounded offset-only OM data block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DataBlockObjectReference {
+    /// Byte offset of the object-index token within the containing byte range.
+    pub offset: usize,
+    /// Referenced OM object ID.
+    pub object_index: u32,
+}
+
 /// Boolean operation kind stored after an operation label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BooleanOperationKind {
@@ -648,6 +657,33 @@ fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)>
         0xff => Some((None, at + 1)),
         _ => None,
     }
+}
+
+/// Decode ordered `04 00, object_index, 02 0b` references from one bounded block.
+pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReference> {
+    let mut references = Vec::new();
+    let mut at = 0usize;
+    while at + 5 <= bytes.len() {
+        if bytes.get(at..at + 2) != Some(&[0x04, 0x00]) {
+            at += 1;
+            continue;
+        }
+        let token = at + 2;
+        let Some((Some(object_index), end)) = feature_object_index(bytes, token) else {
+            at += 1;
+            continue;
+        };
+        if bytes.get(end..end + 2) != Some(&[0x02, 0x0b]) {
+            at += 1;
+            continue;
+        }
+        references.push(DataBlockObjectReference {
+            offset: token,
+            object_index,
+        });
+        at = end + 2;
+    }
+    references
 }
 
 /// Decode Boolean target and tool lists following complete operation labels.
