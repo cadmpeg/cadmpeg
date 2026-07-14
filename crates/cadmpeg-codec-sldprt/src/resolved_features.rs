@@ -245,13 +245,13 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_path_at, compact_body_selection_at,
-        compact_body_selection_vector, compact_edge_selection_at, compact_extrusion_through_all_at,
-        compact_extrusion_to_face_at, compact_general_curve_ref_at, compact_surface_selection_at,
-        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
-        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
-        SCALAR_HEADER,
+        compact_body_selection_vector, compact_body_state_ids, compact_edge_selection_at,
+        compact_extrusion_through_all_at, compact_extrusion_to_face_at,
+        compact_general_curve_ref_at, compact_surface_selection_at, coordinate_marker_local_links,
+        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        resolve_operand_marker, unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
+        NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchRelationKind,
@@ -266,6 +266,23 @@ mod marker_tests {
         assert_eq!(marker_local_id(&payload, 0), Some(37));
         payload[88..92].fill(0xff);
         assert_eq!(marker_local_id(&payload, 0), None);
+    }
+
+    #[test]
+    fn compact_body_states_require_a_duplicated_local_identity() {
+        let token = 0x89a4u16;
+        let mut payload = vec![0; 180];
+        let header = &mut payload[12..95];
+        header[0..2].copy_from_slice(&token.to_le_bytes());
+        header[2..11].copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]);
+        header[11..15].copy_from_slice(&205u32.to_le_bytes());
+        header[15..19].copy_from_slice(&205u32.to_le_bytes());
+        header[47..63].fill(0xff);
+
+        assert_eq!(compact_body_state_ids(&payload, 0, 180, token), [205]);
+
+        payload[12 + 15..12 + 19].copy_from_slice(&206u32.to_le_bytes());
+        assert!(compact_body_state_ids(&payload, 0, 180, token).is_empty());
     }
 
     #[test]
@@ -1204,6 +1221,26 @@ fn compact_body_selections(
         .id
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
+    let mut state_classes = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moDeleteBodyData_c");
+    let state_token = state_classes.next().and_then(|class| {
+        state_classes
+            .next()
+            .is_none()
+            .then_some(class)
+            .and_then(|class| {
+                let offset = usize::try_from(class.offset).ok()?;
+                u16::from_le_bytes(
+                    lane.native_payload
+                        .get(offset + 8 + class.name.len()..offset + 10 + class.name.len())?
+                        .try_into()
+                        .ok()?,
+                )
+                .into()
+            })
+    });
     let mut result = Vec::new();
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
         if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
@@ -1233,7 +1270,34 @@ fn compact_body_selections(
             object_name_ref: name.id.clone(),
             feature_ref: feature.id.clone(),
             local_body_ids,
+            body_state_ids: state_token.map_or_else(Vec::new, |token| {
+                compact_body_state_ids(&lane.native_payload, start, offset, token)
+            }),
         });
+    }
+    result
+}
+
+fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) -> Vec<u32> {
+    const HEADER_LEN: usize = 83;
+    let token = token.to_le_bytes();
+    let mut result = Vec::new();
+    for offset in start..end.saturating_sub(HEADER_LEN - 1) {
+        let Some(header) = payload.get(offset..offset + HEADER_LEN) else {
+            continue;
+        };
+        if header[0..2] != token
+            || header[2..11] != [0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]
+            || header[11..15] != header[15..19]
+            || !header[19..47].iter().all(|byte| *byte == 0)
+            || !header[47..63].iter().all(|byte| *byte == 0xff)
+            || !header[63..83].iter().all(|byte| *byte == 0)
+        {
+            continue;
+        }
+        result.push(u32::from_le_bytes(
+            header[11..15].try_into().expect("four-byte body id"),
+        ));
     }
     result
 }

@@ -236,6 +236,9 @@ pub struct FeatureInputBodySelection {
     pub feature_ref: String,
     /// Ordered feature-local body identifiers.
     pub local_body_ids: Vec<u32>,
+    /// Ordered body-state records stored before the selection vector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_state_ids: Vec<u32>,
 }
 
 /// One compact feature-local edge-selection vector.
