@@ -360,7 +360,8 @@ In a round-feature generated-entity table, a rowless face-use entry is a cylinde
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
 `Surface`.
 
-An ASCII `x` or `y` byte immediately preceding an uppercase operation-family
+Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
+name's localization. An ASCII `x` or `y` byte immediately preceding an uppercase operation-family
 name is a state prefix, not part of the family name. Multiple operation names
 with the same feature identifier are stored states; the last occurrence is the
 current state.

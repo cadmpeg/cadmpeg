@@ -38,18 +38,25 @@ pub struct FeatureOperation {
 /// Decode NUL-terminated `<Kind> id <N>` operation names from one
 /// `MdlStatus` payload.
 pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
-    const SEPARATOR: &[u8] = b" id ";
+    const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
-        byte.is_ascii_alphanumeric() || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
+        byte.is_ascii_alphanumeric()
+            || byte >= 0x80
+            || matches!(byte, b' ' | b'_' | b'-' | b'/' | b'(' | b')')
     };
     let mut result = Vec::new();
-    for separator in 0..payload.len().saturating_sub(SEPARATOR.len()) {
-        if payload.get(separator..separator + SEPARATOR.len()) != Some(SEPARATOR) {
+    for separator in 0..payload.len().saturating_sub(4) {
+        let Some(separator_bytes) = SEPARATORS.iter().find(|candidate| {
+            payload.get(separator..separator + candidate.len()) == Some(**candidate)
+        }) else {
             continue;
-        }
+        };
         let mut offset = separator;
         while offset > 0 && family_byte(payload[offset - 1]) {
             offset -= 1;
+        }
+        while offset < separator && std::str::from_utf8(&payload[offset..separator]).is_err() {
+            offset += 1;
         }
         let family = &payload[offset..separator];
         if family.is_empty() || family.first() == Some(&b' ') || family.last() == Some(&b' ') {
@@ -62,7 +69,7 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
             }
             _ => (None, family),
         };
-        let digits = &payload[separator + SEPARATOR.len()..];
+        let digits = &payload[separator + separator_bytes.len()..];
         let Some(end) = digits.iter().position(|byte| *byte == 0) else {
             continue;
         };
@@ -3686,11 +3693,13 @@ mod tests {
     #[test]
     fn decodes_mdlstatus_recipe_discriminators_within_their_records() {
         let payload = b"\xe3icon\0protextrude\0Protrusion id 40\0\xe2\xe3\
-            icon\0protrevolve\0Revolve id 41\0\xe2\xe3Datum Plane id 42\0";
+            icon\0protrevolve\0Revolve id 41\0\xe2\xe3Datum Plane id 42\0\xe3K\xc3\xb6rper ID 43\0";
         let operations = operations(payload);
-        assert_eq!(operations.len(), 3);
+        assert_eq!(operations.len(), 4);
         assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Extrude));
         assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Revolve));
         assert_eq!(operations[2].recipe, None);
+        assert_eq!(operations[3].kind, "Körper");
+        assert_eq!(operations[3].feature_id, 43);
     }
 }

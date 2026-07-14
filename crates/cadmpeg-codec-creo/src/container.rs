@@ -945,7 +945,7 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
     let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "MdlStatus")
+        .filter(|section| section.name == "MdlStatus" || section.name == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
         records.extend(
