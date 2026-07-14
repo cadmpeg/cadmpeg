@@ -822,9 +822,24 @@ struct FramedRow {
     end: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct TopologyPrefix {
+    id: u32,
+    type_byte: u8,
+    feature_id: u32,
+    directions: [u8; 2],
+    end: usize,
+}
+
 fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, usize)> {
     let short = find_in(payload, b"\xe1\xe3", start, end).map(|offset| (offset, 2));
-    let long = find_in(payload, b"\xe1\xf5\x05\xf6\xe3", start, end).map(|offset| (offset, 5));
+    let long_search_end = short.map_or(end, |(offset, _)| {
+        offset
+            .saturating_add(b"\xe1\xf5\x05\xf6\xe3".len())
+            .min(end)
+    });
+    let long =
+        find_in(payload, b"\xe1\xf5\x05\xf6\xe3", start, long_search_end).map(|offset| (offset, 5));
     match (short, long) {
         (Some(left), Some(right)) => Some(if left.0 < right.0 { left } else { right }),
         (Some(value), None) | (None, Some(value)) => Some(value),
@@ -834,24 +849,27 @@ fn row_terminator(payload: &[u8], start: usize, end: usize) -> Option<(usize, us
 
 fn framed_segment(payload: &[u8], start: usize, end: usize) -> Option<FramedRow> {
     let segment = payload.get(start..end)?;
-    let mut closes = segment
+    let mut prefixes = (0..segment.len())
+        .filter_map(|row_start| {
+            topology_prefix_fields(segment, row_start).map(|prefix| (row_start, prefix.end))
+        })
+        .collect::<Vec<_>>();
+    prefixes.sort_unstable_by_key(|(_, end)| *end);
+    let closes = segment
         .windows(3)
         .enumerate()
         .filter(|(_, bytes)| *bytes == [0, 0, 0xe3])
         .map(|(offset, _)| offset)
         .collect::<Vec<_>>();
-    closes.reverse();
-    for close in closes {
+    for close in closes.into_iter().rev() {
         let row_end = close + 3;
-        let mut candidates = Vec::new();
-        for row_start in 0..close {
-            if parse_topology_row(&segment[row_start..row_end], start + row_start).is_some() {
-                candidates.push(row_start);
-            }
-        }
-        if candidates.len() == 1 {
+        let Some((suffix_start, _)) = topology_suffix(&segment[..row_end]) else {
+            continue;
+        };
+        let eligible = prefixes.partition_point(|(_, prefix_end)| *prefix_end <= suffix_start);
+        if eligible == 1 {
             return Some(FramedRow {
-                start: start + candidates[0],
+                start: start + prefixes[0].0,
                 end: start + row_end,
             });
         }
@@ -1419,14 +1437,44 @@ pub fn bind_prototype_pcurves(
 }
 
 fn parse_topology_row(row: &[u8], absolute_offset: usize) -> Option<CurveTopologyRow> {
-    let (id, after_id) = compact_int(row, 0);
+    let (suffix_start, [f0, f1, e0, e1]) = topology_suffix(row)?;
+    let prefix = topology_prefix(row, 0, suffix_start)?;
+    Some(CurveTopologyRow {
+        id: prefix.id,
+        type_byte: prefix.type_byte,
+        feature_id: prefix.feature_id,
+        directions: prefix.directions,
+        faces: [f0, f1],
+        next_edges: [e0, e1],
+        offset: absolute_offset,
+    })
+}
+
+fn topology_prefix(row: &[u8], start: usize, suffix_start: usize) -> Option<TopologyPrefix> {
+    let fields = topology_prefix_fields(row, start)?;
+    (fields.end <= suffix_start).then_some(fields)
+}
+
+fn topology_prefix_fields(row: &[u8], start: usize) -> Option<TopologyPrefix> {
+    let (id, after_id) = compact_int(row, start);
+    (after_id > start).then_some(())?;
     let type_byte = *row.get(after_id)?;
     let (feature_id, after_feature) = compact_int(row, after_id + 1);
+    (after_feature > after_id + 1).then_some(())?;
     let directions = [*row.get(after_feature)?, *row.get(after_feature + 1)?];
     directions
         .iter()
         .all(|direction| matches!(direction, 0x01 | 0xf6))
-        .then_some(())?;
+        .then_some(TopologyPrefix {
+            id,
+            type_byte,
+            feature_id,
+            directions,
+            end: after_feature + 2,
+        })
+}
+
+fn topology_suffix(row: &[u8]) -> Option<(usize, [u32; 4])> {
     let close = row.len().checked_sub(3)?;
     (row.get(close..)? == [0, 0, 0xe3]).then_some(())?;
     let mut candidates = Vec::new();
@@ -1446,21 +1494,14 @@ fn parse_topology_row(row: &[u8], absolute_offset: usize) -> Option<CurveTopolog
         let Ok((e1, end)) = reference_id(row, p3) else {
             continue;
         };
-        if end == close && start >= after_feature + 2 {
-            candidates.push([f0, f1, e0, e1]);
+        if end == close {
+            candidates.push((start, [f0, f1, e0, e1]));
         }
     }
-    (candidates.len() == 1).then_some(())?;
-    let [f0, f1, e0, e1] = candidates[0];
-    Some(CurveTopologyRow {
-        id,
-        type_byte,
-        feature_id,
-        directions,
-        faces: [f0, f1],
-        next_edges: [e0, e1],
-        offset: absolute_offset,
-    })
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
@@ -1610,6 +1651,20 @@ mod tests {
                 next_edges: [7, 7],
                 offset: 15,
             }]
+        );
+    }
+
+    #[test]
+    fn row_terminator_selects_the_first_short_or_long_marker() {
+        let short_then_long = [0xe1, 0xe3, 0, 0xe1, 0xf5, 0x05, 0xf6, 0xe3];
+        assert_eq!(
+            row_terminator(&short_then_long, 0, short_then_long.len()),
+            Some((0, 2))
+        );
+        let long_then_short = [0xe1, 0xf5, 0x05, 0xf6, 0xe3, 0, 0xe1, 0xe3];
+        assert_eq!(
+            row_terminator(&long_then_short, 0, long_then_short.len()),
+            Some((0, 5))
         );
     }
 

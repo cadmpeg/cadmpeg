@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 //! PSB scalar forms with context-independent IEEE-754 mappings.
 
+use std::collections::{BTreeMap, HashSet};
+
 use crate::psb::{compact_int, short_form_float};
 
 /// Section-local dictionary formed by distinct raw `0x46` token images.
 #[derive(Debug, Clone, Default)]
 pub struct ScalarCache {
     entries: Vec<CacheEntry>,
+    paired_byte_1_by_tail: BTreeMap<[u8; 6], u8>,
 }
 
 #[derive(Debug, Clone)]
 struct CacheEntry {
-    raw: [u8; 8],
     value: f64,
 }
 
@@ -20,6 +22,8 @@ impl ScalarCache {
     /// eight-byte sequence beginning with `0x46` in one section.
     pub fn from_section(section: &[u8]) -> Self {
         let mut entries = Vec::<CacheEntry>::new();
+        let mut seen = HashSet::<[u8; 8]>::new();
+        let mut paired_byte_1_by_tail = BTreeMap::new();
         for offset in 0..section.len() {
             if section[offset] != 0x46 {
                 continue;
@@ -28,17 +32,22 @@ impl ScalarCache {
                 continue;
             };
             let raw: [u8; 8] = bytes.try_into().expect("bounded eight-byte slice");
-            if entries.iter().any(|entry| entry.raw == raw) {
+            if !seen.insert(raw) {
                 continue;
             }
             let mut ieee = raw;
             ieee[0] = 0x40;
+            paired_byte_1_by_tail
+                .entry(raw[2..].try_into().expect("six-byte cache tail"))
+                .or_insert(raw[1]);
             entries.push(CacheEntry {
-                raw,
                 value: f64::from_be_bytes(ieee),
             });
         }
-        Self { entries }
+        Self {
+            entries,
+            paired_byte_1_by_tail,
+        }
     }
 
     fn value(&self, index: u32) -> Option<f64> {
@@ -48,10 +57,9 @@ impl ScalarCache {
     }
 
     fn paired_byte_1(&self, tail: &[u8]) -> Option<u8> {
-        self.entries
-            .iter()
-            .find(|entry| entry.raw[2..] == *tail)
-            .map(|entry| entry.raw[1])
+        self.paired_byte_1_by_tail
+            .get(<&[u8; 6]>::try_from(tail).ok()?)
+            .copied()
     }
 }
 
@@ -274,6 +282,18 @@ mod tests {
         assert_eq!(
             decode_in_lane(&[0x18, 0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
             Some((0.0, 1))
+        );
+    }
+
+    #[test]
+    fn paired_cache_tail_keeps_its_first_exponent() {
+        let cache = ScalarCache::from_section(&[
+            0x46, 0x08, 1, 2, 3, 4, 5, 6, 0x46, 0x13, 1, 2, 3, 4, 5, 6,
+        ]);
+        let expected = f64::from_be_bytes([0x40, 0x08, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(
+            decode_in_lane(&[0x9e, 1, 2, 3, 4, 5, 6], 0, &cache),
+            Some((expected, 7))
         );
     }
 
