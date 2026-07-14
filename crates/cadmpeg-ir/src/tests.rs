@@ -2375,6 +2375,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
 fn sketch_profile_subselections_are_bounds_checked() {
     use crate::features::{
         BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+        SketchProfileRegion,
     };
     use crate::sketches::{Sketch, SketchId};
 
@@ -2423,8 +2424,19 @@ fn sketch_profile_subselections_are_bounds_checked() {
         },
     ));
     ir.model.features.push(feature(
-        "empty-native-selection",
+        "invalid-region",
         2,
+        ProfileRef::SketchRegions {
+            sketch: sketch_id.clone(),
+            regions: vec![SketchProfileRegion {
+                outer: 0,
+                holes: vec![0, 0],
+            }],
+        },
+    ));
+    ir.model.features.push(feature(
+        "empty-native-selection",
+        3,
         ProfileRef::SketchSelection {
             sketch: sketch_id,
             selections: Vec::new(),
@@ -2440,6 +2452,41 @@ fn sketch_profile_subselections_are_bounds_checked() {
             .iter()
             .any(|finding| finding.message
                 == "native sketch profile selections are empty or repeated")
+    );
+    assert!(findings.iter().any(|finding| {
+        finding.message == "sketch regions are empty, repeated, self-referential, or out of range"
+    }));
+}
+
+#[test]
+fn sketch_regions_round_trip_with_explicit_boundary_roles() {
+    use crate::features::{ProfileRef, SketchProfileRegion};
+    use crate::sketches::SketchId;
+
+    let profile = ProfileRef::SketchRegions {
+        sketch: SketchId("synthetic:test:sketch#region".into()),
+        regions: vec![
+            SketchProfileRegion {
+                outer: 2,
+                holes: vec![3, 5],
+            },
+            SketchProfileRegion {
+                outer: 8,
+                holes: Vec::new(),
+            },
+        ],
+    };
+    let json = serde_json::to_value(&profile).expect("serialize sketch regions");
+    assert_eq!(json["kind"], "sketch_regions");
+    assert_eq!(json["value"]["regions"][0]["outer"], 2);
+    assert_eq!(
+        json["value"]["regions"][0]["holes"],
+        serde_json::json!([3, 5])
+    );
+    assert!(json["value"]["regions"][1].get("holes").is_none());
+    assert_eq!(
+        serde_json::from_value::<ProfileRef>(json).expect("deserialize sketch regions"),
+        profile
     );
 }
 

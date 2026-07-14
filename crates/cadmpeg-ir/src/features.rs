@@ -1135,7 +1135,17 @@ pub enum SweepMode {
     Surface,
 }
 
-/// Profile consumed by an extrude or revolve.
+/// One connected planar region bounded by solved sketch-profile loops.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+pub struct SketchProfileRegion {
+    /// Exterior-loop index in the referenced sketch's profile-loop table.
+    pub outer: u32,
+    /// Immediate child loops removed from the exterior interior.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub holes: Vec<u32>,
+}
+
+/// Profile consumed by a profile-driven feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ProfileRef {
@@ -1149,6 +1159,13 @@ pub enum ProfileRef {
         sketch: crate::sketches::SketchId,
         /// Zero-based indices into [`crate::sketches::Sketch::profiles`].
         profiles: Vec<u32>,
+    },
+    /// Exact union of bounded atomic regions within one neutral sketch.
+    SketchRegions {
+        /// Sketch containing every referenced boundary loop.
+        sketch: crate::sketches::SketchId,
+        /// Connected regions in source selection order.
+        regions: Vec<SketchProfileRegion>,
     },
     /// Source-native selection within a known neutral sketch.
     SketchSelection {

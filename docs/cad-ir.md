@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"3"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"4"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -172,7 +172,7 @@ Each feature has an ID, source-history `ordinal`, optional name, suppression sta
 
 Neutral definitions are extrude, revolve, fillet, chamfer, shell, hole, and pattern. `native` is the sole escape hatch for a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
 
-Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native profile identity or solved faces. Fillets contain ordered independently dimensioned edge groups; each group uses a constant or sampled variable radius and may carry a dimensionless tangency weight. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
+Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native identity, a whole solved sketch, specific sketch loops, exact bounded sketch regions, or solved faces. One bounded sketch region is the interior of its `outer` loop minus the interiors of its immediate `holes`; multiple regions denote their union in source selection order. All loop indices address the referenced sketch's `profiles` table. A region list is nonempty; every loop index is in range; holes are unique and exclude the outer loop; repeated regions are invalid. Loop references do not acquire region semantics implicitly. Fillets contain ordered independently dimensioned edge groups; each group uses a constant or sampled variable radius and may carry a dimensionless tangency weight. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. It does not change the neutral definition's meaning.
 
@@ -214,7 +214,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "3"`. The `model.subds` arena is required in version 3 JSON, including when it is empty. Version 3 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version.
+Readers accept exactly `ir_version: "4"`. The `model.subds` arena is required in version 4 JSON, including when it is empty. Version 4 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. Version 4 adds explicit sketch-region profile references; version 3 loop references retain no implicit region semantics.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -236,7 +236,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "3",
+  "ir_version": "4",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

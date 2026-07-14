@@ -2279,6 +2279,7 @@ fn check_feature_sketch_references(
             let sketch = match profile {
                 ProfileRef::Sketch(sketch)
                 | ProfileRef::SketchProfiles { sketch, .. }
+                | ProfileRef::SketchRegions { sketch, .. }
                 | ProfileRef::SketchSelection { sketch, .. } => sketch,
                 ProfileRef::Native(_) | ProfileRef::Faces(_) => continue,
             };
@@ -2315,6 +2316,33 @@ fn check_feature_sketch_references(
                             findings,
                             feature,
                             "sketch profile indices are empty, repeated, or out of range",
+                        );
+                    }
+                }
+                ProfileRef::SketchRegions { regions, .. } => {
+                    let sketch_profile_count = ir
+                        .model
+                        .sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .map_or(0, |sketch| sketch.profiles.len());
+                    let unique_regions = regions.iter().collect::<HashSet<_>>();
+                    let invalid = regions.is_empty()
+                        || unique_regions.len() != regions.len()
+                        || regions.iter().any(|region| {
+                            let holes = region.holes.iter().copied().collect::<HashSet<_>>();
+                            region.outer as usize >= sketch_profile_count
+                                || holes.len() != region.holes.len()
+                                || holes.contains(&region.outer)
+                                || holes
+                                    .iter()
+                                    .any(|index| *index as usize >= sketch_profile_count)
+                        });
+                    if invalid {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch regions are empty, repeated, self-referential, or out of range",
                         );
                     }
                 }

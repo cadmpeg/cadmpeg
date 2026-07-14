@@ -6921,7 +6921,9 @@ fn profile_source(
     match profile {
         ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
-        ProfileRef::SketchProfiles { .. } | ProfileRef::SketchSelection { .. } => None,
+        ProfileRef::SketchProfiles { .. }
+        | ProfileRef::SketchRegions { .. }
+        | ProfileRef::SketchSelection { .. } => None,
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
