@@ -3558,6 +3558,9 @@ pub(crate) fn project_relation_bindings(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
+            if relation.parameter_scalar_ref.is_none() {
+                continue;
+            }
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
@@ -3659,6 +3662,9 @@ fn typed_marker_relation_definition(
         SketchInputKind::Native(_) => None,
         _ => return None,
     };
+    if kind.is_some() && marker.links.is_empty() && marker.coordinates_m.is_none() {
+        return None;
+    }
     let native = || {
         let mut entities = marker
             .links
@@ -5103,6 +5109,12 @@ mod profile_join_tests {
             Some(SketchConstraintDefinition::Horizontal {
                 entity: first.clone(),
             })
+        );
+        let mut operandless_vertical = marker("operandless-vertical", None);
+        operandless_vertical.kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
+        assert_eq!(
+            typed_marker_relation_definition(&operandless_vertical, &markers, &joins),
+            None
         );
         let mut parallel = marker("parallel", None);
         parallel.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
