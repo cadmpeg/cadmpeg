@@ -1158,10 +1158,10 @@ mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
-        e5_boundary_curve, equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes,
-        include_native_endpoint_pairs, intersection_line_direction, ordered_range,
-        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
-        resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
+        e5_boundary_curve, e5_pcurve_on_surface, equivalent_e5_curve_carriers,
+        fit_rank_one_e5_plane_axes, include_native_endpoint_pairs, intersection_line_direction,
+        ordered_range, point_distance, point_on_known_surface, quintic_jet_pcurve,
+        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
@@ -1393,6 +1393,50 @@ mod chart_tests {
             radius: 4.0,
         };
         assert!(!equivalent_e5_curve_carriers(&left, &displaced));
+    }
+
+    #[test]
+    fn e5_nonplanar_jet_normalizes_positions_and_derivatives() {
+        let surface = crate::geometry::E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            uv_scale: [0.5, 1.0],
+        };
+        let pcurve = crate::e5::E5Pcurve::Jet {
+            surface: 7,
+            degree: 5,
+            knots: vec![0.0, 1.0],
+            multiplicities: vec![6, 6],
+            points: vec![[0.0, 3.0], [std::f64::consts::PI, 3.0]],
+            first_derivatives: vec![[std::f64::consts::PI, 0.0], [std::f64::consts::PI, 0.0]],
+            second_derivatives: vec![[0.0, 0.0], [0.0, 0.0]],
+            range: [0.0, 1.0],
+        };
+        let (geometry, range, endpoints) =
+            e5_pcurve_on_surface(&pcurve, &surface).expect("normalized cylinder jet");
+        assert_eq!(range, [0.0, 1.0]);
+        let PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+            panic!("expected NURBS pcurve");
+        };
+        assert_eq!(
+            control_points.first(),
+            Some(&cadmpeg_ir::math::Point2::new(0.0, 3.0))
+        );
+        assert_eq!(
+            control_points.last(),
+            Some(&cadmpeg_ir::math::Point2::new(
+                std::f64::consts::FRAC_PI_2,
+                3.0
+            ))
+        );
+        assert!(point_distance(endpoints[0], Point3::new(2.0, 0.0, 3.0)) < 1e-12);
+        assert!(point_distance(endpoints[1], Point3::new(0.0, 2.0, 3.0)) < 1e-12);
     }
 
     #[test]
@@ -2446,13 +2490,26 @@ fn e5_pcurve_on_surface(
             second_derivatives,
             range,
             ..
-        } if matches!(surface, SurfaceGeometry::Plane { .. }) => {
+        } => {
+            let scale = decoded_surface.uv_scale;
+            let points = points
+                .iter()
+                .map(|point| [point[0] * scale[0], point[1] * scale[1]])
+                .collect::<Vec<_>>();
+            let first_derivatives = first_derivatives
+                .iter()
+                .map(|value| [value[0] * scale[0], value[1] * scale[1]])
+                .collect::<Vec<_>>();
+            let second_derivatives = second_derivatives
+                .iter()
+                .map(|value| [value[0] * scale[0], value[1] * scale[1]])
+                .collect::<Vec<_>>();
             let geometry = quintic_jet_pcurve(
                 *degree,
                 knots,
-                points,
-                first_derivatives,
-                second_derivatives,
+                &points,
+                &first_derivatives,
+                &second_derivatives,
             )?;
             let endpoints = [*points.first()?, *points.last()?]
                 .map(|uv| cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]));
@@ -2466,7 +2523,7 @@ fn e5_pcurve_on_surface(
                     .ok()?,
             ))
         }
-        _ => None,
+        crate::e5::E5Pcurve::Circle { .. } => None,
     }
 }
 
