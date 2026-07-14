@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-byte ledger validation.
 
-use crate::byte_ledger::ByteSpanClass;
 use crate::byte_ledger::ByteLedger;
+use crate::byte_ledger::ByteSpanClass;
 use crate::report::{Check, Finding, Severity};
 use crate::source_fidelity::RetainedSourceRecord;
 use std::collections::{BTreeMap, HashSet};
@@ -42,13 +42,19 @@ pub(super) fn check_byte_ledger(
         if record.byte_len != record.data.len() as u64 {
             finding(
                 findings,
-                format!("retained source record {:?} byte length disagrees with its data", record.id),
+                format!(
+                    "retained source record {:?} byte length disagrees with its data",
+                    record.id
+                ),
             );
         }
         if crate::hash::sha256_hex(&record.data) != record.sha256 {
             finding(
                 findings,
-                format!("retained source record {:?} digest disagrees with its data", record.id),
+                format!(
+                    "retained source record {:?} digest disagrees with its data",
+                    record.id
+                ),
             );
         }
     }
@@ -119,10 +125,12 @@ pub(super) fn check_byte_ledger(
                 {
                     finding(
                         findings,
-                        format!("opaque byte ledger span and retained record {id:?} ranges disagree"),
+                        format!(
+                            "opaque byte ledger span and retained record {id:?} ranges disagree"
+                        ),
                     );
                 }
-            } else if retained_records.is_some() || !legacy_retained_ids.contains(id) {
+            } else if retained_records.is_some() && !legacy_retained_ids.contains(id) {
                 finding(
                     findings,
                     format!("byte ledger retained record {id:?} does not resolve"),

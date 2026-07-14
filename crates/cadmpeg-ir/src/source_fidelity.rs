@@ -137,7 +137,11 @@ mod tests {
             .map(|finding| finding.message.as_str())
             .collect::<Vec<_>>();
 
-        assert!(messages.iter().any(|message| message.contains("ranges disagree")));
-        assert!(messages.iter().any(|message| message.contains("digest disagrees")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("ranges disagree")));
+        assert!(messages
+            .iter()
+            .any(|message| message.contains("digest disagrees")));
     }
 }

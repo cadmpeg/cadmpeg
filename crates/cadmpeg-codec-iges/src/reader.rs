@@ -56,6 +56,10 @@ pub(crate) fn decode(
     let parameters = parameter::assemble(&scan, &directory, &global)?;
     let references = graph::build(&directory);
     let byte_ledger = byte_ledger::build(&scan, &global, &parameters);
+    let mut source_fidelity = SourceFidelity {
+        byte_ledger: byte_ledger.clone(),
+        ..SourceFidelity::default()
+    };
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
@@ -75,13 +79,10 @@ pub(crate) fn decode(
         &parameters,
         &references,
         &global,
-        &byte_ledger,
+        &mut source_fidelity,
     )?;
     ir.byte_ledger = byte_ledger.clone();
-    let source_fidelity = SourceFidelity {
-        byte_ledger,
-        ..SourceFidelity::default()
-    };
+    source_fidelity.finalize();
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;

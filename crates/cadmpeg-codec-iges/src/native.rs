@@ -8,7 +8,7 @@ use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::{ByteLedger, ByteSpanClass, CadIr};
+use cadmpeg_ir::{ByteSpanClass, CadIr, RetainedSourceRecord, SourceFidelity};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -25,17 +25,6 @@ pub(crate) struct NativeCard {
     line_ending: Vec<u8>,
     section: Option<String>,
     sequence: Option<u32>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct NativeOpaqueBytes {
-    id: String,
-    owner: String,
-    meaning: String,
-    source_span: [u64; 2],
-    byte_length: u64,
-    sha256: String,
-    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1244,7 +1233,7 @@ pub(crate) fn store(
     parameters: &[ParameterRecord],
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
-    byte_ledger: &ByteLedger,
+    source_fidelity: &mut SourceFidelity,
 ) -> Result<bool, CodecError> {
     let cards = scan
         .lines
@@ -1261,7 +1250,8 @@ pub(crate) fn store(
             sequence: line.sequence,
         })
         .collect::<Vec<_>>();
-    let opaque_bytes = byte_ledger
+    source_fidelity.retained_records = source_fidelity
+        .byte_ledger
         .spans
         .iter()
         .filter(|span| span.class == ByteSpanClass::Opaque)
@@ -1269,14 +1259,13 @@ pub(crate) fn store(
             let start = usize::try_from(span.start).unwrap_or(scan.source.len());
             let end = usize::try_from(span.end).unwrap_or(scan.source.len());
             let bytes = scan.source.get(start..end).unwrap_or_default().to_vec();
-            NativeOpaqueBytes {
+            RetainedSourceRecord {
                 id: span.retained_record.clone().unwrap_or_default(),
-                owner: span.owner.clone(),
-                meaning: span.meaning.clone(),
-                source_span: [span.start, span.end],
-                byte_length: span.end.saturating_sub(span.start),
+                stream: "source".into(),
+                offset: span.start,
+                byte_len: span.end.saturating_sub(span.start),
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                bytes,
+                data: bytes,
             }
         })
         .collect::<Vec<_>>();
@@ -3568,7 +3557,6 @@ pub(crate) fn store(
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
-    namespace.set_arena("opaque_bytes", &opaque_bytes)?;
     namespace.set_arena("entities", &entities)?;
     namespace.set_arena("directions", &directions)?;
     namespace.set_arena("transformations", &transforms)?;

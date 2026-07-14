@@ -7278,24 +7278,24 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     assert_eq!(native.arenas["entities"].len(), 1);
     assert!(native.arenas["colors"].is_empty());
     assert_eq!(native.arenas["display_attributes"].len(), 1);
+    assert!(!native.arenas.contains_key("opaque_bytes"));
     for span in result
-        .ir
+        .source_fidelity
         .byte_ledger
         .spans
         .iter()
         .filter(|span| span.class == cadmpeg_ir::ByteSpanClass::Opaque)
     {
-        let retained = native.arenas["opaque_bytes"]
+        let retained = result
+            .source_fidelity
+            .retained_records
             .iter()
             .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
             .unwrap();
+        assert_eq!(retained.offset, span.start);
+        assert_eq!(retained.byte_len, span.end - span.start);
         assert_eq!(
-            retained.fields["source_span"],
-            serde_json::json!([span.start, span.end])
-        );
-        assert_eq!(retained.fields["byte_length"], span.end - span.start);
-        assert_eq!(
-            retained.fields["sha256"],
+            retained.sha256,
             cadmpeg_ir::hash::sha256_hex(
                 &bytes[usize::try_from(span.start).unwrap()..usize::try_from(span.end).unwrap()]
             )
@@ -7438,19 +7438,19 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
         .unwrap();
     assert_eq!(span.class, cadmpeg_ir::ByteSpanClass::Opaque);
     assert_eq!(span.end - span.start, 17);
-    let retained = result.ir.native.namespace("iges").unwrap().arenas["opaque_bytes"]
+    let retained = result
+        .source_fidelity
+        .retained_records
         .iter()
         .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
         .unwrap();
+    assert_eq!(retained.data, b"transport padding");
+    assert_eq!(retained.byte_len, 17);
     assert_eq!(
-        retained.fields["bytes"],
-        serde_json::json!(b"transport padding")
-    );
-    assert_eq!(retained.fields["byte_length"], 17);
-    assert_eq!(
-        retained.fields["sha256"],
+        retained.sha256,
         cadmpeg_ir::hash::sha256_hex(b"transport padding")
     );
-    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let validation =
+        cadmpeg_ir::validate_with_source_fidelity(&result.ir, &result.source_fidelity, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
