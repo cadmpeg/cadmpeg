@@ -2942,6 +2942,25 @@ fn recalculable_dimension_associativity_file() -> Vec<u8> {
     ])
 }
 
+fn text_display_template_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 312,
+            form: 0,
+            label: "ABSTEXT".into(),
+            status: "00000200",
+            parameters: "312,4,2,1,1.5707963267948966,0,0,0,10,20,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 312,
+            form: 1,
+            label: "INCTEXT".into(),
+            status: "00000200",
+            parameters: "312,3,1,18,1.5707963267948966,0.25,1,1,2,-1,0;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4670,6 +4689,38 @@ fn decode_preserves_recalculable_dimension_geometry_points() {
     );
     assert_eq!(associativity.fields["geometry"][1]["location_flag"], 1);
     assert_eq!(associativity.fields["geometry"][1]["point"][0], 4.0);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_distinguishes_absolute_and_incremental_text_templates() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(text_display_template_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let templates = &result.ir.native.namespace("iges").unwrap().arenas["text_templates"];
+    assert_eq!(templates.len(), 2);
+    let absolute = templates
+        .iter()
+        .find(|template| template.fields["form"] == 0)
+        .unwrap();
+    assert_eq!(absolute.fields["origin_or_increment"][0], 10.0);
+    assert_eq!(absolute.fields["origin_or_increment"][1], 20.0);
+    let incremental = templates
+        .iter()
+        .find(|template| template.fields["form"] == 1)
+        .unwrap();
+    assert_eq!(incremental.fields["font_code"], 18);
+    assert_eq!(incremental.fields["mirror"], 1);
+    assert_eq!(incremental.fields["vertical"], 1);
+    assert_eq!(incremental.fields["origin_or_increment"][0], 2.0);
+    assert_eq!(incremental.fields["origin_or_increment"][1], -1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

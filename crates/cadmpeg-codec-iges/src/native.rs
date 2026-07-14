@@ -117,6 +117,21 @@ enum NativeLineFontDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeTextDisplayTemplate {
+    id: String,
+    source_entity: String,
+    form: i64,
+    character_box: [Option<f64>; 2],
+    font_code: Option<i64>,
+    font_definition: Option<String>,
+    slant_angle: Option<f64>,
+    rotation_angle: Option<f64>,
+    mirror: Option<i64>,
+    vertical: Option<i64>,
+    origin_or_increment: [Option<f64>; 3],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeDefinitionLevels {
     id: String,
     source_entity: String,
@@ -1140,6 +1155,37 @@ pub(crate) fn store(
                         .and_then(|record| record.string(2 + count))
                         .map(<[u8]>::to_vec),
                 }
+            }
+        })
+        .collect::<Vec<_>>();
+    let text_templates = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let font_code = record.and_then(|record| record.integer(3));
+            NativeTextDisplayTemplate {
+                id: format!("iges:presentation:text-template#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                character_box: [
+                    record.and_then(|record| record.number(1)),
+                    record.and_then(|record| record.number(2)),
+                ],
+                font_code,
+                font_definition: font_code
+                    .filter(|value| *value < 0)
+                    .and_then(i64::checked_neg)
+                    .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
+                slant_angle: record.and_then(|record| record.number(4)),
+                rotation_angle: record.and_then(|record| record.number(5)),
+                mirror: record.and_then(|record| record.integer(6)),
+                vertical: record.and_then(|record| record.integer(7)),
+                origin_or_increment: [
+                    record.and_then(|record| record.number(8)),
+                    record.and_then(|record| record.number(9)),
+                    record.and_then(|record| record.number(10)),
+                ],
             }
         })
         .collect::<Vec<_>>();
@@ -2696,6 +2742,7 @@ pub(crate) fn store(
     namespace.set_arena("colors", &colors)?;
     namespace.set_arena("display_attributes", &display_attributes)?;
     namespace.set_arena("line_fonts", &line_fonts)?;
+    namespace.set_arena("text_templates", &text_templates)?;
     namespace.set_arena("definition_levels", &definition_levels)?;
     namespace.set_arena("primitive_solids", &primitive_solids)?;
     namespace.set_arena("procedural_solids", &procedural_solids)?;

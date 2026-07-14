@@ -3,7 +3,7 @@
 
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
 use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
@@ -68,6 +68,22 @@ fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Col
     }
 }
 
+fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
+    match record.tokens.get(index).map(|token| &token.value) {
+        None | Some(TokenValue::Omitted) => Some(default),
+        Some(TokenValue::Integer(_) | TokenValue::Real(_)) => record.number(index),
+        Some(TokenValue::String(_)) => None,
+    }
+}
+
+fn integer_or(record: &ParameterRecord, index: usize, default: i64) -> Option<i64> {
+    match record.tokens.get(index).map(|token| &token.value) {
+        None | Some(TokenValue::Omitted) => Some(default),
+        Some(TokenValue::Integer(value)) => Some(*value),
+        Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+    }
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -87,6 +103,59 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
     let mut names = BTreeMap::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 312 && matches!(entry.form, 0..=1))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let parameter_end = trailing_pointer_groups(record, &entries)
+            .map_or(record.tokens.len(), |groups| groups.token_start);
+        let font = integer_or(record, 3, 1);
+        let font_valid = font.is_some_and(|font| {
+            font >= 0
+                || font
+                    .checked_neg()
+                    .and_then(|value| u32::try_from(value).ok())
+                    .and_then(|sequence| entries.get(&sequence).copied())
+                    .is_some_and(|target| target.entity_type == 310 && target.form == 0)
+        });
+        let directory_valid = entry.status.use_flag == 2
+            && entry.structure == 0
+            && entry.line_font == 0
+            && entry.view == 0
+            && entry.transform == 0
+            && entry.label_display == 0
+            && entry.line_weight == 0;
+        let fields_valid = parameter_end == 11
+            && (1..=2).all(|index| {
+                record
+                    .number(index)
+                    .is_some_and(|value| value.is_finite() && value > 0.0)
+            })
+            && font_valid
+            && number_or(record, 4, std::f64::consts::FRAC_PI_2).is_some_and(f64::is_finite)
+            && record.number(5).is_some_and(f64::is_finite)
+            && record
+                .integer(6)
+                .is_some_and(|value| matches!(value, 0..=2))
+            && record
+                .integer(7)
+                .is_some_and(|value| matches!(value, 0..=1))
+            && (8..=10).all(|index| record.number(index).is_some_and(f64::is_finite));
+        if directory_valid && fields_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(loss(
+                entry,
+                "text-template metrics, font, orientation, placement, or Directory fields are invalid",
+            ));
+        }
+    }
 
     for entry in directory
         .iter()
