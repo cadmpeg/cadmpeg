@@ -1998,18 +1998,20 @@ fn strict_writer_rejects_before_emitting_bytes() {
 }
 
 #[test]
-fn hidden_body_is_omitted_and_reported() {
+fn hidden_body_geometry_and_visibility_round_trip() {
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(false);
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
     let s = String::from_utf8(buf).unwrap();
-    assert!(!s.contains("MANIFOLD_SOLID_BREP"));
-    assert!(!s.contains("ADVANCED_FACE"));
-    assert!(report
-        .losses
-        .iter()
-        .any(|l| l.message.contains("hidden body(ies) were omitted")));
+    assert!(s.contains("MANIFOLD_SOLID_BREP"));
+    assert!(s.contains("ADVANCED_FACE"));
+    assert!(s.contains("INVISIBILITY"));
+    assert!(report.losses.is_empty());
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(s.into_bytes()), &DecodeOptions::default())
+        .expect("decode hidden body");
+    assert_eq!(decoded.ir.model.bodies[0].visible, Some(false));
 
     // An explicitly visible body exports unchanged.
     let mut ir = unit_cube();

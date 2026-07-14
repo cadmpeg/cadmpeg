@@ -473,6 +473,7 @@ impl<'a> Builder<'a> {
             self.emit_product_graph(context);
         }
 
+        self.emit_visibility();
         self.emit_presentation(context);
         self.emit_tessellations(context);
         self.emit_layers();
@@ -1069,27 +1070,7 @@ impl<'a> Builder<'a> {
         // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas
         // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
-        let hidden: BTreeSet<&str> = ir
-            .model
-            .bodies
-            .iter()
-            .filter(|body| body.visible == Some(false))
-            .map(|body| body.id.0.as_str())
-            .collect();
-        if !hidden.is_empty() {
-            self.loss(
-                LossCategory::Metadata,
-                Severity::Info,
-                format!(
-                    "{} hidden body(ies) were omitted from STEP output",
-                    hidden.len()
-                ),
-            );
-        }
         for body in &ir.model.bodies {
-            if hidden.contains(body.id.0.as_str()) {
-                continue;
-            }
             if let Some(t) = &body.transform {
                 if !is_identity(&t.rows) {
                     self.loss(
@@ -1107,9 +1088,6 @@ impl<'a> Builder<'a> {
         }
 
         for region in &ir.model.regions {
-            if hidden.contains(region.body.0.as_str()) {
-                continue;
-            }
             let body_kind = ir
                 .model
                 .bodies
@@ -1168,6 +1146,20 @@ impl<'a> Builder<'a> {
                 .or_insert(if closed { item } else { *outer });
         }
         items
+    }
+
+    fn emit_visibility(&mut self) {
+        let hidden = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body.visible == Some(false))
+            .filter_map(|body| self.body_shape_refs.get(body.id.as_str()).copied())
+            .collect::<Vec<_>>();
+        if !hidden.is_empty() {
+            self.emitter.emit("INVISIBILITY", &refs(&hidden));
+        }
     }
 
     fn emit_wire_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {

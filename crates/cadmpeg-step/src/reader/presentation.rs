@@ -37,6 +37,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         .map(|(index, body)| (body.id.0.clone(), index))
         .collect::<BTreeMap<_, _>>();
     let mut appearance_ids = BTreeMap::<u64, AppearanceId>::new();
+    for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("INVISIBILITY") {
+            continue;
+        }
+        let Some(items) = record.parameter(0).and_then(ValueExt::list) else {
+            warnings.push(format!("INVISIBILITY #{id} has no item set"));
+            continue;
+        };
+        for target in items.iter().filter_map(ValueExt::reference) {
+            let body_id = format!("step:data:body#{target}");
+            if let Some(index) = body_indices.get(&body_id) {
+                ir.model.bodies[*index].visible = Some(false);
+            } else {
+                warnings.push(format!(
+                    "INVISIBILITY #{id} targets unsupported item #{target}"
+                ));
+            }
+        }
+        typed.insert(id);
+    }
     for (&layer_id, layer) in &exchange.records {
         if layer.simple_name() != Some("PRESENTATION_LAYER_ASSIGNMENT") {
             continue;
