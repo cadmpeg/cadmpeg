@@ -1626,10 +1626,14 @@ fn b2_cone_stream() -> Vec<u8> {
 }
 
 fn b2_construction_use_stream() -> Vec<u8> {
+    b2_construction_use_stream_for([0.0, -1.0, 4.0, 3.0])
+}
+
+fn b2_construction_use_stream_for(domain: [f64; 4]) -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x30, 0x2d, 0x05, 0x05, 0x08, 0x34, 0x12];
     record.extend_from_slice(&le_f64(-2.0));
     record.push(0x01);
-    for value in [0.0f64, 4.0, -1.0, 3.0] {
+    for value in [domain[0], domain[2], domain[1], domain[3]] {
         record.extend_from_slice(&le_f64(value));
     }
     record
@@ -3646,6 +3650,40 @@ fn decode_standard_transfers_exact_offset_construction() {
 }
 
 #[test]
+fn decode_standard_transfers_construction_use_offset() {
+    let surface_bytes = a5_surface_stream();
+    let carriers = crate::geometry::a5_surfaces(&surface_bytes);
+    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
+        panic!("NURBS fixture");
+    };
+    let domain = [
+        surface.u_knots[0],
+        surface.v_knots[0],
+        *surface.u_knots.last().unwrap(),
+        *surface.v_knots.last().unwrap(),
+    ];
+    let mut payload = surface_bytes;
+    payload.extend_from_slice(&b2_construction_use_stream_for(domain));
+    let mut file = standard_catpart();
+    file.splice(16..16, payload);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("standard decode");
+    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+        panic!("one offset construction");
+    };
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset { distance, .. } =
+        &procedural.definition
+    else {
+        panic!("offset construction");
+    };
+    assert_eq!(*distance, -2.0);
+}
+
+#[test]
 fn decode_standard_transfers_exact_rolling_ball_jet() {
     let mut file = standard_catpart();
     file.splice(16..16, a5_freeform_curve_stream());
@@ -3952,6 +3990,11 @@ fn b2_construction_use_parser_reorders_offset_domain() {
     assert_eq!(uses[0].distance, -2.0);
     assert_eq!(uses[0].kind, 0x01);
     assert_eq!(uses[0].domain, Some([0.0, -1.0, 4.0, 3.0]));
+    let offsets = crate::geometry::b2_offset_supports(&b2_construction_use_stream());
+    assert_eq!(offsets.len(), 1);
+    assert_eq!(offsets[0].support_id, 0x1234);
+    assert_eq!(offsets[0].distance, -2.0);
+    assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
 }
 
 #[test]

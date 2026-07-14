@@ -734,7 +734,8 @@ pub struct A5Pcurve {
     pub range: [f64; 2],
 }
 
-/// Offset-surface constructor stored in a `b2 03 31` support record.
+/// Offset-surface constructor stored in a `b2 03 31` support record or a
+/// kind-`0x01` `b2 03 30` construction-use record.
 #[derive(Debug, Clone)]
 pub struct B2OffsetSupport {
     /// Record byte offset.
@@ -2131,7 +2132,7 @@ pub fn b2_construction_uses(data: &[u8]) -> Vec<B2ConstructionUse> {
         let Some(fields) = read_f64_array::<4>(data, at + 9) else {
             continue;
         };
-        if !distance.is_finite() || fields.iter().any(|v| !v.is_finite()) {
+        if at + 41 != frame.end || !distance.is_finite() || fields.iter().any(|v| !v.is_finite()) {
             continue;
         }
         out.push(B2ConstructionUse {
@@ -2501,7 +2502,7 @@ pub fn b2_edge_parameters(data: &[u8]) -> Vec<B2EdgeParameters> {
 /// Decode `b2 03 31` offset-surface constructors.
 #[must_use]
 pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
-    b_family_frames(data, 0x31)
+    let mut offsets = b_family_frames(data, 0x31)
         .into_iter()
         .filter_map(|frame| {
             if frame.header_token != 5 {
@@ -2529,7 +2530,21 @@ pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
                     domain: [values[1], values[2], values[3], values[4]],
                 })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    offsets.extend(
+        b2_construction_uses(data)
+            .into_iter()
+            .filter_map(|construction| {
+                (construction.kind == 0x01).then_some(B2OffsetSupport {
+                    pos: construction.pos,
+                    support_id: construction.support_id,
+                    distance: construction.distance,
+                    domain: construction.domain.expect("kind 0x01 carries a domain"),
+                })
+            }),
+    );
+    offsets.sort_unstable_by_key(|offset| offset.pos);
+    offsets
 }
 
 /// Bind each offset constructor to the unique consolidated NURBS carrier whose
