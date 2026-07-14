@@ -1036,10 +1036,28 @@ fn decode_variable_scalar(
         raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
+    if prefix == 0x28 && offset + 8 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x3f;
+        raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
+        return (Some(f64::from_be_bytes(raw)), offset + 8, false);
+    }
     let variable_dict = match prefix {
+        0x64 | 0xad => Some([0x3f, 0xd9]),
+        0x69 => Some([0x3f, 0xde]),
         0x80 => Some([0x3f, 0xf5]),
         0x97 => Some([0x40, 0x0c]),
+        0x9c => Some([0x40, 0x11]),
+        0x9d => Some([0x40, 0x12]),
+        0x9f => Some([0x40, 0x14]),
+        0xa0 => Some([0x40, 0x15]),
+        0xb3 => Some([0xbf, 0xe0]),
         0xc8 => Some([0xbf, 0xf5]),
+        0xcb => Some([0xbf, 0xf8]),
+        0xcc => Some([0xbf, 0xf9]),
+        0xd0 => Some([0xbf, 0xfe]),
+        0xd2 => Some([0xc0, 0x00]),
+        0xd6 => Some([0xc0, 0x04]),
         0xdd => Some([0xc0, 0x0c]),
         _ => None,
     };
@@ -2232,7 +2250,8 @@ fn saved_arc_scalar(
         && payload.get(offset + 1).is_some_and(|next| {
             matches!(
                 next,
-                0x28 | 0x5e | 0x64 | 0x9d..=0xa0 | 0xad | 0xcc | 0xd0 | 0xd2 | 0xd5 | 0xde | 0xdf
+                0x28 | 0x5e | 0x60 | 0x64 | 0x9c
+                    ..=0xa0 | 0xad | 0xcc | 0xd0 | 0xd2 | 0xd5 | 0xde | 0xdf
             )
         })
     {
@@ -2245,11 +2264,13 @@ fn saved_arc_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
     let arc_dict = match payload.get(offset).copied() {
+        Some(0x9c) => Some([0x40, 0x11]),
         Some(0x9d) => Some([0x40, 0x12]),
         Some(0x9e) => Some([0x40, 0x13]),
         Some(0x9f) => Some([0x40, 0x14]),
         Some(0xa0) => Some([0x40, 0x15]),
         Some(0x5e) => Some([0x3f, 0xd3]),
+        Some(0x60) => Some([0x3f, 0xd5]),
         Some(0x64) => Some([0x3f, 0xd9]),
         Some(0xad) => Some([0x3f, 0xd9]),
         Some(0xcc) => Some([0xbf, 0xf9]),
@@ -3308,6 +3329,45 @@ mod tests {
     }
 
     #[test]
+    fn decodes_var_arr_positional_dict_lattice() {
+        for (bytes, head) in [
+            ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
+            ([0x69, 1, 2, 3, 4, 5, 6], [0x3f, 0xde]),
+            ([0x9c, 1, 2, 3, 4, 5, 6], [0x40, 0x11]),
+            ([0x9d, 1, 2, 3, 4, 5, 6], [0x40, 0x12]),
+            ([0x9f, 1, 2, 3, 4, 5, 6], [0x40, 0x14]),
+            ([0xa0, 1, 2, 3, 4, 5, 6], [0x40, 0x15]),
+            ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
+            ([0xb3, 1, 2, 3, 4, 5, 6], [0xbf, 0xe0]),
+            ([0xcb, 1, 2, 3, 4, 5, 6], [0xbf, 0xf8]),
+            ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
+            ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
+            ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
+            ([0xd6, 1, 2, 3, 4, 5, 6], [0xc0, 0x04]),
+        ] {
+            let (value, next, dimension_driven) =
+                decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default());
+            assert_eq!(
+                value,
+                Some(f64::from_be_bytes([
+                    head[0], head[1], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6],
+                ]))
+            );
+            assert_eq!(next, bytes.len());
+            assert!(!dimension_driven);
+        }
+        let bytes = [0x28, 1, 2, 3, 4, 5, 6, 7];
+        assert_eq!(
+            decode_variable_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+            (
+                Some(f64::from_be_bytes([0x3f, 1, 2, 3, 4, 5, 6, 7])),
+                bytes.len(),
+                false,
+            )
+        );
+    }
+
+    #[test]
     fn saved_line_accepts_bare_entity_reference_before_coordinates() {
         let payload = b"\xe0\0entity(line)\0\x05\xe2\xf7\x2a\
             \x2f\x20\0\x2f\x20\0\x2f\x20\0\
@@ -3465,11 +3525,13 @@ mod tests {
     #[test]
     fn saved_arc_negative_dict_forms_supply_ieee_high_bytes() {
         for (bytes, head) in [
+            ([0x9c, 1, 2, 3, 4, 5, 6], [0x40, 0x11]),
             ([0x9d, 1, 2, 3, 4, 5, 6], [0x40, 0x12]),
             ([0x9e, 1, 2, 3, 4, 5, 6], [0x40, 0x13]),
             ([0x9f, 1, 2, 3, 4, 5, 6], [0x40, 0x14]),
             ([0xa0, 1, 2, 3, 4, 5, 6], [0x40, 0x15]),
             ([0x5e, 1, 2, 3, 4, 5, 6], [0x3f, 0xd3]),
+            ([0x60, 1, 2, 3, 4, 5, 6], [0x3f, 0xd5]),
             ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
