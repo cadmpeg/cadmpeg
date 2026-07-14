@@ -88,6 +88,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         let mut null_style_records = BTreeSet::new();
         if style
             .parameter(1)
+            .and_then(ValueExt::list)
+            .is_some_and(<[Value]>::is_empty)
+        {
+            typed.insert(style_id);
+            continue;
+        }
+        if style
+            .parameter(1)
             .is_some_and(|value| has_null_style(value, exchange, &mut null_style_records))
         {
             typed.insert(style_id);

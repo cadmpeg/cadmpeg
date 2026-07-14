@@ -419,6 +419,11 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("STYLED_ITEM #43")));
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("STYLED_ITEM #52")));
     assert_eq!(
         result
             .ir
