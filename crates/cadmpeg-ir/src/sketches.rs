@@ -140,6 +140,38 @@ pub enum SketchGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         end_angle: Option<Angle>,
     },
+    /// Full or bounded hyperbola.
+    Hyperbola {
+        /// Hyperbola center.
+        center: Point2,
+        /// Major-axis angle in sketch coordinates.
+        major_angle: Angle,
+        /// Semi-major radius.
+        major_radius: Length,
+        /// Semi-minor radius.
+        minor_radius: Length,
+        /// Start parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start_parameter: Option<f64>,
+        /// End parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_parameter: Option<f64>,
+    },
+    /// Full or bounded parabola.
+    Parabola {
+        /// Parabola vertex.
+        vertex: Point2,
+        /// Symmetry-axis angle in sketch coordinates.
+        axis_angle: Angle,
+        /// Distance from the vertex to the focus.
+        focal_length: Length,
+        /// Start parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        start_parameter: Option<f64>,
+        /// End parameter for a bounded branch; absent for the full curve.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        end_parameter: Option<f64>,
+    },
     /// NURBS curve in sketch coordinates.
     Nurbs {
         /// Curve degree.

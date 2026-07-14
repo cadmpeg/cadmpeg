@@ -1513,8 +1513,9 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             .or_else(|| number("AngleXU"))
             .or_else(|| Some(number("MajorAxisY")?.atan2(number("MajorAxisX")?)));
         let bounds = if kind.contains("Arc") {
-            number("FirstParameter")
-                .zip(number("LastParameter"))
+            number("StartAngle")
+                .or_else(|| number("FirstParameter"))
+                .zip(number("EndAngle").or_else(|| number("LastParameter")))
                 .map(|(start, end)| (Some(start), Some(end)))
         } else {
             Some((None, None))
@@ -1541,13 +1542,71 @@ fn sketch_geometry(kind: &str, attributes: &BTreeMap<String, String>) -> SketchG
             }
             _ => native(),
         }
+    } else if kind.contains("Hyperbola") {
+        let bounds = if kind.contains("Arc") {
+            number("StartAngle")
+                .or_else(|| number("FirstParameter"))
+                .zip(number("EndAngle").or_else(|| number("LastParameter")))
+                .map(|(start, end)| (Some(start), Some(end)))
+        } else {
+            Some((None, None))
+        };
+        match (
+            number("CenterX"),
+            number("CenterY"),
+            number("AngleXU").or_else(|| number("MajorAngle")),
+            number("MajorRadius"),
+            number("MinorRadius"),
+            bounds,
+        ) {
+            (Some(x), Some(y), Some(angle), Some(major), Some(minor), Some((start, end)))
+                if major > 0.0 && minor > 0.0 =>
+            {
+                SketchGeometry::Hyperbola {
+                    center: Point2::new(x, y),
+                    major_angle: cadmpeg_ir::features::Angle(angle),
+                    major_radius: Length(major),
+                    minor_radius: Length(minor),
+                    start_parameter: start,
+                    end_parameter: end,
+                }
+            }
+            _ => native(),
+        }
+    } else if kind.contains("Parabola") {
+        let bounds = if kind.contains("Arc") {
+            number("StartAngle")
+                .or_else(|| number("FirstParameter"))
+                .zip(number("EndAngle").or_else(|| number("LastParameter")))
+                .map(|(start, end)| (Some(start), Some(end)))
+        } else {
+            Some((None, None))
+        };
+        match (
+            number("CenterX"),
+            number("CenterY"),
+            number("AngleXU").or_else(|| number("AxisAngle")),
+            number("Focal"),
+            bounds,
+        ) {
+            (Some(x), Some(y), Some(angle), Some(focal), Some((start, end))) if focal > 0.0 => {
+                SketchGeometry::Parabola {
+                    vertex: Point2::new(x, y),
+                    axis_angle: cadmpeg_ir::features::Angle(angle),
+                    focal_length: Length(focal),
+                    start_parameter: start,
+                    end_parameter: end,
+                }
+            }
+            _ => native(),
+        }
     } else if kind.contains("Arc") {
         match (
             number("CenterX"),
             number("CenterY"),
             number("Radius"),
-            number("FirstParameter"),
-            number("LastParameter"),
+            number("StartAngle").or_else(|| number("FirstParameter")),
+            number("EndAngle").or_else(|| number("LastParameter")),
         ) {
             (Some(x), Some(y), Some(radius), Some(start), Some(end)) if radius > 0.0 => {
                 SketchGeometry::Arc {

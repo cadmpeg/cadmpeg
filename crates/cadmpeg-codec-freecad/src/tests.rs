@@ -82,6 +82,80 @@ fn transfers_point_and_elliptical_sketch_geometry_without_fabricated_defaults() 
 }
 
 #[test]
+fn transfers_full_and_bounded_sketch_conics() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Conics" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Conics"><Properties Count="1">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="6">
+ <Geometry type="Part::GeomHyperbola"><Hyperbola CenterX="1" CenterY="2" AngleXU="0.25" MajorRadius="5" MinorRadius="3"/></Geometry>
+ <Geometry type="Part::GeomArcOfHyperbola"><ArcOfHyperbola CenterX="2" CenterY="3" AngleXU="0.5" MajorRadius="7" MinorRadius="4" StartAngle="-1" EndAngle="1.5"/></Geometry>
+ <Geometry type="Part::GeomParabola"><Parabola CenterX="3" CenterY="4" AngleXU="0.75" Focal="2"/></Geometry>
+ <Geometry type="Part::GeomArcOfParabola"><ArcOfParabola CenterX="4" CenterY="5" AngleXU="1" Focal="2.5" StartAngle="-2" EndAngle="3"/></Geometry>
+ <Geometry type="Part::GeomArcOfCircle"><ArcOfCircle CenterX="0" CenterY="0" Radius="4" StartAngle="0.2" EndAngle="1.2"/></Geometry>
+ <Geometry type="Part::GeomArcOfEllipse"><ArcOfEllipse CenterX="0" CenterY="1" AngleXU="0.3" MajorRadius="6" MinorRadius="2" StartAngle="0.4" EndAngle="1.4"/></Geometry>
+</GeometryList></Property></Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("sketch conics");
+    let entities = &result.ir.model.sketch_entities;
+    assert_eq!(entities.len(), 6);
+    assert!(matches!(
+        entities[0].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
+            start_parameter: None,
+            end_parameter: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        entities[1].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Hyperbola {
+            start_parameter: Some(-1.0),
+            end_parameter: Some(1.5),
+            ..
+        }
+    ));
+    assert!(matches!(
+        entities[2].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Parabola {
+            focal_length: cadmpeg_ir::features::Length(2.0),
+            start_parameter: None,
+            ..
+        }
+    ));
+    assert!(matches!(
+        entities[3].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Parabola {
+            focal_length: cadmpeg_ir::features::Length(2.5),
+            start_parameter: Some(-2.0),
+            end_parameter: Some(3.0),
+            ..
+        }
+    ));
+    assert!(matches!(
+        entities[4].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Arc { .. }
+    ));
+    assert!(matches!(
+        entities[5].geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Ellipse {
+            start_angle: Some(_),
+            end_angle: Some(_),
+            ..
+        }
+    ));
+    assert!(entities.iter().all(|entity| !matches!(
+        entity.geometry,
+        cadmpeg_ir::sketches::SketchGeometry::Native { .. }
+    )));
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
+}
+
+#[test]
 fn transfers_bounded_rational_sketch_nurbs() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
@@ -535,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "39");
+    assert_eq!(result.ir.ir_version, "40");
     let feature = |name: &str| {
         &result
             .ir

@@ -2036,6 +2036,8 @@ fn generated_sketch_curve(
         }
         SketchGeometry::Point { .. }
         | SketchGeometry::ReferenceLine { .. }
+        | SketchGeometry::Hyperbola { .. }
+        | SketchGeometry::Parabola { .. }
         | SketchGeometry::Native { .. } => Err(
             cadmpeg_ir::codec::CodecError::NotImplemented(
                 "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),

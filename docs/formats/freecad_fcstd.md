@@ -120,19 +120,23 @@ tessellation is presentation data and does not replace an available exact shape.
 
 Construction objects retain source order and native identity independently of their cached shape.
 Planar sketch geometry is transferred in persisted entity order. Non-construction line segments
-are connected into deterministic oriented profile chains; circles and arcs retain canonical
-millimetre/radian values, while unsupported geometry families remain explicit native sketch
-entities. A persisted placement supplies the sketch origin, normal, and in-plane axis by applying
+are connected into deterministic oriented profile chains. Points, lines, circles, ellipses,
+hyperbolas, parabolas, their bounded arc forms, and rational or non-rational B-splines retain
+canonical millimetre/radian values and parameter bounds. Both start/end-angle and legacy
+first/last-parameter bound names identify the same conic interval. A persisted placement supplies
+the sketch origin, normal, and in-plane axis by applying
 its normalized quaternion to the canonical sketch basis. Attachment support and mapping mode remain
 linked source state when their complete support-frame composition is not resolved.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,
 distance, horizontal/vertical distance, angle, radius, and diameter relations transfer to neutral
-constraints when every operand resolves. Dimensional relations create canonical parameters linked
-to the source constraint property and retain whether the value is driving. Negative external
-indices, unsupported midpoint interpretations, unresolved operands, and future family codes remain
-explicit native relations rather than being guessed.
+constraints when every operand resolves. Point-on-object, symmetry, internal alignment, optical
+refraction, B-spline weight, geometry group, and text relations retain their typed operands and
+family-specific data. Dimensional relations create canonical parameters linked to the source
+constraint property and retain whether the value is driving. Negative external indices,
+unresolved operands, and future family codes remain explicit native relations rather than being
+guessed.
 
 An expression binding is retained independently from its target property's cached scalar. The
 neutral parameter carries the exact decoded expression, evaluated canonical value, scalar-property

@@ -169,6 +169,49 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
+            SketchGeometry::Hyperbola {
+                center,
+                major_angle,
+                major_radius,
+                minor_radius,
+                start_parameter,
+                end_parameter,
+            } => {
+                if !finite2(*center)
+                    || !major_angle.0.is_finite()
+                    || nonpositive(major_radius.0)
+                    || nonpositive(minor_radius.0)
+                {
+                    finding(findings, Check::Bounds, id, "invalid sketch hyperbola");
+                }
+                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid hyperbolic arc parameters",
+                    );
+                }
+            }
+            SketchGeometry::Parabola {
+                vertex,
+                axis_angle,
+                focal_length,
+                start_parameter,
+                end_parameter,
+            } => {
+                if !finite2(*vertex) || !axis_angle.0.is_finite() || nonpositive(focal_length.0) {
+                    finding(findings, Check::Bounds, id, "invalid sketch parabola");
+                }
+                if invalid_optional_parameter_pair(*start_parameter, *end_parameter) {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid parabolic arc parameters",
+                    );
+                }
+            }
             SketchGeometry::Nurbs {
                 degree,
                 knots,
@@ -282,6 +325,10 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
+}
+
+fn invalid_optional_parameter_pair(start: Option<f64>, end: Option<f64>) -> bool {
+    start.is_some() != end.is_some() || start.into_iter().chain(end).any(|value| !value.is_finite())
 }
 
 fn distance2(left: crate::math::Point2, right: crate::math::Point2) -> f64 {
