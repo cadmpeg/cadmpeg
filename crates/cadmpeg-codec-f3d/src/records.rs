@@ -952,6 +952,10 @@ pub struct DesignExtrudeSelectionMember {
     /// is unambiguous across every decoded state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub historical_entity_kind: Option<AsmHistoricalEntityKind>,
+    /// Stable ASM entity slot carrying `local_id` after record-revision
+    /// identities are normalized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_entity_ref: Option<i64>,
     /// ASM history states containing `local_id` in `historical_entity_kind`, in
     /// history arena order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

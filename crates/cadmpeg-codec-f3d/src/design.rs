@@ -1587,7 +1587,9 @@ fn historical_member_points(
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<Vec<Point3>> {
     let kind = member.historical_entity_kind?;
-    let local_id = i64::try_from(member.local_id).ok()?;
+    let entity_ref = member
+        .historical_entity_ref
+        .or_else(|| i64::try_from(member.local_id).ok())?;
     let mut positions = Vec::new();
     for state in histories.iter().flat_map(|history| &history.states) {
         if !member.historical_state_ids.contains(&state.state_id) {
@@ -1596,7 +1598,7 @@ fn historical_member_points(
         let Some(topology) = state.topology.as_ref() else {
             continue;
         };
-        if let Some(mut state_positions) = historical_entity_positions(kind, local_id, topology) {
+        if let Some(mut state_positions) = historical_entity_positions(kind, entity_ref, topology) {
             positions.append(&mut state_positions);
         }
     }
@@ -6111,6 +6113,7 @@ fn parse_extrude_selection_member(
         resolved_geometry: None,
         operand_identity_ids: Vec::new(),
         historical_entity_kind: None,
+        historical_entity_ref: None,
         historical_state_ids: Vec::new(),
         next_record_index: member.next_record_index,
         next_byte_offset: member.next_byte_offset,

@@ -725,7 +725,7 @@ pub(crate) fn historical_identity_kind(
 pub(crate) fn historical_selection_identity_kind(
     histories: &[AsmHistory],
     local_id: u64,
-) -> Option<(AsmHistoricalEntityKind, Vec<i64>)> {
+) -> Option<(AsmHistoricalEntityKind, i64, Vec<i64>)> {
     let record_ref = i64::try_from(local_id).ok()?;
     let mut entity_refs = HashSet::new();
     let mut states = Vec::new();
@@ -741,7 +741,7 @@ pub(crate) fn historical_selection_identity_kind(
     }
     if let Some(resolved) = historical_identity_kind(histories, local_id) {
         return (entity_refs.is_empty() || entity_refs == HashSet::from([record_ref]))
-            .then_some(resolved);
+            .then_some((resolved.0, record_ref, resolved.1));
     }
     let mut entity_refs = entity_refs.into_iter();
     let entity_ref = entity_refs.next()?;
@@ -750,7 +750,7 @@ pub(crate) fn historical_selection_identity_kind(
     }
     let entity_ref = u64::try_from(entity_ref).ok()?;
     let (kind, _) = historical_identity_kind(histories, entity_ref)?;
-    Some((kind, states))
+    Some((kind, i64::try_from(entity_ref).ok()?, states))
 }
 
 pub(crate) fn bind_extrude_selection_history(
@@ -759,10 +759,13 @@ pub(crate) fn bind_extrude_selection_history(
 ) {
     for member in members {
         member.historical_entity_kind = None;
+        member.historical_entity_ref = None;
         member.historical_state_ids.clear();
-        if let Some((kind, states)) = historical_selection_identity_kind(histories, member.local_id)
+        if let Some((kind, entity_ref, states)) =
+            historical_selection_identity_kind(histories, member.local_id)
         {
             member.historical_entity_kind = Some(kind);
+            member.historical_entity_ref = Some(entity_ref);
             member.historical_state_ids = states;
         }
     }
@@ -1487,6 +1490,10 @@ mod tests {
             Some((AsmHistoricalEntityKind::Vertex, vec![5]))
         );
         assert_eq!(
+            historical_selection_identity_kind(std::slice::from_ref(&history), 42),
+            Some((AsmHistoricalEntityKind::Edge, 42, vec![3, 5]))
+        );
+        assert_eq!(
             historical_identity_kind(std::slice::from_ref(&history), 7),
             None
         );
@@ -1501,11 +1508,11 @@ mod tests {
         }];
         assert_eq!(
             historical_selection_identity_kind(std::slice::from_ref(&revision_history), 700),
-            Some((AsmHistoricalEntityKind::Edge, vec![3]))
+            Some((AsmHistoricalEntityKind::Edge, 42, vec![3]))
         );
         assert_eq!(
             historical_selection_identity_kind(std::slice::from_ref(&revision_history), 701),
-            Some((AsmHistoricalEntityKind::Edge, vec![5]))
+            Some((AsmHistoricalEntityKind::Edge, 42, vec![5]))
         );
         revision_history.states[0].entity_versions = vec![AsmEntityVersion {
             entity_ref: 90,

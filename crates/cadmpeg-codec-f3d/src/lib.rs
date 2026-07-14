@@ -1051,11 +1051,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .collect::<Vec<_>>();
         let expected_history =
             history::historical_selection_identity_kind(&native.asm_histories, member.local_id);
-        let history_matches = expected_history.as_ref().map(|(kind, _)| *kind)
+        let history_matches = expected_history.as_ref().map(|(kind, _, _)| *kind)
             == member.historical_entity_kind
             && expected_history
                 .as_ref()
-                .map(|(_, states)| states.as_slice())
+                .map(|(_, entity_ref, _)| *entity_ref)
+                == member.historical_entity_ref
+            && expected_history
+                .as_ref()
+                .map(|(_, _, states)| states.as_slice())
                 .unwrap_or_default()
                 == member.historical_state_ids.as_slice();
         let valid = member.class_tag.len() == 3
