@@ -837,16 +837,17 @@ pub(crate) fn operand_accepts_marker(
     marker: SketchInputKind,
 ) -> bool {
     match kind {
-        FeatureInputOperandKind::D6 | FeatureInputOperandKind::Native(0x837b | 0x8dcb | 0xbc7c) => {
+        FeatureInputOperandKind::D6
+        | FeatureInputOperandKind::Native(0x837b | 0x8ab6 | 0x8dcb | 0x929d | 0xbc7c | 0xbd69) => {
             matches!(
                 marker,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
             )
         }
         FeatureInputOperandKind::E1
-        | FeatureInputOperandKind::Native(
-            0x8386 | 0x83fe | 0x8ab6 | 0x8dda | 0x929d | 0xbc87 | 0xbd69,
-        ) => marker == SketchInputKind::LineOrCircle,
+        | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
+            marker == SketchInputKind::LineOrCircle
+        }
         _ => true,
     }
 }

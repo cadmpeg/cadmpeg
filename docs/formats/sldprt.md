@@ -117,9 +117,9 @@ A compact dimensional relation instance contains one or two adjacent scalar reco
 
 A named scalar begins with `04 80 ff fe ff`, followed by a u8 UTF-16 code-unit count, that many UTF-16LE code units, the 22-byte scalar header `00 00 00 00 00 00 00 40 ff ff ff ff 00 00 00 00 ff fe ff 00 00 00`, and a finite little-endian f64 value. Scalar trailer offsets are relative to the byte immediately after that f64. Trailer +3 stores the little-endian u32 scalar object identifier. Trailer +24 stores `00 00 00 02 00`; trailer +29 stores role `0` for driving or `1` for display. Operand cells begin at trailer +35 and repeat every 12 bytes. Each cell stores its little-endian u16 tag at +0, its u16 marker address at +2, `ff ff ff ff` at +4, and four zero bytes at +8. The name length therefore moves the value and every trailer field together.
 
-The instance operand list is the first scalar record's complete ordered operand-cell list. Tags `d6 80` and `e1 80` use a zero-based ordinal within the tag's marker family, ordered by marker byte offset in the owning feature object. Circular-dimension tags `fe 83`, `b6 8a`, `9d 92`, and `69 bd` use a zero-based line-or-circle ordinal. Tags `7b 83`, `86 83`, `cb 8d`, `da 8d`, `7c bc`, and `87 bc` use a feature-local marker identifier qualified by the tag's marker family; resolution requires one matching marker.
+The instance operand list is the first scalar record's complete ordered operand-cell list. Tags `d6 80` and `e1 80` use a zero-based ordinal within the tag's marker family, ordered by marker byte offset in the owning feature object. Circular-dimension tag `fe 83` uses a zero-based line-or-circle ordinal. Circular-dimension tags `b6 8a`, `9d 92`, and `69 bd` use a zero-based point or constrained-point ordinal. Tags `7b 83`, `86 83`, `cb 8d`, `da 8d`, `7c bc`, and `87 bc` use a feature-local marker identifier qualified by the tag's marker family; resolution requires one matching marker.
 
-Operand-cell tags `d6 80`, `7b 83`, `cb 8d`, and `7c bc` address point or constrained-point handles. Tags `e1 80`, `86 83`, `fe 83`, `b6 8a`, `da 8d`, `9d 92`, `87 bc`, and `69 bd` address line-or-circle handles. Tags `fe 83`, `b6 8a`, `9d 92`, and `69 bd` are used by circular dimensions.
+Operand-cell tags `d6 80`, `7b 83`, `b6 8a`, `cb 8d`, `9d 92`, `7c bc`, and `69 bd` address point or constrained-point handles. Tags `e1 80`, `86 83`, `fe 83`, `da 8d`, and `87 bc` address line-or-circle handles. Tags `fe 83`, `b6 8a`, `9d 92`, and `69 bd` are used by circular dimensions.
 
 A point operand projects to a typed sketch constraint only when its marker identifies exactly one profile locus. A coordinate shared by multiple profile loci does not select one by ordering.
 
@@ -149,7 +149,7 @@ Distance, horizontal-distance, vertical-distance, and circular-dimension driving
 
 Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.
 
-Operand tags `80d6`, `837b`, `8dcb`, and `bc7c` select point or constrained-point markers. Tags `80e1`, `8386`, `83fe`, `8ab6`, `8dda`, `929d`, `bc87`, and `bd69` select line-or-circle markers.
+Operand tags `80d6`, `837b`, `8ab6`, `8dcb`, `929d`, `bc7c`, and `bd69` select point or constrained-point markers. Tags `80e1`, `8386`, `83fe`, `8dda`, and `bc87` select line-or-circle markers.
 
 Feature-input geometry-handle coordinates and the nested Parasolid profile differ by a signed axis permutation and constant translation per sketch feature. A unique transform mapping at least two distinct geometry-handle coordinates onto profile loci binds every matching geometry or relation marker coordinate to those loci. Relation-marker coordinates do not participate in selecting the frame. The identity axis permutation has precedence when it has a unique translation. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
 
