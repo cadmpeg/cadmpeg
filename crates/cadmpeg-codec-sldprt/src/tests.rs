@@ -5080,6 +5080,26 @@ fn sheet_body_faces_are_retained_and_classified() {
 }
 
 #[test]
+fn schema_33103_disc1d_flo2_is_not_a_sheet_region() {
+    let mut body = Vec::new();
+    body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
+    body.extend(entity51(2, 511, 0x001d, &[701, 0, 0, 0, 0, 0]));
+    body.extend(owned_triangle(0, 701, 0.0));
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(
+        decoded.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Solid
+    );
+}
+
+#[test]
 fn semantic_writer_preserves_sheet_body_classification() {
     let mut body = Vec::new();
     body.extend(entity51(2, 501, 0x0017, &[511, 701, 0, 0, 0, 0]));
