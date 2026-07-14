@@ -69,6 +69,7 @@ struct LadderGateFile {
 #[derive(Deserialize)]
 struct LadderGate {
     level: String,
+    decisions: Vec<String>,
     fixture_classes: Vec<String>,
     assertions: Vec<String>,
 }
@@ -145,6 +146,7 @@ struct Summary {
 #[derive(Serialize)]
 struct ReportGate {
     level: String,
+    decisions: Vec<String>,
     fixture_classes: Vec<String>,
     assertions: Vec<String>,
     original_tests: Vec<String>,
@@ -417,6 +419,14 @@ fn build_report(root: &Path) -> Result<Report, String> {
         if gate.assertions.is_empty() {
             missing.push("assertion".into());
         }
+        for decision in &gate.decisions {
+            if !decision_gates.contains(decision.as_str()) {
+                missing.push(format!("decision:{decision}"));
+            }
+        }
+        if !gate.decisions.is_empty() && approvals.ladder_decisions != "approved" {
+            missing.push("approval:ladder_decisions".into());
+        }
         let mut original_tests = BTreeSet::new();
         let mut gate_public_ids = BTreeSet::new();
         for class in &gate.fixture_classes {
@@ -455,6 +465,7 @@ fn build_report(root: &Path) -> Result<Report, String> {
         }
         ladder_gates.push(ReportGate {
             level: gate.level,
+            decisions: gate.decisions,
             fixture_classes: gate.fixture_classes,
             assertions: gate.assertions,
             original_tests: original_tests.into_iter().collect(),
@@ -551,7 +562,12 @@ fn build_report(root: &Path) -> Result<Report, String> {
     let complete_rows = rows.iter().filter(|row| row.missing.is_empty()).count();
     let structurally_complete_gates = ladder_gates
         .iter()
-        .filter(|gate| !gate.missing.iter().any(|missing| missing == "assertion"))
+        .filter(|gate| {
+            !gate
+                .missing
+                .iter()
+                .any(|missing| missing == "assertion" || missing.starts_with("decision:"))
+        })
         .count();
     let original_complete_gates = ladder_gates
         .iter()
@@ -678,7 +694,7 @@ mod tests {
         assert_eq!(report.summary.structurally_complete_gates, 9);
         assert_eq!(report.summary.original_complete_gates, 9);
         assert_eq!(report.summary.public_complete_gates, 2);
-        assert_eq!(report.summary.complete_gates, 2);
+        assert_eq!(report.summary.complete_gates, 0);
         assert!(!report.summary.release_ready);
         assert!(report.evidence_errors.is_empty());
     }

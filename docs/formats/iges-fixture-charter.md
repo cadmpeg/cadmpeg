@@ -30,7 +30,7 @@ cargo run -p cadmpeg-codec-iges --bin iges-proof-report -- --write corpus/iges-e
 cargo run -p cadmpeg-codec-iges --bin iges-proof-report -- --check corpus/iges-envelope-a-proof.json
 ```
 
-`corpus/iges-ladder-gates.toml` maps every cumulative L0 through L8 gate to fixture classes and assertions. `corpus/iges-ladder-decisions.toml` records the settled L0, L3, L4, L6, and L7-mates format decisions. `corpus/iges-approvals.toml` records maintainer approval of those decisions, the closed matrix, and the byte-ledger policy. The report sets `release_ready` only when all three approvals are present, every cumulative gate is complete, and every admitted row has a real decoder, destination, assertion, original fixture class, and verified public fixture class.
+`corpus/iges-ladder-gates.toml` maps every cumulative L0 through L8 gate to fixture classes, assertions, and required format decisions. `corpus/iges-ladder-decisions.toml` records the settled L0, L3, L4, L6, and L7-mates format decisions. A decision-dependent gate remains incomplete until `corpus/iges-approvals.toml` records maintainer approval. That file also records approval of the closed matrix and byte-ledger policy. The report sets `release_ready` only when all three approvals are present, every cumulative gate is complete, and every admitted row has a real decoder, destination, assertion, original fixture class, and verified public fixture class.
 
 ## Machine-checkable gates
 

@@ -46,12 +46,15 @@
     "structurally_complete_gates": 9,
     "original_complete_gates": 9,
     "public_complete_gates": 2,
-    "complete_gates": 2,
+    "complete_gates": 0,
     "release_ready": false
   },
   "ladder_gates": [
     {
       "level": "L0",
+      "decisions": [
+        "L0"
+      ],
       "fixture_classes": [
         "fixed-ascii-container"
       ],
@@ -71,6 +74,7 @@
       ],
       "public_fixtures": [],
       "missing": [
+        "approval:ladder_decisions",
         "public_fixture_class:fixed-ascii-container",
         "public_assertion:bounded-detection",
         "public_assertion:document-kind",
@@ -81,6 +85,7 @@
     },
     {
       "level": "L1",
+      "decisions": [],
       "fixture_classes": [
         "fixed-ascii-container",
         "reference-graph",
@@ -125,6 +130,7 @@
     },
     {
       "level": "L2",
+      "decisions": [],
       "fixture_classes": [
         "analytic-curves",
         "analytic-surfaces",
@@ -205,6 +211,9 @@
     },
     {
       "level": "L3",
+      "decisions": [
+        "L3"
+      ],
       "fixture_classes": [
         "bounded-surfaces",
         "curves-on-surfaces",
@@ -235,6 +244,7 @@
       ],
       "public_fixtures": [],
       "missing": [
+        "approval:ladder_decisions",
         "public_fixture_class:bounded-surfaces",
         "public_fixture_class:curves-on-surfaces",
         "public_fixture_class:explicit-brep",
@@ -252,16 +262,22 @@
     },
     {
       "level": "L4",
+      "decisions": [
+        "L4"
+      ],
       "fixture_classes": [],
       "assertions": [
-        "approved-inapplicability-decision"
+        "format-inapplicability"
       ],
       "original_tests": [],
       "public_fixtures": [],
-      "missing": []
+      "missing": [
+        "approval:ladder_decisions"
+      ]
     },
     {
       "level": "L5",
+      "decisions": [],
       "fixture_classes": [
         "analytic-curves",
         "analytic-surfaces",
@@ -367,16 +383,24 @@
     },
     {
       "level": "L6",
+      "decisions": [
+        "L6"
+      ],
       "fixture_classes": [],
       "assertions": [
-        "approved-inapplicability-decision"
+        "format-inapplicability"
       ],
       "original_tests": [],
       "public_fixtures": [],
-      "missing": []
+      "missing": [
+        "approval:ladder_decisions"
+      ]
     },
     {
       "level": "L7",
+      "decisions": [
+        "L7-mates"
+      ],
       "fixture_classes": [
         "attribute-tables",
         "external-references",
@@ -394,8 +418,7 @@
         "ordered-members",
         "world-placement",
         "external-reference-state",
-        "persistent-identity",
-        "approved-mates-inapplicability"
+        "persistent-identity"
       ],
       "original_tests": [
         "decode_applies_nested_transforms_reflection_units_and_model_scale_once",
@@ -412,6 +435,7 @@
       ],
       "public_fixtures": [],
       "missing": [
+        "approval:ladder_decisions",
         "public_fixture_class:attribute-tables",
         "public_fixture_class:external-references",
         "public_fixture_class:network-connect-points",
@@ -426,12 +450,12 @@
         "public_assertion:ordered-members",
         "public_assertion:world-placement",
         "public_assertion:external-reference-state",
-        "public_assertion:persistent-identity",
-        "public_assertion:approved-mates-inapplicability"
+        "public_assertion:persistent-identity"
       ]
     },
     {
       "level": "L8",
+      "decisions": [],
       "fixture_classes": [
         "associativities",
         "associativity-definitions",
