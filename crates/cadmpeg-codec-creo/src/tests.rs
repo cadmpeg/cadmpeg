@@ -3400,6 +3400,40 @@ fn nd_decoration_selects_nd_layout() {
 }
 
 #[test]
+fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
+    let mut visible = visibgeom_payload(1, 0);
+    visible.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0, 0xe4, 0xe3]);
+    let mut invisible = visibgeom_payload(1, 0);
+    invisible.extend_from_slice(&[8, 0x26, 5, 0x01, 0, 0, 0xe4, 0xe3]);
+    let mut depdb = visibgeom_payload(1, 0);
+    depdb.extend_from_slice(&[9, 0x26, 6, 0x01, 0, 0, 0xe4, 0xe3]);
+
+    let scan = container::scan_bytes(build_prt(
+        "c",
+        &[
+            ("VisibGeom", visible),
+            ("NovisGeom", invisible),
+            ("DEPDB_DATA", depdb),
+        ],
+    ));
+
+    assert_eq!(
+        scan.surface_rows
+            .iter()
+            .map(|row| row.id)
+            .collect::<Vec<_>>(),
+        [7]
+    );
+    assert_eq!(
+        scan.surface_parameters
+            .iter()
+            .map(|record| record.surface_id)
+            .collect::<Vec<_>>(),
+        [7]
+    );
+}
+
+#[test]
 fn depdb_data_with_sparse_sections_selects_depdb() {
     let depdb = b"srf_array\0geom_id\0\x07geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\0next_geom_ptr\0\0feat_defs_12\0protrevolve\0Revolve id 17\0".to_vec();
     let data = build_prt("c", &[("VisibGeom", vec![0x00]), ("DEPDB_DATA", depdb)]);

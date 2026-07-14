@@ -159,6 +159,12 @@ The seven-byte scalar `5e b2 b3 b4 b5 b6 b7` reconstructs IEEE-754 bytes `3f d3 
 
 `srf_array` provides surface and face-reference identifiers.
 
+`VisibGeom` is the material model-geometry namespace when it contains
+`srf_array` or `crv_array`. `NovisGeom` is a separate invisible and construction
+namespace and its identifiers do not join the visible namespace. `DEPDB_DATA`
+supplies the model-geometry namespace only when no visible geometry namespace
+is present.
+
 | Item                  | Rule                                                                                |
 | --------------------- | ----------------------------------------------------------------------------------- |
 | Count header          | `srf_array\0 f8 <count>`                                                            |
