@@ -6596,6 +6596,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::Binder { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses design-binder semantics that cannot be written",
+                    feature.id
+                )));
+            }
         };
         if feature.outputs.is_empty() {
             if existing.is_none() {
@@ -7034,6 +7040,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         } => "Surface-Sweep",
         FeatureDefinition::Sweep { .. } => "Sweep",
         FeatureDefinition::HelicalSweep { .. } => "Helix",
+        FeatureDefinition::Binder { .. } => "Feature",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",
         FeatureDefinition::Fillet { .. } => "Fillet",

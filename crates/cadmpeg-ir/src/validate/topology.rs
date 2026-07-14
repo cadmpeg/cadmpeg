@@ -2187,6 +2187,73 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "helical sweep is invalid");
                 }
             }
+            FeatureDefinition::Binder {
+                sources,
+                construction,
+            } => {
+                let target_valid = |target: &crate::features::BinderTarget| match target {
+                    crate::features::BinderTarget::Feature { .. } => true,
+                    crate::features::BinderTarget::External { document, object } => {
+                        !document.is_empty() && !object.is_empty()
+                    }
+                    crate::features::BinderTarget::Native { reference } => !reference.is_empty(),
+                };
+                let sources_valid = sources.iter().all(|source| {
+                    target_valid(&source.target)
+                        && source
+                            .subelements
+                            .iter()
+                            .all(|selector| !selector.is_empty())
+                });
+                for target in
+                    sources
+                        .iter()
+                        .map(|source| &source.target)
+                        .chain(match construction {
+                            crate::features::BinderConstruction::SubShape { context, .. } => {
+                                context.as_ref()
+                            }
+                            crate::features::BinderConstruction::Shape { .. } => None,
+                        })
+                {
+                    if let crate::features::BinderTarget::Feature { feature: target } = target {
+                        match features.get(target.0.as_str()) {
+                            None => ref_error(
+                                findings,
+                                &feature.id.0,
+                                "binder target feature",
+                                &target.0,
+                            ),
+                            Some(ordinal) if *ordinal >= feature.ordinal => {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "binder target feature `{}` does not precede its binder",
+                                        target.0
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                });
+                            }
+                            Some(_) => {}
+                        }
+                    }
+                }
+                let construction_valid = match construction {
+                    crate::features::BinderConstruction::Shape { .. } => true,
+                    crate::features::BinderConstruction::SubShape {
+                        offset, context, ..
+                    } => {
+                        context.as_ref().is_none_or(target_valid)
+                            && offset.is_none_or(|offset| {
+                                offset.distance.0.is_finite() && offset.distance.0 != 0.0
+                            })
+                    }
+                };
+                if !sources_valid || !construction_valid {
+                    feature_geometry_error(findings, feature, "binder construction is invalid");
+                }
+            }
             FeatureDefinition::Wrap {
                 profile,
                 face,

@@ -431,6 +431,13 @@ pub enum FeatureDefinition {
         /// Boolean combination with the existing body.
         op: BooleanOp,
     },
+    /// Live or frozen reference geometry imported from other design features.
+    Binder {
+        /// Ordered source objects and selected subelements.
+        sources: Vec<BinderSource>,
+        /// Binding and derived-shape construction semantics.
+        construction: BinderConstruction,
+    },
     /// Loft through an ordered sequence of section profiles.
     Loft {
         /// Ordered section profiles.
@@ -1317,6 +1324,136 @@ pub enum HelicalSweepLaw {
     HeightTurnsAngle,
     /// Height, turn count, and radial growth are independent.
     HeightTurnsGrowth,
+}
+
+/// One object or subelement selection consumed by a design binder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct BinderSource {
+    /// Bound object identity.
+    pub target: BinderTarget,
+    /// Ordered native subelement selectors; empty selects the complete object.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub subelements: Vec<String>,
+}
+
+/// Resolved or externally scoped binder target.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BinderTarget {
+    /// Feature in this CADIR document.
+    Feature {
+        /// Target feature identity.
+        feature: FeatureId,
+    },
+    /// Object in another source document.
+    External {
+        /// Source document identity.
+        document: String,
+        /// Object identity within the source document.
+        object: String,
+    },
+    /// Source-native target identity that cannot be resolved further.
+    Native {
+        /// Opaque source-native target identity.
+        reference: String,
+    },
+}
+
+/// Binding behavior and optional derived-shape construction.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum BinderConstruction {
+    /// Simple binder over one support object.
+    Shape {
+        /// Transform support geometry between its container and the binder container.
+        trace_support: bool,
+    },
+    /// Multi-object subshape binder.
+    SubShape {
+        /// Live-update lifecycle.
+        lifecycle: BinderLifecycle,
+        /// Placement interpretation for linked subobjects.
+        placement: BinderPlacement,
+        /// Copy-on-change state.
+        copy_on_change: BinderCopyOnChange,
+        /// Whether linked objects are claimed as children in the tree.
+        claim_children: bool,
+        /// Whether multiple resulting solids are fused.
+        fuse: bool,
+        /// Whether bound wires are promoted to faces.
+        make_face: bool,
+        /// Whether external documents may remain partially loaded.
+        partial_load: bool,
+        /// Whether redundant edges are removed from the result.
+        refine: bool,
+        /// Optional two-dimensional offset construction.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        offset: Option<BinderOffset>,
+        /// Context object used to interpret relative placement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        context: Option<BinderTarget>,
+    },
+}
+
+/// Update lifecycle of a subshape binder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderLifecycle {
+    /// Automatically tracks changes to its sources.
+    Synchronized,
+    /// Retains links but updates only when explicitly requested.
+    Frozen,
+    /// Stores a copied shape and no longer retains live binding behavior.
+    Detached,
+}
+
+/// Placement interpretation for bound subobjects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderPlacement {
+    /// Interpret source placement relative to the binder context.
+    Relative,
+    /// Preserve source placement in global coordinates.
+    Global,
+}
+
+/// Copy-on-change state of a subshape binder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderCopyOnChange {
+    /// Do not clone configurable source properties.
+    Disabled,
+    /// Clone configurable source properties when they change.
+    Enabled,
+    /// A private source copy has already been mutated.
+    Mutated,
+}
+
+/// Two-dimensional offset applied to bound faces or wires.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct BinderOffset {
+    /// Signed offset distance.
+    pub distance: Length,
+    /// Join law at offset corners.
+    pub join: BinderOffsetJoin,
+    /// Whether to fill between original and offset wires.
+    pub fill: bool,
+    /// Whether open input wires produce open offset results.
+    pub open_result: bool,
+    /// Whether child-wire intersections are resolved together.
+    pub intersection: bool,
+}
+
+/// Corner join law of a binder offset.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BinderOffsetJoin {
+    /// Circular corner arcs.
+    Arcs,
+    /// Tangent continuation.
+    Tangent,
+    /// Sharp line-line intersections.
+    Intersection,
 }
 
 /// Profile consumed by an extrude or revolve.

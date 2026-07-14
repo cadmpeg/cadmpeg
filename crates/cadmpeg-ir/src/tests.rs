@@ -2265,6 +2265,32 @@ fn feature_operation_geometry_is_validated() {
             },
             op: crate::features::BooleanOp::Join,
         },
+        FeatureDefinition::Binder {
+            sources: vec![crate::features::BinderSource {
+                target: crate::features::BinderTarget::Native {
+                    reference: String::new(),
+                },
+                subelements: vec![String::new()],
+            }],
+            construction: crate::features::BinderConstruction::SubShape {
+                lifecycle: crate::features::BinderLifecycle::Synchronized,
+                placement: crate::features::BinderPlacement::Relative,
+                copy_on_change: crate::features::BinderCopyOnChange::Disabled,
+                claim_children: false,
+                fuse: false,
+                make_face: true,
+                partial_load: false,
+                refine: true,
+                offset: Some(crate::features::BinderOffset {
+                    distance: Length(0.0),
+                    join: crate::features::BinderOffsetJoin::Arcs,
+                    fill: false,
+                    open_result: false,
+                    intersection: false,
+                }),
+                context: None,
+            },
+        },
         FeatureDefinition::Wrap {
             profile: ProfileRef::Native("profile".into()),
             face: FaceSelection::Unresolved,
@@ -2348,6 +2374,7 @@ fn feature_operation_geometry_is_validated() {
         "composite curve is empty",
         "helix geometry is invalid",
         "helical sweep is invalid",
+        "binder construction is invalid",
         "wrap depth is invalid",
         "body motion is invalid",
         "pattern geometry is invalid",

@@ -6,12 +6,14 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw,
-    HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length,
-    ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternStage,
-    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, ShellJoin, ShellMode, SketchSpace, SweepMode, ThreadHand,
+    BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
+    BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
+    DesignParameter, EdgeSelection, Extent, Feature, FeatureDefinition, FeatureId,
+    FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw, HoleBottom, HoleKind,
+    HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue,
+    PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
+    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, ShellJoin,
+    ShellMode, SketchSpace, SweepMode, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -146,6 +148,14 @@ pub(crate) fn transfer(
             })
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if is_binder(&object.type_name) {
+            binder_definition(&object.type_name, &owned, &feature_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -1910,6 +1920,111 @@ fn helical_sweep_definition(
     Some(FeatureDefinition::HelicalSweep { construction, op })
 }
 
+fn binder_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    features: &HashMap<&str, FeatureId>,
+) -> Option<FeatureDefinition> {
+    let sources = property(properties, "Support")?
+        .links
+        .iter()
+        .filter(|link| {
+            link.object
+                .as_deref()
+                .is_some_and(|object| !object.is_empty())
+        })
+        .map(|link| {
+            Some(BinderSource {
+                target: binder_target(link, features)?,
+                subelements: link_selectors(link).map(str::to_owned).collect(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let construction = if kind == "PartDesign::ShapeBinder" {
+        BinderConstruction::Shape {
+            trace_support: bool_property(properties, "TraceSupport").unwrap_or(false),
+        }
+    } else {
+        let distance = scalar_named(properties, "Offset").unwrap_or(0.0);
+        if !distance.is_finite() {
+            return None;
+        }
+        let offset = if distance == 0.0 {
+            None
+        } else {
+            Some(BinderOffset {
+                distance: Length(distance),
+                join: match integer_property(properties, "OffsetJoinType").unwrap_or(0) {
+                    0 => BinderOffsetJoin::Arcs,
+                    1 => BinderOffsetJoin::Tangent,
+                    2 => BinderOffsetJoin::Intersection,
+                    _ => return None,
+                },
+                fill: bool_property(properties, "OffsetFill").unwrap_or(false),
+                open_result: bool_property(properties, "OffsetOpenResult").unwrap_or(false),
+                intersection: bool_property(properties, "OffsetIntersection").unwrap_or(false),
+            })
+        };
+        let context = property(properties, "Context")
+            .and_then(|property| property.links.first())
+            .filter(|link| {
+                link.object
+                    .as_deref()
+                    .is_some_and(|object| !object.is_empty())
+            })
+            .and_then(|link| binder_target(link, features));
+        BinderConstruction::SubShape {
+            lifecycle: match integer_property(properties, "BindMode").unwrap_or(0) {
+                0 => BinderLifecycle::Synchronized,
+                1 => BinderLifecycle::Frozen,
+                2 => BinderLifecycle::Detached,
+                _ => return None,
+            },
+            placement: if bool_property(properties, "Relative").unwrap_or(true) {
+                BinderPlacement::Relative
+            } else {
+                BinderPlacement::Global
+            },
+            copy_on_change: match integer_property(properties, "BindCopyOnChange").unwrap_or(0) {
+                0 => BinderCopyOnChange::Disabled,
+                1 => BinderCopyOnChange::Enabled,
+                2 => BinderCopyOnChange::Mutated,
+                _ => return None,
+            },
+            claim_children: bool_property(properties, "ClaimChildren").unwrap_or(false),
+            fuse: bool_property(properties, "Fuse").unwrap_or(false),
+            make_face: bool_property(properties, "MakeFace").unwrap_or(true),
+            partial_load: bool_property(properties, "PartialLoad").unwrap_or(false),
+            refine: bool_property(properties, "Refine").unwrap_or(true),
+            offset,
+            context,
+        }
+    };
+    Some(FeatureDefinition::Binder {
+        sources,
+        construction,
+    })
+}
+
+fn binder_target(
+    link: &crate::native::LinkTarget,
+    features: &HashMap<&str, FeatureId>,
+) -> Option<BinderTarget> {
+    let object = link.object.as_deref()?;
+    if let Some(document) = link.document.as_ref() {
+        return Some(BinderTarget::External {
+            document: document.clone(),
+            object: object.to_owned(),
+        });
+    }
+    Some(features.get(object).cloned().map_or_else(
+        || BinderTarget::Native {
+            reference: object.to_owned(),
+        },
+        |feature| BinderTarget::Feature { feature },
+    ))
+}
+
 fn enumeration_label(properties: &[&PropertyRecord], name: &str) -> Option<String> {
     let property = property(properties, name)?;
     let index = usize::try_from(integer_property(properties, name)?).ok()?;
@@ -2256,6 +2371,12 @@ fn is_helical_sweep(kind: &str) -> bool {
         "PartDesign::AdditiveHelix" | "PartDesign::SubtractiveHelix"
     )
 }
+fn is_binder(kind: &str) -> bool {
+    matches!(
+        kind,
+        "PartDesign::ShapeBinder" | "PartDesign::SubShapeBinder"
+    )
+}
 fn is_pattern(kind: &str) -> bool {
     matches!(
         kind,
@@ -2287,6 +2408,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_loft(kind)
         || is_sweep(kind)
         || is_helical_sweep(kind)
+        || is_binder(kind)
         || is_pattern(kind)
         || is_hole(kind)
         || is_extrusion(kind)

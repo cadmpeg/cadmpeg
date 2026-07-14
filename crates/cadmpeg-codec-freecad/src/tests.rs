@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "11");
+    assert_eq!(result.ir.ir_version, "12");
     let feature = |name: &str| {
         &result
             .ir
@@ -825,6 +825,88 @@ fn transfers_remaining_partdesign_analytic_primitives() {
     assert!(
         matches!(definition("Wedge"), cadmpeg_ir::features::FeatureDefinition::Primitive { solid: cadmpeg_ir::features::PrimitiveSolid::Wedge { xmin, ymax, .. }, op: cadmpeg_ir::features::BooleanOp::Join } if xmin.0 == -2.0 && ymax.0 == 6.0)
     );
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_shape_and_subshape_binder_construction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="Source" id="1"/>
+ <Object type="PartDesign::CoordinateSystem" name="Context" id="2"/>
+ <Object type="PartDesign::ShapeBinder" name="ShapeBind" id="3"/>
+ <Object type="PartDesign::SubShapeBinder" name="SubBind" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Source"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Context"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="0" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="ShapeBind"><Properties Count="2"><Property name="Support" type="App::PropertyLinkSubListGlobal"><LinkList count="1"><Link object="Source" sub="Face1 Face2"/></LinkList></Property><Property name="TraceSupport" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="SubBind"><Properties Count="15">
+  <Property name="Support" type="App::PropertyXLinkSubList"><LinkList count="2"><XLink object="Source" sub="Edge1"/><XLink document="library.FCStd" object="RemotePart" sub="Face3"/></LinkList></Property>
+  <Property name="Context" type="App::PropertyXLink"><XLink object="Context"/></Property>
+  <Property name="ClaimChildren" type="App::PropertyBool"><Bool value="true"/></Property><Property name="Relative" type="App::PropertyBool"><Bool value="false"/></Property><Property name="Fuse" type="App::PropertyBool"><Bool value="true"/></Property><Property name="MakeFace" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="BindMode" type="App::PropertyEnumeration"><Integer value="1"/></Property><Property name="PartialLoad" type="App::PropertyBool"><Bool value="true"/></Property><Property name="BindCopyOnChange" type="App::PropertyEnumeration"><Integer value="2"/></Property><Property name="Refine" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Offset" type="App::PropertyFloat"><Float value="-2.5"/></Property><Property name="OffsetJoinType" type="App::PropertyEnumeration"><Integer value="2"/></Property><Property name="OffsetFill" type="App::PropertyBool"><Bool value="true"/></Property><Property name="OffsetOpenResult" type="App::PropertyBool"><Bool value="true"/></Property><Property name="OffsetIntersection" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("binders");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+            .definition
+    };
+    assert!(
+        matches!(definition("ShapeBind"), cadmpeg_ir::features::FeatureDefinition::Binder { sources, construction: cadmpeg_ir::features::BinderConstruction::Shape { trace_support: true } } if sources.len() == 1 && sources[0].subelements == ["Face1", "Face2"])
+    );
+    let cadmpeg_ir::features::FeatureDefinition::Binder {
+        sources,
+        construction:
+            cadmpeg_ir::features::BinderConstruction::SubShape {
+                lifecycle,
+                placement,
+                copy_on_change,
+                claim_children,
+                fuse,
+                make_face,
+                partial_load,
+                refine,
+                offset: Some(offset),
+                context: Some(context),
+            },
+    } = definition("SubBind")
+    else {
+        panic!("subshape binder");
+    };
+    assert_eq!(sources.len(), 2);
+    assert!(
+        matches!(sources[1].target, cadmpeg_ir::features::BinderTarget::External { ref document, ref object } if document == "library.FCStd" && object == "RemotePart")
+    );
+    assert_eq!(*lifecycle, cadmpeg_ir::features::BinderLifecycle::Frozen);
+    assert_eq!(*placement, cadmpeg_ir::features::BinderPlacement::Global);
+    assert_eq!(
+        *copy_on_change,
+        cadmpeg_ir::features::BinderCopyOnChange::Mutated
+    );
+    assert!(*claim_children && *fuse && !*make_face && *partial_load && !*refine);
+    assert_eq!(offset.distance.0, -2.5);
+    assert_eq!(
+        offset.join,
+        cadmpeg_ir::features::BinderOffsetJoin::Intersection
+    );
+    assert!(matches!(
+        context,
+        cadmpeg_ir::features::BinderTarget::Feature { .. }
+    ));
     assert!(result.report.losses.is_empty());
 }
 
