@@ -1014,6 +1014,84 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
 }
 
 #[test]
+fn resolved_section_points_propagate_line_orientation_equalities() {
+    let definition = crate::feature::FeatureDefinition {
+        id: 40,
+        owner_feature_id: None,
+        body: Vec::new(),
+        parameter_frames: Vec::new(),
+        outlines: Vec::new(),
+        variables: Some(crate::feature::FeatureVariableTable {
+            declared_count: 4,
+            entity_ref: None,
+            rows: Vec::new(),
+            points: vec![
+                crate::feature::FeatureSectionPoint {
+                    point_id: 1,
+                    u: Some(2.0),
+                    v: Some(3.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 2,
+                    u: None,
+                    v: None,
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 3,
+                    u: Some(7.0),
+                    v: Some(11.0),
+                },
+            ],
+            offset: 0,
+        }),
+        segments: Some(crate::feature::FeatureSegmentTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: vec![
+                crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids: [1, 2],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: Some(1),
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 1,
+                    offset: 0,
+                },
+                crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids: [2, 3],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: Some(0),
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 2,
+                    offset: 0,
+                },
+            ],
+            offset: 0,
+        }),
+        trim_entities: None,
+        trim_vertices: None,
+        order_table: None,
+        section_3d: None,
+        dimensions: None,
+        relations: None,
+        saved_section: None,
+        offset: 0,
+    };
+
+    assert_eq!(
+        crate::decode::resolved_section_points(&definition).get(&2),
+        Some(&[7.0, 3.0])
+    );
+}
+
+#[test]
 fn scan_includes_named_segtab_prototype_as_data() {
     let payload = b"feat_defs_40\0segtab_ptr\0\xf8\x01\xf7\x01\xfb\xe2\
         type\0\x02dir\0\xf8\x03\xf6\x00\xe4pointid\0\xf8\x02\x00\x01\

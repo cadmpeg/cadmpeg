@@ -356,6 +356,10 @@ For relation-backed endpoint ordinates, `dir[0] = 0` and two equal defined
 endpoint `u` values define a vertical carrier; `dir[1] = 0` and two equal
 defined endpoint `v` values define a horizontal carrier. The carrier remains
 unbounded until the trim-vertex graph supplies both endpoints.
+The `verhor` value is also an equality constraint between the corresponding
+endpoint ordinates: value `0` equates `u`, and value `1` equates `v`. A defined
+ordinate therefore supplies the same ordinate for the other endpoint when its
+`var_arr` value is dimension-driven.
 
 The `ent_tab` start and end vertex identifiers orient each trimmed entity.
 Connected components of this incidence graph are profile chains. A component

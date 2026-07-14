@@ -677,6 +677,56 @@ fn resolved_section_segment_geometry(
         .or_else(|| saved_section_arc_geometry(definition, segment))
 }
 
+pub(crate) fn resolved_section_points(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<u32, [f64; 2]> {
+    let Some(variables) = &definition.variables else {
+        return BTreeMap::new();
+    };
+    let mut points = variables
+        .points
+        .iter()
+        .map(|point| (point.point_id, [point.u, point.v]))
+        .collect::<BTreeMap<_, _>>();
+    let segments = definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .collect::<Vec<_>>();
+    loop {
+        let mut changed = false;
+        for segment in &segments {
+            let coordinate = match segment.vertical_horizontal {
+                Some(0) => 0,
+                Some(1) => 1,
+                _ => continue,
+            };
+            let [first_id, second_id] = segment.point_ids;
+            let [first, second] =
+                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
+            match [first[coordinate], second[coordinate]] {
+                [Some(value), None] => {
+                    points.entry(second_id).or_insert([None, None])[coordinate] = Some(value);
+                    changed = true;
+                }
+                [None, Some(value)] => {
+                    points.entry(first_id).or_insert([None, None])[coordinate] = Some(value);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    points
+        .into_iter()
+        .filter_map(|(id, [u, v])| Some((id, [u?, v?])))
+        .collect()
+}
+
 struct SectionIntersectionCarrier {
     geometry: SketchGeometry,
     line_is_bounded: bool,
@@ -1485,7 +1535,7 @@ fn transfer_feature_extrusion_surfaces(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
             continue;
         }
-        let (Some(variables), Some(segments), Some(order_table), Some(trim_entities)) = (
+        let (Some(_), Some(segments), Some(order_table), Some(trim_entities)) = (
             &definition.variables,
             &definition.segments,
             &definition.order_table,
@@ -1501,11 +1551,7 @@ fn transfer_feature_extrusion_surfaces(
         let [table] = tables.as_slice() else {
             continue;
         };
-        let points = variables
-            .points
-            .iter()
-            .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
-            .collect::<BTreeMap<_, _>>();
+        let points = resolved_section_points(definition);
         let solved = trim_entities
             .rows
             .iter()
@@ -2293,12 +2339,7 @@ fn transfer_resolved_sketches(
         let Some(segments) = &definition.segments else {
             continue;
         };
-        let points = definition
-            .variables
-            .iter()
-            .flat_map(|variables| &variables.points)
-            .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
-            .collect::<BTreeMap<_, _>>();
+        let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
             .iter()
@@ -3051,13 +3092,9 @@ fn resolved_revolution_axis(
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
 ) -> Option<RevolutionAxis> {
-    let variables = definition.variables.as_ref()?;
+    definition.variables.as_ref()?;
     let segments = definition.segments.as_ref()?;
-    let points = variables
-        .points
-        .iter()
-        .filter_map(|point| Some((point.point_id, [point.u?, point.v?])))
-        .collect::<BTreeMap<_, _>>();
+    let points = resolved_section_points(definition);
     let candidates = segments
         .rows
         .iter()
