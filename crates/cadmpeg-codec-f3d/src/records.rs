@@ -1112,8 +1112,17 @@ pub struct DesignEdgeRecipeEntry {
     pub selector: i32,
     /// Number of boundary edges on the referenced face loop.
     pub boundary_edge_count: NonZeroU32,
-    /// Six remaining topology-selector words.
-    pub signature: [i32; 6],
+    /// Two ordered topology triplets.
+    pub topology_triplets: [DesignEdgeRecipeTopologyTriplet; 2],
+}
+
+/// One three-word invariant in an edge-recipe entry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeRecipeTopologyTriplet {
+    /// Equal positive first and third words.
+    pub outer: NonZeroU32,
+    /// Middle word, equal to `outer` or one less.
+    pub middle: u32,
 }
 
 /// Face-selection operand owned by an Extrude parameter scope.

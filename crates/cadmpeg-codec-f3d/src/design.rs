@@ -13,14 +13,14 @@ use crate::records::{
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEdgeRecipeEntry, DesignEdgeRecipeSide,
-    DesignEdgeRecipeStructure, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignEdgeRecipeStructure, DesignEdgeRecipeTopologyTriplet, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
+    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
+    PersistentReference, PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -6851,10 +6851,26 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignEdgeRecipeEntry>> {
             Some(DesignEdgeRecipeEntry {
                 selector: entry[0],
                 boundary_edge_count: std::num::NonZeroU32::new(u32::try_from(entry[1]).ok()?)?,
-                signature: std::array::from_fn(|index| entry[index + 2]),
+                topology_triplets: [
+                    edge_recipe_topology_triplet(&entry[2..5])?,
+                    edge_recipe_topology_triplet(&entry[5..8])?,
+                ],
             })
         })
         .collect()
+}
+
+fn edge_recipe_topology_triplet(words: &[i32]) -> Option<DesignEdgeRecipeTopologyTriplet> {
+    let [outer, middle, repeated_outer] = words else {
+        return None;
+    };
+    if outer != repeated_outer {
+        return None;
+    }
+    let outer = std::num::NonZeroU32::new(u32::try_from(*outer).ok()?)?;
+    let middle = u32::try_from(*middle).ok()?;
+    (middle == outer.get() || middle.checked_add(1) == Some(outer.get()))
+        .then_some(DesignEdgeRecipeTopologyTriplet { outer, middle })
 }
 
 fn parse_face_operand(
@@ -11098,12 +11114,50 @@ mod relation_tests {
         assert_eq!(structured.sides[0].payload_prefix, [0, 1]);
         assert_eq!(structured.sides[0].entries[0].selector, 1);
         assert_eq!(structured.sides[0].entries[0].boundary_edge_count.get(), 5);
-        assert_eq!(structured.sides[0].entries[0].signature, [4, 4, 4, 4, 3, 4]);
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[0]
+                .outer
+                .get(),
+            4
+        );
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[0].middle,
+            4
+        );
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[1]
+                .outer
+                .get(),
+            4
+        );
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[1].middle,
+            3
+        );
         assert_eq!(structured.sides[1].header, [3, 0]);
         assert_eq!(structured.sides[1].payload_prefix, [0, 1]);
         assert_eq!(structured.sides[1].entries[0].selector, 2);
         assert_eq!(structured.sides[1].entries[0].boundary_edge_count.get(), 5);
-        assert_eq!(structured.sides[1].entries[0].signature, [3, 3, 3, 1, 1, 1]);
+        assert_eq!(
+            structured.sides[1].entries[0].topology_triplets[0]
+                .outer
+                .get(),
+            3
+        );
+        assert_eq!(
+            structured.sides[1].entries[0].topology_triplets[0].middle,
+            3
+        );
+        assert_eq!(
+            structured.sides[1].entries[0].topology_triplets[1]
+                .outer
+                .get(),
+            1
+        );
+        assert_eq!(
+            structured.sides[1].entries[0].topology_triplets[1].middle,
+            1
+        );
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(
