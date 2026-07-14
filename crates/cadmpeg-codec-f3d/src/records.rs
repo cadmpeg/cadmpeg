@@ -1094,8 +1094,10 @@ pub struct DesignEdgeRecipeSide {
     pub first: i32,
     /// Scalar between the second and third clause delimiters.
     pub second: i32,
-    /// Nonempty words after the third clause delimiter.
-    pub payload: Vec<i32>,
+    /// Two-word prefix after the third clause delimiter.
+    pub payload_prefix: [i32; 2],
+    /// Ordered eight-word payload entries.
+    pub entries: Vec<[i32; 8]>,
 }
 
 /// Face-selection operand owned by an Extrude parameter scope.
