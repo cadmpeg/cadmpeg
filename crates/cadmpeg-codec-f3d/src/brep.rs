@@ -4159,9 +4159,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 None
             };
             let use_curve = tolerant.as_ref().and_then(|(range, extension)| {
-                if !matches!(extension, TolerantCoedgeExtension::EmbeddedCurve { .. }) {
+                let TolerantCoedgeExtension::EmbeddedCurve {
+                    parameter_range, ..
+                } = extension
+                else {
                     return None;
-                }
+                };
                 let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
                 let curve =
                     nurbs::decode_curve_cache_resolving_refs(record_bytes, bytes, &subtype_tables)?;
@@ -4171,7 +4174,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     geometry: CurveGeometry::Nurbs(curve),
                     source_object: None,
                 });
-                Some((curve_id, *range))
+                Some((curve_id, parameter_range.unwrap_or(*range)))
             });
             out.coedges.push(Coedge {
                 id: CoedgeId(id(i)),

@@ -561,7 +561,10 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     t_long(&mut tail, 1);
     tail.extend_from_slice(&[0x0b, 0x0f]);
     tail.extend_from_slice(&generated_curve_block());
-    tail.extend_from_slice(&[0x10, 0x0b, 0x0b]);
+    tail.extend_from_slice(&[0x10, 0x0a]);
+    t_dbl(&mut tail, -2.0);
+    tail.push(0x0a);
+    t_dbl(&mut tail, 3.0);
     t_long(&mut tail, 0);
     append_generated_record_tail(&mut smbh, "coedge", &tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
@@ -583,7 +586,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
         3
     );
     assert!(decoded.ir.model.coedges.iter().all(|coedge| {
-        coedge.use_curve_parameter_range == Some([0.0, 1.0])
+        coedge.use_curve_parameter_range == Some([-2.0, 3.0])
             && coedge.use_curve.as_ref().is_some_and(|id| {
                 decoded.ir.model.curves.iter().any(|curve| {
                     curve.id == *id

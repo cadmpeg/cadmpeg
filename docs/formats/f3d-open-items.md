@@ -29,7 +29,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Tolerant topology variants
 
-- The semantic role of the boolean before a modern `tcoedge` selector-one curve and the optional interval following that curve are unresolved.
+- The semantic role of the boolean before a modern `tcoedge` selector-one curve is unresolved.
 
 ## Material assets
 
