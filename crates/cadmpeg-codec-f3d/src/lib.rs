@@ -948,6 +948,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 records::ConstructionRecipeKind::Face
                     | records::ConstructionRecipeKind::BoundedFace
             )
+            && !operand.recipe_program.is_empty()
+            && operand.recipe_program_offset
+                == recipe.map_or(u64::MAX, |recipe| {
+                    recipe
+                        .byte_offset
+                        .saturating_add(match operand.recipe_kind {
+                            records::ConstructionRecipeKind::Face => 16,
+                            records::ConstructionRecipeKind::BoundedFace => 24,
+                            _ => u64::MAX,
+                        })
+                })
+            && operand.next_byte_offset
+                == operand.recipe_program_offset.saturating_add(
+                    u64::try_from(operand.recipe_program.len())
+                        .unwrap_or(u64::MAX)
+                        .saturating_mul(4),
+                )
             && operand.candidate_faces == expected_faces
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream

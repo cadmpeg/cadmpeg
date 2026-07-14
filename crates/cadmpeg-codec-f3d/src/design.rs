@@ -3560,6 +3560,31 @@ fn parse_face_operand(
     let [recipe] = matches.as_slice() else {
         return None;
     };
+    let recipe_program_at =
+        usize::try_from(recipe.byte_offset)
+            .ok()?
+            .checked_add(match recipe.kind {
+                ConstructionRecipeKind::Face => b"face_recipe_data".len(),
+                ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
+                _ => return None,
+            })?;
+    let recipe_program_bytes =
+        bytes.get(recipe_program_at..usize::try_from(next_byte_offset).ok()?)?;
+    if recipe_program_bytes.is_empty()
+        || recipe_program_bytes.len() % 4 != 0
+        || recipe_program_bytes.len() > 64 * 1024
+    {
+        return None;
+    }
+    let recipe_program = recipe_program_bytes
+        .chunks_exact(4)
+        .map(|raw| {
+            i32::from_le_bytes(
+                raw.try_into()
+                    .expect("invariant: chunks_exact(4) yields four-byte slices"),
+            )
+        })
+        .collect::<Vec<_>>();
     Some(DesignFaceOperand {
         id: format!(
             "f3d:{}:design-face-operand#{}",
@@ -3577,6 +3602,8 @@ fn parse_face_operand(
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
         recipe_kind: recipe.kind,
+        recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
+        recipe_program,
         candidate_faces: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
@@ -6211,7 +6238,12 @@ mod relation_tests {
         header(&mut bytes, *b"408", 101);
         header(&mut bytes, *b"414", 102);
         let recipe_record_at = header(&mut bytes, *b"423", 103);
-        bytes.extend_from_slice(&[0; 32]);
+        let recipe_name_at = bytes.len() + 4;
+        bytes.extend_from_slice(&24u32.to_le_bytes());
+        bytes.extend_from_slice(b"bounded_face_recipe_data");
+        for value in [0i32, -1, 4] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
         let next_at = header(&mut bytes, *b"306", 104);
         let scope = DesignParameterScope {
             id: "f3d:Design/BulkStream.dat:scope#1".into(),
@@ -6245,7 +6277,7 @@ mod relation_tests {
         };
         let recipe = ConstructionRecipe {
             id: "f3d:Design/BulkStream.dat:construction-recipe#60".into(),
-            byte_offset: recipe_record_at + 16,
+            byte_offset: recipe_name_at as u64,
             record_index_offset: Some(recipe_record_at + 8),
             kind: ConstructionRecipeKind::Edge,
             design_id: None,
@@ -6283,6 +6315,8 @@ mod relation_tests {
         assert_eq!(operand.recipe_record_index, 103);
         assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
         assert_eq!(operand.recipe_id, face_recipe.id);
+        assert_eq!(operand.recipe_program_offset, recipe_name_at as u64 + 24);
+        assert_eq!(operand.recipe_program, [0, -1, 4]);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, next_at);
         bind_face_operand_candidates(
