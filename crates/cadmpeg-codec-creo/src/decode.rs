@@ -2528,7 +2528,7 @@ fn section_skamp_constraints(
         .iter()
         .filter_map(|skamp| {
             let constraint_definition = match (skamp.kind, skamp.items.as_slice()) {
-                (0, [first, second]) => SketchConstraintDefinition::CoincidentLoci {
+                (0 | 3, [first, second]) => SketchConstraintDefinition::CoincidentLoci {
                     loci: vec![
                         section_skamp_locus(definition.id, &segments.rows, first)?,
                         section_skamp_locus(definition.id, &segments.rows, second)?,

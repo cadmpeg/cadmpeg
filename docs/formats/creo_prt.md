@@ -343,6 +343,8 @@ For an `arcorient = 0` arc these map to the neutral end and start loci,
 respectively, because the analytic arc orientation is reversed. A two-item
 type-four incidence makes the referenced entities tangent at their selected
 endpoint loci.
+A two-item type-three incidence has one sense-zero point entity and one
+endpoint-selected entity; the point and endpoint loci coincide.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
