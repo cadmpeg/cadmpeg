@@ -364,6 +364,7 @@ struct CreoSurfaceParameterRecord {
     scalar_frames: Vec<CreoSurfaceParameterScalarFrame>,
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
     extrusion_direction: Option<[f64; 3]>,
+    torus_radii: Option<[f64; 2]>,
     row_offset: usize,
     body_offset: usize,
     source_section: String,
@@ -762,6 +763,7 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
                 extrusion_direction: (row.kind == crate::surface::SurfaceKind::Extrusion)
                     .then(|| record.extrusion_direction(row.type_byte))
                     .flatten(),
+                torus_radii: record.torus_radii(row.type_byte),
                 row_offset: record.offset,
                 body_offset: record.body_offset,
                 source_section,

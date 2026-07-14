@@ -319,6 +319,23 @@ pub struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    /// Decode per-instance torus radii from an exact two-scalar terminal frame.
+    #[must_use]
+    pub fn torus_radii(&self, type_byte: u8) -> Option<[f64; 2]> {
+        (type_byte == 0x26).then_some(())?;
+        let frame = self.terminal_scalar_frame.as_ref()?;
+        let [major, minor] = frame.slots.as_slice() else {
+            return None;
+        };
+        let frame_end = frame.offset + major.length + minor.length;
+        (frame_end == self.body.len()).then_some(())?;
+        let radii = [major.value?, minor.value?];
+        radii
+            .iter()
+            .all(|radius| radius.is_finite() && *radius > 0.0)
+            .then_some(radii)
+    }
+
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
     #[must_use]
@@ -2124,5 +2141,35 @@ mod tests {
             offset: 20,
         }];
         assert!(outline_planes(&records).is_empty());
+    }
+
+    #[test]
+    fn torus_radii_require_an_exact_positive_terminal_pair() {
+        let slot = |value, offset| SurfaceParameterScalar {
+            value: Some(value),
+            raw: vec![0; 3],
+            offset,
+            length: 3,
+        };
+        let mut record = SurfaceParameterRecord {
+            surface_id: 1,
+            body: vec![0; 8],
+            scalar_values: vec![0.7, 0.2],
+            scalar_tokens: vec![],
+            opaque_spans: vec![],
+            scalar_frames: vec![],
+            terminal_scalar_frame: Some(SurfaceParameterScalarFrame {
+                offset: 2,
+                slots: vec![slot(0.7, 2), slot(0.2, 5)],
+            }),
+            boundary: SurfaceBodyBoundary::CompoundClose,
+            offset: 0,
+            body_offset: 0,
+        };
+
+        assert_eq!(record.torus_radii(0x26), Some([0.7, 0.2]));
+        assert_eq!(record.torus_radii(0x24), None);
+        record.terminal_scalar_frame.as_mut().expect("frame").slots[0].value = Some(0.0);
+        assert_eq!(record.torus_radii(0x26), None);
     }
 }
