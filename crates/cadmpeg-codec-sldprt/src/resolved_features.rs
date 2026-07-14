@@ -514,11 +514,13 @@ mod marker_tests {
             (
                 SketchEntityId("top".into()),
                 &marker,
+                &marker,
                 point(0.0, 1.0),
                 point(1.0, 1.0),
             ),
             (
                 SketchEntityId("bottom".into()),
+                &marker,
                 &marker,
                 point(0.0, 0.0),
                 point(1.0, 0.0),
@@ -526,11 +528,13 @@ mod marker_tests {
             (
                 SketchEntityId("right".into()),
                 &marker,
+                &marker,
                 point(1.0, 0.0),
                 point(1.0, 1.0),
             ),
             (
                 SketchEntityId("left".into()),
+                &marker,
                 &marker,
                 point(0.0, 1.0),
                 point(0.0, 0.0),
@@ -5035,6 +5039,7 @@ pub(crate) fn project_compact_sketch_profiles(
                                     native_feature.ordinal
                                 )),
                                 *curve,
+                                *vertex,
                                 start,
                                 end,
                             )
@@ -5044,14 +5049,14 @@ pub(crate) fn project_compact_sketch_profiles(
                 let Some(profile) = ordered_compact_line_profile(&lines) else {
                     continue;
                 };
-                for (entity_id, marker, start, end) in lines {
+                for (entity_id, marker, vertex, start, end) in lines {
                     sketch_entities.push(SketchEntity {
                         id: entity_id,
                         sketch: sketch_id.clone(),
                         construction: false,
                         native_ref: Some(marker.id.clone()),
                         geometry_ref: None,
-                        endpoint_refs: Vec::new(),
+                        endpoint_refs: vec![marker.id.clone(), vertex.id.clone()],
                         geometry: SketchGeometry::Line { start, end },
                     });
                 }
@@ -5119,7 +5124,13 @@ pub(crate) fn project_compact_sketch_profiles(
 }
 
 fn ordered_compact_line_profile(
-    lines: &[(SketchEntityId, &SketchInputEntity, Point2, Point2)],
+    lines: &[(
+        SketchEntityId,
+        &SketchInputEntity,
+        &SketchInputEntity,
+        Point2,
+        Point2,
+    )],
 ) -> Option<Vec<SketchEntityUse>> {
     if lines.len() < 3 {
         return None;
@@ -5132,16 +5143,16 @@ fn ordered_compact_line_profile(
         entity: first.0.clone(),
         reversed: false,
     });
-    let origin = first.2;
-    let mut current = first.3;
+    let origin = first.3;
+    let mut current = first.4;
     while profile.len() < lines.len() {
         let mut candidates = lines.iter().enumerate().filter_map(|(index, line)| {
             if used[index] {
                 None
-            } else if line.2 == current {
-                Some((index, false, line.3))
             } else if line.3 == current {
-                Some((index, true, line.2))
+                Some((index, false, line.4))
+            } else if line.4 == current {
+                Some((index, true, line.3))
             } else {
                 None
             }
@@ -7090,9 +7101,13 @@ pub(crate) fn project_relation_point_geometry(
                         marker.kind,
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
-                || entities
-                    .iter()
-                    .any(|entity| entity.native_ref.as_deref() == Some(marker.id.as_str()))
+                || entities.iter().any(|entity| {
+                    entity.native_ref.as_deref() == Some(marker.id.as_str())
+                        || entity
+                            .endpoint_refs
+                            .iter()
+                            .any(|reference| reference == &marker.id)
+                })
             {
                 continue;
             }
@@ -7104,6 +7119,17 @@ pub(crate) fn project_relation_point_geometry(
             let Some(sketch) = sketches_by_feature.get(feature) else {
                 continue;
             };
+            if sketch.0.contains("sketch#compact:")
+                && !marker_is_geometry_locus(&lane.native_payload, marker.offset as usize)
+                && !entities.iter().any(|entity| {
+                    entity
+                        .endpoint_refs
+                        .iter()
+                        .any(|reference| reference == &marker.id)
+                })
+            {
+                continue;
+            }
             let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
             let positions = transforms
                 .get(feature)
@@ -8097,8 +8123,17 @@ fn typed_relation_definition(
             .find(|entity| entity.geometry_ref.as_deref() == Some(scoped_ref.as_str()))
             .map(|entity| SketchLocus::Entity(entity.id.clone()))
             .or_else(|| {
-                marker(index)
-                    .and_then(|marker| marker_point_locus(marker, markers_by_id, loci_by_marker))
+                let marker = marker(index)?;
+                if matches!(
+                    relation.operands.get(index).map(|operand| operand.kind),
+                    Some(FeatureInputOperandKind::Native(0x837b | 0xbc7c))
+                ) {
+                    loci_by_marker
+                        .get(&qualified_point_marker_key(marker))
+                        .and_then(|loci| unique_locus(loci))
+                } else {
+                    marker_point_locus(marker, markers_by_id, loci_by_marker)
+                }
             })
     };
     match relation.family {
@@ -8316,10 +8351,8 @@ fn unique_profile_distance_locus(
             .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
     };
     let known_point = point(known)?;
-    let mut candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
+    let mut candidates = canonical_profile_loci(sketch, sketch_entities)
+        .into_iter()
         .filter_map(|(candidate_point, candidate)| {
             let measured =
                 (candidate_point.u - known_point.u).hypot(candidate_point.v - known_point.v);
@@ -8345,10 +8378,8 @@ fn unique_profile_axis_distance_locus(
         return None;
     };
     let known_point = profile_locus_point(known, sketch_entities)?;
-    let mut candidates = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
+    let mut candidates = canonical_profile_loci(sketch, sketch_entities)
+        .into_iter()
         .filter_map(|(candidate_point, candidate)| {
             let measured = if horizontal {
                 (candidate_point.u - known_point.u).abs()
@@ -8376,11 +8407,7 @@ fn unique_profile_axis_distance_pair(
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
-    let loci = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
-        .collect::<Vec<_>>();
+    let loci = canonical_profile_loci(sketch, sketch_entities);
     let mut candidates = Vec::new();
     for (first_index, (first_point, first)) in loci.iter().enumerate() {
         for (second_point, second) in &loci[first_index + 1..] {
@@ -8414,11 +8441,7 @@ fn unique_profile_distance_loci_pair(
     let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
         return None;
     };
-    let loci = sketch_entities
-        .iter()
-        .filter(|entity| entity.sketch == *sketch)
-        .flat_map(sketch_entity_loci)
-        .collect::<Vec<_>>();
+    let loci = canonical_profile_loci(sketch, sketch_entities);
     let mut candidates = Vec::new();
     for (first_index, (first_point, first)) in loci.iter().enumerate() {
         for (second_point, second) in &loci[first_index + 1..] {
@@ -8438,6 +8461,27 @@ fn unique_profile_distance_loci_pair(
         return None;
     };
     Some(candidate.clone())
+}
+
+fn canonical_profile_loci(
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+) -> Vec<(Point2, SketchLocus)> {
+    const QUANTUM: f64 = 1.0e-8;
+    let mut loci = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .flat_map(sketch_entity_loci)
+        .collect::<Vec<_>>();
+    loci.sort_by(|(left_point, left_locus), (right_point, right_locus)| {
+        quantize(*left_point, QUANTUM)
+            .cmp(&quantize(*right_point, QUANTUM))
+            .then_with(|| locus_key(left_locus).cmp(&locus_key(right_locus)))
+    });
+    loci.dedup_by(|(left_point, _), (right_point, _)| {
+        quantize(*left_point, QUANTUM) == quantize(*right_point, QUANTUM)
+    });
+    loci
 }
 
 fn unique_profile_line_distance_entity(
@@ -8735,6 +8779,29 @@ fn profile_locus_point(locus: &SketchLocus, sketch_entities: &[SketchEntity]) ->
         .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
 }
 
+fn canonicalize_physical_loci(
+    loci: &mut Vec<SketchLocus>,
+    sketch_entities: &[SketchEntity],
+    quantum: f64,
+) {
+    if loci.len() < 2 {
+        return;
+    }
+    let points = loci
+        .iter()
+        .map(|locus| {
+            profile_locus_point(locus, sketch_entities).map(|point| quantize(point, quantum))
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(points) = points else {
+        return;
+    };
+    if points.iter().all(|point| *point == points[0]) {
+        loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+        loci.truncate(1);
+    }
+}
+
 fn point_line_distance_value(point: Point2, line: &SketchEntity) -> Option<f64> {
     let SketchGeometry::Line { start, end } = &line.geometry else {
         return None;
@@ -8891,6 +8958,18 @@ fn profile_loci_by_marker(
 ) -> HashMap<String, Vec<SketchLocus>> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
+    let qualified_point_markers = lanes
+        .iter()
+        .flat_map(|lane| &lane.relation_instances)
+        .flat_map(|relation| &relation.operands)
+        .filter(|operand| {
+            matches!(
+                operand.kind,
+                FeatureInputOperandKind::Native(0x837b | 0xbc7c)
+            )
+        })
+        .filter_map(|operand| operand.entity_ref.as_deref())
+        .collect::<HashSet<_>>();
 
     let sketches_by_feature = features
         .iter()
@@ -8975,6 +9054,38 @@ fn profile_loci_by_marker(
             })
         })
         .collect::<HashMap<String, Vec<SketchLocus>>>();
+    let mut endpoint_marker_keys = HashSet::new();
+    for entity in sketch_entities {
+        let [start, end] = entity.endpoint_refs.as_slice() else {
+            continue;
+        };
+        for (marker, locus) in [
+            (start, SketchLocus::Start(entity.id.clone())),
+            (end, SketchLocus::End(entity.id.clone())),
+        ] {
+            if !markers_by_id.contains_key(marker.as_str()) {
+                continue;
+            }
+            endpoint_marker_keys.insert(marker.clone());
+            let loci = result.entry(marker.clone()).or_default();
+            if !loci.contains(&locus) {
+                loci.push(locus.clone());
+            }
+            if qualified_point_markers.contains(marker.as_str()) {
+                let qualified_key = qualified_point_marker_key(marker);
+                endpoint_marker_keys.insert(qualified_key.clone());
+                let loci = result.entry(qualified_key).or_default();
+                if !loci.contains(&locus) {
+                    loci.push(locus);
+                }
+            }
+        }
+    }
+    for marker in endpoint_marker_keys {
+        if let Some(loci) = result.get_mut(&marker) {
+            canonicalize_physical_loci(loci, sketch_entities, QUANTUM);
+        }
+    }
     for lane in lanes {
         let mut markers_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
         for marker in &lane.sketch_entities {
@@ -9007,7 +9118,16 @@ fn profile_loci_by_marker(
                 },
             );
             for marker in markers {
-                if result.contains_key(&marker.id) {
+                let qualified_point = qualified_point_markers.contains(marker.id.as_str());
+                let result_key = if qualified_point {
+                    qualified_point_marker_key(&marker.id)
+                } else {
+                    marker.id.clone()
+                };
+                if result.contains_key(&result_key) {
+                    continue;
+                }
+                if qualified_point && sketch.0.contains("sketch#compact:") {
                     continue;
                 }
                 let Some([u, v]) = marker.coordinates_m else {
@@ -9034,10 +9154,12 @@ fn profile_loci_by_marker(
                                 )
                             })
                             .map(|locus| {
-                                if matches!(
-                                    marker.kind,
-                                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                                ) {
+                                if !qualified_point
+                                    && matches!(
+                                        marker.kind,
+                                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                                    )
+                                {
                                     SketchLocus::Entity(locus_entity(locus))
                                 } else {
                                     locus.clone()
@@ -9075,6 +9197,9 @@ fn profile_loci_by_marker(
                         }
                         marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                         marker_loci.dedup();
+                        if qualified_point {
+                            canonicalize_physical_loci(&mut marker_loci, sketch_entities, QUANTUM);
+                        }
                         (!marker_loci.is_empty()).then_some(marker_loci)
                     })
                     .collect::<Vec<_>>();
@@ -9083,7 +9208,7 @@ fn profile_loci_by_marker(
                 };
                 if !marker_loci.is_empty() && marker_loci.iter().all(|candidate| candidate == first)
                 {
-                    result.insert(marker.id.clone(), first.clone());
+                    result.insert(result_key, first.clone());
                 }
             }
         }
@@ -10493,13 +10618,19 @@ mod profile_join_tests {
             native_ref: None,
         };
         let first = point("first", 0.0, 0.0);
+        let coincident_first = point("z-coincident-first", 0.0, 0.0);
         let second = point("second", 3.0, 4.0);
         let unrelated = point("unrelated", 20.0, 20.0);
         assert_eq!(
             unique_profile_distance_loci_pair(
                 &sketch,
                 &parameter,
-                &[first.clone(), second.clone(), unrelated.clone()],
+                &[
+                    first.clone(),
+                    coincident_first,
+                    second.clone(),
+                    unrelated.clone(),
+                ],
             ),
             Some((
                 SketchLocus::Entity(first.id.clone()),
