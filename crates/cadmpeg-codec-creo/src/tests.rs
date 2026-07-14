@@ -790,6 +790,34 @@ fn decode_types_named_mirror_with_unresolved_operands() {
 }
 
 #[test]
+fn decode_types_z_prefixed_round_with_unresolved_operands() {
+    let data = build_prt("c", &[("MdlStatus", b"zRound id 4\0".to_vec())]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("round feature");
+
+    assert_eq!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+        }
+    );
+    assert_eq!(
+        feature
+            .source_properties
+            .get("mdl_status_prefix")
+            .map(String::as_str),
+        Some("z")
+    );
+}
+
+#[test]
 fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

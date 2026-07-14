@@ -481,8 +481,8 @@ non-modeling cross-section definitions. `Mirror` identifies a reflection
 operation.
 
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
-name's localization. An ASCII `o`, `x`, or `y` byte immediately preceding an
-uppercase operation-family name is a state prefix, not part of the family
+name's localization. An ASCII `o`, `x`, `y`, or `z` byte immediately preceding
+an uppercase operation-family name is a state prefix, not part of the family
 name. Multiple operation names with the same feature identifier are stored
 states; the last occurrence is the current state.
 
