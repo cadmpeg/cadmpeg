@@ -57,10 +57,10 @@ pub struct BinaryFacts {
     pub surfaces: Vec<TextSurface>,
     /// Ordered display triangulation table.
     pub triangulations: Vec<TextTriangulation>,
-    /// Declared topology-record count.
-    pub tshape_count: usize,
-    /// Byte offset at the first topology record.
-    pub tshapes_offset: usize,
+    /// Ordered subshape-first topology records.
+    pub tshapes: Vec<TextTShape>,
+    /// Root shape use stored after the shape set.
+    pub roots: Vec<TextShapeUse>,
 }
 
 /// Framing facts from a text shape set.
@@ -777,6 +777,48 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         });
     }
     let tshape_count = cursor.section_count("TShapes")?;
+    let mut tshapes = Vec::with_capacity(tshape_count);
+    for index in 0..tshape_count {
+        tshapes.push(parse_binary_tshape(
+            &mut cursor,
+            version,
+            index + 1,
+            tshape_count,
+            curve_count,
+            curve2ds.len(),
+            surfaces.len(),
+            locations.len(),
+            polygons3d.len(),
+            polygons_on_triangulations.len(),
+            triangulations.len(),
+        )?);
+    }
+    let roots = if cursor.remaining() == 0 {
+        Vec::new()
+    } else {
+        if cursor.remaining() != 12 {
+            return Err(CodecError::Malformed(
+                "binary B-rep root record has invalid length".into(),
+            ));
+        }
+        let shape = cursor.i32("binary root shape")?;
+        let location = cursor.i32("binary root location")?;
+        let orientation = cursor.i32("binary root orientation")?;
+        if shape == -1 && location == -1 && orientation == -1 {
+            Vec::new()
+        } else {
+            vec![TextShapeUse {
+                shape: checked_binary_reference(shape, tshape_count, false, "root shape")?,
+                location: checked_binary_reference(
+                    location,
+                    locations.len(),
+                    true,
+                    "root location",
+                )?,
+                orientation: binary_orientation(orientation)?,
+            }]
+        }
+    };
     Ok(BinaryFacts {
         topology_version: version,
         locations,
@@ -786,9 +828,427 @@ fn parse_binary_prefix(bytes: &[u8]) -> Result<BinaryFacts, CodecError> {
         polygons_on_triangulations,
         surfaces,
         triangulations,
-        tshape_count,
-        tshapes_offset: cursor.offset,
+        tshapes,
+        roots,
     })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_binary_tshape(
+    cursor: &mut BinaryCursor<'_>,
+    version: u8,
+    index: usize,
+    tshape_count: usize,
+    curve_count: usize,
+    curve2d_count: usize,
+    surface_count: usize,
+    location_count: usize,
+    polygon3d_count: usize,
+    indexed_polygon_count: usize,
+    triangulation_count: usize,
+) -> Result<TextTShape, CodecError> {
+    let kind = match cursor.u8("binary TShape kind")? {
+        0 => TextShapeKind::Compound,
+        1 => TextShapeKind::CompSolid,
+        2 => TextShapeKind::Solid,
+        3 => TextShapeKind::Shell,
+        4 => TextShapeKind::Face,
+        5 => TextShapeKind::Wire,
+        6 => TextShapeKind::Edge,
+        7 => TextShapeKind::Vertex,
+        other => {
+            return Err(CodecError::Malformed(format!(
+                "invalid binary TShape kind {other}"
+            )))
+        }
+    };
+    let geometry = match kind {
+        TextShapeKind::Vertex => {
+            let tolerance = cursor.f64("binary vertex tolerance")?;
+            let point = cursor.point3("binary vertex point")?;
+            let mut representations = Vec::new();
+            loop {
+                let representation_kind = cursor.u8("binary vertex representation kind")?;
+                if representation_kind == 0 {
+                    break;
+                }
+                if representations.len() >= 1_000_000 {
+                    return Err(CodecError::Malformed(
+                        "binary vertex representation-count limit exceeded".into(),
+                    ));
+                }
+                let parameter = cursor.f64("binary vertex parameter")?;
+                let (second_parameter, curve, surface) = match representation_kind {
+                    1 => (
+                        None,
+                        Some(checked_binary_reference(
+                            cursor.i32("binary vertex curve")?,
+                            curve_count,
+                            false,
+                            "vertex curve",
+                        )?),
+                        None,
+                    ),
+                    2 => (
+                        None,
+                        Some(checked_binary_reference(
+                            cursor.i32("binary vertex pcurve")?,
+                            curve2d_count,
+                            false,
+                            "vertex pcurve",
+                        )?),
+                        Some(checked_binary_reference(
+                            cursor.i32("binary vertex surface")?,
+                            surface_count,
+                            false,
+                            "vertex surface",
+                        )?),
+                    ),
+                    3 => (
+                        Some(cursor.f64("binary vertex second surface parameter")?),
+                        None,
+                        Some(checked_binary_reference(
+                            cursor.i32("binary vertex surface")?,
+                            surface_count,
+                            false,
+                            "vertex surface",
+                        )?),
+                    ),
+                    other => {
+                        return Err(CodecError::Malformed(format!(
+                            "invalid binary vertex representation kind {other}"
+                        )))
+                    }
+                };
+                representations.push(TextPointRepresentation {
+                    parameter,
+                    second_parameter,
+                    kind: representation_kind,
+                    curve,
+                    surface,
+                    location: checked_binary_reference(
+                        cursor.i32("binary vertex location")?,
+                        location_count,
+                        true,
+                        "vertex location",
+                    )?,
+                });
+            }
+            TextTShapeGeometry::Vertex {
+                tolerance,
+                point,
+                representations,
+            }
+        }
+        TextShapeKind::Edge => {
+            let tolerance = cursor.f64("binary edge tolerance")?;
+            let same_parameter = cursor.bool("binary edge same-parameter flag")?;
+            let same_range = cursor.bool("binary edge same-range flag")?;
+            let degenerated = cursor.bool("binary edge degenerated flag")?;
+            let mut representations = Vec::new();
+            loop {
+                let representation_kind = cursor.u8("binary edge representation kind")?;
+                if representation_kind == 0 {
+                    break;
+                }
+                if representations.len() >= 1_000_000 {
+                    return Err(CodecError::Malformed(
+                        "binary edge representation-count limit exceeded".into(),
+                    ));
+                }
+                representations.push(parse_binary_edge_representation(
+                    cursor,
+                    version,
+                    representation_kind,
+                    curve_count,
+                    curve2d_count,
+                    surface_count,
+                    location_count,
+                    polygon3d_count,
+                    indexed_polygon_count,
+                    triangulation_count,
+                )?);
+            }
+            TextTShapeGeometry::Edge {
+                tolerance,
+                same_parameter,
+                same_range,
+                degenerated,
+                representations,
+            }
+        }
+        TextShapeKind::Face => {
+            let natural_restriction = cursor.bool("binary face natural-restriction flag")?;
+            let tolerance = cursor.f64("binary face tolerance")?;
+            let surface = checked_binary_reference(
+                cursor.i32("binary face surface")?,
+                surface_count,
+                true,
+                "face surface",
+            )?;
+            let location = checked_binary_reference(
+                cursor.i32("binary face location")?,
+                location_count,
+                true,
+                "face location",
+            )?;
+            let triangulation = match cursor.u8("binary face triangulation marker")? {
+                0 | 1 => None,
+                2 => Some(checked_binary_reference(
+                    cursor.i32("binary face triangulation")?,
+                    triangulation_count,
+                    false,
+                    "face triangulation",
+                )?),
+                other => {
+                    return Err(CodecError::Malformed(format!(
+                        "invalid binary face triangulation marker {other}"
+                    )))
+                }
+            };
+            TextTShapeGeometry::Face {
+                natural_restriction,
+                tolerance,
+                surface,
+                location,
+                triangulation,
+            }
+        }
+        TextShapeKind::Wire
+        | TextShapeKind::Shell
+        | TextShapeKind::Solid
+        | TextShapeKind::CompSolid
+        | TextShapeKind::Compound => TextTShapeGeometry::Empty,
+    };
+    let mut flags = [false; 7];
+    for flag in &mut flags {
+        *flag = cursor.bool("binary TShape flag")?;
+    }
+    let mut children = Vec::new();
+    loop {
+        let orientation = cursor.u8("binary child orientation")?;
+        if orientation == b'*' {
+            break;
+        }
+        let reverse_index = checked_binary_reference(
+            cursor.i32("binary child reverse index")?,
+            tshape_count,
+            false,
+            "child reverse index",
+        )?;
+        let shape = tshape_count - reverse_index + 1;
+        if shape >= index {
+            return Err(CodecError::Malformed(format!(
+                "binary TShape {index} references non-prior child {shape}"
+            )));
+        }
+        children.push(TextShapeUse {
+            shape,
+            orientation: binary_orientation(i32::from(orientation))?,
+            location: checked_binary_reference(
+                cursor.i32("binary child location")?,
+                location_count,
+                true,
+                "child location",
+            )?,
+        });
+    }
+    Ok(TextTShape {
+        index,
+        kind,
+        geometry,
+        flags,
+        children,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn parse_binary_edge_representation(
+    cursor: &mut BinaryCursor<'_>,
+    version: u8,
+    kind: u8,
+    curve_count: usize,
+    curve2d_count: usize,
+    surface_count: usize,
+    location_count: usize,
+    polygon3d_count: usize,
+    indexed_polygon_count: usize,
+    triangulation_count: usize,
+) -> Result<TextEdgeRepresentation, CodecError> {
+    let mut record = TextEdgeRepresentation {
+        kind,
+        primary: 0,
+        secondary: None,
+        surface: None,
+        second_surface: None,
+        location: 0,
+        second_location: None,
+        parameter_range: None,
+        continuity: None,
+        uv_endpoints: None,
+    };
+    match kind {
+        1 => {
+            record.primary = checked_binary_reference(
+                cursor.i32("binary edge curve")?,
+                curve_count,
+                false,
+                "edge curve",
+            )?;
+            record.location = checked_binary_reference(
+                cursor.i32("binary edge curve location")?,
+                location_count,
+                true,
+                "edge curve location",
+            )?;
+            record.parameter_range = Some([
+                cursor.f64("binary edge curve start")?,
+                cursor.f64("binary edge curve end")?,
+            ]);
+        }
+        2 | 3 => {
+            record.primary = checked_binary_reference(
+                cursor.i32("binary edge pcurve")?,
+                curve2d_count,
+                false,
+                "edge pcurve",
+            )?;
+            if kind == 3 {
+                record.secondary = Some(checked_binary_reference(
+                    cursor.i32("binary edge secondary pcurve")?,
+                    curve2d_count,
+                    false,
+                    "edge secondary pcurve",
+                )?);
+                record.continuity = Some(cursor.u8("binary edge continuity")?.to_string());
+            }
+            record.surface = Some(checked_binary_reference(
+                cursor.i32("binary edge surface")?,
+                surface_count,
+                false,
+                "edge surface",
+            )?);
+            record.location = checked_binary_reference(
+                cursor.i32("binary edge surface location")?,
+                location_count,
+                true,
+                "edge surface location",
+            )?;
+            record.parameter_range = Some([
+                cursor.f64("binary edge pcurve start")?,
+                cursor.f64("binary edge pcurve end")?,
+            ]);
+            if matches!(version, 2 | 3) {
+                record.uv_endpoints = Some([
+                    cursor.point2("binary edge first UV endpoint")?,
+                    cursor.point2("binary edge last UV endpoint")?,
+                ]);
+            }
+        }
+        4 => {
+            record.continuity = Some(cursor.u8("binary edge continuity")?.to_string());
+            record.surface = Some(checked_binary_reference(
+                cursor.i32("binary edge regularity surface")?,
+                surface_count,
+                false,
+                "edge regularity surface",
+            )?);
+            record.location = checked_binary_reference(
+                cursor.i32("binary edge regularity location")?,
+                location_count,
+                true,
+                "edge regularity location",
+            )?;
+            record.second_surface = Some(checked_binary_reference(
+                cursor.i32("binary edge second regularity surface")?,
+                surface_count,
+                false,
+                "edge second regularity surface",
+            )?);
+            record.second_location = Some(checked_binary_reference(
+                cursor.i32("binary edge second regularity location")?,
+                location_count,
+                true,
+                "edge second regularity location",
+            )?);
+        }
+        5 => {
+            record.primary = checked_binary_reference(
+                cursor.i32("binary edge 3D polygon")?,
+                polygon3d_count,
+                false,
+                "edge 3D polygon",
+            )?;
+            record.location = checked_binary_reference(
+                cursor.i32("binary edge polygon location")?,
+                location_count,
+                true,
+                "edge polygon location",
+            )?;
+        }
+        6 | 7 => {
+            record.primary = checked_binary_reference(
+                cursor.i32("binary edge indexed polygon")?,
+                indexed_polygon_count,
+                false,
+                "edge indexed polygon",
+            )?;
+            if kind == 7 {
+                record.secondary = Some(checked_binary_reference(
+                    cursor.i32("binary edge secondary indexed polygon")?,
+                    indexed_polygon_count,
+                    false,
+                    "edge secondary indexed polygon",
+                )?);
+            }
+            record.surface = Some(checked_binary_reference(
+                cursor.i32("binary edge triangulation")?,
+                triangulation_count,
+                false,
+                "edge triangulation",
+            )?);
+            record.location = checked_binary_reference(
+                cursor.i32("binary edge triangulation location")?,
+                location_count,
+                true,
+                "edge triangulation location",
+            )?;
+        }
+        other => {
+            return Err(CodecError::Malformed(format!(
+                "invalid binary edge representation kind {other}"
+            )))
+        }
+    }
+    Ok(record)
+}
+
+fn checked_binary_reference(
+    value: i32,
+    count: usize,
+    allow_zero: bool,
+    label: &str,
+) -> Result<usize, CodecError> {
+    let value = usize::try_from(value)
+        .map_err(|_| CodecError::Malformed(format!("negative binary {label}")))?;
+    if value > count || (!allow_zero && value == 0) {
+        return Err(CodecError::Malformed(format!(
+            "binary {label} index {value} exceeds table count {count}"
+        )));
+    }
+    Ok(value)
+}
+
+fn binary_orientation(value: i32) -> Result<TextOrientation, CodecError> {
+    match value {
+        0 => Ok(TextOrientation::Forward),
+        1 => Ok(TextOrientation::Reversed),
+        2 => Ok(TextOrientation::Internal),
+        3 => Ok(TextOrientation::External),
+        other => Err(CodecError::Malformed(format!(
+            "invalid binary orientation {other}"
+        ))),
+    }
 }
 
 fn parse_binary_surface(
@@ -1245,6 +1705,10 @@ struct BinaryCursor<'a> {
 impl<'a> BinaryCursor<'a> {
     fn new(bytes: &'a [u8]) -> Self {
         Self { bytes, offset: 0 }
+    }
+
+    fn remaining(&self) -> usize {
+        self.bytes.len() - self.offset
     }
 
     fn take(&mut self, count: usize, label: &str) -> Result<&'a [u8], CodecError> {
@@ -2973,8 +3437,8 @@ mod tests {
         assert!(matches!(facts.surfaces[0], TextSurface::Plane { .. }));
         assert!(matches!(facts.surfaces[1], TextSurface::Offset { .. }));
         assert_eq!(facts.triangulations[0].triangles, [[1, 2, 3]]);
-        assert_eq!(facts.tshape_count, 0);
-        assert_eq!(&bytes[facts.tshapes_offset..], b"");
+        assert!(facts.tshapes.is_empty());
+        assert!(facts.roots.is_empty());
     }
 
     #[test]

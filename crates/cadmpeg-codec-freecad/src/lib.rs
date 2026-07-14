@@ -845,11 +845,25 @@ fn transfer_text_topology(
     payloads: &[brep::ShapePayloadRecord],
 ) -> Result<(), CodecError> {
     for payload in payloads {
-        let Some(text) = &payload.text else {
+        let tables = if let Some(text) = &payload.text {
+            TopologyTables {
+                locations: &text.locations,
+                curve2ds: &text.curve2ds,
+                tshapes: &text.tshapes,
+                roots: &text.roots,
+            }
+        } else if let Some(binary) = &payload.binary {
+            TopologyTables {
+                locations: &binary.locations,
+                curve2ds: &binary.curve2ds,
+                tshapes: &binary.tshapes,
+                roots: &binary.roots,
+            }
+        } else {
             continue;
         };
         let mut vertices = HashMap::new();
-        for shape in &text.tshapes {
+        for shape in tables.tshapes {
             let brep::TextTShapeGeometry::Vertex {
                 tolerance, point, ..
             } = &shape.geometry
@@ -871,7 +885,7 @@ fn transfer_text_topology(
         }
 
         let mut edges = HashMap::new();
-        for shape in &text.tshapes {
+        for shape in tables.tshapes {
             let brep::TextTShapeGeometry::Edge {
                 tolerance,
                 degenerated,
@@ -917,7 +931,7 @@ fn transfer_text_topology(
                 }
                 ir.model.pcurves.push(Pcurve {
                     id: text_pcurve_id(payload, shape.index, representation_index, false),
-                    geometry: text_pcurve_geometry(&text.curve2ds[representation.primary - 1]),
+                    geometry: text_pcurve_geometry(&tables.curve2ds[representation.primary - 1]),
                     wrapper_reversed: None,
                     native_tail_flags: None,
                     parameter_range: representation.parameter_range,
@@ -926,7 +940,7 @@ fn transfer_text_topology(
                 if let Some(secondary) = representation.secondary {
                     ir.model.pcurves.push(Pcurve {
                         id: text_pcurve_id(payload, shape.index, representation_index, true),
-                        geometry: text_pcurve_geometry(&text.curve2ds[secondary - 1]),
+                        geometry: text_pcurve_geometry(&tables.curve2ds[secondary - 1]),
                         wrapper_reversed: None,
                         native_tail_flags: None,
                         parameter_range: representation.parameter_range,
@@ -936,13 +950,20 @@ fn transfer_text_topology(
             }
         }
 
-        let body_roots = collect_body_roots(text)?;
+        let body_roots = collect_body_roots(&tables)?;
         for root in body_roots {
-            append_body_topology(ir, payload, text, &root, &edges);
+            append_body_topology(ir, payload, &tables, &root, &edges);
         }
     }
     close_radial_rings(&mut ir.model.coedges);
     Ok(())
+}
+
+struct TopologyTables<'a> {
+    locations: &'a [brep::TextLocation],
+    curve2ds: &'a [brep::TextCurve2d],
+    tshapes: &'a [brep::TextTShape],
+    roots: &'a [brep::TextShapeUse],
 }
 
 fn text_pcurve_id(
@@ -1035,13 +1056,13 @@ fn text_pcurve_geometry(curve: &brep::TextCurve2d) -> PcurveGeometry {
     }
 }
 
-fn collect_body_roots(text: &brep::TextFacts) -> Result<Vec<brep::TextShapeUse>, CodecError> {
+fn collect_body_roots(tables: &TopologyTables<'_>) -> Result<Vec<brep::TextShapeUse>, CodecError> {
     fn visit(
-        text: &brep::TextFacts,
+        tables: &TopologyTables<'_>,
         shape_use: &brep::TextShapeUse,
         output: &mut Vec<brep::TextShapeUse>,
     ) -> Result<(), CodecError> {
-        let shape = text
+        let shape = tables
             .tshapes
             .get(shape_use.shape - 1)
             .ok_or_else(|| CodecError::Malformed(format!("missing TShape {}", shape_use.shape)))?;
@@ -1052,7 +1073,7 @@ fn collect_body_roots(text: &brep::TextFacts) -> Result<Vec<brep::TextShapeUse>,
             | brep::TextShapeKind::Face => output.push(shape_use.clone()),
             brep::TextShapeKind::CompSolid | brep::TextShapeKind::Compound => {
                 for child in &shape.children {
-                    visit(text, child, output)?;
+                    visit(tables, child, output)?;
                 }
             }
             brep::TextShapeKind::Vertex | brep::TextShapeKind::Edge => {}
@@ -1061,8 +1082,8 @@ fn collect_body_roots(text: &brep::TextFacts) -> Result<Vec<brep::TextShapeUse>,
     }
 
     let mut output = Vec::new();
-    for root in &text.roots {
-        visit(text, root, &mut output)?;
+    for root in tables.roots {
+        visit(tables, root, &mut output)?;
     }
     Ok(output)
 }
@@ -1070,11 +1091,11 @@ fn collect_body_roots(text: &brep::TextFacts) -> Result<Vec<brep::TextShapeUse>,
 fn append_body_topology(
     ir: &mut CadIr,
     payload: &brep::ShapePayloadRecord,
-    text: &brep::TextFacts,
+    tables: &TopologyTables<'_>,
     root: &brep::TextShapeUse,
     edges: &HashMap<usize, EdgeId>,
 ) {
-    let root_shape = &text.tshapes[root.shape - 1];
+    let root_shape = &tables.tshapes[root.shape - 1];
     let body_id = BodyId(format!("{}:body#{}", payload.id, root.shape));
     let region_id = RegionId(format!("{}:region#{}", payload.id, root.shape));
     let kind = match root_shape.kind {
@@ -1083,12 +1104,12 @@ fn append_body_topology(
         brep::TextShapeKind::Shell | brep::TextShapeKind::Face => BodyKind::Sheet,
         _ => BodyKind::General,
     };
-    let transform = (root.location != 0).then(|| text.locations[root.location - 1].transform);
+    let transform = (root.location != 0).then(|| tables.locations[root.location - 1].transform);
     let shell_uses = match root_shape.kind {
         brep::TextShapeKind::Solid => root_shape
             .children
             .iter()
-            .filter(|child| text.tshapes[child.shape - 1].kind == brep::TextShapeKind::Shell)
+            .filter(|child| tables.tshapes[child.shape - 1].kind == brep::TextShapeKind::Shell)
             .cloned()
             .collect::<Vec<_>>(),
         brep::TextShapeKind::Shell => vec![root.clone()],
@@ -1097,7 +1118,7 @@ fn append_body_topology(
     };
     let mut shell_ids = Vec::new();
     for shell_use in shell_uses {
-        let shell_id = append_shell_topology(ir, payload, text, &region_id, &shell_use, edges);
+        let shell_id = append_shell_topology(ir, payload, tables, &region_id, &shell_use, edges);
         shell_ids.push(shell_id);
     }
     if shell_ids.is_empty() {
@@ -1122,18 +1143,18 @@ fn append_body_topology(
 fn append_shell_topology(
     ir: &mut CadIr,
     payload: &brep::ShapePayloadRecord,
-    text: &brep::TextFacts,
+    tables: &TopologyTables<'_>,
     region_id: &RegionId,
     shell_use: &brep::TextShapeUse,
     edges: &HashMap<usize, EdgeId>,
 ) -> ShellId {
-    let shape = &text.tshapes[shell_use.shape - 1];
+    let shape = &tables.tshapes[shell_use.shape - 1];
     let shell_id = ShellId(format!("{}:shell#{}", payload.id, shell_use.shape));
     let face_uses = match shape.kind {
         brep::TextShapeKind::Shell => shape
             .children
             .iter()
-            .filter(|child| text.tshapes[child.shape - 1].kind == brep::TextShapeKind::Face)
+            .filter(|child| tables.tshapes[child.shape - 1].kind == brep::TextShapeKind::Face)
             .cloned()
             .collect::<Vec<_>>(),
         brep::TextShapeKind::Face => vec![shell_use.clone()],
@@ -1141,7 +1162,8 @@ fn append_shell_topology(
     };
     let mut face_ids = Vec::new();
     for face_use in face_uses {
-        if let Some(face_id) = append_face_topology(ir, payload, text, &shell_id, &face_use, edges)
+        if let Some(face_id) =
+            append_face_topology(ir, payload, tables, &shell_id, &face_use, edges)
         {
             face_ids.push(face_id);
         }
@@ -1168,12 +1190,12 @@ fn append_shell_topology(
 fn append_face_topology(
     ir: &mut CadIr,
     payload: &brep::ShapePayloadRecord,
-    text: &brep::TextFacts,
+    tables: &TopologyTables<'_>,
     shell_id: &ShellId,
     face_use: &brep::TextShapeUse,
     edges: &HashMap<usize, EdgeId>,
 ) -> Option<FaceId> {
-    let shape = &text.tshapes[face_use.shape - 1];
+    let shape = &tables.tshapes[face_use.shape - 1];
     let brep::TextTShapeGeometry::Face {
         tolerance,
         surface,
@@ -1191,10 +1213,10 @@ fn append_face_topology(
     for (loop_index, wire_use) in shape
         .children
         .iter()
-        .filter(|child| text.tshapes[child.shape - 1].kind == brep::TextShapeKind::Wire)
+        .filter(|child| tables.tshapes[child.shape - 1].kind == brep::TextShapeKind::Wire)
         .enumerate()
     {
-        let wire = &text.tshapes[wire_use.shape - 1];
+        let wire = &tables.tshapes[wire_use.shape - 1];
         let loop_id = LoopId(format!(
             "{}:loop#{}:{}",
             payload.id,
@@ -1221,7 +1243,7 @@ fn append_face_topology(
             let id = coedge_ids[index].clone();
             let next = coedge_ids[(index + 1) % coedge_ids.len()].clone();
             let previous = coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone();
-            let edge_shape = &text.tshapes[edge_use.shape - 1];
+            let edge_shape = &tables.tshapes[edge_use.shape - 1];
             let pcurve = match &edge_shape.geometry {
                 brep::TextTShapeGeometry::Edge {
                     representations, ..
