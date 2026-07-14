@@ -8089,7 +8089,7 @@ fn typed_relation_definition(
     };
     let parameter = parameter?;
     let parameter_id = parameter.id.clone();
-    let marker = |index: usize| relation.operands.get(index)?.entity_ref.as_deref();
+    let marker = |index: usize| relation_operand_marker(relation, index, sketch, markers_by_id);
     let point = |index: usize| {
         let scoped_ref = relation_operand_geometry_ref(relation, index);
         sketch_entities
@@ -8744,6 +8744,28 @@ fn point_line_distance_value(point: Point2, line: &SketchEntity) -> Option<f64> 
     (length > SKETCH_POINT_TOLERANCE).then(|| {
         ((point.u - start.u) * direction[1] - (point.v - start.v) * direction[0]).abs() / length
     })
+}
+
+fn relation_operand_marker<'a>(
+    relation: &'a FeatureInputRelationInstance,
+    index: usize,
+    sketch: &SketchId,
+    markers_by_id: &HashMap<&str, &'a SketchInputEntity>,
+) -> Option<&'a str> {
+    let operand = relation.operands.get(index)?;
+    if sketch.0.contains("sketch#compact:") && operand.kind == FeatureInputOperandKind::D6 {
+        let mut coordinate_handles = markers_by_id
+            .values()
+            .copied()
+            .filter(|marker| marker.feature_ref.as_deref() == Some(&relation.feature_ref))
+            .filter(|marker| marker.coordinates_m.is_some())
+            .collect::<Vec<_>>();
+        coordinate_handles.sort_unstable_by_key(|marker| marker.offset);
+        return coordinate_handles
+            .get(usize::from(operand.entity_index))
+            .map(|marker| marker.id.as_str());
+    }
+    operand.entity_ref.as_deref()
 }
 
 fn unique_dimensioned_circle_entity(
@@ -10003,8 +10025,8 @@ mod profile_join_tests {
         implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
         marker_point_locus, profile_loci_by_marker, project_dimensioned_sketch_geometry,
         project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
-        select_marker_transforms_by_frame, sketch_frame_marker_transform,
+        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
+        resolved_marker_locus, select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
@@ -10050,6 +10072,50 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn compact_d6_operand_indexes_coordinate_handles_in_byte_order() {
+        let mut first = marker("first", Some([0.0, 0.0]));
+        first.offset = 10;
+        first.kind = SketchInputKind::Arc;
+        let mut second = marker("second", Some([1.0, 0.0]));
+        second.offset = 20;
+        second.kind = SketchInputKind::LineOrCircle;
+        let markers = HashMap::from([(first.id.as_str(), &first), (second.id.as_str(), &second)]);
+        let relation = FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            family: FeatureInputRelationFamily::PointPointDistance,
+            class_ref: "class".into(),
+            feature_ref: "feature-native".into(),
+            scalar_refs: Vec::new(),
+            parameter_scalar_ref: None,
+            display_scalar_ref: None,
+            operands: vec![FeatureInputOperand {
+                offset: 0,
+                reference_ref: "reference".into(),
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 1,
+                entity_ref: Some("stored-marker".into()),
+            }],
+        };
+
+        assert_eq!(
+            relation_operand_marker(
+                &relation,
+                0,
+                &SketchId("sldprt:model:sketch#compact:lane:1".into()),
+                &markers,
+            ),
+            Some("second")
+        );
+        assert_eq!(
+            relation_operand_marker(&relation, 0, &SketchId("sketch".into()), &markers),
+            Some("stored-marker")
+        );
     }
 
     #[test]
