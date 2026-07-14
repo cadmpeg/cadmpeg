@@ -1,2 +1,6 @@
 schema_version = 1
 fixtures = []
+
+# Each [[fixtures]] entry names one committed IGES corpus filename, one or more
+# fixture_classes, every assertions label it verifies, and exact codec tests
+# that load the file and enforce those assertions.

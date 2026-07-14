@@ -85,6 +85,7 @@ struct PublicFixture {
     filename: String,
     fixture_classes: Vec<String>,
     assertions: Vec<String>,
+    tests: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -193,6 +194,7 @@ fn valid_public_fixture(
     if fixture.filename.is_empty()
         || fixture.fixture_classes.is_empty()
         || fixture.assertions.is_empty()
+        || fixture.tests.is_empty()
     {
         return Err(format!(
             "public fixture evidence {:?} has incomplete proof fields",
@@ -352,6 +354,63 @@ fn build_report(root: &Path) -> Result<Report, String> {
     if gate_levels.len() != gates.gate.len() {
         evidence_errors.push("duplicate ladder gate level".into());
     }
+    let known_assertions = matrix
+        .entity
+        .iter()
+        .flat_map(|entity| entity.assertions.iter())
+        .chain(gates.gate.iter().flat_map(|gate| gate.assertions.iter()))
+        .collect::<BTreeSet<_>>();
+    for fixture in &valid_public {
+        let fixture_class_count = fixture
+            .fixture_classes
+            .iter()
+            .collect::<BTreeSet<_>>()
+            .len();
+        if fixture_class_count != fixture.fixture_classes.len() {
+            evidence_errors.push(format!(
+                "public fixture {} repeats a fixture class",
+                fixture.filename
+            ));
+        }
+        for class in &fixture.fixture_classes {
+            if !originals.contains_key(class) {
+                evidence_errors.push(format!(
+                    "public fixture {} names unknown fixture class {}",
+                    fixture.filename, class
+                ));
+            }
+        }
+        let assertion_count = fixture.assertions.iter().collect::<BTreeSet<_>>().len();
+        if assertion_count != fixture.assertions.len() {
+            evidence_errors.push(format!(
+                "public fixture {} repeats an assertion",
+                fixture.filename
+            ));
+        }
+        for assertion in &fixture.assertions {
+            if !known_assertions.contains(assertion) {
+                evidence_errors.push(format!(
+                    "public fixture {} names unknown assertion {}",
+                    fixture.filename, assertion
+                ));
+            }
+        }
+        let test_count = fixture.tests.iter().collect::<BTreeSet<_>>().len();
+        if test_count != fixture.tests.len() {
+            evidence_errors.push(format!(
+                "public fixture {} repeats a test",
+                fixture.filename
+            ));
+        }
+        for test in &fixture.tests {
+            if !test_source.contains(&format!("fn {test}()")) {
+                evidence_errors.push(format!(
+                    "public fixture {} names missing test {}",
+                    fixture.filename, test
+                ));
+            }
+        }
+    }
     let mut ladder_gates = Vec::new();
     for gate in gates.gate {
         let mut missing = Vec::new();
@@ -374,6 +433,24 @@ fn build_report(root: &Path) -> Result<Report, String> {
             } else {
                 gate_public_ids
                     .extend(fixtures.into_iter().map(|fixture| fixture.filename.clone()));
+            }
+        }
+        let relevant_public = valid_public
+            .iter()
+            .filter(|fixture| {
+                fixture
+                    .fixture_classes
+                    .iter()
+                    .any(|class| gate.fixture_classes.contains(class))
+            })
+            .collect::<Vec<_>>();
+        for assertion in &gate.assertions {
+            if !relevant_public
+                .iter()
+                .any(|fixture| fixture.assertions.contains(assertion))
+                && !gate.fixture_classes.is_empty()
+            {
+                missing.push(format!("public_assertion:{assertion}"));
             }
         }
         ladder_gates.push(ReportGate {
@@ -415,6 +492,23 @@ fn build_report(root: &Path) -> Result<Report, String> {
                 public_ids.extend(fixtures.into_iter().map(|fixture| fixture.filename.clone()));
             }
         }
+        let relevant_public = valid_public
+            .iter()
+            .filter(|fixture| {
+                fixture
+                    .fixture_classes
+                    .iter()
+                    .any(|class| entity.fixture_classes.contains(class))
+            })
+            .collect::<Vec<_>>();
+        for assertion in &entity.assertions {
+            if !relevant_public
+                .iter()
+                .any(|fixture| fixture.assertions.contains(assertion))
+            {
+                missing.push(format!("public_assertion:{assertion}"));
+            }
+        }
         rows.push(ReportRow {
             entity_type: entity.r#type,
             name: entity.name,
@@ -448,9 +542,10 @@ fn build_report(root: &Path) -> Result<Report, String> {
     let public_complete_rows = rows
         .iter()
         .filter(|row| {
-            !row.missing
-                .iter()
-                .any(|missing| missing.starts_with("public_fixture_class:"))
+            !row.missing.iter().any(|missing| {
+                missing.starts_with("public_fixture_class:")
+                    || missing.starts_with("public_assertion:")
+            })
         })
         .count();
     let complete_rows = rows.iter().filter(|row| row.missing.is_empty()).count();
@@ -470,10 +565,10 @@ fn build_report(root: &Path) -> Result<Report, String> {
     let public_complete_gates = ladder_gates
         .iter()
         .filter(|gate| {
-            !gate
-                .missing
-                .iter()
-                .any(|missing| missing.starts_with("public_fixture_class:"))
+            !gate.missing.iter().any(|missing| {
+                missing.starts_with("public_fixture_class:")
+                    || missing.starts_with("public_assertion:")
+            })
         })
         .count();
     let complete_gates = ladder_gates

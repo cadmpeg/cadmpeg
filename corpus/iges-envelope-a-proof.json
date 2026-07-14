@@ -71,7 +71,12 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:fixed-ascii-container"
+        "public_fixture_class:fixed-ascii-container",
+        "public_assertion:bounded-detection",
+        "public_assertion:document-kind",
+        "public_assertion:fixed-card-framing",
+        "public_assertion:version",
+        "public_assertion:global-metadata"
       ]
     },
     {
@@ -109,7 +114,13 @@
         "public_fixture_class:fixed-ascii-container",
         "public_fixture_class:reference-graph",
         "public_fixture_class:external-references",
-        "public_fixture_class:byte-ledger"
+        "public_fixture_class:byte-ledger",
+        "public_assertion:section-navigation",
+        "public_assertion:entity-census",
+        "public_assertion:external-reference-census",
+        "public_assertion:named-undecoded-content",
+        "public_assertion:reference-findings",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -184,7 +195,12 @@
         "public_fixture_class:ruled-surfaces",
         "public_fixture_class:tabulated-surfaces",
         "public_fixture_class:transforms",
-        "public_fixture_class:vectors"
+        "public_fixture_class:vectors",
+        "public_assertion:carrier-evaluation",
+        "public_assertion:parameter-domain",
+        "public_assertion:units",
+        "public_assertion:placement",
+        "public_assertion:native-construction"
       ]
     },
     {
@@ -224,7 +240,14 @@
         "public_fixture_class:explicit-brep",
         "public_fixture_class:manifold-solids",
         "public_fixture_class:surface-boundaries",
-        "public_fixture_class:trimmed-surfaces"
+        "public_fixture_class:trimmed-surfaces",
+        "public_assertion:connected-body-to-vertex",
+        "public_assertion:face-local-sheet",
+        "public_assertion:orientation",
+        "public_assertion:seams",
+        "public_assertion:voids",
+        "public_assertion:non-manifold-rings",
+        "public_assertion:transactional-validation"
       ]
     },
     {
@@ -335,7 +358,11 @@
         "public_fixture_class:tabulated-surfaces",
         "public_fixture_class:transforms",
         "public_fixture_class:trimmed-surfaces",
-        "public_fixture_class:vectors"
+        "public_fixture_class:vectors",
+        "public_assertion:closed-carrier-matrix",
+        "public_assertion:closed-topology-matrix",
+        "public_assertion:appearance-precedence",
+        "public_assertion:native-exactness"
       ]
     },
     {
@@ -393,7 +420,14 @@
         "public_fixture_class:solid-instances",
         "public_fixture_class:subfigure-arrays",
         "public_fixture_class:subfigures",
-        "public_fixture_class:transforms"
+        "public_fixture_class:transforms",
+        "public_assertion:definition-identity",
+        "public_assertion:occurrence-identity",
+        "public_assertion:ordered-members",
+        "public_assertion:world-placement",
+        "public_assertion:external-reference-state",
+        "public_assertion:persistent-identity",
+        "public_assertion:approved-mates-inapplicability"
       ]
     },
     {
@@ -465,7 +499,13 @@
         "public_fixture_class:text-fonts",
         "public_fixture_class:text-templates",
         "public_fixture_class:units-data",
-        "public_fixture_class:views"
+        "public_fixture_class:views",
+        "public_assertion:typed-application-records",
+        "public_assertion:referential-validity",
+        "public_assertion:stable-identity",
+        "public_assertion:opaque-record-digest",
+        "public_assertion:byte-coverage",
+        "public_assertion:no-unreported-domain-loss"
       ]
     }
   ],
@@ -491,7 +531,9 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:null-entity"
+        "public_fixture_class:null-entity",
+        "public_assertion:native-identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -516,7 +558,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:analytic-curves"
+        "public_fixture_class:analytic-curves",
+        "public_assertion:curve-evaluation",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -541,7 +586,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:composite-curves"
+        "public_fixture_class:composite-curves",
+        "public_assertion:ordered-children",
+        "public_assertion:parameter-domain",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -569,7 +617,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:conic-forms"
+        "public_fixture_class:conic-forms",
+        "public_assertion:curve-evaluation",
+        "public_assertion:endpoints",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -619,7 +670,10 @@
         "public_fixture_class:copious-tuples",
         "public_fixture_class:centerlines",
         "public_fixture_class:sections",
-        "public_fixture_class:witness-lines"
+        "public_fixture_class:witness-lines",
+        "public_assertion:tuple-arity",
+        "public_assertion:form-semantics",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -646,7 +700,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:analytic-surfaces"
+        "public_fixture_class:analytic-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:bounded-plane",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -674,7 +731,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:line-forms"
+        "public_fixture_class:line-forms",
+        "public_assertion:curve-evaluation",
+        "public_assertion:bounds",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -699,7 +759,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:parametric-spline-curves"
+        "public_fixture_class:parametric-spline-curves",
+        "public_assertion:curve-evaluation",
+        "public_assertion:continuity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -724,7 +787,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:parametric-spline-surfaces"
+        "public_fixture_class:parametric-spline-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:control-order",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -749,7 +815,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:placed-points"
+        "public_fixture_class:placed-points",
+        "public_assertion:units",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -775,7 +844,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:ruled-surfaces"
+        "public_fixture_class:ruled-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:direction-flags",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -800,7 +872,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:revolved-surfaces"
+        "public_fixture_class:revolved-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:angle-domain",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -825,7 +900,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:tabulated-surfaces"
+        "public_fixture_class:tabulated-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:directrix",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -850,7 +928,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:vectors"
+        "public_fixture_class:vectors",
+        "public_assertion:dimensionless",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -880,7 +961,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:transforms"
+        "public_fixture_class:transforms",
+        "public_assertion:composition",
+        "public_assertion:reflection",
+        "public_assertion:scale",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -914,7 +999,13 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:nurbs-curves"
+        "public_fixture_class:nurbs-curves",
+        "public_assertion:knots",
+        "public_assertion:multiplicity",
+        "public_assertion:weights",
+        "public_assertion:periodicity",
+        "public_assertion:evaluation",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -952,7 +1043,14 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:nurbs-surfaces"
+        "public_fixture_class:nurbs-surfaces",
+        "public_assertion:knots",
+        "public_assertion:multiplicity",
+        "public_assertion:weights",
+        "public_assertion:periodicity",
+        "public_assertion:control-order",
+        "public_assertion:evaluation",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -979,7 +1077,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:offset-curves"
+        "public_fixture_class:offset-curves",
+        "public_assertion:source-definition",
+        "public_assertion:parameter-domain",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1005,7 +1106,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:network-connect-points"
+        "public_fixture_class:network-connect-points",
+        "public_assertion:owner-links",
+        "public_assertion:classification",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1030,7 +1135,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:offset-surfaces"
+        "public_fixture_class:offset-surfaces",
+        "public_assertion:source-definition",
+        "public_assertion:signed-distance",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1057,7 +1165,12 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:surface-boundaries"
+        "public_fixture_class:surface-boundaries",
+        "public_assertion:orientation",
+        "public_assertion:ordered-pcurve-collections",
+        "public_assertion:pcurve-links",
+        "public_assertion:model-curve-links",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1082,7 +1195,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:curves-on-surfaces"
+        "public_fixture_class:curves-on-surfaces",
+        "public_assertion:preferred-representation",
+        "public_assertion:carrier-agreement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1108,7 +1224,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:bounded-surfaces"
+        "public_fixture_class:bounded-surfaces",
+        "public_assertion:face-local-topology",
+        "public_assertion:inner-loops",
+        "public_assertion:validation",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1136,7 +1256,12 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:trimmed-surfaces"
+        "public_fixture_class:trimmed-surfaces",
+        "public_assertion:face-local-topology",
+        "public_assertion:outer-boundary",
+        "public_assertion:inner-loops",
+        "public_assertion:validation",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1161,7 +1286,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-primitives"
+        "public_fixture_class:csg-primitives",
+        "public_assertion:primitive-semantics",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1186,7 +1314,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-primitives"
+        "public_fixture_class:csg-primitives",
+        "public_assertion:primitive-semantics",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1211,7 +1342,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-primitives"
+        "public_fixture_class:csg-primitives",
+        "public_assertion:primitive-semantics",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1236,7 +1370,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-primitives"
+        "public_fixture_class:csg-primitives",
+        "public_assertion:primitive-semantics",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1261,7 +1398,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-primitives"
+        "public_fixture_class:csg-primitives",
+        "public_assertion:primitive-semantics",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1286,7 +1426,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-primitives"
+        "public_fixture_class:csg-primitives",
+        "public_assertion:primitive-semantics",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1312,7 +1455,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-procedural-solids"
+        "public_fixture_class:csg-procedural-solids",
+        "public_assertion:source-definition",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1337,7 +1483,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-procedural-solids"
+        "public_fixture_class:csg-procedural-solids",
+        "public_assertion:source-definition",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1362,7 +1511,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-primitives"
+        "public_fixture_class:csg-primitives",
+        "public_assertion:primitive-semantics",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1390,7 +1542,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-boolean-trees"
+        "public_fixture_class:csg-boolean-trees",
+        "public_assertion:postfix-arity",
+        "public_assertion:ordered-operands",
+        "public_assertion:cycles",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1416,7 +1572,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:csg-selected-components"
+        "public_fixture_class:csg-selected-components",
+        "public_assertion:boolean-tree-link",
+        "public_assertion:selection-point",
+        "public_assertion:placement",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1444,7 +1604,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:solid-assemblies"
+        "public_fixture_class:solid-assemblies",
+        "public_assertion:ordered-members",
+        "public_assertion:placements",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1472,7 +1636,12 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:manifold-solids"
+        "public_fixture_class:manifold-solids",
+        "public_assertion:connected-topology",
+        "public_assertion:void-shells",
+        "public_assertion:orientation",
+        "public_assertion:validation",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1498,7 +1667,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:analytic-surfaces"
+        "public_fixture_class:analytic-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:reference-direction",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1524,7 +1696,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:analytic-surfaces"
+        "public_fixture_class:analytic-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:reference-direction",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1550,7 +1725,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:analytic-surfaces"
+        "public_fixture_class:analytic-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:reference-direction",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1576,7 +1754,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:analytic-surfaces"
+        "public_fixture_class:analytic-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:reference-direction",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1602,7 +1783,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:analytic-surfaces"
+        "public_fixture_class:analytic-surfaces",
+        "public_assertion:surface-evaluation",
+        "public_assertion:reference-direction",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1628,7 +1812,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:dimensions"
+        "public_fixture_class:dimensions",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1654,7 +1841,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:dimensions"
+        "public_fixture_class:dimensions",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1680,7 +1870,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:dimensions"
+        "public_fixture_class:dimensions",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1706,7 +1899,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:notes-labels"
+        "public_fixture_class:notes-labels",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1732,7 +1928,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:notes-labels"
+        "public_fixture_class:notes-labels",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1758,7 +1957,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:notes-labels"
+        "public_fixture_class:notes-labels",
+        "public_assertion:text-runs",
+        "public_assertion:presentation",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1784,7 +1986,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:notes-labels"
+        "public_fixture_class:notes-labels",
+        "public_assertion:text-runs",
+        "public_assertion:presentation",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1820,7 +2025,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:leaders"
+        "public_fixture_class:leaders",
+        "public_assertion:leader-form",
+        "public_assertion:witness-geometry",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1848,7 +2056,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:dimensions"
+        "public_fixture_class:dimensions",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1875,7 +2086,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:dimensions"
+        "public_fixture_class:dimensions",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1901,7 +2115,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:dimensions"
+        "public_fixture_class:dimensions",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1928,7 +2145,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:dimensions"
+        "public_fixture_class:dimensions",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1953,7 +2173,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:symbols"
+        "public_fixture_class:symbols",
+        "public_assertion:typed-links",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -1978,7 +2201,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:sectioned-areas"
+        "public_fixture_class:sectioned-areas",
+        "public_assertion:boundary-links",
+        "public_assertion:fill-pattern",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2001,7 +2227,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:associativity-definitions"
+        "public_fixture_class:associativity-definitions",
+        "public_assertion:class-layout",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2027,7 +2256,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:line-fonts"
+        "public_fixture_class:line-fonts",
+        "public_assertion:pattern-semantics",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2052,7 +2284,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:subfigures"
+        "public_fixture_class:subfigures",
+        "public_assertion:ordered-members",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2077,7 +2312,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:text-fonts"
+        "public_fixture_class:text-fonts",
+        "public_assertion:glyph-strokes",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2103,7 +2341,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:text-templates"
+        "public_fixture_class:text-templates",
+        "public_assertion:placement",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2128,7 +2369,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:colors"
+        "public_fixture_class:colors",
+        "public_assertion:rgb-conversion",
+        "public_assertion:precedence",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2153,7 +2397,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:units-data"
+        "public_fixture_class:units-data",
+        "public_assertion:unit-semantics",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2179,7 +2426,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:network-subfigures"
+        "public_fixture_class:network-subfigures",
+        "public_assertion:ordered-members",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2207,7 +2457,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:attribute-tables"
+        "public_fixture_class:attribute-tables",
+        "public_assertion:field-layout",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2247,7 +2500,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:associativities"
+        "public_fixture_class:associativities",
+        "public_assertion:form-layout",
+        "public_assertion:typed-links",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2273,7 +2529,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:drawings"
+        "public_fixture_class:drawings",
+        "public_assertion:view-links",
+        "public_assertion:annotation-links",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2335,7 +2594,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:properties"
+        "public_fixture_class:properties",
+        "public_assertion:form-layout",
+        "public_assertion:owner-links",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2361,7 +2623,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:subfigures"
+        "public_fixture_class:subfigures",
+        "public_assertion:definition-link",
+        "public_assertion:placement",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2390,7 +2656,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:views"
+        "public_fixture_class:views",
+        "public_assertion:projection",
+        "public_assertion:clipping",
+        "public_assertion:visibility",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2416,7 +2686,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:subfigure-arrays"
+        "public_fixture_class:subfigure-arrays",
+        "public_assertion:occurrence-count",
+        "public_assertion:placement",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2442,7 +2716,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:subfigure-arrays"
+        "public_fixture_class:subfigure-arrays",
+        "public_assertion:occurrence-count",
+        "public_assertion:placement",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2471,7 +2749,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:external-references"
+        "public_fixture_class:external-references",
+        "public_assertion:path-definition-occurrence-states",
+        "public_assertion:no-implicit-open",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2498,7 +2779,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:network-subfigures"
+        "public_fixture_class:network-subfigures",
+        "public_assertion:definition-link",
+        "public_assertion:placement",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2525,7 +2810,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:attribute-tables"
+        "public_fixture_class:attribute-tables",
+        "public_assertion:definition-link",
+        "public_assertion:field-values",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2553,7 +2841,12 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:solid-instances"
+        "public_fixture_class:solid-instances",
+        "public_assertion:definition-link",
+        "public_assertion:form-target-domain",
+        "public_assertion:placement",
+        "public_assertion:identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2579,7 +2872,10 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:explicit-brep"
+        "public_fixture_class:explicit-brep",
+        "public_assertion:list-index",
+        "public_assertion:shared-identity",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2606,7 +2902,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:explicit-brep"
+        "public_fixture_class:explicit-brep",
+        "public_assertion:list-index",
+        "public_assertion:endpoint-links",
+        "public_assertion:curve-links",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2633,7 +2933,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:explicit-brep"
+        "public_fixture_class:explicit-brep",
+        "public_assertion:ordered-uses",
+        "public_assertion:orientation",
+        "public_assertion:seams",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2660,7 +2964,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:explicit-brep"
+        "public_fixture_class:explicit-brep",
+        "public_assertion:surface-link",
+        "public_assertion:same-sense",
+        "public_assertion:outer-loop",
+        "public_assertion:byte-coverage"
       ]
     },
     {
@@ -2688,7 +2996,11 @@
       ],
       "public_fixtures": [],
       "missing": [
-        "public_fixture_class:explicit-brep"
+        "public_fixture_class:explicit-brep",
+        "public_assertion:face-membership",
+        "public_assertion:orientation",
+        "public_assertion:validation",
+        "public_assertion:byte-coverage"
       ]
     }
   ],
