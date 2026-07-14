@@ -68,6 +68,50 @@ pub(crate) struct AsmHistoricalTopology {
     pub coedges: Vec<i64>,
     pub edges: Vec<i64>,
     pub vertices: Vec<i64>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_regions: Vec<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub region_shells: Vec<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell_faces: Vec<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell_wire_edges: Vec<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shell_free_vertices: Vec<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub face_loops: Vec<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub loop_coedges: Vec<AsmHistoricalRelation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub coedge_topology: Vec<AsmHistoricalCoedge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_vertices: Vec<AsmHistoricalEdge>,
+}
+
+/// Ordered stable entity-slot relation in a historical B-rep.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalRelation {
+    pub owner_ref: i64,
+    pub member_refs: Vec<i64>,
+}
+
+/// Stable topology links of one historical coedge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalCoedge {
+    pub coedge: i64,
+    pub owner_loop: i64,
+    pub edge: i64,
+    pub next: i64,
+    pub previous: i64,
+    pub radial_next: i64,
+}
+
+/// Ordered endpoint links of one historical edge.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalEdge {
+    pub edge: i64,
+    pub start_vertex: i64,
+    pub end_vertex: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

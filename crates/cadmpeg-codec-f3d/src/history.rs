@@ -7,7 +7,8 @@
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistoricalTopology, AsmHistory, AsmHistoryRecord,
+    AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalRelation, AsmHistoricalTopology,
+    AsmHistory, AsmHistoryRecord,
 };
 use cadmpeg_ir::le::int_at;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -342,16 +343,30 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
 }
 
 fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology> {
+    fn entity_ref(id: &str) -> Option<i64> {
+        id.rsplit_once('#')?
+            .1
+            .split(':')
+            .next()?
+            .parse::<i64>()
+            .ok()
+    }
+
     fn refs<'a>(ids: impl Iterator<Item = &'a str>) -> Option<Vec<i64>> {
-        ids.map(|id| {
-            id.rsplit_once('#')?
-                .1
-                .split(':')
-                .next()?
-                .parse::<i64>()
-                .ok()
-        })
-        .collect()
+        ids.map(entity_ref).collect()
+    }
+
+    fn relations<'a>(
+        items: impl Iterator<Item = (&'a str, Vec<&'a str>)>,
+    ) -> Option<Vec<AsmHistoricalRelation>> {
+        items
+            .map(|(owner, members)| {
+                Some(AsmHistoricalRelation {
+                    owner_ref: entity_ref(owner)?,
+                    member_refs: refs(members.into_iter())?,
+                })
+            })
+            .collect()
     }
 
     Some(AsmHistoricalTopology {
@@ -363,6 +378,73 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
         coedges: refs(brep.coedges.iter().map(|entity| entity.id.0.as_str()))?,
         edges: refs(brep.edges.iter().map(|entity| entity.id.0.as_str()))?,
         vertices: refs(brep.vertices.iter().map(|entity| entity.id.0.as_str()))?,
+        body_regions: relations(brep.bodies.iter().map(|body| {
+            (
+                body.id.0.as_str(),
+                body.regions.iter().map(|id| id.0.as_str()).collect(),
+            )
+        }))?,
+        region_shells: relations(brep.regions.iter().map(|region| {
+            (
+                region.id.0.as_str(),
+                region.shells.iter().map(|id| id.0.as_str()).collect(),
+            )
+        }))?,
+        shell_faces: relations(brep.shells.iter().map(|shell| {
+            (
+                shell.id.0.as_str(),
+                shell.faces.iter().map(|id| id.0.as_str()).collect(),
+            )
+        }))?,
+        shell_wire_edges: relations(brep.shells.iter().map(|shell| {
+            (
+                shell.id.0.as_str(),
+                shell.wire_edges.iter().map(|id| id.0.as_str()).collect(),
+            )
+        }))?,
+        shell_free_vertices: relations(brep.shells.iter().map(|shell| {
+            (
+                shell.id.0.as_str(),
+                shell.free_vertices.iter().map(|id| id.0.as_str()).collect(),
+            )
+        }))?,
+        face_loops: relations(brep.faces.iter().map(|face| {
+            (
+                face.id.0.as_str(),
+                face.loops.iter().map(|id| id.0.as_str()).collect(),
+            )
+        }))?,
+        loop_coedges: relations(brep.loops.iter().map(|loop_| {
+            (
+                loop_.id.0.as_str(),
+                loop_.coedges.iter().map(|id| id.0.as_str()).collect(),
+            )
+        }))?,
+        coedge_topology: brep
+            .coedges
+            .iter()
+            .map(|coedge| {
+                Some(AsmHistoricalCoedge {
+                    coedge: entity_ref(&coedge.id.0)?,
+                    owner_loop: entity_ref(&coedge.owner_loop.0)?,
+                    edge: entity_ref(&coedge.edge.0)?,
+                    next: entity_ref(&coedge.next.0)?,
+                    previous: entity_ref(&coedge.previous.0)?,
+                    radial_next: entity_ref(&coedge.radial_next.0)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        edge_vertices: brep
+            .edges
+            .iter()
+            .map(|edge| {
+                Some(AsmHistoricalEdge {
+                    edge: entity_ref(&edge.id.0)?,
+                    start_vertex: entity_ref(&edge.start.0)?,
+                    end_vertex: entity_ref(&edge.end.0)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
     })
 }
 
@@ -605,6 +687,93 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn historical_topology_retains_ordered_ownership_and_incidence() {
+        use cadmpeg_ir::ids::{
+            BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId,
+            SurfaceId, VertexId,
+        };
+        use cadmpeg_ir::topology::{
+            Body, BodyKind, Coedge, Edge, Face, Loop, Region, Sense, Shell, Vertex,
+        };
+
+        let id = |slot| format!("f3d:brep:entity#{slot}");
+        let mut brep = crate::brep::Brep::default();
+        brep.bodies.push(Body {
+            id: BodyId(id(1)),
+            kind: BodyKind::Solid,
+            regions: vec![RegionId(id(2))],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        brep.regions.push(Region {
+            id: RegionId(id(2)),
+            body: BodyId(id(1)),
+            shells: vec![ShellId(id(3))],
+        });
+        brep.shells.push(Shell {
+            id: ShellId(id(3)),
+            region: RegionId(id(2)),
+            faces: vec![FaceId(id(4))],
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        brep.faces.push(Face {
+            id: FaceId(id(4)),
+            shell: ShellId(id(3)),
+            surface: SurfaceId(id(20)),
+            sense: Sense::Forward,
+            loops: vec![LoopId(id(5))],
+            name: None,
+            color: None,
+            tolerance: None,
+        });
+        brep.loops.push(Loop {
+            id: LoopId(id(5)),
+            face: FaceId(id(4)),
+            coedges: vec![CoedgeId(id(6))],
+        });
+        brep.coedges.push(Coedge {
+            id: CoedgeId(id(6)),
+            owner_loop: LoopId(id(5)),
+            edge: EdgeId(id(7)),
+            next: CoedgeId(id(6)),
+            previous: CoedgeId(id(6)),
+            radial_next: CoedgeId(id(6)),
+            sense: Sense::Forward,
+            pcurve: None,
+            pcurve_parameter_range: None,
+        });
+        brep.edges.push(Edge {
+            id: EdgeId(id(7)),
+            curve: Some(CurveId(id(21))),
+            start: VertexId(id(8)),
+            end: VertexId(id(9)),
+            param_range: None,
+            tolerance: None,
+        });
+        for slot in [8, 9] {
+            brep.vertices.push(Vertex {
+                id: VertexId(id(slot)),
+                point: PointId(id(slot + 20)),
+                tolerance: None,
+            });
+        }
+
+        let topology = historical_topology(&brep).expect("stable historical topology");
+        assert_eq!(topology.body_regions[0].member_refs, [2]);
+        assert_eq!(topology.region_shells[0].member_refs, [3]);
+        assert_eq!(topology.shell_faces[0].member_refs, [4]);
+        assert_eq!(topology.face_loops[0].member_refs, [5]);
+        assert_eq!(topology.loop_coedges[0].member_refs, [6]);
+        assert_eq!(topology.coedge_topology[0].edge, 7);
+        assert_eq!(topology.coedge_topology[0].radial_next, 6);
+        assert_eq!(topology.edge_vertices[0].start_vertex, 8);
+        assert_eq!(topology.edge_vertices[0].end_vertex, 9);
+    }
 
     #[test]
     fn snapshot_ordinals_bind_the_sorted_revision_interval() {
