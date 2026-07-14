@@ -617,13 +617,10 @@ pub(crate) fn bind_face_operand_history_candidates(
         if transition.previous_state_id != Some(previous_state_id) {
             continue;
         }
-        operand.preceding_candidate_faces = faces_in_topology(
-            crate::design::face_operand_candidates(operand),
-            topology,
-            histories,
-        );
+        operand.preceding_candidate_faces =
+            faces_in_topology(crate::design::face_operand_candidates(operand), topology);
         operand.changed_candidate_faces =
-            faces_changed_by_transition(&operand.preceding_candidate_faces, transition, histories)
+            faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
                 .into_iter()
                 .cloned()
                 .collect();
@@ -633,11 +630,10 @@ pub(crate) fn bind_face_operand_history_candidates(
 fn face_boundary_edges(
     faces: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
-    histories: &[AsmHistory],
 ) -> Vec<i64> {
     let face_slots = faces
         .iter()
-        .filter_map(|face| historical_face_slot(face, histories))
+        .filter_map(|face| stable_ref(&face.0))
         .collect::<HashSet<_>>();
     let loops = topology
         .face_loops
@@ -709,15 +705,14 @@ pub(crate) fn bind_edge_operand_history_candidates(
         if transition.previous_state_id != Some(previous_state_id) {
             continue;
         }
-        operand.preceding_candidate_faces =
-            faces_in_topology(&operand.candidate_faces, topology, histories);
+        operand.preceding_candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
         operand.changed_candidate_faces =
-            faces_changed_by_transition(&operand.preceding_candidate_faces, transition, histories)
+            faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
                 .into_iter()
                 .cloned()
                 .collect();
         operand.preceding_boundary_edge_slots =
-            face_boundary_edges(&operand.preceding_candidate_faces, topology, histories);
+            face_boundary_edges(&operand.preceding_candidate_faces, topology);
         let changed_edges = transition
             .topology
             .edges
@@ -744,9 +739,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .enumerate()
             .filter_map(|(ordinal, reference)| {
                 let reference_ordinal = u32::try_from(ordinal).ok()?;
-                let preceding_faces =
-                    faces_in_topology(&reference.candidate_faces, topology, histories);
-                let reference_edges = face_boundary_edges(&preceding_faces, topology, histories)
+                let preceding_faces = faces_in_topology(&reference.candidate_faces, topology);
+                let reference_edges = face_boundary_edges(&preceding_faces, topology)
                     .into_iter()
                     .collect::<HashSet<_>>();
                 let shared_edge_slots = operand
@@ -955,7 +949,6 @@ fn bind_face_selection(
 fn faces_changed_by_transition<'a>(
     candidates: &'a [cadmpeg_ir::ids::FaceId],
     transition: &crate::history_records::AsmHistoricalTransition,
-    histories: &[AsmHistory],
 ) -> Vec<&'a cadmpeg_ir::ids::FaceId> {
     let changed = transition
         .topology
@@ -967,31 +960,20 @@ fn faces_changed_by_transition<'a>(
         .collect::<HashSet<_>>();
     candidates
         .iter()
-        .filter(|face| {
-            historical_face_slot(face, histories).is_some_and(|slot| changed.contains(&slot))
-        })
+        .filter(|face| stable_ref(&face.0).is_some_and(|slot| changed.contains(&slot)))
         .collect()
 }
 
 fn faces_in_topology(
     candidates: &[cadmpeg_ir::ids::FaceId],
     topology: &AsmHistoricalTopology,
-    histories: &[AsmHistory],
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     let faces = topology.faces.iter().copied().collect::<HashSet<_>>();
     candidates
         .iter()
-        .filter(|face| {
-            historical_face_slot(face, histories).is_some_and(|slot| faces.contains(&slot))
-        })
+        .filter(|face| stable_ref(&face.0).is_some_and(|slot| faces.contains(&slot)))
         .cloned()
         .collect()
-}
-
-fn historical_face_slot(face: &cadmpeg_ir::ids::FaceId, histories: &[AsmHistory]) -> Option<i64> {
-    let local_id = u64::try_from(stable_ref(&face.0)?).ok()?;
-    let (kind, entity_ref, _) = historical_selection_identity_kind(histories, local_id)?;
-    (kind == AsmHistoricalEntityKind::Face).then_some(entity_ref)
 }
 
 fn stable_ref(id: &str) -> Option<i64> {
@@ -1827,46 +1809,12 @@ mod tests {
             bodies_intersecting(&topology, &BTreeSet::from([28])).unwrap(),
             BTreeSet::from([1])
         );
-        let histories = [AsmHistory {
-            id: "history".into(),
-            byte_offset: 0,
-            stream_size: None,
-            history_entry_count: None,
-            states: vec![AsmDeltaState {
-                id: "state".into(),
-                parent: "history".into(),
-                byte_offset: 0,
-                state_id: 1,
-                version_flag: 1,
-                state_flag: 0,
-                previous_ref: None,
-                next_ref: None,
-                node_index: 1,
-                partner_ref: None,
-                owner_ref: 0,
-                bulletin_boards: Vec::new(),
-                records: Vec::new(),
-                entity_versions: vec![AsmEntityVersion {
-                    entity_ref: 4,
-                    record_ref: 40,
-                }],
-                record_table_complete: true,
-                topology: Some(topology.clone()),
-                transition: None,
-            }],
-        }];
         assert_eq!(
             faces_in_topology(
-                &[
-                    FaceId(id(4)),
-                    FaceId(id(40)),
-                    FaceId(id(99)),
-                    FaceId("foreign".into()),
-                ],
+                &[FaceId(id(4)), FaceId(id(99)), FaceId("foreign".into())],
                 &topology,
-                &histories,
             ),
-            [FaceId(id(4)), FaceId(id(40))]
+            [FaceId(id(4))]
         );
         let mut transition = AsmHistoricalTransition {
             previous_state_id: Some(1),
@@ -1875,9 +1823,9 @@ mod tests {
         };
         transition.topology.faces.updated = vec![4];
         transition.topology.faces.inserted = vec![99];
-        let candidates = [FaceId(id(40)), FaceId(id(99))];
+        let candidates = [FaceId(id(4)), FaceId(id(99))];
         assert_eq!(
-            faces_changed_by_transition(&candidates, &transition, &histories),
+            faces_changed_by_transition(&candidates, &transition),
             [&candidates[0]]
         );
     }
