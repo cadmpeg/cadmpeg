@@ -1619,7 +1619,7 @@ pub(crate) fn store(
     let primitive_solids = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168))
-        .map(|entry| {
+        .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let number = |index| record.and_then(|record| record.number(index));
             let (kind, dimension_names, origin_start, x_axis_start, z_axis_start) =
@@ -1667,7 +1667,7 @@ pub(crate) fn store(
                         Some(7),
                         Some(10),
                     ),
-                    _ => unreachable!("filtered primitive type"),
+                    _ => return None,
                 };
             let dimensions = dimension_names
                 .into_iter()
@@ -1675,7 +1675,7 @@ pub(crate) fn store(
                 .map(|(index, name)| (name.to_owned(), number(index + 1)))
                 .collect();
             let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
-            NativePrimitiveSolid {
+            Some(NativePrimitiveSolid {
                 id: format!("iges:solid:primitive#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 kind: kind.into(),
@@ -1685,7 +1685,7 @@ pub(crate) fn store(
                 z_axis: z_axis_start.map(axis),
                 transformation: (entry.transform > 0)
                     .then(|| format!("iges:native:transformation#D{}", entry.transform)),
-            }
+            })
         })
         .collect::<Vec<_>>();
     let procedural_solids = directory
@@ -2067,7 +2067,7 @@ pub(crate) fn store(
     let external_references = directory
         .iter()
         .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
-        .map(|entry| {
+        .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let (reference_kind, file_index, symbolic_index, library_index) = match entry.form {
                 0 => ("external_definition", Some(1), Some(2), None),
@@ -2075,9 +2075,9 @@ pub(crate) fn store(
                 2 => ("external_logical", Some(1), Some(2), None),
                 3 => ("native_definition", None, Some(1), None),
                 4 => ("native_library_definition", None, Some(2), Some(1)),
-                _ => unreachable!("filtered external-reference form"),
+                _ => return None,
             };
-            NativeExternalReference {
+            Some(NativeExternalReference {
                 id: format!("iges:product:external-reference#D{}", entry.sequence),
                 source_entity: format!("iges:entity:directory#{}", entry.sequence),
                 form: entry.form,
@@ -2098,7 +2098,7 @@ pub(crate) fn store(
                         .map(<[u8]>::to_vec)
                 }),
                 resolution_state: "not_attempted".into(),
-            }
+            })
         })
         .collect::<Vec<_>>();
     let groups = directory
@@ -2173,7 +2173,7 @@ pub(crate) fn store(
                 entry.entity_type == 402
                     && matches!(entry.form, 5 | 9 | 12 | 13 | 16 | 18 | 20 | 21)
             })
-            .map(|entry| {
+            .filter_map(|entry| {
                 let record = by_directory.get(&entry.sequence).copied();
                 let id = format!("iges:structure:associativity#D{}", entry.sequence);
                 let source_entity = format!("iges:entity:directory#{}", entry.sequence);
@@ -2183,7 +2183,7 @@ pub(crate) fn store(
                         .filter(|sequence| *sequence != 0)
                         .map(|sequence| format!("iges:entity:directory#{sequence}"))
                 };
-                match entry.form {
+                Some(match entry.form {
                     5 => {
                         let count = record
                             .and_then(|record| record.count(1))
@@ -2342,8 +2342,8 @@ pub(crate) fn store(
                                 .collect(),
                         }
                     }
-                    _ => unreachable!("filtered predefined associativity form"),
-                }
+                    _ => return None,
+                })
             }),
     );
     let attribute_table_definitions = directory
@@ -3128,11 +3128,11 @@ pub(crate) fn store(
                 )
                 || matches!((entry.entity_type, entry.form), (228 | 230, 0))
         })
-        .map(|entry| {
+        .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let transformation = (entry.transform > 0)
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));
-            if entry.entity_type == 212 {
+            Some(if entry.entity_type == 212 {
                 let count = record
                     .and_then(|record| record.count(1))
                     .unwrap_or_default();
@@ -3437,9 +3437,9 @@ pub(crate) fn store(
                             transformation,
                         }
                     }
-                    _ => unreachable!("annotation filter admits known entity types"),
+                    _ => return None,
                 }
-            }
+            })
         })
         .collect::<Vec<_>>();
     let occurrence_definitions = directory

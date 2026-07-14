@@ -304,27 +304,24 @@ pub(crate) fn build(
                         parameter_data(&mut spans, line, record, &owner);
                     }
                 }
-                Some(section) => match section {
-                    Section::Global => {
-                        global_data(&mut spans, line, global, global_line_index, &owner);
-                        global_line_index += 1;
-                    }
-                    Section::Directory => directory_data(&mut spans, line, &owner),
-                    Section::Terminate => terminate_data(&mut spans, line, &owner),
-                    Section::Start => {
-                        push(
-                            &mut spans,
-                            line.offset,
-                            line.offset + 72,
-                            ByteSpanClass::Opaque,
-                            &owner,
-                            "start_text",
-                            Some(owner.as_str()),
-                        );
-                        fixed_card_framing(&mut spans, line, &owner);
-                    }
-                    Section::Parameter => unreachable!("handled above"),
-                },
+                Some(Section::Global) => {
+                    global_data(&mut spans, line, global, global_line_index, &owner);
+                    global_line_index += 1;
+                }
+                Some(Section::Directory) => directory_data(&mut spans, line, &owner),
+                Some(Section::Terminate) => terminate_data(&mut spans, line, &owner),
+                Some(Section::Start) => {
+                    push(
+                        &mut spans,
+                        line.offset,
+                        line.offset + 72,
+                        ByteSpanClass::Opaque,
+                        &owner,
+                        "start_text",
+                        Some(owner.as_str()),
+                    );
+                    fixed_card_framing(&mut spans, line, &owner);
+                }
                 None => {}
             }
         }
