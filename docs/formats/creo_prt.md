@@ -686,7 +686,19 @@ The placed section is the owning sweep feature's profile input. For `protextrude
 
 `ent_tab` membership identifies solved trimmed section entities. `segtab` entities outside `ent_tab` are construction or envelope entities.
 
+The positional `ent_tab.chains` opener is `f8 <bucket_count> f7
+<table_class> fb e2`. Its first entry in a bucket repeats the entry class as
+`f7 <entry_class> 00 e3`; later entries in that bucket inherit the class and
+begin after a structural `e3`. Each entry stores `ext_id`, `ent_mode`,
+`start_vtx`, `end_vtx`, nullable `center_vtx`, and a terminal zero. The opener
+count is the number of hash buckets, including empty buckets, rather than the
+number of entity entries.
+
 `vert_tab` chains bind a solved trim-vertex identifier to two incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A solved trim vertex is the intersection of its two defining `segtab` carriers evaluated from `var_arr` or the joined saved-section geometry; its identifier differs from a `segtab` point identifier. A neutral sketch line uses its `ent_tab` start and end intersections, not the untrimmed carrier endpoints.
+
+The positional `vert_tab.chains` opener uses the same bucket-count framing.
+Each populated entry begins with `f7 <entry_class>` and stores two incident
+`ent_tab.ext_id` values, one trim-vertex identifier, and a terminal zero.
 
 `p_saved_result` contains evaluated section entities and does not define the authoritative solved trim topology. Saved line rows may contain `f0 f7 <ref>`, `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute, and coordinate fields.
 The line prototype can close with `f1 e3`; positional line rows follow that

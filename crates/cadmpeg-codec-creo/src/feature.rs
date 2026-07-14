@@ -1769,6 +1769,150 @@ fn trim_entity_table(
     })
 }
 
+fn trim_table_classes(
+    payload: &[u8],
+    label: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<(u32, u32)> {
+    let table = find_bytes(payload, label, start, end)? + label.len();
+    let opener = (table..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
+    let (_, after_count) = psb::compact_int(payload, opener + 1);
+    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (table_class, _) = psb::reference_id(payload, after_count + 1).ok()?;
+    let entry_class = (after_count..end).find_map(|offset| {
+        (payload.get(offset) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (class, after_reference) = psb::reference_id(payload, offset + 1).ok()?;
+        if label == b"vert_tab\0" {
+            let (first, next) = segment_int(payload, after_reference);
+            let (second, next) = segment_int(payload, next);
+            let (third, next) = segment_int(payload, next);
+            return (class != table_class
+                && first.is_some()
+                && second.is_some()
+                && third.is_some()
+                && payload.get(next) == Some(&0))
+            .then_some(class);
+        }
+        (payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])).then_some(class)
+    })?;
+    Some((table_class, entry_class))
+}
+
+fn positional_table_region(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    next_table_class: Option<u32>,
+) -> Option<(usize, u32, usize, usize)> {
+    let (table, declared_count, rows_start) = (start..end).find_map(|table| {
+        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (class, after_reference) = psb::reference_id(payload, after_count + 1).ok()?;
+        (class == table_class
+            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
+        .then_some((table, declared_count, after_reference + 2))
+    })?;
+    let region_end = next_table_class
+        .and_then(|next_class| {
+            (rows_start..end).find(|&offset| {
+                if payload.get(offset) != Some(&psb::token::ARRAY_OPEN) {
+                    return false;
+                }
+                let (_, after_count) = psb::compact_int(payload, offset + 1);
+                if payload.get(after_count) != Some(&psb::token::ENTITY_REF) {
+                    return false;
+                }
+                psb::reference_id(payload, after_count + 1).is_ok_and(|(class, after_reference)| {
+                    class == next_class
+                        && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2])
+                })
+            })
+        })
+        .unwrap_or(end);
+    Some((table, declared_count, rows_start, region_end))
+}
+
+fn positional_trim_entity_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    entry_class: u32,
+    next_table_class: Option<u32>,
+    segments: Option<&FeatureSegmentTable>,
+) -> Option<FeatureTrimEntityTable> {
+    let (table, declared_count, rows_start, region_end) =
+        positional_table_region(payload, start, end, table_class, next_table_class)?;
+    (declared_count > 0).then_some(())?;
+    let valid_ids = segments.map(|table| {
+        table
+            .rows
+            .iter()
+            .map(|row| row.external_id)
+            .collect::<BTreeSet<_>>()
+    });
+    let mut rows = Vec::new();
+    let mut seen = BTreeSet::new();
+    (rows_start..region_end)
+        .any(|offset| {
+            if payload.get(offset) != Some(&psb::token::ENTITY_REF) {
+                return false;
+            }
+            psb::reference_id(payload, offset + 1).is_ok_and(|(class, after_reference)| {
+                class == entry_class
+                    && payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])
+            })
+        })
+        .then_some(())?;
+    let mut cursor = rows_start;
+    while cursor < region_end {
+        if cursor == rows_start || payload.get(cursor.saturating_sub(1)) != Some(&0xe3) {
+            cursor += 1;
+            continue;
+        }
+        let row_offset = cursor;
+        let mut p = row_offset;
+        let external_id = next_segment_int(payload, &mut p);
+        let mode = next_segment_int(payload, &mut p);
+        let start_vertex = next_segment_int(payload, &mut p);
+        let end_vertex = next_segment_int(payload, &mut p);
+        let center_vertex = next_segment_int(payload, &mut p);
+        if let (Some(external_id), Some(start_vertex), Some(end_vertex)) =
+            (external_id, start_vertex, end_vertex)
+        {
+            if external_id != 0
+                && payload.get(p) == Some(&0)
+                && valid_ids
+                    .as_ref()
+                    .is_none_or(|ids| ids.contains(&external_id))
+                && seen.insert(external_id)
+            {
+                rows.push(FeatureTrimEntity {
+                    external_id,
+                    mode,
+                    vertices: [start_vertex, end_vertex],
+                    center_vertex,
+                    kind: if center_vertex.is_some() {
+                        TrimEntityKind::Arc
+                    } else {
+                        TrimEntityKind::Line
+                    },
+                    offset: row_offset,
+                });
+            }
+        }
+        cursor += 1;
+    }
+    (!rows.is_empty()).then(|| FeatureTrimEntityTable {
+        solved_external_ids: seen.into_iter().collect(),
+        rows,
+        offset: table,
+    })
+}
+
 fn trim_vertex_table(
     payload: &[u8],
     start: usize,
@@ -1868,6 +2012,83 @@ fn trim_vertex_table(
             });
         }
         cursor = next + 1;
+    }
+    (!rows.is_empty()).then_some(FeatureTrimVertexTable {
+        rows,
+        offset: table,
+    })
+}
+
+fn positional_trim_vertex_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    classes: (u32, u32),
+    entities: Option<&FeatureTrimEntityTable>,
+    segments: Option<&FeatureSegmentTable>,
+    variables: Option<&FeatureVariableTable>,
+) -> Option<FeatureTrimVertexTable> {
+    let (table_class, entry_class) = classes;
+    let (table, declared_count, rows_start, region_end) =
+        positional_table_region(payload, start, end, table_class, None)?;
+    (declared_count > 0).then_some(())?;
+    let valid_entities = entities.map(|table| {
+        table
+            .rows
+            .iter()
+            .map(|row| row.external_id)
+            .collect::<BTreeSet<_>>()
+    });
+    let valid_vertices = entities.map(|table| {
+        table
+            .rows
+            .iter()
+            .flat_map(|row| row.vertices.into_iter().chain(row.center_vertex))
+            .collect::<BTreeSet<_>>()
+    });
+    let mut rows = Vec::new();
+    let mut seen = BTreeSet::new();
+    let mut cursor = rows_start;
+    while cursor < region_end {
+        if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+            cursor += 1;
+            continue;
+        }
+        let Ok((class, after_reference)) = psb::reference_id(payload, cursor + 1) else {
+            cursor += 1;
+            continue;
+        };
+        if class != entry_class {
+            cursor += 1;
+            continue;
+        }
+        let row_offset = after_reference;
+        let (entity_1, next) = segment_int(payload, row_offset);
+        let (entity_2, next) = segment_int(payload, next);
+        let (vertex_id, next) = segment_int(payload, next);
+        let (Some(entity_1), Some(entity_2), Some(vertex_id)) = (entity_1, entity_2, vertex_id)
+        else {
+            cursor += 1;
+            continue;
+        };
+        let valid = match (&valid_entities, &valid_vertices) {
+            (Some(entity_ids), Some(vertex_ids)) => {
+                entity_ids.contains(&entity_1)
+                    && entity_ids.contains(&entity_2)
+                    && vertex_ids.contains(&vertex_id)
+            }
+            _ => entity_1 > 2 && entity_2 > 2,
+        };
+        if payload.get(next) == Some(&0) && valid && entity_1 != entity_2 && seen.insert(vertex_id)
+        {
+            rows.push(FeatureTrimVertex {
+                vertex_id,
+                entities: [entity_1, entity_2],
+                section_coordinates: line_intersection([entity_1, entity_2], segments, variables),
+                offset: row_offset,
+            });
+        }
+        cursor = next.saturating_add(1).max(cursor + 1);
     }
     (!rows.is_empty()).then_some(FeatureTrimVertexTable {
         rows,
@@ -3921,6 +4142,8 @@ fn definitions_in_ranges(
     let mut replay_dimension_class = None;
     let mut replay_variable_class = None;
     let mut replay_relation_class = None;
+    let mut replay_trim_entity_classes = None;
+    let mut replay_trim_vertex_classes = None;
     for (index, &(start, id, owner_override)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
@@ -4006,7 +4229,24 @@ fn definitions_in_ranges(
         }
         let segments = segment_table(payload, start, end)
             .or_else(|| owner_override.and_then(|_| positional_segment_table(payload, start, end)));
-        let trim_entities = trim_entity_table(payload, start, end, segments.as_ref());
+        let trim_entities =
+            trim_entity_table(payload, start, end, segments.as_ref()).or_else(|| {
+                owner_override.and_then(|_| {
+                    let (table_class, entry_class) = replay_trim_entity_classes?;
+                    positional_trim_entity_table(
+                        payload,
+                        start,
+                        end,
+                        table_class,
+                        entry_class,
+                        replay_trim_vertex_classes.map(|(class, _)| class),
+                        segments.as_ref(),
+                    )
+                })
+            });
+        if owner_override.is_none() {
+            replay_trim_entity_classes = trim_table_classes(payload, b"ent_tab\0", start, end);
+        }
         let trim_vertices = trim_vertex_table(
             payload,
             start,
@@ -4014,7 +4254,24 @@ fn definitions_in_ranges(
             trim_entities.as_ref(),
             segments.as_ref(),
             variables.as_ref(),
-        );
+        )
+        .or_else(|| {
+            owner_override.and_then(|_| {
+                let (table_class, entry_class) = replay_trim_vertex_classes?;
+                positional_trim_vertex_table(
+                    payload,
+                    start,
+                    end,
+                    (table_class, entry_class),
+                    trim_entities.as_ref(),
+                    segments.as_ref(),
+                    variables.as_ref(),
+                )
+            })
+        });
+        if owner_override.is_none() {
+            replay_trim_vertex_classes = trim_table_classes(payload, b"vert_tab\0", start, end);
+        }
         let order_table = order_table(payload, start, end);
         let section_3d = section_3d(payload, start, end)
             .or_else(|| owner_override.and_then(|_| positional_section_3d(payload, start, end)));
@@ -4573,6 +4830,100 @@ mod tests {
         assert_eq!(relations.rows[0].dimension_id, 246);
         assert_eq!(relations.rows[0].relation_type, 0);
         assert!(relations.rows[0].operand_vectors.is_some());
+    }
+
+    #[test]
+    fn positional_trim_entity_table_uses_inherited_entry_class() {
+        let payload = b"prefix\xf8\x07\xf7\x42\xfb\xe2\xf7\x43\x00\xe3\
+            \x09\x00\x03\x04\xf6\x00\
+            \xf4\x04\xf7\x42\xe2\x01\xf8\x13\xf7\x44\xfb\xe2";
+        let segments = FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![FeatureSegment {
+                kind: FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids: [1, 2],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 9,
+                offset: 0,
+            }],
+            offset: 0,
+        };
+
+        let entities = positional_trim_entity_table(
+            payload,
+            0,
+            payload.len(),
+            66,
+            67,
+            Some(68),
+            Some(&segments),
+        )
+        .expect("positional ent_tab");
+
+        assert_eq!(entities.solved_external_ids, vec![9]);
+        assert_eq!(entities.rows[0].vertices, [3, 4]);
+        assert_eq!(entities.rows[0].kind, TrimEntityKind::Line);
+    }
+
+    #[test]
+    fn positional_trim_vertex_table_uses_inherited_entry_class() {
+        let payload = b"prefix\xf8\x13\xf7\x44\xfb\xe2\xf7\x45\
+            \x09\x0a\x03\x00\xe2";
+        let entities = FeatureTrimEntityTable {
+            rows: vec![
+                FeatureTrimEntity {
+                    external_id: 9,
+                    mode: Some(0),
+                    vertices: [3, 4],
+                    center_vertex: None,
+                    kind: TrimEntityKind::Line,
+                    offset: 0,
+                },
+                FeatureTrimEntity {
+                    external_id: 10,
+                    mode: Some(0),
+                    vertices: [3, 5],
+                    center_vertex: None,
+                    kind: TrimEntityKind::Line,
+                    offset: 0,
+                },
+            ],
+            solved_external_ids: vec![9, 10],
+            offset: 0,
+        };
+
+        let vertices = positional_trim_vertex_table(
+            payload,
+            0,
+            payload.len(),
+            (68, 69),
+            Some(&entities),
+            None,
+            None,
+        )
+        .expect("positional vert_tab");
+
+        assert_eq!(vertices.rows.len(), 1);
+        assert_eq!(vertices.rows[0].vertex_id, 3);
+        assert_eq!(vertices.rows[0].entities, [9, 10]);
+    }
+
+    #[test]
+    fn trim_vertex_template_identifies_table_and_entry_classes() {
+        let payload = b"vert_tab\0\xf8\x13\xf7\x44\xfb\xe2\
+            attrs\0\xf1\xf7\x46\xe3\xf8\x01\xf7\x46\xfb\xe3\
+            \xf7\x45\x09\x0a\x03\x00";
+
+        assert_eq!(
+            trim_table_classes(payload, b"vert_tab\0", 0, payload.len()),
+            Some((68, 69))
+        );
     }
 
     #[test]
