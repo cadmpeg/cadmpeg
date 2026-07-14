@@ -30,7 +30,7 @@ cargo run -p cadmpeg-codec-iges --bin iges-proof-report -- --write corpus/iges-e
 cargo run -p cadmpeg-codec-iges --bin iges-proof-report -- --check corpus/iges-envelope-a-proof.json
 ```
 
-The report sets `release_ready` only when the matrix is approved and every admitted row has a real decoder, destination, assertion, original fixture class, and verified public fixture class.
+`corpus/iges-ladder-decisions.toml` records the settled L0, L3, L4, L6, and L7-mates format decisions. `corpus/iges-approvals.toml` records maintainer approval of those decisions, the closed matrix, and the byte-ledger policy. The report sets `release_ready` only when all three approvals are present and every admitted row has a real decoder, destination, assertion, original fixture class, and verified public fixture class.
 
 ## Machine-checkable gates
 

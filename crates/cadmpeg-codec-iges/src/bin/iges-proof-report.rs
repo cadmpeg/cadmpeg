@@ -47,6 +47,27 @@ struct PublicEvidence {
 }
 
 #[derive(Deserialize)]
+struct Approvals {
+    schema_version: u64,
+    envelope_matrix: String,
+    ladder_decisions: String,
+    byte_ledger: String,
+}
+
+#[derive(Deserialize)]
+struct LadderDecisionFile {
+    schema_version: u64,
+    decision: Vec<LadderDecision>,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+struct LadderDecision {
+    gate: String,
+    disposition: String,
+    requirement: String,
+}
+
+#[derive(Deserialize)]
 struct PublicFixture {
     filename: String,
     fixture_classes: Vec<String>,
@@ -76,10 +97,18 @@ struct Report {
     envelope: String,
     representation: String,
     specification_version: String,
-    approval: String,
+    approvals: ApprovalReport,
+    ladder_decisions: Vec<LadderDecision>,
     summary: Summary,
     rows: Vec<ReportRow>,
     evidence_errors: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ApprovalReport {
+    envelope_matrix: String,
+    ladder_decisions: String,
+    byte_ledger: String,
 }
 
 #[derive(Serialize)]
@@ -182,13 +211,45 @@ fn build_report(root: &Path) -> Result<Report, String> {
     let matrix: Matrix = read_toml(&root.join("corpus/iges-envelope-a.toml"))?;
     let original: OriginalEvidence = read_toml(&root.join("corpus/iges-original-evidence.toml"))?;
     let public: PublicEvidence = read_toml(&root.join("corpus/iges-public-evidence.toml"))?;
-    if matrix.schema_version != 1 || original.schema_version != 1 || public.schema_version != 1 {
+    let approvals: Approvals = read_toml(&root.join("corpus/iges-approvals.toml"))?;
+    let decisions: LadderDecisionFile = read_toml(&root.join("corpus/iges-ladder-decisions.toml"))?;
+    if matrix.schema_version != 1
+        || original.schema_version != 1
+        || public.schema_version != 1
+        || approvals.schema_version != 1
+        || decisions.schema_version != 1
+    {
         return Err("IGES proof inputs require schema_version = 1".into());
     }
 
     let test_source = fs::read_to_string(root.join("crates/cadmpeg-codec-iges/src/tests.rs"))
         .map_err(|error| format!("IGES test source: {error}"))?;
     let mut evidence_errors = Vec::new();
+    if approvals.envelope_matrix != matrix.approval {
+        evidence_errors.push(format!(
+            "matrix approval {} differs from approval record {}",
+            matrix.approval, approvals.envelope_matrix
+        ));
+    }
+    let required_decisions = ["L0", "L3", "L4", "L6", "L7-mates"];
+    let decision_gates = decisions
+        .decision
+        .iter()
+        .map(|decision| decision.gate.as_str())
+        .collect::<BTreeSet<_>>();
+    for gate in required_decisions {
+        if !decision_gates.contains(gate) {
+            evidence_errors.push(format!("missing ladder decision {gate}"));
+        }
+    }
+    if decision_gates.len() != decisions.decision.len() {
+        evidence_errors.push("duplicate ladder decision gate".into());
+    }
+    for decision in &decisions.decision {
+        if decision.disposition.is_empty() || decision.requirement.is_empty() {
+            evidence_errors.push(format!("ladder decision {} is incomplete", decision.gate));
+        }
+    }
     let mut originals = BTreeMap::<String, Vec<String>>::new();
     for class in original.fixture_class {
         if class.name.is_empty() || class.tests.is_empty() {
@@ -307,14 +368,22 @@ fn build_report(root: &Path) -> Result<Report, String> {
         })
         .count();
     let complete_rows = rows.iter().filter(|row| row.missing.is_empty()).count();
-    let release_ready =
-        matrix.approval == "approved" && evidence_errors.is_empty() && complete_rows == rows.len();
+    let release_ready = approvals.envelope_matrix == "approved"
+        && approvals.ladder_decisions == "approved"
+        && approvals.byte_ledger == "approved"
+        && evidence_errors.is_empty()
+        && complete_rows == rows.len();
     Ok(Report {
         schema_version: 1,
         envelope: matrix.envelope,
         representation: matrix.representation,
         specification_version: matrix.specification_version,
-        approval: matrix.approval,
+        approvals: ApprovalReport {
+            envelope_matrix: approvals.envelope_matrix,
+            ladder_decisions: approvals.ladder_decisions,
+            byte_ledger: approvals.byte_ledger,
+        },
+        ladder_decisions: decisions.decision,
         summary: Summary {
             matrix_rows: rows.len(),
             original_fixture_classes: originals.len(),
