@@ -500,7 +500,7 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
             break;
         }
         let decoded = if name == "half_angle" {
-            scalar::decode_positive_dict(body, cursor)
+            scalar::decode_positive_dict(body, cursor).filter(|(value, _)| valid_half_angle(*value))
         } else {
             scalar::decode_in_lane(body, cursor, cache)
         };
@@ -1035,6 +1035,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
         let half_angle = find_in(payload, b"half_angle\0", start, end).and_then(|pos| {
             scalar::decode_positive_dict(payload, pos + b"half_angle\0".len())
                 .map(|(value, _)| value)
+                .filter(|value| valid_half_angle(*value))
         });
         prototypes.push(SurfacePrototype {
             kind,
@@ -1045,6 +1046,10 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
         });
     }
     prototypes
+}
+
+fn valid_half_angle(value: f64) -> bool {
+    value.is_finite() && (0.0..std::f64::consts::FRAC_PI_2).contains(&value)
 }
 
 fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {

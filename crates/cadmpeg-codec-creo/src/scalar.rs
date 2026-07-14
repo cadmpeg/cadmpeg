@@ -306,12 +306,20 @@ mod tests {
     #[test]
     fn positive_dict_lane_decodes_cone_half_angles() {
         let forty_five_degrees = [0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23];
+        let eighty_degrees = [0x81, 0x57, 0x18, 0x4a, 0xe7, 0x44, 0x8d];
         let other_angle = [0xb7, 0x5e, 0x8a, 0x1c, 0xf2, 0x17, 0x1e];
 
         assert_eq!(
             decode_positive_dict(&forty_five_degrees, 0),
             Some((
                 f64::from_be_bytes([0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_positive_dict(&eighty_degrees, 0),
+            Some((
+                f64::from_be_bytes([0x3f, 0xf6, 0x57, 0x18, 0x4a, 0xe7, 0x44, 0x8d]),
                 7
             ))
         );
