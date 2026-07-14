@@ -2521,6 +2521,42 @@ fn extrusion_side_uvs(
     ]
 }
 
+fn extrusion_profile_signed_area(
+    profile: &[(SketchGeometry, bool, [f64; 2], [f64; 2])],
+) -> Option<f64> {
+    let area_twice = profile
+        .iter()
+        .map(|(geometry, reversed, start, end)| {
+            let chord = start[0].mul_add(end[1], -(start[1] * end[0]));
+            let SketchGeometry::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } = geometry
+            else {
+                return chord;
+            };
+            let forward_delta = (end_angle.0 - start_angle.0).rem_euclid(std::f64::consts::TAU);
+            let delta = if *reversed {
+                -forward_delta
+            } else {
+                forward_delta
+            };
+            center.u.mul_add(
+                end[1] - start[1],
+                -(center.v * (end[0] - start[0])) + radius.0 * radius.0 * delta,
+            )
+        })
+        .sum::<f64>();
+    let scale = profile
+        .iter()
+        .flat_map(|(_, _, start, end)| start.iter().chain(end))
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (area_twice.abs() > 1e-12 * scale * scale).then_some(0.5 * area_twice)
+}
+
 fn add_extrusion_pcurve(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -2633,6 +2669,13 @@ fn transfer_resolved_extrusion_breps(
         if !supported {
             continue;
         }
+        let [profile] = profiles.as_slice() else {
+            continue;
+        };
+        let Some(profile_area) = extrusion_profile_signed_area(profile) else {
+            continue;
+        };
+        let forward_faces = profile_area > 0.0;
 
         let prefix = format!("creo:feature:extrusion#{feature_id}");
         let body_id = BodyId(format!("{prefix}:body"));
@@ -2985,7 +3028,11 @@ fn transfer_resolved_extrusion_breps(
                     id: face_id.clone(),
                     shell: shell_id.clone(),
                     surface: surface_id,
-                    sense: Sense::Forward,
+                    sense: if forward_faces {
+                        Sense::Forward
+                    } else {
+                        Sense::Reversed
+                    },
                     loops: vec![loop_id],
                     name: None,
                     color: None,
@@ -3001,7 +3048,11 @@ fn transfer_resolved_extrusion_breps(
             id: bottom_face,
             shell: shell_id.clone(),
             surface: bottom_surface,
-            sense: Sense::Reversed,
+            sense: if forward_faces {
+                Sense::Reversed
+            } else {
+                Sense::Forward
+            },
             loops: bottom_loops,
             name: None,
             color: None,
@@ -3011,7 +3062,11 @@ fn transfer_resolved_extrusion_breps(
             id: top_face,
             shell: shell_id.clone(),
             surface: top_surface,
-            sense: Sense::Forward,
+            sense: if forward_faces {
+                Sense::Forward
+            } else {
+                Sense::Reversed
+            },
             loops: top_loops,
             name: None,
             color: None,
@@ -5309,6 +5364,40 @@ mod resolved_sketch_tests {
             assert!((last.u - (2.0 + 3.0 * end.cos())).abs() < 1e-12);
             assert!((last.v - (2.0 + 3.0 * end.sin())).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn extrusion_profile_area_includes_oriented_arc_sector() {
+        let arc = SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(1.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        };
+        let line = SketchGeometry::Line {
+            start: Point2::new(-1.0, 0.0),
+            end: Point2::new(1.0, 0.0),
+        };
+        let counterclockwise = vec![
+            (arc.clone(), false, [1.0, 0.0], [-1.0, 0.0]),
+            (line.clone(), false, [-1.0, 0.0], [1.0, 0.0]),
+        ];
+        let clockwise = vec![
+            (arc, true, [-1.0, 0.0], [1.0, 0.0]),
+            (line, true, [1.0, 0.0], [-1.0, 0.0]),
+        ];
+        assert!(
+            (extrusion_profile_signed_area(&counterclockwise).expect("positive area")
+                - std::f64::consts::FRAC_PI_2)
+                .abs()
+                < 1e-12
+        );
+        assert!(
+            (extrusion_profile_signed_area(&clockwise).expect("negative area")
+                + std::f64::consts::FRAC_PI_2)
+                .abs()
+                < 1e-12
+        );
     }
 
     #[test]
