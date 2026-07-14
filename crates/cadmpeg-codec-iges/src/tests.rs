@@ -7053,6 +7053,20 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
         result.ir.byte_ledger.spans.last().unwrap().end,
         source_length
     );
+    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+        span.class == cadmpeg_ir::ByteSpanClass::Typed
+            && span.meaning == "parameter_token_0"
+            && span.owner == "iges:parameter-record#D1"
+    }));
+    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+        span.class == cadmpeg_ir::ByteSpanClass::Structural
+            && span.meaning == "parameter_delimiter_or_padding"
+    }));
+    assert!(result.ir.byte_ledger.spans.iter().any(|span| {
+        span.class == cadmpeg_ir::ByteSpanClass::Opaque
+            && span.meaning == "parameter_comment"
+            && span.retained_record.as_deref() == Some("iges:physical:card#6")
+    }));
     let native = result.ir.native.namespace("iges").unwrap();
     assert_eq!(native.version, 2);
     assert_eq!(native.arenas["cards"].len(), 7);

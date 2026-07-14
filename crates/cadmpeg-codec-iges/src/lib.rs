@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Read-only IGES 5.3 Fixed ASCII codec.
 
+mod byte_ledger;
 mod card;
 mod directory;
 mod entities;
