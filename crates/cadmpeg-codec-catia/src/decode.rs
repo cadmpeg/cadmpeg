@@ -2554,6 +2554,7 @@ fn attach_standard_topology(
         .map(|(index, surface)| (surface.id.clone(), index))
         .collect::<HashMap<_, _>>();
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
+    let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
     for support in &supports {
         let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
             return false;
@@ -2561,28 +2562,45 @@ fn attach_standard_topology(
         let Some(surface1) = face_surface(ir, bindings, &surface_indices, support.faces[1]) else {
             return false;
         };
-        let candidates: Vec<usize> = ir
-            .model
-            .points
-            .iter()
-            .enumerate()
-            .filter_map(|(index, point)| {
-                let incident = match &support.geometry {
-                    geometry::StandardCurveGeometry::Circle { center, radius } => {
+        let candidates = match &support.geometry {
+            geometry::StandardCurveGeometry::Circle { center, radius } => ir
+                .model
+                .points
+                .iter()
+                .enumerate()
+                .filter_map(|(index, point)| {
+                    let incident =
                         (point_distance_squared(point.position, *center).sqrt() - *radius).abs()
                             <= 1e-3
                             && point_on_known_surface(point.position, &surface0.geometry)
-                            && point_on_known_surface(point.position, &surface1.geometry)
-                    }
-                    geometry::StandardCurveGeometry::Line
-                    | geometry::StandardCurveGeometry::Bspline => {
-                        point_on_known_surface(point.position, &surface0.geometry)
-                            && point_on_known_surface(point.position, &surface1.geometry)
-                    }
-                };
-                incident.then_some(index)
-            })
-            .collect();
+                            && point_on_known_surface(point.position, &surface1.geometry);
+                    incident.then_some(index)
+                })
+                .collect(),
+            geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
+                let mut faces = support.faces;
+                faces.sort_unstable();
+                incidence_candidates
+                    .entry(faces)
+                    .or_insert_with(|| {
+                        ir.model
+                            .points
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(index, point)| {
+                                let incident =
+                                    point_on_known_surface(point.position, &surface0.geometry)
+                                        && point_on_known_surface(
+                                            point.position,
+                                            &surface1.geometry,
+                                        );
+                                incident.then_some(index)
+                            })
+                            .collect()
+                    })
+                    .clone()
+            }
+        };
         endpoint_candidates.push(candidates);
     }
     let edge_faces: Vec<[usize; 2]> = supports.iter().map(|support| support.faces).collect();
@@ -2600,6 +2618,7 @@ fn attach_standard_topology(
         .collect::<Option<Vec<_>>>();
     let native_endpoint_pairs = endpoint_options.as_ref().and_then(|options| {
         const MAX_NATIVE_PORT_CHOICES: usize = 8_192;
+        const MAX_NATIVE_PORT_WORK: usize = 1_000_000;
 
         let ports = native_ports.as_ref()?;
         let seeds = options
@@ -2617,8 +2636,13 @@ fn attach_standard_topology(
         // Exhaustive binding is a fallback after exact identity propagation.
         // Large symmetric choice sets remain unresolved and continue through
         // trim-mesh and incidence paths instead of making decode unbounded.
-        (options.iter().map(Vec::len).sum::<usize>() <= MAX_NATIVE_PORT_CHOICES)
-            .then(|| topology::bind_edge_port_candidates(ports, options))?
+        let choice_count = options.iter().map(Vec::len).sum::<usize>();
+        (choice_count <= MAX_NATIVE_PORT_CHOICES
+            && options
+                .len()
+                .checked_mul(choice_count)
+                .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
+        .then(|| topology::bind_edge_port_candidates(ports, options))?
     });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
@@ -2744,6 +2768,13 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
+        const MAX_INCIDENCE_SEARCH_WORK: usize = 1_000_000;
+
+        let choice_count = options.iter().map(Vec::len).sum::<usize>();
+        options
+            .len()
+            .checked_mul(choice_count)
+            .filter(|work| *work <= MAX_INCIDENCE_SEARCH_WORK)?;
         topology::parse_standard_endpoint_candidates(brep, &edge_faces, options)
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
@@ -2986,6 +3017,13 @@ fn resolve_standard_endpoint_pairs(
         let surface1 = face_surface(ir, bindings, surface_indices, faces[1])?;
         let direction = intersection_line_direction(&surface0.geometry, &surface1.geometry);
         let points = candidates.get(*edges.first()?)?;
+        let relation_count = points
+            .len()
+            .checked_mul(points.len().saturating_sub(1))
+            .and_then(|value| value.checked_div(2));
+        if relation_count.is_none_or(|count| count > MAX_PAIR_RELATIONS_PER_EDGE) {
+            continue;
+        }
         let mut pairs = Vec::new();
         for (left, &start) in points.iter().enumerate() {
             for &end_index in &points[left + 1..] {
