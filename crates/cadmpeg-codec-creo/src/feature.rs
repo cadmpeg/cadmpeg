@@ -1956,6 +1956,18 @@ fn saved_section_scalar(
         raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
         return (Some(f64::from_be_bytes(raw)), offset + 7);
     }
+    let supplied_head = match prefix {
+        0xb3 => Some([0xbf, 0xe0]),
+        0xcb => Some([0xbf, 0xf8]),
+        0xd6 => Some([0xc0, 0x04]),
+        _ => None,
+    };
+    if let Some(head) = supplied_head.filter(|_| offset + 7 <= end) {
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&head);
+        raw[2..].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return (Some(f64::from_be_bytes(raw)), offset + 7);
+    }
     if prefix == 0xd5 && offset + 7 <= end {
         let mut raw = [0; 8];
         raw[0] = 0xbf;
@@ -3424,6 +3436,26 @@ mod tests {
                 7,
             )
         );
+    }
+
+    #[test]
+    fn saved_section_negative_dict_forms_supply_ieee_high_bytes() {
+        for (bytes, head) in [
+            ([0xb3, 1, 2, 3, 4, 5, 6], [0xbf, 0xe0]),
+            ([0xcb, 1, 2, 3, 4, 5, 6], [0xbf, 0xf8]),
+            ([0xd6, 1, 2, 3, 4, 5, 6], [0xc0, 0x04]),
+        ] {
+            assert_eq!(
+                saved_section_scalar(&bytes, 0, bytes.len(), &scalar::ScalarCache::default()),
+                (
+                    Some(f64::from_be_bytes([
+                        head[0], head[1], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5],
+                        bytes[6],
+                    ])),
+                    7,
+                )
+            );
+        }
     }
 
     #[test]

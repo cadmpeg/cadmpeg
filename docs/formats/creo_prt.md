@@ -457,6 +457,9 @@ DEPDB `crv_array` rows are sparse topology views with one-sided `[0, X1, F1, 0]`
 A `0x99` DICT prefix maps to IEEE prefix `40 0E` in positive reads and `C0 0E` in the mirrored saved-section lane.
 In the saved-section scalar lane, `dd` maps to IEEE prefix `40 0c`; its six
 payload bytes are the remaining IEEE bytes.
+In the same lane, `b3`, `cb`, and `d6` map to IEEE prefixes `bf e0`, `bf f8`,
+and `c0 04`, respectively; their six payload bytes are the remaining IEEE
+bytes.
 The positional generated-arc scalar lane maps `5e`, `64`, `ad`, `cc`, `d0`,
 `d2`, `d5`, `de`, and `df` to IEEE prefixes `3f d3`, `3f d9`, `3f d9`,
 `bf f9`, `bf fe`, `c0 00`, `c0 03`, `c0 10`, and `c0 11`, respectively. Its eight-byte
