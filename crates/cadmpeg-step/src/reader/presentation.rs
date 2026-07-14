@@ -127,14 +127,25 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             typed.insert(style_id);
             continue;
         }
-        let mut visited = BTreeSet::new();
+        let domain = style_domain(target_step, exchange);
+        let mut active = BTreeSet::new();
+        let mut color_cache = BTreeMap::new();
         let Some((color_id, color, name)) = style
             .parameter(1)
             .and_then(ValueExt::list)
             .into_iter()
             .flatten()
             .flat_map(references)
-            .find_map(|reference| find_color(reference, exchange, &mut visited, 0))
+            .find_map(|reference| {
+                find_color(
+                    reference,
+                    exchange,
+                    domain,
+                    &mut active,
+                    &mut color_cache,
+                    0,
+                )
+            })
         else {
             let mut visited = BTreeSet::new();
             if !style
@@ -239,7 +250,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
         if let Some(overridden) = overridden_style(style) {
             typed.insert(overridden);
         }
-        typed.extend(visited);
+        typed.extend(color_cache.keys().copied());
         typed.insert(color_id);
     }
     PresentationResult {
@@ -401,47 +412,98 @@ fn style_depth(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Opti
 fn find_color(
     id: u64,
     exchange: &Exchange,
-    visited: &mut BTreeSet<u64>,
+    domain: StyleDomain,
+    active: &mut BTreeSet<u64>,
+    cache: &mut BTreeMap<u64, Option<(u64, Color, Option<String>)>>,
     depth: usize,
 ) -> Option<(u64, Color, Option<String>)> {
     if depth >= 256 {
         return None;
     }
-    if !visited.insert(id) {
+    if let Some(result) = cache.get(&id) {
+        return result.clone();
+    }
+    if !active.insert(id) {
         return None;
     }
     let record = exchange.records.get(&id)?;
-    match record.simple_name()? {
-        "COLOUR_RGB" => {
-            let r = record.parameter(1)?.number()?;
-            let g = record.parameter(2)?.number()?;
-            let b = record.parameter(3)?.number()?;
-            if ![r, g, b]
-                .iter()
-                .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
-            {
-                return None;
+    let name = record.simple_name()?;
+    let record_domain = if name.starts_with("SURFACE_STYLE") {
+        Some(StyleDomain::Surface)
+    } else if name == "CURVE_STYLE" {
+        Some(StyleDomain::Curve)
+    } else if name == "POINT_STYLE" {
+        Some(StyleDomain::Point)
+    } else {
+        None
+    };
+    let incompatible =
+        record_domain.is_some_and(|candidate| domain != StyleDomain::Any && candidate != domain);
+    let result = if incompatible {
+        for reference in record.parameters().iter().flat_map(references) {
+            let _ = find_color(reference, exchange, domain, active, cache, depth + 1);
+        }
+        None
+    } else {
+        match name {
+            "COLOUR_RGB" => {
+                let r = record.parameter(1)?.number()?;
+                let g = record.parameter(2)?.number()?;
+                let b = record.parameter(3)?.number()?;
+                if ![r, g, b]
+                    .iter()
+                    .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+                {
+                    return None;
+                }
+                Some((
+                    id,
+                    Color {
+                        r: r as f32,
+                        g: g as f32,
+                        b: b as f32,
+                        a: 1.0,
+                    },
+                    record.parameter(0).and_then(ValueExt::text),
+                ))
             }
-            Some((
-                id,
-                Color {
-                    r: r as f32,
-                    g: g as f32,
-                    b: b as f32,
-                    a: 1.0,
-                },
-                record.parameter(0).and_then(ValueExt::text),
-            ))
+            "DRAUGHTING_PRE_DEFINED_COLOUR" => {
+                let name = record.parameter(0)?.text()?;
+                predefined(&name).map(|color| (id, color, Some(name)))
+            }
+            _ => record
+                .parameters()
+                .iter()
+                .flat_map(references)
+                .find_map(|reference| {
+                    find_color(reference, exchange, domain, active, cache, depth + 1)
+                }),
         }
-        "DRAUGHTING_PRE_DEFINED_COLOUR" => {
-            let name = record.parameter(0)?.text()?;
-            predefined(&name).map(|color| (id, color, Some(name)))
+    };
+    active.remove(&id);
+    cache.insert(id, result.clone());
+    result
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum StyleDomain {
+    Any,
+    Surface,
+    Curve,
+    Point,
+}
+
+fn style_domain(id: u64, exchange: &Exchange) -> StyleDomain {
+    match exchange.records.get(&id).and_then(RecordExt::simple_name) {
+        Some(name)
+            if name.contains("FACE")
+                || name.contains("SURFACE")
+                || name.contains("SOLID")
+                || name.contains("SHELL") =>
+        {
+            StyleDomain::Surface
         }
-        _ => record
-            .parameters()
-            .iter()
-            .flat_map(references)
-            .find_map(|reference| find_color(reference, exchange, visited, depth + 1)),
+        _ => StyleDomain::Any,
     }
 }
 
@@ -482,6 +544,36 @@ fn predefined(name: &str) -> Option<Color> {
         _ => return None,
     };
     Some(Color { r, g, b, a: 1.0 })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_color_search_ignores_curve_style_colors() {
+        let exchange = crate::parse::parse(
+            b"ISO-10303-21;HEADER;ENDSEC;DATA;\
+#1=COLOUR_RGB('curve',0.,0.,1.);\
+#2=CURVE_STYLE('',#1);\
+#3=COLOUR_RGB('surface',1.,0.,0.);\
+#4=SURFACE_STYLE_FILL_AREA(#3);\
+#5=PRESENTATION_STYLE_ASSIGNMENT((#2,#4));\
+ENDSEC;END-ISO-10303-21;",
+        )
+        .expect("parse style graph");
+        let color = find_color(
+            5,
+            &exchange,
+            StyleDomain::Surface,
+            &mut BTreeSet::new(),
+            &mut BTreeMap::new(),
+            0,
+        )
+        .expect("surface color");
+        assert_eq!(color.1.r, 1.0);
+        assert_eq!(color.1.b, 0.0);
+    }
 }
 fn references(value: &Value) -> Vec<u64> {
     match value {

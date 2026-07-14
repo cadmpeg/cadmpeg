@@ -314,37 +314,6 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .iter()
         .filter_map(|(&id, record)| record.partial("COMPOSITE_CURVE").map(|_| id))
         .collect::<BTreeSet<_>>();
-    loop {
-        let decoded_curve_ids = ir
-            .model
-            .curves
-            .iter()
-            .map(|curve| curve.id.clone())
-            .collect::<BTreeSet<_>>();
-        let ready = pending_composites
-            .iter()
-            .filter_map(|&id| {
-                composite_curve(exchange.records.get(&id)?, exchange, &decoded_curve_ids)
-                    .map(|definition| (id, definition))
-            })
-            .collect::<Vec<_>>();
-        if ready.is_empty() {
-            break;
-        }
-        for (id, (segments, self_intersect)) in ready {
-            typed.extend(segments.iter().map(|(id, _)| *id));
-            ir.model.curves.push(Curve {
-                id: CurveId(format!("step:data:curve#{id}")),
-                geometry: CurveGeometry::Composite {
-                    segments: segments.into_iter().map(|(_, segment)| segment).collect(),
-                    self_intersect,
-                },
-                source_object: None,
-            });
-            typed.insert(id);
-            pending_composites.remove(&id);
-        }
-    }
     let curve_geometries = ir
         .model
         .curves
@@ -409,13 +378,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         typed.insert(id);
     }
 
+    let mut decoded_curve_ids = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| curve.id.clone())
+        .collect::<BTreeSet<_>>();
     loop {
-        let decoded_curve_ids = ir
-            .model
-            .curves
-            .iter()
-            .map(|curve| curve.id.clone())
-            .collect::<BTreeSet<_>>();
         let ready = pending_composites
             .iter()
             .filter_map(|&id| {
@@ -438,6 +407,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             });
             typed.insert(id);
             pending_composites.remove(&id);
+            decoded_curve_ids.insert(CurveId(format!("step:data:curve#{id}")));
         }
     }
     for id in pending_composites {

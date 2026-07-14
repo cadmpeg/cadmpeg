@@ -45,7 +45,12 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         })
         .flatten()
         .collect::<Vec<_>>();
+    let mut built_wire_models = BTreeSet::new();
     for (representation, model) in wire_models {
+        if !built_wire_models.insert(model) {
+            result.typed_records.insert(representation);
+            continue;
+        }
         if let Some(mut built) = build_wire(model, exchange, &vertices, &edges) {
             built.typed.insert(representation);
             result.typed_records.append(&mut built.typed);
@@ -60,6 +65,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             ));
         }
     }
+    let geometry_ids = GeometryIds {
+        points: ir
+            .model
+            .points
+            .iter()
+            .map(|point| point.id.0.clone())
+            .collect(),
+        curves: ir
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve.id.0.clone())
+            .collect(),
+        surfaces: ir
+            .model
+            .surfaces
+            .iter()
+            .map(|surface| surface.id.0.clone())
+            .collect(),
+    };
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
@@ -90,8 +115,14 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         if record.simple_name() != Some("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION") {
             continue;
         }
-        let Some(mut built) = build_geometric_set(id, record, exchange, ir) else {
-            if mark_standalone_geometric_set(id, record, exchange, ir, &mut result.typed_records) {
+        let Some(mut built) = build_geometric_set(id, record, exchange, &geometry_ids) else {
+            if mark_standalone_geometric_set(
+                id,
+                record,
+                exchange,
+                &geometry_ids,
+                &mut result.typed_records,
+            ) {
                 continue;
             }
             result.warnings.push(format!(
@@ -114,7 +145,13 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         ) {
             continue;
         }
-        mark_standalone_geometric_set(id, record, exchange, ir, &mut result.typed_records);
+        mark_standalone_geometric_set(
+            id,
+            record,
+            exchange,
+            &geometry_ids,
+            &mut result.typed_records,
+        );
     }
     if !ir.model.bodies.is_empty() {
         for (&id, record) in &exchange.records {
@@ -226,7 +263,7 @@ fn mark_standalone_geometric_set(
     id: u64,
     representation: &RawRecord,
     exchange: &Exchange,
-    ir: &CadIr,
+    geometry_ids: &GeometryIds,
     typed: &mut BTreeSet<u64>,
 ) -> bool {
     let Some(set_ids) = representation.parameter(1).and_then(refs) else {
@@ -249,15 +286,7 @@ fn mark_standalone_geometric_set(
         let has_decoded_member = items.into_iter().any(|item| {
             let point = format!("step:data:point#{item}");
             let curve = format!("step:data:curve#{item}");
-            ir.model
-                .points
-                .iter()
-                .any(|value| value.id.as_str() == point)
-                || ir
-                    .model
-                    .curves
-                    .iter()
-                    .any(|value| value.id.as_str() == curve)
+            geometry_ids.points.contains(&point) || geometry_ids.curves.contains(&curve)
         });
         if has_decoded_member {
             typed.insert(set_id);
@@ -274,7 +303,7 @@ fn build_geometric_set(
     id: u64,
     representation: &RawRecord,
     exchange: &Exchange,
-    ir: &CadIr,
+    geometry_ids: &GeometryIds,
 ) -> Option<Built> {
     let set_ids = refs(representation.parameter(1)?)?;
     let mut typed = BTreeSet::from([id]);
@@ -287,12 +316,7 @@ fn build_geometric_set(
         typed.insert(set_id);
         for surface_step in refs(set.parameter(1)?)? {
             let surface = SurfaceId(format!("step:data:surface#{surface_step}"));
-            if ir
-                .model
-                .surfaces
-                .iter()
-                .any(|candidate| candidate.id == surface)
-            {
+            if geometry_ids.surfaces.contains(surface.as_str()) {
                 surfaces.push((surface_step, surface));
             }
         }
@@ -346,6 +370,12 @@ fn build_geometric_set(
             visible: None,
         },
     })
+}
+
+struct GeometryIds {
+    points: BTreeSet<String>,
+    curves: BTreeSet<String>,
+    surfaces: BTreeSet<String>,
 }
 
 #[derive(Clone)]

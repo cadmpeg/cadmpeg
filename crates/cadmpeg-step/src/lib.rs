@@ -354,6 +354,7 @@ struct Builder<'a> {
     length_unit: Option<Ref>,
     angle_unit: Option<Ref>,
     ratio_unit: Option<Ref>,
+    geometry_emission_depth: usize,
 }
 
 impl<'a> Builder<'a> {
@@ -443,6 +444,7 @@ impl<'a> Builder<'a> {
             length_unit: None,
             angle_unit: None,
             ratio_unit: None,
+            geometry_emission_depth: 0,
         }
     }
 
@@ -1848,9 +1850,12 @@ impl<'a> Builder<'a> {
         if let Some(r) = self.surface_refs.get(surface_id) {
             return Some(*r);
         }
-        if !self.active_surfaces.insert(surface_id.to_string()) {
+        if self.geometry_emission_depth >= 256
+            || !self.active_surfaces.insert(surface_id.to_string())
+        {
             return None;
         }
+        self.geometry_emission_depth += 1;
         let result = (|| {
             let surf = self.surfaces.get(surface_id).copied()?;
             let procedural = self
@@ -1875,6 +1880,7 @@ impl<'a> Builder<'a> {
             Some(r)
         })();
         self.active_surfaces.remove(surface_id);
+        self.geometry_emission_depth -= 1;
         if let Some(r) = result {
             self.surface_refs.insert(surface_id.to_string(), r);
         }
@@ -1969,9 +1975,10 @@ impl<'a> Builder<'a> {
         if let Some(r) = self.curve_refs.get(curve_id) {
             return Some(*r);
         }
-        if !self.active_curves.insert(curve_id.to_string()) {
+        if self.geometry_emission_depth >= 256 || !self.active_curves.insert(curve_id.to_string()) {
             return None;
         }
+        self.geometry_emission_depth += 1;
         let result = (|| {
             let geometry = self.curves.get(curve_id)?.geometry.clone();
             let procedural = self
@@ -2036,6 +2043,7 @@ impl<'a> Builder<'a> {
             Some(r)
         })();
         self.active_curves.remove(curve_id);
+        self.geometry_emission_depth -= 1;
         if let Some(r) = result {
             self.curve_refs.insert(curve_id.to_string(), r);
         }

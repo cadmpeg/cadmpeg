@@ -32,6 +32,8 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     let mut annotations = BTreeMap::<u64, usize>::new();
 
     let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
+    let characteristic_values =
+        characteristic_values(exchange, geometry.length_scale, geometry.plane_angle_scale);
     for (&id, record) in &exchange.records {
         if record.simple_name() != Some("DATUM") {
             continue;
@@ -67,17 +69,19 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let datum_references = constituents
             .iter()
             .enumerate()
-            .flat_map(|(index, constituent)| {
-                datum_references(
+            .filter_map(|(index, constituent)| {
+                let precedence = u32::try_from(index + 1).ok()?;
+                Some(datum_references(
                     constituent,
-                    u32::try_from(index + 1).expect("datum precedence exceeds u32"),
+                    precedence,
                     exchange,
                     &annotations,
                     &mut datum_records,
                     geometry.length_scale,
                     geometry.plane_angle_scale,
-                )
+                ))
             })
+            .flatten()
             .collect::<Vec<_>>();
         push_annotation(
             ir,
@@ -119,14 +123,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 _ => kind,
             };
         }
-        let nominal = characteristic_values(
-            id,
-            exchange,
-            geometry.length_scale,
-            geometry.plane_angle_scale,
-        )
-        .into_iter()
-        .next();
+        let nominal = characteristic_values
+            .get(&id)
+            .and_then(|values| values.first())
+            .copied();
         let aspect_ids = record
             .parameters()
             .iter()
@@ -237,7 +237,11 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     }
 
     for (&id, record) in &exchange.records {
-        let Some(tolerance) = tolerance_kind(record.simple_name()) else {
+        let Some(tolerance) = record
+            .partials
+            .iter()
+            .find_map(|partial| tolerance_kind(Some(&partial.name)))
+        else {
             continue;
         };
         let refs = record
@@ -263,7 +267,19 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         // This path decodes simple tolerance entities. Datum references belong
         // to GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE complex instances; a
         // surplus reference on a simple entity does not alter its semantics.
-        let datum_system = None;
+        let has_datum_reference = record
+            .partials
+            .iter()
+            .any(|partial| partial.name == "GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE");
+        let datum_system = if has_datum_reference {
+            refs.iter().find_map(|id| {
+                let annotation = &ir.model.pmi[*annotations.get(id)?];
+                matches!(annotation.definition, PmiDefinition::DatumSystem { .. })
+                    .then(|| annotation.id.clone())
+            })
+        } else {
+            None
+        };
         push_annotation(
             ir,
             &mut annotations,
@@ -362,13 +378,17 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         }
     }
 
-    typed.extend(aspects.into_iter().filter(|id| {
-        ir.model.pmi.iter().any(|annotation| {
-            annotation.targets.iter().any(|target| {
-                matches!(target, PmiTarget::ShapeAspect { source_id } if source_id == &format!("#{id}"))
-            })
+    let targeted_aspects = ir
+        .model
+        .pmi
+        .iter()
+        .flat_map(|annotation| &annotation.targets)
+        .filter_map(|target| match target {
+            PmiTarget::ShapeAspect { source_id } => source_id.strip_prefix('#')?.parse().ok(),
+            _ => None,
         })
-    }));
+        .collect::<BTreeSet<u64>>();
+    typed.extend(aspects.intersection(&targeted_aspects).copied());
     mark_characteristic_representations(exchange, &annotations, &mut typed);
     PmiResult {
         typed_records: typed,
@@ -523,12 +543,6 @@ fn is_common_datum_list(value: Option<&Value>) -> bool {
 fn datum_ids(value: Option<&Value>) -> Vec<u64> {
     match value {
         Some(Value::Reference(id)) => vec![*id],
-        Some(Value::Typed(kind, value)) if kind == "COMMON_DATUM_LIST" => value
-            .list()
-            .unwrap_or_default()
-            .iter()
-            .flat_map(|value| datum_ids(Some(value)))
-            .collect(),
         Some(Value::List(values)) => values
             .iter()
             .flat_map(|value| datum_ids(Some(value)))
@@ -726,25 +740,32 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
 }
 
 fn characteristic_values(
-    id: u64,
     exchange: &Exchange,
     length_scale: f64,
     angle_scale: f64,
-) -> Vec<PmiValue> {
-    exchange
+) -> BTreeMap<u64, Vec<PmiValue>> {
+    let mut result = BTreeMap::<u64, Vec<PmiValue>>::new();
+    for record in exchange
         .records
         .values()
-        .filter(|record| {
-            record.simple_name() == Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION")
-                && record
-                    .parameters()
-                    .iter()
-                    .flat_map(references)
-                    .any(|item| item == id)
-        })
-        .flat_map(RecordExt::parameters)
-        .filter_map(|value| measure(value, exchange, length_scale, angle_scale))
-        .collect()
+        .filter(|record| record.simple_name() == Some("DIMENSIONAL_CHARACTERISTIC_REPRESENTATION"))
+    {
+        let Some(characteristic) = record.parameters().iter().flat_map(references).find(|id| {
+            exchange
+                .records
+                .get(id)
+                .is_some_and(|record| dimension_kind(record.simple_name()).is_some())
+        }) else {
+            continue;
+        };
+        result.entry(characteristic).or_default().extend(
+            record
+                .parameters()
+                .iter()
+                .filter_map(|value| measure(value, exchange, length_scale, angle_scale)),
+        );
+    }
+    result
 }
 
 fn measure(

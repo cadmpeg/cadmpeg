@@ -62,19 +62,29 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
     }
+    let mut parent_state = HashMap::<&str, u8>::new();
     for occurrence in &ir.model.occurrences {
-        let mut seen = HashSet::new();
+        if parent_state.get(occurrence.id.as_str()) == Some(&2) {
+            continue;
+        }
+        let mut path = Vec::new();
         let mut cursor = occurrence;
         loop {
-            if !seen.insert(cursor.id.as_str()) {
-                findings.push(Finding {
-                    check: Check::ProductStructure,
-                    severity: Severity::Error,
-                    message: "occurrence parent graph contains a cycle".into(),
-                    entity: Some(occurrence.id.0.clone()),
-                });
-                break;
+            match parent_state.get(cursor.id.as_str()) {
+                Some(1) => {
+                    findings.push(Finding {
+                        check: Check::ProductStructure,
+                        severity: Severity::Error,
+                        message: "occurrence parent graph contains a cycle".into(),
+                        entity: Some(occurrence.id.0.clone()),
+                    });
+                    break;
+                }
+                Some(2) => break,
+                _ => {}
             }
+            parent_state.insert(cursor.id.as_str(), 1);
+            path.push(cursor.id.as_str());
             let OccurrenceParent::Occurrence { occurrence: parent } = &cursor.parent else {
                 break;
             };
@@ -82,6 +92,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                 break;
             };
             cursor = next;
+        }
+        for id in path {
+            parent_state.insert(id, 2);
         }
     }
 }
