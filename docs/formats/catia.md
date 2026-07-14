@@ -185,6 +185,8 @@ Triangle expansion: independent `(H[3i],H[3i+1],H[3i+2])`; strips alternate wind
 
 Each spine edge row is a handle sequence `E = [p0, interior…, p1]` with endpoint ports `p0,p1`. Match `E` (forward or reversed) against the boundary cycle; if the interior matches a contiguous run, the two flanking cycle handles are corner tokens `c0,c1`. Logical vertices are the connected components of a **union-find** over (edge ports ∪ face-local corner tokens): `union(Port(edge,0),c0); union(Port(edge,1),c1)` on a forward match (swapped on reverse). Edge orientation comes from the recovered boundary path, not from a stored sense bit, and **not** from the order of the two `0x60` face refs.
 
+An edge row with no interior handles does not match every boundary position. After all non-empty interiors are matched, maximal uncovered boundary-segment runs are retained separately from the incident edge rows having no occurrence on that face. Assigning those rows to an uncovered run requires additional endpoint or carrier constraints; empty-interior matching alone establishes no position, order, or orientation.
+
 The FBB-spline edge-table handles share the mesh-boundary handle namespace used by the trim packets. Endpoint ports form a larger namespace than the vertex table; a port handle is not a vertex index. Port-handle identity is scoped to its `01 01` or `01 02` edge table. Equal handles in one table name the same port; equal numeric handles across the two tables do not establish identity. Boundary-run corner unions bridge the two table-local namespaces.
 
 Resolved physical-edge endpoint pairs constrain the port namespace. For every

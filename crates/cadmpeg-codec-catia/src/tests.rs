@@ -180,6 +180,33 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
 }
 
 #[test]
+fn standard_mesh_coverage_reports_exact_matched_partition() {
+    let coverage = crate::topology::standard_mesh_face_coverage(
+        &standard_quad_topology_stream(),
+        &[[0, 0]; 4],
+    )
+    .expect("mesh coverage");
+    assert_eq!(coverage.len(), 1);
+    assert_eq!(coverage[0].face, 0);
+    assert!(coverage[0].gaps.is_empty());
+    assert!(coverage[0].missing_edges.is_empty());
+
+    let mut bytes = standard_quad_topology_stream();
+    let header = bytes
+        .windows(3)
+        .position(|window| window == [0x01, 0x01, 0x04])
+        .expect("edge table header");
+    let first_row = header + 3;
+    bytes[first_row + 1] = 2;
+    bytes.drain(first_row + 4..first_row + 6);
+    let coverage =
+        crate::topology::standard_mesh_face_coverage(&bytes, &[[0, 0]; 4]).expect("one gap");
+    assert_eq!(coverage[0].missing_edges, [0]);
+    assert_eq!(coverage[0].gaps.len(), 1);
+    assert_eq!(coverage[0].gaps[0].length, 2);
+}
+
+#[test]
 fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
     for handle in [

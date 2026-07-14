@@ -569,17 +569,7 @@ pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
             .iter()
             .map(|trim| boundary_cycles(&trim.triangles))
             .collect::<Option<Vec<_>>>()?;
-        let mut locations = HashMap::<u32, Vec<(usize, usize, usize)>>::new();
-        for (face, face_cycles) in cycles.iter().enumerate() {
-            for (cycle_index, cycle) in face_cycles.iter().enumerate() {
-                for (position, handle) in cycle.iter().copied().enumerate() {
-                    locations
-                        .entry(handle)
-                        .or_default()
-                        .push((face, cycle_index, position));
-                }
-            }
-        }
+        let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
         let mut union = UnionFind::new(edge_rows.len() * 2);
         let mut table_ports = HashMap::new();
         for (edge, row) in edge_rows.iter().enumerate() {
@@ -594,59 +584,22 @@ pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
             }
         }
         let mut corners = HashMap::new();
-        let mut valid = true;
         for (edge, row) in edge_rows.iter().enumerate() {
-            let Some(interior) = row.handles.get(1..row.handles.len() - 1) else {
-                valid = false;
-                break;
-            };
+            let interior = row.handles.get(1..row.handles.len() - 1)?;
             if interior.is_empty() {
                 continue;
             }
-            let mut occurrences = HashMap::<(usize, usize, usize), bool>::new();
-            for &(face, cycle_index, start) in locations.get(&interior[0]).into_iter().flatten() {
-                let cycle = &cycles[face][cycle_index];
-                if interior
-                    .iter()
-                    .enumerate()
-                    .all(|(offset, handle)| cycle[(start + offset) % cycle.len()] == *handle)
-                {
-                    occurrences.insert((face, cycle_index, start), false);
-                }
-            }
-            for &(face, cycle_index, start) in locations.get(interior.last()?).into_iter().flatten()
-            {
-                let cycle = &cycles[face][cycle_index];
-                if interior
-                    .iter()
-                    .rev()
-                    .enumerate()
-                    .all(|(offset, handle)| cycle[(start + offset) % cycle.len()] == *handle)
-                {
-                    occurrences
-                        .entry((face, cycle_index, start))
-                        .or_insert(true);
-                }
-            }
-            let mut cycle_counts = HashMap::new();
-            for &(face, cycle_index, _) in occurrences.keys() {
-                *cycle_counts.entry((face, cycle_index)).or_insert(0usize) += 1;
-            }
-            if cycle_counts.values().any(|count| *count > 1) {
-                valid = false;
-                break;
-            }
-            for ((face, cycle_index, start), reversed) in occurrences {
-                let cycle = &cycles[face][cycle_index];
-                let before = (start + cycle.len() - 1) % cycle.len();
-                let after = (start + interior.len()) % cycle.len();
+            for occurrence in &occurrences[edge] {
+                let cycle = &cycles[occurrence.face][occurrence.cycle];
+                let before = (occurrence.start + cycle.len() - 1) % cycle.len();
+                let after = (occurrence.start + interior.len()) % cycle.len();
                 let before_node = *corners
-                    .entry((face, cycle_index, before))
+                    .entry((occurrence.face, occurrence.cycle, before))
                     .or_insert_with(|| union.push());
                 let after_node = *corners
-                    .entry((face, cycle_index, after))
+                    .entry((occurrence.face, occurrence.cycle, after))
                     .or_insert_with(|| union.push());
-                if reversed {
+                if occurrence.reversed {
                     union.union(edge * 2 + 1, before_node);
                     union.union(edge * 2, after_node);
                 } else {
@@ -654,9 +607,6 @@ pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
                     union.union(edge * 2 + 1, after_node);
                 }
             }
-        }
-        if !valid {
-            continue;
         }
         let mut roots = HashMap::new();
         let mut ports = Vec::with_capacity(edge_rows.len());
@@ -673,6 +623,198 @@ pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     <[Vec<[u32; 2]>; 1]>::try_from(solutions)
         .ok()
         .map(|[ports]| ports)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MeshEdgeOccurrence {
+    face: usize,
+    cycle: usize,
+    start: usize,
+    reversed: bool,
+}
+
+fn mesh_edge_occurrences(
+    edge_rows: &[EdgeRow],
+    cycles: &[Vec<Vec<u32>>],
+) -> Option<Vec<Vec<MeshEdgeOccurrence>>> {
+    let mut locations = HashMap::<u32, Vec<(usize, usize, usize)>>::new();
+    for (face, face_cycles) in cycles.iter().enumerate() {
+        for (cycle, handles) in face_cycles.iter().enumerate() {
+            for (position, handle) in handles.iter().copied().enumerate() {
+                locations
+                    .entry(handle)
+                    .or_default()
+                    .push((face, cycle, position));
+            }
+        }
+    }
+    edge_rows
+        .iter()
+        .map(|row| {
+            let interior = row.handles.get(1..row.handles.len() - 1)?;
+            if interior.is_empty() {
+                return Some(Vec::new());
+            }
+            let mut matches = HashMap::<(usize, usize, usize), bool>::new();
+            for &(face, cycle, start) in locations.get(&interior[0]).into_iter().flatten() {
+                let handles = &cycles[face][cycle];
+                if interior
+                    .iter()
+                    .enumerate()
+                    .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
+                {
+                    matches.insert((face, cycle, start), false);
+                }
+            }
+            for &(face, cycle, start) in locations.get(interior.last()?).into_iter().flatten() {
+                let handles = &cycles[face][cycle];
+                if interior
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .all(|(offset, handle)| handles[(start + offset) % handles.len()] == *handle)
+                {
+                    matches.entry((face, cycle, start)).or_insert(true);
+                }
+            }
+            let mut cycle_counts = HashMap::new();
+            for &(face, cycle, _) in matches.keys() {
+                *cycle_counts.entry((face, cycle)).or_insert(0usize) += 1;
+            }
+            if cycle_counts.values().any(|count| *count > 1) {
+                return None;
+            }
+            let mut occurrences = matches
+                .into_iter()
+                .map(|((face, cycle, start), reversed)| MeshEdgeOccurrence {
+                    face,
+                    cycle,
+                    start,
+                    reversed,
+                })
+                .collect::<Vec<_>>();
+            occurrences
+                .sort_by_key(|occurrence| (occurrence.face, occurrence.cycle, occurrence.start));
+            Some(occurrences)
+        })
+        .collect()
+}
+
+/// One uncovered run in a trim-mesh boundary cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeshBoundaryGap {
+    /// Boundary-cycle ordinal within the face.
+    pub cycle: usize,
+    /// First uncovered boundary-segment index.
+    pub start: usize,
+    /// Number of consecutive uncovered boundary segments.
+    pub length: usize,
+}
+
+/// Exact matched and unmatched physical-edge coverage for one trim face.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeshFaceCoverage {
+    /// Positional face ordinal.
+    pub face: usize,
+    /// Maximal uncovered runs after matching every serialized edge interior.
+    pub gaps: Vec<MeshBoundaryGap>,
+    /// Incident physical-edge rows with no interior occurrence on this face.
+    pub missing_edges: Vec<usize>,
+}
+
+/// Recover exact face-local mesh coverage without assigning unmatched edge rows
+/// to gaps. A result exists only for a unique trim-handle width and when every
+/// matched interior occurs on one of its two serialized incident faces.
+#[must_use]
+pub fn standard_mesh_face_coverage(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+) -> Option<Vec<MeshFaceCoverage>> {
+    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    if edge_rows.len() != edge_faces.len() {
+        return None;
+    }
+    let mut solutions = Vec::new();
+    for width in [2, 3] {
+        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
+            continue;
+        };
+        let cycles = trims
+            .iter()
+            .map(|trim| boundary_cycles(&trim.triangles))
+            .collect::<Option<Vec<_>>>()?;
+        let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
+        if occurrences.iter().enumerate().any(|(edge, values)| {
+            values
+                .iter()
+                .any(|occurrence| !edge_faces[edge].contains(&occurrence.face))
+        }) {
+            continue;
+        }
+        let mut coverage = Vec::with_capacity(face_count);
+        for (face, face_cycles) in cycles.iter().enumerate() {
+            let mut gaps = Vec::new();
+            for (cycle_index, cycle) in face_cycles.iter().enumerate() {
+                let mut covered = vec![false; cycle.len()];
+                for (edge, values) in occurrences.iter().enumerate() {
+                    let interior_len = edge_rows[edge].handles.len().checked_sub(2)?;
+                    for occurrence in values.iter().filter(|occurrence| {
+                        occurrence.face == face && occurrence.cycle == cycle_index
+                    }) {
+                        let start = (occurrence.start + cycle.len() - 1) % cycle.len();
+                        for offset in 0..=interior_len {
+                            let slot = &mut covered[(start + offset) % cycle.len()];
+                            if *slot {
+                                return None;
+                            }
+                            *slot = true;
+                        }
+                    }
+                }
+                if covered.iter().all(|value| !*value) {
+                    gaps.push(MeshBoundaryGap {
+                        cycle: cycle_index,
+                        start: 0,
+                        length: cycle.len(),
+                    });
+                } else {
+                    for start in (0..covered.len()).filter(|&index| {
+                        !covered[index] && covered[(index + covered.len() - 1) % covered.len()]
+                    }) {
+                        let length = (0..covered.len())
+                            .take_while(|offset| !covered[(start + offset) % covered.len()])
+                            .count();
+                        gaps.push(MeshBoundaryGap {
+                            cycle: cycle_index,
+                            start,
+                            length,
+                        });
+                    }
+                }
+            }
+            let missing_edges = edge_rows
+                .iter()
+                .enumerate()
+                .filter_map(|(edge, _)| {
+                    (edge_faces[edge].contains(&face)
+                        && !occurrences[edge]
+                            .iter()
+                            .any(|occurrence| occurrence.face == face))
+                    .then_some(edge)
+                })
+                .collect();
+            coverage.push(MeshFaceCoverage {
+                face,
+                gaps,
+                missing_edges,
+            });
+        }
+        solutions.push(coverage);
+    }
+    <[Vec<MeshFaceCoverage>; 1]>::try_from(solutions)
+        .ok()
+        .map(|[coverage]| coverage)
 }
 
 /// Propagate byte-level endpoint ports through independently resolved physical
