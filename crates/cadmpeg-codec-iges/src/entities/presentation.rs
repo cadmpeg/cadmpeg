@@ -1,0 +1,257 @@
+// SPDX-License-Identifier: Apache-2.0
+//! Directory display attributes and color definitions.
+
+use crate::directory::DirectoryEntry;
+use crate::parameter::ParameterRecord;
+use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::ids::AppearanceId;
+use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
+use cadmpeg_ir::topology::Color;
+use cadmpeg_ir::CadIr;
+use std::collections::{BTreeMap, BTreeSet};
+
+pub(super) struct PresentationProjection {
+    pub(super) handled: BTreeSet<u32>,
+    pub(super) decoded: BTreeSet<u32>,
+    pub(super) losses: Vec<LossNote>,
+}
+
+fn loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
+    LossNote {
+        category: LossCategory::Material,
+        severity: Severity::Warning,
+        message: format!(
+            "IGES entity type {} form {} display data was not projected: {}",
+            entry.entity_type,
+            entry.form,
+            message.into()
+        ),
+        provenance: None,
+    }
+}
+
+fn standard_color(number: i64) -> Option<Color> {
+    let (r, g, b) = match number {
+        1 => (0.0, 0.0, 0.0),
+        2 => (1.0, 0.0, 0.0),
+        3 => (0.0, 1.0, 0.0),
+        4 => (0.0, 0.0, 1.0),
+        5 => (1.0, 1.0, 0.0),
+        6 => (1.0, 0.0, 1.0),
+        7 => (0.0, 1.0, 1.0),
+        8 => (1.0, 1.0, 1.0),
+        _ => return None,
+    };
+    Some(Color { r, g, b, a: 1.0 })
+}
+
+fn source_sequence(id: &str) -> Option<u32> {
+    let marker = id.rfind("#D").into_iter().chain(id.rfind(":D")).max()? + 2;
+    let digits = id[marker..].bytes().take_while(u8::is_ascii_digit).count();
+    id.get(marker..marker.checked_add(digits)?)?.parse().ok()
+}
+
+fn appearance(ir: &mut CadIr, id: AppearanceId, name: Option<String>, color: Color) {
+    if ir.model.appearances.iter().all(|item| item.id != id) {
+        ir.model.appearances.push(Appearance {
+            id,
+            name,
+            asset_guid: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some("IGES color".into()),
+            category: None,
+            base_color: Some(color),
+            properties: BTreeMap::new(),
+        });
+    }
+}
+
+pub(super) fn project(
+    ir: &mut CadIr,
+    directory: &[DirectoryEntry],
+    parameters: &[ParameterRecord],
+) -> PresentationProjection {
+    let records = parameters
+        .iter()
+        .map(|record| (record.directory_sequence, record))
+        .collect::<BTreeMap<_, _>>();
+    let entries = directory
+        .iter()
+        .map(|entry| (entry.sequence, entry))
+        .collect::<BTreeMap<_, _>>();
+    let mut handled = BTreeSet::new();
+    let mut decoded = BTreeSet::new();
+    let mut losses = Vec::new();
+    let mut defined = BTreeMap::new();
+    let mut names = BTreeMap::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 314 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(components) = (1..=3)
+            .map(|index| {
+                record
+                    .number(index)
+                    .filter(|value| (0.0..=100.0).contains(value))
+            })
+            .collect::<Option<Vec<_>>>()
+        else {
+            losses.push(loss(entry, "RGB percentage is outside 0 through 100"));
+            continue;
+        };
+        let name = match record.tokens.get(4).map(|token| &token.value) {
+            None | Some(crate::parameter::TokenValue::Omitted) => None,
+            Some(crate::parameter::TokenValue::String(_)) => record
+                .string(4)
+                .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok()),
+            Some(
+                crate::parameter::TokenValue::Integer(_) | crate::parameter::TokenValue::Real(_),
+            ) => {
+                losses.push(loss(entry, "optional color name is not a string"));
+                continue;
+            }
+        };
+        let color = Color {
+            r: (components[0] / 100.0) as f32,
+            g: (components[1] / 100.0) as f32,
+            b: (components[2] / 100.0) as f32,
+            a: 1.0,
+        };
+        defined.insert(entry.sequence, color);
+        names.insert(entry.sequence, name.clone());
+        appearance(
+            ir,
+            AppearanceId(format!("iges:appearance:color#D{}", entry.sequence)),
+            name,
+            color,
+        );
+        decoded.insert(entry.sequence);
+    }
+
+    let resolve = |value: i64| -> Option<(AppearanceId, Color)> {
+        match value.cmp(&0) {
+            std::cmp::Ordering::Greater => Some((
+                AppearanceId(format!("iges:appearance:standard#{value}")),
+                standard_color(value)?,
+            )),
+            std::cmp::Ordering::Less => {
+                let sequence = u32::try_from(value.checked_neg()?).ok()?;
+                let entry = entries.get(&sequence)?;
+                if entry.entity_type != 314 || entry.form != 0 {
+                    return None;
+                }
+                Some((
+                    AppearanceId(format!("iges:appearance:color#D{sequence}")),
+                    *defined.get(&sequence)?,
+                ))
+            }
+            std::cmp::Ordering::Equal => None,
+        }
+    };
+
+    for entry in directory.iter().filter(|entry| entry.color != 0) {
+        if resolve(entry.color).is_none() {
+            losses.push(loss(
+                entry,
+                "Directory color number or definition pointer is invalid",
+            ));
+        }
+    }
+
+    for curve in &mut ir.model.curves {
+        if let Some(source) = &mut curve.source_object {
+            source.color = source_sequence(&source.object_id)
+                .and_then(|sequence| entries.get(&sequence))
+                .and_then(|entry| resolve(entry.color))
+                .map(|(_, color)| color);
+        }
+    }
+    for surface in &mut ir.model.surfaces {
+        if let Some(source) = &mut surface.source_object {
+            source.color = source_sequence(&source.object_id)
+                .and_then(|sequence| entries.get(&sequence))
+                .and_then(|entry| resolve(entry.color))
+                .map(|(_, color)| color);
+        }
+    }
+
+    let body_assignments = ir
+        .model
+        .bodies
+        .iter()
+        .filter_map(|body| {
+            let sequence = source_sequence(&body.id.0)?;
+            let entry = entries.get(&sequence)?;
+            resolve(entry.color).map(|appearance| (body.id.clone(), appearance, entry.status.blank))
+        })
+        .collect::<Vec<_>>();
+    for (body_id, (appearance_id, color), blank) in body_assignments {
+        let sequence = source_sequence(&body_id.0).expect("body assignment has source sequence");
+        appearance(ir, appearance_id.clone(), None, color);
+        let body = ir
+            .model
+            .bodies
+            .iter_mut()
+            .find(|body| body.id == body_id)
+            .expect("body assignment target still exists");
+        body.color = Some(color);
+        body.visible = Some(blank == 0);
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: format!("iges:model:appearance-binding#body-D{sequence}"),
+            target: AppearanceTarget::Body(body_id),
+            appearance: appearance_id,
+            source_entity_id: None,
+            object_type: Some("Body".into()),
+            channels: BTreeMap::new(),
+        });
+    }
+    for body in &mut ir.model.bodies {
+        if body.visible.is_none() {
+            body.visible = source_sequence(&body.id.0)
+                .and_then(|sequence| entries.get(&sequence))
+                .map(|entry| entry.status.blank == 0);
+        }
+    }
+
+    let face_assignments = ir
+        .model
+        .faces
+        .iter()
+        .filter_map(|face| {
+            let sequence = source_sequence(&face.id.0)?;
+            let entry = entries.get(&sequence)?;
+            resolve(entry.color).map(|appearance| (face.id.clone(), appearance))
+        })
+        .collect::<Vec<_>>();
+    for (face_id, (appearance_id, color)) in face_assignments {
+        let sequence = source_sequence(&face_id.0).expect("face assignment has source sequence");
+        appearance(ir, appearance_id.clone(), None, color);
+        ir.model
+            .faces
+            .iter_mut()
+            .find(|face| face.id == face_id)
+            .expect("face assignment target still exists")
+            .color = Some(color);
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: format!("iges:model:appearance-binding#face-D{sequence}"),
+            target: AppearanceTarget::Face(face_id),
+            appearance: appearance_id,
+            source_entity_id: None,
+            object_type: Some("Face".into()),
+            channels: BTreeMap::new(),
+        });
+    }
+
+    PresentationProjection {
+        handled,
+        decoded,
+        losses,
+    }
+}

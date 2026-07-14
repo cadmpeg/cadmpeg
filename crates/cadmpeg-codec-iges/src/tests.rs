@@ -1726,6 +1726,10 @@ struct OwnedTestEntity {
 }
 
 fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
+    owned_test_file_with_colors(entities, &[])
+}
+
+fn owned_test_file_with_colors(entities: &[OwnedTestEntity], colors: &[(u32, i64)]) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -1751,7 +1755,11 @@ fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
             [
                 &entity.entity_type.to_string(),
                 "0",
-                "0",
+                &colors
+                    .iter()
+                    .find_map(|(entry, color)| (*entry == sequence).then_some(*color))
+                    .unwrap_or(0)
+                    .to_string(),
                 &line_count.to_string(),
                 &entity.form.to_string(),
                 "",
@@ -1836,6 +1844,61 @@ fn explicit_vertex_loop_file_with_outer_flag(has_outer_loop: bool) -> Vec<u8> {
             parameters: "514,1,9,1;".into(),
         },
     ])
+}
+
+fn colored_explicit_vertex_loop_file() -> Vec<u8> {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "CENTER".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 196,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00010000",
+            parameters: "196,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "POLE".into(),
+            status: "00010000",
+            parameters: "502,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "VLOOP".into(),
+            status: "00010000",
+            parameters: "508,1,1,5,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE".into(),
+            status: "00010000",
+            parameters: "510,3,1,1,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 514,
+            form: 2,
+            label: "SHELL".into(),
+            status: "00000000",
+            parameters: "514,1,9,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 314,
+            form: 0,
+            label: "COLOR".into(),
+            status: "00000200",
+            parameters: "314,20,40,60,6Hcustom;".into(),
+        },
+    ];
+    owned_test_file_with_colors(&entities, &[(9, -13), (11, 2), (13, 2)])
 }
 
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
@@ -2501,6 +2564,64 @@ fn decode_preserves_a_face_with_no_explicit_outer_loop() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_applies_standard_body_color_and_face_color_override() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(colored_explicit_vertex_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let body = result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D11")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    assert_eq!(
+        body.color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 1.0,
+            g: 0.0,
+            b: 0.0,
+            a: 1.0,
+        })
+    );
+    assert_eq!(body.visible, Some(true));
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D11:D9")
+        .unwrap();
+    assert_eq!(
+        face.color,
+        Some(cadmpeg_ir::topology::Color {
+            r: 0.2,
+            g: 0.4,
+            b: 0.6,
+            a: 1.0,
+        })
+    );
+    assert!(result
+        .ir
+        .model
+        .appearances
+        .iter()
+        .any(|appearance| appearance.id.0 == "iges:appearance:color#D13"
+            && appearance.name.as_deref() == Some("custom")));
+    assert_eq!(result.ir.model.appearance_bindings.len(), 2);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
 fn append_tetrahedral_shell(

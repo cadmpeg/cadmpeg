@@ -66,6 +66,12 @@ A Form 0 Curve on a Parametric Surface Entity (Type 142) stores its creation met
 
 A Form 0 Trimmed Surface Entity (Type 144) stores a support-surface pointer, an outer-boundary flag, an inner-boundary count, an outer Curve on a Parametric Surface pointer or zero, and the ordered inner Curve on a Parametric Surface pointers. When the outer-boundary flag is zero, the outer pointer is zero and the rectangular parameter domain of the support surface supplies the outer boundary. The entity then produces no explicit outer loop; each listed loop is `inner`. When the flag is one, the outer pointer produces the single `outer` loop and each listed loop is `inner`.
 
+## Appearance
+
+Directory color zero supplies no direct color. Positive values `1` through `8` select black, red, green, blue, yellow, magenta, cyan, and white. A negative value is the negated odd Directory sequence of a Form 0 Color Definition Entity (Type 314). Type 314 stores red, green, and blue intensities as finite percentages from `0` through `100` and an optional Hollerith name. Neutral RGBA components equal the percentages divided by `100`, with alpha `1`.
+
+A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. Curve and surface source-object associations retain their direct Directory colors.
+
 ## Byte accounting
 
 Every source byte belongs to one nonempty half-open ledger span. Typed spans cover values with decoded semantics. Structural spans cover framing, delimiters, padding, and sequence fields. Opaque spans name the native record that retains their bytes or their length and digest. Canonical ledger order is ascending start offset. Adjacent spans may be coalesced only when class, owner, and meaning are identical. Coverage starts at zero, ends at source length, and has neither gaps nor overlaps.

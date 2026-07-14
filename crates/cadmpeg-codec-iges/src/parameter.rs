@@ -49,6 +49,13 @@ impl ParameterRecord {
             TokenValue::Omitted | TokenValue::String(_) => None,
         }
     }
+
+    pub(crate) fn string(&self, index: usize) -> Option<&[u8]> {
+        match self.tokens.get(index).map(|token| &token.value)? {
+            TokenValue::String(value) => Some(value),
+            TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
+        }
+    }
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
