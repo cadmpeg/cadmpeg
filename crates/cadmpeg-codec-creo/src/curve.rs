@@ -518,13 +518,107 @@ fn expression_assignment(line: &CurveExpressionLine) -> Option<CurveExpressionAs
     })
 }
 
-struct ArithmeticParser<'a> {
-    source: &'a [u8],
-    cursor: usize,
-    values: &'a BTreeMap<String, f64>,
+trait ArithmeticValue: Copy {
+    fn number(value: f64) -> Self;
+    fn add(self, right: Self) -> Option<Self>;
+    fn subtract(self, right: Self) -> Option<Self>;
+    fn multiply(self, right: Self) -> Option<Self>;
+    fn divide(self, right: Self) -> Option<Self>;
+    fn negate(self) -> Self;
+    fn finite(self) -> bool;
 }
 
-impl ArithmeticParser<'_> {
+impl ArithmeticValue for f64 {
+    fn number(value: f64) -> Self {
+        value
+    }
+
+    fn add(self, right: Self) -> Option<Self> {
+        Some(self + right)
+    }
+
+    fn subtract(self, right: Self) -> Option<Self> {
+        Some(self - right)
+    }
+
+    fn multiply(self, right: Self) -> Option<Self> {
+        Some(self * right)
+    }
+
+    fn divide(self, right: Self) -> Option<Self> {
+        Some(self / right)
+    }
+
+    fn negate(self) -> Self {
+        -self
+    }
+
+    fn finite(self) -> bool {
+        self.is_finite()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct AffineValue {
+    constant: f64,
+    linear: f64,
+}
+
+impl ArithmeticValue for AffineValue {
+    fn number(value: f64) -> Self {
+        Self {
+            constant: value,
+            linear: 0.0,
+        }
+    }
+
+    fn add(self, right: Self) -> Option<Self> {
+        Some(Self {
+            constant: self.constant + right.constant,
+            linear: self.linear + right.linear,
+        })
+    }
+
+    fn subtract(self, right: Self) -> Option<Self> {
+        Some(Self {
+            constant: self.constant - right.constant,
+            linear: self.linear - right.linear,
+        })
+    }
+
+    fn multiply(self, right: Self) -> Option<Self> {
+        (self.linear == 0.0 || right.linear == 0.0).then_some(Self {
+            constant: self.constant * right.constant,
+            linear: self.constant * right.linear + self.linear * right.constant,
+        })
+    }
+
+    fn divide(self, right: Self) -> Option<Self> {
+        (right.linear == 0.0 && right.constant != 0.0).then_some(Self {
+            constant: self.constant / right.constant,
+            linear: self.linear / right.constant,
+        })
+    }
+
+    fn negate(self) -> Self {
+        Self {
+            constant: -self.constant,
+            linear: -self.linear,
+        }
+    }
+
+    fn finite(self) -> bool {
+        self.constant.is_finite() && self.linear.is_finite()
+    }
+}
+
+struct ArithmeticParser<'a, V> {
+    source: &'a [u8],
+    cursor: usize,
+    values: &'a BTreeMap<String, V>,
+}
+
+impl<V: ArithmeticValue> ArithmeticParser<'_, V> {
     fn whitespace(&mut self) {
         while self
             .source
@@ -535,43 +629,43 @@ impl ArithmeticParser<'_> {
         }
     }
 
-    fn expression(&mut self) -> Option<f64> {
+    fn expression(&mut self) -> Option<V> {
         let mut value = self.term()?;
         loop {
             self.whitespace();
             match self.source.get(self.cursor) {
                 Some(b'+') => {
                     self.cursor += 1;
-                    value += self.term()?;
+                    value = value.add(self.term()?)?;
                 }
                 Some(b'-') => {
                     self.cursor += 1;
-                    value -= self.term()?;
+                    value = value.subtract(self.term()?)?;
                 }
                 _ => return Some(value),
             }
         }
     }
 
-    fn term(&mut self) -> Option<f64> {
+    fn term(&mut self) -> Option<V> {
         let mut value = self.factor()?;
         loop {
             self.whitespace();
             match self.source.get(self.cursor) {
                 Some(b'*') => {
                     self.cursor += 1;
-                    value *= self.factor()?;
+                    value = value.multiply(self.factor()?)?;
                 }
                 Some(b'/') => {
                     self.cursor += 1;
-                    value /= self.factor()?;
+                    value = value.divide(self.factor()?)?;
                 }
                 _ => return Some(value),
             }
         }
     }
 
-    fn factor(&mut self) -> Option<f64> {
+    fn factor(&mut self) -> Option<V> {
         self.whitespace();
         match self.source.get(self.cursor)? {
             b'+' => {
@@ -580,7 +674,7 @@ impl ArithmeticParser<'_> {
             }
             b'-' => {
                 self.cursor += 1;
-                Some(-self.factor()?)
+                Some(self.factor()?.negate())
             }
             b'(' => {
                 self.cursor += 1;
@@ -597,7 +691,7 @@ impl ArithmeticParser<'_> {
         }
     }
 
-    fn number(&mut self) -> Option<f64> {
+    fn number(&mut self) -> Option<V> {
         let start = self.cursor;
         while self
             .source
@@ -623,13 +717,14 @@ impl ArithmeticParser<'_> {
                 self.cursor += 1;
             }
         }
-        std::str::from_utf8(&self.source[start..self.cursor])
+        let value = std::str::from_utf8(&self.source[start..self.cursor])
             .ok()?
             .parse()
-            .ok()
+            .ok()?;
+        Some(V::number(value))
     }
 
-    fn identifier(&mut self) -> Option<f64> {
+    fn identifier(&mut self) -> Option<V> {
         let start = self.cursor;
         self.cursor += 1;
         while self.source.get(self.cursor).is_some_and(|byte| {
@@ -650,13 +745,33 @@ fn evaluate_expression(expression: &str, values: &BTreeMap<String, f64>) -> Opti
     };
     let value = parser.expression()?;
     parser.whitespace();
-    (parser.cursor == parser.source.len() && value.is_finite()).then_some(value)
+    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
 }
 
-fn evaluate_program(record: &CurveExpressionRecord, parameter: f64) -> BTreeMap<String, f64> {
-    let mut values = BTreeMap::from([("t".to_string(), parameter)]);
+fn evaluate_affine_expression(
+    expression: &str,
+    values: &BTreeMap<String, AffineValue>,
+) -> Option<AffineValue> {
+    let mut parser = ArithmeticParser {
+        source: expression.as_bytes(),
+        cursor: 0,
+        values,
+    };
+    let value = parser.expression()?;
+    parser.whitespace();
+    (parser.cursor == parser.source.len() && value.finite()).then_some(value)
+}
+
+fn evaluate_affine_program(record: &CurveExpressionRecord) -> BTreeMap<String, AffineValue> {
+    let mut values = BTreeMap::from([(
+        "t".to_string(),
+        AffineValue {
+            constant: 0.0,
+            linear: 1.0,
+        },
+    )]);
     for assignment in &record.assignments {
-        if let Some(value) = evaluate_expression(&assignment.expression, &values) {
+        if let Some(value) = evaluate_affine_expression(&assignment.expression, &values) {
             values.insert(assignment.name.clone(), value);
         } else {
             values.remove(&assignment.name);
@@ -668,49 +783,21 @@ fn evaluate_program(record: &CurveExpressionRecord, parameter: f64) -> BTreeMap<
 /// Recognize an exact cylindrical helix program expressed by the conventional
 /// Creo outputs `r`, `theta` (degrees), and `z` over `t` in `[0, 1]`.
 pub fn expression_helix(record: &CurveExpressionRecord) -> Option<CurveExpressionHelix> {
-    let start = evaluate_program(record, 0.0);
-    let middle = evaluate_program(record, 0.5);
-    let end = evaluate_program(record, 1.0);
-    let sample = |values: &BTreeMap<String, f64>, name: &str| values.get(name).copied();
-    let (radius_start, radius_middle, radius_end) = (
-        sample(&start, "r")?,
-        sample(&middle, "r")?,
-        sample(&end, "r")?,
-    );
-    let (theta_start, theta_middle, theta_end) = (
-        sample(&start, "theta")?,
-        sample(&middle, "theta")?,
-        sample(&end, "theta")?,
-    );
-    let (z_start, z_middle, z_end) = (
-        sample(&start, "z")?,
-        sample(&middle, "z")?,
-        sample(&end, "z")?,
-    );
-    let scale = radius_start
-        .abs()
-        .max(theta_start.abs())
-        .max(theta_end.abs())
-        .max(z_start.abs())
-        .max(z_end.abs())
-        .max(1.0);
-    let tolerance = 1e-12 * scale;
-    if radius_start <= 0.0
-        || (radius_middle - radius_start).abs() > tolerance
-        || (radius_end - radius_start).abs() > tolerance
-        || (theta_middle - theta_start.midpoint(theta_end)).abs() > tolerance
-        || (z_middle - z_start.midpoint(z_end)).abs() > tolerance
-    {
+    let values = evaluate_affine_program(record);
+    let radius = values.get("r")?;
+    let theta = values.get("theta")?;
+    let z = values.get("z")?;
+    if radius.constant <= 0.0 || radius.linear != 0.0 {
         return None;
     }
-    let angular_travel = theta_end - theta_start;
+    let angular_travel = theta.linear;
     let revolutions = angular_travel.abs() / 360.0;
     (revolutions > 0.0).then_some(CurveExpressionHelix {
-        radius: radius_start,
-        height: z_end - z_start,
-        z_start,
+        radius: radius.constant,
+        height: z.linear,
+        z_start: z.constant,
         revolutions,
-        start_angle: theta_start.to_radians(),
+        start_angle: theta.constant.to_radians(),
         clockwise: angular_travel < 0.0,
     })
 }
@@ -1499,6 +1586,10 @@ mod tests {
         let nonlinear = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
             \xe0\x0aexpression\0\xf8\x03r=5\0theta=t*t*360\0z=20*t\0";
         assert!(expression_helix(&expression_records(nonlinear)[0]).is_none());
+
+        let sample_alias = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x09\
+            \xe0\x0aexpression\0\xf8\x03r=5\0theta=360*t+t*(t-0.5)*(t-1)\0z=20*t\0";
+        assert!(expression_helix(&expression_records(sample_alias)[0]).is_none());
     }
 
     #[test]
