@@ -2780,6 +2780,8 @@ fn attach_native_object_model(
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
+    let feature_datum_csys_constructions =
+        crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_sketch_references = crate::native::feature_sketch_references(&scan.container);
     let feature_extrude_profile_references =
         crate::native::feature_extrude_profile_references(&scan.container);
@@ -2898,6 +2900,7 @@ fn attach_native_object_model(
         && feature_simple_hole_placement_block_references.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
+        && feature_datum_csys_constructions.is_empty()
         && feature_sketch_references.is_empty()
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
@@ -3190,6 +3193,7 @@ fn attach_native_object_model(
             body_references: &feature_body_references,
             body_reference_occurrences: &feature_body_reference_occurrences,
             input_blocks: &feature_input_blocks,
+            datum_csys_constructions: &feature_datum_csys_constructions,
             sketch_references: &feature_sketch_references,
             extrude_profile_references: &feature_extrude_profile_references,
             extrude_construction_profiles: &feature_extrude_construction_profiles,
@@ -3213,7 +3217,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(72);
+    namespace.version = namespace.version.max(73);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3273,6 +3277,12 @@ fn attach_native_object_model(
     }
     if !feature_input_blocks.is_empty() {
         namespace.set_arena("feature_input_blocks", &feature_input_blocks)?;
+    }
+    if !feature_datum_csys_constructions.is_empty() {
+        namespace.set_arena(
+            "feature_datum_csys_constructions",
+            &feature_datum_csys_constructions,
+        )?;
     }
     if !feature_sketch_references.is_empty() {
         namespace.set_arena("feature_sketch_references", &feature_sketch_references)?;
@@ -3482,6 +3492,7 @@ struct FeatureOperationSources<'a> {
     body_references: &'a [crate::native::FeatureBodyReference],
     body_reference_occurrences: &'a [crate::native::FeatureBodyReferenceOccurrence],
     input_blocks: &'a [crate::native::FeatureInputBlock],
+    datum_csys_constructions: &'a [crate::native::FeatureDatumCsysConstruction],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
@@ -3511,6 +3522,7 @@ fn attach_feature_operations(
         body_references,
         body_reference_occurrences,
         input_blocks,
+        datum_csys_constructions,
         sketch_references,
         extrude_profile_references,
         extrude_construction_profiles,
@@ -3562,6 +3574,10 @@ fn attach_feature_operations(
             .or_default()
             .push(input);
     }
+    let datum_csys_constructions_by_operation = datum_csys_constructions
+        .iter()
+        .map(|construction| (construction.operation_label.as_str(), construction))
+        .collect::<BTreeMap<_, _>>();
     let mut sketch_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchReference>>::new();
     for reference in sketch_references {
@@ -3707,6 +3723,12 @@ fn attach_feature_operations(
         if let Some(construction) = extrude_32_constructions_by_operation.get(label.id.as_str()) {
             source_properties.insert(
                 "extrude_32_construction".to_string(),
+                construction.id.clone(),
+            );
+        }
+        if let Some(construction) = datum_csys_constructions_by_operation.get(label.id.as_str()) {
+            source_properties.insert(
+                "datum_csys_construction".to_string(),
                 construction.id.clone(),
             );
         }

@@ -408,6 +408,21 @@ pub struct FeatureSketchRecord {
     pub source_offset: u64,
 }
 
+/// Completely resolved native construction lane of a datum coordinate system.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysConstruction {
+    /// Globally unique construction identity.
+    pub id: String,
+    /// Owning `DATUM_CSYS` operation label.
+    pub operation_label: String,
+    /// Eight object indices in serialized lane order.
+    pub object_indices: [u32; 8],
+    /// Eight uniquely resolved same-store blocks in lane order.
+    pub data_blocks: [String; 8],
+    /// Absolute offsets of the eight canonical reference markers.
+    pub source_offsets: [u64; 8],
+}
+
 /// Completely resolved counted-reference field of one sketch construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchConstructionInputs {
@@ -1480,6 +1495,102 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
         }
     }
     inputs
+}
+
+/// Decode and atomically resolve datum coordinate-system construction lanes
+/// through the offset store selected by each operation header.
+pub fn feature_datum_csys_constructions(
+    container: &Container,
+) -> Vec<FeatureDatumCsysConstruction> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let inputs = feature_input_blocks(container);
+    let mut constructions = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(field) = crate::om::datum_csys_references(record) else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+            let input_prefixes = inputs
+                .iter()
+                .filter(|input| input.operation_label == operation_label)
+                .filter_map(|input| {
+                    input
+                        .data_block
+                        .rsplit_once(":block#")
+                        .map(|(prefix, _)| prefix)
+                })
+                .collect::<BTreeSet<_>>();
+            if input_prefixes.len() != 1 {
+                continue;
+            }
+            let input_prefix = input_prefixes
+                .into_iter()
+                .next()
+                .expect("one checked input store");
+            let resolved = field.references.map(|reference| {
+                unique_offset_data_block(&indexed, reference.object_index).map(|data_block| {
+                    (
+                        reference.object_index,
+                        data_block,
+                        entry_offset + reference.offset as u64,
+                    )
+                })
+            });
+            let Some(resolved) = resolved.into_iter().collect::<Option<Vec<_>>>() else {
+                continue;
+            };
+            if resolved.iter().any(|(_, data_block, _)| {
+                data_block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != input_prefix)
+            }) {
+                continue;
+            }
+            constructions.push(FeatureDatumCsysConstruction {
+                id: format!(
+                    "nx:feature-history:datum-csys-construction#{section_key}-{operation_ordinal}"
+                ),
+                operation_label,
+                object_indices: resolved
+                    .iter()
+                    .map(|(object_index, _, _)| *object_index)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("eight decoded references"),
+                data_blocks: resolved
+                    .iter()
+                    .map(|(_, data_block, _)| data_block.clone())
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("eight decoded references"),
+                source_offsets: resolved
+                    .iter()
+                    .map(|(_, _, source_offset)| *source_offset)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("eight decoded references"),
+            });
+        }
+    }
+    constructions
 }
 
 /// Join each sketch operation to its bounded record and ordered input blocks.

@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 72);
+    assert_eq!(namespace.version, 73);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1303,6 +1303,51 @@ fn om_simple_hole_placement_block_references_follow_both_coordinate_pairs() {
         crate::om::simple_hole_placement_block_references(crate::om::OperationRecord {
             bytes: &null,
             payload: &null,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
+    let mut payload = vec![
+        0x13, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+    ];
+    for value in 42..50 {
+        payload.extend_from_slice(&[0xf0, value]);
+    }
+    payload.extend_from_slice(&[0x01, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00]);
+    let label = crate::om::OperationLabel {
+        header_offset: 10,
+        offset: 20,
+        value: "DATUM_CSYS",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 10,
+        bytes: &payload,
+        payload_offset: 100,
+        payload: &payload,
+        label,
+    };
+    let field = crate::om::datum_csys_references(record).unwrap();
+    assert_eq!(
+        field.references.map(|reference| reference.object_index),
+        [42, 43, 44, 45, 46, 47, 48, 49]
+    );
+    assert_eq!(
+        field.references.map(|reference| reference.offset),
+        [114, 116, 118, 120, 122, 124, 126, 128]
+    );
+
+    let mut malformed = payload.clone();
+    malformed[14] = 0x2a;
+    assert!(
+        crate::om::datum_csys_references(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
             ..record
         })
         .is_none()
@@ -5062,7 +5107,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 72);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 73);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
