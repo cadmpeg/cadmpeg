@@ -474,9 +474,9 @@ value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
 
 The value block owns that immediately following catalog as its source schema. The catalog marker offset therefore identifies the value block's schema without scanning or name matching.
 
-The payload is a serialized token stream. `32 <ordinal:u32le>` selects the zero-based entry ordinal in the source schema; an ordinal equal to the schema's entry population is the absent-schema sentinel. `87 E6 <bits:u64le>` stores one IEEE-754 binary64 value. `87 E7` and `87 E8` are zero-payload markers. `8E <code:E8..EF> 84 <bytes[code-E7]>` stores one through eight inline bytes. Multi-byte token payloads are opaque to token recognition: marker-like bytes inside them do not start another token. Bytes outside these forms are single-byte literals, so tokenization preserves the complete payload without residual bytes.
+The payload is a serialized token stream. `32 <ordinal:u32le>` selects the zero-based entry ordinal in the source schema; an ordinal equal to the schema's entry population is the absent-schema sentinel. `87 E6 <bits:u64le>` stores one IEEE-754 binary64 value. `87 E7` and `87 E8` are zero-payload markers. `8E <code:E8..EF> 84 <bytes[code-E7]>` stores one through eight inline bytes. `80..D0` stores the unsigned atom `byte - 80`; `D1..E4 <low:u8>` stores `(byte - D1) * 256 + low + 1`. The longer assigned forms take precedence over atom recognition. Multi-byte token payloads are opaque to token recognition: marker-like bytes inside them do not start another token. Bytes outside these forms are single-byte literals, so tokenization preserves the complete payload without residual bytes.
 
-Resolve every in-range selector to the exact entry in the block's source schema. Preserve selector order and payload offset. Preserve the absent-schema sentinel as a selector without an entry link.
+Resolve every in-range selector to the exact entry in the block's source schema. Its value is the immediately following token. Preserve selector order and payload offset. Preserve the absent-schema sentinel as a selector without an entry link or value assignment.
 
 ### 7.4 Outer alias rows
 

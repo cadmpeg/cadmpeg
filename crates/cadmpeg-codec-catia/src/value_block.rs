@@ -55,6 +55,15 @@ pub enum ValueField {
         /// Byte offset within the value payload.
         offset: usize,
     },
+    /// Compact unsigned atom.
+    Atom {
+        /// Decoded unsigned value.
+        value: u32,
+        /// Stored width, one or two bytes.
+        width: u8,
+        /// Byte offset within the value payload.
+        offset: usize,
+    },
     /// One byte outside the assigned multi-byte token forms.
     Literal {
         /// Exact stored byte.
@@ -150,6 +159,27 @@ fn tokenize(payload: &[u8]) -> Vec<ValueField> {
                 offset,
             });
             at += 5;
+        } else if payload
+            .get(at)
+            .is_some_and(|byte| (0x80..=0xd0).contains(byte))
+        {
+            fields.push(ValueField::Atom {
+                value: u32::from(payload[at] - 0x80),
+                width: 1,
+                offset,
+            });
+            at += 1;
+        } else if payload
+            .get(at)
+            .is_some_and(|byte| (0xd1..=0xe4).contains(byte))
+            && at + 2 <= payload.len()
+        {
+            fields.push(ValueField::Atom {
+                value: u32::from(payload[at] - 0xd1) * 256 + u32::from(payload[at + 1]) + 1,
+                width: 2,
+                offset,
+            });
+            at += 2;
         } else {
             fields.push(ValueField::Literal {
                 value: payload[at],
@@ -208,8 +238,9 @@ mod tests {
                     value: 0xef,
                     offset: 1,
                 },
-                ValueField::Literal {
-                    value: 0x84,
+                ValueField::Atom {
+                    value: 4,
+                    width: 1,
                     offset: 2,
                 },
                 ValueField::Literal {

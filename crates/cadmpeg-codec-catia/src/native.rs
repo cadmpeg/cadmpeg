@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 13;
+pub const CATIA_NATIVE_VERSION: u32 = 14;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -138,6 +138,9 @@ pub struct CatiaValueSchemaSelection {
     /// Selected catalog entry; absent for the terminal sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
+    /// Encoded value token immediately following an in-range selector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<value_block::ValueField>,
 }
 
 /// One exact `7C02` source-schema catalog.
@@ -612,14 +615,20 @@ impl CatiaValueBlock {
         let schema_selections = block
             .fields
             .iter()
-            .filter_map(|field| match field {
+            .enumerate()
+            .filter_map(|(index, field)| match field {
                 value_block::ValueField::SchemaSelector { ordinal, offset } => {
+                    let entry = catalog
+                        .and_then(|catalog| catalog.entries.get(*ordinal as usize))
+                        .map(|entry| entry.id.clone());
                     Some(CatiaValueSchemaSelection {
                         offset: *offset as u64,
                         ordinal: *ordinal,
-                        entry: catalog
-                            .and_then(|catalog| catalog.entries.get(*ordinal as usize))
-                            .map(|entry| entry.id.clone()),
+                        value: entry
+                            .as_ref()
+                            .and_then(|_| block.fields.get(index + 1))
+                            .cloned(),
+                        entry,
                     })
                 }
                 _ => None,

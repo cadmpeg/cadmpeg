@@ -4248,6 +4248,14 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
         native.value_blocks[0].schema_selections[0].entry.as_deref(),
         Some(native.catalogs[0].entries[4].id.as_str())
     );
+    assert_eq!(
+        native.value_blocks[0].schema_selections[0].value,
+        Some(crate::value_block::ValueField::Atom {
+            value: 3,
+            width: 1,
+            offset: 7,
+        })
+    );
 }
 
 #[test]
