@@ -240,7 +240,7 @@ pub fn project_parameter_design(
     use cadmpeg_ir::features::{
         Angle, ChamferForm, ChamferSpec, DesignParameter as NeutralParameter, DimensionDisplay,
         EdgeSelection, Feature, FeatureDefinition, FilletGroup, Length, ParameterId,
-        ParameterValue, RadiusForm, RadiusSpec, SketchSpace,
+        ParameterValue, ProfileRef, RadiusForm, RadiusSpec, SketchSpace,
     };
     use std::collections::BTreeMap;
 
@@ -471,6 +471,27 @@ pub fn project_parameter_design(
             }
         })
         .collect::<Vec<_>>();
+    let sketch_features = features
+        .iter()
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } => Some((sketch.0.clone(), feature.id.clone())),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    for feature in &mut features {
+        if let FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(sketch),
+            ..
+        } = &feature.definition
+        {
+            feature
+                .dependencies
+                .extend(sketch_features.get(&sketch.0).cloned());
+        }
+    }
     features.sort_by_key(|feature| feature.id.clone());
 
     let mut parameters = native
@@ -560,15 +581,18 @@ pub fn project_parameter_design(
         .filter_map(|parameter| Some((parameter.id.clone(), parameter.owner.clone()?)))
         .collect::<HashMap<_, _>>();
     for feature in &mut features {
-        let mut seen = HashSet::new();
-        feature.dependencies = parameters
-            .iter()
-            .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
-            .flat_map(|parameter| &parameter.dependencies)
-            .filter_map(|parameter| parameter_owners.get(parameter))
-            .filter(|dependency| *dependency != &feature.id && seen.insert((*dependency).clone()))
-            .cloned()
-            .collect();
+        let mut seen = feature.dependencies.iter().cloned().collect::<HashSet<_>>();
+        feature.dependencies.extend(
+            parameters
+                .iter()
+                .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
+                .flat_map(|parameter| &parameter.dependencies)
+                .filter_map(|parameter| parameter_owners.get(parameter))
+                .filter(|dependency| {
+                    *dependency != &feature.id && seen.insert((*dependency).clone())
+                })
+                .cloned(),
+        );
     }
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
@@ -590,7 +614,11 @@ fn project_extrude(
         BooleanOp, Extent, ExtrudeStart, FaceSelection, FeatureDefinition, Length, ProfileRef,
     };
 
-    scope.extrude_profile.as_ref()?;
+    let profile = scope.extrude_profile.as_ref()?;
+    let profile_placement = placements.iter().find(|placement| {
+        native_stream(&placement.id) == native_stream(&scope.id)
+            && placement.entity_id == profile.entity_id
+    })?;
     let scope_groups = construction_groups
         .iter()
         .filter(|group| {
@@ -720,15 +748,10 @@ fn project_extrude(
         _ => return None,
     };
     let direction = if reverse_direction {
-        let profile = scope.extrude_profile.as_ref()?;
-        let placement = placements.iter().find(|placement| {
-            native_stream(&placement.id) == native_stream(&scope.id)
-                && placement.entity_id == profile.entity_id
-        })?;
         Some(Vector3::new(
-            -placement.transform[0][2],
-            -placement.transform[1][2],
-            -placement.transform[2][2],
+            -profile_placement.transform[0][2],
+            -profile_placement.transform[1][2],
+            -profile_placement.transform[2][2],
         ))
     } else {
         None
@@ -748,7 +771,7 @@ fn project_extrude(
         _ => return None,
     };
     Some(FeatureDefinition::Extrude {
-        profile: ProfileRef::Native(scope.id.clone()),
+        profile: ProfileRef::Sketch(neutral_sketch_id(profile_placement)),
         direction,
         start,
         extent,
@@ -5706,7 +5729,7 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_sketch_graph, decode_fillet_radius_groups,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix, neutral_sketch_id,
         next_indexed_record_offset, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
@@ -7300,21 +7323,80 @@ mod relation_tests {
             paired_class_tag: "261".into(),
             paired_byte_offset: 300,
         };
+        let placement = DesignSketchPlacement {
+            id: "f3d:Design/BulkStream.dat:placement#200".into(),
+            scope_record_index: 11,
+            entity_id: "0_172".into(),
+            entity_suffix: 172,
+            byte_offset: 600,
+            class_tag: "300".into(),
+            record_index: 200,
+            frame_length: 329,
+            transform: [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: Some(655),
+            paired_class_tag: "260".into(),
+            paired_byte_offset: 929,
+        };
         let along = parameter("AlongDistance", "mm", 0.55);
         let taper = parameter("TaperAngle", "deg", 0.2);
-        let blind = project_extrude(&scope, &[(0, &along), (1, &taper)], &[], &[])
-            .expect("typed blind Extrude");
+        let blind = project_extrude(
+            &scope,
+            &[(0, &along), (1, &taper)],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .expect("typed blind Extrude");
         assert!(matches!(
             blind,
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Native(ref profile),
+                profile: ProfileRef::Sketch(ref profile),
                 direction: None,
                 extent: Extent::Blind { length: Length(5.5) },
                 op: BooleanOp::NewBody,
                 draft: Some(Angle(0.2)),
                 ..
-            } if profile == &scope.id
+            } if profile == &neutral_sketch_id(&placement)
         ));
+        let mut owned_along = along.clone();
+        owned_along.id = "f3d:Design/BulkStream.dat:parameter#45".into();
+        owned_along.record_index = 45;
+        owned_along.owner_record_index = Some(44);
+        let mut owner = parse_parameter_owner(&parameter_owner_frame())
+            .expect("generated parameter owner is canonical");
+        owner.id = "f3d:Design/BulkStream.dat:owner#44".into();
+        owner.record_index = 44;
+        owner.scope_record_index = scope.record_index;
+        owner.parameter_record_index = owned_along.record_index;
+        let mut sketch_scope = scope.clone();
+        sketch_scope.id = "f3d:Design/BulkStream.dat:scope#11".into();
+        sketch_scope.record_index = placement.scope_record_index;
+        sketch_scope.kind = "Sketch".into();
+        sketch_scope.extrude_operation = None;
+        sketch_scope.extrude_extent = None;
+        sketch_scope.extrude_start = None;
+        sketch_scope.extrude_profile = None;
+        let (features, _) = project_parameter_design(
+            &[owned_along],
+            &[owner],
+            &[sketch_scope, scope.clone()],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+        );
+        let sketch_feature = features
+            .iter()
+            .find(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+            .expect("neutral Sketch feature");
+        let extrude_feature = features
+            .iter()
+            .find(|feature| matches!(feature.definition, FeatureDefinition::Extrude { .. }))
+            .expect("neutral Extrude feature");
+        assert_eq!(extrude_feature.dependencies, [sketch_feature.id.clone()]);
 
         let body_group = DesignConstructionOperandGroup {
             id: "f3d:Design/BulkStream.dat:operand-group#101".into(),
@@ -7345,7 +7427,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &taper)],
             std::slice::from_ref(&body_group),
-            &[],
+            std::slice::from_ref(&placement),
         )
         .expect("typed target-body Extrude");
         assert!(matches!(
@@ -7375,7 +7457,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &taper)],
             &[body_group.clone(), face_group.clone()],
-            &[],
+            std::slice::from_ref(&placement),
         )
         .is_none());
 
@@ -7384,7 +7466,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &profile_offset)],
             std::slice::from_ref(&body_group),
-            &[],
+            std::slice::from_ref(&placement),
         )
         .is_none());
         scope.extrude_start = Some(DesignExtrudeStart::OffsetProfilePlane);
@@ -7392,7 +7474,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &profile_offset)],
             std::slice::from_ref(&body_group),
-            &[],
+            std::slice::from_ref(&placement),
         )
         .expect("typed offset-profile-plane Extrude");
         assert!(matches!(
@@ -7408,10 +7490,21 @@ mod relation_tests {
 
         scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
         let against = parameter("AgainstDistance", "mm", -0.05);
-        assert!(project_extrude(&scope, &[(0, &along), (1, &against)], &[], &[]).is_none());
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &against)],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_none());
         scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
-        let two_sided = project_extrude(&scope, &[(0, &along), (1, &against)], &[], &[])
-            .expect("typed two-sided Extrude");
+        let two_sided = project_extrude(
+            &scope,
+            &[(0, &along), (1, &against)],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .expect("typed two-sided Extrude");
         assert!(matches!(
             two_sided,
             FeatureDefinition::Extrude {
@@ -7425,25 +7518,6 @@ mod relation_tests {
 
         scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
         let reversed_along = parameter("AlongDistance", "mm", -0.6);
-        let placement = DesignSketchPlacement {
-            id: "f3d:Design/BulkStream.dat:placement#200".into(),
-            scope_record_index: 11,
-            entity_id: "0_172".into(),
-            entity_suffix: 172,
-            byte_offset: 600,
-            class_tag: "300".into(),
-            record_index: 200,
-            frame_length: 329,
-            transform: [
-                [1.0, 0.0, 0.0, 0.0],
-                [0.0, 0.0, 1.0, 0.0],
-                [0.0, -1.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0, 1.0],
-            ],
-            transform_offset: Some(655),
-            paired_class_tag: "260".into(),
-            paired_byte_offset: 929,
-        };
         let reversed = project_extrude(
             &scope,
             &[(0, &reversed_along)],
