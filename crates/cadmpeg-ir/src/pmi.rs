@@ -136,6 +136,19 @@ pub struct DatumReference {
     pub modifiers: Vec<String>,
 }
 
+/// ISO limits-and-fits tolerance class attached to a dimension.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct LimitsAndFits {
+    /// Form-variance designation.
+    pub form_variance: String,
+    /// Zone-variance designation.
+    pub zone_variance: String,
+    /// Tolerance grade.
+    pub grade: String,
+    /// Source standard or authority text.
+    pub source: String,
+}
+
 /// Semantic or presentation PMI payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -173,6 +186,9 @@ pub enum PmiDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         /// Signed upper deviation from nominal.
         upper_deviation: Option<PmiValue>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        /// Limits-and-fits tolerance class.
+        limits_and_fits: Option<LimitsAndFits>,
     },
     /// Graphical annotation retained independently of semantic PMI.
     Presentation {

@@ -929,6 +929,7 @@ fn decode_transfers_ap242_semantic_pmi() {
         nominal,
         lower_deviation,
         upper_deviation,
+        ref limits_and_fits,
         ..
     } = dimension.definition
     else {
@@ -937,6 +938,10 @@ fn decode_transfers_ap242_semantic_pmi() {
     assert_eq!(nominal.unwrap().value, 12.0);
     assert_eq!(lower_deviation.unwrap().value, -0.1);
     assert_eq!(upper_deviation.unwrap().value, 0.2);
+    let fit = limits_and_fits.as_ref().expect("limits and fits");
+    assert_eq!(fit.form_variance, "H");
+    assert_eq!(fit.grade, "7");
+    assert_eq!(fit.source, "ISO 286");
     let tolerance = result
         .ir
         .model

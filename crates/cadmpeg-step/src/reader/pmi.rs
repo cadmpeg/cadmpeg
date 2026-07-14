@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::PmiId;
 use cadmpeg_ir::pmi::{
-    DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
-    PmiQuantity, PmiTarget, PmiValue,
+    DatumReference, DimensionKind, GeometricToleranceKind, LimitsAndFits, PmiAnnotation,
+    PmiDefinition, PmiQuantity, PmiTarget, PmiValue,
 };
 use cadmpeg_ir::transform::Transform;
 
@@ -126,6 +126,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 nominal,
                 lower_deviation: None,
                 upper_deviation: None,
+                limits_and_fits: None,
             },
         );
         typed.insert(id);
@@ -148,6 +149,32 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                 .records
                 .get(reference)
                 .filter(|candidate| candidate.simple_name() == Some("TOLERANCE_VALUE"))
+        });
+        let fit = refs.iter().find_map(|reference| {
+            let record = exchange.records.get(reference)?;
+            (record.simple_name() == Some("LIMITS_AND_FITS")).then(|| {
+                (
+                    *reference,
+                    LimitsAndFits {
+                        form_variance: record
+                            .parameter(0)
+                            .and_then(ValueExt::text)
+                            .unwrap_or_default(),
+                        zone_variance: record
+                            .parameter(1)
+                            .and_then(ValueExt::text)
+                            .unwrap_or_default(),
+                        grade: record
+                            .parameter(2)
+                            .and_then(ValueExt::text)
+                            .unwrap_or_default(),
+                        source: record
+                            .parameter(3)
+                            .and_then(ValueExt::text)
+                            .unwrap_or_default(),
+                    },
+                )
+            })
         });
         if let (Some(index), Some(limits)) = (dimension, limits) {
             let values = limits
@@ -173,6 +200,14 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             }
             typed.insert(id);
             typed.extend(refs);
+        } else if let (Some(index), Some((fit_id, fit))) = (dimension, fit) {
+            if let PmiDefinition::Dimension {
+                limits_and_fits, ..
+            } = &mut ir.model.pmi[index].definition
+            {
+                *limits_and_fits = Some(fit);
+            }
+            typed.extend([id, fit_id]);
         } else {
             warnings.push(format!(
                 "PLUS_MINUS_TOLERANCE #{id} has no resolvable dimension and limits"
