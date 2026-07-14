@@ -18,7 +18,7 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
-    Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId,
+    Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, HoleKind, Length, ParameterId,
     ParameterValue, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
@@ -3239,17 +3239,24 @@ fn attach_feature_operations(
 }
 
 pub(crate) fn non_boolean_feature_definition(kind: &str) -> FeatureDefinition {
-    if kind == "SKETCH" {
-        FeatureDefinition::Sketch {
+    match kind {
+        "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Planar,
             sketch: None,
-        }
-    } else {
-        FeatureDefinition::Native {
+        },
+        "SIMPLE HOLE" => FeatureDefinition::Hole {
+            face: None,
+            position: None,
+            direction: None,
+            kind: HoleKind::Simple,
+            diameter: None,
+            extent: None,
+        },
+        _ => FeatureDefinition::Native {
             kind: kind.to_string(),
             parameters: BTreeMap::new(),
             properties: BTreeMap::new(),
-        }
+        },
     }
 }
 

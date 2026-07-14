@@ -541,6 +541,17 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
         }
     ));
     assert!(matches!(
+        crate::decode::non_boolean_feature_definition("SIMPLE HOLE"),
+        cadmpeg_ir::features::FeatureDefinition::Hole {
+            face: None,
+            position: None,
+            direction: None,
+            kind: cadmpeg_ir::features::HoleKind::Simple,
+            diameter: None,
+            extent: None,
+        }
+    ));
+    assert!(matches!(
         crate::decode::non_boolean_feature_definition("DATUM_PLANE"),
         cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
             if kind == "DATUM_PLANE"
