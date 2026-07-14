@@ -4644,6 +4644,10 @@ fn a5_curve_parser_reads_degree5_rolling_ball_jet() {
     assert_eq!(curves[0].knots, vec![0.0, 1.0]);
     assert_eq!(curves[0].sites[1].radius, 2.0);
     assert!(!curves[0].radius_constant);
+
+    let mut wrong_degree = a5_freeform_curve_stream();
+    wrong_degree[9] = 17;
+    assert!(crate::geometry::a5_freeform_curves(&wrong_degree).is_empty());
 }
 
 #[test]

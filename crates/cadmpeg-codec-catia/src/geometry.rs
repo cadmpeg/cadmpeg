@@ -2950,7 +2950,7 @@ fn parse_a5_curve(data: &[u8], frame: ConsolidatedFrame) -> Option<A5FreeformCur
     let degree = compact_int(data, &mut at)?;
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count
         || !(2..=4096).contains(&count)
-        || !(1..=9).contains(&degree)
+        || degree != 5
     {
         return None;
     }

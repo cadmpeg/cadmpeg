@@ -18,6 +18,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 ## Standard nested `V5_CFV2`
 
 - The `a5 03 32` header token byte at `record + 7` is a small repeating type code; its value space and semantics are unresolved.
+- The numeric continuation following the three aligned `a5 03 32` jet blocks has multiple length classes. Its lane counts, terminal fields, and relationship to the rolling-ball definition are unresolved.
 - The semantic assignments of the width-coded `b2/b3/b4 03 5e` header token and terminal byte are unresolved.
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
