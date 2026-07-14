@@ -3919,11 +3919,23 @@ impl MeshSelectionSearch<'_> {
                     .filter(|assignment| {
                         measured.assignment_has_option(assignment, self.edge_candidates)
                     })
-                    .count();
-                if supported == 0 {
-                    return Some((0, 0, 0, face));
+                    .collect::<Vec<_>>();
+                if supported.is_empty() {
+                    return Some((0, 0, 0, 0, face));
                 }
-                let assignment = self.assignments[face].first()?;
+                let direction_work = supported
+                    .iter()
+                    .map(|assignment| {
+                        let unknown = assignment
+                            .boundaries
+                            .iter()
+                            .flatten()
+                            .filter(|use_| use_.reversed.is_none())
+                            .count();
+                        1usize.checked_shl(unknown as u32).unwrap_or(usize::MAX)
+                    })
+                    .fold(0usize, usize::saturating_add);
+                let assignment = supported[0];
                 let selected_incidence = assignment
                     .boundaries
                     .iter()
@@ -3942,14 +3954,15 @@ impl MeshSelectionSearch<'_> {
                     })
                     .count();
                 Some((
-                    supported,
+                    supported.len(),
+                    direction_work,
                     usize::MAX - selected_incidence,
                     usize::MAX - constrained,
                     face,
                 ))
             })
             .min();
-        let Some((supported, _, _, face)) = next else {
+        let Some((supported, _, _, _, face)) = next else {
             let mut quotient = quotient.clone();
             let Some(root_points) =
                 quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
