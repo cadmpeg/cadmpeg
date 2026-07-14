@@ -56,17 +56,18 @@ edge, and vertex topology when its fixed-record references resolve. Geometry
 that cannot be attached remains available through derived free topology.
 
 Partition and adjacent equal-schema deltas streams are scanned together.
-Exactly keyed full records and tombstones use the last event for
-each key. Unmatched tombstones remain unresolved. Multiple partitions are
-emitted without reconstructing their feature-history Boolean composition.
-Assembly files can contain only external child-part references and therefore
-produce no inline geometry.
+Exactly keyed full records and tombstones use the last event for each key.
+Unmatched tombstones remain unresolved. Segment body aliases, primary-body
+writers, and Boolean tool operands select terminal partition images when the
+complete body lineage is unambiguous. Assembly files can contain only external
+child-part references and therefore produce no inline geometry.
 
-NX design history, assembly occurrence placement, materials, appearances,
-entity-owned attributes, tessellation, and native `.prt` writing are not
-supported. Part attributes transfer as document attributes. See the [format
-support matrix][support] for current coverage and the [format notes][spec] for
-byte semantics.
+Ordered feature-operation records, body dependencies, Boolean operations,
+sketch record lanes, arrangements, part attributes, and numeric expressions
+transfer. Complete design history, assembly occurrence placement, materials,
+appearances, entity-owned attributes, tessellation, and native `.prt` writing
+are not supported. See the [format support matrix][support] for current coverage
+and the [format notes][spec] for byte semantics.
 
 The crate also exposes lower-level container, stream, geometry, NURBS, and
 topology modules for tools that need inspection or partial decoding. Most

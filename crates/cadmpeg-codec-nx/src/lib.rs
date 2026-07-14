@@ -48,13 +48,15 @@
 //! in validated `UG_PART` segment order and apply
 //! supported non-topology full records and exact-key tombstones using the last
 //! event for each key. Valid partition topology remains authoritative. Unmatched
-//! tombstone relations remain unresolved. Multiple
-//! partitions are not combined through NX feature-history Booleans. Assembly
-//! files may contain only references to external child parts.
+//! tombstone relations remain unresolved. Segment body aliases, primary-body
+//! writers, and Boolean tool operands select terminal partition images when the
+//! complete body lineage is unambiguous. Assembly files may contain only
+//! references to external child parts.
 //!
-//! Ordered feature-operation labels and numeric expressions transfer from the
-//! NX object model. Complete design history, assembly occurrence placement, materials, appearances,
-//! entity-owned attributes, tessellation, and `.prt` writing are not supported.
+//! Ordered feature-operation records, body dependencies, Boolean operations,
+//! sketch record lanes, and numeric expressions transfer from the NX object
+//! model. Complete design history, assembly occurrence placement, materials,
+//! appearances, entity-owned attributes, tessellation, and `.prt` writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
 //! expose the lower-level container, stream, geometry, NURBS, intersection, and
 //! topology decoders; applications that need a complete IR entry point should
