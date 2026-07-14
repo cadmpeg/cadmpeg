@@ -480,11 +480,20 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralCurveDefinition::Offset {
-                source, support, ..
+                source,
+                support,
+                distance_law,
+                ..
             } => {
                 curves.insert(&source.0);
                 if let Some(support) = support {
                     surfaces.insert(&support.0);
+                }
+                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                    function, ..
+                }) = distance_law
+                {
+                    curves.insert(&function.0);
                 }
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {

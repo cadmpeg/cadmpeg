@@ -1446,6 +1446,46 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::Offset {
+            distance,
+            normal,
+            parameter_range,
+            distance_law,
+            ..
+        } = &procedural.definition
+        {
+            let normal_valid = normal.is_none_or(|normal| {
+                normal.x.is_finite()
+                    && normal.y.is_finite()
+                    && normal.z.is_finite()
+                    && (normal.norm() - 1.0).abs() <= 1.0e-10
+            });
+            let range_valid = parameter_range.is_none_or(|range| {
+                range.iter().all(|value| value.is_finite()) && range[0] < range[1]
+            });
+            let law_valid = distance_law.as_ref().is_none_or(|law| match law {
+                crate::geometry::CurveOffsetDistanceLaw::Linear {
+                    distances,
+                    control_range,
+                    ..
+                } => {
+                    distances.iter().all(|value| value.is_finite())
+                        && control_range.iter().all(|value| value.is_finite())
+                        && control_range[0] < control_range[1]
+                }
+                crate::geometry::CurveOffsetDistanceLaw::Coordinate { coordinate, .. } => {
+                    matches!(coordinate, 1..=3)
+                }
+            });
+            if !distance.is_finite() || !normal_valid || !range_valid || !law_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "curve offset distance, normal, range, or law is invalid",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
             if let crate::geometry::DeformableCurveData::VectorField {
                 vectors,

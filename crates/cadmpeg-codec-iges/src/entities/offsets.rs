@@ -5,7 +5,10 @@ use super::geometry::{entity_loss, source_object};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, CurveOffsetDistanceLaw, CurveOffsetLawBasis, NurbsCurve, ProceduralCurve,
+    ProceduralCurveDefinition,
+};
 use cadmpeg_ir::ids::{CurveId, EdgeId, PointId, ProceduralCurveId, VertexId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::LossNote;
@@ -81,28 +84,8 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset source pointer is invalid"));
             continue;
         };
-        if record.integer(2) != Some(1) {
-            losses.push(entity_loss(
-                entry,
-                "variable-distance offset law is not projected",
-            ));
-            continue;
-        }
-        if record.integer(3) != Some(0)
-            || record.integer(4) != Some(0)
-            || record.integer(5) != Some(0)
-            || record.number(7) != Some(0.0)
-            || record.number(8) != Some(0.0)
-            || record.number(9) != Some(0.0)
-        {
-            losses.push(entity_loss(
-                entry,
-                "uniform offset has a nonzero unused field",
-            ));
-            continue;
-        }
-        let Some(distance) = record.number(6).filter(|value| value.is_finite()) else {
-            losses.push(entity_loss(entry, "uniform offset distance is not finite"));
+        let Some(flag) = record.integer(2).filter(|flag| matches!(flag, 1..=3)) else {
+            losses.push(entity_loss(entry, "offset distance flag is not 1, 2, or 3"));
             continue;
         };
         let components = [record.number(10), record.number(11), record.number(12)];
@@ -124,15 +107,15 @@ pub(super) fn project(
             ));
             continue;
         }
-        let bounds = [record.number(13), record.number(14)];
-        let [Some(start), Some(end)] = bounds else {
+        let native_bounds = [record.number(13), record.number(14)];
+        let [Some(native_start), Some(native_end)] = native_bounds else {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval is not numeric",
             ));
             continue;
         };
-        if !start.is_finite() || !end.is_finite() || start >= end {
+        if !native_start.is_finite() || !native_end.is_finite() || native_start >= native_end {
             losses.push(entity_loss(
                 entry,
                 "offset parameter interval is not increasing",
@@ -151,6 +134,26 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "offset source curve is missing"));
             continue;
         };
+        let source_range = ir.model.edges.iter().find_map(|edge| {
+            (edge.curve.as_ref() == Some(&source_id))
+                .then_some(edge.param_range)
+                .flatten()
+        });
+        let (parameter_origin, parameter_factor) =
+            if matches!(source.geometry, CurveGeometry::Line { .. }) {
+                let Some(range) = source_range else {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset line source has no bounded parameter domain",
+                    ));
+                    continue;
+                };
+                (range[0], range[1] - range[0])
+            } else {
+                (0.0, 1.0)
+            };
+        let start = parameter_origin + native_start * parameter_factor;
+        let end = parameter_origin + native_end * parameter_factor;
         let within_source_domain = ir.model.edges.iter().any(|edge| {
             edge.curve.as_ref() == Some(&source_id)
                 && edge
@@ -164,46 +167,180 @@ pub(super) fn project(
             ));
             continue;
         }
-        let distance = distance * factor;
-        let geometry = match &source.geometry {
-            CurveGeometry::Line { origin, direction }
-                if dot(normal, *direction).abs() <= 1.0e-10 =>
-            {
-                let offset = cross(normal, *direction);
-                CurveGeometry::Line {
-                    origin: add(*origin, offset, distance),
-                    direction: *direction,
-                }
-            }
-            CurveGeometry::Circle {
-                center,
-                axis,
-                ref_direction,
-                radius,
-            } if dot(normal, *axis).abs() >= 1.0 - 1.0e-10 => {
-                let signed_distance = distance * dot(normal, *axis).signum();
-                let offset_radius = radius - signed_distance;
-                if offset_radius <= 0.0 {
+        let (distance, distance_law, geometry) = match flag {
+            1 => {
+                if record.integer(3) != Some(0)
+                    || record.integer(4) != Some(0)
+                    || record.integer(5) != Some(0)
+                    || record.number(7) != Some(0.0)
+                    || record.number(8) != Some(0.0)
+                    || record.number(9) != Some(0.0)
+                {
                     losses.push(entity_loss(
                         entry,
-                        "offset collapses or reverses the circle",
+                        "uniform offset has a nonzero unused field",
                     ));
                     continue;
                 }
-                CurveGeometry::Circle {
-                    center: *center,
-                    axis: *axis,
-                    ref_direction: *ref_direction,
-                    radius: offset_radius,
-                }
+                let Some(distance) = record.number(6).filter(|value| value.is_finite()) else {
+                    losses.push(entity_loss(entry, "uniform offset distance is not finite"));
+                    continue;
+                };
+                let distance = distance * factor;
+                let geometry = match &source.geometry {
+                    CurveGeometry::Line { origin, direction }
+                        if dot(normal, *direction).abs() <= 1.0e-10 =>
+                    {
+                        CurveGeometry::Line {
+                            origin: add(*origin, cross(normal, *direction), distance),
+                            direction: *direction,
+                        }
+                    }
+                    CurveGeometry::Circle {
+                        center,
+                        axis,
+                        ref_direction,
+                        radius,
+                    } if dot(normal, *axis).abs() >= 1.0 - 1.0e-10 => {
+                        let offset_radius = radius - distance * dot(normal, *axis).signum();
+                        if offset_radius <= 0.0 {
+                            losses.push(entity_loss(
+                                entry,
+                                "offset collapses or reverses the circle",
+                            ));
+                            continue;
+                        }
+                        CurveGeometry::Circle {
+                            center: *center,
+                            axis: *axis,
+                            ref_direction: *ref_direction,
+                            radius: offset_radius,
+                        }
+                    }
+                    _ => {
+                        losses.push(entity_loss(
+                            entry,
+                            "source curve has no exact uniform offset carrier",
+                        ));
+                        continue;
+                    }
+                };
+                (distance, None, geometry)
             }
-            _ => {
+            2 => {
+                if record.integer(3) != Some(0) || record.integer(4) != Some(0) {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset has a nonzero function field",
+                    ));
+                    continue;
+                }
+                let basis = match record.integer(5) {
+                    Some(1) => CurveOffsetLawBasis::ArcLength,
+                    Some(2) => CurveOffsetLawBasis::Parameter,
+                    _ => {
+                        losses.push(entity_loss(entry, "linear offset basis is not 1 or 2"));
+                        continue;
+                    }
+                };
+                let values = [
+                    record.number(6),
+                    record.number(7),
+                    record.number(8),
+                    record.number(9),
+                ];
+                let [Some(d1), Some(td1), Some(d2), Some(td2)] = values else {
+                    losses.push(entity_loss(entry, "linear offset controls are not numeric"));
+                    continue;
+                };
+                if [d1, td1, d2, td2].iter().any(|value| !value.is_finite()) || td1 >= td2 {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset control range is not increasing and finite",
+                    ));
+                    continue;
+                }
+                let distances = [d1 * factor, d2 * factor];
+                let control_factor = match basis {
+                    CurveOffsetLawBasis::ArcLength => factor,
+                    CurveOffsetLawBasis::Parameter => parameter_factor,
+                };
+                let control_origin = match basis {
+                    CurveOffsetLawBasis::ArcLength => 0.0,
+                    CurveOffsetLawBasis::Parameter => parameter_origin,
+                };
+                let control_range = [
+                    control_origin + td1 * control_factor,
+                    control_origin + td2 * control_factor,
+                ];
+                let CurveGeometry::Line { direction, .. } = &source.geometry else {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset source has no exact neutral carrier",
+                    ));
+                    continue;
+                };
+                if dot(normal, *direction).abs() > 1.0e-10 {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset normal is not perpendicular to the line",
+                    ));
+                    continue;
+                }
+                let law_parameter = |parameter: f64| match basis {
+                    CurveOffsetLawBasis::Parameter => parameter,
+                    CurveOffsetLawBasis::ArcLength => parameter - start,
+                };
+                let evaluate_distance = |parameter: f64| {
+                    let alpha = (law_parameter(parameter) - control_range[0])
+                        / (control_range[1] - control_range[0]);
+                    distances[0] + alpha * (distances[1] - distances[0])
+                };
+                let offset_direction = cross(normal, *direction);
+                let Some(source_start) = cadmpeg_ir::eval::curve_point(&source.geometry, start)
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset source start cannot be evaluated",
+                    ));
+                    continue;
+                };
+                let Some(source_end) = cadmpeg_ir::eval::curve_point(&source.geometry, end) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "linear offset source end cannot be evaluated",
+                    ));
+                    continue;
+                };
+                let controls = vec![
+                    add(source_start, offset_direction, evaluate_distance(start)),
+                    add(source_end, offset_direction, evaluate_distance(end)),
+                ];
+                let law = CurveOffsetDistanceLaw::Linear {
+                    basis,
+                    distances,
+                    control_range,
+                };
+                (
+                    distances[0],
+                    Some(law),
+                    CurveGeometry::Nurbs(NurbsCurve {
+                        degree: 1,
+                        knots: vec![start, start, end, end],
+                        control_points: controls,
+                        weights: None,
+                        periodic: false,
+                    }),
+                )
+            }
+            3 => {
                 losses.push(entity_loss(
                     entry,
-                    "source curve has no exact uniform offset carrier",
+                    "coordinate-function offset has no solved neutral carrier",
                 ));
                 continue;
             }
+            _ => unreachable!(),
         };
         let Some(start_position) = cadmpeg_ir::eval::curve_point(&geometry, start) else {
             losses.push(entity_loss(
@@ -267,6 +404,9 @@ pub(super) fn project(
                 source: source_id,
                 distance,
                 support: None,
+                normal: Some(normal),
+                parameter_range: Some([start, end]),
+                distance_law,
             },
             cache_fit_tolerance: None,
         });

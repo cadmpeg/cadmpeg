@@ -910,7 +910,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralCurveDefinition::Offset {
-                source, support, ..
+                source,
+                support,
+                distance_law,
+                ..
             } => {
                 if !ids.curves.contains(&source.0) {
                     ref_error(findings, &procedural.id.0, "curve", &source.0);
@@ -918,6 +921,14 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 if let Some(support) = support {
                     if !ids.surfaces.contains(&support.0) {
                         ref_error(findings, &procedural.id.0, "surface", &support.0);
+                    }
+                }
+                if let Some(crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                    function, ..
+                }) = distance_law
+                {
+                    if !ids.curves.contains(&function.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &function.0);
                     }
                 }
             }
