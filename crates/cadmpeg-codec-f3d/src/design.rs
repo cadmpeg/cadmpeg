@@ -1341,6 +1341,19 @@ pub fn project_dimension_constraints(
         }
         None
     };
+    let exact_pair_companions = pairs
+        .iter()
+        .filter_map(|pair| {
+            let scope = native_stream(&pair.id)?;
+            let (parameter, parameter_id) = parameter_for(scope, pair.companion_record_index)?;
+            let indices = [
+                pair.first_geometry_record_index,
+                pair.second_geometry_record_index,
+            ];
+            exact_definition(scope, &parameter.source_kind, &indices, parameter_id)
+                .map(|_| (scope.to_owned(), pair.companion_record_index))
+        })
+        .collect::<HashSet<_>>();
 
     let mut constraints = pairs
         .iter()
@@ -1370,6 +1383,9 @@ pub fn project_dimension_constraints(
         })
         .chain(groups.iter().filter_map(|group| {
             let scope = native_stream(&group.id)?;
+            if exact_pair_companions.contains(&(scope.to_owned(), group.companion_record_index)) {
+                return None;
+            }
             let (parameter, parameter_id) = parameter_for(scope, group.companion_record_index)?;
             let indices = group
                 .loci
