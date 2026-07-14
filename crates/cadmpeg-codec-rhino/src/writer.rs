@@ -73,6 +73,7 @@ const CHANNEL_UV: u32 = 0x5248_0001;
 const CHANNEL_COLOR: u32 = 0x5248_0002;
 const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 const CHANNEL_CURVATURE: u32 = 0x5248_0004;
+const DEFAULT_RELATIVE_TOLERANCE: f64 = 0.01;
 
 pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<(), CodecError> {
     check_representable(ir)?;
@@ -2839,7 +2840,7 @@ fn units_record(linear: f64, angular: f64) -> Vec<u8> {
     body.extend(2_i32.to_le_bytes()); // millimeters
     body.extend(linear.to_le_bytes());
     body.extend(angular.to_le_bytes());
-    body.extend(linear.to_le_bytes());
+    body.extend(DEFAULT_RELATIVE_TOLERANCE.to_le_bytes());
     crc_chunk(TCODE_UNITS_AND_TOLERANCES, &body)
 }
 
@@ -3402,6 +3403,31 @@ mod tests {
                 Point3::new(1.25, -2.5, 3.75)
             );
         }
+    }
+
+    #[test]
+    fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.tolerances.linear = 2.0;
+        ir.model.points.push(Point {
+            id: PointId("point:coarse-tolerance".into()),
+            position: Point3::new(1.0, 2.0, 3.0),
+        });
+
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut bytes)
+            .expect("coarse absolute tolerance is writable");
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("generated settings record remains valid");
+
+        assert_eq!(decoded.ir.tolerances.linear, 2.0);
+        assert!(decoded
+            .report
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("relative tolerance")));
     }
 
     #[test]
