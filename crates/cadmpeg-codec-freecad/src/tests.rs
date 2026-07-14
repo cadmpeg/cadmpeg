@@ -309,6 +309,70 @@ fn transfers_part_and_partdesign_analytic_primitives() {
 }
 
 #[test]
+fn transfers_ordered_part_boolean_operands_and_infers_dependencies() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="Part::Box" name="A" id="1"/>
+ <Object type="Part::Box" name="B" id="2"/>
+ <Object type="Part::Box" name="C" id="3"/>
+ <Object type="Part::Cut" name="Cut" id="4"/>
+ <Object type="Part::MultiFuse" name="Fuse" id="5"/>
+</Objects>
+<ObjectData Count="5">
+ <Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="C"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Cut"><Properties Count="2"><Property name="Base" type="App::PropertyLink"><Link value="A"/></Property><Property name="Tool" type="App::PropertyLink"><Link value="B"/></Property></Properties></Object>
+ <Object name="Fuse"><Properties Count="1"><Property name="Shapes" type="App::PropertyLinkList"><LinkList count="2"><Link value="Cut"/><Link value="C"/></LinkList></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("Part booleans");
+    let feature = |name: &str| {
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+    };
+    assert!(matches!(
+        feature("Cut").definition,
+        cadmpeg_ir::features::FeatureDefinition::Combine {
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }
+    ));
+    assert_eq!(
+        feature("Cut")
+            .dependencies
+            .iter()
+            .map(|id| id.0.as_str())
+            .collect::<Vec<_>>(),
+        ["fcstd:design:feature#A", "fcstd:design:feature#B"]
+    );
+    let cadmpeg_ir::features::FeatureDefinition::Combine { target, tools, op } =
+        &feature("Fuse").definition
+    else {
+        panic!("multi-fuse");
+    };
+    assert_eq!(*op, cadmpeg_ir::features::BooleanOp::Join);
+    assert!(matches!(
+        target,
+        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with("#link:0")
+    ));
+    assert!(matches!(
+        tools,
+        cadmpeg_ir::features::BodySelection::Native(value) if value.ends_with("#links:1..2")
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn reports_attributable_native_design_blockers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>

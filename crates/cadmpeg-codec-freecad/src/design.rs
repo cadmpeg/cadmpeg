@@ -6,9 +6,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature, FeatureDefinition,
-    FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue, PrimitiveSolid,
-    ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, SketchSpace,
+    BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
+    FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
+    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, SketchSpace,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -94,6 +94,14 @@ pub(crate) fn transfer(
             }
         } else if is_primitive(&object.type_name) {
             primitive_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if is_boolean(&object.type_name) {
+            boolean_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -190,10 +198,22 @@ pub(crate) fn transfer(
                     .cloned()
             })
             .collect();
-        let dependencies = object
+        let mut dependency_objects = object
             .dependencies
             .iter()
-            .filter_map(|dependency| feature_ids.get(dependency.as_str()).cloned())
+            .map(String::as_str)
+            .chain(
+                owned
+                    .iter()
+                    .flat_map(|property| &property.links)
+                    .filter_map(|link| link.object.as_deref()),
+            )
+            .collect::<Vec<_>>();
+        let mut seen_dependencies = BTreeSet::new();
+        dependency_objects.retain(|dependency| seen_dependencies.insert(*dependency));
+        let dependencies = dependency_objects
+            .into_iter()
+            .filter_map(|dependency| feature_ids.get(dependency).cloned())
             .filter(|dependency| {
                 objects.iter().any(|candidate| {
                     feature_id(candidate) == *dependency && candidate.order < object.order
@@ -1355,6 +1375,39 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     Some(FeatureDefinition::Primitive { solid, op })
 }
 
+fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let op = if kind.ends_with("Cut") {
+        BooleanOp::Cut
+    } else if kind.ends_with("Common") || kind.ends_with("MultiCommon") {
+        BooleanOp::Intersect
+    } else if kind.ends_with("Fuse") || kind.ends_with("MultiFuse") {
+        BooleanOp::Join
+    } else {
+        return None;
+    };
+    let (target, tools) = if let (Some(base), Some(tool)) =
+        (property(properties, "Base"), property(properties, "Tool"))
+    {
+        if base.links.is_empty() || tool.links.is_empty() {
+            return None;
+        }
+        (
+            BodySelection::Native(base.id.clone()),
+            BodySelection::Native(tool.id.clone()),
+        )
+    } else {
+        let shapes = property(properties, "Shapes")?;
+        if shapes.links.len() < 2 {
+            return None;
+        }
+        (
+            BodySelection::Native(format!("{}#link:0", shapes.id)),
+            BodySelection::Native(format!("{}#links:1..{}", shapes.id, shapes.links.len())),
+        )
+    };
+    Some(FeatureDefinition::Combine { target, tools, op })
+}
+
 fn feature_id(object: &ObjectRecord) -> FeatureId {
     FeatureId(format!("fcstd:design:feature#{}", object.name))
 }
@@ -1377,6 +1430,11 @@ fn is_primitive(kind: &str) -> bool {
         .any(|primitive| kind.ends_with(primitive))
         && (kind.starts_with("Part::") || kind.starts_with("PartDesign::"))
 }
+fn is_boolean(kind: &str) -> bool {
+    ["Cut", "Fuse", "MultiFuse", "Common", "MultiCommon"]
+        .iter()
+        .any(|operation| kind == format!("Part::{operation}"))
+}
 fn is_dress_up(kind: &str) -> bool {
     kind.contains("Fillet") || kind.contains("Chamfer")
 }
@@ -1391,6 +1449,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_body(kind)
         || is_sketch(kind)
         || is_primitive(kind)
+        || is_boolean(kind)
         || is_extrusion(kind)
         || is_revolution(kind)
         || is_dress_up(kind)

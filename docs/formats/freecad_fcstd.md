@@ -279,3 +279,9 @@ persisted degree-valued angular bounds become radians. A standalone primitive cr
 additive and subtractive families explicitly join or cut. Required dimensions must be finite,
 linear sizes must be positive except that one cone end radius may be zero, and latitude bounds must
 be ordered. Incomplete or invalid primitive definitions remain attributable native operations.
+
+Part cut, fuse, common, multi-fuse, and multi-common objects transfer as neutral Boolean combine
+operations. Two-input forms retain distinct `Base` and `Tool` property identities. Multi-input
+forms define link zero as the target and the remaining ordered `Shapes` links as tools without
+claiming that application-object links are already neutral body ids. Feature dependencies are the
+stable union of declared object dependencies and earlier link-property operands in source order.
