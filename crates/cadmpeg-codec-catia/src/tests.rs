@@ -1107,6 +1107,17 @@ fn a5_topology_edge_run_stream() -> Vec<u8> {
     bytes
 }
 
+fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
+    let mut bytes = a5_edge_block_stream();
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 1, 2, 3, 0x84]);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 4, 5, 6, 0x88]);
+    let references = [curve, start, end, 20, 21];
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x5e, 0x06, 0x05]);
+    bytes.extend(references.map(|value| 4 * value + 1));
+    bytes.push(0x21);
+    bytes
+}
+
 fn a5_cylinder_bound_edge_stream() -> Vec<u8> {
     let mut bytes = a5_edge_block_stream();
     bytes.extend_from_slice(&b2_cylinder_stream());
@@ -3061,6 +3072,32 @@ fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
     assert_eq!(runs[0].uses[1].sense, Some(B2UseSense::Sense88));
     assert_eq!(runs[0].node.start_vertex_ref, 889);
     assert_eq!(runs[0].node.end_vertex_ref, 895);
+}
+
+#[test]
+fn a5_native_edge_graph_uses_persistent_endpoint_incidence() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&a5_native_edge_run_stream(1, 10, 11));
+    bytes.extend_from_slice(&a5_native_edge_run_stream(2, 11, 12));
+    bytes.extend_from_slice(&a5_native_edge_run_stream(3, 12, 10));
+    let graph = crate::geometry::a5_native_edge_graph(&bytes).expect("native edge graph");
+    assert_eq!(graph.vertex_identities, [10, 11, 12]);
+    assert_eq!(
+        graph
+            .edges
+            .iter()
+            .map(|edge| edge.vertices)
+            .collect::<Vec<_>>(),
+        [[0, 1], [1, 2], [2, 0]]
+    );
+    assert_eq!(graph.components, [vec![0, 1, 2]]);
+}
+
+#[test]
+fn a5_native_edge_graph_rejects_duplicate_curve_identities() {
+    let mut bytes = a5_native_edge_run_stream(1, 10, 11);
+    bytes.extend_from_slice(&a5_native_edge_run_stream(1, 20, 21));
+    assert!(crate::geometry::a5_native_edge_graph(&bytes).is_none());
 }
 
 #[test]

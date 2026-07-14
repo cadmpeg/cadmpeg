@@ -11,7 +11,10 @@
 //! finite numeric payloads, structural counts, and family-specific invariants
 //! before returning a carrier.
 
-use std::{collections::BTreeMap, ops::Range};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::Range,
+};
 
 use cadmpeg_ir::be::f32_at as f32_be;
 use cadmpeg_ir::eval::nurbs_surface_partials;
@@ -974,6 +977,27 @@ pub struct A5TopologyEdgeRun {
     pub node: B2EdgeNode,
 }
 
+/// Native endpoint-incidence graph of complete consolidated edge runs.
+#[derive(Debug, Clone)]
+pub struct A5NativeEdgeGraph {
+    /// Persistent native vertex identities in first-incidence order.
+    pub vertex_identities: Vec<u32>,
+    /// Edge runs in serialization order, with endpoints indexing
+    /// `vertex_identities`.
+    pub edges: Vec<A5NativeGraphEdge>,
+    /// Connected edge components, expressed as edge ordinals.
+    pub components: Vec<Vec<usize>>,
+}
+
+/// One edge in a consolidated native endpoint-incidence graph.
+#[derive(Debug, Clone)]
+pub struct A5NativeGraphEdge {
+    /// Complete serialized edge run.
+    pub run: A5TopologyEdgeRun,
+    /// Compact endpoint indices into [`A5NativeEdgeGraph::vertex_identities`].
+    pub vertices: [usize; 2],
+}
+
 /// Uniquely resolved carrier for one side of a consolidated edge block.
 #[derive(Debug, Clone, PartialEq)]
 pub enum A5SupportBinding {
@@ -1113,6 +1137,64 @@ pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
             }
         })
         .collect()
+}
+
+/// Build the native endpoint-incidence graph for all complete consolidated
+/// edge runs. Duplicate curve identities invalidate the graph rather than
+/// silently merging distinct serialized runs.
+#[must_use]
+pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
+    let runs = a5_topology_edge_runs(data);
+    if runs.is_empty() {
+        return None;
+    }
+    let mut curve_identities = std::collections::HashSet::new();
+    let mut vertex_indices = HashMap::new();
+    let mut vertex_identities = Vec::new();
+    let mut edges = Vec::with_capacity(runs.len());
+    for run in runs {
+        if !curve_identities.insert(run.node.curve_ref) {
+            return None;
+        }
+        let vertices = [run.node.start_vertex_ref, run.node.end_vertex_ref].map(|identity| {
+            *vertex_indices.entry(identity).or_insert_with(|| {
+                let index = vertex_identities.len();
+                vertex_identities.push(identity);
+                index
+            })
+        });
+        edges.push(A5NativeGraphEdge { run, vertices });
+    }
+    let mut vertex_edges = vec![Vec::new(); vertex_identities.len()];
+    for (edge, value) in edges.iter().enumerate() {
+        for vertex in value.vertices {
+            vertex_edges[vertex].push(edge);
+        }
+    }
+    let mut unseen = (0..edges.len()).collect::<std::collections::BTreeSet<_>>();
+    let mut components = Vec::new();
+    while let Some(&first) = unseen.first() {
+        let mut component = Vec::new();
+        let mut stack = vec![first];
+        unseen.remove(&first);
+        while let Some(edge) = stack.pop() {
+            component.push(edge);
+            for vertex in edges[edge].vertices {
+                for &neighbor in &vertex_edges[vertex] {
+                    if unseen.remove(&neighbor) {
+                        stack.push(neighbor);
+                    }
+                }
+            }
+        }
+        component.sort_unstable();
+        components.push(component);
+    }
+    Some(A5NativeEdgeGraph {
+        vertex_identities,
+        edges,
+        components,
+    })
 }
 
 /// Resolve consolidated edge sides against B2 cylinder charts by endpoint lifts.

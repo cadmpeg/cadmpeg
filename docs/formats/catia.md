@@ -306,6 +306,8 @@ For a co-parametric edge block, each uniquely bound analytic carrier lifts every
 
 A complete consolidated edge run is the contiguous framed sequence `A:20, A:20, B:23, B:06, B:06, B:5e`. The first two records are its side pcurves, `23` is their shared parameter packet, the two `06` records are the side uses in the same order, and `5e` is the native edge node. In the five-reference `5e` layout the references identify, in order, the 3D curve support, start vertex, end vertex, start endpoint parameter, and end endpoint parameter. An intervening framed record terminates the run.
 
+The start/end references form a global native vertex-identity namespace across complete edge runs. Equal references join incident physical edges independently of endpoint coordinates. The curve-support reference uniquely identifies one physical edge run; duplicate curve identities invalidate the incidence graph. Connected components of this graph partition disconnected edge populations before face ownership is applied.
+
 ### 6.4 Consolidated guide and topology metadata
 
 - **`a5 03 39`** stores `K`, degree, repeated `K`, distinct knots, three `K × 6 × f64le` blocks, and a 48-byte tail. Each position-site pair is two triples `(P,Q)` satisfying `|Q−P|=1`; `P` is a guide-curve point and `Q−P` is its unit reference direction. The next two blocks contain first and second derivatives of all six channels.
