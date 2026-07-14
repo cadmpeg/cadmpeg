@@ -136,6 +136,21 @@ pub struct OmRecordArea {
     pub source_offset: u64,
 }
 
+/// Ordered feature operation label from a feature-history record area.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationLabel {
+    /// Globally unique label identity.
+    pub id: String,
+    /// Link identifying the owning ordered OM section.
+    pub section_link: String,
+    /// Zero-based order within the record area.
+    pub ordinal: u32,
+    /// Exact printable operation name.
+    pub value: String,
+    /// Absolute file offset of the `03` label tag.
+    pub source_offset: u64,
+}
+
 /// Decode internally pointed record areas from linked OM sections.
 pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
     let links = segment_om_links(container);
@@ -170,6 +185,38 @@ pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
             })
         })
         .collect()
+}
+
+/// Decode ordered operation labels from feature-history record areas.
+pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLabel> {
+    let sections = container.om_sections();
+    let mut labels = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        labels.extend(section.operation_labels().into_iter().enumerate().map(
+            |(ordinal, label)| FeatureOperationLabel {
+                id: format!("{}:operation-label#{ordinal}", link.id),
+                section_link: link.id.clone(),
+                ordinal: ordinal as u32,
+                value: label.value.to_string(),
+                source_offset: entry_offset + label.offset as u64,
+            },
+        ));
+    }
+    labels
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

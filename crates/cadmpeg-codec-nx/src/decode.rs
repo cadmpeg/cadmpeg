@@ -2704,6 +2704,7 @@ fn attach_native_object_model(
     let segment_om_links = crate::native::segment_om_links(&scan.container);
     let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
     let om_record_areas = crate::native::om_record_areas(&scan.container);
+    let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
@@ -2723,6 +2724,7 @@ fn attach_native_object_model(
         && segment_om_links.is_empty()
         && segment_stream_links.is_empty()
         && om_record_areas.is_empty()
+        && feature_operation_labels.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
         && fields.is_empty()
@@ -2764,6 +2766,12 @@ fn attach_native_object_model(
             .note(&area.id, annotation_stream, area.source_offset)
             .tag("OM_RECORD_AREA");
         annotations.exactness(&area.id, Exactness::ByteExact);
+    }
+    for label in &feature_operation_labels {
+        annotations
+            .note(&label.id, annotation_stream, label.source_offset)
+            .tag("FEATURE_OPERATION_LABEL");
+        annotations.exactness(&label.id, Exactness::ByteExact);
     }
     for header in &store_headers {
         annotations
@@ -2865,7 +2873,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(15);
+    namespace.version = namespace.version.max(16);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2877,6 +2885,9 @@ fn attach_native_object_model(
     }
     if !om_record_areas.is_empty() {
         namespace.set_arena("om_record_areas", &om_record_areas)?;
+    }
+    if !feature_operation_labels.is_empty() {
+        namespace.set_arena("feature_operation_labels", &feature_operation_labels)?;
     }
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;

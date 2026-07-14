@@ -195,6 +195,15 @@ pub struct Section<'a> {
     pub record_area: Option<&'a [u8]>,
 }
 
+/// A feature operation name in a size-framed feature-history record area.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationLabel<'a> {
+    /// Absolute offset of the `03` label tag within the containing entry.
+    pub offset: usize,
+    /// Printable operation name without its terminating NUL.
+    pub value: &'a str,
+}
+
 impl<'a> IndexedSection<'a> {
     /// Return the section base used by its external record offsets.
     pub const fn base_offset(&self) -> usize {
@@ -292,6 +301,54 @@ impl<'a> Section<'a> {
             },
         })
     }
+
+    /// Decode strictly framed operation labels from the pointed record area.
+    pub fn operation_labels(&self) -> Vec<OperationLabel<'a>> {
+        let Some(bytes) = self.record_area else {
+            return Vec::new();
+        };
+        let Some(base_offset) = self.record_area_offset else {
+            return Vec::new();
+        };
+        operation_labels(bytes, base_offset)
+    }
+}
+
+/// Decode `ff ff 03 length name 00` operation-label frames.
+pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
+    let mut labels = Vec::new();
+    for at in 2..bytes.len().saturating_sub(3) {
+        if bytes[at - 2..at] != [0xff, 0xff] || bytes[at] != 0x03 {
+            continue;
+        }
+        let length = usize::from(bytes[at + 1]);
+        if length < 3 {
+            continue;
+        }
+        let Some(end) = at.checked_add(length) else {
+            continue;
+        };
+        if bytes.get(end) != Some(&0) {
+            continue;
+        }
+        let Some(name) = bytes.get(at + 2..end) else {
+            continue;
+        };
+        if !name
+            .iter()
+            .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+        {
+            continue;
+        }
+        let Ok(value) = std::str::from_utf8(name) else {
+            continue;
+        };
+        labels.push(OperationLabel {
+            offset: base_offset + at,
+            value,
+        });
+    }
+    labels
 }
 
 /// Decode count-framed runs of same-section record references.

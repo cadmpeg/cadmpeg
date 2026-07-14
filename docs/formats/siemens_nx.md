@@ -79,6 +79,9 @@ A size-framed OM section's schema trailer can contain a little-endian
 section-relative record-area offset. The target begins with three `u32 LE`
 control words followed by `04|05 01 text_length:u8 "NX " product_text 00`.
 The pointed record area extends to the size-framed section boundary.
+Within a feature-history record area, an operation label is encoded as
+`ff ff 03 length:u8 name 00`. `name` contains printable ASCII bytes and
+`length = name_length + 2`.
 
 ### 2.1 Stream inventory
 
