@@ -95,6 +95,51 @@ pub fn parasolid_trimmed_curve_records(streams: &[Stream]) -> Vec<ParasolidTrimm
     records
 }
 
+/// Complete typed source record for one Parasolid surface curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidSurfaceCurveRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the surface curve.
+    pub xmt: u32,
+    /// Cross-reference index of the support surface.
+    pub surface_xmt: u32,
+    /// Cross-reference index of the parameter-space B-curve.
+    pub pcurve_xmt: u32,
+    /// Nullable cross-reference index of the original model-space curve.
+    pub original_curve_xmt: u32,
+    /// Serialized tolerance to the original curve in Parasolid metres.
+    pub tolerance_to_original: f64,
+    /// Record tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode complete typed source records for Parasolid surface curves.
+pub fn parasolid_surface_curve_records(streams: &[Stream]) -> Vec<ParasolidSurfaceCurveRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for curve in crate::topology::surface_curves(&stream.inflated) {
+            records.push(ParasolidSurfaceCurveRecord {
+                id: format!("nx:s{stream_ordinal}:surface-curve-record#{}", curve.xmt),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: curve.xmt,
+                surface_xmt: curve.surface,
+                pcurve_xmt: curve.pcurve,
+                original_curve_xmt: curve.original,
+                tolerance_to_original: curve.tolerance,
+                inflated_offset: curve.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidIntersectionRecord {

@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 135);
+    assert_eq!(namespace.version, 136);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 135);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 136);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7146,6 +7146,18 @@ fn decode_resolves_surface_curve_to_its_basis_curve() {
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
 
     assert_eq!(result.ir.model.edges.len(), 1);
+    let records = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidSurfaceCurveRecord>("parasolid_surface_curve_records")
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].surface_xmt, 6);
+    assert_eq!(records[0].pcurve_xmt, 9);
+    assert_eq!(records[0].original_curve_xmt, 9);
+    assert_eq!(records[0].tolerance_to_original, 0.000_01);
     assert_eq!(
         result.ir.model.edges[0].curve.as_ref(),
         Some(&result.ir.model.curves[0].id)

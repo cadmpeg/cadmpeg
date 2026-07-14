@@ -367,6 +367,8 @@ pub struct SurfaceCurve {
     pub original: u32,
     /// Fit tolerance to the original curve, in Parasolid metres.
     pub tolerance: f64,
+    /// Record type-tag offset in the inflated stream.
+    pub pos: usize,
 }
 
 /// A type-60 offset surface referencing its support carrier.
@@ -609,6 +611,7 @@ pub fn surface_curves(stream: &[u8]) -> Vec<SurfaceCurve> {
                 pcurve: refs[1],
                 original: refs[2],
                 tolerance,
+                pos: node.pos,
             })
         })
         .collect()
