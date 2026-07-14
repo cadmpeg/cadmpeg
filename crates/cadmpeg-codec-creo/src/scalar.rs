@@ -139,6 +139,15 @@ pub fn decode_in_surface_row_lane(
         raw[2..].copy_from_slice(tail);
         return Some((f64::from_be_bytes(raw), offset + 7));
     }
+    if let Some(high) = match data.get(offset) {
+        Some(0xd1) => Some(0x3fff),
+        Some(0xd3) => Some(0x4001),
+        Some(0xde) => Some(0x4010),
+        Some(0xdf) => Some(0x4011),
+        _ => None,
+    } {
+        return ieee7_dict(data, offset, high);
+    }
     decode_in_row_lane(data, offset, cache)
 }
 
@@ -448,6 +457,39 @@ mod tests {
             decode_tabulated_cylinder_second_coordinate(&second_negative, 0, &cache),
             Some((
                 f64::from_be_bytes([0xbf, 0xf4, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77]),
+                7
+            ))
+        );
+    }
+
+    #[test]
+    fn surface_row_lane_decodes_large_positive_dict_forms() {
+        let cache = ScalarCache::default();
+        assert_eq!(
+            decode_in_surface_row_lane(&[0xd1, 0xf1, 0x60, 0x5a, 0xa4, 0xd9, 0x00], 0, &cache),
+            Some((
+                f64::from_be_bytes([0x3f, 0xff, 0xf1, 0x60, 0x5a, 0xa4, 0xd9, 0x00]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_in_surface_row_lane(&[0xd3, 0x65, 0x1a, 0x84, 0x5c, 0xa9, 0xf0], 0, &cache),
+            Some((
+                f64::from_be_bytes([0x40, 0x01, 0x65, 0x1a, 0x84, 0x5c, 0xa9, 0xf0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_in_surface_row_lane(&[0xde, 0xee, 0xa1, 0x55, 0x61, 0x88, 0x28], 0, &cache),
+            Some((
+                f64::from_be_bytes([0x40, 0x10, 0xee, 0xa1, 0x55, 0x61, 0x88, 0x28]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_in_surface_row_lane(&[0xdf, 0x19, 0x4c, 0x93, 0x0f, 0x96, 0xe8], 0, &cache),
+            Some((
+                f64::from_be_bytes([0x40, 0x11, 0x19, 0x4c, 0x93, 0x0f, 0x96, 0xe8]),
                 7
             ))
         );
