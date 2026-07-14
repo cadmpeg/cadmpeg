@@ -493,7 +493,12 @@ fn is_model_geometry_namespace(data: &[u8], sections: &[Section], section: &Sect
     if visible_namespace_present {
         section.name == VISIBGEOM
     } else {
-        section.name == "DEPDB_DATA"
+        if section.name != "DEPDB_DATA" {
+            return false;
+        }
+        let end = (section.offset + section.length).min(data.len());
+        let payload = &data[section.offset..end];
+        find(payload, b"srf_array\0", 0).is_some() || find(payload, b"crv_array\0", 0).is_some()
     }
 }
 
@@ -672,7 +677,7 @@ fn curve_expressions(data: &[u8], sections: &[Section]) -> Vec<CurveExpressionRe
     let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| is_model_geometry_namespace(data, sections, section))
+        .filter(|section| section.name == VISIBGEOM || section.name == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
         records.extend(

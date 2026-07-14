@@ -271,6 +271,15 @@ fn scan_sums_concatenated_depdb_surface_namespaces() {
 }
 
 #[test]
+fn scan_does_not_treat_unlabeled_depdb_bytes_as_geometry_rows() {
+    let payload = vec![7, 0x22, 4, 0x01, 0, 8, 8, 0x24, 4, 0xf6, 0x01, 0];
+    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
+
+    assert!(scan.surface_rows.is_empty());
+    assert!(scan.surface_parameters.is_empty());
+}
+
+#[test]
 fn scan_discovers_typed_surface_rows() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);
