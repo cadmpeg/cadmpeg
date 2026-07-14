@@ -2701,6 +2701,7 @@ fn attach_native_object_model(
     annotations: &mut AnnotationBuilder,
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let segment_index_rows = crate::native::segment_index_rows(&scan.container);
+    let segment_om_links = crate::native::segment_om_links(&scan.container);
     let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
@@ -2718,6 +2719,7 @@ fn attach_native_object_model(
         crate::native::persistent_handles(&object_references, &external_reference_records);
     let object_sections = scan.container.indexed_om_sections();
     if segment_index_rows.is_empty()
+        && segment_om_links.is_empty()
         && segment_stream_links.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
@@ -2747,6 +2749,12 @@ fn attach_native_object_model(
         annotations
             .note(&link.id, annotation_stream, link.source_offset)
             .tag("UG_PART_SEGMENT_STREAM_LINK");
+        annotations.exactness(&link.id, Exactness::ByteExact);
+    }
+    for link in &segment_om_links {
+        annotations
+            .note(&link.id, annotation_stream, link.source_offset)
+            .tag("UG_PART_SEGMENT_OM_LINK");
         annotations.exactness(&link.id, Exactness::ByteExact);
     }
     for header in &store_headers {
@@ -2855,6 +2863,9 @@ fn attach_native_object_model(
     }
     if !segment_stream_links.is_empty() {
         namespace.set_arena("segment_stream_links", &segment_stream_links)?;
+    }
+    if !segment_om_links.is_empty() {
+        namespace.set_arena("segment_om_links", &segment_om_links)?;
     }
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;

@@ -80,6 +80,69 @@ pub struct SegmentStreamLink {
     pub source_offset: u64,
 }
 
+/// Validated link from a segment-index word to a framed OM section.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SegmentOmLink {
+    /// Globally unique link identity.
+    pub id: String,
+    /// Owning segment-index row.
+    pub row: String,
+    /// Row word containing the section offset.
+    pub slot: SegmentIndexSlot,
+    /// Bytes from the pointed offset to the OM section signature.
+    pub separator_byte_len: u32,
+    /// Absolute file offset of the pointed location.
+    pub source_offset: u64,
+    /// Absolute file offset of the `ff ff ff ff` OM signature.
+    pub section_offset: u64,
+}
+
+/// Resolve segment-index words that point to validated framed OM sections.
+pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
+    let Some((entry, index)) = container.segment_index() else {
+        return Vec::new();
+    };
+    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let entry_start = usize::try_from(entry_offset).expect("in-bounds directory offset");
+    let section_offsets = container
+        .om_sections()
+        .into_iter()
+        .filter(|(candidate, _)| candidate.name == entry.name)
+        .map(|(_, section)| section.offset)
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut links = Vec::new();
+    for (row_ordinal, row) in index.rows.into_iter().enumerate() {
+        for (slot, relative) in [
+            (SegmentIndexSlot::TypeCode, row.type_code),
+            (SegmentIndexSlot::SubtypeCode, row.subtype_code),
+            (SegmentIndexSlot::Value, row.value),
+        ] {
+            let relative = relative as usize;
+            let separator_byte_len = if section_offsets.contains(&relative) {
+                0usize
+            } else if container
+                .data
+                .get(entry_start + relative..entry_start + relative + 4)
+                == Some(&[0xc0, 0xd1, 0xf1, 0xed])
+                && section_offsets.contains(&(relative + 4))
+            {
+                4
+            } else {
+                continue;
+            };
+            links.push(SegmentOmLink {
+                id: format!("nx:segment-om-links:link#{}", links.len()),
+                row: format!("nx:segment-index:row#{row_ordinal}"),
+                slot,
+                separator_byte_len: separator_byte_len as u32,
+                source_offset: entry_offset + relative as u64,
+                section_offset: entry_offset + relative as u64 + separator_byte_len as u64,
+            });
+        }
+    }
+    links
+}
+
 /// Resolve segment-index words that point to validated compressed wrappers.
 pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<SegmentStreamLink> {
     let Some((entry, index)) = container.segment_index() else {

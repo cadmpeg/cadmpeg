@@ -55,6 +55,19 @@ fn segment_stream_payload() -> Vec<u8> {
     payload
 }
 
+fn segment_om_payload(separated: bool) -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    if separated {
+        payload.extend_from_slice(&[0xc0, 0xd1, 0xf1, 0xed]);
+    }
+    payload.extend_from_slice(&size_framed_om_section());
+    payload
+}
+
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
@@ -392,6 +405,32 @@ fn segment_order_pairs_delta_across_intervening_non_history_stream() {
         crate::decode::pair_stream_indices(&streams, Some(&eligible)),
         std::collections::BTreeMap::from([(0, vec![2]), (3, vec![5])])
     );
+}
+
+#[test]
+fn decode_links_segment_index_words_to_direct_and_separated_om_sections() {
+    for (separated, expected_separator) in [(false, 0), (true, 4)] {
+        let file =
+            prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_om_payload(separated))]);
+        let result = NxCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .unwrap();
+        let links = result
+            .ir
+            .native
+            .namespace("nx")
+            .unwrap()
+            .arena_as::<crate::native::SegmentOmLink>("segment_om_links")
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].row, "nx:segment-index:row#0");
+        assert_eq!(links[0].slot, crate::native::SegmentIndexSlot::TypeCode);
+        assert_eq!(links[0].separator_byte_len, expected_separator);
+        assert_eq!(
+            links[0].section_offset,
+            links[0].source_offset + u64::from(expected_separator)
+        );
+    }
 }
 
 #[test]

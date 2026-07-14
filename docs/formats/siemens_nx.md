@@ -64,6 +64,11 @@ order with the same Parasolid schema token. Non-history compressed streams do
 not break this relation. A later partition begins a distinct body-history unit;
 a deltas stream does not cross an intervening equal-schema partition.
 
+A segment-index word can also point directly to an OM section signature, or to
+`c0 d1 f1 ed` followed immediately by that signature. The latter form has a
+four-byte separator. The row ordinal and word position order the pointed OM
+section relative to the compressed stream wrappers in the same segment index.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |
