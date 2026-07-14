@@ -3296,7 +3296,7 @@ fn attach_native_object_model(
             values: vec![AttributeValue::String(attribute.value.clone())],
         });
     }
-    attach_parasolid_face_string_attributes(
+    attach_parasolid_topology_string_attributes(
         ir,
         &parasolid_topology_attribute_list_references,
         &parasolid_entity_51_string_uses,
@@ -3419,7 +3419,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(119);
+    namespace.version = namespace.version.max(120);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3810,7 +3810,7 @@ fn attach_native_object_model(
     Ok(())
 }
 
-fn attach_parasolid_face_string_attributes(
+fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
     topology_references: &[crate::native::ParasolidTopologyAttributeListReference],
     string_uses: &[crate::native::ParasolidEntity51StringUse],
@@ -3832,31 +3832,54 @@ fn attach_parasolid_face_string_attributes(
     for uses in uses_by_entity.values_mut() {
         uses.sort_by_key(|string_use| string_use.reference_ordinal);
     }
-    let mut references_by_face =
+    let mut references_by_target =
         BTreeMap::<String, Vec<&crate::native::ParasolidTopologyAttributeListReference>>::new();
-    for reference in topology_references
-        .iter()
-        .filter(|reference| reference.topology_type == 14)
-    {
-        references_by_face
+    for reference in topology_references {
+        let kind = match reference.topology_type {
+            14 => "face",
+            16 => "edge",
+            17 => "fin",
+            18 => "vertex",
+            _ => continue,
+        };
+        references_by_target
             .entry(format!(
-                "nx:s{}:face#{}",
+                "nx:s{}:{kind}#{}",
                 reference.stream_ordinal, reference.topology_xmt
             ))
             .or_default()
             .push(reference);
     }
-    let emitted_faces = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| (face.id.0.as_str(), face.id.clone()))
-        .collect::<BTreeMap<_, _>>();
-    for (face_key, references) in references_by_face {
+    let mut emitted_targets = BTreeMap::<String, AttributeTarget>::new();
+    emitted_targets.extend(
+        ir.model
+            .faces
+            .iter()
+            .map(|face| (face.id.0.clone(), AttributeTarget::Face(face.id.clone()))),
+    );
+    emitted_targets.extend(
+        ir.model
+            .edges
+            .iter()
+            .map(|edge| (edge.id.0.clone(), AttributeTarget::Edge(edge.id.clone()))),
+    );
+    emitted_targets.extend(ir.model.coedges.iter().map(|coedge| {
+        (
+            coedge.id.0.clone(),
+            AttributeTarget::Coedge(coedge.id.clone()),
+        )
+    }));
+    emitted_targets.extend(ir.model.vertices.iter().map(|vertex| {
+        (
+            vertex.id.0.clone(),
+            AttributeTarget::Vertex(vertex.id.clone()),
+        )
+    }));
+    for (target_key, references) in references_by_target {
         let [reference] = references.as_slice() else {
             continue;
         };
-        let Some(face) = emitted_faces.get(face_key.as_str()) else {
+        let Some(target) = emitted_targets.get(target_key.as_str()) else {
             continue;
         };
         let Some(entity) = reference.attribute_list_record.as_deref() else {
@@ -3867,8 +3890,11 @@ fn attach_parasolid_face_string_attributes(
                 continue;
             };
             let id = AttributeId(format!(
-                "nx:s{}:face-string-attribute#{}-{}",
-                reference.stream_ordinal, reference.topology_xmt, string_use.reference_ordinal
+                "nx:s{}:topology-string-attribute#{}-{}-{}",
+                reference.stream_ordinal,
+                reference.topology_type,
+                reference.topology_xmt,
+                string_use.reference_ordinal
             ));
             let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
             annotations
@@ -3878,7 +3904,7 @@ fn attach_parasolid_face_string_attributes(
             annotations.derived(&id.0, "name");
             ir.model.attributes.push(SourceAttribute {
                 id,
-                target: AttributeTarget::Face(face.clone()),
+                target: target.clone(),
                 name: format!(
                     "parasolid_type_84_reference_{}",
                     string_use.reference_ordinal
