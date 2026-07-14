@@ -882,6 +882,85 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let face_group_members = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces))
+        .flat_map(|group| {
+            let native_stream = design_stream(&group.id);
+            group
+                .members
+                .iter()
+                .map(move |member| (native_stream, group.scope_record_index, *member))
+        })
+        .collect::<HashSet<_>>();
+    let mut face_operand_records = HashSet::new();
+    for operand in &native.design_face_operands {
+        let native_stream = design_stream(&operand.id);
+        let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
+        let header = records_by_index.get(&(native_stream, operand.record_index));
+        let recipe = recipes_by_id.get(operand.recipe_id.as_str());
+        let valid = operand.class_tag.len() == 3
+            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && operand.paired_class_tag.len() == 3
+            && operand
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && scope.is_some_and(|scope| {
+                scope.kind == "Extrude"
+                    && usize::try_from(operand.scope_reference_ordinal)
+                        .ok()
+                        .and_then(|ordinal| scope.reference_members.get(ordinal))
+                        == Some(&operand.record_index)
+            })
+            && face_group_members.contains(&(
+                native_stream,
+                operand.scope_record_index,
+                operand.record_index,
+            ))
+            && header.is_some_and(|header| {
+                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+            })
+            && operand.paired_byte_offset > operand.byte_offset
+            && operand.recipe_record_index == operand.record_index.saturating_add(3)
+            && operand.recipe_record_byte_offset > operand.paired_byte_offset
+            && operand.next_byte_offset > operand.recipe_record_byte_offset
+            && matches!(
+                operand.recipe_kind,
+                records::ConstructionRecipeKind::Face
+                    | records::ConstructionRecipeKind::BoundedFace
+            )
+            && recipe.is_some_and(|recipe| {
+                design_stream(&recipe.id) == native_stream
+                    && recipe.kind == operand.recipe_kind
+                    && recipe.byte_offset > operand.recipe_record_byte_offset
+                    && recipe.byte_offset < operand.next_byte_offset
+            })
+            && face_operand_records.insert((
+                native_stream,
+                operand.scope_record_index,
+                operand.record_index,
+            ));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design face operand has an invalid scope or recipe frame".into(),
+                entity: Some(operand.id.clone()),
+            });
+        }
+    }
+    for member in face_group_members {
+        if !face_operand_records.contains(&member) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Extrude face group has an unresolved recipe operand".into(),
+                entity: None,
+            });
+        }
+    }
     let mut placement_records = HashSet::new();
     let mut placement_scopes = HashSet::new();
     for placement in &native.design_sketch_placements {

@@ -13,11 +13,11 @@ use crate::records::{
     DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
     DesignExtrudeOperandRole, DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
-    PersistentReference, PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignExtrudeSelectionMember, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject,
+    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -2648,6 +2648,68 @@ pub fn decode_edge_operands(
     Ok(out)
 }
 
+/// Decode the face-recipe operand frames named by Extrude face groups.
+pub fn decode_face_operands(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+    recipes: &[ConstructionRecipe],
+) -> Result<Vec<DesignFaceOperand>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let scopes = scopes
+        .iter()
+        .filter_map(|scope| Some(((native_stream(&scope.id)?, scope.record_index), scope)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for group in groups
+        .iter()
+        .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces))
+    {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(scope) = scopes.get(&(stream, group.scope_record_index)) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for record_index in &group.members {
+            if !seen.insert((stream, scope.record_index, *record_index)) {
+                continue;
+            }
+            let Some(scope_reference_ordinal) = scope
+                .reference_members
+                .iter()
+                .position(|member| member == record_index)
+                .and_then(|ordinal| u32::try_from(ordinal).ok())
+            else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, *record_index)) else {
+                continue;
+            };
+            if let Some(operand) =
+                parse_face_operand(bytes, scope, scope_reference_ordinal, header, recipes)
+            {
+                out.push(operand);
+            }
+        }
+    }
+    out.sort_by_key(|operand| operand.id.clone());
+    Ok(out)
+}
+
 /// Resolve the unique sketch-profile frame named by every Extrude scope.
 pub fn bind_extrude_profiles(
     scan: &ContainerScan,
@@ -3411,6 +3473,74 @@ fn parse_edge_operand(
         recipe_record_index,
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
+        next_record_index: indexed[4].1,
+        next_byte_offset,
+    })
+}
+
+fn parse_face_operand(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    scope_reference_ordinal: u32,
+    header: &DesignRecordHeader,
+    recipes: &[ConstructionRecipe],
+) -> Option<DesignFaceOperand> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    let mut offsets = Vec::with_capacity(5);
+    let mut position = start.checked_add(11)?;
+    for _ in 0..5 {
+        let offset = next_indexed_record_offset(bytes, position)?;
+        offsets.push(offset);
+        position = offset.checked_add(11)?;
+    }
+    let mut indexed = Vec::with_capacity(offsets.len());
+    for offset in &offsets {
+        let (class_tag, after_tag) = lp_ascii(bytes, *offset)?;
+        indexed.push((class_tag, u32_at(bytes, after_tag)?));
+    }
+    let recipe_record_index = header.record_index.checked_add(3)?;
+    if indexed[0].1 != header.record_index
+        || indexed[1].1 != header.record_index.checked_add(1)?
+        || indexed[2].1 != header.record_index.checked_add(2)?
+        || indexed[3].1 != recipe_record_index
+    {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let recipe_start = u64::try_from(offsets[3]).ok()?;
+    let next_byte_offset = u64::try_from(offsets[4]).ok()?;
+    let matches = recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream)
+                && matches!(
+                    recipe.kind,
+                    ConstructionRecipeKind::Face | ConstructionRecipeKind::BoundedFace
+                )
+                && recipe.byte_offset > recipe_start
+                && recipe.byte_offset < next_byte_offset
+        })
+        .collect::<Vec<_>>();
+    let [recipe] = matches.as_slice() else {
+        return None;
+    };
+    Some(DesignFaceOperand {
+        id: format!(
+            "f3d:{}:design-face-operand#{}",
+            stream.strip_prefix("f3d:").unwrap_or(stream),
+            header.byte_offset
+        ),
+        scope_record_index: scope.record_index,
+        scope_reference_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        paired_byte_offset: u64::try_from(offsets[0]).ok()?,
+        paired_class_tag: indexed[0].0.clone(),
+        recipe_record_index,
+        recipe_record_byte_offset: recipe_start,
+        recipe_id: recipe.id.clone(),
+        recipe_kind: recipe.kind,
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -5311,9 +5441,10 @@ mod relation_tests {
         parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
         parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -6026,7 +6157,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn edge_operand_follows_consecutive_nested_records_to_its_recipe() {
+    fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) -> u64 {
             let offset = u64::try_from(bytes.len()).expect("generated frame length fits u64");
             bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -6092,6 +6223,26 @@ mod relation_tests {
         assert_eq!(operand.recipe_record_index, 103);
         assert_eq!(operand.recipe_record_byte_offset, recipe_record_at);
         assert_eq!(operand.recipe_id, recipe.id);
+        assert_eq!(operand.next_record_index, 104);
+        assert_eq!(operand.next_byte_offset, next_at);
+
+        let mut face_scope = scope;
+        face_scope.kind = "Extrude".into();
+        let mut face_recipe = recipe;
+        face_recipe.kind = ConstructionRecipeKind::BoundedFace;
+        let operand = parse_face_operand(
+            &bytes,
+            &face_scope,
+            0,
+            &record,
+            std::slice::from_ref(&face_recipe),
+        )
+        .expect("face recipe operand");
+        assert_eq!(operand.record_index, 100);
+        assert_eq!(operand.paired_byte_offset, paired_at);
+        assert_eq!(operand.recipe_record_index, 103);
+        assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
+        assert_eq!(operand.recipe_id, face_recipe.id);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, next_at);
     }

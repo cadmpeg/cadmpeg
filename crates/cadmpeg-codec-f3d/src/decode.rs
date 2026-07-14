@@ -900,6 +900,13 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.construction_recipes,
     )?;
+    native.design_face_operands = crate::design::decode_face_operands(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+        &native.construction_recipes,
+    )?;
     native.design_sketch_placements =
         crate::design::decode_sketch_placements(scan, &native.design_parameter_scopes)?;
     Ok(())
