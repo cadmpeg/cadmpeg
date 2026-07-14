@@ -6654,12 +6654,22 @@ fn marker_point_locus(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchLocus> {
+    if let Some(locus) = loci_by_marker
+        .get(&qualified_point_marker_key(marker_id))
+        .and_then(|loci| unique_locus(loci))
+    {
+        return Some(locus);
+    }
     resolved_marker_locus(
         marker_id,
         markers_by_id,
         loci_by_marker,
         &mut HashSet::new(),
     )
+}
+
+fn qualified_point_marker_key(marker_id: &str) -> String {
+    format!("{marker_id}:qualified-point")
 }
 
 fn resolved_marker_locus(
@@ -6762,12 +6772,17 @@ fn profile_loci_by_marker(
     let mut result = sketch_entities
         .iter()
         .filter_map(|entity| {
-            let marker = entity.native_ref.as_ref().or_else(|| {
-                entity.geometry_ref.as_ref().filter(|reference| {
-                    reference.starts_with("sldprt:feature-input:sketch-entity#")
-                        && matches!(entity.geometry, SketchGeometry::Point { .. })
-                })
-            })?;
+            let (marker, qualified_point) = if let Some(marker) = entity.native_ref.as_ref() {
+                (marker, false)
+            } else {
+                (
+                    entity.geometry_ref.as_ref().filter(|reference| {
+                        reference.starts_with("sldprt:feature-input:sketch-entity#")
+                            && matches!(entity.geometry, SketchGeometry::Point { .. })
+                    })?,
+                    true,
+                )
+            };
             marker
                 .starts_with("sldprt:feature-input:sketch-entity#")
                 .then(|| {
@@ -6778,7 +6793,12 @@ fn profile_loci_by_marker(
                     } else {
                         SketchLocus::Entity(entity.id.clone())
                     };
-                    (marker.clone(), vec![locus])
+                    let marker = if qualified_point {
+                        qualified_point_marker_key(marker)
+                    } else {
+                        marker.clone()
+                    };
+                    (marker, vec![locus])
                 })
         })
         .collect::<HashMap<String, Vec<SketchLocus>>>();
@@ -7818,9 +7838,10 @@ mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, bind_detached_relation_drivers,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, line_endpoint_markers, marker_entities, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, project_relation_point_geometry,
-        relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
+        implicit_circle_marker, line_endpoint_markers, marker_entities, marker_point_locus,
+        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        project_relation_point_geometry, relation_owner_markers,
+        relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_axis_aligned_linked_loci,
@@ -9759,7 +9780,8 @@ mod profile_join_tests {
             local_id: 3,
             entity_ref: relation_line.id.clone(),
         }];
-        let mut qualified_curve = marker("qualified-curve", Some([0.009, 0.008]));
+        let mut qualified_curve = marker("qualified-curve", Some([0.0045, 0.0025]));
+        qualified_curve.id = "sldprt:feature-input:sketch-entity#qualified-curve".into();
         qualified_curve.offset = 86;
         qualified_curve.kind = SketchInputKind::LineOrCircle;
         markers.extend([
@@ -9855,7 +9877,12 @@ mod profile_join_tests {
             references: Vec::new(),
             sketch_entities: markers,
         };
-        project_relation_point_geometry(&mut entities, &[], &[feature], &[lane]);
+        project_relation_point_geometry(
+            &mut entities,
+            &[],
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&lane),
+        );
         assert!(entities.iter().any(|entity| {
             entity.construction
                 && entity.native_ref.as_deref() == Some("relation-point")
@@ -9867,10 +9894,11 @@ mod profile_join_tests {
         assert!(entities.iter().any(|entity| {
             entity.construction
                 && entity.native_ref.is_none()
-                && entity.geometry_ref.as_deref() == Some("qualified-curve")
+                && entity.geometry_ref.as_deref()
+                    == Some("sldprt:feature-input:sketch-entity#qualified-curve")
                 && matches!(
                     entity.geometry,
-                    SketchGeometry::Point { position } if position == Point2::new(8.0, 9.0)
+                    SketchGeometry::Point { position } if position == Point2::new(2.5, 4.5)
                 )
         }));
         assert!(entities.iter().any(|entity| {
@@ -9879,6 +9907,33 @@ mod profile_join_tests {
                 && matches!(entity.geometry, SketchGeometry::Line { start, end }
                     if start == Point2::new(1.0, 2.0) && end == Point2::new(4.0, 7.0))
         }));
+        let loci = profile_loci_by_marker(
+            std::slice::from_ref(&feature),
+            &[],
+            &entities,
+            std::slice::from_ref(&lane),
+        );
+        assert_eq!(
+            loci["sldprt:feature-input:sketch-entity#qualified-curve:qualified-point"],
+            vec![SketchLocus::Entity(SketchEntityId(
+                "sldprt:model:sketch-entity#relation-point:lane:86".into(),
+            ))]
+        );
+        let markers = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            marker_point_locus(
+                "sldprt:feature-input:sketch-entity#qualified-curve",
+                &markers,
+                &loci,
+            ),
+            Some(SketchLocus::Entity(SketchEntityId(
+                "sldprt:model:sketch-entity#relation-point:lane:86".into(),
+            )))
+        );
     }
 
     #[test]
