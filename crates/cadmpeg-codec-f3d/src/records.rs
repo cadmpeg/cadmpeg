@@ -522,6 +522,18 @@ pub enum DesignExtrudeExtent {
     TwoSidedDistance,
 }
 
+/// Starting support selected by the fixed Extrude prologue enum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignExtrudeStart {
+    /// Start on the selected sketch's plane.
+    ProfilePlane,
+    /// Start on a parallel offset from the selected sketch's plane.
+    OffsetProfilePlane,
+    /// Start on a selected face.
+    FromFace,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -551,6 +563,12 @@ pub struct DesignParameterScope {
     /// Byte offsets of the two u32 enums selecting the Extrude extent form.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_extent_offsets: Option<[u64; 2]>,
+    /// Extrude starting support from the fixed scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_start: Option<DesignExtrudeStart>,
+    /// Byte offset of the u8 enum selecting the Extrude starting support.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_start_offset: Option<u64>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.

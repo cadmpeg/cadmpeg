@@ -280,18 +280,29 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 scope.extrude_operation_offset,
                 scope.extrude_extent,
                 scope.extrude_extent_offsets,
+                scope.extrude_start,
+                scope.extrude_start_offset,
             ) {
-                ("Extrude", Some(_), Some(operation_offset), Some(_), Some(extent_offsets)) => {
+                (
+                    "Extrude",
+                    Some(_),
+                    Some(operation_offset),
+                    Some(_),
+                    Some(extent_offsets),
+                    Some(_),
+                    Some(start_offset),
+                ) => {
                     operation_offset > scope.byte_offset
                         && extent_offsets
                             == [
                                 operation_offset.saturating_add(4),
                                 operation_offset.saturating_add(8),
                             ]
+                        && start_offset == operation_offset.saturating_add(14)
                         && extent_offsets[1] < scope.reference_count_offset
                 }
-                ("Extrude", _, _, _, _) => false,
-                (_, None, None, None, None) => true,
+                ("Extrude", _, _, _, _, _, _) => false,
+                (_, None, None, None, None, None, None) => true,
                 _ => false,
             }
             && scope.frame_length > 89
@@ -543,14 +554,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role == Some(records::DesignExtrudeOperandRole::Bodies)
                 });
-            let has_face_operands = native
+            let face_operand_group_count = native
                 .design_construction_operand_groups
                 .iter()
-                .any(|group| {
+                .filter(|group| {
                     design_stream(&group.id) == native_stream
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
-                });
+                })
+                .count();
             let operation_matches_operands = match scope.extrude_operation {
                 Some(records::DesignExtrudeOperation::NewBody) => !has_body_operands,
                 Some(
@@ -585,23 +597,43 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             };
             let along_count = parameter_kind_count("AlongDistance");
             let against_count = parameter_kind_count("AgainstDistance");
+            let profile_offset_count = parameter_kind_count("ProfileOffset");
+            let side_one_offset_count = parameter_kind_count("Side1Offset");
             let extent_matches_operands = match scope.extrude_extent {
                 Some(records::DesignExtrudeExtent::OneSidedDistance) => {
-                    along_count == 1 && against_count == 0
+                    along_count == 1 && against_count == 0 && side_one_offset_count == 0
                 }
                 Some(records::DesignExtrudeExtent::OneSidedToFace) => {
-                    along_count == 0 && against_count == 0 && has_face_operands
+                    along_count == 0 && against_count == 0 && side_one_offset_count == 1
                 }
                 Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
-                    along_count == 1 && against_count == 1
+                    along_count == 1 && against_count == 1 && side_one_offset_count == 0
                 }
                 None => false,
             };
-            if !extent_matches_operands {
+            let start_matches_operands = match scope.extrude_start {
+                Some(records::DesignExtrudeStart::ProfilePlane) => profile_offset_count == 0,
+                Some(
+                    records::DesignExtrudeStart::OffsetProfilePlane
+                    | records::DesignExtrudeStart::FromFace,
+                ) => profile_offset_count == 1,
+                None => false,
+            };
+            let expected_face_group_count = usize::from(matches!(
+                scope.extrude_extent,
+                Some(records::DesignExtrudeExtent::OneSidedToFace)
+            )) + usize::from(matches!(
+                scope.extrude_start,
+                Some(records::DesignExtrudeStart::FromFace)
+            ));
+            if !extent_matches_operands
+                || !start_matches_operands
+                || face_operand_group_count != expected_face_group_count
+            {
                 findings.push(Finding {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
-                    message: "Fusion Design Extrude extent conflicts with its parameters and face operands"
+                    message: "Fusion Design Extrude start or extent conflicts with its parameters and face operands"
                         .into(),
                     entity: Some(scope.id.clone()),
                 });
