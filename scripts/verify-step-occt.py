@@ -51,7 +51,7 @@ def main() -> int:
     for path in args.files:
         try:
             roots, shapes = verify(path, args.require_shape)
-        except (OSError, ValueError) as error:
+        except Exception as error:  # OCCT bindings raise Standard_Failure as RuntimeError.
             failed = True
             print(f"FAIL {path}: {error}", file=sys.stderr)
         else:
