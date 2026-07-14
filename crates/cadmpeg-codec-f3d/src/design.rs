@@ -1190,12 +1190,15 @@ pub fn project_sketch_design(
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
-pub fn bind_extrude_profile_selections(
+pub(crate) fn bind_extrude_profile_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     groups: &[DesignExtrudeSelectionGroup],
     members: &[DesignExtrudeSelectionMember],
     sketches: &[cadmpeg_ir::sketches::Sketch],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    histories: &[crate::history_records::AsmHistory],
+    linear_tolerance: f64,
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 
@@ -1227,7 +1230,15 @@ pub fn bind_extrude_profile_selections(
             continue;
         };
         *profile = if let [group] = matching_groups.as_slice() {
-            resolved_extrude_profile_selection(sketch_id, group, members, sketch)
+            resolved_extrude_profile_selection(
+                sketch_id,
+                group,
+                members,
+                sketch,
+                entities,
+                histories,
+                linear_tolerance,
+            )
         } else {
             ProfileRef::SketchSelection {
                 sketch: sketch_id.clone(),
@@ -1245,6 +1256,9 @@ fn resolved_extrude_profile_selection(
     group: &DesignExtrudeSelectionGroup,
     members: &[DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    histories: &[crate::history_records::AsmHistory],
+    linear_tolerance: f64,
 ) -> cadmpeg_ir::features::ProfileRef {
     use cadmpeg_ir::features::ProfileRef;
 
@@ -1286,7 +1300,18 @@ fn resolved_extrude_profile_selection(
         }
         (!selected.is_empty()).then_some(selected)
     });
-    match resolved_profiles.flatten() {
+    let resolved_profiles = resolved_profiles.flatten().or_else(|| {
+        exact_member_run.then(|| {
+            historical_selection_profiles(
+                &selection_members,
+                sketch,
+                entities,
+                histories,
+                linear_tolerance,
+            )
+        })?
+    });
+    match resolved_profiles {
         Some(profiles) => ProfileRef::SketchProfiles {
             sketch: sketch_id.clone(),
             profiles,
@@ -1296,6 +1321,167 @@ fn resolved_extrude_profile_selection(
             selections: vec![group.id.clone()],
         },
     }
+}
+
+fn historical_selection_profiles(
+    members: &[&DesignExtrudeSelectionMember],
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    histories: &[crate::history_records::AsmHistory],
+    linear_tolerance: f64,
+) -> Option<Vec<u32>> {
+    let points = members
+        .iter()
+        .map(|member| historical_member_points(member, histories))
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    if points.is_empty() {
+        return None;
+    }
+    let tolerance = linear_tolerance.max(1.0e-7);
+    let matches = profiles_containing_points(sketch, entities, &points, tolerance)?;
+    let [profile] = matches.as_slice() else {
+        return None;
+    };
+    Some(vec![*profile])
+}
+
+fn profiles_containing_points(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    points: &[Point3],
+    tolerance: f64,
+) -> Option<Vec<u32>> {
+    sketch
+        .profiles
+        .iter()
+        .enumerate()
+        .filter(|(_, profile)| {
+            points.iter().all(|point| {
+                let projected = project_to_sketch(sketch, *point);
+                profile.iter().any(|use_| {
+                    entities
+                        .iter()
+                        .find(|entity| entity.id == use_.entity)
+                        .is_some_and(|entity| point_on_sketch_entity(projected, entity, tolerance))
+                })
+            })
+        })
+        .map(|(index, _)| u32::try_from(index).ok())
+        .collect()
+}
+
+fn historical_member_points(
+    member: &DesignExtrudeSelectionMember,
+    histories: &[crate::history_records::AsmHistory],
+) -> Option<Vec<Point3>> {
+    use crate::records::AsmHistoricalEntityKind;
+
+    let kind = member.historical_entity_kind?;
+    let local_id = i64::try_from(member.local_id).ok()?;
+    let mut positions = Vec::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        if !member.historical_state_ids.contains(&state.state_id) {
+            continue;
+        }
+        let topology = state.topology.as_ref()?;
+        let edge_refs = match kind {
+            AsmHistoricalEntityKind::Coedge => topology
+                .coedge_topology
+                .iter()
+                .filter(|coedge| coedge.coedge == local_id)
+                .map(|coedge| coedge.edge)
+                .collect::<Vec<_>>(),
+            AsmHistoricalEntityKind::Edge => vec![local_id],
+            AsmHistoricalEntityKind::Curve => topology
+                .edge_curves
+                .iter()
+                .filter(|binding| binding.carrier == Some(local_id))
+                .map(|binding| binding.entity)
+                .collect(),
+            AsmHistoricalEntityKind::Vertex => {
+                positions.extend(historical_vertex_positions(topology, local_id));
+                Vec::new()
+            }
+            _ => return None,
+        };
+        for edge_ref in edge_refs {
+            let edge = topology
+                .edge_vertices
+                .iter()
+                .find(|edge| edge.edge == edge_ref)?;
+            positions.extend(historical_vertex_positions(topology, edge.start_vertex));
+            positions.extend(historical_vertex_positions(topology, edge.end_vertex));
+        }
+    }
+    positions.dedup_by(|a, b| a == b);
+    (!positions.is_empty()).then_some(positions)
+}
+
+fn historical_vertex_positions(
+    topology: &crate::history_records::AsmHistoricalTopology,
+    vertex_ref: i64,
+) -> impl Iterator<Item = Point3> + '_ {
+    topology
+        .vertex_points
+        .iter()
+        .filter(move |binding| binding.entity == vertex_ref)
+        .filter_map(|binding| {
+            topology
+                .point_positions
+                .iter()
+                .find(|point| point.point == binding.carrier)
+                .map(|point| point.position)
+        })
+}
+
+fn project_to_sketch(sketch: &cadmpeg_ir::sketches::Sketch, point: Point3) -> Point2 {
+    let x = point.x - sketch.origin.x;
+    let y = point.y - sketch.origin.y;
+    let z = point.z - sketch.origin.z;
+    let v_axis = Vector3::new(
+        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
+        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
+        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+    );
+    Point2::new(
+        x * sketch.u_axis.x + y * sketch.u_axis.y + z * sketch.u_axis.z,
+        x * v_axis.x + y * v_axis.y + z * v_axis.z,
+    )
+}
+
+fn point_on_sketch_entity(
+    point: Point2,
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    match &entity.geometry {
+        SketchGeometry::Line { start, end } => {
+            let dx = end.u - start.u;
+            let dy = end.v - start.v;
+            let length_squared = dx * dx + dy * dy;
+            if length_squared == 0.0 {
+                return point_distance(point, *start) <= tolerance;
+            }
+            let t = ((point.u - start.u) * dx + (point.v - start.v) * dy) / length_squared;
+            if !(-tolerance..=1.0 + tolerance).contains(&t) {
+                return false;
+            }
+            point_distance(point, Point2::new(start.u + t * dx, start.v + t * dy)) <= tolerance
+        }
+        SketchGeometry::Circle { center, radius } => {
+            (point_distance(point, *center) - radius.0).abs() <= tolerance
+        }
+        _ => false,
+    }
+}
+
+fn point_distance(a: Point2, b: Point2) -> f64 {
+    ((a.u - b.u).powi(2) + (a.v - b.v).powi(2)).sqrt()
 }
 
 fn closed_sketch_profiles(
@@ -7990,9 +8176,9 @@ mod relation_tests {
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
         parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_dimension_constraints,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, remove_dimension_frame_relations,
+        parse_sketch_placement_candidates, parse_sketch_relation, profiles_containing_points,
+        project_dimension_constraints, project_extrude, project_parameter_design,
+        project_sketch_constraints, project_sketch_design, remove_dimension_frame_relations,
         resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
@@ -8015,6 +8201,48 @@ mod relation_tests {
         SketchEntityUse, SketchGeometry, SketchId,
     };
     use std::collections::{HashMap, HashSet};
+
+    #[test]
+    fn historical_points_require_a_unique_profile_boundary() {
+        let sketch_id = SketchId("sketch".into());
+        let entity_id = SketchEntityId("line".into());
+        let mut sketch = Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            origin: Point3::new(10.0, 20.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: vec![vec![SketchEntityUse {
+                entity: entity_id.clone(),
+                reversed: false,
+            }]],
+            native_ref: None,
+        };
+        let entity = SketchEntity {
+            id: entity_id,
+            sketch: sketch_id,
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(2.0, 0.0),
+            },
+        };
+        let point = Point3::new(11.0, 20.0, 9.0);
+        assert_eq!(
+            profiles_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
+            Some(vec![0])
+        );
+
+        sketch.profiles.push(sketch.profiles[0].clone());
+        assert_eq!(
+            profiles_containing_points(&sketch, &[entity], &[point], 1.0e-6),
+            Some(vec![0, 1])
+        );
+    }
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
         let units = value.encode_utf16().collect::<Vec<_>>();
@@ -9155,6 +9383,9 @@ mod relation_tests {
                 &group,
                 std::slice::from_ref(&member),
                 &sketch,
+                &[],
+                &[],
+                1.0e-6,
             ),
             cadmpeg_ir::features::ProfileRef::SketchProfiles {
                 sketch: ref actual_sketch,
@@ -9168,6 +9399,9 @@ mod relation_tests {
                 &group,
                 std::slice::from_ref(&member),
                 &sketch,
+                &[],
+                &[],
+                1.0e-6,
             ),
             cadmpeg_ir::features::ProfileRef::SketchSelection {
                 sketch: ref actual_sketch,

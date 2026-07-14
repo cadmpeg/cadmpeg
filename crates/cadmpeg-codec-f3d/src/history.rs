@@ -8,8 +8,9 @@
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalEntityDelta,
-    AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
-    AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
+    AsmHistoricalOptionalCarrierBinding, AsmHistoricalPoint, AsmHistoricalRelation,
+    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
+    AsmHistoryRecord,
 };
 use crate::records::{AsmHistoricalEntityKind, DesignExtrudeSelectionMember};
 use cadmpeg_ir::le::int_at;
@@ -995,6 +996,16 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
                 Some(AsmHistoricalCarrierBinding {
                     entity: entity_ref(&vertex.id.0)?,
                     carrier: entity_ref(&vertex.point.0)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        point_positions: brep
+            .points
+            .iter()
+            .map(|point| {
+                Some(AsmHistoricalPoint {
+                    point: entity_ref(&point.id.0)?,
+                    position: point.position,
                 })
             })
             .collect::<Option<Vec<_>>>()?,

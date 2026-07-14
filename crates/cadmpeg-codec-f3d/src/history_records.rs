@@ -4,6 +4,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use cadmpeg_ir::math::Point3;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistory {
     pub id: String,
@@ -61,7 +63,7 @@ pub(crate) struct AsmEntityVersion {
 }
 
 /// Stable entity-slot membership of one re-derived historical B-rep.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistoricalTopology {
     pub bodies: Vec<i64>,
     pub regions: Vec<i64>,
@@ -101,6 +103,16 @@ pub(crate) struct AsmHistoricalTopology {
     pub coedge_pcurves: Vec<AsmHistoricalOptionalCarrierBinding>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub vertex_points: Vec<AsmHistoricalCarrierBinding>,
+    /// Model-space values of the point carriers in this historical state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub point_positions: Vec<AsmHistoricalPoint>,
+}
+
+/// Stable point-carrier value in one historical B-rep state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalPoint {
+    pub point: i64,
+    pub position: Point3,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
