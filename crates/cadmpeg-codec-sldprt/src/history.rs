@@ -3252,6 +3252,10 @@ fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Vec<cadmpeg_ir::features::Feature> {
     let mut histories = native.feature_histories.clone();
+    crate::resolved_features::enrich_history_extrusion_terminations(
+        &mut histories,
+        &native.feature_input_lanes,
+    );
     crate::resolved_features::enrich_history_parameters(
         &mut histories,
         &native.feature_input_lanes,

@@ -93,7 +93,9 @@ An extrusion feature-input object stores a little-endian u32 form code before it
 
 An `moICE_c` object-name record is followed by four zero bytes, one class byte, byte `01`, a one-byte Boolean operation, one schema byte, the repeated little-endian u32 object identifier, four zero bytes, and `ff fe ff`. Operation `00` joins the extrusion result and operation `02` subtracts it. Sparse objects without this trailer use class-scoped form semantics: `moICE_c` form codes `1`, `2`, `10`, and `11` subtract and form code `3` joins; `moExtrusion_c` form code `1` joins.
 
-An extrusion object without an `EndCondition` attribute and without an owned `Depth` or `D1` scalar has an unresolved extent. The class, profile reference, direction, draft, and Boolean operation remain independently meaningful.
+A repeated compact extrusion end-spec child begins with its lane-scoped class token. Token +2 through +17 are `00 00 01 00 00 00 00 00 00 00 00 00 00 00 00 00`. The little-endian u32 termination code is at token +18. Code `0` is blind and code `1` is through-all. A through-all child has two zero u32 words after the code, `01 00 00 01`, 56 zero bytes, `00 00 01 00`, and 10 zero bytes.
+
+An extrusion object without an `EndCondition` attribute, without an owned `Depth` or `D1` scalar, and without a decoded compact end-spec termination has an unresolved extent. The class, profile reference, direction, draft, and Boolean operation remain independently meaningful.
 
 An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile. A nested profile stream owned by that extrusion resolves the profile to its transferred sketch.
 

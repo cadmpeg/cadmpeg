@@ -882,6 +882,10 @@ fn project_design_history(
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
     let mut semantic_projection = histories.to_vec();
+    crate::resolved_features::enrich_history_extrusion_terminations(
+        &mut semantic_projection,
+        lanes,
+    );
     crate::resolved_features::enrich_history_parameters(&mut semantic_projection, lanes, true);
     crate::resolved_features::enrich_history_reference_planes(&mut semantic_projection, lanes);
     crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);

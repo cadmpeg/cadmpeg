@@ -245,9 +245,9 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_selection_at, compact_body_selection_vector,
-        compact_edge_selection_at, compact_surface_selection_at, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, unique_locus,
+        compact_edge_selection_at, compact_extrusion_through_all_at, compact_surface_selection_at,
+        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names, unique_locus,
         unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::SketchRelationKind;
@@ -278,6 +278,23 @@ mod marker_tests {
             Some(SketchRelationKind::ArcAngle270)
         );
         assert_eq!(arc_angle_relation_kind(std::f64::consts::FRAC_PI_3), None);
+    }
+
+    #[test]
+    fn compact_extrusion_through_all_requires_the_complete_end_spec() {
+        let mut payload = vec![0; 104];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload[18] = 1;
+        payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
+        payload[92] = 1;
+        assert!(compact_extrusion_through_all_at(&payload, 0));
+
+        payload[18] = 0;
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
+        payload[18] = 1;
+        payload[103] = 1;
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
     }
 
     #[test]
@@ -2373,6 +2390,80 @@ pub(crate) fn project_compact_surface_selections(
             ));
         }
     }
+}
+
+/// Add semantic termination forms carried by compact extrusion end-spec children.
+pub(crate) fn enrich_history_extrusion_terminations(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    for lane in lanes {
+        let mut objects = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|feature| {
+                Some((
+                    feature_object_name(feature, lane)?.offset,
+                    feature.id.clone(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|object| object.0);
+        let mut through_all = HashSet::new();
+        for (index, (start, feature_id)) in objects.iter().enumerate() {
+            let Some(feature) = histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|feature| feature.id == *feature_id)
+            else {
+                continue;
+            };
+            if feature.xml_tag != "Extrusion"
+                || (!feature.parameters.is_empty()
+                    && (feature.parameters.contains_key("Depth")
+                        || feature.parameters.contains_key("D1")))
+            {
+                continue;
+            }
+            let Ok(start) = usize::try_from(*start) else {
+                continue;
+            };
+            let end = objects
+                .get(index + 1)
+                .and_then(|object| usize::try_from(object.0).ok())
+                .unwrap_or(lane.native_payload.len());
+            let candidates = (start..end.saturating_sub(103))
+                .filter(|offset| compact_extrusion_through_all_at(&lane.native_payload, *offset))
+                .count();
+            if candidates == 1 {
+                through_all.insert(feature_id.clone());
+            }
+        }
+        for feature in histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+        {
+            if through_all.contains(&feature.id) && !feature.properties.contains_key("EndCondition")
+            {
+                feature
+                    .properties
+                    .insert("EndCondition".into(), "ThroughAll".into());
+            }
+        }
+    }
+}
+
+pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 2..offset + 18) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        && payload.get(offset + 18..offset + 30) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+        && payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
+        && payload
+            .get(offset + 34..offset + 90)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload.get(offset + 90..offset + 94) == Some(&[0, 0, 1, 0])
+        && payload
+            .get(offset + 94..offset + 104)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
 }
 
 pub(crate) fn compact_surface_selection_value(ids: &[u32]) -> String {
