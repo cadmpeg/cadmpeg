@@ -565,6 +565,8 @@ pub struct FeatureExtrudePayload32Branch {
     pub scalar: f64,
     /// Ordered fixed-width big-endian atoms in the first counted lane.
     pub atoms_be: Vec<u32>,
+    /// Compact indices wrapped by the fixed-width atoms.
+    pub atom_indices: Vec<u32>,
     /// Ordered values in the first compact-index lane.
     pub first_indices: Vec<u32>,
     /// Ordered values in the second compact-index lane.
@@ -1706,6 +1708,7 @@ pub fn feature_extrude_payload_32_branches(
                 ),
                 scalar: branch.scalar,
                 atoms_be: branch.atoms_be,
+                atom_indices: branch.atom_indices,
                 first_indices: branch.first_indices,
                 second_indices: branch.second_indices,
                 terminal_object_index: branch.terminal_object_index,

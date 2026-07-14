@@ -403,6 +403,8 @@ pub struct ExtrudePayload32Branch {
     pub scalar: f64,
     /// Ordered fixed-width big-endian atoms in the first counted lane.
     pub atoms_be: Vec<u32>,
+    /// Compact indices wrapped by the fixed-width atoms.
+    pub atom_indices: Vec<u32>,
     /// Ordered values in the first compact-index lane.
     pub first_indices: Vec<u32>,
     /// Ordered values in the second compact-index lane.
@@ -1185,6 +1187,16 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     let scalar = shifted_ieee_f64(record.bytes.get(end + 4..end + 12)?)?;
     let mut at = end + 12;
     let atoms_be = counted_u32_atoms(record.bytes, &mut at)?;
+    let atom_indices = atoms_be
+        .iter()
+        .map(|atom| {
+            let bytes = atom.to_be_bytes();
+            if bytes[0] != 0x3d || bytes[3] != 0x00 || !(0x80..=0xfe).contains(&bytes[1]) {
+                return None;
+            }
+            Some(u32::from(bytes[1] - 0x80) * 256 + u32::from(bytes[2]))
+        })
+        .collect::<Option<Vec<_>>>()?;
     let first_indices = counted_compact_values(record.bytes, &mut at)?;
     let second_indices = counted_compact_values(record.bytes, &mut at)?;
     if record.bytes.get(at..at + 2) != Some(&[0x00, 0x01]) {
@@ -1199,6 +1211,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         offset: record.offset + branch_at,
         scalar,
         atoms_be,
+        atom_indices,
         first_indices,
         second_indices,
         terminal_object_index,

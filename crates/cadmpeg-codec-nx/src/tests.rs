@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 51);
+    assert_eq!(namespace.version, 52);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1786,6 +1786,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     assert_eq!(branch.offset, 105);
     assert!(branch.scalar.is_finite());
     assert_eq!(branch.atoms_be, [0x3d82_5600, 0x3d82_5700]);
+    assert_eq!(branch.atom_indices, [598, 599]);
     assert_eq!(branch.first_indices, [43, 45, 44]);
     assert_eq!(branch.second_indices, [46, 119]);
     assert_eq!(branch.terminal_object_index, 115);
@@ -1796,6 +1797,17 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         crate::om::extrude_payload_32_branch(crate::om::OperationRecord {
             bytes: &invalid,
             payload: &invalid,
+            ..record
+        })
+        .is_none()
+    );
+
+    let mut invalid_atom = bytes.to_vec();
+    invalid_atom[18] = 0x3c;
+    assert!(
+        crate::om::extrude_payload_32_branch(crate::om::OperationRecord {
+            bytes: &invalid_atom,
+            payload: &invalid_atom,
             ..record
         })
         .is_none()
@@ -4556,7 +4568,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 51);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 52);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
