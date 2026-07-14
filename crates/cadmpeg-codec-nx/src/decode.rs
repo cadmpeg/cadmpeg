@@ -2938,6 +2938,7 @@ fn attach_native_object_model(
         &data_block_references,
         &expressions,
     );
+    let feature_parameter_uses = crate::native::feature_parameter_uses(&feature_parameter_bindings);
     let feature_block_dimensions = crate::native::feature_block_dimensions(
         &feature_block_constructions,
         &feature_parameter_bindings,
@@ -3017,6 +3018,7 @@ fn attach_native_object_model(
         && data_block_counted_index_lanes.is_empty()
         && data_block_abr_reference_lanes.is_empty()
         && feature_parameter_bindings.is_empty()
+        && feature_parameter_uses.is_empty()
         && store_headers.is_empty()
         && string_values.is_empty()
         && object_references.is_empty()
@@ -3197,6 +3199,16 @@ fn attach_native_object_model(
             .tag("FEATURE_PARAMETER_BINDING");
         annotations.exactness(&binding.id, Exactness::Derived);
     }
+    for parameter_use in &feature_parameter_uses {
+        annotations
+            .note(
+                &parameter_use.id,
+                annotation_stream,
+                parameter_use.source_offsets[0],
+            )
+            .tag("FEATURE_PARAMETER_USE");
+        annotations.exactness(&parameter_use.id, Exactness::Derived);
+    }
     for header in &store_headers {
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
@@ -3322,6 +3334,7 @@ fn attach_native_object_model(
             extrude_payload_headers: &feature_extrude_payload_headers,
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
             parameter_bindings: &feature_parameter_bindings,
+            parameter_uses: &feature_parameter_uses,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
             simple_hole_templates: &feature_simple_hole_templates,
@@ -3332,12 +3345,18 @@ fn attach_native_object_model(
         },
         annotations,
     );
-    attach_expression_parameters(ir, &expressions, &expression_declarations, annotations);
+    attach_expression_parameters(
+        ir,
+        &expressions,
+        &expression_declarations,
+        &feature_parameter_uses,
+        annotations,
+    );
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(113);
+    namespace.version = namespace.version.max(114);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3671,6 +3690,9 @@ fn attach_native_object_model(
     if !feature_parameter_bindings.is_empty() {
         namespace.set_arena("feature_parameter_bindings", &feature_parameter_bindings)?;
     }
+    if !feature_parameter_uses.is_empty() {
+        namespace.set_arena("feature_parameter_uses", &feature_parameter_uses)?;
+    }
     if !store_headers.is_empty() {
         namespace.set_arena("store_headers", &store_headers)?;
     }
@@ -3724,6 +3746,7 @@ struct FeatureOperationSources<'a> {
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
+    parameter_uses: &'a [crate::native::FeatureParameterUse],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
     simple_hole_templates: &'a [crate::native::FeatureSimpleHoleTemplate],
@@ -3763,6 +3786,7 @@ fn attach_feature_operations(
         extrude_payload_headers,
         operation_body_scalar_triples,
         parameter_bindings,
+        parameter_uses,
         operation_records,
         payload_strings,
         simple_hole_templates,
@@ -3933,6 +3957,14 @@ fn attach_feature_operations(
             .entry(binding.operation_label.as_str())
             .or_default()
             .push(binding);
+    }
+    let mut parameter_uses_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureParameterUse>>::new();
+    for parameter_use in parameter_uses {
+        parameter_uses_by_operation
+            .entry(parameter_use.operation_label.as_str())
+            .or_default()
+            .push(parameter_use);
     }
     let operation_labels_by_record = operation_records
         .iter()
@@ -4246,6 +4278,14 @@ fn attach_feature_operations(
                 );
             }
         }
+        for (ordinal, parameter_use) in parameter_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(format!("parameter_use.{ordinal}"), parameter_use.id.clone());
+        }
         let operation_payload_strings = payload_strings_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
@@ -4432,6 +4472,7 @@ pub(crate) fn attach_expression_parameters(
     ir: &mut CadIr,
     expressions: &[crate::native::Expression],
     declarations: &[crate::native::ExpressionDeclaration],
+    parameter_uses: &[crate::native::FeatureParameterUse],
     annotations: &mut AnnotationBuilder,
 ) {
     let declarations = declarations
@@ -4449,6 +4490,22 @@ pub(crate) fn attach_expression_parameters(
             .push(expression);
     }
     let stream = annotations.stream("nx:container");
+    let mut uses_by_expression = BTreeMap::<&str, Vec<&crate::native::FeatureParameterUse>>::new();
+    for parameter_use in parameter_uses {
+        uses_by_expression
+            .entry(parameter_use.expression.as_str())
+            .or_default()
+            .push(parameter_use);
+    }
+    for uses in uses_by_expression.values_mut() {
+        uses.sort_by_key(|parameter_use| {
+            parameter_use
+                .operation_label
+                .rsplit_once('-')
+                .and_then(|(_, ordinal)| ordinal.parse::<u64>().ok())
+                .unwrap_or(u64::MAX)
+        });
+    }
     let base_ordinal = ir.model.features.len() as u64;
     for (section_ordinal, (section, expressions)) in sections.into_iter().enumerate() {
         let feature_id = FeatureId(format!("{section}:feature#equations"));
@@ -4530,6 +4587,24 @@ pub(crate) fn attach_expression_parameters(
                 properties.insert(
                     "declaration_object_id".to_string(),
                     declaration.object_id.to_string(),
+                );
+                annotations.derived(&id.0, "properties");
+            }
+            for (consumer_ordinal, parameter_use) in uses_by_expression
+                .get(expression.id.as_str())
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                properties.insert(
+                    format!("consumer.{consumer_ordinal}"),
+                    parameter_use
+                        .operation_label
+                        .replacen("operation-label", "feature", 1),
+                );
+                properties.insert(
+                    format!("parameter_use.{consumer_ordinal}"),
+                    parameter_use.id.clone(),
                 );
                 annotations.derived(&id.0, "properties");
             }

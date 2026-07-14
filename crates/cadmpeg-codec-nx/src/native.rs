@@ -406,6 +406,21 @@ pub struct FeatureParameterBinding {
     pub source_offset: u64,
 }
 
+/// All binding occurrences by which one operation consumes one expression.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureParameterUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Consuming operation-label identity.
+    pub operation_label: String,
+    /// Exact numeric expression consumed by the operation.
+    pub expression: String,
+    /// Binding occurrences in ascending source-offset order.
+    pub bindings: Vec<String>,
+    /// Binding source offsets aligned with `bindings`.
+    pub source_offsets: Vec<u64>,
+}
+
 /// Ordered sketch-history record and its exact native input lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchRecord {
@@ -4022,6 +4037,47 @@ pub fn feature_parameter_bindings(
         }
     }
     bindings
+}
+
+/// Group exact expression bindings by consuming operation and expression.
+pub fn feature_parameter_uses(bindings: &[FeatureParameterBinding]) -> Vec<FeatureParameterUse> {
+    let mut grouped = BTreeMap::<(&str, &str), Vec<&FeatureParameterBinding>>::new();
+    for binding in bindings {
+        if let Some(expression) = binding.expression.as_deref() {
+            grouped
+                .entry((binding.operation_label.as_str(), expression))
+                .or_default()
+                .push(binding);
+        }
+    }
+    let mut uses = grouped
+        .into_iter()
+        .map(|((operation_label, expression), mut bindings)| {
+            bindings.sort_by_key(|binding| binding.source_offset);
+            (operation_label, expression, bindings)
+        })
+        .collect::<Vec<_>>();
+    uses.sort_by_key(|(_, _, bindings)| bindings[0].source_offset);
+    uses.into_iter()
+        .map(|(operation_label, expression, bindings)| {
+            let operation_key = operation_label
+                .rsplit_once('#')
+                .map_or(operation_label, |(_, key)| key);
+            let expression_key = expression
+                .rsplit_once('#')
+                .map_or(expression, |(_, key)| key);
+            FeatureParameterUse {
+                id: format!("nx:feature-history:parameter-use#{operation_key}-{expression_key}"),
+                operation_label: operation_label.to_string(),
+                expression: expression.to_string(),
+                bindings: bindings.iter().map(|binding| binding.id.clone()).collect(),
+                source_offsets: bindings
+                    .iter()
+                    .map(|binding| binding.source_offset)
+                    .collect(),
+            }
+        })
+        .collect()
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

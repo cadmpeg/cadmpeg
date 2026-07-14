@@ -191,7 +191,7 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &mut annotations);
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert_eq!(ir.model.parameters[2].value, None);
     assert_eq!(
@@ -223,9 +223,66 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &mut annotations);
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
 
     assert!(ir.model.parameters[2].dependencies.is_empty());
+}
+
+#[test]
+fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
+    use crate::native::{feature_parameter_uses, FeatureParameterBinding};
+
+    let binding = |id: &str, operation: &str, slot: u8, offset: u64| FeatureParameterBinding {
+        id: id.to_string(),
+        operation_label: operation.to_string(),
+        input_slot: slot,
+        input_block: format!("block-{slot}"),
+        reference_ordinal: 0,
+        expression_declaration: "declaration".to_string(),
+        expression: Some("nx:test:expression#20".to_string()),
+        object_id: 20,
+        source_offset: offset,
+    };
+    let uses = feature_parameter_uses(&[
+        binding("late", "nx:feature-history:operation-label#1-2", 1, 30),
+        binding("early", "nx:feature-history:operation-label#1-2", 0, 20),
+        binding("other", "nx:feature-history:operation-label#1-3", 0, 40),
+    ]);
+    assert_eq!(uses.len(), 2);
+    assert_eq!(uses[0].bindings, ["early", "late"]);
+    assert_eq!(uses[0].source_offsets, [20, 30]);
+
+    let expression = crate::native::Expression {
+        id: "nx:test:expression#20".to_string(),
+        object_id: Some(20),
+        record: None,
+        declaration: None,
+        name: "p20".to_string(),
+        parameter_index: Some(20),
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: "5".to_string(),
+        value: Some(5.0),
+        source_entry: "part".to_string(),
+        source_offset: 20,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::attach_expression_parameters(
+        &mut ir,
+        &[expression],
+        &[],
+        &uses,
+        &mut annotations,
+    );
+    assert_eq!(
+        ir.model.parameters[0].properties["consumer.0"],
+        "nx:feature-history:feature#1-2"
+    );
+    assert_eq!(
+        ir.model.parameters[0].properties["consumer.1"],
+        "nx:feature-history:feature#1-3"
+    );
 }
 
 /// Write three big-endian doubles into `rec` starting at `at`.
@@ -428,7 +485,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 113);
+    assert_eq!(namespace.version, 114);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -5576,7 +5633,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 113);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 114);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

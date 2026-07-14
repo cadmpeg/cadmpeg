@@ -105,6 +105,10 @@ their input-binding identity, operation-label identity, header slot, and
 object-index token offset in ascending token-offset order. Repeated slots from
 only one operation do not form a group. The group assigns no direction or
 semantic role between its operations.
+All resolved bindings from one operation to one exact numeric expression form
+one parameter-use relation. Binding identities and source offsets remain in
+ascending source-offset order. Multiple input slots may witness the same use;
+they do not create multiple operation-expression relations.
 The fixed marker begins an operation record. A record extends through the byte
 before the next validated operation marker; the final record extends through
 the feature-history record-area boundary.
