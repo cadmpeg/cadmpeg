@@ -355,6 +355,10 @@ stores a symmetry axis as a sense-zero line followed by two point loci selected
 with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero entity
 and a sense-`2`, sense-`3`, or sense-`4` point locus makes the entity and locus
 coincident.
+When the sense-zero entity is a `segtab` point, its `pointid` coordinate equals
+the selected endpoint or arc-center `pointid` coordinate. Solved coordinates
+propagate across that equality under the same unique-row and conflict rules as
+type zero.
 A two-item type-9 incidence with sense zero on one line and one point makes the
 point coincident with the line.
 A two-item sense-zero line incidence makes the lines perpendicular for type 5,
