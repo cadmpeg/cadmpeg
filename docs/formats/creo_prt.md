@@ -226,6 +226,15 @@ A decoder must not infer the kind of a row without a materialized parameter row 
 Named `i_pnts` and `c_pnts` fields inside a nested curve record following a
 torus prototype belong to that curve, not to the analytic torus prototype.
 
+A nested `curve(b_spline)` record uses compact integers for `id`, `type`,
+`tan_cond`, and `degree`. Its `params` array and `c_pnts` reference array are
+independent fields. A `c_pnts` body `f8 <count> f7 <start_id> fb` denotes the
+contiguous entity-reference range `start_id .. start_id + count`. `flip`
+retains its typed-wrapper bytes. `dum_array`, `data_dbls`, and `data_type` are
+separate named fields. A count-prefixed compact-integer array is typed as such
+only when exactly the declared number of compact integers consumes the entire
+bounded field body; trailing bytes make the field opaque.
+
 Named prototype fields describe the first surface instance. The first instance is the adjacent same-family positional surface row. The preceding adjacent row is the first instance when the prototype separates it from replay rows; otherwise the following adjacent row is the first instance. Positional row bodies carry the per-instance values for subsequent instances.
 
 A complete analytic prototype `local_sys` and family parameters define the first instance carrier. The first and second support triples occupy slots 0 through 2 and 6 through 8, slots 3 through 5 are zero, and slots 9 through 11 are the origin. The normalized cross product of the two orthogonal support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A cylinder requires a positive `radius`. A cone uses the local-system origin as its apex, has zero radius there, circular ratio one, and requires a `half_angle` in `(0, pi/2)`. A zero `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin.

@@ -772,6 +772,11 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
     payload.extend_from_slice(b"\xe0\x00parent_feats\0\xf8\x02\x07\x08");
     payload.extend_from_slice(b"\xe0\x00i_pnts\0\xf8\x03\xf7\x80\x80\xfb");
+    payload.extend_from_slice(b"\xe0\x01id\0\x0f");
+    payload.extend_from_slice(b"\xe0\x01degree\0\x03");
+    payload.extend_from_slice(b"\xe0\x02params\0\xf8\x04\x00\x00\x01\x01");
+    payload.extend_from_slice(b"\xe0\x01flip\0\xf1\x01");
+    payload.extend_from_slice(b"\xe0\x02dum_array\0\xf8\x03\x01\x02\x03\x04");
     let data = build_prt("c", &[("VisibGeom", payload)]);
     let scan = container::scan_bytes(data.clone());
 
@@ -810,6 +815,30 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
             }
         )
     );
+    assert_eq!(
+        prototype.field("id").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(15))
+    );
+    assert_eq!(
+        prototype.field("degree").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactInt(3))
+    );
+    assert_eq!(
+        prototype.field("params").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::CompactIntArray(vec![
+            0, 0, 1, 1
+        ]))
+    );
+    assert_eq!(
+        prototype.field("flip").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::Opaque(vec![0xf1, 0x01]))
+    );
+    assert_eq!(
+        prototype.field("dum_array").map(|field| &field.value),
+        Some(&crate::surface::SurfaceNamedValue::Opaque(vec![
+            0xf8, 0x03, 0x01, 0x02, 0x03, 0x04
+        ]))
+    );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
     assert_eq!(native.fields["family"], "cylinder");
@@ -824,6 +853,16 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     assert_eq!(native.fields["parameters"][3]["compact_values"][0], 128);
     assert_eq!(native.fields["parameters"][3]["compact_values"][1], 129);
     assert_eq!(native.fields["parameters"][3]["compact_values"][2], 130);
+    assert_eq!(native.fields["parameters"][4]["name"], "id");
+    assert_eq!(native.fields["parameters"][4]["compact_values"][0], 15);
+    assert_eq!(native.fields["parameters"][5]["name"], "degree");
+    assert_eq!(native.fields["parameters"][5]["compact_values"][0], 3);
+    assert_eq!(native.fields["parameters"][6]["name"], "params");
+    assert_eq!(native.fields["parameters"][6]["compact_values"][2], 1);
+    assert_eq!(native.fields["parameters"][7]["name"], "flip");
+    assert_eq!(native.fields["parameters"][7]["opaque"][0], 0xf1);
+    assert_eq!(native.fields["parameters"][8]["name"], "dum_array");
+    assert_eq!(native.fields["parameters"][8]["value_kind"], "opaque");
     assert_eq!(
         result.ir.annotations.provenance[&native.id].tag.as_deref(),
         Some("surface_prototype_record")

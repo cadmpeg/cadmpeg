@@ -702,6 +702,15 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
     "c_pnts",
     "parent_feats",
     "frst_cntr_crv_hdr_ptr",
+    "id",
+    "type",
+    "flip",
+    "tan_cond",
+    "degree",
+    "params",
+    "dum_array",
+    "data_dbls",
+    "data_type",
 ];
 
 fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> bool {
@@ -711,6 +720,10 @@ fn prototype_parameter_allowed(family: &SurfacePrototypeFamily, name: &str) -> b
 
 fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
     let scalar_field = matches!(name, "radius" | "radius1" | "radius2" | "half_angle");
+    let compact_integer_field = matches!(
+        name,
+        "id" | "type" | "tan_cond" | "degree" | "frst_cntr_crv_hdr_ptr" | "data_type"
+    );
     if scalar_field && body == [0x18] {
         return SurfaceNamedValue::ScalarSequence(vec![0.0]);
     }
@@ -738,7 +751,8 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 values.push(value);
                 cursor = next;
             }
-            if values.len() == usize::try_from(count).unwrap_or(usize::MAX) {
+            if values.len() == usize::try_from(count).unwrap_or(usize::MAX) && cursor == body.len()
+            {
                 return SurfaceNamedValue::CompactIntArray(values);
             }
         }
@@ -756,6 +770,13 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
                 scalar_slots(&body[3..], slot_count, cache)
             },
         };
+    }
+    if compact_integer_field {
+        let (value, end) = compact_int(body, 0);
+        if end == body.len() && end != 0 {
+            return SurfaceNamedValue::CompactInt(value);
+        }
+        return SurfaceNamedValue::Opaque(body.to_vec());
     }
     let mut values = Vec::new();
     let mut cursor = 0;
