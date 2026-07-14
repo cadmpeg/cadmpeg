@@ -1189,6 +1189,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::Annotations => "Annotations",
         FeatureTreeNodeRole::AmbientLight => "Ambient",
         FeatureTreeNodeRole::Comments => "Comments",
+        FeatureTreeNodeRole::CrossSections => "Cross Sections",
         FeatureTreeNodeRole::DesignBinder => "Design Binder",
         FeatureTreeNodeRole::DirectionalLight => "Directional",
         FeatureTreeNodeRole::Equations => "Equations",
