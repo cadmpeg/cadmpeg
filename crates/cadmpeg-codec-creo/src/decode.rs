@@ -271,6 +271,7 @@ struct CreoSurfaceParameterRecord {
     opaque_spans: Vec<CreoSurfaceParameterOpaqueSpan>,
     scalar_frames: Vec<CreoSurfaceParameterScalarFrame>,
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
+    extrusion_direction: Option<[f64; 3]>,
     row_offset: usize,
     body_offset: usize,
     source_section: String,
@@ -386,6 +387,9 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
                             .collect(),
                     }
                 }),
+                extrusion_direction: (row.kind == crate::surface::SurfaceKind::Extrusion)
+                    .then(|| record.extrusion_direction())
+                    .flatten(),
                 row_offset: record.offset,
                 body_offset: record.body_offset,
                 source_section,
@@ -14242,6 +14246,19 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_surface_parameter_record_count".to_string(),
         scan.surface_parameters.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_positional_extrusion_direction_count".to_string(),
+        scan.surface_parameters
+            .iter()
+            .filter(|record| {
+                scan.surface_rows.iter().any(|row| {
+                    row.id == record.surface_id
+                        && row.kind == crate::surface::SurfaceKind::Extrusion
+                }) && record.extrusion_direction().is_some()
+            })
+            .count()
+            .to_string(),
     );
     attributes.insert(
         "decoded_plane_local_system_count".to_string(),

@@ -381,6 +381,21 @@ fn decode_transfers_positional_line_extrusion_plane() {
             ..
         }
     ));
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(record.fields["extrusion_direction"][0], 0.0);
+    assert_eq!(record.fields["extrusion_direction"][1], 0.0);
+    assert_eq!(record.fields["extrusion_direction"][2], 1.0);
+    assert_eq!(
+        result
+            .ir
+            .source
+            .as_ref()
+            .unwrap()
+            .attributes
+            .get("decoded_positional_extrusion_direction_count")
+            .map(String::as_str),
+        Some("1")
+    );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }

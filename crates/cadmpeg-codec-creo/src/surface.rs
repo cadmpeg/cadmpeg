@@ -267,6 +267,34 @@ pub struct LineExtrusionFrame {
 }
 
 impl SurfaceParameterRecord {
+    /// Decode the common model-space sweep-direction prefix of a positional
+    /// `surface_of_extrusion` body.
+    #[must_use]
+    pub fn extrusion_direction(&self) -> Option<[f64; 3]> {
+        if self.boundary != SurfaceBodyBoundary::CompoundClose {
+            return None;
+        }
+        let direction = self.scalar_frames.first()?;
+        let [x, y, z] = direction.slots.as_slice() else {
+            return None;
+        };
+        let direction_end = direction.offset
+            + direction
+                .slots
+                .iter()
+                .map(|slot| slot.length)
+                .sum::<usize>();
+        let separator = self.opaque_spans.first()?;
+        if separator.offset != direction_end || !separator.raw.starts_with(&[0x00, 0x0c, 0x9a]) {
+            return None;
+        }
+        let direction = [x.value?, y.value?, z.value?];
+        direction
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some(direction)
+    }
+
     /// Decode the two-frame positional body used by a straight
     /// `surface_of_extrusion` instance.
     #[must_use]
@@ -277,16 +305,14 @@ impl SurfaceParameterRecord {
         let [direction, directrix] = self.scalar_frames.as_slice() else {
             return None;
         };
-        let [direction_x, direction_y, direction_z] = direction.slots.as_slice() else {
-            return None;
-        };
+        let direction_values = self.extrusion_direction()?;
         let [start_x, start_y, start_z, end_x, end_y, end_z] = directrix.slots.as_slice() else {
             return None;
         };
         let values = [
-            direction_x.value?,
-            direction_y.value?,
-            direction_z.value?,
+            direction_values[0],
+            direction_values[1],
+            direction_values[2],
             start_x.value?,
             start_y.value?,
             start_z.value?,
