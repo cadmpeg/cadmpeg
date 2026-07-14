@@ -961,6 +961,8 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2, 0xe3]);
     payload.extend_from_slice(&[2, 0, 0, 0, 9, 10, 0xf6, 0, 0, 0xf6, 0xf6, 0x80, 0xe3, 0xe2]);
+    payload.extend_from_slice(b"dimtab_ptr\0");
+    payload.extend_from_slice(&[2, 0, 0, 0, 11, 12, 0xf6, 0, 0, 0xf6, 0xf6, 44, 0xe2]);
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
     let segments = scan.feature_definitions[0]
@@ -2108,6 +2110,30 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
         scan.feature_operations[0].recipe,
         Some(crate::feature::FeatureRecipeKind::Revolve)
     );
+}
+
+#[test]
+fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
+    let mut depdb = b"gsec2d_ptr\0\xe0\x0aname\0S2D0002\0\
+        var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2"
+        .to_vec();
+    depdb.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
+    depdb.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+    depdb.extend_from_slice(
+        b"\xe3Body ID 17\0\xe3\
+        \xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0",
+    );
+    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", depdb)]));
+
+    assert_eq!(scan.feature_definitions.len(), 1);
+    let definition = &scan.feature_definitions[0];
+    assert_eq!(definition.id, 2);
+    assert_eq!(definition.owner_feature_id, Some(17));
+    let variables = definition.variables.as_ref().expect("var_arr");
+    assert_eq!(variables.points.len(), 1);
+    assert_eq!(variables.points[0].point_id, 7);
+    assert_eq!(variables.points[0].u, Some(1.0));
+    assert_eq!(variables.points[0].v, Some(3.0));
 }
 
 #[test]

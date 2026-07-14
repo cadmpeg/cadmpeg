@@ -504,6 +504,17 @@ prefix followed by seven payload bytes.
 
 ### 8.2 Section topology
 
+DEPDB stores a section directly below `gsec2d_ptr` when it is not nested in a
+`feat_defs_<id>` record. Its `name` value `S2D<N>` supplies the section
+identifier. When the namespace contains one section and one procedural-recipe
+record, the recipe record's feature identifier owns the section. The section
+retains the same `segtab_ptr`, `dimtab_ptr`, `relat_ptr`, `var_arr`,
+`gsec3d_ptr`, and `p_saved_result` grammars as a nested feature definition.
+
+Positional `segtab_ptr` replay ends at the first following section-table label,
+including `dimtab_ptr`, `relat_ptr`, `var_arr`, `gsec3d_ptr`, `order_ptr`, or
+`p_saved_result`; bytes in later tables are not segment rows.
+
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is a one-byte generated-entity order index. In a feature-generated table, a line entity with `int_id = N` maps to table position `N - 1`. Arc entities map in `int_id` order to cylinder entries in generated-table order only when the feature's arc count equals its cylinder-entry count; `int_id - 1` does not index arc-generated cylinders.
 
 Positional `order_table` tuples are separated by `e2`. The final tuple may

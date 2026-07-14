@@ -851,6 +851,72 @@ fn feature_entity_graph(
     (entities, references)
 }
 
+fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset: usize) {
+    definition.offset += section_offset;
+    for frame in &mut definition.parameter_frames {
+        frame.offset += section_offset;
+    }
+    for outline in &mut definition.outlines {
+        outline.offset += section_offset;
+    }
+    if let Some(variables) = &mut definition.variables {
+        variables.offset += section_offset;
+        for row in &mut variables.rows {
+            row.offset += section_offset;
+        }
+    }
+    if let Some(segments) = &mut definition.segments {
+        segments.offset += section_offset;
+        for row in &mut segments.rows {
+            row.offset += section_offset;
+        }
+    }
+    if let Some(entities) = &mut definition.trim_entities {
+        entities.offset += section_offset;
+        for row in &mut entities.rows {
+            row.offset += section_offset;
+        }
+    }
+    if let Some(vertices) = &mut definition.trim_vertices {
+        vertices.offset += section_offset;
+        for row in &mut vertices.rows {
+            row.offset += section_offset;
+        }
+    }
+    if let Some(order) = &mut definition.order_table {
+        order.offset += section_offset;
+        for row in &mut order.rows {
+            row.offset += section_offset;
+        }
+    }
+    if let Some(section_3d) = &mut definition.section_3d {
+        section_3d.offset += section_offset;
+    }
+    if let Some(dimensions) = &mut definition.dimensions {
+        dimensions.offset += section_offset;
+        for row in &mut dimensions.rows {
+            row.offset += section_offset;
+        }
+    }
+    if let Some(relations) = &mut definition.relations {
+        relations.offset += section_offset;
+        for row in &mut relations.rows {
+            row.offset += section_offset;
+        }
+    }
+    if let Some(saved) = &mut definition.saved_section {
+        saved.offset += section_offset;
+        for entity in &mut saved.entities {
+            match entity {
+                feature::FeatureSavedEntity::Line(line) => line.offset += section_offset,
+                feature::FeatureSavedEntity::Arc(arc) => arc.offset += section_offset,
+                feature::FeatureSavedEntity::Circle(circle) => circle.offset += section_offset,
+                feature::FeatureSavedEntity::Dummy(dummy) => dummy.offset += section_offset,
+            }
+        }
+    }
+}
+
 fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
     let mut definitions = Vec::new();
     for section in sections
@@ -862,80 +928,25 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
             feature::definitions(&data[section.offset..end])
                 .into_iter()
                 .map(|mut definition| {
-                    definition.offset += section.offset;
-                    for frame in &mut definition.parameter_frames {
-                        frame.offset += section.offset;
-                    }
-                    for outline in &mut definition.outlines {
-                        outline.offset += section.offset;
-                    }
-                    if let Some(variables) = &mut definition.variables {
-                        variables.offset += section.offset;
-                        for row in &mut variables.rows {
-                            row.offset += section.offset;
-                        }
-                    }
-                    if let Some(segments) = &mut definition.segments {
-                        segments.offset += section.offset;
-                        for row in &mut segments.rows {
-                            row.offset += section.offset;
-                        }
-                    }
-                    if let Some(entities) = &mut definition.trim_entities {
-                        entities.offset += section.offset;
-                        for row in &mut entities.rows {
-                            row.offset += section.offset;
-                        }
-                    }
-                    if let Some(vertices) = &mut definition.trim_vertices {
-                        vertices.offset += section.offset;
-                        for row in &mut vertices.rows {
-                            row.offset += section.offset;
-                        }
-                    }
-                    if let Some(order) = &mut definition.order_table {
-                        order.offset += section.offset;
-                        for row in &mut order.rows {
-                            row.offset += section.offset;
-                        }
-                    }
-                    if let Some(section_3d) = &mut definition.section_3d {
-                        section_3d.offset += section.offset;
-                    }
-                    if let Some(dimensions) = &mut definition.dimensions {
-                        dimensions.offset += section.offset;
-                        for row in &mut dimensions.rows {
-                            row.offset += section.offset;
-                        }
-                    }
-                    if let Some(relations) = &mut definition.relations {
-                        relations.offset += section.offset;
-                        for row in &mut relations.rows {
-                            row.offset += section.offset;
-                        }
-                    }
-                    if let Some(saved) = &mut definition.saved_section {
-                        saved.offset += section.offset;
-                        for entity in &mut saved.entities {
-                            match entity {
-                                feature::FeatureSavedEntity::Line(line) => {
-                                    line.offset += section.offset;
-                                }
-                                feature::FeatureSavedEntity::Arc(arc) => {
-                                    arc.offset += section.offset;
-                                }
-                                feature::FeatureSavedEntity::Circle(circle) => {
-                                    circle.offset += section.offset;
-                                }
-                                feature::FeatureSavedEntity::Dummy(dummy) => {
-                                    dummy.offset += section.offset;
-                                }
-                            }
-                        }
-                    }
+                    offset_feature_definition(&mut definition, section.offset);
                     definition
                 }),
         );
+        if section.name == "DEPDB_DATA" {
+            let payload = &data[section.offset..end];
+            let recipe_operations = feature::operations(payload)
+                .into_iter()
+                .filter(|operation| operation.recipe.is_some())
+                .collect::<Vec<_>>();
+            if let [operation] = recipe_operations.as_slice() {
+                if let Some(mut definition) =
+                    feature::depdb_section_definition(payload, operation.feature_id)
+                {
+                    offset_feature_definition(&mut definition, section.offset);
+                    definitions.push(definition);
+                }
+            }
+        }
     }
     definitions.sort_by_key(|definition| definition.offset);
     definitions

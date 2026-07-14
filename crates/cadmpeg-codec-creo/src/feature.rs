@@ -1362,7 +1362,19 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
-    let region_end = find_bytes(payload, b"order_table", cursor, end).unwrap_or(end);
+    let region_end = [
+        b"order_table".as_slice(),
+        b"dimtab_ptr\0",
+        b"relat_ptr\0",
+        b"var_arr\0",
+        b"gsec3d_ptr\0",
+        b"order_ptr\0",
+        b"p_saved_result\0",
+    ]
+    .into_iter()
+    .filter_map(|label| find_bytes(payload, label, cursor, end))
+    .min()
+    .unwrap_or(end);
     let mut rows = named_row.into_iter().collect::<Vec<_>>();
     let first_row = cursor;
     while cursor < region_end {
@@ -3014,34 +3026,16 @@ pub fn direction_bytes(rows: &[FeatureRow]) -> Vec<FeatureDirectionByte> {
     result
 }
 
-/// Decode `FeatDefs` feature-definition records and their `f9 04 03`
-/// definition-space parameter frames.
-pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
-    const PREFIX: &[u8] = b"feat_defs_";
+fn definitions_in_ranges(
+    payload: &[u8],
+    starts: &[(usize, u32, Option<u32>)],
+) -> Vec<FeatureDefinition> {
     let cache = scalar::ScalarCache::from_section(payload);
-    let mut starts = Vec::new();
-    for offset in 0..payload.len() {
-        if payload.get(offset..offset + PREFIX.len()) != Some(PREFIX) {
-            continue;
-        }
-        let digits_start = offset + PREFIX.len();
-        let Some(nul_relative) = payload[digits_start..].iter().position(|&byte| byte == 0) else {
-            continue;
-        };
-        let digits = &payload[digits_start..digits_start + nul_relative];
-        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-            continue;
-        }
-        let Ok(id) = String::from_utf8_lossy(digits).parse::<u32>() else {
-            continue;
-        };
-        starts.push((offset, id));
-    }
     let mut result = Vec::new();
-    for (index, &(start, id)) in starts.iter().enumerate() {
+    for (index, &(start, id, owner_override)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
-            .map_or(payload.len(), |&(offset, _)| offset);
+            .map_or(payload.len(), |&(offset, _, _)| offset);
         let mut parameter_frames = Vec::new();
         for &(label, kind) in &[
             (
@@ -3150,7 +3144,8 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
                 })?
             })
             .collect::<BTreeSet<_>>();
-        let owner_feature_id = owner_ids.first().copied().filter(|_| owner_ids.len() == 1);
+        let owner_feature_id =
+            owner_override.or_else(|| owner_ids.first().copied().filter(|_| owner_ids.len() == 1));
         result.push(FeatureDefinition {
             id,
             owner_feature_id,
@@ -3170,6 +3165,68 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         });
     }
     result
+}
+
+/// Decode `FeatDefs` feature-definition records and their `f9 04 03`
+/// definition-space parameter frames.
+pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+    const PREFIX: &[u8] = b"feat_defs_";
+    let mut starts = Vec::new();
+    for offset in 0..payload.len() {
+        if payload.get(offset..offset + PREFIX.len()) != Some(PREFIX) {
+            continue;
+        }
+        let digits_start = offset + PREFIX.len();
+        let Some(nul_relative) = payload[digits_start..].iter().position(|&byte| byte == 0) else {
+            continue;
+        };
+        let digits = &payload[digits_start..digits_start + nul_relative];
+        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+            continue;
+        }
+        let Ok(id) = String::from_utf8_lossy(digits).parse::<u32>() else {
+            continue;
+        };
+        starts.push((offset, id, None));
+    }
+    definitions_in_ranges(payload, &starts)
+}
+
+/// Decode one standalone DEPDB `gsec2d_ptr` section whose owner is established
+/// by the section's unique procedural-recipe record.
+pub fn depdb_section_definition(
+    payload: &[u8],
+    owner_feature_id: u32,
+) -> Option<FeatureDefinition> {
+    const GSEC: &[u8] = b"gsec2d_ptr\0";
+    const NAME: &[u8] = b"name\0S2D";
+    const PREFIX: &[u8] = b"feat_defs_";
+    let starts = payload
+        .windows(GSEC.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == GSEC).then_some(offset))
+        .collect::<Vec<_>>();
+    let [start] = starts.as_slice() else {
+        return None;
+    };
+    let name_search_end = start.saturating_add(128).min(payload.len());
+    let name = find_bytes(payload, NAME, *start, name_search_end)? + NAME.len();
+    let name_end = payload[name..name_search_end]
+        .iter()
+        .position(|byte| *byte == 0)?
+        + name;
+    let digits = payload.get(name..name_end)?;
+    if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    let section_id = String::from_utf8_lossy(digits).parse::<u32>().ok()?;
+    let end =
+        find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len()).unwrap_or(payload.len());
+    definitions_in_ranges(
+        &payload[..end],
+        &[(*start, section_id, Some(owner_feature_id))],
+    )
+    .pop()
 }
 
 /// Bind an owner omitted by `feat_id` through the section's unique generated
