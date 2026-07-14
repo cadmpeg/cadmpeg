@@ -1605,6 +1605,302 @@ fn explicit_tetrahedron_solid_file_with_options(
     bytes
 }
 
+struct OwnedTestEntity {
+    entity_type: i64,
+    form: i64,
+    label: String,
+    status: &'static str,
+    parameters: String,
+}
+
+fn append_tetrahedral_shell(
+    entities: &mut Vec<OwnedTestEntity>,
+    label: &str,
+    origin: [f64; 3],
+    size: f64,
+) -> u32 {
+    let sequence = |index: usize| u32::try_from(index * 2 + 1).unwrap();
+    let first = entities.len();
+    let vertices = [
+        origin,
+        [origin[0] + size, origin[1], origin[2]],
+        [origin[0], origin[1] + size, origin[2]],
+        [origin[0], origin[1], origin[2] + size],
+    ];
+    for (index, point) in vertices.iter().enumerate().take(2) {
+        entities.push(OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: format!("{label}P{index}"),
+            status: "00010000",
+            parameters: format!("116,{},{},{},0;", point[0], point[1], point[2]),
+        });
+    }
+    for (index, normal) in [
+        [0.0, 0.0, -1.0],
+        [0.0, -1.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0],
+    ]
+    .iter()
+    .enumerate()
+    {
+        entities.push(OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: format!("{label}N{index}"),
+            status: "00010000",
+            parameters: format!("123,{},{},{};", normal[0], normal[1], normal[2]),
+        });
+    }
+    for (index, (point_offset, normal_offset)) in
+        [(0, 2), (0, 3), (0, 4), (1, 5)].into_iter().enumerate()
+    {
+        entities.push(OwnedTestEntity {
+            entity_type: 190,
+            form: 0,
+            label: format!("{label}S{index}"),
+            status: "00010000",
+            parameters: format!(
+                "190,{},{};",
+                sequence(first + point_offset),
+                sequence(first + normal_offset)
+            ),
+        });
+    }
+    for (index, (start, end)) in [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
+        .into_iter()
+        .enumerate()
+    {
+        let a = vertices[start];
+        let b = vertices[end];
+        entities.push(OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: format!("{label}E{index}"),
+            status: "00010000",
+            parameters: format!("110,{},{},{},{},{},{};", a[0], a[1], a[2], b[0], b[1], b[2]),
+        });
+    }
+    let vertex_list = sequence(entities.len());
+    entities.push(OwnedTestEntity {
+        entity_type: 502,
+        form: 1,
+        label: format!("{label}VERT"),
+        status: "00010000",
+        parameters: format!(
+            "502,4,{},{},{},{},{},{},{},{},{},{},{},{};",
+            vertices[0][0],
+            vertices[0][1],
+            vertices[0][2],
+            vertices[1][0],
+            vertices[1][1],
+            vertices[1][2],
+            vertices[2][0],
+            vertices[2][1],
+            vertices[2][2],
+            vertices[3][0],
+            vertices[3][1],
+            vertices[3][2]
+        ),
+    });
+    let edge_list = sequence(entities.len());
+    let curve = |offset: usize| sequence(first + 10 + offset);
+    entities.push(OwnedTestEntity {
+        entity_type: 504,
+        form: 1,
+        label: format!("{label}EDGE"),
+        status: "00010001",
+        parameters: format!(
+            "504,6,{}, {},1,{},2,{}, {},1,{},3,{}, {},1,{},4,{}, {},2,{},3,{}, {},2,{},4,{}, {},3,{},4;",
+            curve(0), vertex_list, vertex_list,
+            curve(1), vertex_list, vertex_list,
+            curve(2), vertex_list, vertex_list,
+            curve(3), vertex_list, vertex_list,
+            curve(4), vertex_list, vertex_list,
+            curve(5), vertex_list, vertex_list,
+        ).replace(' ', ""),
+    });
+    let mut loop_sequences = Vec::new();
+    for (index, uses) in [
+        [(2, 1), (4, 0), (1, 0)],
+        [(1, 1), (5, 1), (3, 0)],
+        [(3, 1), (6, 0), (2, 0)],
+        [(4, 1), (6, 1), (5, 0)],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let loop_sequence = sequence(entities.len());
+        loop_sequences.push(loop_sequence);
+        entities.push(OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: format!("{label}L{index}"),
+            status: "00010000",
+            parameters: format!(
+                "508,3,0,{edge_list},{}, {},0,0,{edge_list},{}, {},0,0,{edge_list},{}, {},0;",
+                uses[0].0, uses[0].1, uses[1].0, uses[1].1, uses[2].0, uses[2].1
+            )
+            .replace(' ', ""),
+        });
+    }
+    let mut face_sequences = Vec::new();
+    for (index, loop_sequence) in loop_sequences.into_iter().enumerate() {
+        let face_sequence = sequence(entities.len());
+        face_sequences.push(face_sequence);
+        entities.push(OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: format!("{label}F{index}"),
+            status: "00010000",
+            parameters: format!("510,{},1,1,{loop_sequence};", sequence(first + 6 + index)),
+        });
+    }
+    let shell = sequence(entities.len());
+    entities.push(OwnedTestEntity {
+        entity_type: 514,
+        form: 1,
+        label: format!("{label}SH"),
+        status: "00010000",
+        parameters: format!(
+            "514,4,{},1,{},1,{},1,{},1;",
+            face_sequences[0], face_sequences[1], face_sequences[2], face_sequences[3]
+        ),
+    });
+    shell
+}
+
+fn explicit_void_solid_file() -> (Vec<u8>, u32, u32, u32) {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut entities = Vec::new();
+    let outer = append_tetrahedral_shell(&mut entities, "OUT", [0.0, 0.0, 0.0], 4.0);
+    let void = append_tetrahedral_shell(&mut entities, "VOID", [0.5, 0.5, 0.5], 0.5);
+    let solid = u32::try_from(entities.len() * 2 + 1).unwrap();
+    entities.push(OwnedTestEntity {
+        entity_type: 186,
+        form: 0,
+        label: "VOIDBODY".into(),
+        status: "00000000",
+        parameters: format!("186,{outer},1,1,{void},0;"),
+    });
+
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    let mut parameter_sequence = 1_u32;
+    for (index, entity) in entities.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        let line_count = entity.parameters.len().div_ceil(64);
+        bytes.extend(directory_card(
+            [
+                &entity.entity_type.to_string(),
+                &parameter_sequence.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                entity.status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [
+                &entity.entity_type.to_string(),
+                "0",
+                "0",
+                &line_count.to_string(),
+                &entity.form.to_string(),
+                "",
+                "",
+                &entity.label,
+                "0",
+            ],
+            sequence + 1,
+        ));
+        parameter_sequence += u32::try_from(line_count).unwrap();
+    }
+    parameter_sequence = 1;
+    for (index, entity) in entities.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        bytes.extend(parameter_cards(
+            entity.parameters.as_bytes(),
+            sequence,
+            parameter_sequence,
+        ));
+        parameter_sequence += u32::try_from(entity.parameters.len().div_ceil(64)).unwrap();
+    }
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!(
+            "S0000001G{global_cards:07}D{:07}P{:07}",
+            entities.len() * 2,
+            parameter_sequence - 1
+        )
+        .as_bytes(),
+        b'T',
+        1,
+    ));
+    (bytes, solid, outer, void)
+}
+
+#[test]
+fn decode_builds_a_solid_with_an_oriented_void_shell() {
+    let (bytes, solid_sequence, outer_sequence, void_sequence) = explicit_void_solid_file();
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let body = result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == format!("iges:model:body#D{solid_sequence}"))
+        .unwrap();
+    assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
+    let region = result
+        .ir
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == body.regions[0])
+        .unwrap();
+    assert_eq!(region.shells.len(), 2);
+    assert_eq!(
+        region.shells[0].0,
+        format!("iges:model:shell#D{solid_sequence}:D{outer_sequence}")
+    );
+    assert_eq!(
+        region.shells[1].0,
+        format!("iges:model:shell#D{solid_sequence}:D{void_sequence}")
+    );
+    let void_shell = result
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == region.shells[1])
+        .unwrap();
+    for face_id in &void_shell.faces {
+        let face = result
+            .ir
+            .model
+            .faces
+            .iter()
+            .find(|face| face.id == *face_id)
+            .unwrap();
+        assert_eq!(face.sense, cadmpeg_ir::topology::Sense::Reversed);
+    }
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_rejects_closed_shell_with_inconsistent_radial_sense() {
     let result = IgesCodec
