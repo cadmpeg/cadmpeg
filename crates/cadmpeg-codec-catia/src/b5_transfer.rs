@@ -102,19 +102,9 @@ fn transfer_complete(
         return false;
     }
 
-    let referenced_loops: HashSet<u32> = graph
-        .faces
-        .iter()
-        .flat_map(|face| face.loops.iter().copied())
-        .collect();
-    if referenced_loops.len() != graph.loops.len()
-        || graph
-            .loops
-            .keys()
-            .any(|loop_id| !referenced_loops.contains(loop_id))
-    {
+    let Some(body_kind) = body_kind_if_owned(graph) else {
         return false;
-    }
+    };
 
     let mut referenced_surfaces: HashSet<u32> =
         graph.faces.iter().map(|face| face.surface).collect();
@@ -484,7 +474,7 @@ fn transfer_complete(
         .derived(&body_id, "regions");
     ir.model.bodies.push(Body {
         id: body_id.clone(),
-        kind: body_kind(graph),
+        kind: body_kind,
         regions: vec![region_id.clone()],
         transform: None,
         name: None,
@@ -1378,18 +1368,45 @@ fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
     Some(knots)
 }
 
-fn body_kind(graph: &B5Graph) -> BodyKind {
+fn body_kind_if_owned(graph: &B5Graph) -> Option<BodyKind> {
+    let mut face_ids = HashSet::new();
+    let mut loop_owners = HashMap::<u32, usize>::new();
+    for face in &graph.faces {
+        if !face_ids.insert(face.object_id) || face.loops.is_empty() {
+            return None;
+        }
+        for loop_id in &face.loops {
+            *loop_owners.entry(*loop_id).or_default() += 1;
+        }
+    }
+    if loop_owners.len() != graph.loops.len()
+        || loop_owners.values().any(|owners| *owners != 1)
+        || graph.loops.iter().any(|(loop_id, loop_)| {
+            loop_id != &loop_.object_id || !loop_owners.contains_key(loop_id)
+        })
+    {
+        return None;
+    }
+
+    let vertex_count = graph
+        .vertex_points
+        .len()
+        .checked_add(graph.logical_vertex_points.len())?;
     let mut uses = HashMap::<u32, usize>::new();
     for edge in graph.loops.values().flat_map(|loop_| &loop_.edges) {
+        let endpoints = graph.edge_vertices.get(edge)?;
+        if endpoints.iter().any(|endpoint| *endpoint >= vertex_count) {
+            return None;
+        }
         *uses.entry(*edge).or_default() += 1;
     }
-    if uses.values().any(|count| *count > 2) {
+    Some(if uses.values().any(|count| *count > 2) {
         BodyKind::General
     } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
         BodyKind::Solid
     } else {
         BodyKind::Sheet
-    }
+    })
 }
 
 fn annotate(
@@ -1437,16 +1454,66 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        cylinder_helix, lifted_curve_geometry, neutral_pcurve_point, revolution_surface,
-        transfer_vertex_tolerances, SurfacePlan,
+        body_kind_if_owned, cylinder_helix, lifted_curve_geometry, neutral_pcurve_point,
+        revolution_surface, transfer_vertex_tolerances, SurfacePlan,
     };
-    use crate::b5::{B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
+    use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
         CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::BodyKind;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn body_kind_requires_unique_complete_loop_ownership() {
+        let mut graph = B5Graph {
+            complete: true,
+            records: Vec::new(),
+            faces: vec![B5Face {
+                object_id: 1,
+                surface: 10,
+                loops: vec![2],
+            }],
+            loops: BTreeMap::from([(
+                2,
+                B5Loop {
+                    object_id: 2,
+                    pcurves: vec![4],
+                    edges: vec![3],
+                    surface: 10,
+                },
+            )]),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::from([(3, [0, 1])]),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+
+        assert_eq!(body_kind_if_owned(&graph), Some(BodyKind::Sheet));
+        graph.faces[0].loops.push(2);
+        assert_eq!(body_kind_if_owned(&graph), None);
+        graph.faces[0].loops.pop();
+        graph.faces.push(B5Face {
+            object_id: 5,
+            surface: 10,
+            loops: vec![2],
+        });
+        assert_eq!(body_kind_if_owned(&graph), None);
+        graph.faces.pop();
+        graph.edge_vertices.insert(3, [0, 2]);
+        assert_eq!(body_kind_if_owned(&graph), None);
+    }
 
     #[test]
     fn emitted_carriers_determine_logical_vertex_tolerance() {
