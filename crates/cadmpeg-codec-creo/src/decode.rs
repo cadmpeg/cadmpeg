@@ -5906,10 +5906,12 @@ fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])
             }
         }
     }
-    let [radius] = radii.as_slice() else {
-        return None;
-    };
-    Some(*radius)
+    let radius = *radii.first()?;
+    let scale = radius.abs().max(1.0);
+    radii
+        .iter()
+        .all(|candidate| (candidate - radius).abs() <= 1e-9 * scale)
+        .then_some(radius)
 }
 
 fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
@@ -5919,7 +5921,7 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
         .then_some(())?;
-    let records = scan
+    let named_records = scan
         .feature_affected_ids
         .iter()
         .filter(|record| {
@@ -5927,10 +5929,17 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
                 && record.kind == crate::feature::AffectedIdKind::Geometry
         })
         .collect::<Vec<_>>();
-    let [record] = records.as_slice() else {
-        return None;
+    let replay_records = scan
+        .feature_replay_affected_ids
+        .iter()
+        .filter(|record| record.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    let affected_ids = match (named_records.as_slice(), replay_records.as_slice()) {
+        ([record], _) => record.ids.as_slice(),
+        ([], [record]) => record.geometry_ids.as_slice(),
+        _ => return None,
     };
-    let support_ids = record.ids.get(2..)?;
+    let support_ids = affected_ids.get(2..)?;
     let support_planes = support_ids
         .iter()
         .filter_map(|id| {
@@ -7085,9 +7094,18 @@ mod resolved_sketch_tests {
                 ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
                 ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
                 ([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
-                ([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+                ([0.0, 0.0, -8.0], [0.0, 0.0, 1.0]),
             ]),
             None
+        );
+        assert_eq!(
+            parallel_support_radius([
+                ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                ([-9.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+                ([0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+                ([0.0, 0.0, -7.0], [0.0, 0.0, 1.0]),
+            ]),
+            Some(0.5)
         );
     }
 
