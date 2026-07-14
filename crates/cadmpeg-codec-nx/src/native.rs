@@ -2585,6 +2585,33 @@ pub struct DataBlockReference {
     pub source_offset: u64,
 }
 
+/// Complete counted block-index lane carried by one offset-store block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockCountedIndexLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning block in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Zero-based lane order within the block.
+    pub ordinal: u32,
+    /// Serialized count including the anchor and terminal slot.
+    pub declared_count: u8,
+    /// Decoded anchoring block index.
+    pub anchor_index: u32,
+    /// Same-section block addressed by the anchor.
+    pub anchor_data_block: String,
+    /// Ordered decoded member block indices.
+    pub member_indices: Vec<u32>,
+    /// Ordered same-section blocks addressed by the members.
+    pub member_data_blocks: Vec<String>,
+    /// Absolute file offset of the opening `01` marker.
+    pub source_offset: u64,
+    /// Absolute file offset of the anchoring compact index.
+    pub anchor_source_offset: u64,
+    /// Ordered absolute file offsets of member compact indices.
+    pub member_source_offsets: Vec<u64>,
+}
+
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreHeader {
@@ -3445,6 +3472,88 @@ pub fn data_block_references(container: &Container) -> Vec<DataBlockReference> {
                                     + reference.offset as u64,
                             }
                         })
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode complete in-range counted block-index lanes from offset-only stores.
+pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCountedIndexLane> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            if section
+                .records
+                .first()
+                .is_none_or(|record| record.object_id.is_some())
+            {
+                return Vec::new();
+            }
+            let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+            let block_count = section.records.len() + 1;
+            section
+                .records
+                .into_iter()
+                .enumerate()
+                .flat_map(|(record_ordinal, block)| {
+                    let block_ordinal = record_ordinal + 1;
+                    crate::om::offset_store_counted_index_lanes(block.bytes)
+                        .into_iter()
+                        .filter_map(|lane| {
+                            let anchor_data_block = control_index_data_block(
+                                section_ordinal,
+                                block_count,
+                                lane.anchor,
+                            )?;
+                            let member_data_blocks = lane
+                                .members
+                                .iter()
+                                .map(|(value, _)| {
+                                    control_index_data_block(
+                                        section_ordinal,
+                                        block_count,
+                                        *value,
+                                    )
+                                })
+                                .collect::<Option<Vec<_>>>()?;
+                            let source_base = entry_offset + block.offset as u64;
+                            Some((lane, anchor_data_block, member_data_blocks, source_base))
+                        })
+                        .enumerate()
+                        .map(
+                            |(
+                                ordinal,
+                                (lane, anchor_data_block, member_data_blocks, source_base),
+                            )| DataBlockCountedIndexLane {
+                                id: format!(
+                                    "nx:om-data-block-counted-index-lanes-{section_ordinal}-{block_ordinal}:lane#{ordinal}"
+                                ),
+                                data_block: format!(
+                                    "nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}"
+                                ),
+                                ordinal: ordinal as u32,
+                                declared_count: lane.declared_count,
+                                anchor_index: lane.anchor,
+                                anchor_data_block,
+                                member_indices: lane
+                                    .members
+                                    .iter()
+                                    .map(|(value, _)| *value)
+                                    .collect(),
+                                member_data_blocks,
+                                source_offset: source_base + lane.offset as u64,
+                                anchor_source_offset: source_base + lane.anchor_offset as u64,
+                                member_source_offsets: lane
+                                    .members
+                                    .iter()
+                                    .map(|(_, offset)| source_base + *offset as u64)
+                                    .collect(),
+                            },
+                        )
                         .collect::<Vec<_>>()
                 })
                 .collect()

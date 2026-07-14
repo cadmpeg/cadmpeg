@@ -119,6 +119,66 @@ fn compact_index(bytes: &[u8]) -> Option<(CompactIndex, usize)> {
     }
 }
 
+/// One counted compact-index lane ending in the exact `01 11` marker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetStoreCountedIndexLane {
+    /// Byte offset of the opening `01` marker.
+    pub offset: usize,
+    /// Serialized count. One slot is the anchor and one is the terminator.
+    pub declared_count: u8,
+    /// Non-null compact index immediately following the count.
+    pub anchor: u32,
+    /// Byte offset of the anchor compact index.
+    pub anchor_offset: usize,
+    /// Ordered non-null compact indices preceding the terminator.
+    pub members: Vec<(u32, usize)>,
+}
+
+/// Decode complete counted compact-index lanes from one bounded store block.
+///
+/// A lane is `01, count:u8, anchor, member[count-2], 01 11`, with
+/// `count >= 3`. Compact indices use the ordinary direct/extended encoding;
+/// null indices reject the candidate atomically.
+pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedIndexLane> {
+    let mut lanes = Vec::new();
+    for start in 0..bytes.len().saturating_sub(4) {
+        if bytes[start] != 0x01 {
+            continue;
+        }
+        let declared_count = bytes[start + 1];
+        if declared_count < 3 {
+            continue;
+        }
+        let mut at = start + 2;
+        let Some((CompactIndex::Value(anchor), width)) = compact_index(&bytes[at..]) else {
+            continue;
+        };
+        let anchor_offset = at;
+        at += width;
+        let mut members = Vec::with_capacity(usize::from(declared_count) - 2);
+        let mut complete = true;
+        for _ in 0..usize::from(declared_count) - 2 {
+            let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                complete = false;
+                break;
+            };
+            members.push((value, at));
+            at += width;
+        }
+        if complete && bytes.get(at..at + 2) == Some(&[0x01, 0x11]) {
+            lanes.push(OffsetStoreCountedIndexLane {
+                offset: start,
+                declared_count,
+                anchor,
+                anchor_offset,
+                members,
+            });
+        }
+    }
+    lanes
+}
+
 /// One tagged reference occurrence in an externally bounded OM record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReferenceValue {

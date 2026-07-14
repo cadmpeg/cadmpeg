@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 62);
+    assert_eq!(namespace.version, 63);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1050,6 +1050,36 @@ fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
         ])
     );
     assert_eq!(crate::om::compact_indices(&[0x80]), None);
+}
+
+#[test]
+fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
+    let bytes = [
+        0xaa, 0x01, 0x06, 0x42, 0x62, 0x80, 0x48, 0x80, 0x50, 0x7c, 0x01, 0x11, 0xbb,
+    ];
+    let lanes = crate::om::offset_store_counted_index_lanes(&bytes);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].offset, 1);
+    assert_eq!(lanes[0].declared_count, 6);
+    assert_eq!(lanes[0].anchor, 0x42);
+    assert_eq!(lanes[0].anchor_offset, 3);
+    assert_eq!(
+        lanes[0].members,
+        vec![(0x62, 4), (0x48, 5), (0x50, 7), (0x7c, 9)]
+    );
+
+    assert!(
+        crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0xff, 0x01, 0x11,])
+            .is_empty()
+    );
+    assert!(
+        crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x80, 0x01, 0x11,])
+            .is_empty()
+    );
+    assert!(
+        crate::om::offset_store_counted_index_lanes(&[0x01, 0x03, 0x42, 0x62, 0x01, 0x10,])
+            .is_empty()
+    );
 }
 
 #[test]
@@ -4785,7 +4815,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 62);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 63);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

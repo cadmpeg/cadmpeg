@@ -2836,6 +2836,8 @@ fn attach_native_object_model(
     let data_block_control_handle_pairs =
         crate::native::data_block_control_handle_pairs(&data_block_control_references);
     let data_block_references = crate::native::data_block_references(&scan.container);
+    let data_block_counted_index_lanes =
+        crate::native::data_block_counted_index_lanes(&scan.container);
     let feature_parameter_bindings = crate::native::feature_parameter_bindings(
         &feature_input_blocks,
         &data_block_references,
@@ -2894,6 +2896,7 @@ fn attach_native_object_model(
         && data_block_control_references.is_empty()
         && data_block_control_handle_pairs.is_empty()
         && data_block_references.is_empty()
+        && data_block_counted_index_lanes.is_empty()
         && feature_parameter_bindings.is_empty()
         && store_headers.is_empty()
         && string_values.is_empty()
@@ -3165,7 +3168,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(62);
+    namespace.version = namespace.version.max(63);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3345,6 +3348,12 @@ fn attach_native_object_model(
     }
     if !data_block_references.is_empty() {
         namespace.set_arena("data_block_references", &data_block_references)?;
+    }
+    if !data_block_counted_index_lanes.is_empty() {
+        namespace.set_arena(
+            "data_block_counted_index_lanes",
+            &data_block_counted_index_lanes,
+        )?;
     }
     if !feature_parameter_bindings.is_empty() {
         namespace.set_arena("feature_parameter_bindings", &feature_parameter_bindings)?;
