@@ -263,7 +263,7 @@ Point-distance operands select explicit profile loci. Line-distance and angular 
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
 
-An `moCurvePattern_c` feature-input object is followed by its path feature object. When that immediately following object is an `moProfileFeature_c` sketch with one resolved neutral sketch, the curve-driven pattern path is that sketch. A missing, multiply addressed, non-sketch, or unresolved following object leaves the path native.
+An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object and followed by its path feature object. The preceding object identifies the repeated neutral feature. When the following object is an `moProfileFeature_c` sketch with one resolved neutral sketch, that sketch is the curve-driven pattern path. A missing or multiply addressed adjacent object, or a following object that is not a resolved sketch, leaves both pattern inputs unresolved.
 
 A parameterless, propertyless `Feature` history record with type `Directional` or `Direccional` is a directional scene-light tree node rather than a modeling operation.
 
