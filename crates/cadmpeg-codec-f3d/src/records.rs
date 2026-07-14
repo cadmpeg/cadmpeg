@@ -691,6 +691,26 @@ pub struct DesignConstructionPersistentIdentity {
     pub next_byte_offset: u64,
 }
 
+/// One radius assignment and its ordered edge group in a Fillet scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFilletRadiusGroup {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning Fillet scope record.
+    pub scope_record_index: u32,
+    /// Position among construction-operand groups in scope-reference order.
+    pub group_ordinal: u32,
+    /// Counted construction-operand group carrying the edges.
+    pub group_record_index: u32,
+    /// Ordered edge-operand records assigned this radius.
+    pub edge_operand_record_indices: Vec<u32>,
+    /// Radius parameter record paired with this edge group.
+    pub radius_parameter_record_index: u32,
+    /// Tangency-weight parameter record paired with this edge group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangency_weight_parameter_record_index: Option<u32>,
+}
+
 /// One fixed-width member named by an Extrude selection group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignExtrudeSelectionMember {

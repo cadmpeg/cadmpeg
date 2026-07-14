@@ -475,6 +475,74 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let construction_groups_by_index = native
+        .design_construction_operand_groups
+        .iter()
+        .map(|group| ((design_stream(&group.id), group.record_index), group))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut fillet_radius_group_records = HashSet::new();
+    let mut fillet_radius_group_slots = HashSet::new();
+    for assignment in &native.design_fillet_radius_groups {
+        let native_stream = design_stream(&assignment.id);
+        let scope = scopes_by_index.get(&(native_stream, assignment.scope_record_index));
+        let group =
+            construction_groups_by_index.get(&(native_stream, assignment.group_record_index));
+        let radius =
+            parameters_by_index.get(&(native_stream, assignment.radius_parameter_record_index));
+        let tangency_weight = assignment
+            .tangency_weight_parameter_record_index
+            .and_then(|record_index| parameters_by_index.get(&(native_stream, record_index)));
+        let valid = scope.is_some_and(|scope| scope.kind == "Fillet")
+            && group.is_some_and(|group| {
+                group.scope_record_index == assignment.scope_record_index
+                    && group.members == assignment.edge_operand_record_indices
+            })
+            && radius.is_some_and(|parameter| {
+                parameter.source_kind == "Radius"
+                    && parameter.unit.as_deref() == Some("mm")
+                    && parameter.evaluated_value > 0.0
+                    && parameter.evaluated_value.is_finite()
+            })
+            && assignment
+                .tangency_weight_parameter_record_index
+                .is_none_or(|_| {
+                    tangency_weight.is_some_and(|parameter| {
+                        parameter.source_kind == "TangencyWeight"
+                            && parameter.unit.is_none()
+                            && parameter.evaluated_value.is_finite()
+                    })
+                })
+            && fillet_radius_group_records.insert((native_stream, assignment.group_record_index))
+            && fillet_radius_group_slots.insert((
+                native_stream,
+                assignment.scope_record_index,
+                assignment.group_ordinal,
+            ));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Fillet radius group has an invalid parameter assignment"
+                    .into(),
+                entity: Some(assignment.id.clone()),
+            });
+        }
+    }
+    for group in &native.design_construction_operand_groups {
+        let native_stream = design_stream(&group.id);
+        let is_fillet = scopes_by_index
+            .get(&(native_stream, group.scope_record_index))
+            .is_some_and(|scope| scope.kind == "Fillet");
+        if is_fillet && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Fillet operand group has no radius assignment".into(),
+                entity: Some(group.id.clone()),
+            });
+        }
+    }
     let operand_groups_by_index = native
         .design_construction_operand_groups
         .iter()

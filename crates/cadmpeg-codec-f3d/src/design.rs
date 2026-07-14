@@ -13,10 +13,11 @@ use crate::records::{
     DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
     DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -2695,6 +2696,85 @@ pub fn decode_construction_operand_groups(
     Ok(out)
 }
 
+/// Pair Fillet construction-operand groups with their radius inputs.
+pub fn decode_fillet_radius_groups(
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    owners: &[DesignParameterOwner],
+    parameters: &[DesignParameter],
+) -> Vec<DesignFilletRadiusGroup> {
+    let parameters = parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((
+                (native_stream(&parameter.id)?, parameter.record_index),
+                parameter,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for scope in scopes.iter().filter(|scope| scope.kind == "Fillet") {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let mut scope_groups = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == Some(stream)
+                    && group.scope_record_index == scope.record_index
+            })
+            .collect::<Vec<_>>();
+        scope_groups.sort_by_key(|group| group.scope_reference_ordinal);
+        let mut owned_parameters = owners
+            .iter()
+            .filter(|owner| {
+                native_stream(&owner.id) == Some(stream)
+                    && owner.scope_record_index == scope.record_index
+            })
+            .filter_map(|owner| {
+                Some((
+                    owner.local_ordinal,
+                    *parameters.get(&(stream, owner.parameter_record_index))?,
+                ))
+            })
+            .collect::<Vec<_>>();
+        owned_parameters.sort_by_key(|(ordinal, _)| *ordinal);
+        let radii = owned_parameters
+            .iter()
+            .filter_map(|(_, parameter)| (parameter.source_kind == "Radius").then_some(*parameter))
+            .collect::<Vec<_>>();
+        let weights = owned_parameters
+            .iter()
+            .filter_map(|(_, parameter)| {
+                (parameter.source_kind == "TangencyWeight").then_some(*parameter)
+            })
+            .collect::<Vec<_>>();
+        if scope_groups.len() != radii.len()
+            || (!weights.is_empty() && weights.len() != scope_groups.len())
+        {
+            continue;
+        }
+        for (ordinal, (group, radius)) in scope_groups.into_iter().zip(radii).enumerate() {
+            let Ok(group_ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            out.push(DesignFilletRadiusGroup {
+                id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
+                scope_record_index: scope.record_index,
+                group_ordinal,
+                group_record_index: group.record_index,
+                edge_operand_record_indices: group.members.clone(),
+                radius_parameter_record_index: radius.record_index,
+                tangency_weight_parameter_record_index: weights
+                    .get(ordinal)
+                    .map(|parameter| parameter.record_index),
+            });
+        }
+    }
+    out.sort_by_key(|group| group.id.clone());
+    out
+}
+
 fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -5113,14 +5193,14 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 mod relation_tests {
     use super::{
         bind_dimension_loci, bind_extrude_selection_geometry, bind_sketch_graph,
-        find_dimension_locus_pair, identity_matrix, next_indexed_record_offset,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_parameter_companion,
-        parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
-        parse_sketch_relation, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design,
+        decode_fillet_radius_groups, find_dimension_locus_pair, identity_matrix,
+        next_indexed_record_offset, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -6620,6 +6700,103 @@ mod relation_tests {
                 spec: ChamferSpec::TwoDistances { first, second },
             } if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0
         ));
+    }
+
+    #[test]
+    fn fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
+        let scope = DesignParameterScope {
+            id: "f3d:native:scope#12".into(),
+            byte_offset: 100,
+            class_tag: "301".into(),
+            record_index: 12,
+            frame_length: 200,
+            kind: "Fillet".into(),
+            kind_offset: 210,
+            reference_count_offset: 180,
+            reference_members: vec![100, 101],
+            reference_member_offsets: vec![185, 196],
+            extrude_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 300,
+        };
+        let group = |record_index, ordinal, members: Vec<u32>| DesignConstructionOperandGroup {
+            id: format!("f3d:native:construction-group#{record_index}"),
+            scope_record_index: 12,
+            scope_reference_ordinal: ordinal,
+            record_index,
+            byte_offset: 1000 + u64::from(ordinal) * 200,
+            class_tag: "288".into(),
+            member_count_offset: 1021 + u64::from(ordinal) * 200,
+            member_offsets: (0..members.len())
+                .map(|index| 1026 + u64::from(ordinal) * 200 + index as u64 * 11)
+                .collect(),
+            members,
+            identity_record_index: 300 + ordinal,
+            identity_record_offset: 1100 + u64::from(ordinal) * 200,
+            role: 0x0000_0008_0000_0000,
+            role_offset: 1110 + u64::from(ordinal) * 200,
+            opaque_index: 100,
+            opaque_index_offset: 1128 + u64::from(ordinal) * 200,
+            opaque_scalar: 0.5,
+            opaque_scalar_offset: 1132 + u64::from(ordinal) * 200,
+            variant: false,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 1200 + u64::from(ordinal) * 200,
+        };
+        let groups = [group(100, 0, vec![200]), group(101, 1, vec![201, 202])];
+        let parameter = |owner_index, record_index, source_kind: &str, unit, value| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                Some(owner_index),
+                "value",
+                source_kind,
+                unit,
+                "d1",
+                value,
+            ))
+            .expect("canonical Fillet parameter");
+            parameter.id = format!("f3d:native:parameter#{record_index}");
+            parameter.record_index = record_index;
+            parameter
+        };
+        let owner = |record_index, parameter_record_index, local_ordinal| {
+            let mut owner = parse_parameter_owner(&parameter_owner_frame()).unwrap();
+            owner.id = format!("f3d:native:owner#{record_index}");
+            owner.record_index = record_index;
+            owner.scope_record_index = 12;
+            owner.parameter_record_index = parameter_record_index;
+            owner.local_ordinal = local_ordinal;
+            owner
+        };
+        let parameters = [
+            parameter(10, 11, "Radius", Some("mm"), 0.5),
+            parameter(20, 21, "Radius", Some("mm"), 0.3),
+            parameter(30, 31, "TangencyWeight", None, 1.0),
+            parameter(40, 41, "TangencyWeight", None, 0.75),
+        ];
+        let owners = [
+            owner(10, 11, 0),
+            owner(20, 21, 1),
+            owner(30, 31, 2),
+            owner(40, 41, 3),
+        ];
+
+        let assignments = decode_fillet_radius_groups(&[scope], &groups, &owners, &parameters);
+        assert_eq!(assignments.len(), 2);
+        assert_eq!(assignments[0].edge_operand_record_indices, [200]);
+        assert_eq!(assignments[0].radius_parameter_record_index, 11);
+        assert_eq!(
+            assignments[0].tangency_weight_parameter_record_index,
+            Some(31)
+        );
+        assert_eq!(assignments[1].edge_operand_record_indices, [201, 202]);
+        assert_eq!(assignments[1].radius_parameter_record_index, 21);
+        assert_eq!(
+            assignments[1].tangency_weight_parameter_record_index,
+            Some(41)
+        );
     }
 
     #[test]

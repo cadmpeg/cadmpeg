@@ -785,6 +785,12 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.design_record_headers,
     )?;
+    native.design_fillet_radius_groups = crate::design::decode_fillet_radius_groups(
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_parameter_owners,
+        &native.design_parameters,
+    );
     native.design_extrude_selection_groups = crate::design::decode_extrude_selection_groups(
         scan,
         &native.design_parameter_scopes,

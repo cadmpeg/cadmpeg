@@ -10,13 +10,13 @@ use crate::records::{
     CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignMaterialAssignment,
-    DesignObject, DesignParameter, DesignParameterCompanion, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, EdgeContinuity, EdgeOwnership,
-    FaceSidedness, LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink,
-    PersistentReference, PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint,
-    SketchRelation, TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership,
-    WireTopology,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFilletRadiusGroup,
+    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
+    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
+    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
+    TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -46,6 +46,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_entity_headers",
     "design_extrude_selection_groups",
     "design_extrude_selection_members",
+    "design_fillet_radius_groups",
     "design_material_assignments",
     "design_objects",
     "design_parameter_companions",
@@ -90,6 +91,7 @@ macro_rules! f3d_arenas {
             design_construction_operand_identities: DesignConstructionOperandIdentity;
             design_extrude_selection_groups: DesignExtrudeSelectionGroup;
             design_extrude_selection_members: DesignExtrudeSelectionMember;
+            design_fillet_radius_groups: DesignFilletRadiusGroup;
             design_parameter_companions: DesignParameterCompanion;
             design_parameter_owners: DesignParameterOwner;
             design_parameter_scopes: DesignParameterScope;
@@ -214,6 +216,9 @@ pub struct F3dNative {
     /// Fixed-width members named by Extrude selection groups.
     #[serde(default)]
     pub design_extrude_selection_members: Vec<DesignExtrudeSelectionMember>,
+    /// Radius parameters paired with counted Fillet edge groups.
+    #[serde(default)]
+    pub design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
     /// Fixed prefixes of indexed records paired with parameter owners.
     #[serde(default)]
     pub design_parameter_companions: Vec<DesignParameterCompanion>,
@@ -324,6 +329,7 @@ impl Default for F3dNative {
             design_construction_operand_identities: Vec::new(),
             design_extrude_selection_groups: Vec::new(),
             design_extrude_selection_members: Vec::new(),
+            design_fillet_radius_groups: Vec::new(),
             design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),
             design_parameter_scopes: Vec::new(),
