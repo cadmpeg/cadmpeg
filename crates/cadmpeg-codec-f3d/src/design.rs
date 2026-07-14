@@ -2607,14 +2607,17 @@ pub fn project_dimension_constraints(
             let sketch = sketches_by_scope
                 .get(&(scope.as_str(), owner.scope_record_index))?
                 .clone();
-            Some(SketchConstraint {
-                id: neutral_dimension_constraint_id(
-                    &companion.id,
-                    "recipe-group",
-                    companion.record_index,
-                ),
-                sketch,
-                definition: Definition::Native {
+            let definition = (parameter.source_kind.starts_with("Linear Dimension"))
+                .then(|| {
+                    unique_recipe_linear_dimension(
+                        entities,
+                        &sketch,
+                        parameter.evaluated_value * 10.0,
+                        &parameter_id,
+                    )
+                })
+                .flatten()
+                .unwrap_or_else(|| Definition::Native {
                     native_kind: parameter.source_kind.clone(),
                     entities: Vec::new(),
                     parameter: Some(parameter_id),
@@ -2626,7 +2629,15 @@ pub fn project_dimension_constraints(
                             native_ref: Some(record.id.clone()),
                         })
                         .collect(),
-                },
+                });
+            Some(SketchConstraint {
+                id: neutral_dimension_constraint_id(
+                    &companion.id,
+                    "recipe-group",
+                    companion.record_index,
+                ),
+                sketch,
+                definition,
                 native_ref: Some(companion.id.clone()),
             })
         },
@@ -3073,6 +3084,104 @@ fn directional_point_dimension(
     } else {
         None
     }
+}
+
+fn unique_recipe_linear_dimension(
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    evaluated_mm: f64,
+    parameter: &cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    let sketch_entities = entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch)
+        .collect::<Vec<_>>();
+    let points = sketch_entities
+        .iter()
+        .copied()
+        .filter(|entity| {
+            matches!(
+                entity.geometry,
+                cadmpeg_ir::sketches::SketchGeometry::Point { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for first in 0..points.len() {
+        for second in first + 1..points.len() {
+            if let Some(definition) = directional_point_dimension(
+                &[points[first], points[second]],
+                evaluated_mm,
+                parameter.clone(),
+            ) {
+                candidates.push(definition);
+            }
+        }
+    }
+    let lines = sketch_entities
+        .iter()
+        .copied()
+        .filter(|entity| {
+            matches!(
+                entity.geometry,
+                cadmpeg_ir::sketches::SketchGeometry::Line { .. }
+            )
+        })
+        .collect::<Vec<_>>();
+    for first in 0..lines.len() {
+        for second in first + 1..lines.len() {
+            if parallel_line_separation(lines[first], lines[second], evaluated_mm) {
+                candidates.push(cadmpeg_ir::sketches::SketchConstraintDefinition::Distance {
+                    entities: vec![lines[first].id.clone(), lines[second].id.clone()],
+                    parameter: parameter.clone(),
+                });
+            }
+        }
+    }
+    (candidates.len() == 1).then(|| candidates.remove(0))
+}
+
+fn parallel_line_separation(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+    evaluated_mm: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let SketchGeometry::Line {
+        start: first_start,
+        end: first_end,
+    } = &first.geometry
+    else {
+        return false;
+    };
+    let SketchGeometry::Line {
+        start: second_start,
+        end: second_end,
+    } = &second.geometry
+    else {
+        return false;
+    };
+    let first_direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
+    let second_direction =
+        Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
+    let first_length = first_direction.u.hypot(first_direction.v);
+    let second_length = second_direction.u.hypot(second_direction.v);
+    if first_length <= 1.0e-12 || second_length <= 1.0e-12 {
+        return false;
+    }
+    let cross = first_direction.u * second_direction.v - first_direction.v * second_direction.u;
+    if cross.abs() > 1.0e-9 * first_length * second_length {
+        return false;
+    }
+    let offset = Point2::new(
+        second_start.u - first_start.u,
+        second_start.v - first_start.v,
+    );
+    let separation =
+        (offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length;
+    let expected = evaluated_mm.abs();
+    (separation - expected).abs() <= 1.0e-9 * (1.0 + expected)
 }
 
 fn two_locus_distance_dimension(
@@ -11034,6 +11143,74 @@ mod relation_tests {
                 .collect::<Vec<_>>(),
             [30, 31]
         );
+    }
+
+    #[test]
+    fn recipe_dimension_requires_one_axis_aligned_point_pair() {
+        let sketch = SketchId("sketch".into());
+        let point = |name: &str, u, v| SketchEntity {
+            id: SketchEntityId(name.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        };
+        let parameter = cadmpeg_ir::features::ParameterId("parameter".into());
+        let mut entities = vec![
+            point("first", -30.0, 2.0),
+            point("second", -30.0, 0.0),
+            point("unrelated", 10.0, 10.0),
+        ];
+        assert!(matches!(
+            super::unique_recipe_linear_dimension(
+                &entities,
+                &sketch,
+                2.0,
+                &parameter,
+            ),
+            Some(SketchConstraintDefinition::VerticalDistance { first, second, parameter: actual })
+                if first == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("first".into()))
+                    && second == cadmpeg_ir::sketches::SketchLocus::Entity(SketchEntityId("second".into()))
+                    && actual == parameter
+        ));
+        entities.push(point("ambiguous", 10.0, 8.0));
+        assert_eq!(
+            super::unique_recipe_linear_dimension(&entities, &sketch, 2.0, &parameter),
+            None
+        );
+    }
+
+    #[test]
+    fn recipe_dimension_resolves_one_parallel_line_pair() {
+        let sketch = SketchId("sketch".into());
+        let line = |name: &str, start, end| SketchEntity {
+            id: SketchEntityId(name.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let entities = vec![
+            line("first", Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
+            line("second", Point2::new(1.0, 2.0), Point2::new(5.0, 2.0)),
+            line("unrelated", Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)),
+        ];
+        assert!(matches!(
+            super::unique_recipe_linear_dimension(
+                &entities,
+                &sketch,
+                2.0,
+                &cadmpeg_ir::features::ParameterId("parameter".into()),
+            ),
+            Some(SketchConstraintDefinition::Distance { entities, .. })
+                if entities == [SketchEntityId("first".into()), SketchEntityId("second".into())]
+        ));
     }
 
     #[test]
