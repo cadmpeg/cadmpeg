@@ -99,6 +99,12 @@ Each non-null header slot addresses the zero-based entity-record ordinal in the
 offset-only OM store. The addressed record retains its external index boundary
 as the operation's ordered input block. A slot binds only when exactly one
 offset-only store contains that ordinal.
+Input bindings from two or more distinct operation headers form an identity
+group when they resolve to the same bounded data block. Group members retain
+their input-binding identity, operation-label identity, header slot, and
+object-index token offset in ascending token-offset order. Repeated slots from
+only one operation do not form a group. The group assigns no direction or
+semantic role between its operations.
 The fixed marker begins an operation record. A record extends through the byte
 before the next validated operation marker; the final record extends through
 the feature-history record-area boundary.

@@ -365,6 +365,23 @@ pub struct FeatureInputBlock {
     pub source_offset: u64,
 }
 
+/// Input-block bindings from distinct operations that resolve to one data block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureInputBlockIdentityGroup {
+    /// Globally unique group identity.
+    pub id: String,
+    /// Shared target in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Input bindings in ascending source-offset order.
+    pub input_blocks: Vec<String>,
+    /// Operation labels aligned with `input_blocks`.
+    pub operation_labels: Vec<String>,
+    /// Header slots aligned with `input_blocks`.
+    pub input_slots: Vec<u8>,
+    /// Object-index token offsets aligned with `input_blocks`.
+    pub source_offsets: Vec<u64>,
+}
+
 /// Ordered parameter declaration reached through one feature input block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureParameterBinding {
@@ -1848,6 +1865,50 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
         }
     }
     inputs
+}
+
+/// Group bindings from distinct operations by exact resolved data-block identity.
+pub fn feature_input_block_identity_groups(
+    inputs: &[FeatureInputBlock],
+) -> Vec<FeatureInputBlockIdentityGroup> {
+    let mut by_block = BTreeMap::<&str, Vec<&FeatureInputBlock>>::new();
+    for input in inputs {
+        by_block.entry(&input.data_block).or_default().push(input);
+    }
+    let mut groups = by_block
+        .into_iter()
+        .filter_map(|(data_block, mut members)| {
+            if members
+                .iter()
+                .map(|member| member.operation_label.as_str())
+                .collect::<BTreeSet<_>>()
+                .len()
+                < 2
+            {
+                return None;
+            }
+            members.sort_by_key(|member| member.source_offset);
+            Some((data_block, members))
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|(_, members)| members[0].source_offset);
+    groups
+        .into_iter()
+        .enumerate()
+        .map(
+            |(ordinal, (data_block, members))| FeatureInputBlockIdentityGroup {
+                id: format!("nx:feature-history:input-block-identity-group#{ordinal}"),
+                data_block: data_block.to_string(),
+                input_blocks: members.iter().map(|member| member.id.clone()).collect(),
+                operation_labels: members
+                    .iter()
+                    .map(|member| member.operation_label.clone())
+                    .collect(),
+                input_slots: members.iter().map(|member| member.input_slot).collect(),
+                source_offsets: members.iter().map(|member| member.source_offset).collect(),
+            },
+        )
+        .collect()
 }
 
 /// Decode and atomically resolve datum coordinate-system construction lanes

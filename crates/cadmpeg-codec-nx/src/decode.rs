@@ -2787,6 +2787,8 @@ fn attach_native_object_model(
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
+    let feature_input_block_identity_groups =
+        crate::native::feature_input_block_identity_groups(&feature_input_blocks);
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_csys_payloads = crate::native::feature_datum_csys_payloads(
@@ -2963,6 +2965,7 @@ fn attach_native_object_model(
         && feature_simple_hole_repeated_scalar_pair_block_references.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
+        && feature_input_block_identity_groups.is_empty()
         && feature_datum_csys_constructions.is_empty()
         && feature_datum_plane_headers.is_empty()
         && feature_datum_plane_block_uses.is_empty()
@@ -3049,6 +3052,12 @@ fn attach_native_object_model(
             .note(&frame.id, annotation_stream, frame.source_offset)
             .tag("OFFSET_STORE_OBJECT_FRAME");
         annotations.exactness(&frame.id, Exactness::ByteExact);
+    }
+    for group in &feature_input_block_identity_groups {
+        annotations
+            .note(&group.id, annotation_stream, group.source_offsets[0])
+            .tag("FEATURE_INPUT_BLOCK_IDENTITY_GROUP");
+        annotations.exactness(&group.id, Exactness::ByteExact);
     }
     for lane in &data_block_abr_reference_lanes {
         annotations
@@ -3274,6 +3283,7 @@ fn attach_native_object_model(
             body_references: &feature_body_references,
             body_reference_occurrences: &feature_body_reference_occurrences,
             input_blocks: &feature_input_blocks,
+            input_block_identity_groups: &feature_input_block_identity_groups,
             datum_csys_constructions: &feature_datum_csys_constructions,
             datum_plane_headers: &feature_datum_plane_headers,
             datum_plane_block_uses: &feature_datum_plane_block_uses,
@@ -3306,7 +3316,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(108);
+    namespace.version = namespace.version.max(109);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3366,6 +3376,12 @@ fn attach_native_object_model(
     }
     if !feature_input_blocks.is_empty() {
         namespace.set_arena("feature_input_blocks", &feature_input_blocks)?;
+    }
+    if !feature_input_block_identity_groups.is_empty() {
+        namespace.set_arena(
+            "feature_input_block_identity_groups",
+            &feature_input_block_identity_groups,
+        )?;
     }
     if !feature_datum_csys_constructions.is_empty() {
         namespace.set_arena(
@@ -3659,6 +3675,7 @@ struct FeatureOperationSources<'a> {
     body_references: &'a [crate::native::FeatureBodyReference],
     body_reference_occurrences: &'a [crate::native::FeatureBodyReferenceOccurrence],
     input_blocks: &'a [crate::native::FeatureInputBlock],
+    input_block_identity_groups: &'a [crate::native::FeatureInputBlockIdentityGroup],
     datum_csys_constructions: &'a [crate::native::FeatureDatumCsysConstruction],
     datum_plane_headers: &'a [crate::native::FeatureDatumPlaneHeader],
     datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
@@ -3696,6 +3713,7 @@ fn attach_feature_operations(
         body_references,
         body_reference_occurrences,
         input_blocks,
+        input_block_identity_groups,
         datum_csys_constructions,
         datum_plane_headers,
         datum_plane_block_uses,
@@ -3755,6 +3773,15 @@ fn attach_feature_operations(
             .or_default()
             .push(input);
     }
+    let input_block_identity_group_by_input = input_block_identity_groups
+        .iter()
+        .flat_map(|group| {
+            group
+                .input_blocks
+                .iter()
+                .map(move |input| (input.as_str(), group.id.as_str()))
+        })
+        .collect::<BTreeMap<_, _>>();
     let datum_csys_constructions_by_operation = datum_csys_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
@@ -4097,6 +4124,12 @@ fn attach_feature_operations(
                 format!("input_block.{}", input.input_slot),
                 input.data_block.clone(),
             );
+            if let Some(group) = input_block_identity_group_by_input.get(input.id.as_str()) {
+                source_properties.insert(
+                    format!("input_block_identity_group.{}", input.input_slot),
+                    (*group).to_string(),
+                );
+            }
         }
         for reference in sketch_references_by_operation
             .get(label.id.as_str())

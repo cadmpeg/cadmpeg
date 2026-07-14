@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 108);
+    assert_eq!(namespace.version, 109);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1066,6 +1066,33 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
     assert_ne!(references[0].data_block, inputs[0].data_block);
     assert_eq!(references[0].object_id, 42);
     assert_eq!(references[0].target_record, None);
+}
+
+#[test]
+fn feature_input_identity_groups_require_distinct_operations_and_preserve_order() {
+    use crate::native::{feature_input_block_identity_groups, FeatureInputBlock};
+
+    let input = |id: &str, operation: &str, slot: u8, block: &str, offset: u64| FeatureInputBlock {
+        id: id.to_string(),
+        operation_label: operation.to_string(),
+        input_slot: slot,
+        object_index: 7,
+        data_block: block.to_string(),
+        source_offset: offset,
+    };
+    let groups = feature_input_block_identity_groups(&[
+        input("late", "operation-b", 1, "block-7", 30),
+        input("single-a", "operation-a", 0, "block-8", 10),
+        input("early", "operation-a", 2, "block-7", 20),
+        input("single-b", "operation-a", 3, "block-8", 40),
+    ]);
+
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].data_block, "block-7");
+    assert_eq!(groups[0].input_blocks, ["early", "late"]);
+    assert_eq!(groups[0].operation_labels, ["operation-a", "operation-b"]);
+    assert_eq!(groups[0].input_slots, [2, 1]);
+    assert_eq!(groups[0].source_offsets, [20, 30]);
 }
 
 #[test]
@@ -5455,7 +5482,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 108);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 109);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
