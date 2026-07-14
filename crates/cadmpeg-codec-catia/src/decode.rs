@@ -1155,7 +1155,8 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        attach_standard_free_vertices, build_standard_edge_curve, fit_rank_one_e5_plane_axes,
+        attach_standard_free_vertices, build_standard_edge_curve,
+        combine_propagated_endpoint_pairs, fit_rank_one_e5_plane_axes,
         include_native_endpoint_pairs, intersection_line_direction, ordered_range,
         point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
@@ -1303,6 +1304,16 @@ mod chart_tests {
         let mut candidates = vec![vec![1], Vec::new()];
         include_native_endpoint_pairs(&mut candidates, &[Some([1, 2]), Some([3, 4])]);
         assert_eq!(candidates, [vec![1, 2], vec![3, 4]]);
+    }
+
+    #[test]
+    fn complete_mesh_endpoint_quotient_overrides_table_local_ports() {
+        let raw = Some(vec![Some([0, 1]), Some([2, 3])]);
+        let mesh = Some(vec![Some([0, 1]), Some([1, 2])]);
+        assert_eq!(
+            combine_propagated_endpoint_pairs(raw, mesh),
+            Some(vec![Some([0, 1]), Some([1, 2])])
+        );
     }
 
     #[test]
@@ -2780,29 +2791,29 @@ fn attach_standard_topology(
         .iter()
         .map(|support| native_edges.get(&support.tag).copied())
         .collect::<Option<Vec<_>>>();
-    let roster_endpoint_pairs = native_ports.as_ref().and_then(|ports| {
-        let roster = geometry::standard_vertex_roster(source, ir.model.points.len())?;
-        let point_by_identity = roster
-            .into_iter()
-            .enumerate()
-            .map(|(point, identity)| (identity, point))
-            .collect::<HashMap<_, _>>();
-        ports
-            .iter()
-            .map(|identities| {
-                Some([
-                    *point_by_identity.get(&identities[0])?,
-                    *point_by_identity.get(&identities[1])?,
-                ])
-            })
-            .collect::<Option<Vec<_>>>()
-    });
+    let roster_endpoint_pairs = geometry::standard_vertex_roster(source, ir.model.points.len())
+        .map(|roster| {
+            let point_by_identity = roster
+                .into_iter()
+                .enumerate()
+                .map(|(point, identity)| (identity, point))
+                .collect::<HashMap<_, _>>();
+            supports
+                .iter()
+                .map(|support| {
+                    let identities = native_edges.get(&support.tag)?;
+                    Some([
+                        *point_by_identity.get(&identities[0])?,
+                        *point_by_identity.get(&identities[1])?,
+                    ])
+                })
+                .collect::<Vec<_>>()
+        });
     if let Some(pairs) = &graph_endpoint_pairs {
         include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     if let Some(pairs) = &roster_endpoint_pairs {
-        let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
-        include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
+        include_native_endpoint_pairs(&mut endpoint_candidates, pairs);
     }
     let mut endpoint_options = resolve_standard_endpoint_pairs(
         ir,
@@ -2818,13 +2829,26 @@ fn attach_standard_topology(
             }
         }
     }
+    if let (Some(options), Some(pairs)) = (&mut endpoint_options, &roster_endpoint_pairs) {
+        for (options, pair) in options.iter_mut().zip(pairs) {
+            if let Some(pair) = pair {
+                *options = vec![*pair];
+            }
+        }
+    }
     let graph_propagated_pairs = native_ports
         .as_ref()
         .zip(graph_endpoint_pairs.as_ref())
         .and_then(|(ports, pairs)| topology::propagate_edge_port_points(ports, pairs))
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<_>>>());
     let native_endpoint_pairs = graph_propagated_pairs
-        .or(roster_endpoint_pairs)
+        .or_else(|| {
+            roster_endpoint_pairs
+                .as_ref()?
+                .iter()
+                .copied()
+                .collect::<Option<Vec<_>>>()
+        })
         .or_else(|| {
             endpoint_options.as_ref().and_then(|options| {
                 const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
@@ -2897,25 +2921,10 @@ fn attach_standard_topology(
                 .collect::<Vec<_>>();
             topology::propagate_edge_port_points(&ports, &pairs)
         });
-    let propagated_endpoint_pairs =
-        match (propagated_endpoint_pairs, mesh_propagated_endpoint_pairs) {
-            (Some(raw), Some(mesh)) => raw
-                .into_iter()
-                .zip(mesh)
-                .map(|(raw, mesh)| match (raw, mesh) {
-                    (Some(raw), Some(mesh)) if raw == mesh || raw == [mesh[1], mesh[0]] => {
-                        Some(raw)
-                    }
-                    (Some(_), Some(_)) => None,
-                    (Some(pair), None) | (None, Some(pair)) => Some(pair),
-                    (None, None) => None,
-                })
-                .collect::<Vec<_>>(),
-            (Some(pairs), None) | (None, Some(pairs)) => pairs,
-            (None, None) => Vec::new(),
-        };
-    let propagated_endpoint_pairs =
-        (!propagated_endpoint_pairs.is_empty()).then_some(propagated_endpoint_pairs);
+    let propagated_endpoint_pairs = combine_propagated_endpoint_pairs(
+        propagated_endpoint_pairs,
+        mesh_propagated_endpoint_pairs,
+    );
     let constrained_endpoint_options = endpoint_options.as_ref().map(|options| {
         options
             .iter()
@@ -2930,6 +2939,10 @@ fn attach_standard_topology(
     });
     let resolved_endpoint_pairs = propagated_endpoint_pairs
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
+    if let Some(pairs) = &resolved_endpoint_pairs {
+        let pairs = pairs.iter().copied().map(Some).collect::<Vec<_>>();
+        include_native_endpoint_pairs(&mut endpoint_candidates, &pairs);
+    }
     let mesh_bound = topology::parse_standard(brep)
         .or_else(|| topology::parse_fbb_with_native_vertices(brep, native_ports.as_ref()?))
         .and_then(|topology| {
@@ -3358,6 +3371,29 @@ fn include_native_endpoint_pairs(candidates: &mut [Vec<usize>], pairs: &[Option<
             }
         }
     }
+}
+
+fn combine_propagated_endpoint_pairs(
+    raw: Option<Vec<Option<[usize; 2]>>>,
+    mesh: Option<Vec<Option<[usize; 2]>>>,
+) -> Option<Vec<Option<[usize; 2]>>> {
+    let pairs = match (raw, mesh) {
+        (_, Some(mesh)) if mesh.iter().all(Option::is_some) => mesh,
+        (Some(raw), _) if raw.iter().all(Option::is_some) => raw,
+        (Some(raw), Some(mesh)) => raw
+            .into_iter()
+            .zip(mesh)
+            .map(|(raw, mesh)| match (raw, mesh) {
+                (Some(raw), Some(mesh)) if raw == mesh || raw == [mesh[1], mesh[0]] => Some(raw),
+                (Some(_), Some(_)) => None,
+                (Some(pair), None) | (None, Some(pair)) => Some(pair),
+                (None, None) => None,
+            })
+            .collect(),
+        (Some(pairs), None) | (None, Some(pairs)) => pairs,
+        (None, None) => return None,
+    };
+    (!pairs.is_empty()).then_some(pairs)
 }
 
 fn unique_native_identity_points(

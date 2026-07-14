@@ -199,6 +199,8 @@ The standard `u16be` endpoint ports form a larger namespace than the vertex tabl
 
 The endpoint components induced by exact face-local run matches are provisional. Distinct occurrence components map to one logical vertex when their physical edge endpoints carry the same native endpoint identity, even when adjacent faces use different trim handles. Native endpoint identities are global within the topology; each edge's ordered identity pair is in physical edge-row direction and replaces its provisional corner pair. Coordinate-row indices therefore cannot be assigned directly from component ordinals; the native-identity quotient precedes coordinate binding.
 
+Native edge records and the vertex roster may cover only a subset of the physical edge table. Each covered edge binds independently: its two endpoint tags select coordinate rows through the positional vertex roster. These exact partial bindings propagate through the trim-mesh endpoint quotient. A complete trim-mesh propagation supersedes equality in the table-local port namespaces because the mesh quotient includes the cross-table corner unions.
+
 The co-stored `b5 03 5d` identity graph supplies a world-space locus for a native endpoint identity when its parameter incidences lift through their carriers. That locus binds a `05 08 01` coordinate row only when exactly one row lies within the identity's stored tolerance, with a `2e-3` mm floor. Bound identities seed the global port-to-coordinate fixpoint; ambiguous or absent locus matches remain unbound.
 
 Resolved physical-edge endpoint pairs constrain the port namespace. For every

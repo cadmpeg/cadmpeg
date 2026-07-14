@@ -323,7 +323,7 @@ pub fn parse_standard(bytes: &[u8]) -> Option<StandardTopology> {
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     let mut solutions = Vec::new();
-    for width in [2, 3] {
+    for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
         };
@@ -353,7 +353,7 @@ pub fn parse_standard_motif(
         return None;
     }
     let mut solutions = Vec::new();
-    for width in [2, 3] {
+    for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
         };
@@ -680,7 +680,7 @@ pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
-    for width in [2, 3] {
+    for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
         };
@@ -845,7 +845,7 @@ pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
-    for width in [2, 3] {
+    for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
         };
@@ -914,7 +914,7 @@ pub fn standard_mesh_face_coverage(
         return None;
     }
     let mut solutions = Vec::new();
-    for width in [2, 3] {
+    for width in [1, 2, 3] {
         let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
             continue;
         };
