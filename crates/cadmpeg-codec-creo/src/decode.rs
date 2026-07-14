@@ -10144,6 +10144,52 @@ mod resolved_sketch_tests {
                     && (direction.x + inverse_sqrt_two).abs() < 1e-12
                     && (direction.z - inverse_sqrt_two).abs() < 1e-12
         ));
+        let cone_ellipse_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 2.0],
+            normal: [-0.2, 0.0, 1.0],
+        });
+        assert!(matches!(
+            carrier_intersection_curve(cone_ellipse_plane, cone),
+            Some((
+                CurveGeometry::Ellipse {
+                    major_radius,
+                    minor_radius,
+                    ..
+                },
+                "plane_cone_ellipse"
+            )) if major_radius > minor_radius && minor_radius > 0.0
+        ));
+        let cone_parabola_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 2.0],
+            normal: [inverse_sqrt_two, 0.0, inverse_sqrt_two],
+        });
+        assert!(matches!(
+            carrier_intersection_curve(cone_parabola_plane, cone),
+            Some((
+                CurveGeometry::Parabola { focal_distance, .. },
+                "plane_cone_parabola"
+            )) if focal_distance > 0.0
+        ));
+        let cone_hyperbola_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 2.0],
+            normal: [1.0, 0.0, 0.2],
+        });
+        assert!(matches!(
+            carrier_intersection_curve(cone_hyperbola_plane, cone),
+            Some((
+                CurveGeometry::Hyperbola {
+                    major_radius,
+                    minor_radius,
+                    ..
+                },
+                "plane_cone_hyperbola"
+            )) if major_radius > 0.0 && minor_radius > 0.0
+        ));
+        let cone_degenerate_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, -2.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert!(carrier_intersection_curve(cone_degenerate_plane, cone).is_none());
         assert_eq!(solve_carriers(&[cone, cap, tangent]), None);
         let cone_tangent = CarrierEquation::Plane(PlaneEquation {
             origin: [5.0, 0.0, 0.0],
@@ -10579,6 +10625,135 @@ fn circle_parameters(geometry: &CurveGeometry) -> Option<([f64; 3], [f64; 3], f6
         [center.x, center.y, center.z],
         [axis.x, axis.y, axis.z],
         *radius,
+    ))
+}
+
+fn plane_cone_conic(
+    plane: PlaneEquation,
+    cone: ConeEquation,
+) -> Option<(CurveGeometry, &'static str)> {
+    let normal = normalized(plane.normal)?;
+    let axis = normalized(cone.axis)?;
+    let slope = cone.half_angle.tan();
+    if slope <= 1e-12 || !slope.is_finite() || cone.radius < 0.0 {
+        return None;
+    }
+    let alignment = dot(normal, axis);
+    let u = normalized(std::array::from_fn(|index| {
+        axis[index] - alignment * normal[index]
+    }))?;
+    let v = normalized(cross(normal, u))?;
+    let relative: [f64; 3] = std::array::from_fn(|index| plane.origin[index] - cone.origin[index]);
+    let axial = dot(relative, axis);
+    let axis_u = dot(axis, u);
+    let cone_factor = 1.0 + slope * slope;
+    let quadratic_u = 1.0 - cone_factor * axis_u * axis_u;
+    let quadratic_v = 1.0;
+    let linear_u =
+        2.0 * (dot(relative, u) - cone_factor * axial * axis_u - cone.radius * slope * axis_u);
+    let linear_v = 2.0 * dot(relative, v);
+    let constant = dot(relative, relative)
+        - cone_factor * axial * axial
+        - 2.0 * cone.radius * slope * axial
+        - cone.radius * cone.radius;
+    let coefficient_scale = quadratic_u
+        .abs()
+        .max(linear_u.abs())
+        .max(linear_v.abs())
+        .max(constant.abs())
+        .max(1.0);
+    let point = |u_parameter: f64, v_parameter: f64| {
+        Point3::new(
+            plane.origin[0] + u_parameter * u[0] + v_parameter * v[0],
+            plane.origin[1] + u_parameter * u[1] + v_parameter * v[1],
+            plane.origin[2] + u_parameter * u[2] + v_parameter * v[2],
+        )
+    };
+    let axis_vector = Vector3::new(normal[0], normal[1], normal[2]);
+    if quadratic_u.abs() <= 1e-12 * coefficient_scale {
+        if linear_u.abs() <= 1e-12 * coefficient_scale {
+            return None;
+        }
+        let vertex_v = -linear_v / (2.0 * quadratic_v);
+        let shifted_constant = constant - linear_v * linear_v / (4.0 * quadratic_v);
+        let vertex_u = -shifted_constant / linear_u;
+        let opening = -linear_u / quadratic_v;
+        if opening.abs() <= 1e-12 || !opening.is_finite() {
+            return None;
+        }
+        let direction = u.map(|value| value * opening.signum());
+        return Some((
+            CurveGeometry::Parabola {
+                vertex: point(vertex_u, vertex_v),
+                axis: axis_vector,
+                major_direction: Vector3::new(direction[0], direction[1], direction[2]),
+                focal_distance: opening.abs() / 4.0,
+            },
+            "plane_cone_parabola",
+        ));
+    }
+    let center_u = -linear_u / (2.0 * quadratic_u);
+    let center_v = -linear_v / (2.0 * quadratic_v);
+    let shifted_constant = constant
+        - linear_u * linear_u / (4.0 * quadratic_u)
+        - linear_v * linear_v / (4.0 * quadratic_v);
+    let value_scale = shifted_constant.abs().max(coefficient_scale).max(1.0);
+    if shifted_constant.abs() <= 1e-12 * value_scale {
+        return None;
+    }
+    let center = point(center_u, center_v);
+    if quadratic_u > 0.0 {
+        if shifted_constant >= 0.0 {
+            return None;
+        }
+        let u_radius = (-shifted_constant / quadratic_u).sqrt();
+        let v_radius = (-shifted_constant / quadratic_v).sqrt();
+        let (major_direction, major_radius, minor_radius) = if u_radius >= v_radius {
+            (u, u_radius, v_radius)
+        } else {
+            (v, v_radius, u_radius)
+        };
+        return Some((
+            CurveGeometry::Ellipse {
+                center,
+                axis: axis_vector,
+                major_direction: Vector3::new(
+                    major_direction[0],
+                    major_direction[1],
+                    major_direction[2],
+                ),
+                major_radius,
+                minor_radius,
+            },
+            "plane_cone_ellipse",
+        ));
+    }
+    let (major_direction, major_radius, minor_radius) = if shifted_constant > 0.0 {
+        (
+            u,
+            (shifted_constant / -quadratic_u).sqrt(),
+            (shifted_constant / quadratic_v).sqrt(),
+        )
+    } else {
+        (
+            v,
+            (-shifted_constant / quadratic_v).sqrt(),
+            (-shifted_constant / -quadratic_u).sqrt(),
+        )
+    };
+    Some((
+        CurveGeometry::Hyperbola {
+            center,
+            axis: axis_vector,
+            major_direction: Vector3::new(
+                major_direction[0],
+                major_direction[1],
+                major_direction[2],
+            ),
+            major_radius,
+            minor_radius,
+        },
+        "plane_cone_hyperbola",
     ))
 }
 
@@ -11977,29 +12152,29 @@ fn carrier_intersection_curve(
                     ));
                 }
             }
-            if (alignment.abs() - 1.0).abs() > 1e-10 {
-                return None;
+            if (alignment.abs() - 1.0).abs() <= 1e-10 {
+                let axial = dot(
+                    axis,
+                    std::array::from_fn(|index| plane.origin[index] - cone.origin[index]),
+                );
+                let radius = (cone.radius + axial * cone.half_angle.tan()).abs();
+                if radius <= 1e-12 {
+                    return None;
+                }
+                let center: [f64; 3] =
+                    std::array::from_fn(|index| cone.origin[index] + axial * axis[index]);
+                let reference = normalized(cone.ref_direction)?;
+                return Some((
+                    CurveGeometry::Circle {
+                        center: Point3::new(center[0], center[1], center[2]),
+                        axis: Vector3::new(normal[0], normal[1], normal[2]),
+                        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    },
+                    "plane_cone_circle",
+                ));
             }
-            let axial = dot(
-                axis,
-                std::array::from_fn(|index| plane.origin[index] - cone.origin[index]),
-            );
-            let radius = (cone.radius + axial * cone.half_angle.tan()).abs();
-            if radius <= 1e-12 {
-                return None;
-            }
-            let center: [f64; 3] =
-                std::array::from_fn(|index| cone.origin[index] + axial * axis[index]);
-            let reference = normalized(cone.ref_direction)?;
-            Some((
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(normal[0], normal[1], normal[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
-                "plane_cone_circle",
-            ))
+            plane_cone_conic(plane, cone)
         }
         (CarrierEquation::Plane(plane), CarrierEquation::Torus(torus))
         | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane)) => {
