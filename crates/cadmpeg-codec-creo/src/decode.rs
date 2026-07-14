@@ -3906,13 +3906,13 @@ fn section_dimension_constraints(
                     )))
                 });
             let typed = (|| {
-                let vectors = relation.operand_vectors?;
                 let parameter = parameter.clone()?;
                 if relation.relation_type == 14
                     && relation.sign == 1
-                    && vectors[1] == [Some(0); 4]
-                    && vectors[2] == [Some(15), Some(0), Some(0), Some(0)]
+                    && relation.operand_vectors?[1] == [Some(0); 4]
+                    && relation.operand_vectors?[2] == [Some(15), Some(0), Some(0), Some(0)]
                 {
+                    let vectors = relation.operand_vectors?;
                     let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
                         return None;
                     };
@@ -3931,31 +3931,48 @@ fn section_dimension_constraints(
                 if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
                     return None;
                 }
-                if !section_linear_distance_vectors(vectors) {
-                    return None;
+                if let Some(vectors) = relation.operand_vectors {
+                    if section_linear_distance_vectors(vectors) {
+                        if let [Some(first_id), Some(second_id), _, _] = vectors[0] {
+                            if let Some(measured) = segments.rows.iter().find(|segment| {
+                                segment.point_ids == [first_id, second_id]
+                                    || segment.point_ids == [second_id, first_id]
+                            }) {
+                                if let (Some(first), Some(second)) = (
+                                    section_point_locus(definition.id, &segments.rows, first_id),
+                                    section_point_locus(definition.id, &segments.rows, second_id),
+                                ) {
+                                    match measured.vertical_horizontal {
+                                        Some(0) => {
+                                            return Some(
+                                                SketchConstraintDefinition::VerticalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                },
+                                            );
+                                        }
+                                        Some(1) => {
+                                            return Some(
+                                                SketchConstraintDefinition::HorizontalDistance {
+                                                    first,
+                                                    second,
+                                                    parameter,
+                                                },
+                                            );
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
-                let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
-                    return None;
-                };
-                let measured = segments.rows.iter().find(|segment| {
-                    segment.point_ids == [first_id, second_id]
-                        || segment.point_ids == [second_id, first_id]
-                })?;
-                let first = section_point_locus(definition.id, &segments.rows, first_id)?;
-                let second = section_point_locus(definition.id, &segments.rows, second_id)?;
-                match measured.vertical_horizontal {
-                    Some(0) => Some(SketchConstraintDefinition::VerticalDistance {
-                        first,
-                        second,
-                        parameter,
-                    }),
-                    Some(1) => Some(SketchConstraintDefinition::HorizontalDistance {
-                        first,
-                        second,
-                        parameter,
-                    }),
-                    _ => None,
-                }
+                let entities = relation_incidence_entities(definition, relation.relation_id);
+                (!entities.is_empty()).then_some(SketchConstraintDefinition::Distance {
+                    entities,
+                    parameter,
+                })
             })();
             let constraint_definition =
                 typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
@@ -8428,6 +8445,44 @@ mod resolved_sketch_tests {
                 second: SketchLocus::End(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
                 )),
+                parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
+            }
+        );
+        let mut incidence_distance = distance_definition.clone();
+        let incidence_relations = incidence_distance.relations.as_mut().expect("relations");
+        incidence_relations.rows[0].operand_vectors = None;
+        incidence_relations.skamps = vec![crate::feature::FeatureSkamp {
+            id: 81,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 0,
+                },
+            ],
+            offset: 81,
+        }];
+        incidence_relations.triples = vec![crate::feature::FeatureRelationTriple {
+            relation_id: Some(8),
+            equation_id: None,
+            skamp_id: Some(81),
+            offset: 82,
+        }];
+        assert_eq!(
+            section_dimension_constraints(&incidence_distance, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Distance {
+                entities: vec![
+                    SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+                    SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                ],
                 parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
             }
         );

@@ -382,6 +382,11 @@ the last row may terminate directly at the next structural or named record.
 A relation joined to exactly one incidence through `rel_id` and `skamp_id`
 inherits that incidence's ordered section-entity references. This entity join is
 independent of whether the relation discriminator has a neutral typed mapping.
+A type-zero relation with sign zero, one, or `f6`, a defined `dimtab_ptr`
+selector, and a nonempty joined incidence is a linear distance over the joined
+entities. The more specific operand-vector and `verhor` forms below refine that
+distance to horizontal or vertical endpoint loci; incomplete operand vectors do
+not discard the entity-level distance.
 
 Within the three four-slot `relat_ptr` operand vectors, `e5` expands to two
 zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
