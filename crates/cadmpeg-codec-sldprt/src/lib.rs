@@ -89,7 +89,7 @@ use cadmpeg_ir::codec::{
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
-use cadmpeg_ir::{Check, Finding, Severity};
+use cadmpeg_ir::{Annotations, Check, Finding, Severity, SourceFidelity};
 use std::io::Write;
 
 /// Codec for `SolidWorks` `.sldprt` part documents.
@@ -456,12 +456,20 @@ impl SldprtCodec {
     /// the semantic writer cannot represent, and [`CodecError::Malformed`] when
     /// the IR or retained source data violates a required invariant.
     pub fn write_preserved(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<(), CodecError> {
+        Self::write_preserved_with_annotations(ir, &ir.annotations, writer)
+    }
+
+    fn write_preserved_with_annotations(
+        ir: &CadIr,
+        annotations: &Annotations,
+        writer: &mut dyn Write,
+    ) -> Result<(), CodecError> {
         let expected = ir
             .source
             .as_ref()
             .and_then(|source| source.attributes.get("semantic_sha256"));
         if expected.is_none_or(|expected| decode::semantic_hash(ir) != *expected) {
-            return writer::write_semantic(ir, writer);
+            return writer::write_semantic(ir, annotations, writer);
         }
         let unknowns = ir.native_unknowns("sldprt")?;
         let record = unknowns
@@ -517,11 +525,31 @@ impl Encoder for SldprtCodec {
     }
 
     fn encode(&self, ir: &CadIr, writer: &mut dyn Write) -> Result<ExportReport, CodecError> {
+        Self::encode_with_annotations(ir, &ir.annotations, writer)
+    }
+
+    fn encode_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: Option<&SourceFidelity>,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
+        let annotations = source_fidelity.map_or(&ir.annotations, |value| &value.annotations);
+        Self::encode_with_annotations(ir, annotations, writer)
+    }
+}
+
+impl SldprtCodec {
+    fn encode_with_annotations(
+        ir: &CadIr,
+        annotations: &Annotations,
+        writer: &mut dyn Write,
+    ) -> Result<ExportReport, CodecError> {
         let replay = ir
             .native_unknowns("sldprt")?
             .into_iter()
             .any(|record| record.id.0 == "sldprt:file:source-image#0");
-        self.write_preserved(ir, writer)?;
+        Self::write_preserved_with_annotations(ir, annotations, writer)?;
         let validation = cadmpeg_ir::validate(ir, Vec::new());
         let total_entities = validation.entity_counts.values().sum();
         Ok(ExportReport {
