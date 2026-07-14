@@ -1024,7 +1024,15 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         variables: Some(crate::feature::FeatureVariableTable {
             declared_count: 4,
             entity_ref: None,
-            rows: Vec::new(),
+            rows: vec![crate::feature::FeatureVariableRow {
+                variable_type: 3,
+                key: 6,
+                value: None,
+                guess: None,
+                uvar_id: None,
+                dimension_driven: true,
+                offset: 0,
+            }],
             points: vec![
                 crate::feature::FeatureSectionPoint {
                     point_id: 1,
@@ -1102,37 +1110,65 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         order_table: None,
         section_3d: None,
         dimensions: Some(crate::feature::FeatureDimensionTable {
-            declared_count: 1,
+            declared_count: 2,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureDimension {
-                dimension_type: 2,
-                value: Some(12.0),
-                value_unit: crate::feature::DimensionUnit::Millimeters,
-                direction_byte: 0,
-                auxiliary_value: Some(0.0),
-                external_id: 1,
-                offset: 0,
-            }],
+            rows: vec![
+                crate::feature::FeatureDimension {
+                    dimension_type: 2,
+                    value: Some(12.0),
+                    value_unit: crate::feature::DimensionUnit::Millimeters,
+                    direction_byte: 0,
+                    auxiliary_value: Some(0.0),
+                    external_id: 1,
+                    offset: 0,
+                },
+                crate::feature::FeatureDimension {
+                    dimension_type: 3,
+                    value: Some(4.0),
+                    value_unit: crate::feature::DimensionUnit::Millimeters,
+                    direction_byte: 0,
+                    auxiliary_value: Some(0.0),
+                    external_id: 2,
+                    offset: 0,
+                },
+            ],
             offset: 0,
         }),
         relations: Some(crate::feature::FeatureRelationTable {
             declared_count: 3,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureRelation {
-                relation_id: 1,
-                used: 1,
-                operands: Vec::new(),
-                operand_vectors: Some([
-                    [Some(4), Some(5), None, Some(1)],
-                    [Some(1), Some(1), Some(0), Some(1)],
-                    [Some(15), Some(16), Some(15), Some(1)],
-                ]),
-                sign: 1,
-                dimension_id: 0,
-                relation_type: 0,
-                body: Vec::new(),
-                offset: 0,
-            }],
+            rows: vec![
+                crate::feature::FeatureRelation {
+                    relation_id: 1,
+                    used: 1,
+                    operands: Vec::new(),
+                    operand_vectors: Some([
+                        [Some(4), Some(5), None, Some(1)],
+                        [Some(1), Some(1), Some(0), Some(1)],
+                        [Some(15), Some(16), Some(15), Some(1)],
+                    ]),
+                    sign: 1,
+                    dimension_id: 0,
+                    relation_type: 0,
+                    body: Vec::new(),
+                    offset: 0,
+                },
+                crate::feature::FeatureRelation {
+                    relation_id: 2,
+                    used: 0,
+                    operands: Vec::new(),
+                    operand_vectors: Some([
+                        [Some(6), Some(0), Some(0), Some(0)],
+                        [Some(0); 4],
+                        [Some(15), Some(0), Some(0), Some(0)],
+                    ]),
+                    sign: 1,
+                    dimension_id: 1,
+                    relation_type: 14,
+                    body: Vec::new(),
+                    offset: 0,
+                },
+            ],
             skamps: Vec::new(),
             triples: Vec::new(),
             offset: 0,
@@ -1148,6 +1184,10 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
     assert_eq!(
         crate::decode::resolved_section_points(&definition).get(&5),
         Some(&[17.0, 20.0])
+    );
+    assert_eq!(
+        crate::decode::resolved_section_radii(&definition).get(&6),
+        Some(&4.0)
     );
 }
 

@@ -843,6 +843,55 @@ pub(crate) fn resolved_section_points(
         .collect()
 }
 
+pub(crate) fn resolved_section_radii(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<u32, f64> {
+    let mut radii = definition
+        .variables
+        .iter()
+        .flat_map(|table| &table.rows)
+        .filter_map(|row| {
+            (row.variable_type == 3).then_some((row.key, row.value.filter(|value| *value > 0.0)?))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for relation in definition.relations.iter().flat_map(|table| &table.rows) {
+        if relation.relation_type != 14 || relation.sign != 1 {
+            continue;
+        }
+        let Some(vectors) = relation.operand_vectors else {
+            continue;
+        };
+        let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
+            continue;
+        };
+        if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
+            continue;
+        }
+        let Some(value) = definition
+            .dimensions
+            .as_ref()
+            .and_then(|table| table.rows.get(usize::try_from(relation.dimension_id).ok()?))
+            .and_then(|dimension| dimension.value)
+            .filter(|value| value.is_finite() && *value > 0.0)
+        else {
+            continue;
+        };
+        radii.entry(radius_id).or_insert(value);
+    }
+    radii
+}
+
+fn section_arc_carrier(
+    definition: &crate::feature::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<([f64; 2], f64)> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Arc).then_some(())?;
+    let center = *points.get(&segment.center_id?)?;
+    let radius = *resolved_section_radii(definition).get(&segment.radius_ref?)?;
+    Some((center, radius))
+}
+
 struct SectionIntersectionCarrier {
     geometry: SketchGeometry,
     line_is_bounded: bool,
@@ -905,7 +954,8 @@ fn section_segment_intersection_carrier(
             line_is_bounded: false,
         });
     }
-    let ([center_u, center_v], radius) = saved_section_arc_carrier(definition, segment)?;
+    let ([center_u, center_v], radius) = section_arc_carrier(definition, points, segment)
+        .or_else(|| saved_section_arc_carrier(definition, segment))?;
     Some(SectionIntersectionCarrier {
         geometry: SketchGeometry::Arc {
             center: cadmpeg_ir::math::Point2::new(center_u, center_v),
@@ -1246,7 +1296,8 @@ fn trimmed_section_segment_geometry(
             return Some(geometry);
         }
     } else if let Some(([center_u, center_v], radius)) =
-        saved_section_arc_carrier(definition, segment)
+        section_arc_carrier(definition, points, segment)
+            .or_else(|| saved_section_arc_carrier(definition, segment))
     {
         let first = [start[0] - center_u, start[1] - center_v];
         let second = [end[0] - center_u, end[1] - center_v];
