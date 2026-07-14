@@ -1967,7 +1967,7 @@ fn model_curve_tangent(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Ve
     ))
 }
 
-fn closest_spine_parameter(
+pub(crate) fn closest_spine_parameter(
     ir: &CadIr,
     curve: &CurveId,
     point: Point3,
@@ -1988,44 +1988,130 @@ fn closest_spine_parameter(
             let degree = usize::try_from(nurbs.degree).ok()?;
             let count = nurbs.control_points.len();
             let domain = [*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?];
-            let mut parameter = seed.unwrap_or_else(|| {
-                let mut best = domain[0];
-                let mut best_distance = f64::INFINITY;
-                for index in 0..=32 {
-                    let candidate = domain[0] + (domain[1] - domain[0]) * f64::from(index) / 32.0;
-                    let Some(position) = curve_point(&carrier.geometry, candidate) else {
-                        continue;
-                    };
-                    let distance = point_distance(position, point);
-                    if distance < best_distance {
-                        best = candidate;
-                        best_distance = distance;
-                    }
-                }
-                best
-            });
-            for _ in 0..24 {
-                let step = 1.0e-6 * (domain[1] - domain[0]).abs().max(1.0);
-                let before = curve_point(&carrier.geometry, (parameter - step).max(domain[0]))?;
-                let center = curve_point(&carrier.geometry, parameter)?;
-                let after = curve_point(&carrier.geometry, (parameter + step).min(domain[1]))?;
-                let first =
-                    (point_distance(after, point) - point_distance(before, point)) / (2.0 * step);
-                let second = (point_distance(after, point) - 2.0 * point_distance(center, point)
-                    + point_distance(before, point))
-                    / (step * step);
-                if !second.is_finite() || second.abs() <= f64::EPSILON {
-                    break;
-                }
-                let delta = first / second;
-                parameter = (parameter - delta).clamp(domain[0], domain[1]);
-                if delta.abs() <= 1.0e-12 * (1.0 + parameter.abs()) {
-                    break;
-                }
+            if domain[0] >= domain[1] {
+                return None;
             }
-            Some(parameter)
+            closest_nurbs_curve_parameter(
+                &carrier.geometry,
+                &nurbs.knots,
+                degree,
+                domain,
+                point,
+                seed,
+            )
         }
         _ => None,
+    }
+}
+
+fn closest_nurbs_curve_parameter(
+    geometry: &CurveGeometry,
+    knots: &[f64],
+    degree: usize,
+    domain: [f64; 2],
+    point: Point3,
+    seed: Option<f64>,
+) -> Option<f64> {
+    let squared_distance = |parameter| {
+        let position = curve_point(geometry, parameter)?;
+        Some(
+            (position.x - point.x).powi(2)
+                + (position.y - point.y).powi(2)
+                + (position.z - point.z).powi(2),
+        )
+    };
+    let subdivisions = 2 * (degree + 1).max(2);
+    let mut samples = vec![domain[0]];
+    for span in knots[degree..].windows(2) {
+        let start = span[0].max(domain[0]);
+        let end = span[1].min(domain[1]);
+        if start >= end {
+            continue;
+        }
+        for index in 1..=subdivisions {
+            samples.push(start + (end - start) * index as f64 / subdivisions as f64);
+        }
+        if end >= domain[1] {
+            break;
+        }
+    }
+    samples.sort_by(f64::total_cmp);
+    samples.dedup_by(|left, right| *left == *right);
+    let distances = samples
+        .iter()
+        .map(|parameter| squared_distance(*parameter))
+        .collect::<Option<Vec<_>>>()?;
+    let mut best = samples[0];
+    let mut best_distance = distances[0];
+    let mut best_seed_distance = seed.map_or(best.abs(), |seed| (best - seed).abs());
+    let mut consider = |parameter: f64, distance: f64| {
+        let seed_distance = seed.map_or(parameter.abs(), |seed| (parameter - seed).abs());
+        let same_point = (distance - best_distance).abs()
+            <= f64::EPSILON * 64.0 * distance.abs().max(best_distance.abs()).max(1.0);
+        if distance < best_distance && !same_point
+            || same_point && seed_distance < best_seed_distance
+        {
+            best = parameter;
+            best_distance = distance;
+            best_seed_distance = seed_distance;
+        }
+    };
+    for (index, &distance) in distances.iter().enumerate() {
+        consider(samples[index], distance);
+        if index > 0
+            && index + 1 < samples.len()
+            && distance <= distances[index - 1]
+            && distance <= distances[index + 1]
+        {
+            let (parameter, distance) =
+                golden_section_minimum(samples[index - 1], samples[index + 1], &squared_distance)?;
+            consider(parameter, distance);
+        }
+    }
+    if let Some(seed) = seed {
+        let seed = seed.clamp(domain[0], domain[1]);
+        let insertion = samples.partition_point(|parameter| *parameter < seed);
+        let lower = samples[insertion.saturating_sub(1)];
+        let upper = samples[insertion.min(samples.len() - 1)];
+        if lower < upper {
+            let (parameter, distance) = golden_section_minimum(lower, upper, &squared_distance)?;
+            consider(parameter, distance);
+        } else {
+            consider(seed, squared_distance(seed)?);
+        }
+    }
+    Some(best)
+}
+
+fn golden_section_minimum(
+    mut lower: f64,
+    mut upper: f64,
+    value: &impl Fn(f64) -> Option<f64>,
+) -> Option<(f64, f64)> {
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+    let mut left = upper - ratio * (upper - lower);
+    let mut right = lower + ratio * (upper - lower);
+    let mut left_value = value(left)?;
+    let mut right_value = value(right)?;
+    for _ in 0..64 {
+        if left_value <= right_value {
+            upper = right;
+            right = left;
+            right_value = left_value;
+            left = upper - ratio * (upper - lower);
+            left_value = value(left)?;
+        } else {
+            lower = left;
+            left = right;
+            left_value = right_value;
+            right = lower + ratio * (upper - lower);
+            right_value = value(right)?;
+        }
+    }
+    if left_value <= right_value {
+        Some((left, left_value))
+    } else {
+        Some((right, right_value))
     }
 }
 

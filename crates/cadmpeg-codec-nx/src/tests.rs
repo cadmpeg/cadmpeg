@@ -8334,6 +8334,40 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 }
 
 #[test]
+fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
+    use cadmpeg_ir::geometry::{Curve, NurbsCurve};
+    use cadmpeg_ir::ids::CurveId;
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let curve = CurveId("synthetic:piecewise-spine".into());
+    ir.model.curves.push(Curve {
+        id: curve.clone(),
+        geometry: CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 0.5, 1.0, 1.0],
+            control_points: vec![
+                cadmpeg_ir::math::Point3::new(-10.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        }),
+        source_object: None,
+    });
+
+    let actual = crate::decode::closest_spine_parameter(
+        &ir,
+        &curve,
+        cadmpeg_ir::math::Point3::new(-5.0, 2.0, 0.0),
+        Some(0.9),
+    )
+    .unwrap();
+
+    assert!((actual - 0.25).abs() < 1.0e-10);
+}
+
+#[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
