@@ -340,7 +340,7 @@ Frames an explicit rolling-ball surface jet. Header (`K`, degree 5, K-repeat, ar
 
 A 2D spline in a support surface's parameter space. Its payload stores `degU`, `K` definition points, one global curve parameter, one `(U,V)` pair per point, and 2D tangent and second derivative values. The leading operand `op1` is an absolute persistent CGM object tag. The `mode/offset` byte encodes the leading-extrapolation count `q = (mode−1)/4`.
 
-`b2 03 20` is the B-family form with the same support reference, degree, knot-site parameters, U/V values, first derivatives, second derivatives, and native range. Wide `a6/a7` and `b3/b4` records use identical payload grammars.
+`b2 03 20` is the B-family form with the same support reference, degree, knot-site parameters, U/V values, first derivatives, second derivatives, and native range. Wide `a6/a7` and `b3/b4` records use identical payload grammars. Terminal `0x07`, optionally followed by one zero padding byte, exhausts every framed form.
 
 For a co-parametric edge block, each uniquely bound analytic carrier lifts every pcurve definition site into the common edge parameterization. A NURBS carrier with signed normal offset `d` lifts a site as `S(u,v) + d·normalize(Su(u,v)×Sv(u,v))`; a degenerate tangent pair has no lift. All liftable sides have equal site counts and their index-aligned 3D sites agree within `2e-3` mm. Disagreement invalidates the shared locus sequence rather than selecting one side. Its first and last sites are the shared 3D endpoint loci.
 

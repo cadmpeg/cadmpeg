@@ -2430,8 +2430,10 @@ fn append_unbound_pcurve_pools(
             "consolidated_a_or_b_03_20",
             pcurve.pos as u64,
             format!(
-                "support_ref:{:08x}:extrapolation_sites:{}",
-                pcurve.support_id, pcurve.extrapolation_sites
+                "support_ref:{:08x}:extrapolation_sites:{}:terminal_padding:{}",
+                pcurve.support_id,
+                pcurve.extrapolation_sites,
+                pcurve.tail == [0x07, 0x00]
             ),
             Exactness::Derived,
         );

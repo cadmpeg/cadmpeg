@@ -732,6 +732,8 @@ pub struct A5Pcurve {
     pub second_derivatives: Vec<[f64; 2]>,
     /// Native parameter range.
     pub range: [f64; 2],
+    /// Bytes following the native range inside the framed record.
+    pub tail: Vec<u8>,
 }
 
 /// Offset-surface constructor stored in a `b2 03 31` support record or a
@@ -2657,6 +2659,7 @@ fn parse_a5_pcurve(data: &[u8], pos: usize, payload: usize, end: usize) -> Optio
     let range = [f64_le(data, at)?, f64_le(data, at + 8)?];
     at += 16;
     if at > end
+        || !matches!(&data[at..end], [0x07] | [0x07, 0x00])
         || knots.windows(2).any(|v| v[0] >= v[1])
         || range[0] >= range[1]
         || knots
@@ -2682,6 +2685,7 @@ fn parse_a5_pcurve(data: &[u8], pos: usize, payload: usize, end: usize) -> Optio
         first_derivatives: du.into_iter().zip(dv).map(|p| [p.0, p.1]).collect(),
         second_derivatives: ddu.into_iter().zip(ddv).map(|p| [p.0, p.1]).collect(),
         range,
+        tail: data[at..end].to_vec(),
     })
 }
 

@@ -1373,6 +1373,7 @@ fn a5_pcurve_stream_with_uv(u: [f64; 2], v: [f64; 2]) -> Vec<u8> {
     }
     payload.extend_from_slice(&le_f64(0.0));
     payload.extend_from_slice(&le_f64(1.0));
+    payload.push(0x07);
     let mut record = vec![0xa5, 0x03, 0x20];
     record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     record.push(0x05);
@@ -3472,6 +3473,19 @@ fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
     assert_eq!(pcurves[0].extrapolation_sites, 2);
     assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
     assert_eq!(pcurves[0].range, [0.0, 1.0]);
+    assert_eq!(pcurves[0].tail, [0x07]);
+
+    let mut padded = a5_pcurve_stream();
+    padded.push(0);
+    let payload_len = u32::try_from(padded.len() - 8).unwrap();
+    padded[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert_eq!(crate::geometry::a5_pcurves(&padded)[0].tail, [0x07, 0]);
+
+    let mut trailing = padded;
+    trailing.push(1);
+    let payload_len = u32::try_from(trailing.len() - 8).unwrap();
+    trailing[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert!(crate::geometry::a5_pcurves(&trailing).is_empty());
 }
 
 #[test]
