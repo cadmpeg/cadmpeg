@@ -11,18 +11,19 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::Annotations;
 
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
+fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &Annotations) {
     let mut entity_count = 0;
     macro_rules! check {
         ($entities:expr) => {
             for entity in $entities {
                 entity_count += 1;
-                let provenance = &ir.annotations.provenance[&entity.id.0];
-                assert!(ir.annotations.streams[provenance.stream as usize].starts_with("catia:"));
+                let provenance = &annotations.provenance[&entity.id.0];
+                assert!(annotations.streams[provenance.stream as usize].starts_with("catia:"));
             }
         };
     }
@@ -40,7 +41,7 @@ fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     check!(&ir.model.curves);
     let unknowns = ir.native_unknowns("catia").unwrap();
     check!(&unknowns);
-    assert_eq!(ir.annotations.provenance.len(), entity_count);
+    assert_eq!(annotations.provenance.len(), entity_count);
 }
 
 fn standard_quad_topology_stream() -> Vec<u8> {
@@ -3183,7 +3184,8 @@ fn every_decode_path_populates_v1_annotations() {
         let decoded = CatiaCodec
             .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
             .unwrap();
-        assert_every_entity_has_v1_annotation(&decoded.ir);
+        assert_eq!(decoded.ir.annotations, Annotations::default());
+        assert_every_entity_has_v1_annotation(&decoded.ir, &decoded.source_fidelity.annotations);
     }
 
     let container_only = CatiaCodec
@@ -3194,5 +3196,9 @@ fn every_decode_path_populates_v1_annotations() {
             },
         )
         .unwrap();
-    assert_every_entity_has_v1_annotation(&container_only.ir);
+    assert_eq!(container_only.ir.annotations, Annotations::default());
+    assert_every_entity_has_v1_annotation(
+        &container_only.ir,
+        &container_only.source_fidelity.annotations,
+    );
 }

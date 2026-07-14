@@ -30,6 +30,7 @@ use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
+use cadmpeg_ir::SourceFidelity;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::{self, ContainerScan};
@@ -51,7 +52,7 @@ pub fn decode(
     if options.container_only {
         let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return Ok(decode_result(ir, report));
     }
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
@@ -92,7 +93,19 @@ fn finish_decode(
     report: DecodeReport,
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(&scan.data).store(ir.native.namespace_mut("catia"))?;
-    Ok(DecodeResult::new(ir, report))
+    Ok(decode_result(ir, report))
+}
+
+fn decode_result(mut ir: CadIr, report: DecodeReport) -> DecodeResult {
+    let annotations = std::mem::take(&mut ir.annotations);
+    DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        SourceFidelity {
+            annotations,
+            ..SourceFidelity::default()
+        },
+    )
 }
 
 fn annotate(
