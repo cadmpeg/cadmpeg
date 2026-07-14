@@ -234,6 +234,8 @@ face_ref := <u8>  |  ff <u32le>   (widened when the ordinal needs it)
 
 The table begins immediately after the complete face-local surface roster and has one row per spine edge. Circle center and radius use BE f32. The two trailing references are adjacent face ordinals and form an edge-to-face incidence graph. The `u24` `tag` is a local allocation identifier and equals the object id of the co-stored `b5 03 5e` edge record. That record's second and third references are the row's native endpoint identities. Shared identities constrain analytic and spline rows to one injective vertex-coordinate assignment. The byte sequence `ff 46` encodes a widened face ordinal as `ff <u32le>`.
 
+The spline row identifies a required 3D curve carrier even when its spline definition is not resolved. It is not a curveless topological edge: the adjacent faces, native endpoint identities, and trim incidence belong to an opaque curve occurrence retained with the B-rep payload.
+
 ### 5.6 Curve carrier and endpoint semantics
 
 **Edge endpoints by surface-intersection binding:** an edge lies on both adjacent analytic carriers. Two vertices on both carriers (`on(P,surf)` := signed distance within 1e-3 mm) define the endpoint pair. For a line edge whose faces share a carrier, use the two common vertices collinear with the surface-intersection direction `d` (`plane∩plane`: nonzero `n0×n1`; `plane∩cylinder`: axis; `cylinder∩cylinder`: shared ruling). Coincident planes provide no intersection direction; incidence closure selects among their common vertex pairs.

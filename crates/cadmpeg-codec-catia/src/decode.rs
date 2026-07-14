@@ -1063,13 +1063,18 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        fit_rank_one_e5_plane_axes, intersection_line_direction, ordered_range,
-        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc, standard_pcurve_geometry,
+        build_standard_edge_curve, fit_rank_one_e5_plane_axes, intersection_line_direction,
+        ordered_range, point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
+        standard_pcurve_geometry,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
+    use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
-    use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::AnnotationBuilder;
+    use std::collections::HashMap;
 
     #[test]
     fn rational_arc_preserves_angular_parameterization() {
@@ -1084,6 +1089,34 @@ mod chart_tests {
             assert!((point.u - expected[0]).abs() < 1e-12);
             assert!((point.v - expected[1]).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn standard_spline_edge_retains_an_unknown_curve_carrier() {
+        let mut ir = CadIr::empty(Units::default());
+        let mut annotations = AnnotationBuilder::new();
+        let support = StandardCurveSupport {
+            pos: 12,
+            tag: 7,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let id = build_standard_edge_curve(
+            &mut ir,
+            &mut annotations,
+            &[],
+            &HashMap::new(),
+            &support,
+            0,
+            0,
+        )
+        .expect("spline support identifies a curve carrier");
+        assert_eq!(ir.model.curves[0].id, id);
+        assert!(matches!(
+            ir.model.curves[0].geometry,
+            CurveGeometry::Unknown { ref record }
+                if record.as_ref().is_some_and(|id| id.0 == "catia:payload:unknown#brep-stream")
+        ));
     }
 
     #[test]
@@ -3172,7 +3205,9 @@ fn build_standard_edge_curve(
                 radius: *radius,
             }
         }
-        geometry::StandardCurveGeometry::Bspline => return None,
+        geometry::StandardCurveGeometry::Bspline => CurveGeometry::Unknown {
+            record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
+        },
     };
     let id = CurveId(format!("catia:standard:curve#{}", support.pos));
     annotate(
@@ -3181,13 +3216,20 @@ fn build_standard_edge_curve(
         "MainDataStream+SurfacicReps",
         support.pos as u64,
         "curve_support_60",
-        Exactness::ByteExact,
+        if matches!(geometry, CurveGeometry::Unknown { .. }) {
+            Exactness::Unknown
+        } else {
+            Exactness::ByteExact
+        },
     );
     if matches!(&support.geometry, geometry::StandardCurveGeometry::Line) {
         annotations
             .derived(&id, "geometry.origin")
             .derived(&id, "geometry.direction");
-    } else {
+    } else if matches!(
+        &support.geometry,
+        geometry::StandardCurveGeometry::Circle { .. }
+    ) {
         annotations.derived(&id, "geometry.axis");
     }
     ir.model.curves.push(Curve {
