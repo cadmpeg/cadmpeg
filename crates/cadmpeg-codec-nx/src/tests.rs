@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 64);
+    assert_eq!(namespace.version, 65);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1036,7 +1036,7 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
     assert_eq!(inputs.len(), 1);
     assert_eq!(inputs[0].input_slot, 0);
     assert_eq!(inputs[0].object_index, 1);
-    assert!(inputs[0].data_block.ends_with(":block#2"));
+    assert!(inputs[0].data_block.ends_with(":block#1"));
     assert_eq!(
         result.ir.model.features[0].source_properties["input_block.0"],
         inputs[0].data_block
@@ -1049,7 +1049,8 @@ fn decode_resolves_feature_header_input_to_unique_data_block() {
         .arena_as::<crate::native::DataBlockReference>("data_block_references")
         .unwrap();
     assert_eq!(references.len(), 1);
-    assert_eq!(references[0].data_block, inputs[0].data_block);
+    assert!(references[0].data_block.ends_with(":block#2"));
+    assert_ne!(references[0].data_block, inputs[0].data_block);
     assert_eq!(references[0].object_id, 42);
     assert_eq!(references[0].target_record, None);
 }
@@ -4835,7 +4836,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 64);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 65);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

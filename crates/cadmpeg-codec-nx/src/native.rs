@@ -404,7 +404,7 @@ pub struct FeatureSketchConstructionPayload {
     pub operation_label: String,
     /// Complete construction-input record defining block order.
     pub construction_inputs: String,
-    /// Member blocks followed by the separated terminal block.
+    /// Ordered leading member blocks; the separated terminal is not payload.
     pub data_blocks: Vec<String>,
     /// Exact concatenated payload length.
     pub byte_len: u64,
@@ -1383,8 +1383,7 @@ pub fn feature_sketch_construction_payloads(
     constructions
         .iter()
         .filter_map(|construction| {
-            let mut data_blocks = construction.member_data_blocks.clone();
-            data_blocks.push(construction.terminal_data_block.clone());
+            let data_blocks = construction.member_data_blocks.clone();
             let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
                 join_data_block_bytes(&data_blocks, &blocks)?;
             Some(FeatureSketchConstructionPayload {
@@ -2181,11 +2180,13 @@ fn unique_offset_data_block(
                 .records
                 .first()
                 .is_some_and(|record| record.object_id.is_none())
-                && candidate.records.get(object_index as usize).is_some()
+                && object_index != 0
+                && usize::try_from(object_index)
+                    .ok()
+                    .is_some_and(|ordinal| ordinal <= candidate.records.len())
         })
-        .map(|(section_ordinal, (_, candidate))| {
-            let block_ordinal = object_index as usize + usize::from(candidate.control.is_some());
-            format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}")
+        .map(|(section_ordinal, _)| {
+            format!("nx:om-data-blocks-{section_ordinal}:block#{object_index}")
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
