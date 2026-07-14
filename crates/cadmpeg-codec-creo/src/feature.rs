@@ -1915,7 +1915,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
 fn dimension_unit(dimension_type: u32) -> DimensionUnit {
     match dimension_type {
         0x0a => DimensionUnit::Radians,
-        0x01 | 0x02 | 0x04 | 0x05 => DimensionUnit::Millimeters,
+        0x01..=0x05 => DimensionUnit::Millimeters,
         _ => DimensionUnit::SchemaDefined,
     }
 }
@@ -3892,6 +3892,11 @@ pub fn entity_tables(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn radius_dimension_type_uses_model_length_units() {
+        assert_eq!(dimension_unit(0x03), DimensionUnit::Millimeters);
+    }
 
     #[test]
     fn binds_missing_definition_owner_from_unique_generated_datum_table() {
