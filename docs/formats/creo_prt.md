@@ -285,6 +285,9 @@ separators or an intervening replay leave the bytes opaque.
 Each packed point body contains two directrix coordinates. A control point is
 numeric only when two defined scalar tokens consume its entire bounded body;
 partial scalar matches do not assign either coordinate.
+In the first-coordinate lane, `4a <tail6>` reconstructs `C0 <tail6> 00`.
+In the second-coordinate lane, prefixes `78..8a` and `a1..a3` use the positive
+DICT mapping and consume seven bytes.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 

@@ -142,6 +142,42 @@ pub fn decode_in_surface_row_lane(
     decode_in_row_lane(data, offset, cache)
 }
 
+/// Decode the first coordinate of a tabulated-cylinder directrix control point.
+///
+/// This lane adds `0x4a`, whose six-byte payload completes a negative IEEE
+/// value with an implicit `0xc0` high byte and zero low byte.
+pub fn decode_tabulated_cylinder_first_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x4a) {
+        return ieee7(data, offset, 0xc0);
+    }
+    decode_in_surface_row_lane(data, offset, cache)
+}
+
+/// Decode the second coordinate of a tabulated-cylinder directrix control point.
+///
+/// Positive DICT tokens encode the first two IEEE bytes as `0x3f75 + prefix`;
+/// their six-byte payload supplies the remaining bytes.
+pub fn decode_tabulated_cylinder_second_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    let head = *data.get(offset)?;
+    if matches!(head, 0x78..=0x8a | 0xa1..=0xa3) {
+        let high = 0x3f75_u16 + u16::from(head);
+        let tail = data.get(offset + 1..offset + 7)?;
+        let mut raw = [0; 8];
+        raw[..2].copy_from_slice(&high.to_be_bytes());
+        raw[2..].copy_from_slice(tail);
+        return Some((f64::from_be_bytes(raw), offset + 7));
+    }
+    decode_in_surface_row_lane(data, offset, cache)
+}
+
 /// Decode one scalar in the positive seven-byte DICT lane.
 ///
 /// The enclosing record grammar must establish this lane. Several prefix
@@ -237,6 +273,27 @@ mod tests {
             decode(&[0xde, 0x5c, 0xfa, 0x99, 0x80, 0x36, 0x84], 0),
             Some((
                 f64::from_be_bytes([0xbf, 0x5c, 0xfa, 0x99, 0x80, 0x36, 0x84, 0]),
+                7
+            ))
+        );
+    }
+
+    #[test]
+    fn decodes_tabulated_cylinder_coordinate_lanes() {
+        let cache = ScalarCache::default();
+        let first = [0x4a, 0x13, 0x21, 0xe3, 0xe3, 0x00, 0x00];
+        let second = [0x7f, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08];
+        assert_eq!(
+            decode_tabulated_cylinder_first_coordinate(&first, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xc0, 0x13, 0x21, 0xe3, 0xe3, 0x00, 0x00, 0]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&second, 0, &cache),
+            Some((
+                f64::from_be_bytes([0x3f, 0xf4, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08]),
                 7
             ))
         );

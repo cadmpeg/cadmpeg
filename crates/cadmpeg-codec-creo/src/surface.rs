@@ -1211,8 +1211,10 @@ pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinder
             continue;
         }
         let decode_point = |body: &[u8]| {
-            let (first, after_first) = scalar::decode_in_surface_row_lane(body, 0, &cache)?;
-            let (second, end) = scalar::decode_in_surface_row_lane(body, after_first, &cache)?;
+            let (first, after_first) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, 0, &cache)?;
+            let (second, end) =
+                scalar::decode_tabulated_cylinder_second_coordinate(body, after_first, &cache)?;
             (end == body.len() && first.is_finite() && second.is_finite())
                 .then_some([first, second])
         };
