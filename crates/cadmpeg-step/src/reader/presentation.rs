@@ -98,8 +98,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             .then_some(id)
         })
         .collect::<Vec<_>>();
+    let overridden_styles = styles
+        .iter()
+        .filter_map(|id| overridden_style(&exchange.records[id]))
+        .collect::<BTreeSet<_>>();
     styles.sort_by_key(|id| style_depth(*id, exchange, &mut BTreeSet::new()).unwrap_or(u32::MAX));
     for style_id in styles {
+        if overridden_styles.contains(&style_id) {
+            typed.insert(style_id);
+            continue;
+        }
         let style = &exchange.records[&style_id];
         let Some(target_step) = style.parameter(2).and_then(ValueExt::reference) else {
             warnings.push(format!("STYLED_ITEM #{style_id} has no resolved target"));

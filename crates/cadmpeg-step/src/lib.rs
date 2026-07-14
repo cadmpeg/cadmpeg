@@ -48,7 +48,7 @@ mod reader;
 pub mod strings;
 mod writer;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
 
 use cadmpeg_ir::appearance::Appearance;
@@ -446,14 +446,16 @@ impl<'a> Builder<'a> {
     fn build(&mut self) {
         let context = self.emit_context();
 
-        let mut shape_items = self.emit_shape_items(context);
-        shape_items.extend(self.emit_standalone_geometry());
-        if shape_items.is_empty() {
+        let shape_items = self.emit_shape_items(context);
+        let mut standalone_items = self.emit_standalone_geometry();
+        let has_standalone_geometry = !standalone_items.is_empty();
+        if shape_items.is_empty() && standalone_items.is_empty() {
             self.notes
                 .push("STEP representation contains no shape items".to_string());
         }
 
         let mut items = shape_items;
+        items.extend(standalone_items.iter().copied());
         // A representation-space origin placement is conventional and harmless.
         let origin = geometry::placement(
             &mut self.emitter,
@@ -466,12 +468,14 @@ impl<'a> Builder<'a> {
         if self.ir.model.products.is_empty() {
             let product_def_shape = self.emit_product_structure();
             self.default_product_definition_shape = Some(product_def_shape);
-            let representation_kind = if self
-                .ir
-                .model
-                .bodies
-                .iter()
-                .all(|body| body.kind == BodyKind::Solid)
+            let representation_kind = if !has_standalone_geometry
+                && !self.ir.model.bodies.is_empty()
+                && self
+                    .ir
+                    .model
+                    .bodies
+                    .iter()
+                    .all(|body| body.kind == BodyKind::Solid)
             {
                 "ADVANCED_BREP_SHAPE_REPRESENTATION"
             } else {
@@ -487,6 +491,17 @@ impl<'a> Builder<'a> {
             );
         } else {
             self.emit_product_graph(context);
+            if has_standalone_geometry {
+                standalone_items.push(origin);
+                self.emitter.emit(
+                    "SHAPE_REPRESENTATION",
+                    &format!(
+                        "{},{},{context}",
+                        string("standalone geometry"),
+                        refs(&standalone_items)
+                    ),
+                );
+            }
         }
 
         self.emit_visibility();
@@ -1870,30 +1885,31 @@ impl<'a> Builder<'a> {
         if !self.active_curves.insert(curve_id.to_string()) {
             return None;
         }
-        let geometry = self.curves.get(curve_id)?.geometry.clone();
-        let procedural = self
-            .ir
-            .model
-            .procedural_curves
-            .iter()
-            .find(|procedural| procedural.curve.as_str() == curve_id)
-            .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
-        let emitted = procedural.and_then(|(id, definition)| {
-            self.emit_procedural_curve(&definition)
-                .map(|reference| (id, reference))
-        });
-        let r = if let Some((id, reference)) = emitted {
-            self.written_procedural_curves.insert(id);
-            reference
-        } else if let CurveGeometry::Composite {
-            segments,
-            self_intersect,
-        } = &geometry
-        {
-            let mut segment_refs = Vec::with_capacity(segments.len());
-            for segment in segments {
-                let curve = self.emit_curve(segment.curve.as_str())?;
-                let transition = match segment.transition {
+        let result = (|| {
+            let geometry = self.curves.get(curve_id)?.geometry.clone();
+            let procedural = self
+                .ir
+                .model
+                .procedural_curves
+                .iter()
+                .find(|procedural| procedural.curve.as_str() == curve_id)
+                .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
+            let emitted = procedural.and_then(|(id, definition)| {
+                self.emit_procedural_curve(&definition)
+                    .map(|reference| (id, reference))
+            });
+            let r = if let Some((id, reference)) = emitted {
+                self.written_procedural_curves.insert(id);
+                reference
+            } else if let CurveGeometry::Composite {
+                segments,
+                self_intersect,
+            } = &geometry
+            {
+                let mut segment_refs = Vec::with_capacity(segments.len());
+                for segment in segments {
+                    let curve = self.emit_curve(segment.curve.as_str())?;
+                    let transition = match segment.transition {
                     cadmpeg_ir::geometry::CompositeCurveTransition::Discontinuous => {
                         ".DISCONTINUOUS."
                     }
@@ -1905,32 +1921,38 @@ impl<'a> Builder<'a> {
                         ".CONTSAMEGRADIENTSAMECURVATURE."
                     }
                 };
-                segment_refs.push(self.emitter.emit(
-                    "COMPOSITE_CURVE_SEGMENT",
+                    segment_refs.push(self.emitter.emit(
+                        "COMPOSITE_CURVE_SEGMENT",
+                        &format!(
+                            "{transition},{},{curve}",
+                            if segment.same_sense { ".T." } else { ".F." }
+                        ),
+                    ));
+                }
+                self.emitter.emit(
+                    "COMPOSITE_CURVE",
                     &format!(
-                        "{transition},{},{curve}",
-                        if segment.same_sense { ".T." } else { ".F." }
+                        "'',{},{}",
+                        refs(&segment_refs),
+                        match self_intersect {
+                            Some(true) => ".T.",
+                            Some(false) => ".F.",
+                            None => ".U.",
+                        }
                     ),
-                ));
-            }
-            self.emitter.emit(
-                "COMPOSITE_CURVE",
-                &format!(
-                    "'',{},{}",
-                    refs(&segment_refs),
-                    match self_intersect {
-                        Some(true) => ".T.",
-                        Some(false) => ".F.",
-                        None => ".U.",
-                    }
-                ),
-            )
-        } else {
-            geometry::curve(&mut self.emitter, &geometry)
-        };
+                )
+            } else if matches!(geometry, CurveGeometry::Unknown { .. }) {
+                return None;
+            } else {
+                geometry::curve(&mut self.emitter, &geometry)
+            };
+            Some(r)
+        })();
         self.active_curves.remove(curve_id);
-        self.curve_refs.insert(curve_id.to_string(), r);
-        Some(r)
+        if let Some(r) = result {
+            self.curve_refs.insert(curve_id.to_string(), r);
+        }
+        result
     }
 
     fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
@@ -2034,12 +2056,27 @@ impl<'a> Builder<'a> {
         }
         for annotation in &annotations {
             if let PmiDefinition::DatumSystem { references } = &annotation.definition {
-                let compartments = references
-                    .iter()
-                    .filter_map(|reference| {
-                        let datum = annotation_refs.get(&reference.datum)?;
+                let mut groups = BTreeMap::<(u32, Option<u32>), Vec<_>>::new();
+                for reference in references {
+                    groups
+                        .entry((reference.precedence, reference.common_group))
+                        .or_default()
+                        .push(reference);
+                }
+                let compartments = groups
+                    .values()
+                    .filter_map(|group| {
+                        let datum_refs = group
+                            .iter()
+                            .map(|reference| annotation_refs.get(&reference.datum).copied())
+                            .collect::<Option<Vec<_>>>()?;
+                        let datum = if group[0].common_group.is_some() {
+                            format!("COMMON_DATUM_LIST({})", refs(&datum_refs))
+                        } else {
+                            datum_refs[0].to_string()
+                        };
                         let mut modifiers = Vec::new();
-                        for modifier in &reference.modifiers {
+                        for modifier in &group[0].modifiers {
                             if let Some((kind, value)) = modifier.split_once(':') {
                                 let value = value.parse::<f64>().ok()?;
                                 let measure = self.emit_pmi_measure(cadmpeg_ir::PmiValue {
@@ -2091,25 +2128,32 @@ impl<'a> Builder<'a> {
                 } => {
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
                     let name = annotation.name.as_deref().unwrap_or("");
-                    let entity = match dimension {
-                        DimensionKind::Size => "DIMENSIONAL_SIZE",
-                        DimensionKind::Location => "DIMENSIONAL_LOCATION",
-                        DimensionKind::Angular => "ANGULAR_SIZE",
-                        DimensionKind::Diameter => "DIAMETER_SIZE",
-                        DimensionKind::Radius => "RADIUS_SIZE",
-                        DimensionKind::Other(value) => {
-                            let upper = value.to_ascii_uppercase();
-                            if upper.ends_with("_SIZE") || upper.ends_with("_LOCATION") {
-                                Box::leak(upper.into_boxed_str())
-                            } else {
-                                "DIMENSIONAL_SIZE"
-                            }
+                    let (entity, kind_exact) = match dimension {
+                        DimensionKind::Size => ("DIMENSIONAL_SIZE", true),
+                        DimensionKind::Location => ("DIMENSIONAL_LOCATION", true),
+                        DimensionKind::Angular => ("ANGULAR_SIZE", true),
+                        // AP242 represents diameter and radius as a
+                        // DIMENSIONAL_SIZE whose name identifies the size
+                        // category; DIAMETER_SIZE and RADIUS_SIZE are not
+                        // entity types.
+                        DimensionKind::Diameter | DimensionKind::Radius => {
+                            ("DIMENSIONAL_SIZE", true)
                         }
+                        DimensionKind::Other(_) => ("DIMENSIONAL_SIZE", false),
+                    };
+                    let characteristic_name = match dimension {
+                        DimensionKind::Diameter => "diameter",
+                        DimensionKind::Radius => "radius",
+                        _ => name,
                     };
                     let parameters = match dimension {
-                        DimensionKind::Location => format!("{aspect},{aspect},{}", string(name)),
-                        DimensionKind::Angular => format!("{aspect},{},.SMALL.", string(name)),
-                        _ => format!("{aspect},{}", string(name)),
+                        DimensionKind::Location => {
+                            format!("{},$,{aspect},{aspect}", string(characteristic_name))
+                        }
+                        DimensionKind::Angular => {
+                            format!("{aspect},{},.SMALL.", string(characteristic_name))
+                        }
+                        _ => format!("{aspect},{}", string(characteristic_name)),
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
                     if let Some(value) = nominal {
@@ -2150,7 +2194,8 @@ impl<'a> Builder<'a> {
                     }
                     annotation_refs.insert(annotation.id.clone(), characteristic);
                     let deviations_exact = lower_deviation.is_some() == upper_deviation.is_some();
-                    self.written_pmi += usize::from(targets_exact(annotation) && deviations_exact);
+                    self.written_pmi +=
+                        usize::from(targets_exact(annotation) && deviations_exact && kind_exact);
                 }
                 PmiDefinition::GeometricTolerance {
                     tolerance,
@@ -2173,7 +2218,7 @@ impl<'a> Builder<'a> {
                         GeometricToleranceKind::Symmetry => "SYMMETRY_TOLERANCE",
                         GeometricToleranceKind::CircularRunout => "CIRCULAR_RUNOUT_TOLERANCE",
                         GeometricToleranceKind::TotalRunout => "TOTAL_RUNOUT_TOLERANCE",
-                        GeometricToleranceKind::Other(_) => "GEOMETRIC_TOLERANCE",
+                        GeometricToleranceKind::Other(_) => continue,
                     };
                     let measure = self.emit_pmi_measure(*magnitude);
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
@@ -2991,7 +3036,11 @@ fn is_rigid_transform(rows: &[[f64; 4]; 4]) -> bool {
             }
         }
     }
-    true
+    let determinant = columns[0][0]
+        * (columns[1][1] * columns[2][2] - columns[1][2] * columns[2][1])
+        - columns[1][0] * (columns[0][1] * columns[2][2] - columns[0][2] * columns[2][1])
+        + columns[2][0] * (columns[0][1] * columns[1][2] - columns[0][2] * columns[1][1]);
+    (determinant - 1.0).abs() <= EPSILON
 }
 
 #[cfg(test)]

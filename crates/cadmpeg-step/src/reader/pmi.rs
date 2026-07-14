@@ -100,9 +100,17 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     }
 
     for (&id, record) in &exchange.records {
-        let Some(kind) = dimension_kind(record.simple_name()) else {
+        let Some(mut kind) = dimension_kind(record.simple_name()) else {
             continue;
         };
+        let name = record.parameters().iter().find_map(ValueExt::text);
+        if matches!(kind, DimensionKind::Size) {
+            kind = match name.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                Some("diameter") => DimensionKind::Diameter,
+                Some("radius") => DimensionKind::Radius,
+                _ => kind,
+            };
+        }
         let nominal = characteristic_values(
             id,
             exchange,
@@ -120,7 +128,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ir,
             &mut annotations,
             id,
-            record.parameters().iter().find_map(ValueExt::text),
+            name,
             targets(aspect_ids),
             PmiDefinition::Dimension {
                 dimension: kind,
@@ -178,26 +186,30 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             })
         });
         if let (Some(index), Some(limits)) = (dimension, limits) {
-            let values = limits
-                .parameters()
-                .iter()
-                .filter_map(|value| {
-                    measure(
-                        value,
-                        exchange,
-                        geometry.length_scale,
-                        geometry.plane_angle_scale,
-                    )
-                })
-                .collect::<Vec<_>>();
+            let lower = limits.parameters().first().and_then(|value| {
+                measure(
+                    value,
+                    exchange,
+                    geometry.length_scale,
+                    geometry.plane_angle_scale,
+                )
+            });
+            let upper = limits.parameters().get(1).and_then(|value| {
+                measure(
+                    value,
+                    exchange,
+                    geometry.length_scale,
+                    geometry.plane_angle_scale,
+                )
+            });
             if let PmiDefinition::Dimension {
                 lower_deviation,
                 upper_deviation,
                 ..
             } = &mut ir.model.pmi[index].definition
             {
-                *lower_deviation = values.first().copied();
-                *upper_deviation = values.get(1).copied();
+                *lower_deviation = lower;
+                *upper_deviation = upper;
             }
             typed.insert(id);
             typed.extend(refs);
@@ -437,6 +449,7 @@ fn datum_references(
         .flatten()
         .filter_map(|modifier| modifier_text(modifier, exchange, typed, length_scale, angle_scale))
         .collect::<Vec<_>>();
+    let common_group = is_common_datum_list(compartment.parameter(4)).then_some(precedence);
     datum_ids(compartment.parameter(4))
         .into_iter()
         .filter(|datum| annotations.contains_key(datum))
@@ -445,10 +458,15 @@ fn datum_references(
             DatumReference {
                 datum: pmi_id(datum),
                 precedence,
+                common_group,
                 modifiers: modifiers.clone(),
             }
         })
         .collect()
+}
+
+fn is_common_datum_list(value: Option<&Value>) -> bool {
+    matches!(value, Some(Value::Typed(kind, _)) if kind == "COMMON_DATUM_LIST")
 }
 
 fn datum_ids(value: Option<&Value>) -> Vec<u64> {
@@ -810,7 +828,10 @@ impl RecordExt for RawRecord {
             .join("+")
     }
     fn parameters(&self) -> &[Value] {
-        &self.partials[0].parameters
+        self.partials
+            .first()
+            .map(|partial| partial.parameters.as_slice())
+            .unwrap_or_default()
     }
     fn parameter(&self, index: usize) -> Option<&Value> {
         self.parameters().get(index)

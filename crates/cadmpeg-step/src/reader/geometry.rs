@@ -164,6 +164,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                     let axis = optional_direction(record.parameter(2), &directions)
                         .unwrap_or(Vector3::new(0.0, 0.0, 1.0));
                     let reference = optional_direction(record.parameter(3), &directions)
+                        .and_then(|reference| orthogonal_reference(axis, reference))
                         .unwrap_or_else(|| derive_reference_direction(axis));
                     (origin, axis, reference)
                 });
@@ -367,10 +368,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         };
         let start = record
             .parameter(2)
-            .and_then(|value| trim_parameter(value, &points, &geometry));
+            .and_then(|value| trim_parameter(value, &points, &geometry, angle_scale));
         let end = record
             .parameter(3)
-            .and_then(|value| trim_parameter(value, &points, &geometry));
+            .and_then(|value| trim_parameter(value, &points, &geometry, angle_scale));
         let Some((start, end)) = start.zip(end) else {
             warnings.push(format!(
                 "TRIMMED_CURVE #{id} has trim selectors incompatible with its basis curve"
@@ -1036,19 +1037,40 @@ fn trim_parameter(
     value: &Value,
     points: &BTreeMap<u64, Point3>,
     geometry: &CurveGeometry,
+    angle_scale: f64,
 ) -> Option<f64> {
     match value {
-        Value::Integer(value) => Some(*value as f64),
-        Value::Real(value) => Some(*value),
-        Value::Typed(_, value) => trim_parameter(value, points, geometry),
+        Value::Integer(value) => Some(parameter_scale(geometry, angle_scale) * *value as f64),
+        Value::Real(value) => Some(parameter_scale(geometry, angle_scale) * *value),
+        Value::Typed(_, value) => trim_parameter(value, points, geometry, angle_scale),
         Value::Reference(id) => points
             .get(id)
             .and_then(|point| curve_parameter_at_point(geometry, *point)),
         Value::List(values) => values
             .iter()
-            .find_map(|value| trim_parameter(value, points, geometry)),
+            .find_map(|value| trim_parameter(value, points, geometry, angle_scale)),
         _ => None,
     }
+}
+
+fn parameter_scale(geometry: &CurveGeometry, angle_scale: f64) -> f64 {
+    if matches!(
+        geometry,
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. }
+    ) {
+        angle_scale
+    } else {
+        1.0
+    }
+}
+
+fn orthogonal_reference(axis: Vector3, reference: Vector3) -> Option<Vector3> {
+    let projection = dot(axis, reference);
+    normalize(Vector3::new(
+        reference.x - projection * axis.x,
+        reference.y - projection * axis.y,
+        reference.z - projection * axis.z,
+    ))
 }
 
 fn curve_parameter_at_point(geometry: &CurveGeometry, point: Point3) -> Option<f64> {

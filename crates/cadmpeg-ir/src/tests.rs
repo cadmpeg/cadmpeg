@@ -1595,6 +1595,52 @@ fn wire_and_free_topology_negative_cases_are_reported() {
 }
 
 #[test]
+fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
+    let mut ir = unit_cube();
+    let vertex = ir.model.vertices[0].id.clone();
+    ir.model.loops[0].coedges.clear();
+    ir.model.loops[0].vertex = Some(vertex.clone());
+    ir.model.shells[0].free_vertices.push(vertex.clone());
+    let mut second_shell = ir.model.shells[0].clone();
+    second_shell.id.0 = "synthetic:test:shell#second".into();
+    second_shell.faces.clear();
+    second_shell.wire_edges.clear();
+    second_shell.free_vertices = vec![vertex];
+    ir.model.regions[0].shells.push(second_shell.id.clone());
+    ir.model.shells.push(second_shell);
+
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::WireTopology
+            && finding.message == "free vertex must belong to exactly one shell"
+    }));
+}
+
+#[test]
+fn self_referential_composite_curve_is_invalid() {
+    use crate::geometry::{CompositeCurveSegment, CompositeCurveTransition};
+
+    let mut ir = unit_cube();
+    let id = CurveId("synthetic:test:curve#recursive".into());
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: id,
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }],
+            self_intersect: Some(false),
+        },
+        source_object: None,
+    });
+
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ReferentialIntegrity));
+}
+
+#[test]
 fn empty_shell_is_reported() {
     let mut ir = unit_cube();
     ir.model.shells[0].faces.clear();

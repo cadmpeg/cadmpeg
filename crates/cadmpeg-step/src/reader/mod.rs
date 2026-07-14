@@ -63,8 +63,11 @@ pub fn decode(input: &[u8], options: &DecodeOptions) -> Result<DecodeResult, Cod
     let pmi = pmi::decode(&exchange, &geometry, &mut ir);
     report.notes.extend(dependencies.notes);
     report.notes.extend(validation.notes);
-    report.geometry_transferred =
-        !ir.model.points.is_empty() || !ir.model.curves.is_empty() || !ir.model.surfaces.is_empty();
+    report.geometry_transferred = !ir.model.points.is_empty()
+        || !ir.model.curves.is_empty()
+        || !ir.model.surfaces.is_empty()
+        || !ir.model.bodies.is_empty()
+        || !ir.model.tessellations.is_empty();
     report
         .losses
         .extend(geometry.warnings.into_iter().map(|message| LossNote {

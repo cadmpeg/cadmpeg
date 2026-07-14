@@ -301,6 +301,32 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             _ => {}
         }
     }
+    let composite_segments = ir
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Composite { segments, .. } => Some((
+                curve.id.0.as_str(),
+                segments
+                    .iter()
+                    .map(|segment| segment.curve.0.as_str())
+                    .collect::<Vec<_>>(),
+            )),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let mut complete = HashSet::new();
+    let mut active = HashSet::new();
+    for curve in composite_segments.keys().copied() {
+        check_composite_cycle(
+            curve,
+            &composite_segments,
+            &mut active,
+            &mut complete,
+            findings,
+        );
+    }
     for procedural in &ir.model.procedural_surfaces {
         if !ids.surfaces.contains(&procedural.surface.0) {
             ref_error(
@@ -2464,9 +2490,11 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for vertex in &ir.model.vertices {
-        if !edge_vertices.contains(vertex.id.0.as_str())
-            && !loop_vertices.contains(vertex.id.0.as_str())
-            && free_owners.get(vertex.id.0.as_str()).copied().unwrap_or(0) != 1
+        let owner_count = free_owners.get(vertex.id.0.as_str()).copied().unwrap_or(0);
+        if owner_count > 1
+            || (!edge_vertices.contains(vertex.id.0.as_str())
+                && !loop_vertices.contains(vertex.id.0.as_str())
+                && owner_count != 1)
         {
             wire_error(
                 findings,
@@ -2503,6 +2531,31 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
             wire_error(findings, &body.id.0, "wire body contains faces");
         }
     }
+}
+
+fn check_composite_cycle<'a>(
+    curve: &'a str,
+    segments: &HashMap<&'a str, Vec<&'a str>>,
+    active: &mut HashSet<&'a str>,
+    complete: &mut HashSet<&'a str>,
+    findings: &mut Vec<Finding>,
+) {
+    if complete.contains(curve) {
+        return;
+    }
+    if !active.insert(curve) {
+        ref_error(findings, curve, "acyclic composite curve", curve);
+        return;
+    }
+    if let Some(children) = segments.get(curve) {
+        for child in children {
+            if segments.contains_key(child) {
+                check_composite_cycle(child, segments, active, complete, findings);
+            }
+        }
+    }
+    active.remove(curve);
+    complete.insert(curve);
 }
 
 pub(super) fn wire_error(findings: &mut Vec<Finding>, id: &str, message: &str) {

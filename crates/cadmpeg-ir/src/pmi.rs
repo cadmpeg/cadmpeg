@@ -131,6 +131,10 @@ pub struct DatumReference {
     pub datum: PmiId,
     /// Precedence within the datum system, starting at one.
     pub precedence: u32,
+    /// Identity of a common-datum group within this datum system. References
+    /// with the same precedence and group form one simultaneous compartment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub common_group: Option<u32>,
     /// Source-defined material-condition and translation modifiers.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub modifiers: Vec<String>,
@@ -249,6 +253,7 @@ mod tests {
                 references: vec![DatumReference {
                     datum: datum_id,
                     precedence: 1,
+                    common_group: None,
                     modifiers: Vec::new(),
                 }],
             },
@@ -277,5 +282,58 @@ mod tests {
             .findings
             .iter()
             .any(|finding| finding.check == Check::Pmi));
+    }
+
+    #[test]
+    fn datum_references_are_type_checked_and_common_groups_are_explicit() {
+        let mut ir = CadIr::empty(Units::default());
+        let dimension_id = PmiId("test:model:pmi#dimension".into());
+        ir.model.pmi.push(PmiAnnotation {
+            id: dimension_id.clone(),
+            name: None,
+            targets: Vec::new(),
+            definition: PmiDefinition::Dimension {
+                dimension: DimensionKind::Size,
+                nominal: None,
+                lower_deviation: None,
+                upper_deviation: None,
+                limits_and_fits: None,
+            },
+        });
+        ir.model.pmi.push(PmiAnnotation {
+            id: PmiId("test:model:pmi#system".into()),
+            name: None,
+            targets: Vec::new(),
+            definition: PmiDefinition::DatumSystem {
+                references: vec![DatumReference {
+                    datum: dimension_id.clone(),
+                    precedence: 1,
+                    common_group: None,
+                    modifiers: Vec::new(),
+                }],
+            },
+        });
+        ir.model.pmi.push(PmiAnnotation {
+            id: PmiId("test:model:pmi#tolerance".into()),
+            name: None,
+            targets: Vec::new(),
+            definition: PmiDefinition::GeometricTolerance {
+                tolerance: GeometricToleranceKind::Position,
+                magnitude: PmiValue {
+                    value: 0.1,
+                    quantity: PmiQuantity::Length,
+                },
+                datum_system: Some(dimension_id),
+            },
+        });
+
+        let findings = validate(&ir, Vec::new()).findings;
+        assert!(
+            findings
+                .iter()
+                .filter(|finding| finding.check == Check::Pmi)
+                .count()
+                >= 2
+        );
     }
 }

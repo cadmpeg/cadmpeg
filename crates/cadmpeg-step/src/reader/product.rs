@@ -95,7 +95,8 @@ pub(super) fn decode(
         .values()
         .map(|usage| usage.child_definition)
         .collect::<BTreeSet<_>>();
-    let mut definition_occurrences = BTreeMap::new();
+    let mut definition_occurrences = BTreeMap::<u64, Vec<OccurrenceId>>::new();
+    let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
     for (&definition, &product) in &definitions {
         if child_definitions.contains(&definition) {
             continue;
@@ -108,19 +109,31 @@ pub(super) fn decode(
             transform: Transform::identity(),
             name: None,
         });
-        definition_occurrences.insert(definition, id);
+        definition_occurrences
+            .entry(definition)
+            .or_default()
+            .push(id.clone());
+        occurrence_paths.insert(id, BTreeSet::from([definition]));
     }
     let placements = occurrence_placements(exchange, geometry, &usages);
-    let mut pending = usages.keys().copied().collect::<BTreeSet<_>>();
-    while !pending.is_empty() {
-        let ready = pending.iter().copied().find(|usage_id| {
-            definition_occurrences.contains_key(&usages[usage_id].parent_definition)
-        });
-        let Some(usage_id) = ready else {
-            warnings.push("assembly occurrence graph has no resolvable root".into());
+    let mut expanded = BTreeSet::<(u64, OccurrenceId)>::new();
+    let mut usage_instances = BTreeMap::<u64, usize>::new();
+    loop {
+        let ready = usages
+            .iter()
+            .flat_map(|(&usage_id, usage)| {
+                definition_occurrences
+                    .get(&usage.parent_definition)
+                    .into_iter()
+                    .flatten()
+                    .cloned()
+                    .map(move |parent| (usage_id, parent))
+            })
+            .find(|pair| !expanded.contains(pair));
+        let Some((usage_id, parent)) = ready else {
             break;
         };
-        pending.remove(&usage_id);
+        expanded.insert((usage_id, parent.clone()));
         let usage = &usages[&usage_id];
         let Some(&product) = definitions.get(&usage.child_definition) else {
             warnings.push(format!(
@@ -128,21 +141,42 @@ pub(super) fn decode(
             ));
             continue;
         };
-        let id = OccurrenceId(format!("step:product:occurrence#{usage_id}"));
+        let parent_path = occurrence_paths.get(&parent).cloned().unwrap_or_default();
+        if parent_path.contains(&usage.child_definition) {
+            warnings.push(format!(
+                "NAUO #{usage_id} closes an assembly definition cycle"
+            ));
+            continue;
+        }
+        let instance = usage_instances.entry(usage_id).or_default();
+        *instance += 1;
+        let suffix = if *instance == 1 {
+            String::new()
+        } else {
+            format!("-instance-{instance}")
+        };
+        let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
         ir.model.occurrences.push(ProductOccurrence {
             id: id.clone(),
             product: product_ir_id(product),
-            parent: OccurrenceParent::Occurrence {
-                occurrence: definition_occurrences[&usage.parent_definition].clone(),
-            },
+            parent: OccurrenceParent::Occurrence { occurrence: parent },
             transform: placements
                 .get(&usage_id)
                 .copied()
                 .unwrap_or_else(Transform::identity),
             name: usage.name.clone(),
         });
-        definition_occurrences.insert(usage.child_definition, id);
+        let mut path = parent_path;
+        path.insert(usage.child_definition);
+        occurrence_paths.insert(id.clone(), path);
+        definition_occurrences
+            .entry(usage.child_definition)
+            .or_default()
+            .push(id);
         typed.insert(usage_id);
+    }
+    if expanded.is_empty() && !usages.is_empty() {
+        warnings.push("assembly occurrence graph has no resolvable root".into());
     }
     apply_body_placements(exchange, geometry, &usages, ir, &mut warnings);
     for (&id, record) in &exchange.records {

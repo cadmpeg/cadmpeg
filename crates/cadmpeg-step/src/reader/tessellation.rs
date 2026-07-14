@@ -122,7 +122,19 @@ pub(super) fn decode(
             Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") => 5,
             _ => 4,
         };
-        let pnindex = index_list(record.parameter(pnindex_parameter)).unwrap_or_default();
+        let pnindex = match record.parameter(pnindex_parameter) {
+            None | Some(Value::Omitted) => Vec::new(),
+            Some(value) => {
+                let Some(indices) = index_list(Some(value)) else {
+                    warnings.push(format!(
+                        "{} #{id} has an invalid pnindex",
+                        record.simple_name().expect("matched simple name")
+                    ));
+                    continue;
+                };
+                indices
+            }
+        };
         let (local_vertices, local_triangles, coordinate_indices) = if pnindex.is_empty() {
             if triangles
                 .iter()

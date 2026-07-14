@@ -1558,6 +1558,413 @@ fn export(ir: &CadIr) -> String {
     String::from_utf8(buf).expect("utf8")
 }
 
+fn decode_inline(records: &str) -> cadmpeg_ir::codec::DecodeResult {
+    let source = format!(
+        "ISO-10303-21;\nHEADER;\nFILE_DESCRIPTION(('test'),'2;1');\nFILE_NAME('test','2026-07-14T00:00:00',('cadmpeg'),('cadmpeg'),'cadmpeg-step','','');\nFILE_SCHEMA(('AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF'));\nENDSEC;\nDATA;\n{records}\nENDSEC;\nEND-ISO-10303-21;\n"
+    );
+    StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode inline STEP")
+}
+
+#[test]
+fn malformed_zero_partial_pmi_reference_is_non_panicking() {
+    let result = decode_inline("#5=();\n#10=ANNOTATION_OCCURRENCE('',(),#5);");
+    assert!(result.ir.model.pmi.len() <= 1);
+}
+
+#[test]
+fn overriding_style_suppresses_the_base_binding() {
+    let result = decode_inline(
+        "#1=COLOUR_RGB('blue',0.,0.,1.);
+#2=PRESENTATION_STYLE_ASSIGNMENT((#1));
+#3=COLOUR_RGB('red',1.,0.,0.);
+#4=PRESENTATION_STYLE_ASSIGNMENT((#3));
+#10=STYLED_ITEM('',(#2),#20);
+#11=OVER_RIDING_STYLED_ITEM('',(#4),#20,#10);
+#20=SOURCE_ITEM();",
+    );
+    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    let binding = &result.ir.model.appearance_bindings[0];
+    let appearance = result
+        .ir
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .expect("overriding appearance");
+    let color = appearance.base_color.expect("override color");
+    assert_eq!((color.r, color.g, color.b), (1.0, 0.0, 0.0));
+}
+
+#[test]
+fn unresolved_lower_tolerance_does_not_shift_upper_deviation() {
+    use cadmpeg_ir::pmi::PmiDefinition;
+
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#5=PRODUCT_DEFINITION_SHAPE('','',#99);
+#6=SHAPE_ASPECT('feature','',#5,.T.);
+#10=DIMENSIONAL_SIZE(#6,'width');
+#16=UNRESOLVED_MEASURE();
+#17=LENGTH_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.2),#1);
+#18=TOLERANCE_VALUE(#16,#17);
+#19=PLUS_MINUS_TOLERANCE(#18,#10);
+#99=UNRESOLVED_PRODUCT();",
+    );
+    assert!(result.ir.model.pmi.iter().any(|annotation| matches!(
+        annotation.definition,
+        PmiDefinition::Dimension {
+            lower_deviation: None,
+            upper_deviation: Some(cadmpeg_ir::PmiValue { value, .. }),
+            ..
+        } if (value - 0.2).abs() < 1.0e-12
+    )));
+}
+
+#[test]
+fn repeated_subassembly_instances_each_receive_the_subtree() {
+    use cadmpeg_ir::product::OccurrenceParent;
+
+    let result = decode_inline(
+        "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','parent','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('part definition',#1,'design');
+#6=PRODUCT_DEFINITION('parent','',#4,#5);
+#7=PRODUCT('S','subassembly','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('subassembly','',#8,#5);
+#10=PRODUCT('L','leaf','',(#2));
+#11=PRODUCT_DEFINITION_FORMATION('','',#10);
+#12=PRODUCT_DEFINITION('leaf','',#11,#5);
+#20=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u1','sub one','',#6,#9,$);
+#21=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u2','sub two','',#6,#9,$);
+#22=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u3','leaf','',#9,#12,$);",
+    );
+    assert_eq!(result.ir.model.occurrences.len(), 5);
+    let subassemblies = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .filter(|occurrence| occurrence.product.as_str() == "step:product:product#7")
+        .collect::<Vec<_>>();
+    assert_eq!(subassemblies.len(), 2);
+    for subassembly in subassemblies {
+        assert_eq!(
+            result
+                .ir
+                .model
+                .occurrences
+                .iter()
+                .filter(|occurrence| matches!(
+                    &occurrence.parent,
+                    OccurrenceParent::Occurrence { occurrence: parent }
+                        if parent == &subassembly.id
+                ))
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
+    let result = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_tessellation.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode tessellation fixture");
+    assert!(result.report.geometry_transferred);
+
+    let malformed = decode_inline(
+        "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,('bad'),((1,2,3)));",
+    );
+    assert!(malformed.ir.model.tessellations.is_empty());
+    assert!(malformed
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("invalid pnindex")));
+}
+
+#[test]
+fn rigid_transform_rejects_reflections() {
+    assert!(!crate::is_rigid_transform(&[
+        [-1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]));
+}
+
+#[test]
+fn placement_reference_is_projected_and_angular_trims_use_context_units() {
+    let result = decode_inline(
+        "#1=(LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.));
+#2=(NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.));
+#3=PLANE_ANGLE_MEASURE_WITH_UNIT(PLANE_ANGLE_MEASURE(0.017453292519943295),#2);
+#4=(CONVERSION_BASED_UNIT('degree',#3) NAMED_UNIT(*) PLANE_ANGLE_UNIT());
+#5=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1,#4)) REPRESENTATION_CONTEXT('model','3D'));
+#10=CARTESIAN_POINT('',(0.,0.,0.));
+#11=DIRECTION('',(0.,0.,1.));
+#12=DIRECTION('',(1.,0.,1.));
+#13=AXIS2_PLACEMENT_3D('',#10,#11,#12);
+#14=CIRCLE('',#13,2.);
+#15=TRIMMED_CURVE('',#14,(PARAMETER_VALUE(0.)),(PARAMETER_VALUE(90.)),.T.,.PARAMETER.);
+#16=GEOMETRIC_CURVE_SET('',(#15));
+#17=SHAPE_REPRESENTATION('',(#16),#5);",
+    );
+    let circle = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:data:curve#14")
+        .expect("circle");
+    let CurveGeometry::Circle {
+        axis,
+        ref_direction,
+        ..
+    } = circle.geometry
+    else {
+        panic!("decoded carrier is not a circle")
+    };
+    let dot = axis.x * ref_direction.x + axis.y * ref_direction.y + axis.z * ref_direction.z;
+    assert!(dot.abs() < 1.0e-12);
+    assert!(result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| matches!(
+            curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range: [start, end],
+                ..
+            } if start.abs() < 1.0e-12 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        )));
+}
+
+#[test]
+fn unknown_recursive_curve_dependency_is_refused_without_panicking() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry,
+    };
+
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: CurveId("unknown".into()),
+        geometry: CurveGeometry::Unknown { record: None },
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: CurveId("composite".into()),
+        geometry: CurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: CurveId("unknown".into()),
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }],
+            self_intersect: Some(false),
+        },
+        source_object: None,
+    });
+    let output = export(&ir);
+    assert!(!output.contains("COMPOSITE_CURVE("));
+    let mut builder = crate::Builder::new(&ir, StepSchema::Ap242Edition3);
+    assert!(builder.emit_curve("composite").is_none());
+    assert!(builder.active_curves.is_empty());
+    assert!(builder.emit_curve("composite").is_none());
+    assert!(builder.active_curves.is_empty());
+}
+
+#[test]
+fn standalone_geometry_uses_general_shape_representation() {
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.curves.push(Curve {
+        id: CurveId("line".into()),
+        geometry: CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        },
+        source_object: None,
+    });
+    let output = export(&ir);
+    assert!(output.contains("SHAPE_REPRESENTATION('',"));
+    assert!(!output.contains("ADVANCED_BREP_SHAPE_REPRESENTATION"));
+}
+
+#[test]
+fn ap242_dimension_kinds_emit_concrete_schema_entities() {
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::{DimensionKind, GeometricToleranceKind, PmiDefinition};
+
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode semantic PMI")
+        .ir;
+    let template = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::Dimension { .. }))
+        .cloned()
+        .expect("dimension template");
+    ir.model.pmi.clear();
+    for (ordinal, kind) in [
+        DimensionKind::Diameter,
+        DimensionKind::Radius,
+        DimensionKind::Location,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut annotation = template.clone();
+        annotation.id = PmiId(format!("test:pmi:dimension#{ordinal}"));
+        annotation.name = Some(format!("dimension {ordinal}"));
+        let PmiDefinition::Dimension { dimension, .. } = &mut annotation.definition else {
+            unreachable!()
+        };
+        *dimension = kind;
+        ir.model.pmi.push(annotation);
+    }
+    let mut unsupported = template;
+    unsupported.id = PmiId("test:pmi:tolerance#other".into());
+    unsupported.definition = PmiDefinition::GeometricTolerance {
+        tolerance: GeometricToleranceKind::Other("vendor_tolerance".into()),
+        magnitude: cadmpeg_ir::PmiValue {
+            value: 0.1,
+            quantity: cadmpeg_ir::PmiQuantity::Length,
+        },
+        datum_system: None,
+    };
+    ir.model.pmi.push(unsupported);
+
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write dimensions");
+    let text = String::from_utf8(output.clone()).unwrap();
+    assert!(!text.contains("DIAMETER_SIZE"));
+    assert!(!text.contains("RADIUS_SIZE"));
+    assert!(!text.contains(" = GEOMETRIC_TOLERANCE("));
+    assert!(text.contains(",'diameter')"));
+    assert!(text.contains(",'radius')"));
+    let exchange = crate::parse::parse(&output).unwrap();
+    let location = exchange
+        .records
+        .values()
+        .find(|record| {
+            record
+                .partials
+                .first()
+                .is_some_and(|partial| partial.name == "DIMENSIONAL_LOCATION")
+        })
+        .expect("dimensional location");
+    assert_eq!(location.partials[0].parameters.len(), 4);
+    assert!(matches!(
+        location.partials[0].parameters[0],
+        crate::parse::Value::String(_)
+    ));
+    assert!(matches!(
+        location.partials[0].parameters[1],
+        crate::parse::Value::Omitted
+    ));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PMI annotation")));
+}
+
+#[test]
+fn common_datum_compartment_round_trips_as_one_precedence() {
+    use cadmpeg_ir::ids::PmiId;
+    use cadmpeg_ir::pmi::{DatumReference, PmiDefinition};
+
+    let mut ir = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_semantic_pmi.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode semantic PMI")
+        .ir;
+    let datum_a = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::Datum { .. }))
+        .cloned()
+        .expect("datum A");
+    let mut datum_b = datum_a.clone();
+    datum_b.id = PmiId("test:model:pmi#datum-b".into());
+    datum_b.definition = PmiDefinition::Datum {
+        identification: "B".into(),
+    };
+    ir.model.pmi.push(datum_b.clone());
+    let system = ir
+        .model
+        .pmi
+        .iter_mut()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. }))
+        .expect("datum system");
+    let PmiDefinition::DatumSystem { references } = &mut system.definition else {
+        unreachable!()
+    };
+    let modifiers = references[0].modifiers.clone();
+    *references = vec![
+        DatumReference {
+            datum: datum_a.id,
+            precedence: 1,
+            common_group: Some(7),
+            modifiers: modifiers.clone(),
+        },
+        DatumReference {
+            datum: datum_b.id,
+            precedence: 1,
+            common_group: Some(7),
+            modifiers,
+        },
+    ];
+    let validation = cadmpeg_ir::validate(&ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write common datum");
+    assert!(String::from_utf8_lossy(&output).contains("COMMON_DATUM_LIST(("));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode common datum");
+    assert!(roundtrip.ir.model.pmi.iter().any(|annotation| matches!(
+        &annotation.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 2
+                && references.iter().all(|reference| reference.precedence == 1)
+                && references.iter().all(|reference| reference.common_group == Some(1))
+    )));
+}
+
 /// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();

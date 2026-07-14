@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Product-manufacturing information reference validation.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::document::CadIr;
 use crate::pmi::{PmiDefinition, PmiTarget};
@@ -14,6 +14,12 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|annotation| annotation.id.as_str())
         .collect::<HashSet<_>>();
+    let definitions = ir
+        .model
+        .pmi
+        .iter()
+        .map(|annotation| (annotation.id.as_str(), &annotation.definition))
+        .collect::<HashMap<_, _>>();
     for annotation in &ir.model.pmi {
         for target in &annotation.targets {
             let resolved = match target {
@@ -39,16 +45,52 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         match &annotation.definition {
             PmiDefinition::DatumSystem { references } => {
-                let mut precedence = HashSet::new();
+                let mut compartments = HashMap::<u32, Vec<_>>::new();
+                let mut common_groups = HashMap::new();
                 for reference in references {
-                    if !ids.contains(reference.datum.as_str()) {
+                    if !matches!(
+                        definitions.get(reference.datum.as_str()),
+                        Some(PmiDefinition::Datum { .. })
+                    ) {
                         invalid(
                             findings,
                             annotation.id.as_str(),
                             "unresolved datum reference",
                         );
                     }
-                    if reference.precedence == 0 || !precedence.insert(reference.precedence) {
+                    if reference.precedence == 0 {
+                        invalid(findings, annotation.id.as_str(), "invalid datum precedence");
+                    }
+                    compartments
+                        .entry(reference.precedence)
+                        .or_default()
+                        .push(reference);
+                    if let Some(group) = reference.common_group {
+                        if common_groups
+                            .insert(group, reference.precedence)
+                            .is_some_and(|precedence| precedence != reference.precedence)
+                        {
+                            invalid(
+                                findings,
+                                annotation.id.as_str(),
+                                "common datum group spans precedence compartments",
+                            );
+                        }
+                    }
+                }
+                for compartment in compartments.values() {
+                    let common_group = compartment[0].common_group;
+                    let common = common_group.is_some()
+                        && compartment.len() >= 2
+                        && compartment
+                            .iter()
+                            .all(|reference| reference.common_group == common_group)
+                        && compartment
+                            .iter()
+                            .all(|reference| reference.modifiers == compartment[0].modifiers);
+                    if compartment.len() != 1 && !common
+                        || compartment.len() == 1 && common_group.is_some()
+                    {
                         invalid(findings, annotation.id.as_str(), "invalid datum precedence");
                     }
                 }
@@ -65,10 +107,12 @@ pub(super) fn check_pmi(ir: &CadIr, findings: &mut Vec<Finding>) {
                         "invalid tolerance magnitude",
                     );
                 }
-                if datum_system
-                    .as_ref()
-                    .is_some_and(|id| !ids.contains(id.as_str()))
-                {
+                if datum_system.as_ref().is_some_and(|id| {
+                    !matches!(
+                        definitions.get(id.as_str()),
+                        Some(PmiDefinition::DatumSystem { .. })
+                    )
+                }) {
                     invalid(findings, annotation.id.as_str(), "unresolved datum system");
                 }
             }
