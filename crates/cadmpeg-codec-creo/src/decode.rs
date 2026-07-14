@@ -6150,6 +6150,14 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Line { origin, direction }, "parallel_cylinder_tangent_line"))
                 if origin.x == 2.0 && direction.z == 1.0
         ));
+        assert_eq!(
+            solve_carriers(&[
+                cap,
+                parallel_cylinder([0.0, 0.0, 0.0], 2.0),
+                parallel_cylinder([5.0, 0.0, 0.0], 3.0),
+            ]),
+            Some([2.0, 0.0, 3.0])
+        );
         assert!(matches!(
             carrier_intersection_curve(
                 parallel_cylinder([0.0, 0.0, 0.0], 5.0),
@@ -6334,6 +6342,28 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                     candidates.extend(intersect_two_planes_with_cylinder(
                         *first, *second, *cylinder,
                     ));
+                } else if let ([plane], [first, second]) = (planes.as_slice(), cylinders.as_slice())
+                {
+                    let Some((CurveGeometry::Line { origin, direction }, _)) =
+                        carrier_intersection_curve(
+                            CarrierEquation::Cylinder(*first),
+                            CarrierEquation::Cylinder(*second),
+                        )
+                    else {
+                        continue;
+                    };
+                    let line_origin = [origin.x, origin.y, origin.z];
+                    let line_direction = [direction.x, direction.y, direction.z];
+                    let denominator = dot(plane.normal, line_direction);
+                    if denominator.abs() <= 1e-12 {
+                        continue;
+                    }
+                    let parameter = (dot(plane.normal, plane.origin)
+                        - dot(plane.normal, line_origin))
+                        / denominator;
+                    candidates.push(std::array::from_fn(|index| {
+                        line_origin[index] + parameter * line_direction[index]
+                    }));
                 }
             }
         }
