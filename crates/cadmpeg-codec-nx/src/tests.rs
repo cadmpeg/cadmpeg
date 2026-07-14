@@ -373,7 +373,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 18);
+    assert_eq!(namespace.version, 19);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -510,6 +510,18 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(booleans[0].kind, crate::native::FeatureBooleanKind::Unite);
     assert_eq!(booleans[0].target_object_index, 6466);
     assert_eq!(booleans[0].tool_object_indices, [6476, 127]);
+    let feature = result.ir.model.features.first().expect("neutral feature");
+    assert_eq!(feature.name.as_deref(), Some("UNITE"));
+    assert_eq!(feature.native_ref.as_deref(), Some(labels[0].id.as_str()));
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Combine {
+            target: cadmpeg_ir::features::BodySelection::Native(target),
+            tools: cadmpeg_ir::features::BodySelection::Native(tools),
+            op: cadmpeg_ir::features::BooleanOp::Join,
+        } if target == "nx:om-object-index#6466" && tools == "nx:om-object-indices#6476,127"
+    ));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]
@@ -3254,7 +3266,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 18);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 19);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

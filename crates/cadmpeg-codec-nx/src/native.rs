@@ -236,10 +236,11 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         }) else {
             continue;
         };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         labels.extend(section.operation_labels().into_iter().enumerate().map(
             |(ordinal, label)| FeatureOperationLabel {
-                id: format!("{}:operation-label#{ordinal}", link.id),
+                id: format!("nx:feature-history:operation-label#{section_key}-{ordinal}"),
                 section_link: link.id.clone(),
                 ordinal: ordinal as u32,
                 value: label.value.to_string(),
@@ -269,6 +270,7 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
         }) else {
             continue;
         };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         let labels = section.operation_labels();
         for operation in section.boolean_operations() {
@@ -283,9 +285,10 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
                 crate::om::BooleanOperationKind::Subtract => FeatureBooleanKind::Subtract,
                 crate::om::BooleanOperationKind::Intersect => FeatureBooleanKind::Intersect,
             };
-            let operation_label = format!("{}:operation-label#{ordinal}", link.id);
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
             operations.push(FeatureBooleanOperation {
-                id: format!("{operation_label}:boolean"),
+                id: format!("nx:feature-history:boolean#{section_key}-{ordinal}"),
                 operation_label,
                 kind,
                 target_object_index: operation.target,

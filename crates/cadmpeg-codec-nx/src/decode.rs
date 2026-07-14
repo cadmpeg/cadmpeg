@@ -17,8 +17,9 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::features::{
-    Angle, ConfigurationId, DesignConfiguration, DesignParameter, Feature, FeatureDefinition,
-    FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
+    Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
+    Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId,
+    ParameterValue,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -891,6 +892,7 @@ fn retain_live_annotations(ir: &mut CadIr) {
         ir.model.pcurves,
         ir.model.procedural_surfaces,
         ir.model.procedural_curves,
+        ir.model.features,
     );
     if let Ok(unknowns) = ir.native_unknowns("nx") {
         ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
@@ -2659,9 +2661,9 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Materials, appearances, entity-owned attributes, feature history, and assembly \
-                  occurrence placements were not transferred: they live in the NX object-model \
-                  per-class field serialization, which is not decoded."
+        message: "Materials, appearances, entity-owned attributes, complete feature parameters, \
+                  sketches, constraints, and assembly occurrence placements were not transferred: \
+                  they live in NX object-model per-class field serialization that is not decoded."
             .to_string(),
         provenance: None,
     });
@@ -2880,9 +2882,18 @@ fn attach_native_object_model(
             });
         }
     }
+    attach_feature_operations(
+        ir,
+        &feature_operation_labels,
+        &feature_boolean_operations,
+        annotations,
+    );
     attach_expression_parameters(ir, &expressions, annotations);
+    ir.model
+        .features
+        .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(18);
+    namespace.version = namespace.version.max(19);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2941,6 +2952,77 @@ fn attach_native_object_model(
         namespace.set_arena("external_reference_records", &external_reference_records)?;
     }
     Ok(())
+}
+
+fn attach_feature_operations(
+    ir: &mut CadIr,
+    labels: &[crate::native::FeatureOperationLabel],
+    booleans: &[crate::native::FeatureBooleanOperation],
+    annotations: &mut AnnotationBuilder,
+) {
+    let stream = annotations.stream("nx:container");
+    let base_ordinal = ir.model.features.len() as u64;
+    let booleans = booleans
+        .iter()
+        .map(|operation| (operation.operation_label.as_str(), operation))
+        .collect::<BTreeMap<_, _>>();
+    for (ordinal, label) in labels.iter().enumerate() {
+        let key = label.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let id = FeatureId(format!("nx:feature-history:feature#{key}"));
+        let mut source_properties = BTreeMap::new();
+        for (slot, value) in label.object_indices.iter().enumerate() {
+            source_properties.insert(
+                format!("object_index.{slot}"),
+                value.map_or_else(|| "null".to_string(), |value| value.to_string()),
+            );
+        }
+        let definition = booleans.get(label.id.as_str()).map_or_else(
+            || FeatureDefinition::Native {
+                kind: label.value.clone(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::new(),
+            },
+            |operation| FeatureDefinition::Combine {
+                target: BodySelection::Native(format!(
+                    "nx:om-object-index#{}",
+                    operation.target_object_index
+                )),
+                tools: BodySelection::Native(format!(
+                    "nx:om-object-indices#{}",
+                    operation
+                        .tool_object_indices
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )),
+                op: match operation.kind {
+                    crate::native::FeatureBooleanKind::Unite => BooleanOp::Join,
+                    crate::native::FeatureBooleanKind::Subtract => BooleanOp::Cut,
+                    crate::native::FeatureBooleanKind::Intersect => BooleanOp::Intersect,
+                },
+            },
+        );
+        annotations
+            .note(&id, stream, label.source_offset)
+            .tag("FEATURE_OPERATION");
+        annotations.exactness(&id, Exactness::Derived);
+        ir.model.features.push(Feature {
+            id,
+            ordinal: base_ordinal + ordinal as u64,
+            name: Some(label.value.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties,
+            source_tag: Some(label.value.clone()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: Some(label.id.clone()),
+        });
+    }
 }
 
 pub(crate) fn attach_expression_parameters(
