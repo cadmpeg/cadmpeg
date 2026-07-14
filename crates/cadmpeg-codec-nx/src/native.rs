@@ -423,6 +423,25 @@ pub struct FeatureOperationBodyScalarTriple {
     pub source_offsets: [u64; 3],
 }
 
+/// Ordered member index in a branch-`11` operation body clause.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureOperationBodyMember {
+    /// Globally unique member identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Zero-based member order in the counted lane.
+    pub ordinal: u32,
+    /// Decoded compact index.
+    pub member_index: u32,
+    /// Absolute file offset of the compact-index marker.
+    pub source_offset: u64,
+}
+
 /// Structured `32` branch following an extrusion body-reference field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureExtrudePayload32Branch {
@@ -1184,6 +1203,50 @@ pub fn feature_operation_body_scalar_triples(
         }
     }
     triples
+}
+
+/// Decode ordered member lanes following branch-`11` operation body clauses.
+pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOperationBodyMember> {
+    let sections = container.om_sections();
+    let mut members = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            members.extend(
+                crate::om::operation_body_members(record)
+                    .into_iter()
+                    .map(|member| FeatureOperationBodyMember {
+                        id: format!(
+                            "nx:feature-history:operation-body-member#{section_key}-{operation_ordinal}-{}-{}",
+                            member.body_reference_ordinal, member.ordinal
+                        ),
+                        operation_label: format!(
+                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                        ),
+                        body_reference_ordinal: member.body_reference_ordinal,
+                        body_object_index: member.body_object_index,
+                        ordinal: member.ordinal,
+                        member_index: member.member_index,
+                        source_offset: entry_offset + member.offset as u64,
+                    }),
+            );
+        }
+    }
+    members
 }
 
 /// Decode structured `32` branches following extrusion body-reference fields.

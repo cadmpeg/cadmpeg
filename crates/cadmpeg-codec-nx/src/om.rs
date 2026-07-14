@@ -327,6 +327,21 @@ pub struct OperationBodyScalarTriple {
     pub scalars: [PayloadScalar; 3],
 }
 
+/// One wrapped member index in a branch-`11` operation body clause.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationBodyMember {
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Zero-based member order in the counted lane.
+    pub ordinal: u32,
+    /// Decoded compact index.
+    pub member_index: u32,
+    /// Absolute offset of the compact-index marker.
+    pub offset: usize,
+}
+
 /// Structured `32` branch following an extrusion body reference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtrudePayload32Branch {
@@ -866,6 +881,68 @@ pub fn operation_body_scalar_triples(
                 branch,
                 scalars: scalars.try_into().ok()?,
             })
+        })
+        .collect()
+}
+
+/// Decode wrapped member lanes following branch-`11` body scalar clauses.
+pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyMember> {
+    operation_body_references(record)
+        .into_iter()
+        .enumerate()
+        .flat_map(|(body_ordinal, reference)| {
+            let Some(token) = reference.offset.checked_sub(record.offset) else {
+                return Vec::new();
+            };
+            let Some((_, end)) = feature_object_index(record.bytes, token) else {
+                return Vec::new();
+            };
+            if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
+                return Vec::new();
+            }
+            let mut at = end + 2;
+            for _ in 0..3 {
+                let Some((_, _, width)) = record.bytes.get(at..).and_then(payload_scalar) else {
+                    return Vec::new();
+                };
+                at += width;
+            }
+            if record.bytes.get(at) != Some(&0x01) {
+                return Vec::new();
+            }
+            let Some(count) = record.bytes.get(at + 1).copied().map(usize::from) else {
+                return Vec::new();
+            };
+            if count < 2 {
+                return Vec::new();
+            }
+            at += 2;
+            let mut members = Vec::with_capacity(count - 1);
+            for ordinal in 0..count - 1 {
+                if record.bytes.get(at) != Some(&0x2e) {
+                    return Vec::new();
+                }
+                at += 1;
+                let member_at = at;
+                let Some((CompactIndex::Value(member_index), width)) =
+                    record.bytes.get(at..).and_then(compact_index)
+                else {
+                    return Vec::new();
+                };
+                at += width;
+                if record.bytes.get(at) != Some(&0x00) {
+                    return Vec::new();
+                }
+                at += 1;
+                members.push(OperationBodyMember {
+                    body_reference_ordinal: body_ordinal as u32,
+                    body_object_index: reference.object_index,
+                    ordinal: ordinal as u32,
+                    member_index,
+                    offset: record.offset + member_at,
+                });
+            }
+            members
         })
         .collect()
 }

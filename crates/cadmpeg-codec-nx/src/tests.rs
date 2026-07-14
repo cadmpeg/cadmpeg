@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 42);
+    assert_eq!(namespace.version, 43);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1442,6 +1442,42 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     assert_eq!(
         triples[1].scalars.map(|scalar| scalar.value),
         [2.0, 0.0, 0.0]
+    );
+}
+
+#[test]
+fn om_operation_body_branch_11_decodes_wrapped_member_lane_atomically() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SEW",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let bytes = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00\x01\x03\x2e\x7f\x00\x2e\x80\x01\x00";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes,
+        payload_offset: 100,
+        payload: bytes,
+        label,
+    };
+    let members = crate::om::operation_body_members(record);
+    assert_eq!(members.len(), 2);
+    assert_eq!(members[0].body_reference_ordinal, 0);
+    assert_eq!(members[0].body_object_index, 66);
+    assert_eq!(members[0].member_index, 127);
+    assert_eq!(members[0].offset, 122);
+    assert_eq!(members[1].member_index, 1);
+
+    let truncated = &bytes[..bytes.len() - 1];
+    assert!(
+        crate::om::operation_body_members(crate::om::OperationRecord {
+            bytes: truncated,
+            payload: truncated,
+            ..record
+        })
+        .is_empty()
     );
 }
 
@@ -4210,7 +4246,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 42);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 43);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
