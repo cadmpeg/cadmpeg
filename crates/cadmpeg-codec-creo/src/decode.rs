@@ -6605,6 +6605,83 @@ fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Ve
         })
 }
 
+fn reconcile_feature_links(scan: &ContainerScan, ir: &mut CadIr) {
+    let emitted = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.id.clone())
+        .collect::<BTreeSet<_>>();
+    for feature in &mut ir.model.features {
+        let Some(feature_id) = feature
+            .id
+            .as_str()
+            .strip_prefix("creo:model:feature#")
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        feature.dependencies = scan
+            .feature_affected_ids
+            .iter()
+            .filter(|record| {
+                record.feature_id == feature_id
+                    && matches!(
+                        record.kind,
+                        crate::feature::AffectedIdKind::StrongParents
+                            | crate::feature::AffectedIdKind::Parents
+                    )
+            })
+            .flat_map(|record| &record.ids)
+            .chain(
+                scan.feature_operations
+                    .iter()
+                    .filter(|operation| operation.feature_id == feature_id)
+                    .filter_map(|operation| operation.parent_feature_id.as_ref()),
+            )
+            .map(|dependency| IrFeatureId(format!("creo:model:feature#{dependency}")))
+            .filter(|dependency| emitted.contains(dependency))
+            .filter(|dependency| *dependency != feature.id)
+            .fold(Vec::new(), |mut dependencies, dependency| {
+                if !dependencies.contains(&dependency) {
+                    dependencies.push(dependency);
+                }
+                dependencies
+            });
+        if feature.parent.is_none() {
+            feature.parent = scan
+                .feature_operations
+                .iter()
+                .find(|operation| operation.feature_id == feature_id)
+                .and_then(|operation| operation.parent_feature_id)
+                .map(|parent| IrFeatureId(format!("creo:model:feature#{parent}")))
+                .filter(|parent| *parent != feature.id && emitted.contains(parent));
+        }
+    }
+    let mut remaining = (0..ir.model.features.len()).collect::<Vec<_>>();
+    let mut ordered = Vec::with_capacity(remaining.len());
+    let mut preceding = BTreeSet::new();
+    while !remaining.is_empty() {
+        let Some(position) = remaining.iter().position(|index| {
+            let feature = &ir.model.features[*index];
+            feature
+                .dependencies
+                .iter()
+                .chain(feature.parent.iter())
+                .all(|required| !emitted.contains(required) || preceding.contains(required))
+        }) else {
+            break;
+        };
+        let index = remaining.remove(position);
+        preceding.insert(ir.model.features[index].id.clone());
+        ordered.push(index);
+    }
+    ordered.extend(remaining);
+    for (ordinal, index) in ordered.into_iter().enumerate() {
+        ir.model.features[index].ordinal = ordinal as u64;
+    }
+}
+
 fn resolved_revolution_axis(
     definition: &crate::feature::FeatureDefinition,
     transform: &crate::placement::FeatureSectionTransform,
@@ -13855,6 +13932,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             native_ref: owning_feature_definition_ref(scan, row.feature_id),
         });
     }
+    reconcile_feature_links(scan, &mut ir);
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
     let surface_parameters = surface_parameter_records(scan);
