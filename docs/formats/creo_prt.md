@@ -346,6 +346,11 @@ to `((head-c0)<<16)|(XX<<8)|YY`.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
 and sense `3` selects the native second endpoint; the selected loci coincide.
+For an arc or circle operand, sense `4` selects its center. A type-14 incidence
+stores a symmetry axis as a sense-zero line followed by two point loci selected
+with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero entity
+and a sense-`2`, sense-`3`, or sense-`4` point locus makes the entity and locus
+coincident.
 For an `arcorient = 0` arc these map to the neutral end and start loci,
 respectively, because the analytic arc orientation is reversed. A two-item
 type-four incidence makes the referenced entities tangent at their selected
