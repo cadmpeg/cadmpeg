@@ -3585,6 +3585,25 @@ fn parse_face_operand(
             )
         })
         .collect::<Vec<_>>();
+    if recipe_program.get(0..2) != Some(&[0, -1]) {
+        return None;
+    }
+    let node_count = usize::try_from(*recipe_program.get(2)?).ok()?;
+    if node_count == 0 || node_count > 100_000 {
+        return None;
+    }
+    let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
+    let recipe_node_offsets = recipe_program
+        .windows(3)
+        .enumerate()
+        .filter(|(_, values)| *values == [-1, -1, 2])
+        .map(|(index, _)| u64::try_from(recipe_program_at.checked_add(index.checked_mul(4)?)?).ok())
+        .collect::<Option<Vec<_>>>()?;
+    if recipe_node_offsets.len() != node_count
+        || recipe_node_offsets.first()? != &recipe_program_offset.checked_add(12)?
+    {
+        return None;
+    }
     Some(DesignFaceOperand {
         id: format!(
             "f3d:{}:design-face-operand#{}",
@@ -3602,8 +3621,9 @@ fn parse_face_operand(
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
         recipe_kind: recipe.kind,
-        recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
+        recipe_program_offset,
         recipe_program,
+        recipe_node_offsets,
         candidate_faces: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
@@ -6241,7 +6261,7 @@ mod relation_tests {
         let recipe_name_at = bytes.len() + 4;
         bytes.extend_from_slice(&24u32.to_le_bytes());
         bytes.extend_from_slice(b"bounded_face_recipe_data");
-        for value in [0i32, -1, 4] {
+        for value in [0i32, -1, 1, -1, -1, 2, 7] {
             bytes.extend_from_slice(&value.to_le_bytes());
         }
         let next_at = header(&mut bytes, *b"306", 104);
@@ -6316,7 +6336,8 @@ mod relation_tests {
         assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
         assert_eq!(operand.recipe_id, face_recipe.id);
         assert_eq!(operand.recipe_program_offset, recipe_name_at as u64 + 24);
-        assert_eq!(operand.recipe_program, [0, -1, 4]);
+        assert_eq!(operand.recipe_program, [0, -1, 1, -1, -1, 2, 7]);
+        assert_eq!(operand.recipe_node_offsets, [recipe_name_at as u64 + 36]);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, next_at);
         bind_face_operand_candidates(

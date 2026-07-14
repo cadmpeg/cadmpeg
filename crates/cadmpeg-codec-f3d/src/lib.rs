@@ -917,6 +917,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .unwrap_or_default();
         expected_faces.sort_by(|left, right| left.0.cmp(&right.0));
         expected_faces.dedup();
+        let expected_node_offsets = operand
+            .recipe_program
+            .windows(3)
+            .enumerate()
+            .filter(|(_, values)| *values == [-1, -1, 2])
+            .map(|(index, _)| {
+                operand
+                    .recipe_program_offset
+                    .saturating_add(u64::try_from(index).unwrap_or(u64::MAX).saturating_mul(4))
+            })
+            .collect::<Vec<_>>();
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -948,7 +959,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 records::ConstructionRecipeKind::Face
                     | records::ConstructionRecipeKind::BoundedFace
             )
-            && !operand.recipe_program.is_empty()
+            && operand.recipe_program.len() >= 3
+            && operand.recipe_program.get(0..2) == Some(&[0, -1])
+            && usize::try_from(operand.recipe_program[2]).ok()
+                == Some(operand.recipe_node_offsets.len())
+            && operand.recipe_node_offsets == expected_node_offsets
+            && operand.recipe_node_offsets.first()
+                == Some(&operand.recipe_program_offset.saturating_add(12))
             && operand.recipe_program_offset
                 == recipe.map_or(u64::MAX, |recipe| {
                     recipe
