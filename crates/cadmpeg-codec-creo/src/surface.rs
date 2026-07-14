@@ -1400,7 +1400,9 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
             cursor += 1;
             continue;
         }
-        if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
+        if let Some((value, next)) =
+            scalar::decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+        {
             slots.push(Some(value));
             cursor = next;
         } else {
@@ -2126,6 +2128,30 @@ mod tests {
                 ],
             })
         );
+    }
+
+    #[test]
+    fn named_local_system_uses_the_signed_coordinate_dict_lane() {
+        let payload = b"srf_prim_ptr(torus)\0\
+            \xe0\x02local_sys\0\xf9\x04\x03\
+            \x7a\xeb\xb6\x28\xd0\x03\x82\
+            \x28\xb2\x01\x83\xce\x09\x70\xf1\
+            \x18\xe5\x10\
+            \x41\xb2\x01\x83\xce\x09\x70\xf1\
+            \x7a\xeb\xb6\x28\xd0\x03\x82\x18\
+            \x48\x66\x80\x48\x08\x00\x2f\x44\x00";
+        let records = named_prototype_records(payload);
+        let SurfaceNamedValue::ScalarArray { values, .. } =
+            &records[0].field("local_sys").expect("local system").value
+        else {
+            panic!("scalar local system");
+        };
+
+        assert_eq!(values[0], Some(0.997_523_383_819_597_8));
+        assert_eq!(values[1], Some(0.070_335_614_969_227_37));
+        assert_eq!(values[6], Some(0.070_335_614_969_227_37));
+        assert_eq!(values[7], Some(0.997_523_383_819_597_8));
+        assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
     }
 
     #[test]
