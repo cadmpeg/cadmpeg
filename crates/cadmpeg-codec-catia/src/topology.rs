@@ -3927,6 +3927,57 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 }
 
 impl MeshSelectionSearch<'_> {
+    fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> usize {
+        fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
+            let port = |reversed: bool| {
+                use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
+                    !reversed
+                } else {
+                    reversed
+                }))
+            };
+            match use_.reversed {
+                Some(reversed) => [port(reversed), None],
+                None => [port(false), port(true)],
+            }
+        }
+
+        let node_count = quotient.union.len();
+        let mut possible = UnionFind::new(node_count);
+        for node in 0..node_count {
+            let root = quotient.union.find(node);
+            possible.union(node, root);
+        }
+        let before = (0..node_count)
+            .filter(|&node| possible.find(node) == node)
+            .count();
+        for (face, selected) in self.selected.iter().enumerate() {
+            if selected.is_some() {
+                continue;
+            }
+            for assignment in &self.assignments[face] {
+                for boundary in &assignment.boundaries {
+                    if boundary.is_empty() {
+                        continue;
+                    }
+                    for index in 0..boundary.len() {
+                        let left = ports(boundary[index], true);
+                        let right = ports(boundary[(index + 1) % boundary.len()], false);
+                        for left in left.into_iter().flatten() {
+                            for right in right.into_iter().flatten() {
+                                possible.union(left, right);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let after = (0..node_count)
+            .filter(|&node| possible.find(node) == node)
+            .count();
+        before.saturating_sub(after)
+    }
+
     fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
         fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
             use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
@@ -4146,15 +4197,7 @@ impl MeshSelectionSearch<'_> {
         if root_count < self.vertex_points.len() {
             return;
         }
-        let remaining_merges = self
-            .selected
-            .iter()
-            .enumerate()
-            .filter(|(_, selected)| selected.is_none())
-            .filter_map(|(face, _)| self.assignments[face].first())
-            .flat_map(|assignment| &assignment.boundaries)
-            .map(Vec::len)
-            .sum::<usize>();
+        let remaining_merges = self.remaining_equation_merge_capacity(&mut measured);
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
             return;
         }
@@ -5728,6 +5771,49 @@ mod motif_tests {
         quotient.merge(1, 2).expect("first boundary corner");
         quotient.merge(3, 0).expect("second boundary corner");
         assert!(!mesh_assignment_can_merge(&assignment, &mut quotient));
+    }
+
+    #[test]
+    fn remaining_merge_capacity_counts_distinct_quotient_equations() {
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: Some(false),
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 0,
+                    reversed: Some(false),
+                },
+            ]],
+        };
+        let assignments = vec![vec![assignment.clone()], vec![assignment]];
+        let edge_candidates = vec![Vec::new(); 2];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            face_work: vec![Some(1); 2],
+            edge_candidates: &edge_candidates,
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: vec![None; 2],
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![HashSet::from([0, 1]); 4],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+
+        assert_eq!(search.remaining_equation_merge_capacity(&mut quotient), 2);
+        quotient.merge(1, 2).expect("first repeated equation");
+        assert_eq!(search.remaining_equation_merge_capacity(&mut quotient), 1);
     }
 
     #[test]
