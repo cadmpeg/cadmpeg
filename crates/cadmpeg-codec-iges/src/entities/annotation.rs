@@ -32,11 +32,7 @@ fn font_valid(value: i64, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
 }
 
 fn general_note_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
-    let Some(count) = record
-        .integer(1)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|count| *count > 0)
-    else {
+    let Some(count) = record.count(1).filter(|count| *count > 0) else {
         return false;
     };
     exact_parameter_count(record, 2 + count * 12, entries)
@@ -71,11 +67,7 @@ fn new_general_note_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let Some(count) = record
-        .integer(12)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|count| *count > 0)
-    else {
+    let Some(count) = record.count(12).filter(|count| *count > 0) else {
         return false;
     };
     exact_parameter_count(record, 13 + count * 20, entries)
@@ -146,11 +138,7 @@ fn leader_valid(
     record: &ParameterRecord,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    let Some(count) = record
-        .integer(1)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|count| *count > 0)
-    else {
+    let Some(count) = record.count(1).filter(|count| *count > 0) else {
         return false;
     };
     let dimensions_valid = record
@@ -498,9 +486,7 @@ fn flag_or_label_valid(
     let note = pointer(record, note_index, entries);
     let note_valid =
         note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
-    let count = record
-        .integer(count_index)
-        .and_then(|value| usize::try_from(value).ok());
+    let count = record.count(count_index);
     let leaders_valid = count.is_some_and(|count| {
         (0..count).all(|offset| {
             pointer(record, leader_start + offset, entries).is_some_and(|sequence| {
@@ -519,9 +505,8 @@ fn flag_or_label_valid(
             && (1..=4).all(|index| finite(record, index))
             && note
                 .and_then(|sequence| records.get(&sequence))
-                .and_then(|note| note.integer(1))
+                .and_then(|note| note.count(1))
                 .is_some_and(|strings| {
-                    let strings = usize::try_from(strings).unwrap_or_default();
                     (0..strings)
                         .map(|offset| {
                             note.and_then(|sequence| records.get(&sequence))
@@ -548,11 +533,7 @@ fn general_symbol_valid(
             .is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records)),
         None => false,
     };
-    let Some(geometry_count) = record
-        .integer(2)
-        .and_then(|value| usize::try_from(value).ok())
-        .filter(|count| *count > 0)
-    else {
+    let Some(geometry_count) = record.count(2).filter(|count| *count > 0) else {
         return false;
     };
     let geometry_valid = (0..geometry_count).all(|offset| {
@@ -563,10 +544,7 @@ fn general_symbol_valid(
         })
     });
     let leader_count_index = 3 + geometry_count;
-    let Some(leader_count) = record
-        .integer(leader_count_index)
-        .and_then(|value| usize::try_from(value).ok())
-    else {
+    let Some(leader_count) = record.count(leader_count_index) else {
         return false;
     };
     let leaders_valid = (0..leader_count).all(|offset| {
@@ -639,10 +617,7 @@ fn sectioned_area_valid(
                 && finite_or_omitted(record, 7)
         }
     });
-    let Some(island_count) = record
-        .integer(8)
-        .and_then(|value| usize::try_from(value).ok())
-    else {
+    let Some(island_count) = record.count(8) else {
         return false;
     };
     let islands_valid = (0..island_count).all(|offset| {

@@ -3092,8 +3092,7 @@ pub(crate) fn store(
                 .then(|| format!("iges:native:transformation#D{}", entry.transform));
             if entry.entity_type == 212 {
                 let count = record
-                    .and_then(|record| record.integer(1))
-                    .and_then(|value| usize::try_from(value).ok())
+                    .and_then(|record| record.count(1))
                     .unwrap_or_default();
                 NativeAnnotation::GeneralNote {
                     id: format!("iges:presentation:annotation#D{}", entry.sequence),
@@ -3106,8 +3105,7 @@ pub(crate) fn store(
                 }
             } else if entry.entity_type == 213 {
                 let count = record
-                    .and_then(|record| record.integer(12))
-                    .and_then(|value| usize::try_from(value).ok())
+                    .and_then(|record| record.count(12))
                     .unwrap_or_default();
                 NativeAnnotation::NewGeneralNote {
                     id: format!("iges:presentation:annotation#D{}", entry.sequence),
@@ -3179,8 +3177,7 @@ pub(crate) fn store(
                 }
             } else if entry.entity_type == 214 {
                 let count = record
-                    .and_then(|record| record.integer(1))
-                    .and_then(|value| usize::try_from(value).ok())
+                    .and_then(|record| record.count(1))
                     .unwrap_or_default();
                 let z = record.and_then(|record| record.number(4));
                 NativeAnnotation::Leader {
@@ -3279,11 +3276,7 @@ pub(crate) fn store(
                             (1, 2, 3)
                         };
                         let leader_count = record
-                            .and_then(|record| record.integer(count_index))
-                            .and_then(|value| usize::try_from(value).ok())
-                            .filter(|count| {
-                                record.is_some_and(|record| *count <= record.tokens.len())
-                            })
+                            .and_then(|record| record.count(count_index))
                             .unwrap_or_default();
                         let leaders = (0..leader_count)
                             .map(|offset| annotation_link(leader_start + offset))
@@ -3361,13 +3354,11 @@ pub(crate) fn store(
                     },
                     228 => {
                         let geometry_count = record
-                            .and_then(|record| record.integer(2))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(2))
                             .unwrap_or_default();
                         let leader_count_index = 3 + geometry_count;
                         let leader_count = record
-                            .and_then(|record| record.integer(leader_count_index))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(leader_count_index))
                             .unwrap_or_default();
                         NativeAnnotation::GeneralSymbol {
                             id,
@@ -3384,8 +3375,7 @@ pub(crate) fn store(
                     }
                     230 => {
                         let island_count = record
-                            .and_then(|record| record.integer(8))
-                            .and_then(|value| usize::try_from(value).ok())
+                            .and_then(|record| record.count(8))
                             .unwrap_or_default();
                         NativeAnnotation::SectionedArea {
                             id,
@@ -3415,9 +3405,7 @@ pub(crate) fn store(
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
-            let count = record
-                .integer(3)
-                .and_then(|value| usize::try_from(value).ok())?;
+            let count = record.count(3)?;
             let members = (0..count)
                 .map(|index| {
                     record

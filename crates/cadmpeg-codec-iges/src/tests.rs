@@ -4811,6 +4811,31 @@ fn decode_bounds_declared_presentation_counts_by_record_tokens() {
 }
 
 #[test]
+fn decode_bounds_declared_annotation_counts_by_record_tokens() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 212,
+        form: 0,
+        label: "BADCOUNT".into(),
+        status: "00010100",
+        parameters: "212,9223372036854775807;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("text count")));
+    let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
+    assert!(annotations[0].fields["strings"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(
