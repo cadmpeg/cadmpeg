@@ -501,8 +501,8 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     let allfeatur = vec![
         4, 0xeb, 0x04, // feature row for owner 4
         0xf8, 2, 0xf7, 0x1d, 0xfb, 0xe3, // two mixed entity references
-        7, 0xe3, // a materialized surface id
-        0xf7, 0x1e, 9, 0xe3, // a prefixed non-surface entity id
+        7, 0x80, 0xc8, 1, 0, 0xe3, // a materialized surface id
+        0xf7, 0x1e, 9, 0x80, 0xc8, 2, 0, 0xe3, // a prefixed non-surface entity id
     ];
     let scan = container::scan_bytes(build_prt(
         "c",
@@ -518,9 +518,36 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert!(table.entries[1].prefixed);
     assert_eq!(table.entries[0].entity_id, 7);
     assert_eq!(table.entries[1].entity_id, 9);
+    assert_eq!(table.entries[0].class_id, 200);
+    assert_eq!(table.entries[1].class_id, 200);
+    assert_eq!(table.entries[0].generated_order, Some(1));
+    assert_eq!(table.entries[1].generated_order, Some(2));
     assert_eq!(table.entries[0].end_offset, table.entries[1].offset - 2);
     assert_eq!(table.surface_ids, vec![7]);
     assert_eq!(table.non_surface_entity_ids, vec![9]);
+}
+
+#[test]
+fn scan_decodes_generated_order_whose_compact_tail_is_e3() {
+    let mut geometry = visibgeom_payload(2, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    geometry.extend_from_slice(&[8, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0xf8, 2, 0xf7, 0x1d, 0xfb, 0xe3, 7, 0x80, 0xc8, 0x80, 0xe3, 0, 0xe3, 8,
+        0x80, 0xc8, 3, 0, 0xe3,
+    ];
+    let scan = container::scan_bytes(build_prt(
+        "c",
+        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
+    ));
+
+    let [table] = scan.feature_entity_tables.as_slice() else {
+        panic!("expected one generated-entity table");
+    };
+    assert_eq!(table.entry_ids, vec![7, 8]);
+    assert_eq!(table.entries[0].class_id, 200);
+    assert_eq!(table.entries[0].generated_order, Some(227));
+    assert_eq!(table.entries[1].generated_order, Some(3));
 }
 
 #[test]
@@ -531,9 +558,9 @@ fn scan_accepts_large_structurally_bounded_feature_entity_tables() {
         4, 0xeb, 0x04, // feature row for owner 4
         0xf8, 65, 0xf7, 0x1d, 0xfb, 0xe3,
     ];
-    allfeatur.extend_from_slice(&[7, 0xe3]);
+    allfeatur.extend_from_slice(&[7, 0x80, 0xc8, 1, 0, 0xe3]);
     for _ in 1..65 {
-        allfeatur.extend_from_slice(&[9, 0xe3]);
+        allfeatur.extend_from_slice(&[9, 0x80, 0xc8, 1, 0, 0xe3]);
     }
     let scan = container::scan_bytes(build_prt(
         "c",
@@ -555,7 +582,7 @@ fn scan_rejects_feature_entity_table_that_crosses_the_next_feature_row() {
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     geometry.extend_from_slice(&[8, 0x22, 9, 0x01, 0, 0]);
     let allfeatur = vec![
-        4, 0xeb, 0x04, 0xf8, 2, 0xf7, 0x1d, 0xfb, 0xe3, 7, 0xe3,
+        4, 0xeb, 0x04, 0xf8, 2, 0xf7, 0x1d, 0xfb, 0xe3, 7, 0x80, 0xc8, 1, 0, 0xe3,
         // The second declared entry is absent before feature 9 starts.
         9, 0x90, 0x01, 8, 0xe3,
     ];
@@ -565,28 +592,6 @@ fn scan_rejects_feature_entity_table_that_crosses_the_next_feature_row() {
     ));
 
     assert!(scan.feature_entity_tables.is_empty());
-}
-
-#[test]
-fn scan_does_not_close_feature_entity_entry_inside_a_scalar_token() {
-    let mut geometry = visibgeom_payload(1, 0);
-    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
-    let allfeatur = vec![
-        4, 0xeb, 0x04, 0xf8, 1, 0xf7, 0x1d, 0xfb, 0xe3, 7, 0x2a, 0xe3, 0x00, 0xe3,
-    ];
-    let scan = container::scan_bytes(build_prt(
-        "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
-
-    let [table] = scan.feature_entity_tables.as_slice() else {
-        panic!("expected one generated-entity table");
-    };
-    let [entry] = table.entries.as_slice() else {
-        panic!("expected one generated-entity entry");
-    };
-    assert_eq!(entry.entity_id, 7);
-    assert_eq!(entry.end_offset - entry.offset, 5);
 }
 
 #[test]

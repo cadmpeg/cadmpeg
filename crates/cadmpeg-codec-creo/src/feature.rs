@@ -235,6 +235,10 @@ pub struct FeatureEntityTable {
 pub struct FeatureEntityTableEntry {
     /// Entity identifier at the start of the record body.
     pub entity_id: u32,
+    /// Positional entry class following the entity identifier.
+    pub class_id: u32,
+    /// Generated-entity order carried by class `200` entries.
+    pub generated_order: Option<u32>,
     /// Whether the record starts with the `f7 1e` entry prefix.
     pub prefixed: bool,
     /// Byte offset of the entity identifier in the original stream.
@@ -4640,12 +4644,24 @@ fn read_entries(
         }
         let offset = cursor;
         let (id, after) = psb::reference_id(payload, cursor).ok()?;
-        let close = psb::tokens(payload.get(after..)?)
-            .into_iter()
-            .find(|token| token.kind == psb::TokenKind::CompoundClose)?;
-        let end_offset = after + close.offset + close.length;
+        let (class_id, after_class) = psb::reference_id(payload, after).ok()?;
+        let (generated_order, body_start) = if class_id == 200 {
+            match psb::reference_id(payload, after_class) {
+                Ok((order, after_order)) => (Some(order), after_order),
+                Err(_) => (None, after_class),
+            }
+        } else {
+            (None, after_class)
+        };
+        let close = payload
+            .get(body_start..)?
+            .iter()
+            .position(|&byte| byte == 0xe3)?;
+        let end_offset = body_start + close + 1;
         entries.push(FeatureEntityTableEntry {
             entity_id: id,
+            class_id,
+            generated_order,
             prefixed,
             offset,
             end_offset,
