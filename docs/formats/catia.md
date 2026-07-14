@@ -316,6 +316,7 @@ The start/end references form a global native vertex-identity namespace across c
 - **`b2 03 18`** stores surface-chart data after a two-byte payload prefix. Length `0x12` is `(u,v)`, `0x1a` is `(station,u,v)`, and `0x2a` is five unsplit f64 values.
 - **`b2 03 37`** stores a compact-int persistent-tag reference list followed by f64 `1.0`; its payload length is `0x22`, `0x24`, or `0x26`.
 - **`b2/b3/b4 03 62` owner packet:** payload length `0x52`, then `0x89`, exactly nine persistent identities, and a 62-byte numeric tail. Strong identities use `0x0a <u16le>`; weak identities use the compact integer code. The five-strong/four-weak reference vector and tail consume the complete frame.
+- **Counted `b2/b3/b4 03 61` family:** `0x80+n`, exactly `n` compact values, then a nonempty class-specific tail ending in `0x03`. Long `61` records without the leading count use a separate payload grammar.
 - **`b2 03 3b`** has payload length `0x20`: compact references followed by f64 angular scale and cone half-angle.
 - **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine f64 values. The repeated range is the native parameter interval shared by the two preceding pcurves.
 

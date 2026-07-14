@@ -719,6 +719,19 @@ pub struct B2OwnerPacket {
     pub numeric_tail: [u8; 62],
 }
 
+/// Count-prefixed class-`0x61` reference record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B2Counted61 {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Compact values selected by the leading `0x80+n` count.
+    pub references: Vec<u32>,
+    /// Remaining class-specific bytes, including the terminal `0x03`.
+    pub tail: Vec<u8>,
+}
+
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B2ConeFace {
@@ -952,6 +965,36 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
                 header_token: frame.header_token,
                 references,
                 numeric_tail,
+            })
+        })
+        .collect()
+}
+
+/// Decode the count-prefixed class-`0x61` payload family. Long class-`0x61`
+/// records without a leading count belong to a separate grammar and are not
+/// returned.
+#[must_use]
+pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
+    b_family_frames(data, 0x61)
+        .into_iter()
+        .filter_map(|frame| {
+            let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
+            if count == 0 {
+                return None;
+            }
+            let mut at = frame.payload + 1;
+            let references = (0..count)
+                .map(|_| compact_int(data, &mut at))
+                .collect::<Option<Vec<_>>>()?;
+            let tail = data.get(at..frame.end)?;
+            if tail.is_empty() || tail.last() != Some(&0x03) {
+                return None;
+            }
+            Some(B2Counted61 {
+                pos: frame.pos,
+                header_token: frame.header_token,
+                references,
+                tail: tail.to_vec(),
             })
         })
         .collect()

@@ -957,6 +957,13 @@ fn b2_owner_packet_stream() -> Vec<u8> {
     record
 }
 
+fn b2_counted_61_stream() -> Vec<u8> {
+    vec![
+        0xb2, 0x03, 0x61, 0x0c, 0x05, 0x84, 0x08, 0x14, 0x05, 0x08, 0x0e, 0x05, 0x79, 0x04, 0x4a,
+        0x41, 0x03,
+    ]
+}
+
 fn b2_cone_face_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
     for value in 0u8..16 {
@@ -2880,6 +2887,15 @@ fn b2_owner_packet_parser_closes_nine_references_and_numeric_tail() {
         [1000, 1, 1001, 2, 1002, 3, 1003, 4, 1004]
     );
     assert_eq!(packets[0].numeric_tail, std::array::from_fn(|i| i as u8));
+}
+
+#[test]
+fn b2_counted_61_parser_separates_references_from_tail() {
+    let records = crate::geometry::b2_counted_61(&b2_counted_61_stream());
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].header_token, 5);
+    assert_eq!(records[0].references, [1300, 1294, 30, 74]);
+    assert_eq!(records[0].tail, [0x41, 0x03]);
 }
 
 #[test]
