@@ -258,9 +258,17 @@ struct CreoSurfaceParameterRecord {
     boundary: &'static str,
     body: Vec<u8>,
     slots: Vec<CreoSurfaceParameterSlot>,
+    opaque_spans: Vec<CreoSurfaceParameterOpaqueSpan>,
     row_offset: usize,
     body_offset: usize,
     source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoSurfaceParameterOpaqueSpan {
+    raw: Vec<u8>,
+    offset: usize,
+    length: usize,
 }
 
 #[derive(Serialize)]
@@ -317,6 +325,15 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
                         raw: slot.raw.clone(),
                         offset: slot.offset,
                         length: slot.length,
+                    })
+                    .collect(),
+                opaque_spans: record
+                    .opaque_spans
+                    .iter()
+                    .map(|span| CreoSurfaceParameterOpaqueSpan {
+                        raw: span.raw.clone(),
+                        offset: span.offset,
+                        length: span.length,
                     })
                     .collect(),
                 row_offset: record.offset,

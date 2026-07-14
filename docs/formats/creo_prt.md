@@ -244,7 +244,8 @@ scalar slot. Bytes inside either token cannot open another scalar or terminate
 the row.
 Each bounded positional body transfers to the Creo native
 `surface_parameters` arena with its surface identifier, family, boundary kind,
-exact body bytes, and ordered decoded or opaque scalar slots.
+exact body bytes, ordered decoded or opaque scalar slots, and maximal opaque
+spans covering every byte outside those slots.
 
 ### 3.4 Planes
 

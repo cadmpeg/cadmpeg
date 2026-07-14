@@ -356,6 +356,28 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
         assert_eq!(records[0].fields["slots"][0]["raw"][index], expected);
     }
     assert_eq!(records[0].fields["slots"][0]["length"], 7);
+    assert_eq!(
+        records[0].fields["opaque_spans"].as_array().unwrap().len(),
+        0
+    );
+}
+
+#[test]
+fn decode_preserves_unframed_surface_parameter_spans() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0x11, 0xe4, 0x12, 0x13, 0x0d, 0xe3]);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode surface parameter spans");
+
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(record.fields["slots"][0]["offset"], 1);
+    assert_eq!(record.fields["slots"][1]["offset"], 4);
+    assert_eq!(record.fields["opaque_spans"][0]["offset"], 0);
+    assert_eq!(record.fields["opaque_spans"][0]["raw"][0], 0x11);
+    assert_eq!(record.fields["opaque_spans"][1]["offset"], 2);
+    assert_eq!(record.fields["opaque_spans"][1]["length"], 2);
 }
 
 #[test]

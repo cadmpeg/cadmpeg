@@ -209,12 +209,25 @@ pub struct SurfaceParameterRecord {
     pub scalar_values: Vec<f64>,
     /// Decoded scalar tokens with byte spans relative to `body`.
     pub scalar_tokens: Vec<SurfaceParameterScalar>,
+    /// Exact byte spans not owned by a recognized scalar token.
+    pub opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
     /// Structural form that bounded the body.
     pub boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
     pub offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
     pub body_offset: usize,
+}
+
+/// One maximal unframed span inside a positional surface parameter body.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceParameterOpaqueSpan {
+    /// Exact source bytes in the span.
+    pub raw: Vec<u8>,
+    /// Byte offset relative to the start of the parameter body.
+    pub offset: usize,
+    /// Number of source bytes in the span.
+    pub length: usize,
 }
 
 /// One scalar token located within a positional surface parameter body.
@@ -757,6 +770,29 @@ fn scalar_tokens(
     tokens
 }
 
+fn opaque_spans(body: &[u8], tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterOpaqueSpan> {
+    let mut spans = Vec::new();
+    let mut cursor = 0;
+    for token in tokens {
+        if cursor < token.offset {
+            spans.push(SurfaceParameterOpaqueSpan {
+                raw: body[cursor..token.offset].to_vec(),
+                offset: cursor,
+                length: token.offset - cursor,
+            });
+        }
+        cursor = token.offset + token.length;
+    }
+    if cursor < body.len() {
+        spans.push(SurfaceParameterOpaqueSpan {
+            raw: body[cursor..].to_vec(),
+            offset: cursor,
+            length: body.len() - cursor,
+        });
+    }
+    spans
+}
+
 fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
     (body.get(offset) == Some(&psb::token::NAMED_RECORD)).then_some(())?;
     let field_type = *body.get(offset + 1)?;
@@ -834,6 +870,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         }
         let body = payload[*body_start..body_end].to_vec();
         let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
+        let opaque_spans = opaque_spans(&body, &scalar_tokens);
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
@@ -841,6 +878,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
                 .filter_map(|token| token.value)
                 .collect(),
             scalar_tokens,
+            opaque_spans,
             body,
             boundary,
             offset: row.offset,
