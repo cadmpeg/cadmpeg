@@ -6206,6 +6206,28 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "sphere_intersection_circle"))
                 if center.x == 2.0 && (radius - 5.0_f64.sqrt()).abs() < 1e-12
         ));
+
+        let cone = CarrierEquation::Cone(ConeEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        });
+        assert!(matches!(
+            carrier_intersection_curve(cap, cone),
+            Some((CurveGeometry::Circle { center, radius, .. }, "plane_cone_circle"))
+                if center == Point3::new(0.0, 0.0, 3.0) && (radius - 5.0).abs() < 1e-12
+        ));
+        assert_eq!(solve_carriers(&[cone, cap, tangent]), None);
+        let cone_tangent = CarrierEquation::Plane(PlaneEquation {
+            origin: [5.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[cone, cap, cone_tangent]),
+            Some([5.0, 0.0, 3.0])
+        );
     }
 }
 
@@ -6224,6 +6246,15 @@ struct CylinderEquation {
 }
 
 #[derive(Clone, Copy)]
+struct ConeEquation {
+    origin: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+    radius: f64,
+    half_angle: f64,
+}
+
+#[derive(Clone, Copy)]
 struct SphereEquation {
     center: [f64; 3],
     ref_direction: [f64; 3],
@@ -6234,6 +6265,7 @@ struct SphereEquation {
 enum CarrierEquation {
     Plane(PlaneEquation),
     Cylinder(CylinderEquation),
+    Cone(ConeEquation),
     Sphere(SphereEquation),
 }
 
@@ -6388,6 +6420,71 @@ fn intersect_two_planes_with_sphere(
         .collect()
 }
 
+fn intersect_two_planes_with_cone(
+    first: PlaneEquation,
+    second: PlaneEquation,
+    cone: ConeEquation,
+) -> Vec<[f64; 3]> {
+    let direction = cross(first.normal, second.normal);
+    let denominator = dot(direction, direction);
+    let Some(axis) = normalized(cone.axis) else {
+        return Vec::new();
+    };
+    if denominator <= 1e-18 || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle) {
+        return Vec::new();
+    }
+    let first_distance = dot(first.normal, first.origin);
+    let second_distance = dot(second.normal, second.origin);
+    let second_cross_direction = cross(second.normal, direction);
+    let direction_cross_first = cross(direction, first.normal);
+    let line_origin: [f64; 3] = std::array::from_fn(|index| {
+        (first_distance * second_cross_direction[index]
+            + second_distance * direction_cross_first[index])
+            / denominator
+    });
+    let relative = std::array::from_fn(|index| line_origin[index] - cone.origin[index]);
+    let axial = dot(relative, axis);
+    let axial_direction = dot(direction, axis);
+    let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
+    let radial_direction =
+        std::array::from_fn(|index| direction[index] - axial_direction * axis[index]);
+    let slope = cone.half_angle.tan();
+    let local_radius = cone.radius + axial * slope;
+    let radius_rate = axial_direction * slope;
+    let quadratic = dot(radial_direction, radial_direction) - radius_rate * radius_rate;
+    let linear = 2.0 * (dot(radial, radial_direction) - local_radius * radius_rate);
+    let constant = dot(radial, radial) - local_radius * local_radius;
+    let scale = quadratic
+        .abs()
+        .max(linear.abs())
+        .max(constant.abs())
+        .max(1.0);
+    let mut parameters = Vec::<f64>::new();
+    if quadratic.abs() <= 1e-14 * scale {
+        if linear.abs() <= 1e-14 * scale {
+            return Vec::new();
+        }
+        parameters.push(-constant / linear);
+    } else {
+        let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+        if discriminant < -1e-12 * scale * scale {
+            return Vec::new();
+        }
+        let root = discriminant.max(0.0).sqrt();
+        parameters.push((-linear - root) / (2.0 * quadratic));
+        if root > 1e-12 * scale {
+            parameters.push((-linear + root) / (2.0 * quadratic));
+        }
+    }
+    parameters
+        .into_iter()
+        .map(|parameter| {
+            std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
+        })
+        .filter(|point: &[f64; 3]| point.iter().all(|value| value.is_finite()))
+        .collect()
+}
+
 fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
     match carrier {
         CarrierEquation::Plane(plane) => {
@@ -6402,6 +6499,16 @@ fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             let axial = dot(relative, axis);
             let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
             (dot(radial, radial).sqrt() - cylinder.radius).abs() <= 1e-7 * cylinder.radius.max(1.0)
+        }
+        CarrierEquation::Cone(cone) => {
+            let Some(axis) = normalized(cone.axis) else {
+                return false;
+            };
+            let relative = std::array::from_fn(|index| point[index] - cone.origin[index]);
+            let axial = dot(relative, axis);
+            let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
+            let radius = cone.radius + axial * cone.half_angle.tan();
+            (dot(radial, radial).sqrt() - radius.abs()).abs() <= 1e-7 * radius.abs().max(1.0)
         }
         CarrierEquation::Sphere(sphere) => {
             let relative = std::array::from_fn(|index| point[index] - sphere.center[index]);
@@ -6418,11 +6525,13 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 let triple = [carriers[first], carriers[second], carriers[third]];
                 let mut planes = Vec::new();
                 let mut cylinders = Vec::new();
+                let mut cones = Vec::new();
                 let mut spheres = Vec::new();
                 for carrier in triple {
                     match carrier {
                         CarrierEquation::Plane(plane) => planes.push(plane),
                         CarrierEquation::Cylinder(cylinder) => cylinders.push(cylinder),
+                        CarrierEquation::Cone(cone) => cones.push(cone),
                         CarrierEquation::Sphere(sphere) => spheres.push(sphere),
                     }
                 }
@@ -6461,7 +6570,14 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 } else if let ([first, second], [], [sphere]) =
                     (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
                 {
-                    candidates.extend(intersect_two_planes_with_sphere(*first, *second, *sphere));
+                    if cones.is_empty() {
+                        candidates
+                            .extend(intersect_two_planes_with_sphere(*first, *second, *sphere));
+                    }
+                } else if let ([first, second], [cone]) = (planes.as_slice(), cones.as_slice()) {
+                    if cylinders.is_empty() && spheres.is_empty() {
+                        candidates.extend(intersect_two_planes_with_cone(*first, *second, *cone));
+                    }
                 }
             }
         }
@@ -6556,6 +6672,27 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
                     radius: *radius,
                 }),
             );
+        } else if let SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } = &surface.geometry
+        {
+            if (*ratio - 1.0).abs() <= 1e-12 {
+                carriers.insert(
+                    row.id,
+                    CarrierEquation::Cone(ConeEquation {
+                        origin: [origin.x, origin.y, origin.z],
+                        axis: [axis.x, axis.y, axis.z],
+                        ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
+                        radius: *radius,
+                        half_angle: *half_angle,
+                    }),
+                );
+            }
         }
     }
     carriers
@@ -7534,6 +7671,35 @@ fn carrier_intersection_curve(
                 "plane_sphere_circle",
             ))
         }
+        (CarrierEquation::Plane(plane), CarrierEquation::Cone(cone))
+        | (CarrierEquation::Cone(cone), CarrierEquation::Plane(plane)) => {
+            let normal = normalized(plane.normal)?;
+            let axis = normalized(cone.axis)?;
+            let alignment = dot(normal, axis);
+            if (alignment.abs() - 1.0).abs() > 1e-10 {
+                return None;
+            }
+            let axial = dot(
+                axis,
+                std::array::from_fn(|index| plane.origin[index] - cone.origin[index]),
+            );
+            let radius = (cone.radius + axial * cone.half_angle.tan()).abs();
+            if radius <= 1e-12 {
+                return None;
+            }
+            let center: [f64; 3] =
+                std::array::from_fn(|index| cone.origin[index] + axial * axis[index]);
+            let reference = normalized(cone.ref_direction)?;
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(normal[0], normal[1], normal[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                "plane_cone_circle",
+            ))
+        }
         (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) => {
             let first_axis = normalized(first.axis)?;
             let second_axis = normalized(second.axis)?;
@@ -7608,8 +7774,12 @@ fn carrier_intersection_curve(
                 "sphere_intersection_circle",
             ))
         }
-        (CarrierEquation::Cylinder(_), CarrierEquation::Sphere(_))
-        | (CarrierEquation::Sphere(_), CarrierEquation::Cylinder(_)) => None,
+        (CarrierEquation::Cylinder(_) | CarrierEquation::Cone(_), CarrierEquation::Sphere(_))
+        | (CarrierEquation::Sphere(_) | CarrierEquation::Cone(_), CarrierEquation::Cylinder(_))
+        | (
+            CarrierEquation::Cylinder(_) | CarrierEquation::Sphere(_) | CarrierEquation::Cone(_),
+            CarrierEquation::Cone(_),
+        ) => None,
     }
 }
 
