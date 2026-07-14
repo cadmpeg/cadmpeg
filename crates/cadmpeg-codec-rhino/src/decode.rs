@@ -1109,7 +1109,8 @@ impl<'a> DecodeContext<'a> {
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
-        DecodeResult::new(
+        let annotations = std::mem::take(&mut self.ir.annotations);
+        DecodeResult::with_source_fidelity(
             self.ir,
             DecodeReport {
                 format: "rhino".to_string(),
@@ -1117,6 +1118,10 @@ impl<'a> DecodeContext<'a> {
                 geometry_transferred: self.geometry_transferred,
                 losses,
                 notes,
+            },
+            cadmpeg_ir::SourceFidelity {
+                annotations,
+                ..cadmpeg_ir::SourceFidelity::default()
             },
         )
     }

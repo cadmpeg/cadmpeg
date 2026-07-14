@@ -2902,13 +2902,14 @@ fn subd_decode_commits_association_link_exactness_status_and_report() {
     assert_eq!(subd.vertices[2].point.x, 25.4);
     assert_eq!(
         result
-            .ir
+            .source_fidelity
             .annotations
             .exactness
             .get(&subd.id.to_string())
             .map(|note| note.entity),
         Some(cadmpeg_ir::Exactness::Derived)
     );
+    assert_eq!(result.ir.annotations, cadmpeg_ir::Annotations::default());
     assert_eq!(
         result.ir.native_unknowns("rhino").unwrap()[0].links,
         vec![subd.id.to_string()]
