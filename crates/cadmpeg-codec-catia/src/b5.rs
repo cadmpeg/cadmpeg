@@ -28,6 +28,10 @@ pub struct B5Graph {
     /// Structurally bounded pcurve records whose parameter-space geometry is
     /// not yet assigned, keyed by `object_id`.
     pub opaque_pcurves: BTreeMap<u32, B5OpaquePcurve>,
+    /// Pcurve occurrence ids whose support is bound by a loop and both native
+    /// edge-endpoint incidence records, but which have no standalone geometry
+    /// record.
+    pub implicit_pcurves: BTreeMap<u32, u32>,
     /// `b5 03 27/28/2d` analytic surface nodes and `a8 03 34` NURBS
     /// surfaces, keyed by `object_id`.
     pub surfaces: BTreeMap<u32, B5Surface>,
@@ -442,6 +446,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .iter()
         .filter_map(|record| parse_opaque_pcurve(record).map(|pcurve| (record.object_id, pcurve)))
         .collect();
+    let implicit_pcurves =
+        implicit_pcurve_bindings(&records, &by_id, &pcurves, &opaque_pcurves, &surfaces);
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = surfaces
             .get(&pcurve.surface)
@@ -453,8 +459,15 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         .iter()
         .filter(|record| record.class == 0x62)
         .filter_map(|record| {
-            parse_loop(record, &by_id, &pcurves, &opaque_pcurves, &surfaces)
-                .map(|loop_| (record.object_id, loop_))
+            parse_loop(
+                record,
+                &by_id,
+                &pcurves,
+                &opaque_pcurves,
+                &implicit_pcurves,
+                &surfaces,
+            )
+            .map(|loop_| (record.object_id, loop_))
         })
         .collect();
     let mut faces: Vec<B5Face> = records
@@ -475,8 +488,15 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 .iter()
                 .filter(|record| record.class == 0x62)
                 .filter_map(|record| {
-                    parse_loop(record, &by_id, &pcurves, &opaque_pcurves, &surfaces)
-                        .map(|loop_| (record.object_id, loop_))
+                    parse_loop(
+                        record,
+                        &by_id,
+                        &pcurves,
+                        &opaque_pcurves,
+                        &implicit_pcurves,
+                        &surfaces,
+                    )
+                    .map(|loop_| (record.object_id, loop_))
                 })
                 .collect();
             faces = records
@@ -530,7 +550,8 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                             .is_some_and(|pcurve| pcurve.surface == loop_.surface)
                             || opaque_pcurves
                                 .get(pcurve)
-                                .is_some_and(|pcurve| pcurve.surface == loop_.surface))
+                                .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                            || implicit_pcurves.get(pcurve) == Some(&loop_.surface))
                             && edge_vertices.contains_key(edge)
                     })
                 && unique_loop_chain(loop_, &edge_vertices)
@@ -542,6 +563,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         loops,
         pcurves,
         opaque_pcurves,
+        implicit_pcurves,
         surfaces,
         offset_surfaces,
         supported_surfaces,
@@ -585,17 +607,24 @@ pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
     edges
 }
 
-fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
+fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
     (record.class == 0x5e && record.payload.first() == Some(&0x85)).then_some(())?;
     let mut position = 1;
-    let references = (0..5)
+    let references: [u32; 5] = (0..5)
         .map(|_| reference(&record.payload, &mut position, record.object_id))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
     matches!(
         record.payload.get(position),
         Some(0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a)
     )
-    .then_some([references[1], references[2]])
+    .then_some(references)
+}
+
+fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
+    let references = parse_edge_refs(record)?;
+    Some([references[1], references[2]])
 }
 
 fn incidence_vertex_coordinates(
@@ -661,12 +690,71 @@ fn parameter_incidence(record: &B5Record) -> Option<(Vec<u32>, Vec<f64>)> {
     position += 1;
     let mut parameters = Vec::with_capacity(count);
     for _ in 0..count {
-        parameters.push(scalar(&record.payload, position)?);
+        let parameter = scalar(&record.payload, position)?;
+        if !parameter.is_finite() {
+            return None;
+        }
+        parameters.push(parameter);
         position += 8;
-        (record.payload.get(position) == Some(&0x05)).then_some(())?;
-        position += 1;
+        compact(&record.payload, &mut position)?;
     }
     (position == record.payload.len()).then_some((references, parameters))
+}
+
+fn implicit_pcurve_bindings(
+    records: &[B5Record],
+    by_id: &HashMap<u32, &B5Record>,
+    pcurves: &BTreeMap<u32, B5Pcurve>,
+    opaque_pcurves: &BTreeMap<u32, B5OpaquePcurve>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+) -> BTreeMap<u32, u32> {
+    let mut bindings = BTreeMap::new();
+    let mut ambiguous = HashSet::new();
+    for record in records.iter().filter(|record| record.class == 0x62) {
+        let Some(references) = loop_references(record) else {
+            continue;
+        };
+        let Some((&surface, occurrences)) = references.split_last() else {
+            continue;
+        };
+        if !surfaces.contains_key(&surface) {
+            continue;
+        }
+        for occurrence in occurrences.chunks_exact(2) {
+            let pcurve = occurrence[0];
+            if pcurves.contains_key(&pcurve)
+                || opaque_pcurves.contains_key(&pcurve)
+                || by_id.contains_key(&pcurve)
+            {
+                continue;
+            }
+            let Some(edge_references) = by_id
+                .get(&occurrence[1])
+                .and_then(|edge| parse_edge_refs(edge))
+            else {
+                continue;
+            };
+            let endpoint_incidence_contains = |reference_id| {
+                by_id
+                    .get(&reference_id)
+                    .and_then(|incidence| parameter_incidence(incidence))
+                    .is_some_and(|(references, _)| references.contains(&pcurve))
+            };
+            if !endpoint_incidence_contains(edge_references[3])
+                || !endpoint_incidence_contains(edge_references[4])
+            {
+                continue;
+            }
+            if bindings
+                .insert(pcurve, surface)
+                .is_some_and(|existing| existing != surface)
+            {
+                ambiguous.insert(pcurve);
+            }
+        }
+    }
+    bindings.retain(|pcurve, _| !ambiguous.contains(pcurve));
+    bindings
 }
 
 fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
@@ -2108,24 +2196,11 @@ fn parse_loop(
     by_id: &HashMap<u32, &B5Record>,
     parsed_pcurves: &BTreeMap<u32, B5Pcurve>,
     opaque_pcurves: &BTreeMap<u32, B5OpaquePcurve>,
+    implicit_pcurves: &BTreeMap<u32, u32>,
     surfaces: &BTreeMap<u32, B5Surface>,
 ) -> Option<B5Loop> {
-    let mut position = 0;
-    let count = counted_cardinality(&record.payload, &mut position)?;
-    if count < 3 || count % 2 == 0 {
-        return None;
-    }
-    let mut references = Vec::with_capacity(count);
-    for _ in 0..count {
-        references.push(reference(&record.payload, &mut position, record.object_id)?);
-    }
-    let edge_count = (count - 1) / 2;
-    if position < record.payload.len()
-        && (counted_cardinality(&record.payload, &mut position)? != edge_count
-            || record.payload.get(position) != Some(&0x05))
-    {
-        return None;
-    }
+    let references = loop_references(record)?;
+    let count = references.len();
     let surface = *references.last()?;
     if !surfaces.contains_key(&surface) {
         return None;
@@ -2133,7 +2208,9 @@ fn parse_loop(
     let mut pcurves = Vec::with_capacity((count - 1) / 2);
     let mut edges = Vec::with_capacity((count - 1) / 2);
     for pair in references[..count - 1].chunks_exact(2) {
-        if (!parsed_pcurves.contains_key(&pair[0]) && !opaque_pcurves.contains_key(&pair[0]))
+        if (!parsed_pcurves.contains_key(&pair[0])
+            && !opaque_pcurves.contains_key(&pair[0])
+            && implicit_pcurves.get(&pair[0]) != Some(&surface))
             || by_id.get(&pair[1])?.class != 0x5e
         {
             return None;
@@ -2147,6 +2224,26 @@ fn parse_loop(
         edges,
         surface,
     })
+}
+
+fn loop_references(record: &B5Record) -> Option<Vec<u32>> {
+    (record.class == 0x62).then_some(())?;
+    let mut position = 0;
+    let count = counted_cardinality(&record.payload, &mut position)?;
+    if count < 3 || count % 2 == 0 {
+        return None;
+    }
+    let references = (0..count)
+        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .collect::<Option<Vec<_>>>()?;
+    let edge_count = (count - 1) / 2;
+    if position < record.payload.len()
+        && (counted_cardinality(&record.payload, &mut position)? != edge_count
+            || record.payload.get(position) != Some(&0x05))
+    {
+        return None;
+    }
+    Some(references)
 }
 
 fn counted_cardinality(bytes: &[u8], position: &mut usize) -> Option<usize> {
@@ -2768,6 +2865,69 @@ mod tests {
         assert_eq!(
             edge_vertex_references(&bytes),
             BTreeMap::from([(17, [15, 21])])
+        );
+    }
+
+    #[test]
+    fn loop_and_endpoint_incidences_bind_an_unframed_pcurve_occurrence() {
+        let incidence_payload = |parameter: f64, control| {
+            let mut payload = vec![0x81, 0x89, 0x81];
+            payload.extend_from_slice(&parameter.to_le_bytes());
+            payload.push(control);
+            payload
+        };
+        let records = vec![
+            B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x62,
+                object_id: 1,
+                payload: vec![0x83, 0x89, 0x8a, 0x8b],
+            },
+            B5Record {
+                offset: 1,
+                family: 0xb5,
+                class: 0x5e,
+                object_id: 10,
+                payload: vec![0x85, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x21],
+            },
+            B5Record {
+                offset: 2,
+                family: 0xb5,
+                class: 0x06,
+                object_id: 15,
+                payload: incidence_payload(0.0, 0x15),
+            },
+            B5Record {
+                offset: 3,
+                family: 0xb5,
+                class: 0x06,
+                object_id: 16,
+                payload: incidence_payload(1.0, 0x05),
+            },
+        ];
+        let by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect();
+        let surfaces = BTreeMap::from([(
+            11,
+            B5Surface::Unknown {
+                family: 0xb5,
+                class: 0x34,
+                payload: Vec::new(),
+            },
+        )]);
+
+        assert_eq!(
+            implicit_pcurve_bindings(
+                &records,
+                &by_id,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &surfaces,
+            ),
+            BTreeMap::from([(9, 11)])
         );
     }
 }

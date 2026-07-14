@@ -57,7 +57,8 @@ pub(crate) fn transfer(
                         || subset
                             .opaque_pcurves
                             .get(pcurve)
-                            .is_some_and(|pcurve| pcurve.surface == loop_.surface))
+                            .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                        || subset.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
                         && subset.edge_vertices.contains_key(edge)
                 })
                 && solve_loop_chain(loop_, &subset.edge_vertices).is_some()
@@ -153,6 +154,7 @@ pub(crate) fn transfer(
                     .opaque_pcurves
                     .get(&pcurve_id)
                     .is_some_and(|pcurve| pcurve.surface == loop_.surface)
+                    || graph.implicit_pcurves.get(&pcurve_id) == Some(&loop_.surface)
                 {
                     edge_ids.insert(edge_id);
                     continue;
