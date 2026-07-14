@@ -4085,6 +4085,27 @@ fn section_skamp_point_locus(
         .flatten()
 }
 
+fn section_skamp_line_pair(
+    definition_id: u32,
+    segments: &[crate::feature::FeatureSegment],
+    first: &crate::feature::FeatureSkampItem,
+    second: &crate::feature::FeatureSkampItem,
+) -> Option<[SketchEntityId; 2]> {
+    if first.sense != 0
+        || second.sense != 0
+        || section_skamp_segment(segments, first)?.kind != crate::feature::FeatureSegmentKind::Line
+        || section_skamp_segment(segments, second)?.kind != crate::feature::FeatureSegmentKind::Line
+    {
+        return None;
+    }
+    Some([first, second].map(|item| {
+        SketchEntityId(format!(
+            "creo:featdefs:sketch_entity#{definition_id}:{}",
+            item.entity_id
+        ))
+    }))
+}
+
 fn section_skamp_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -4154,6 +4175,30 @@ fn section_skamp_constraints(
                         first: section_skamp_endpoint(definition, first)?,
                         second: section_skamp_endpoint(definition, second)?,
                     }
+                }
+                (5, [first, second])
+                    if section_skamp_line_pair(definition.id, &segments.rows, first, second)
+                        .is_some() =>
+                {
+                    let [first, second] =
+                        section_skamp_line_pair(definition.id, &segments.rows, first, second)?;
+                    SketchConstraintDefinition::Perpendicular { first, second }
+                }
+                (7, [first, second])
+                    if section_skamp_line_pair(definition.id, &segments.rows, first, second)
+                        .is_some() =>
+                {
+                    let [first, second] =
+                        section_skamp_line_pair(definition.id, &segments.rows, first, second)?;
+                    SketchConstraintDefinition::Parallel { first, second }
+                }
+                (8, [first, second])
+                    if section_skamp_line_pair(definition.id, &segments.rows, first, second)
+                        .is_some() =>
+                {
+                    let [first, second] =
+                        section_skamp_line_pair(definition.id, &segments.rows, first, second)?;
+                    SketchConstraintDefinition::Equal { first, second }
                 }
                 (9, [first, second])
                     if first.sense == 0
@@ -7537,6 +7582,18 @@ mod resolved_sketch_tests {
             external_id: 14,
             offset: 42,
         };
+        let other_line = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [5, 6],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 15,
+            offset: 43,
+        };
         let relations = crate::feature::FeatureRelationTable {
             declared_count: 1,
             entity_ref: None,
@@ -7706,6 +7763,57 @@ mod resolved_sketch_tests {
                     ],
                     offset: 77,
                 },
+                crate::feature::FeatureSkamp {
+                    id: 13,
+                    kind: 5,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 78,
+                },
+                crate::feature::FeatureSkamp {
+                    id: 14,
+                    kind: 7,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 79,
+                },
+                crate::feature::FeatureSkamp {
+                    id: 15,
+                    kind: 8,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 15,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 80,
+                },
             ],
             triples: Vec::new(),
             offset: 45,
@@ -7718,9 +7826,9 @@ mod resolved_sketch_tests {
             outlines: Vec::new(),
             variables: None,
             segments: Some(crate::feature::FeatureSegmentTable {
-                declared_count: 3,
+                declared_count: 4,
                 entity_ref: None,
-                rows: vec![segment, arc, point],
+                rows: vec![segment, arc, point, other_line],
                 offset: 30,
             }),
             trim_entities: None,
@@ -7844,6 +7952,26 @@ mod resolved_sketch_tests {
                     )),
                 ],
             }
+        );
+        let first = SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string());
+        let second = SketchEntityId("creo:featdefs:sketch_entity#917:15".to_string());
+        assert_eq!(
+            constraints[10].0.definition,
+            SketchConstraintDefinition::Perpendicular {
+                first: first.clone(),
+                second: second.clone(),
+            }
+        );
+        assert_eq!(
+            constraints[11].0.definition,
+            SketchConstraintDefinition::Parallel {
+                first: first.clone(),
+                second: second.clone(),
+            }
+        );
+        assert_eq!(
+            constraints[12].0.definition,
+            SketchConstraintDefinition::Equal { first, second }
         );
         let mut distance_definition = definition.clone();
         let distance_segment = &mut distance_definition
