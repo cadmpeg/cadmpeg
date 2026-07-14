@@ -130,11 +130,9 @@ pub(crate) fn transfer_neutral(
     let mut parent_by_object = HashMap::<&str, &str>::new();
     for record in records.iter().filter(|record| record.kind != "occurrence") {
         for member in &record.members {
-            if occurrence_objects.contains(member.as_str())
-                && parent_by_object.insert(member, &record.object).is_some()
-            {
+            if parent_by_object.insert(member, &record.object).is_some() {
                 return Err(CodecError::Malformed(format!(
-                    "product occurrence {member} has multiple direct containers"
+                    "product object {member} has multiple direct containers"
                 )));
             }
         }
@@ -238,9 +236,22 @@ pub(crate) fn transfer_neutral(
                 _ => ComponentKind::Object,
             };
             let members = record.map_or(&[][..], |record| record.members.as_slice());
+            let local_transform = record
+                .and_then(|record| record.local_transform)
+                .unwrap_or_else(identity);
+            let parent_object = parent_by_object.get(object.as_str()).copied();
             Ok(Component {
                 id: component_id(&object),
                 kind,
+                parent: parent_object.map(&component_id),
+                local_transform,
+                resolved_transform: resolve_container_transform(
+                    parent_object,
+                    records,
+                    &parent_by_object,
+                    local_transform,
+                    &mut Vec::new(),
+                )?,
                 components: members
                     .iter()
                     .filter(|member| !occurrence_records.contains_key(member.as_str()))

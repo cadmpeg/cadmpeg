@@ -22,9 +22,39 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect::<HashMap<_, _>>();
 
     for component in &ir.model.components {
+        let parent_valid = component.parent.as_ref().is_none_or(|parent| {
+            components
+                .get(parent.0.as_str())
+                .is_some_and(|parent| parent.components.iter().any(|child| child == &component.id))
+        });
+        let expected_transform =
+            component
+                .parent
+                .as_ref()
+                .map_or(component.local_transform, |parent| {
+                    components
+                        .get(parent.0.as_str())
+                        .map_or(component.local_transform, |parent| {
+                            multiply(parent.resolved_transform, component.local_transform)
+                        })
+                });
+        if !parent_valid
+            || !finite_transform(&component.local_transform)
+            || !finite_transform(&component.resolved_transform)
+            || !same_transform(&expected_transform, &component.resolved_transform)
+        {
+            invalid(
+                findings,
+                &component.id.0,
+                "invalid component parent or resolved transform",
+            );
+        }
         let mut children = HashSet::new();
         for child in &component.components {
-            if !components.contains_key(child.0.as_str()) || !children.insert(child.0.as_str()) {
+            let valid = components
+                .get(child.0.as_str())
+                .is_some_and(|child| child.parent.as_ref() == Some(&component.id));
+            if !valid || !children.insert(child.0.as_str()) {
                 invalid(
                     findings,
                     &component.id.0,
@@ -79,7 +109,23 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .chain(occurrence.resolved_transform.iter().flatten())
             .chain(occurrence.scale.iter())
             .all(|value| value.is_finite());
-        if !valid_prototype || !valid_parent || !auxiliary_components || !finite {
+        let expected_transform =
+            occurrence
+                .parent
+                .as_ref()
+                .map_or(occurrence.local_transform, |parent| {
+                    components
+                        .get(parent.0.as_str())
+                        .map_or(occurrence.local_transform, |parent| {
+                            multiply(parent.resolved_transform, occurrence.local_transform)
+                        })
+                });
+        if !valid_prototype
+            || !valid_parent
+            || !auxiliary_components
+            || !finite
+            || !same_transform(&expected_transform, &occurrence.resolved_transform)
+        {
             invalid(
                 findings,
                 &occurrence.id.0,
@@ -140,6 +186,30 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+fn finite_transform(transform: &[[f64; 4]; 4]) -> bool {
+    transform.iter().flatten().all(|value| value.is_finite())
+}
+
+fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
+    std::array::from_fn(|row| {
+        std::array::from_fn(|column| {
+            (0..4)
+                .map(|index| left[row][index] * right[index][column])
+                .sum()
+        })
+    })
+}
+
+fn same_transform(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> bool {
+    left.iter()
+        .flatten()
+        .zip(right.iter().flatten())
+        .all(|(left, right)| {
+            let scale = left.abs().max(right.abs()).max(1.0);
+            (left - right).abs() <= scale * 1e-12
+        })
 }
 
 fn component_cycle(start: &str, components: &HashMap<&str, &crate::products::Component>) -> bool {

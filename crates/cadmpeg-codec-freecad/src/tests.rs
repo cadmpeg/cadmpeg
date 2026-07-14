@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "45");
+    assert_eq!(result.ir.ir_version, "46");
     let feature = |name: &str| {
         &result
             .ir
@@ -2806,14 +2806,15 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
 #[test]
 fn recovers_product_prototypes_occurrences_and_placements() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="5">
+<Objects Count="6">
  <Object type="App::Part" name="Assembly" id="1"/>
  <Object type="Part::Feature" name="Prototype" id="2"/>
  <Object type="App::Link" name="Occurrence" id="3"/>
  <Object type="Part::Feature" name="ElementA" id="4"/>
  <Object type="Part::Feature" name="ElementB" id="5"/>
+ <Object type="App::Part" name="Outer" id="6"/>
 </Objects>
-<ObjectData Count="5">
+<ObjectData Count="6">
  <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="14">
@@ -2834,6 +2835,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
  </Properties></Object>
  <Object name="ElementA"><Properties Count="0"/></Object>
  <Object name="ElementB"><Properties Count="0"/></Object>
+ <Object name="Outer"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Assembly"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="100" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
 </ObjectData></Document>"#;
     let mut placements = 2_u32.to_le_bytes().to_vec();
     for value in [
@@ -2860,8 +2862,11 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         .expect("native")
         .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
         .expect("product nodes");
-    assert_eq!(nodes.len(), 2);
-    let assembly = nodes.iter().find(|node| node.kind == "part").expect("part");
+    assert_eq!(nodes.len(), 3);
+    let assembly = nodes
+        .iter()
+        .find(|node| node.object.ends_with("Assembly"))
+        .expect("assembly part");
     let occurrence = nodes
         .iter()
         .find(|node| node.kind == "occurrence")
@@ -2877,14 +2882,22 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(occurrence.element_transforms.len(), 2);
     assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
     assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
-    assert_eq!(result.ir.model.components.len(), 4);
+    assert_eq!(result.ir.model.components.len(), 5);
     let component = result
         .ir
         .model
         .components
         .iter()
-        .find(|component| component.kind == cadmpeg_ir::ComponentKind::Part)
+        .find(|component| {
+            component
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("Assembly"))
+        })
         .expect("neutral assembly component");
+    assert!(component.parent.is_some());
+    assert_eq!(component.local_transform[0][3], 10.0);
+    assert_eq!(component.resolved_transform[0][3], 110.0);
     assert_eq!(component.occurrences.len(), 2);
     assert_eq!(result.ir.model.occurrences.len(), 2);
     assert_eq!(result.ir.model.occurrences[0].array_index, Some(0));
@@ -2892,11 +2905,11 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(result.ir.model.occurrences[1].local_transform[0][3], 8.0);
     assert_eq!(
         result.ir.model.occurrences[0].resolved_transform[0][3],
-        15.0
+        115.0
     );
     assert_eq!(
         result.ir.model.occurrences[1].resolved_transform[0][3],
-        18.0
+        118.0
     );
     assert_eq!(result.ir.model.occurrences[0].scale, [2.0, 3.0, 4.0]);
     assert_eq!(result.ir.model.occurrences[1].scale, [4.0, 6.0, 8.0]);
@@ -2934,6 +2947,14 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
+    let mut corrupted = result.ir.clone();
+    corrupted.model.occurrences[0].resolved_transform[0][3] += 1.0;
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("invalid occurrence reference or transform")));
 }
 
 #[test]

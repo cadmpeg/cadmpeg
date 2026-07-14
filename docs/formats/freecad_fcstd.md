@@ -171,6 +171,10 @@ references keep that path or identity separately from the target object and mark
 `unresolved`; decoding never guesses that an external file was loaded. A structurally present but
 empty reference is a distinct `missing_reference` state.
 
+Components retain their own local and hierarchy-resolved placements as well as explicit parentage.
+Neutral validation recomposes every component and occurrence world matrix from its direct parent
+and local matrix and rejects any mismatch, including finite but stale or double-applied transforms.
+
 Link semantics remain distinct from placement. Prototype subelement paths, tree-child claiming,
 base and per-element scale, explicit element objects, and per-element visibility are retained on
 neutral occurrences. Copy-on-change is typed as disabled, enabled, owned, tracking, or an explicit

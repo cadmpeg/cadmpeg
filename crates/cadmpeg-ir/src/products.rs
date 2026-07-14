@@ -41,6 +41,15 @@ pub struct Component {
     pub id: ComponentId,
     /// Structural role.
     pub kind: ComponentKind,
+    /// Direct containing component, absent for a product root.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<ComponentId>,
+    /// Placement relative to the direct container.
+    #[serde(default = "identity_transform")]
+    pub local_transform: [[f64; 4]; 4],
+    /// Placement composed through all containing components exactly once.
+    #[serde(default = "identity_transform")]
+    pub resolved_transform: [[f64; 4]; 4],
     /// Direct component definitions in source order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub components: Vec<ComponentId>,
@@ -50,6 +59,15 @@ pub struct Component {
     /// Format-native object supplying this definition.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+fn identity_transform() -> [[f64; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
 }
 
 /// Local or unresolved external prototype of an occurrence.
