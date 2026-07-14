@@ -369,6 +369,11 @@ fn build_geometry_ir(
         &histories,
         &lanes,
     );
+    crate::resolved_features::type_display_relation_parameters(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        &lanes,
+    );
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, mut sketch_entities, mut sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);

@@ -2872,6 +2872,71 @@ pub(crate) fn bind_parameter_scalars(
     }
 }
 
+/// Apply relation-defined units and display semantics to parameters named by display scalars.
+pub(crate) fn type_display_relation_parameters(
+    parameters: &mut [cadmpeg_ir::features::DesignParameter],
+    features: &[cadmpeg_ir::features::Feature],
+    lanes: &[FeatureInputLane],
+) {
+    let mut families = HashMap::<cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            if relation.parameter_scalar_ref.is_some() {
+                continue;
+            }
+            let Some(parameter) =
+                relation_parameter_by_display_name(relation, lane, features, parameters)
+            else {
+                continue;
+            };
+            families
+                .entry(parameter.id.clone())
+                .or_default()
+                .insert(relation.family);
+        }
+    }
+    for parameter in parameters {
+        let Some(families) = families.get(&parameter.id) else {
+            continue;
+        };
+        if families.len() != 1 {
+            continue;
+        }
+        let family = *families.iter().next().expect("one relation family");
+        match family {
+            FeatureInputRelationFamily::Angle => {}
+            FeatureInputRelationFamily::LineLineDistance
+            | FeatureInputRelationFamily::PointPointDistance
+            | FeatureInputRelationFamily::PointLineDistance
+            | FeatureInputRelationFamily::PointPointHorizontalDistance
+            | FeatureInputRelationFamily::PointPointVerticalDistance
+            | FeatureInputRelationFamily::CircleDiameter => {
+                if let Some(cadmpeg_ir::features::ParameterValue::Integer(value)) =
+                    parameter.value.as_ref()
+                {
+                    let value = *value as f64;
+                    parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
+                        format!("<MOD-DIAM>{}", crate::history::format_length_mm(value))
+                    } else {
+                        crate::history::format_length_mm(value)
+                    };
+                    parameter.value = Some(cadmpeg_ir::features::ParameterValue::Length(
+                        cadmpeg_ir::features::Length(value),
+                    ));
+                }
+                if family == FeatureInputRelationFamily::CircleDiameter
+                    && matches!(
+                        parameter.value,
+                        Some(cadmpeg_ir::features::ParameterValue::Length(_))
+                    )
+                {
+                    parameter.display = Some(cadmpeg_ir::features::DimensionDisplay::Diameter);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn project_compact_body_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
@@ -3514,7 +3579,15 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     let parameter = relation
                         .parameter_scalar_ref
                         .as_deref()
-                        .and_then(|id| parameters_by_scalar.get(id).copied())?;
+                        .and_then(|id| parameters_by_scalar.get(id).copied())
+                        .or_else(|| {
+                            let lane = lanes.iter().find(|lane| {
+                                lane.relation_instances
+                                    .iter()
+                                    .any(|candidate| candidate.id == relation.id)
+                            })?;
+                            relation_parameter_by_display_name(relation, lane, features, parameters)
+                        })?;
                     let cadmpeg_ir::features::ParameterValue::Length(value) =
                         parameter.value.as_ref()?
                     else {
@@ -3597,13 +3670,14 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             ) {
                 continue;
             }
-            let (Some([u, v]), Some(parameter)) = (
-                marker.coordinates_m,
-                relation
-                    .parameter_scalar_ref
-                    .as_deref()
-                    .and_then(|id| parameters_by_scalar.get(id).copied()),
-            ) else {
+            let parameter = relation
+                .parameter_scalar_ref
+                .as_deref()
+                .and_then(|id| parameters_by_scalar.get(id).copied())
+                .or_else(|| {
+                    relation_parameter_by_display_name(relation, lane, features, parameters)
+                });
+            let (Some([u, v]), Some(parameter)) = (marker.coordinates_m, parameter) else {
                 continue;
             };
             let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
@@ -5214,7 +5288,8 @@ mod profile_join_tests {
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
         implicit_circle_marker, marker_entities, profile_loci_by_marker,
         project_dimensioned_sketch_geometry, relation_parameter_by_display_name,
-        sketch_frame_marker_transform, typed_marker_relation_definition, typed_relation_definition,
+        sketch_frame_marker_transform, type_display_relation_parameters,
+        typed_marker_relation_definition, typed_relation_definition,
         unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
     };
     use crate::records::{
@@ -5334,10 +5409,32 @@ mod profile_join_tests {
             operands: Vec::new(),
         };
         assert_eq!(
-            relation_parameter_by_display_name(&relation, &lane, &[feature], &[parameter.clone()])
-                .map(|parameter| &parameter.id),
+            relation_parameter_by_display_name(
+                &relation,
+                &lane,
+                std::slice::from_ref(&feature),
+                std::slice::from_ref(&parameter),
+            )
+            .map(|parameter| &parameter.id),
             Some(&parameter.id)
         );
+
+        let mut parameter = parameter;
+        parameter.value = Some(ParameterValue::Integer(12));
+        type_display_relation_parameters(
+            std::slice::from_mut(&mut parameter),
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&FeatureInputLane {
+                relation_instances: vec![FeatureInputRelationInstance {
+                    family: FeatureInputRelationFamily::CircleDiameter,
+                    ..relation
+                }],
+                ..lane
+            }),
+        );
+        assert_eq!(parameter.value, Some(ParameterValue::Length(Length(12.0))));
+        assert_eq!(parameter.expression, "<MOD-DIAM>12mm");
+        assert_eq!(parameter.display, Some(DimensionDisplay::Diameter));
     }
 
     #[test]
