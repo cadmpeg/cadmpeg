@@ -161,6 +161,8 @@ fn repeated_decode_is_canonical_for_ir_report_and_byte_ledger() {
         serde_json::to_vec(&second.report).unwrap()
     );
     assert_eq!(first.ir.byte_ledger, second.ir.byte_ledger);
+    assert_eq!(first.source_fidelity, second.source_fidelity);
+    assert_eq!(first.source_fidelity.byte_ledger, first.ir.byte_ledger);
 }
 
 #[test]

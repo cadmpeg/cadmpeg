@@ -5,7 +5,7 @@ use crate::{byte_ledger, card, directory, entities, global, graph, native, param
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
-use cadmpeg_ir::{CadIr, SourceMeta};
+use cadmpeg_ir::{CadIr, SourceFidelity, SourceMeta};
 use std::collections::{BTreeMap, BTreeSet};
 
 fn source_meta(global: &global::Global) -> SourceMeta {
@@ -77,7 +77,11 @@ pub(crate) fn decode(
         &global,
         &byte_ledger,
     )?;
-    ir.byte_ledger = byte_ledger;
+    ir.byte_ledger = byte_ledger.clone();
+    let source_fidelity = SourceFidelity {
+        byte_ledger,
+        ..SourceFidelity::default()
+    };
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
@@ -119,7 +123,7 @@ pub(crate) fn decode(
     let mut notes = directory::summary_notes(&directory);
     notes.extend(parameter::summary_notes(&parameters));
     notes.extend(graph::summary_notes(&references));
-    Ok(DecodeResult::new(
+    Ok(DecodeResult::with_source_fidelity(
         ir,
         DecodeReport {
             format: "iges".into(),
@@ -128,5 +132,6 @@ pub(crate) fn decode(
             losses,
             notes,
         },
+        source_fidelity,
     ))
 }
