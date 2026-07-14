@@ -1043,6 +1043,86 @@ fn saved_section_arc_geometry(
     })
 }
 
+fn saved_section_entity_geometry(
+    entity: &crate::feature::FeatureSavedEntity,
+) -> Option<(u32, SketchGeometry, usize)> {
+    match entity {
+        crate::feature::FeatureSavedEntity::Line(line) => {
+            let [[Some(start_u), Some(start_v), _], [Some(end_u), Some(end_v), _]] = line.endpoints
+            else {
+                return None;
+            };
+            Some((
+                line.entity_id,
+                SketchGeometry::Line {
+                    start: Point2::new(start_u, start_v),
+                    end: Point2::new(end_u, end_v),
+                },
+                line.offset,
+            ))
+        }
+        crate::feature::FeatureSavedEntity::Arc(arc) => {
+            let ([Some(center_u), Some(center_v)], Some(radius)) = (
+                [arc.center[0], arc.center[1]],
+                arc.radius.filter(|radius| *radius > 1e-12),
+            ) else {
+                return None;
+            };
+            let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
+                arc.endpoints
+            else {
+                return None;
+            };
+            let first = [first_u - center_u, first_v - center_v];
+            let second = [second_u - center_u, second_v - center_v];
+            let scale = radius
+                .max(first[0].hypot(first[1]))
+                .max(second[0].hypot(second[1]))
+                .max(1.0);
+            if (first[0].hypot(first[1]) - radius).abs() > 1e-9 * scale
+                || (second[0].hypot(second[1]) - radius).abs() > 1e-9 * scale
+            {
+                return None;
+            }
+            let start_angle = second[1].atan2(second[0]);
+            let mut end_angle = first[1].atan2(first[0]);
+            while end_angle <= start_angle {
+                end_angle += std::f64::consts::TAU;
+            }
+            Some((
+                arc.entity_id,
+                SketchGeometry::Arc {
+                    center: Point2::new(center_u, center_v),
+                    radius: Length(radius),
+                    start_angle: Angle(start_angle),
+                    end_angle: Angle(end_angle),
+                },
+                arc.offset,
+            ))
+        }
+        crate::feature::FeatureSavedEntity::Circle(circle) => {
+            let ([Some(center_u), Some(center_v)], Some(radius)) = (
+                [circle.center[0], circle.center[1]],
+                circle.radius.filter(|radius| *radius > 1e-12),
+            ) else {
+                return None;
+            };
+            Some((
+                circle.entity_id,
+                SketchGeometry::Arc {
+                    center: Point2::new(center_u, center_v),
+                    radius: Length(radius),
+                    start_angle: Angle(0.0),
+                    end_angle: Angle(std::f64::consts::TAU),
+                },
+                circle.offset,
+            ))
+        }
+        crate::feature::FeatureSavedEntity::Spline(_)
+        | crate::feature::FeatureSavedEntity::Dummy(_) => None,
+    }
+}
+
 fn resolved_section_segment_geometry(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -2298,12 +2378,7 @@ fn transfer_feature_extrusion_surfaces(
         if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
             continue;
         }
-        let (Some(_), Some(segments), Some(order_table), Some(trim_entities)) = (
-            &definition.variables,
-            &definition.segments,
-            &definition.order_table,
-            &definition.trim_entities,
-        ) else {
+        let Some(order_table) = &definition.order_table else {
             continue;
         };
         let tables = scan
@@ -2315,14 +2390,16 @@ fn transfer_feature_extrusion_surfaces(
             continue;
         };
         let points = resolved_section_points(definition);
-        let solved = trim_entities
-            .rows
+        let solved = definition
+            .trim_entities
             .iter()
+            .flat_map(|trim_entities| &trim_entities.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        for segment in segments
-            .rows
+        for segment in definition
+            .segments
             .iter()
+            .flat_map(|segments| &segments.rows)
             .filter(|segment| solved.contains(&segment.external_id))
         {
             let surface_id = match segment.kind {
@@ -2361,6 +2438,59 @@ fn transfer_feature_extrusion_surfaces(
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
                     object_id: format!("VisibGeom:{surface_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            transferred += 1;
+        }
+
+        for (internal_id, section_geometry, offset) in definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(saved_section_entity_geometry)
+        {
+            let Some(external_id) = order_table.external_id(internal_id) else {
+                continue;
+            };
+            let Some(native_surface_id) = generated_surface_id(table, external_id) else {
+                continue;
+            };
+            let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
+                continue;
+            };
+            let Some(expected_kind) = surface_kind_for_geometry(&geometry) else {
+                continue;
+            };
+            if !scan.surface_rows.iter().any(|row| {
+                row.id == native_surface_id
+                    && row.feature_id == feature_id
+                    && row.kind == expected_kind
+            }) {
+                continue;
+            }
+            let id = SurfaceId(format!("creo:visibgeom:surface#{native_surface_id}"));
+            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &id,
+                "FeatDefs",
+                offset as u64,
+                "protextrude_saved_section_carrier",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{native_surface_id}"),
                     name: None,
                     color: None,
                     visible: None,
@@ -6332,6 +6462,31 @@ mod resolved_sketch_tests {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
+        );
+    }
+
+    #[test]
+    fn complete_saved_circle_defines_full_section_geometry() {
+        let entity =
+            crate::feature::FeatureSavedEntity::Circle(crate::feature::FeatureSavedCircle {
+                entity_id: 7,
+                center: [Some(2.0), Some(-3.0), Some(0.0)],
+                radius: Some(4.5),
+                offset: 19,
+            });
+
+        assert_eq!(
+            saved_section_entity_geometry(&entity),
+            Some((
+                7,
+                SketchGeometry::Arc {
+                    center: Point2::new(2.0, -3.0),
+                    radius: Length(4.5),
+                    start_angle: Angle(0.0),
+                    end_angle: Angle(std::f64::consts::TAU),
+                },
+                19,
+            ))
         );
     }
 

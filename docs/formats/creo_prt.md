@@ -687,6 +687,12 @@ the section axis.
 
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is the section's internal ordering index. A class-200 feature-generated-table entry stores the same `ext_id` as its source identifier and stores the generated surface identifier as its leading entity identifier. This explicit equality joins line, arc, and spline section entities to their generated carriers; table position and family order do not define the join.
 
+For a linear section sweep with a resolved model-space section frame, a complete
+saved line joined through this chain generates a plane parallel to the sweep
+direction, and a complete saved arc or circle generates a cylinder whose axis
+is the sweep direction. The generated surface row must belong to the sweep
+feature and have the matching plane or cylinder family.
+
 The generated-table source identifier remains part of the owning feature's design record even when the corresponding positional section entity is not decoded. It identifies the source section entity; it is not a global geometry identifier or a generated-table ordinal.
 
 The positional `order_table` opener is `f8 <count> f7 <table_class> fb e2 f7
@@ -725,11 +731,12 @@ Each populated entry begins with `f7 <entry_class>` and stores two incident
 
 `p_saved_result` contains evaluated section entities and does not define the authoritative solved trim topology. Saved line rows may contain `f0 f7 <ref>`, `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute, and coordinate fields.
 The line prototype can close with `f1 e3`; positional line rows follow that
-close. Within a saved-line coordinate row, `18 e5` expands to the coordinate
-triple `[0, 1, 0]`, `41` occupies eight bytes, and `74` and `75` are positive
-DICT prefixes. Entity references may also follow the sixth coordinate before
-the row-closing `e3`. Consecutive `18 18` bytes are two standalone zero scalar
-slots; the first `18` does not consume the second as a dictionary index.
+close. Within saved-section three-scalar coordinate fields, `18 e5` expands to
+the coordinate triple `[0, 1, 0]`. In a saved-line coordinate row, `41` occupies
+eight bytes, and `74` and `75` are positive DICT prefixes. Entity references may
+also follow the sixth coordinate before the row-closing `e3`. Consecutive
+`18 18` bytes are two standalone zero scalar slots; the first `18` does not
+consume the second as a dictionary index.
 
 `save_entity_ptr(spline)` carries `i_pnts f9 <count> 03` followed by exactly
 `count` section-space XYZ triples. Every coordinate is a scalar-lane value.

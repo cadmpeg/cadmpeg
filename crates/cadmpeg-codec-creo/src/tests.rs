@@ -1987,7 +1987,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     payload.extend_from_slice(b"\xe0\x02t0\0\x0f\xe0\x02t1\0\xe4");
     payload.extend_from_slice(
         b"\xe0\x00entity(circle)\0\xe0\x01id\0\x2d\
-          \xe0\x02center\0\xf8\x03\xe4\x0f\xe4\
+          \xe0\x02center\0\xf8\x03\x18\xe5\
           \xe0\x02radius\0\xe4",
     );
     payload.extend_from_slice(b"\xe0\x00entity(dummy_ent)\0\xe0\x01id\0\x2e");
@@ -2012,7 +2012,7 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         panic!("saved circle");
     };
     assert_eq!(circle.entity_id, 45);
-    assert_eq!(circle.center, [Some(1.0), Some(0.0), Some(1.0)]);
+    assert_eq!(circle.center, [Some(0.0), Some(1.0), Some(0.0)]);
     let crate::feature::FeatureSavedEntity::Dummy(dummy) = &entities[2] else {
         panic!("saved dummy");
     };

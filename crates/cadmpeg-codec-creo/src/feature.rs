@@ -3334,6 +3334,11 @@ fn saved_named_scalars<const N: usize>(
         (usize::try_from(count).ok()? == N).then_some(())?;
         cursor = next;
     }
+    if N == 3 && payload.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+        return Some(std::array::from_fn(|index| {
+            Some(if index == 1 { 1.0 } else { 0.0 })
+        }));
+    }
     let mut values = [None; N];
     for value in &mut values {
         let (decoded, next) = saved_section_scalar(payload, cursor, end, cache);
