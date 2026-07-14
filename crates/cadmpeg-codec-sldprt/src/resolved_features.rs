@@ -3177,7 +3177,9 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             };
             if !matches!(
                 marker.kind,
-                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                SketchInputKind::Point
+                    | SketchInputKind::ConstrainedPoint
+                    | SketchInputKind::LineOrCircle
             ) {
                 continue;
             }
@@ -4458,6 +4460,7 @@ mod profile_join_tests {
         vertical.kind = SketchInputKind::LineOrCircle;
         vertical.offset = 32;
         let mut center = marker("circle-center", Some([0.040, 0.015]));
+        center.kind = SketchInputKind::LineOrCircle;
         center.offset = 64;
         let mut native_payload = vec![0; 96];
         for offset in [0, 32, 64] {
