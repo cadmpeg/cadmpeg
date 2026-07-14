@@ -1580,6 +1580,132 @@ pub(crate) fn bind_pattern_inputs(
     }
 }
 
+/// Bind solid-sweep cross sections carried by the following profile object.
+pub(crate) fn bind_sweep_adjacent_profiles(
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let model_by_native = model_features
+        .iter()
+        .enumerate()
+        .filter_map(|(index, feature)| Some((feature.native_ref.as_deref()?, index)))
+        .collect::<HashMap<_, _>>();
+    let mut assignments = HashMap::<
+        usize,
+        Vec<(
+            cadmpeg_ir::features::FeatureId,
+            SketchId,
+            Option<(cadmpeg_ir::features::FeatureId, SketchId)>,
+        )>,
+    >::new();
+    for lane in lanes {
+        let mut starts = history_features
+            .iter()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .collect::<Vec<_>>();
+        starts.sort_unstable_by_key(|(offset, _)| *offset);
+        for (index, (_, feature)) in starts.iter().enumerate() {
+            if feature.input_class.as_deref() != Some("moSweep_c") {
+                continue;
+            }
+            let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
+                continue;
+            };
+            if !matches!(
+                model_features[model_index].definition,
+                FeatureDefinition::Sweep { profile: None, .. }
+            ) {
+                continue;
+            }
+            let Some((_, profile_feature)) = starts.get(index + 1) else {
+                continue;
+            };
+            if profile_feature.input_class.as_deref() != Some("moProfileFeature_c") {
+                continue;
+            }
+            let Some(&profile_index) = model_by_native.get(profile_feature.id.as_str()) else {
+                continue;
+            };
+            let FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &model_features[profile_index].definition
+            else {
+                continue;
+            };
+            let path = index.checked_sub(1).and_then(|path_object_index| {
+                let (_, path_feature) = starts[path_object_index];
+                if path_feature.input_class.as_deref() != Some("moProfileFeature_c") {
+                    return None;
+                }
+                let path_index = *model_by_native.get(path_feature.id.as_str())?;
+                let FeatureDefinition::Sketch {
+                    sketch: Some(path), ..
+                } = &model_features[path_index].definition
+                else {
+                    return None;
+                };
+                Some((model_features[path_index].id.clone(), path.clone()))
+            });
+            let candidate = (
+                model_features[profile_index].id.clone(),
+                sketch.clone(),
+                path,
+            );
+            let candidates = assignments.entry(model_index).or_default();
+            if !candidates.contains(&candidate) {
+                candidates.push(candidate);
+            }
+        }
+    }
+    for (index, candidates) in assignments {
+        let [(profile_dependency, sketch, path)] = candidates.as_slice() else {
+            continue;
+        };
+        let mut profile_bound = false;
+        if let FeatureDefinition::Sweep {
+            profile,
+            path: path_slot,
+            ..
+        } = &mut model_features[index].definition
+        {
+            if profile.is_none() {
+                *profile = Some(cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone()));
+                profile_bound = true;
+            }
+            if let Some((_, path)) = path {
+                if path_slot
+                    .as_ref()
+                    .is_none_or(|existing| matches!(existing, PathRef::Native(_)))
+                {
+                    *path_slot = Some(PathRef::Sketch(path.clone()));
+                }
+            }
+        }
+        if profile_bound
+            && !model_features[index]
+                .dependencies
+                .contains(profile_dependency)
+        {
+            model_features[index]
+                .dependencies
+                .push(profile_dependency.clone());
+        }
+        if let Some((path_dependency, _)) = path {
+            if !model_features[index].dependencies.contains(path_dependency) {
+                model_features[index]
+                    .dependencies
+                    .push(path_dependency.clone());
+            }
+        }
+    }
+}
+
 /// Resolve scalar operand indices within their owning feature-object interval.
 pub(crate) fn bind_scalar_operands(
     histories: &[crate::records::FeatureHistory],
@@ -8241,11 +8367,12 @@ fn marker_entities_inner(
 mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
-        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
-        marker_point_locus, profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
+        bind_sweep_adjacent_profiles, dimensioned_circle_surface_transforms,
+        dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
+        line_reference_direction, marker_entities, marker_point_locus, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, project_relation_point_geometry,
+        project_relation_solved_point_geometry, relation_owner_markers,
+        relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_axis_aligned_linked_loci,
@@ -8266,7 +8393,7 @@ mod profile_join_tests {
     };
     use cadmpeg_ir::features::{
         Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue, PathRef, PatternKind, SketchSpace,
+        ParameterId, ParameterValue, PathRef, PatternKind, SketchSpace, SweepMode,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -9182,7 +9309,7 @@ mod profile_join_tests {
             }
         ));
 
-        let mut linear_history = history;
+        let mut linear_history = history.clone();
         linear_history.features[1].input_class = Some("moLPattern_c".into());
         features[0].dependencies.clear();
         features[0].definition = FeatureDefinition::Pattern {
@@ -9213,6 +9340,38 @@ mod profile_join_tests {
                 ..
             } if x == -1.0 && y == 0.0 && z == 0.0
         ));
+
+        let mut sweep_history = history;
+        sweep_history.features[0].input_class = Some("moProfileFeature_c".into());
+        sweep_history.features[1].input_class = Some("moSweep_c".into());
+        let path_sketch = SketchId("sweep-path".into());
+        features[2].definition = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: Some(path_sketch.clone()),
+        };
+        features[0].dependencies.clear();
+        features[0].definition = FeatureDefinition::Sweep {
+            profile: None,
+            path: Some(PathRef::Native("curve-reference".into())),
+            mode: SweepMode::Solid {
+                op: cadmpeg_ir::features::BooleanOp::Join,
+            },
+            twist: None,
+            scale: None,
+        };
+        bind_sweep_adjacent_profiles(&mut features, &[sweep_history], std::slice::from_ref(&lane));
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Sweep {
+                profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(ref profile)),
+                path: Some(PathRef::Sketch(ref path)),
+                ..
+            } if profile == &sketch && path == &path_sketch
+        ));
+        assert_eq!(
+            features[0].dependencies,
+            [features[1].id.clone(), features[2].id.clone()]
+        );
     }
 
     #[test]
