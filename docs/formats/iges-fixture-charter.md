@@ -21,6 +21,17 @@ Generated fuzz seeds are selected original fixtures with bounded size. Mutation 
 
 Public fixtures enter through the corpus manifest only when their redistribution terms, source URL, acquisition date, checksum, and applicable envelope are recorded. Public proof classes cover mainstream mechanical files, explicit B-rep and trimmed-sheet topology, product structure, external references, appearance, annotations, and drawings. A public fixture supports a score only when deterministic reports show its entity/forms, decoded domains, losses, topology validation, and byte coverage.
 
+`corpus/iges-public-evidence.toml` maps an accepted IGES manifest filename to the fixture classes and assertions it exercises. It contains no duplicate provenance metadata. `iges-proof-report` verifies each mapping against `corpus/manifest.toml`, the committed bytes, and the manifest SHA-256 before counting it as public evidence.
+
+`corpus/iges-original-evidence.toml` maps every original fixture class to exact codec test names. The generator verifies that the tests exist and that every matrix decoder path resolves to an owning source function. Generate or verify the deterministic cumulative report with:
+
+```sh
+cargo run -p cadmpeg-codec-iges --bin iges-proof-report -- --write corpus/iges-envelope-a-proof.json
+cargo run -p cadmpeg-codec-iges --bin iges-proof-report -- --check corpus/iges-envelope-a-proof.json
+```
+
+The report sets `release_ready` only when the matrix is approved and every admitted row has a real decoder, destination, assertion, original fixture class, and verified public fixture class.
+
 ## Machine-checkable gates
 
 - L0: bounded detection, document kind, Fixed ASCII framing, version, and Global metadata assertions.
