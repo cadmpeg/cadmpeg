@@ -127,7 +127,7 @@ A horizontal, vertical, or fixed relation marker constrains its sole resolved re
 
 A recognized relation marker whose resolved operands do not satisfy the relation's typed arity and locus-kind invariants remains a native constraint with its ordered local identifiers and resolved native references.
 
-A parallel, perpendicular, tangent, equal, collinear, or concentric relation marker constrains its two distinct linked profile entities when every link identifies exactly one entity. The relation remains native when a link identifies zero or multiple entities or the resolved entity count is not two.
+A parallel, perpendicular, tangent, equal, collinear, or concentric relation marker constrains its two distinct reverse-owner curves when every resolved forward entity is one of those curves or a relation-owned construction point. Otherwise it constrains its two distinct linked profile entities when every link identifies exactly one entity. The relation remains native when neither form resolves exactly two entities.
 
 A coincident relation marker constrains its distinct linked profile loci when every link identifies exactly one locus and at least two loci remain after deduplication. The relation remains native when a link identifies zero or multiple loci.
 

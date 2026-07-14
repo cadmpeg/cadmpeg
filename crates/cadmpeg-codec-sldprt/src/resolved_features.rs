@@ -5529,9 +5529,26 @@ fn typed_marker_relation_definition(
             }
         }
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric => {
-            let Some(entities) = linked_single_entities(marker, markers_by_id, loci_by_marker)
-            else {
-                return Some(native());
+            let owner_entities =
+                relation_owner_curve_entities(marker, markers_by_id, loci_by_marker);
+            let forward_entities = marker
+                .links
+                .iter()
+                .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
+                .filter(|entity| !entity.0.contains("sketch-entity#relation-point:"))
+                .collect::<Vec<_>>();
+            let entities = if owner_entities.len() == 2
+                && forward_entities
+                    .iter()
+                    .all(|entity| owner_entities.contains(entity))
+            {
+                owner_entities
+            } else {
+                let Some(entities) = linked_single_entities(marker, markers_by_id, loci_by_marker)
+                else {
+                    return Some(native());
+                };
+                entities
             };
             let [first, second] = entities.as_slice() else {
                 return Some(native());
@@ -7290,6 +7307,45 @@ mod profile_join_tests {
         assert_eq!(
             typed_marker_relation_definition(&relation, &markers, &loci),
             Some(SketchConstraintDefinition::Horizontal { entity: line })
+        );
+    }
+
+    #[test]
+    fn binary_relation_uses_two_resolved_reverse_curve_owners() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Parallel);
+        let mut first_owner = marker("first-owner", Some([1.0, 2.0]));
+        first_owner.kind = SketchInputKind::LineOrCircle;
+        first_owner.offset = 1;
+        first_owner.links = vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: relation.id.clone(),
+        }];
+        let mut second_owner = marker("second-owner", Some([3.0, 4.0]));
+        second_owner.kind = SketchInputKind::LineOrCircle;
+        second_owner.offset = 2;
+        second_owner.links = first_owner.links.clone();
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (first_owner.id.as_str(), &first_owner),
+            (second_owner.id.as_str(), &second_owner),
+        ]);
+        let first = SketchEntityId("first".into());
+        let second = SketchEntityId("second".into());
+        let loci = HashMap::from([
+            (
+                first_owner.id.clone(),
+                vec![SketchLocus::Entity(first.clone())],
+            ),
+            (
+                second_owner.id.clone(),
+                vec![SketchLocus::Entity(second.clone())],
+            ),
+        ]);
+
+        assert_eq!(
+            typed_marker_relation_definition(&relation, &markers, &loci),
+            Some(SketchConstraintDefinition::Parallel { first, second })
         );
     }
 
