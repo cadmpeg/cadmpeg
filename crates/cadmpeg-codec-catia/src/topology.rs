@@ -1992,6 +1992,9 @@ struct PortCandidateSearch<'a> {
     point_ports: HashMap<usize, u32>,
     edge_pairs: Vec<Option<[usize; 2]>>,
     solution: Option<Vec<[usize; 2]>>,
+    solution_key: Option<Vec<[usize; 2]>>,
+    ambiguous: bool,
+    exhausted: bool,
     states: usize,
 }
 
@@ -2020,7 +2023,11 @@ impl PortCandidateSearch<'_> {
         // still contain symmetric coordinate assignments. Ambiguity beyond
         // this bound is retained for later paths rather than partially bound.
         const MAX_STATES: usize = 1_024;
-        if self.solution.is_some() || self.states >= MAX_STATES {
+        if self.ambiguous || self.exhausted {
+            return;
+        }
+        if self.states >= MAX_STATES {
+            self.exhausted = true;
             return;
         }
         self.states += 1;
@@ -2035,7 +2042,27 @@ impl PortCandidateSearch<'_> {
             })
             .min();
         let Some((count, edge)) = next else {
-            self.solution = self.edge_pairs.iter().copied().collect();
+            let candidate = self.edge_pairs.iter().copied().collect::<Option<Vec<_>>>();
+            if let Some(candidate) = candidate {
+                let key = candidate
+                    .iter()
+                    .map(|pair| {
+                        if pair[0] <= pair[1] {
+                            *pair
+                        } else {
+                            [pair[1], pair[0]]
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                match &self.solution_key {
+                    Some(solution) if *solution != key => self.ambiguous = true,
+                    None => {
+                        self.solution = Some(candidate);
+                        self.solution_key = Some(key);
+                    }
+                    Some(_) => {}
+                }
+            }
             return;
         };
         if count == 0 {
@@ -2082,10 +2109,15 @@ pub fn bind_edge_port_candidates(
         point_ports: HashMap::new(),
         edge_pairs: vec![None; ports.len()],
         solution: None,
+        solution_key: None,
+        ambiguous: false,
+        exhausted: false,
         states: 0,
     };
     search.search();
-    search.solution
+    (!search.ambiguous && !search.exhausted)
+        .then_some(search.solution)
+        .flatten()
 }
 
 pub(crate) fn same_unordered_pair(left: [usize; 2], right: [usize; 2]) -> bool {
@@ -4120,16 +4152,18 @@ mod motif_tests {
     #[test]
     fn native_edge_identities_bind_ambiguous_coordinate_pairs() {
         let ports = [[10, 11], [12, 13], [10, 12], [11, 13]];
-        let candidates = [
-            vec![[0, 1]],
-            vec![[2, 3]],
-            vec![[0, 2], [1, 3]],
-            vec![[1, 3], [0, 2]],
-        ];
+        let candidates = [vec![[0, 1]], vec![[2, 3]], vec![[0, 2]], vec![[1, 3]]];
         assert_eq!(
             bind_edge_port_candidates(&ports, &candidates),
             Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
         );
+    }
+
+    #[test]
+    fn native_edge_identities_reject_multiple_coordinate_bijections() {
+        let ports = [[10, 11]];
+        let candidates = [vec![[0, 1], [2, 3]]];
+        assert_eq!(bind_edge_port_candidates(&ports, &candidates), None);
     }
 
     #[test]
