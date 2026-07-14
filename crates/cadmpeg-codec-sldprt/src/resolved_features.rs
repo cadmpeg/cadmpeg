@@ -298,6 +298,43 @@ mod marker_tests {
     }
 
     #[test]
+    fn curve_operand_selects_an_arc_by_local_identifier() {
+        let markers = [
+            SketchInputEntity {
+                id: "line-11".into(),
+                parent: "lane".into(),
+                feature_ref: Some("feature".into()),
+                ordinal: 0,
+                offset: 0,
+                local_id: Some(11),
+                kind: SketchInputKind::LineOrCircle,
+                state_value: None,
+                coordinates_m: Some([0.0, 0.0]),
+                links: Vec::new(),
+                link_selector: None,
+            },
+            SketchInputEntity {
+                id: "arc-3".into(),
+                parent: "lane".into(),
+                feature_ref: Some("feature".into()),
+                ordinal: 1,
+                offset: 1,
+                local_id: Some(3),
+                kind: SketchInputKind::Arc,
+                state_value: None,
+                coordinates_m: Some([1.0, 1.0]),
+                links: Vec::new(),
+                link_selector: None,
+            },
+        ];
+        assert_eq!(
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8dda), 3,)
+                .map(|marker| marker.id.as_str()),
+            Some("arc-3")
+        );
+    }
+
+    #[test]
     fn generated_arc_angles_use_only_exact_native_quadrants() {
         assert_eq!(
             arc_angle_relation_kind(std::f64::consts::FRAC_PI_2),
@@ -1515,7 +1552,7 @@ pub(crate) fn operand_accepts_marker(
         }
         FeatureInputOperandKind::E1
         | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
-            marker == SketchInputKind::LineOrCircle
+            matches!(marker, SketchInputKind::LineOrCircle | SketchInputKind::Arc)
         }
         _ => true,
     }
