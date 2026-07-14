@@ -1294,6 +1294,30 @@ pub fn standard_mesh_boundary_assignments(
         .collect()
 }
 
+/// Materialize one complete face-assignment selection and one direction for
+/// each ordered edge use into its abstract logical-corner quotient.
+#[must_use]
+pub fn parse_standard_mesh_selection(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    selected_assignments: &[usize],
+    edge_directions: &[Vec<Vec<bool>>],
+) -> Option<StandardTopology> {
+    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let assignments = standard_mesh_boundary_assignments(bytes, edge_faces)?;
+    if selected_assignments.len() != face_count || edge_directions.len() != face_count {
+        return None;
+    }
+    let selected = assignments
+        .iter()
+        .zip(selected_assignments)
+        .map(|(face, &assignment)| face.get(assignment).cloned())
+        .collect::<Option<Vec<_>>>()?;
+    reconstruct_mesh_selection(edge_rows, vertex_points, &selected, edge_directions)
+}
+
 fn boundary_endpoint_support(
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -2336,6 +2360,81 @@ fn reconstruct(
         edge_rows,
         vertex_points,
         logical_vertex_count: roots.len(),
+    })
+}
+
+fn reconstruct_mesh_selection(
+    edge_rows: Vec<EdgeRow>,
+    vertex_points: Vec<[f64; 3]>,
+    selected: &[MeshFaceBoundaryAssignment],
+    unmatched_reversed: &[Vec<Vec<bool>>],
+) -> Option<StandardTopology> {
+    if selected.len() != unmatched_reversed.len() {
+        return None;
+    }
+    let mut union = UnionFind::new(edge_rows.len() * 2);
+    let mut faces = Vec::with_capacity(selected.len());
+    for (face, directions) in selected.iter().zip(unmatched_reversed) {
+        if face.boundaries.len() != directions.len() {
+            return None;
+        }
+        let mut boundaries = Vec::with_capacity(face.boundaries.len());
+        for (uses, directions) in face.boundaries.iter().zip(directions) {
+            if uses.len() != directions.len() || uses.is_empty() {
+                return None;
+            }
+            let corners = (0..uses.len()).map(|_| union.push()).collect::<Vec<_>>();
+            let mut coedges = Vec::with_capacity(uses.len());
+            for (use_index, (use_, &unmatched_reversed)) in uses.iter().zip(directions).enumerate()
+            {
+                let reversed = use_.reversed.unwrap_or(unmatched_reversed);
+                if use_.reversed.is_some() && unmatched_reversed != reversed {
+                    return None;
+                }
+                let start_vertex = corners[use_index];
+                let end_vertex = corners[(use_index + 1) % corners.len()];
+                let edge_start = use_.edge.checked_mul(2)?;
+                let edge_end = edge_start.checked_add(1)?;
+                if edge_end >= edge_rows.len() * 2 {
+                    return None;
+                }
+                if reversed {
+                    union.union(edge_end, start_vertex);
+                    union.union(edge_start, end_vertex);
+                } else {
+                    union.union(edge_start, start_vertex);
+                    union.union(edge_end, end_vertex);
+                }
+                coedges.push(CoedgeUse {
+                    edge_row: use_.edge,
+                    reversed,
+                    start_vertex,
+                    end_vertex,
+                });
+            }
+            boundaries.push(Boundary { coedges });
+        }
+        faces.push(FaceTopology { boundaries });
+    }
+    let mut roots = HashMap::new();
+    for node in 0..union.len() {
+        let root = union.find(node);
+        let next = roots.len();
+        roots.entry(root).or_insert(next);
+    }
+    for face in &mut faces {
+        for boundary in &mut face.boundaries {
+            for coedge in &mut boundary.coedges {
+                coedge.start_vertex = roots[&union.find(coedge.start_vertex)];
+                coedge.end_vertex = roots[&union.find(coedge.end_vertex)];
+            }
+        }
+    }
+    Some(StandardTopology {
+        faces,
+        edge_rows,
+        logical_vertex_count: roots.len(),
+        vertex_points,
     })
 }
 

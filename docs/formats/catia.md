@@ -199,6 +199,8 @@ The placement domain for unmatched rows contains only assignments that partition
 
 Merging an assignment with the exact interior-handle occurrences produces one ordered physical-edge sequence per trim cycle. Every boundary segment is covered exactly once. Interior-handle occurrences retain their stored-row direction; unmatched occurrences retain an unresolved direction until endpoint constraints select it.
 
+Selecting one assignment per face and one direction per unresolved occurrence defines the logical-corner quotient independently of coordinate rows. Consecutive uses in a trim cycle share a face-local corner. Each occurrence maps those two corners to the physical edge row's start and end ports according to its direction. Equal physical ports across the two incident occurrences collapse their face-local corners into one logical vertex.
+
 Resolved matched edges constrain trim-cycle corner points by unordered endpoint pairs. Intersect the pair sets at shared corners, then propagate a singleton corner across its edge to the opposite endpoint. An unmatched placement whose start and end corners are bound contributes their unordered point pair to that edge's endpoint domain. A placement-derived domain is complete only when every retained placement has both corners bound; incomplete corner coverage does not narrow the edge.
 
 Endpoint constraints prune complete face assignments atomically. A placement domain intersects the edge's resolved endpoint pair and the complete placement domain on its opposite incident face. Repeat assignment removal and domain intersection to a fixpoint. An unbound placement contributes no endpoint restriction; it does not invalidate its face assignment.

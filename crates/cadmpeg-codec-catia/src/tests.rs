@@ -287,6 +287,18 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
             (3, Some(false))
         ]
     );
+    let selected = crate::topology::parse_standard_mesh_selection(
+        &bytes,
+        &[[0, 0]; 4],
+        &[0],
+        &[vec![vec![false; 4]]],
+    )
+    .expect("selected mesh-corner quotient");
+    assert_eq!(selected.logical_vertex_count(), 4);
+    assert_eq!(
+        selected.edge_vertices().expect("selected edge vertices"),
+        [[0, 1], [1, 2], [2, 3], [3, 0]]
+    );
     let cycle_domains = crate::topology::standard_mesh_prune_endpoint_candidates(
         &bytes,
         &[[0, 0]; 4],
