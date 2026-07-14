@@ -6543,6 +6543,20 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "plane_cone_circle"))
                 if center == Point3::new(0.0, 0.0, 3.0) && (radius - 5.0).abs() < 1e-12
         ));
+        let inverse_sqrt_two = 1.0 / 2.0_f64.sqrt();
+        let cone_tangent_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, -2.0],
+            normal: [inverse_sqrt_two, 0.0, inverse_sqrt_two],
+        });
+        assert!(matches!(
+            carrier_intersection_curve(cone_tangent_plane, cone),
+            Some((CurveGeometry::Line { origin, direction }, "plane_cone_tangent_line"))
+                if origin.x.abs() < 1e-12
+                    && origin.y.abs() < 1e-12
+                    && (origin.z + 2.0).abs() < 1e-12
+                    && (direction.x + inverse_sqrt_two).abs() < 1e-12
+                    && (direction.z - inverse_sqrt_two).abs() < 1e-12
+        ));
         assert_eq!(solve_carriers(&[cone, cap, tangent]), None);
         let cone_tangent = CarrierEquation::Plane(PlaneEquation {
             origin: [5.0, 0.0, 0.0],
@@ -8206,6 +8220,31 @@ fn carrier_intersection_curve(
             let normal = normalized(plane.normal)?;
             let axis = normalized(cone.axis)?;
             let alignment = dot(normal, axis);
+            let slope = cone.half_angle.tan();
+            if slope.abs() > 1e-12 {
+                let apex: [f64; 3] = std::array::from_fn(|index| {
+                    cone.origin[index] - (cone.radius / slope) * axis[index]
+                });
+                let plane_distance = dot(
+                    normal,
+                    std::array::from_fn(|index| apex[index] - plane.origin[index]),
+                );
+                let scale = cone.radius.max(1.0);
+                if plane_distance.abs() <= 1e-9 * scale
+                    && (alignment.abs() - cone.half_angle.sin()).abs() <= 1e-10
+                {
+                    let direction = normalized(std::array::from_fn(|index| {
+                        axis[index] - alignment * normal[index]
+                    }))?;
+                    return Some((
+                        CurveGeometry::Line {
+                            origin: Point3::new(apex[0], apex[1], apex[2]),
+                            direction: Vector3::new(direction[0], direction[1], direction[2]),
+                        },
+                        "plane_cone_tangent_line",
+                    ));
+                }
+            }
             if (alignment.abs() - 1.0).abs() > 1e-10 {
                 return None;
             }
