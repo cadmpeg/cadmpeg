@@ -72,6 +72,119 @@ pub struct AttributeDefinition<'a> {
     pub field_record_header_words: [u16; 2],
 }
 
+/// One framed type-81 Parasolid entity/attribute-list record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entity51Record {
+    /// Inflated-stream offset of the `00 51` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Record flags preceding the identity.
+    pub flags: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Serialized sequence value.
+    pub sequence: u32,
+    /// Layout discriminator selecting the reference count.
+    pub discriminator: u16,
+    /// Ordered stream-local references.
+    pub references: Vec<u32>,
+}
+
+/// Decode framed type-81 entity/attribute-list records.
+pub fn entity_51_records(bytes: &[u8]) -> Vec<Entity51Record> {
+    let mut records = Vec::new();
+    for offset in 0..bytes.len().saturating_sub(25) {
+        if bytes.get(offset..offset + 2) != Some(&[0x00, 0x51]) {
+            continue;
+        }
+        let mut at = offset + 2;
+        if bytes.get(at) == Some(&0xff) {
+            at += 1;
+        }
+        let Some(flags) = bytes
+            .get(at..at + 4)
+            .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))
+        else {
+            continue;
+        };
+        at += 4;
+        let Some(xmt) = read_xmt(bytes, &mut at) else {
+            continue;
+        };
+        let Some(sequence) = bytes
+            .get(at..at + 4)
+            .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")))
+        else {
+            continue;
+        };
+        at += 4;
+        let Some(discriminator) = bytes
+            .get(at..at + 2)
+            .map(|value| u16::from_be_bytes(value.try_into().expect("two bytes")))
+        else {
+            continue;
+        };
+        at += 2;
+        let low_flag = (flags & 0xff) as u8;
+        if xmt <= 1 || sequence == 0 || !(1..=0x20).contains(&low_flag) {
+            continue;
+        }
+        let reference_count = match (discriminator, low_flag) {
+            (0x0018 | 0x0020 | 0x0025, 1) => 6,
+            (0x001d | 0x001e, 2) => 7,
+            (0x0020 | 0x0024 | 0x0027, 4) => 9,
+            _ => 6,
+        };
+        let Some(references) = entity_51_references(bytes, &mut at, reference_count) else {
+            continue;
+        };
+        records.push(Entity51Record {
+            offset,
+            byte_len: at - offset,
+            flags,
+            xmt,
+            sequence,
+            discriminator,
+            references,
+        });
+    }
+    records
+}
+
+fn entity_51_references(bytes: &[u8], at: &mut usize, count: usize) -> Option<Vec<u32>> {
+    let start = *at;
+    if bytes.get(*at) == Some(&1) {
+        let mut prefixed_at = *at;
+        let mut references = Vec::with_capacity(count);
+        for _ in 0..count {
+            if bytes.get(prefixed_at) != Some(&1) {
+                references.clear();
+                break;
+            }
+            prefixed_at += 1;
+            references.push(read_xmt(bytes, &mut prefixed_at)?);
+        }
+        if references.len() == count && bytes.get(prefixed_at) == Some(&0) {
+            *at = prefixed_at + 1;
+            return Some(references);
+        }
+    }
+    *at = start;
+    (0..count).map(|_| read_xmt(bytes, at)).collect()
+}
+
+fn read_xmt(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    let first = i16::from_be_bytes([*bytes.get(*at)?, *bytes.get(*at + 1)?]);
+    *at += 2;
+    if first >= 0 {
+        return Some(first as u32);
+    }
+    let quotient = u16::from_be_bytes([*bytes.get(*at)?, *bytes.get(*at + 1)?]);
+    *at += 2;
+    Some(u32::from(quotient) * 32_767 + u32::from(first.unsigned_abs()))
+}
+
 /// Decode length-bounded `00 4f` attribute-class declarations.
 pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
     let mut definitions = Vec::new();

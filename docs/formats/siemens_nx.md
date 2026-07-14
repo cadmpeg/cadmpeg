@@ -747,6 +747,17 @@ The B-spline form code does not determine whether a control grid is rational. Th
 
 Parasolid attribute definitions use a two-record catalog entry. `00 4f [ff] name_len:u32 BE, class_xmt:u16 BE, name[name_len]` declares a non-empty printable ASCII class name; `ff` is the optional record-envelope escape. The field record follows immediately as `00 50, field_count:u32 BE, field_xmt:u16 BE, reference[2]:u16 BE, header_word[2]:u16 BE, payload`. Both XMT identities and the ordered references are stream-local. The header words are retained verbatim; their second value includes `2328`, `1f67`, and `1f44`. A truncated header invalidates the declaration pair atomically. Type code `0x05` in the field payload denotes a component/reference or string field, `0x06` a double field, and `0x00` a void or flag field.
 
+A type-81 entity/attribute-list record is `00 51 [ff], flags:u32 BE,
+xmt, sequence:u32 BE, discriminator:u16 BE, references`. XMT fields use the
+compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
+the low flags byte is in `1..=0x20`. The reference count is seven for
+`(discriminator, low_flags) = (001d|001e, 02)`, nine for
+`(0020|0024|0027, 04)`, and six otherwise, including
+`(0018|0020|0025, 01)`. References are either consecutive XMT values or
+individually `01`-prefixed XMT values followed by `00`; the two forms are
+atomic. A topology attribute-list identity resolves only when exactly one
+type-81 record in the same stream has that xmt.
+
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 
 ```text

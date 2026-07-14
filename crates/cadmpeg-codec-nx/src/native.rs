@@ -154,7 +154,33 @@ pub struct ParasolidTopologyAttributeListReference {
     pub topology_xmt: u32,
     /// Stream-local attribute-list identity.
     pub attribute_list_xmt: u32,
+    /// Uniquely resolved type-81 attribute-list record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub attribute_list_record: Option<String>,
     /// Offset of the attribute-list field in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Framed Parasolid type-81 entity/attribute-list record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity51Record {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Exact record flags.
+    pub flags: u32,
+    /// Serialized sequence value.
+    pub sequence: u32,
+    /// Layout discriminator.
+    pub discriminator: u16,
+    /// Ordered stream-local references.
+    pub references: Vec<u32>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
     pub inflated_offset: u64,
 }
 
@@ -4344,7 +4370,15 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
 /// Retain every non-null topology-to-attribute-list reference.
 pub fn parasolid_topology_attribute_list_references(
     streams: &[Stream],
+    entity_records: &[ParasolidEntity51Record],
 ) -> Vec<ParasolidTopologyAttributeListReference> {
+    let mut records_by_identity = BTreeMap::<(u32, u32), Vec<&str>>::new();
+    for record in entity_records {
+        records_by_identity
+            .entry((record.stream_ordinal, record.xmt))
+            .or_default()
+            .push(record.id.as_str());
+    }
     let mut references = Vec::new();
     for (stream_ordinal, stream) in streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -4377,12 +4411,49 @@ pub fn parasolid_topology_attribute_list_references(
                     topology_type,
                     topology_xmt: node.xmt,
                     attribute_list_xmt,
+                    attribute_list_record: records_by_identity
+                        .get(&(stream_ordinal as u32, attribute_list_xmt))
+                        .and_then(|records| {
+                            let [record] = records.as_slice() else {
+                                return None;
+                            };
+                            Some((*record).to_string())
+                        }),
                     inflated_offset: inflated_offset as u64,
                 });
             }
         }
     }
     references
+}
+
+/// Decode every framed type-81 entity/attribute-list record.
+pub fn parasolid_entity_51_records(streams: &[Stream]) -> Vec<ParasolidEntity51Record> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::entity_51_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidEntity51Record {
+                    id: format!(
+                        "nx:s{stream_ordinal}:entity-51#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    flags: record.flags,
+                    sequence: record.sequence,
+                    discriminator: record.discriminator,
+                    references: record.references,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
 }
 
 /// Unit declared by an NX numeric expression.

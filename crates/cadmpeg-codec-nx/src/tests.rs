@@ -485,7 +485,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 116);
+    assert_eq!(namespace.version, 117);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3466,6 +3466,28 @@ fn topology_retains_entity_attribute_list_references() {
 }
 
 #[test]
+fn parasolid_entity_51_records_retain_layout_selected_references() {
+    let mut bytes = vec![0, 0x51];
+    bytes.extend_from_slice(&1u32.to_be_bytes());
+    bytes.extend_from_slice(&10u16.to_be_bytes());
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&0x21u16.to_be_bytes());
+    for reference in 3..=8u16 {
+        bytes.extend_from_slice(&reference.to_be_bytes());
+    }
+    bytes.extend_from_slice(&[0xaa, 0xbb]);
+
+    let records = crate::parasolid::entity_51_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 0);
+    assert_eq!(records[0].byte_len, 26);
+    assert_eq!(records[0].xmt, 10);
+    assert_eq!(records[0].sequence, 2);
+    assert_eq!(records[0].discriminator, 0x21);
+    assert_eq!(records[0].references, vec![3, 4, 5, 6, 7, 8]);
+}
+
+#[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
     let graph = crate::topology::Graph::parse(&valid);
@@ -5759,7 +5781,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 116);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 117);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
