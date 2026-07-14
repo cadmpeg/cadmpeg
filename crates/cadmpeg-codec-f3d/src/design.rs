@@ -1381,23 +1381,89 @@ fn profiles_containing_points(
     points: &[Point3],
     tolerance: f64,
 ) -> Option<Vec<u32>> {
+    let projected = points
+        .iter()
+        .map(|point| project_to_sketch(sketch, *point))
+        .collect::<Vec<_>>();
+    let boundary_profiles = sketch
+        .profiles
+        .iter()
+        .enumerate()
+        .filter(|(_, profile)| {
+            projected.iter().all(|point| {
+                let on_boundary = profile.iter().any(|use_| {
+                    entities
+                        .iter()
+                        .find(|entity| entity.id == use_.entity)
+                        .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
+                });
+                on_boundary
+            })
+        })
+        .map(|(index, _)| u32::try_from(index).ok())
+        .collect::<Option<Vec<_>>>()?;
+    if !boundary_profiles.is_empty() {
+        return Some(boundary_profiles);
+    }
     sketch
         .profiles
         .iter()
         .enumerate()
         .filter(|(_, profile)| {
-            points.iter().all(|point| {
-                let projected = project_to_sketch(sketch, *point);
-                profile.iter().any(|use_| {
-                    entities
-                        .iter()
-                        .find(|entity| entity.id == use_.entity)
-                        .is_some_and(|entity| point_on_sketch_entity(projected, entity, tolerance))
-                })
-            })
+            projected
+                .iter()
+                .all(|point| point_in_line_profile(*point, profile, entities, tolerance))
         })
         .map(|(index, _)| u32::try_from(index).ok())
         .collect()
+}
+
+fn point_in_line_profile(
+    point: Point2,
+    profile: &[cadmpeg_ir::sketches::SketchEntityUse],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let mut vertices = Vec::with_capacity(profile.len());
+    let mut previous_end = None;
+    for use_ in profile {
+        let Some(entity) = entities.iter().find(|entity| entity.id == use_.entity) else {
+            return false;
+        };
+        let SketchGeometry::Line { start, end } = entity.geometry else {
+            return false;
+        };
+        let [start, end] = if use_.reversed {
+            [end, start]
+        } else {
+            [start, end]
+        };
+        if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
+            return false;
+        }
+        vertices.push(start);
+        previous_end = Some(end);
+    }
+    if vertices.len() < 3
+        || previous_end.is_none_or(|end| point_distance(end, vertices[0]) > tolerance)
+    {
+        return false;
+    }
+
+    vertices
+        .iter()
+        .copied()
+        .zip(vertices.iter().copied().cycle().skip(1))
+        .take(vertices.len())
+        .filter(|(start, end)| {
+            (start.v > point.v) != (end.v > point.v)
+                && point.u < start.u + (point.v - start.v) * (end.u - start.u) / (end.v - start.v)
+        })
+        .count()
+        % 2
+        == 1
 }
 
 fn historical_member_points(
@@ -8409,6 +8475,66 @@ mod relation_tests {
         assert_eq!(
             profiles_containing_points(&sketch, &[entity], &[point], 1.0e-6),
             Some(vec![0, 1])
+        );
+    }
+
+    #[test]
+    fn historical_point_inside_unique_closed_line_profile_selects_region() {
+        let sketch_id = SketchId("sketch".into());
+        let mut entities = Vec::new();
+        let mut profile = Vec::new();
+        for (ordinal, (start, end)) in [
+            (Point2::new(0.0, 0.0), Point2::new(4.0, 0.0)),
+            (Point2::new(4.0, 0.0), Point2::new(4.0, 3.0)),
+            (Point2::new(4.0, 3.0), Point2::new(0.0, 3.0)),
+            (Point2::new(0.0, 3.0), Point2::new(0.0, 0.0)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let id = SketchEntityId(format!("line-{ordinal}"));
+            profile.push(SketchEntityUse {
+                entity: id.clone(),
+                reversed: false,
+            });
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line { start, end },
+            });
+        }
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            origin: Point3::new(10.0, 20.0, 5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: vec![profile],
+            native_ref: None,
+        };
+
+        assert_eq!(
+            profiles_containing_points(
+                &sketch,
+                &entities,
+                &[Point3::new(12.0, 21.0, 12.0)],
+                1.0e-6,
+            ),
+            Some(vec![0])
+        );
+        assert_eq!(
+            profiles_containing_points(
+                &sketch,
+                &entities,
+                &[Point3::new(15.0, 21.0, 12.0)],
+                1.0e-6,
+            ),
+            Some(Vec::new())
         );
     }
 
