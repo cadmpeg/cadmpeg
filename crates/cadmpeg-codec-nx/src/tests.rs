@@ -4738,6 +4738,42 @@ fn ext11_charted_intersection_curve_stream() -> Vec<u8> {
     stream
 }
 
+fn two_support_ext11_charted_intersection_curve_stream(ambiguous: bool) -> Vec<u8> {
+    let mut stream = two_support_charted_intersection_curve_stream();
+    let intersection = stream
+        .windows(4)
+        .position(|window| window == [0, 38, 0, 12])
+        .expect("intersection record");
+    put_ref(&mut stream, intersection + 29, 1);
+
+    let second_plane = stream
+        .windows(4)
+        .position(|window| window == [0, 50, 0, 13])
+        .expect("second plane");
+    if !ambiguous {
+        put_vec3(&mut stream, second_plane + 67, [0.0, 0.0, 1.0]);
+    }
+
+    let chart = stream
+        .windows(8)
+        .position(|window| window == [0, 40, 0, 0, 0, 2, 0, 20])
+        .expect("chart record");
+    let mut entries = vec![0u8; 2 * 11 * 8];
+    for (index, x) in [0.0, 0.01].into_iter().enumerate() {
+        let at = index * 88;
+        put_vec3(&mut entries, at, [x, 0.0, 0.0]);
+        let second = if ambiguous { [x, 0.0] } else { [0.0, x] };
+        put_f64(&mut entries, at + 24, x);
+        put_f64(&mut entries, at + 32, second[0]);
+        put_f64(&mut entries, at + 40, 0.0);
+        put_f64(&mut entries, at + 48, second[1]);
+        put_vec3(&mut entries, at + 56, [1.0, 0.0, 0.0]);
+        put_f64(&mut entries, at + 80, x);
+    }
+    stream.splice(chart + 60..chart + 108, entries);
+    stream
+}
+
 fn two_support_charted_intersection_curve_stream() -> Vec<u8> {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let intersection = stream
@@ -7586,6 +7622,47 @@ fn decode_emits_ext11_deltas_intersection_chart() {
     };
     assert_eq!(nurbs.control_points[1].x, 10.0);
     assert_eq!(nurbs.knots, vec![2.0, 2.0, 5.0, 5.0]);
+}
+
+#[test]
+fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    let [Some(PcurveGeometry::Nurbs {
+        control_points: first,
+        ..
+    }), Some(PcurveGeometry::Nurbs {
+        control_points: second,
+        ..
+    })] = context.sides.clone().map(|side| side.pcurve)
+    else {
+        panic!("two ext11 pcurves");
+    };
+    assert_eq!(first, [Point2::new(0.0, 0.0), Point2::new(10.0, 0.0)]);
+    assert_eq!(second, [Point2::new(0.0, 0.0), Point2::new(0.0, 10.0)]);
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
+}
+
+#[test]
+fn decode_rejects_ambiguous_ext11_uv_lane_assignment() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(true);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::Intersection { context, .. } =
+        &result.ir.model.procedural_curves[0].definition
+    else {
+        panic!("typed intersection");
+    };
+    assert!(context.sides.iter().all(|side| side.pcurve.is_none()));
+    assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
 #[test]

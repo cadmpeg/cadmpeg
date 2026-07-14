@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
+use cadmpeg_ir::eval::{curve_point, model_surface_point, pcurve_uv, surface_point};
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
@@ -32,7 +32,7 @@ use cadmpeg_ir::ids::{
     AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId,
     ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -549,11 +549,26 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                         record: Some(unknown_id),
                     },
                     |charted| {
+                        let mut support_uv = charted.support_uv.clone();
+                        if let Some(ext_support_uv) = assign_ext11_support_uv(
+                            &ir,
+                            &surfaces_by_xmt,
+                            charted.supports,
+                            &charted.points,
+                            charted.fit_tolerance,
+                            &charted.ext_support_uv,
+                        ) {
+                            for side in 0..2 {
+                                if support_uv[side].is_none() {
+                                    support_uv[side] = Some(ext_support_uv[side].clone());
+                                }
+                            }
+                        }
                         let first = intersection_side(
                             &ir,
                             &surfaces_by_xmt,
                             charted.supports[0],
-                            charted.support_uv[0]
+                            support_uv[0]
                                 .as_deref()
                                 .filter(|uv| uv.len() == charted.parameters.len())
                                 .map(|uv| (uv, charted.parameters.as_slice())),
@@ -562,7 +577,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                             &ir,
                             &surfaces_by_xmt,
                             charted.supports[1],
-                            charted.support_uv[1]
+                            support_uv[1]
                                 .as_deref()
                                 .filter(|uv| uv.len() == charted.parameters.len())
                                 .map(|uv| (uv, charted.parameters.as_slice())),
@@ -1445,6 +1460,55 @@ fn linear_knots(parameters: &[f64]) -> Vec<f64> {
     knots.extend_from_slice(parameters);
     knots.push(*parameters.last().expect("non-empty chart parameters"));
     knots
+}
+
+pub(crate) fn assign_ext11_support_uv(
+    ir: &CadIr,
+    surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
+    supports: [u32; 2],
+    points: &[Point3],
+    fit_tolerance: f64,
+    lanes: &[Option<Vec<[f64; 2]>>; 2],
+) -> Option<[Vec<[f64; 2]>; 2]> {
+    let surface_ids = supports.map(|support| surfaces_by_xmt.get(&support).cloned());
+    let [Some(first_surface), Some(second_surface)] = surface_ids else {
+        return None;
+    };
+    let surfaces = [first_surface, second_surface];
+    let lane_matches_surface = |surface: &SurfaceId, lane: usize| {
+        let Some(values) = lanes[lane]
+            .as_deref()
+            .filter(|values| values.len() == points.len())
+        else {
+            return false;
+        };
+        let Some(geometry) = ir
+            .model
+            .surfaces
+            .iter()
+            .find(|candidate| &candidate.id == surface)
+            .map(|surface| &surface.geometry)
+        else {
+            return false;
+        };
+        values.iter().zip(points).all(|(uv, point)| {
+            let uv = surface_parameters(geometry, *uv);
+            model_surface_point(ir, surface, uv.u, uv.v)
+                .is_some_and(|candidate| point_distance(candidate, *point) <= fit_tolerance)
+        })
+    };
+    let direct = lane_matches_surface(&surfaces[0], 0) && lane_matches_surface(&surfaces[1], 1);
+    let swapped = lane_matches_surface(&surfaces[0], 1) && lane_matches_surface(&surfaces[1], 0);
+    match (direct, swapped) {
+        (true, false) => Some([lanes[0].clone()?, lanes[1].clone()?]),
+        (false, true) => Some([lanes[1].clone()?, lanes[0].clone()?]),
+        _ => None,
+    }
+}
+
+fn point_distance(first: Point3, second: Point3) -> f64 {
+    ((first.x - second.x).powi(2) + (first.y - second.y).powi(2) + (first.z - second.z).powi(2))
+        .sqrt()
 }
 
 fn intersection_side(
@@ -2861,7 +2925,7 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Materials, appearances, non-string entity-owned attribute fields, complete feature parameters, \
+        message: "Materials, appearances, unresolved entity-owned attribute fields, complete feature parameters, \
                   sketch geometry, constraints, and assembly occurrence placements were not transferred: \
                   their remaining NX object-model and Parasolid field serialization is not decoded."
             .to_string(),

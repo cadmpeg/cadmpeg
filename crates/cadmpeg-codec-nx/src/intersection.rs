@@ -30,8 +30,10 @@ pub struct IntersectionCurve {
     pub parameters: Vec<f64>,
     /// Chart chordal error in millimetres.
     pub fit_tolerance: f64,
-    /// Ordered support-zero UV values in native Parasolid parameter units.
+    /// Ordered support UV values in native Parasolid parameter units.
     pub support_uv: SupportUv,
+    /// Two ext11 UV lanes awaiting assignment to the ordered supports.
+    pub ext_support_uv: SupportUv,
 }
 
 /// Rejection census for structurally decoded intersection constructions whose
@@ -100,12 +102,14 @@ struct Chart {
     points: Vec<Point3>,
     parameters: Vec<f64>,
     fit_tolerance: f64,
+    ext_support_uv: SupportUv,
 }
 
 #[derive(Debug, Clone)]
 struct ChartPoints {
     points: Vec<Point3>,
     native_parameters: Option<Vec<f64>>,
+    ext_support_uv: SupportUv,
 }
 
 /// Decode type-38 and single-byte `0x5a` records whose referenced chart and
@@ -196,6 +200,7 @@ fn enrich(
         parameters: chart.parameters.clone(),
         fit_tolerance: chart.fit_tolerance,
         support_uv,
+        ext_support_uv: chart.ext_support_uv.clone(),
     })
 }
 
@@ -311,6 +316,7 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
                 points: chart_points.points,
                 parameters: native_parameters.clone().unwrap_or(chord_parameters),
                 fit_tolerance: chordal_error * 1000.0,
+                ext_support_uv: chart_points.ext_support_uv,
             };
             match out.entry(xmt) {
                 std::collections::btree_map::Entry::Vacant(entry) => {
@@ -327,6 +333,7 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
                         ) =>
                 {
                     entry.get_mut().parameters = candidate.parameters;
+                    entry.get_mut().ext_support_uv = candidate.ext_support_uv;
                 }
                 std::collections::btree_map::Entry::Occupied(_) => {}
             }
@@ -348,15 +355,42 @@ fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints
             ];
             let norm = tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
             let parameter = be::f64_at(stream, at + 80)?;
-            ((norm - 1.0).abs() < 1.0e-9 && parameter.is_finite()).then_some((point, parameter))
+            let parameter_lanes = [
+                [be::f64_at(stream, at + 24)?, be::f64_at(stream, at + 40)?],
+                [be::f64_at(stream, at + 32)?, be::f64_at(stream, at + 48)?],
+            ];
+            ((norm - 1.0).abs() < 1.0e-9 && parameter.is_finite()).then_some((
+                point,
+                parameter,
+                parameter_lanes,
+            ))
         })
         .collect::<Option<Vec<_>>>();
     if let Some(entries) = ext {
-        let (points, native_parameters): (Vec<_>, Vec<_>) = entries.into_iter().unzip();
+        let mut points = Vec::with_capacity(entries.len());
+        let mut native_parameters = Vec::with_capacity(entries.len());
+        let mut ext_support_uv = [Some(Vec::new()), Some(Vec::new())];
+        for (point, parameter, lanes) in entries {
+            points.push(point);
+            native_parameters.push(parameter);
+            for lane in 0..2 {
+                if lanes[lane]
+                    .iter()
+                    .all(|value| value.is_finite() && *value != MISSING_PARAMETER)
+                {
+                    if let Some(values) = &mut ext_support_uv[lane] {
+                        values.push(lanes[lane]);
+                    }
+                } else {
+                    ext_support_uv[lane] = None;
+                }
+            }
+        }
         if native_parameters.windows(2).all(|pair| pair[0] < pair[1]) {
             return Some(ChartPoints {
                 points,
                 native_parameters: Some(native_parameters),
+                ext_support_uv,
             });
         }
     }
@@ -366,6 +400,7 @@ fn chart_points(stream: &[u8], block: usize, count: usize) -> Option<ChartPoints
     (points.windows(2).any(|pair| pair[0] != pair[1])).then_some(ChartPoints {
         points,
         native_parameters: None,
+        ext_support_uv: [None, None],
     })
 }
 
