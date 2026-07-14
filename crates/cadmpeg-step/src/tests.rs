@@ -268,6 +268,10 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
             include_bytes!("../tests/fixtures/ap242_ed3_sections.p21"),
         ),
         (
+            "ap242_degree_cone",
+            include_bytes!("../tests/fixtures/ap242_degree_cone.p21"),
+        ),
+        (
             "ap242_external_documents",
             include_bytes!("../tests/fixtures/ap242_external_documents.p21"),
         ),
@@ -474,6 +478,20 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 ..
             }
         )));
+}
+
+#[test]
+fn decode_conical_apex_and_context_plane_angle_units() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_degree_cone.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode degree cone");
+
+    assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
+        surface.geometry,
+        SurfaceGeometry::Cone { radius, half_angle, .. }
+            if radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
+    )));
 }
 
 #[test]

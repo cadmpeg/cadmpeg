@@ -27,6 +27,7 @@ pub(super) struct GeometryResult {
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     let scale = length_scale(exchange).unwrap_or(1.0);
+    let angle_scale = plane_angle_scale(exchange).unwrap_or(1.0);
     let mut typed = BTreeSet::new();
     let mut warnings = Vec::new();
     let mut points = BTreeMap::new();
@@ -504,7 +505,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 },
             ),
             Some("CONICAL_SURFACE") => placement
-                .zip(positive(record.parameter(2)))
+                .zip(nonnegative(record.parameter(2)))
                 .zip(record.parameter(3).and_then(Value::number))
                 .filter(|(_, angle)| angle.is_finite() && *angle > 0.0)
                 .map(|(((origin, axis, ref_direction), radius), half_angle)| {
@@ -514,7 +515,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         ref_direction,
                         radius: radius * scale,
                         ratio: 1.0,
-                        half_angle,
+                        half_angle: half_angle * angle_scale,
                     }
                 }),
             Some("SPHERICAL_SURFACE") => placement.zip(positive(record.parameter(2))).map(
@@ -819,6 +820,56 @@ fn length_scale(exchange: &Exchange) -> Option<f64> {
     unit_scale_mm(unit_id, exchange, &mut BTreeSet::new())
 }
 
+fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
+    let context_units = exchange.records.values().find_map(|record| {
+        record
+            .partial("GLOBAL_UNIT_ASSIGNED_CONTEXT")?
+            .parameters
+            .first()?
+            .list()
+    });
+    let unit_id = context_units
+        .into_iter()
+        .flatten()
+        .filter_map(Value::reference)
+        .find(|id| {
+            exchange
+                .records
+                .get(id)
+                .is_some_and(|record| record.partial("PLANE_ANGLE_UNIT").is_some())
+        })
+        .or_else(|| {
+            exchange
+                .records
+                .iter()
+                .find(|(_, record)| record.partial("PLANE_ANGLE_UNIT").is_some())
+                .map(|(&id, _)| id)
+        })?;
+    unit_scale_radians(unit_id, exchange, &mut BTreeSet::new())
+}
+
+fn unit_scale_radians(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Option<f64> {
+    if !active.insert(id) {
+        return None;
+    }
+    let record = exchange.records.get(&id)?;
+    let result = if let Some(unit) = record.partial("SI_UNIT") {
+        (unit.parameters.get(1)?.enumeration()? == "RADIAN").then_some(1.0)
+    } else if let Some(unit) = record.partial("CONVERSION_BASED_UNIT") {
+        let factor_id = unit.parameters.get(1)?.reference()?;
+        let factor = exchange.records.get(&factor_id)?;
+        let value = record_values(factor).find_map(measure_number)?;
+        let base = record_values(factor)
+            .find_map(Value::reference)
+            .and_then(|base| unit_scale_radians(base, exchange, active))?;
+        Some(value * base)
+    } else {
+        None
+    };
+    active.remove(&id);
+    result.filter(|scale| scale.is_finite() && *scale > 0.0)
+}
+
 pub(super) fn unit_scale_mm(
     id: u64,
     exchange: &Exchange,
@@ -1032,6 +1083,12 @@ fn positive(value: Option<&Value>) -> Option<f64> {
     value
         .and_then(Value::number)
         .filter(|value| value.is_finite() && *value > 0.0)
+}
+
+fn nonnegative(value: Option<&Value>) -> Option<f64> {
+    value
+        .and_then(Value::number)
+        .filter(|value| value.is_finite() && *value >= 0.0)
 }
 
 fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsCurve> {
