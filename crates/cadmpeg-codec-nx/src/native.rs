@@ -1052,6 +1052,21 @@ pub struct FeatureSketchPoint {
     pub coordinates: [f64; 2],
 }
 
+/// Exact same-name point identity within one reconstructed sketch payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSketchPointGroup {
+    /// Globally unique point-group identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Exact `Point<positive decimal>` source name.
+    pub name: String,
+    /// Identical point records in payload order.
+    pub points: Vec<String>,
+    /// Bit-identical ordered coordinate values.
+    pub coordinates: [f64; 2],
+}
+
 /// Named two-scalar point object spanning consecutive offset-store blocks.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OffsetStoreNamedPoint {
@@ -1101,8 +1116,8 @@ pub struct FeatureSketchPointUse {
     pub sketch_references: Vec<String>,
     /// Exact block-use witnesses corresponding to the sketch references.
     pub block_uses: Vec<String>,
-    /// Name-delimited solved-point witnesses in reconstructed payload order.
-    pub sketch_points: Vec<String>,
+    /// Exact same-name sketch-point group.
+    pub sketch_point_group: String,
     /// Independently framed named-point object addressed by the reference.
     pub named_point: String,
     /// Absolute source offsets of the sketch references.
@@ -3280,6 +3295,47 @@ pub fn feature_sketch_points(
         .collect()
 }
 
+/// Group every bit-identical same-name sketch-point witness.
+pub fn feature_sketch_point_groups(points: &[FeatureSketchPoint]) -> Vec<FeatureSketchPointGroup> {
+    let mut grouped = BTreeSet::new();
+    let mut groups = Vec::new();
+    for point in points {
+        let key = (point.operation_label.as_str(), point.name.as_str());
+        if !grouped.insert(key) {
+            continue;
+        }
+        let witnesses = points
+            .iter()
+            .filter(|candidate| {
+                candidate.operation_label == point.operation_label && candidate.name == point.name
+            })
+            .collect::<Vec<_>>();
+        if witnesses.iter().any(|candidate| {
+            candidate
+                .coordinates
+                .iter()
+                .zip(point.coordinates)
+                .any(|(first, second)| first.to_bits() != second.to_bits())
+        }) {
+            continue;
+        }
+        groups.push(FeatureSketchPointGroup {
+            id: format!(
+                "nx:feature-history:sketch-point-group#{}",
+                point.id.rsplit_once('#').map_or("unknown", |(_, key)| key)
+            ),
+            operation_label: point.operation_label.clone(),
+            name: point.name.clone(),
+            points: witnesses
+                .into_iter()
+                .map(|point| point.id.clone())
+                .collect(),
+            coordinates: point.coordinates,
+        });
+    }
+    groups
+}
+
 /// Decode exact named point objects across consecutive offset-store blocks.
 pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedPoint> {
     let mut points = Vec::new();
@@ -3382,7 +3438,7 @@ pub fn feature_sketch_named_point_block_uses(
 
 /// Join the two exact encodings of a solved sketch point.
 pub fn feature_sketch_point_uses(
-    sketch_points: &[FeatureSketchPoint],
+    point_groups: &[FeatureSketchPointGroup],
     named_points: &[OffsetStoreNamedPoint],
     block_uses: &[FeatureSketchNamedPointBlockUse],
 ) -> Vec<FeatureSketchPointUse> {
@@ -3410,20 +3466,20 @@ pub fn feature_sketch_point_uses(
                     && candidate.named_point == block_use.named_point
             })
             .collect::<Vec<_>>();
-        let candidates = sketch_points
+        let candidates = point_groups
             .iter()
-            .filter(|point| {
-                point.operation_label == block_use.operation_label && point.name == named_point.name
+            .filter(|group| {
+                group.operation_label == block_use.operation_label && group.name == named_point.name
             })
             .collect::<Vec<_>>();
-        if candidates.is_empty()
-            || candidates.iter().any(|point| {
-                point
-                    .coordinates
-                    .iter()
-                    .zip(named_point.values)
-                    .any(|(first, second)| first.to_bits() != second.to_bits())
-            })
+        let [point_group] = candidates.as_slice() else {
+            continue;
+        };
+        if point_group
+            .coordinates
+            .iter()
+            .zip(named_point.values)
+            .any(|(first, second)| first.to_bits() != second.to_bits())
         {
             continue;
         }
@@ -3440,10 +3496,7 @@ pub fn feature_sketch_point_uses(
                 .iter()
                 .map(|block_use| block_use.id.clone())
                 .collect(),
-            sketch_points: candidates
-                .into_iter()
-                .map(|point| point.id.clone())
-                .collect(),
+            sketch_point_group: point_group.id.clone(),
             named_point: named_point.id.clone(),
             source_offsets: point_block_uses
                 .iter()
