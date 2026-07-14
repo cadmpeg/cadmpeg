@@ -61,7 +61,8 @@ use cadmpeg_ir::codec::{
     Encoder, ReadSeek,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, ProceduralCurveDefinition, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::ids::{OccurrenceId, ProductId};
 use cadmpeg_ir::product::OccurrenceParent;
@@ -313,6 +314,10 @@ struct Builder<'a> {
     vertex_refs: HashMap<String, Ref>,
     point_refs: HashMap<String, Ref>,
     pcurve_context: Option<Ref>,
+    active_surfaces: BTreeSet<String>,
+    active_curves: BTreeSet<String>,
+    written_procedural_surfaces: BTreeSet<String>,
+    written_procedural_curves: BTreeSet<String>,
 
     /// Edges skipped because they carry no attributed 3D curve, deduplicated
     /// (a shared edge is reached once per coedge) and aggregated into a single
@@ -405,6 +410,10 @@ impl<'a> Builder<'a> {
             vertex_refs: HashMap::new(),
             point_refs: HashMap::new(),
             pcurve_context: None,
+            active_surfaces: BTreeSet::new(),
+            active_curves: BTreeSet::new(),
+            written_procedural_surfaces: BTreeSet::new(),
+            written_procedural_curves: BTreeSet::new(),
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
             face_step_refs: HashMap::new(),
@@ -1242,6 +1251,24 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_standalone_geometry(&mut self) -> Vec<Ref> {
+        let surface_ids = self
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .filter(|surface| !self.surface_refs.contains_key(surface.id.as_str()))
+            .map(|surface| surface.id.0.clone())
+            .collect::<Vec<_>>();
+        let mut members = Vec::new();
+        let mut has_surfaces = false;
+        for surface_id in surface_ids {
+            if let Some(reference) = self.emit_surface(&surface_id) {
+                members.push(reference);
+                has_surfaces = true;
+            } else {
+                self.unsupported_standalone_geometry += 1;
+            }
+        }
         let curve_ids = self
             .ir
             .model
@@ -1250,15 +1277,6 @@ impl<'a> Builder<'a> {
             .filter(|curve| !self.curve_refs.contains_key(curve.id.as_str()))
             .map(|curve| curve.id.0.clone())
             .collect::<Vec<_>>();
-        let point_ids = self
-            .ir
-            .model
-            .points
-            .iter()
-            .filter(|point| !self.point_refs.contains_key(point.id.as_str()))
-            .map(|point| point.id.0.clone())
-            .collect::<Vec<_>>();
-        let mut members = Vec::new();
         for curve_id in curve_ids {
             if self
                 .curves
@@ -1270,6 +1288,14 @@ impl<'a> Builder<'a> {
                 members.push(reference);
             }
         }
+        let point_ids = self
+            .ir
+            .model
+            .points
+            .iter()
+            .filter(|point| !self.point_refs.contains_key(point.id.as_str()))
+            .map(|point| point.id.0.clone())
+            .collect::<Vec<_>>();
         for point_id in point_ids {
             let Some(point) = self.points.get(point_id.as_str()).copied() else {
                 continue;
@@ -1281,9 +1307,14 @@ impl<'a> Builder<'a> {
         if members.is_empty() {
             Vec::new()
         } else {
-            vec![self
-                .emitter
-                .emit("GEOMETRIC_CURVE_SET", &format!("'',{}", refs(&members)))]
+            vec![self.emitter.emit(
+                if has_surfaces {
+                    "GEOMETRIC_SET"
+                } else {
+                    "GEOMETRIC_CURVE_SET"
+                },
+                &format!("'',{}", refs(&members)),
+            )]
         }
     }
 
@@ -1429,19 +1460,13 @@ impl<'a> Builder<'a> {
             .iter()
             .find(|f| f.id.as_str() == face_id)?;
         let surface_id = face.surface.0.clone();
-        // A face resting on an unknown (opaque) surface cannot become an
-        // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
-        // loss rather than fabricate placeholder geometry.
-        if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
-            if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
-                self.unknown_surface_faces.insert(face_id.to_string());
-                return None;
-            }
-        }
         let loop_ids: Vec<String> = face.loops.iter().map(|l| l.0.clone()).collect();
         let same_sense = matches!(face.sense, Sense::Forward);
 
-        let surf_ref = self.emit_surface(&surface_id)?;
+        let Some(surf_ref) = self.emit_surface(&surface_id) else {
+            self.unknown_surface_faces.insert(face_id.to_string());
+            return None;
+        };
 
         let mut bound_refs = Vec::new();
         for (i, lid) in loop_ids.iter().enumerate() {
@@ -1604,18 +1629,161 @@ impl<'a> Builder<'a> {
         if let Some(r) = self.surface_refs.get(surface_id) {
             return Some(*r);
         }
+        if !self.active_surfaces.insert(surface_id.to_string()) {
+            return None;
+        }
         let surf = self.surfaces.get(surface_id).copied()?;
-        let r = geometry::surface(&mut self.emitter, &surf.geometry);
+        let procedural = self
+            .ir
+            .model
+            .procedural_surfaces
+            .iter()
+            .find(|procedural| procedural.surface.as_str() == surface_id)
+            .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
+        let emitted = procedural.and_then(|(id, definition)| {
+            self.emit_procedural_surface(&surf.geometry, &definition)
+                .map(|reference| (id, reference))
+        });
+        let r = if let Some((id, reference)) = emitted {
+            self.written_procedural_surfaces.insert(id);
+            reference
+        } else if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
+            self.active_surfaces.remove(surface_id);
+            return None;
+        } else {
+            geometry::surface(&mut self.emitter, &surf.geometry)
+        };
+        self.active_surfaces.remove(surface_id);
         self.surface_refs.insert(surface_id.to_string(), r);
         Some(r)
+    }
+
+    fn emit_procedural_surface(
+        &mut self,
+        solved: &SurfaceGeometry,
+        definition: &ProceduralSurfaceDefinition,
+    ) -> Option<Ref> {
+        let logical = |value: Option<bool>| match value {
+            Some(true) => ".T.",
+            Some(false) => ".F.",
+            None => ".U.",
+        };
+        match definition {
+            ProceduralSurfaceDefinition::LinearSweep {
+                directrix,
+                direction,
+            } => {
+                let directrix = self.emit_curve(directrix.as_str())?;
+                let direction_ref = geometry::direction(&mut self.emitter, *direction);
+                let vector = self.emitter.emit(
+                    "VECTOR",
+                    &format!("'',{direction_ref},{}", real(direction.norm())),
+                );
+                Some(self.emitter.emit(
+                    "SURFACE_OF_LINEAR_EXTRUSION",
+                    &format!("'',{directrix},{vector}"),
+                ))
+            }
+            ProceduralSurfaceDefinition::AxisRevolution {
+                directrix,
+                axis_origin,
+                axis_direction,
+            } => {
+                let directrix = self.emit_curve(directrix.as_str())?;
+                let origin = geometry::point(&mut self.emitter, *axis_origin);
+                let direction = geometry::direction(&mut self.emitter, *axis_direction);
+                let axis = self
+                    .emitter
+                    .emit("AXIS1_PLACEMENT", &format!("'',{origin},{direction}"));
+                Some(
+                    self.emitter
+                        .emit("SURFACE_OF_REVOLUTION", &format!("'',{directrix},{axis}")),
+                )
+            }
+            ProceduralSurfaceDefinition::ParallelOffset {
+                support,
+                distance,
+                self_intersect,
+            } => {
+                let support = self.emit_surface(support.as_str())?;
+                Some(self.emitter.emit(
+                    "OFFSET_SURFACE",
+                    &format!(
+                        "'',{support},{},{}",
+                        real(*distance),
+                        logical(*self_intersect)
+                    ),
+                ))
+            }
+            ProceduralSurfaceDefinition::CurveBounded {
+                support,
+                boundaries,
+                implicit_outer,
+            } if !boundaries.is_empty() => {
+                let support = self.emit_surface(support.as_str())?;
+                let boundaries = boundaries
+                    .iter()
+                    .map(|curve| self.emit_curve(curve.as_str()))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(self.emitter.emit(
+                    "CURVE_BOUNDED_SURFACE",
+                    &format!(
+                        "'',{support},{},{}",
+                        refs(&boundaries),
+                        if *implicit_outer { ".T." } else { ".F." }
+                    ),
+                ))
+            }
+            ProceduralSurfaceDefinition::DegenerateTorus { select_outer } => {
+                let SurfaceGeometry::Torus {
+                    center,
+                    axis,
+                    ref_direction,
+                    major_radius,
+                    minor_radius,
+                } = solved
+                else {
+                    return None;
+                };
+                let placement =
+                    geometry::placement(&mut self.emitter, *center, *axis, *ref_direction);
+                Some(self.emitter.emit(
+                    "DEGENERATE_TOROIDAL_SURFACE",
+                    &format!(
+                        "'',{placement},{},{},{}",
+                        real(major_radius.abs()),
+                        real(minor_radius.abs()),
+                        if *select_outer { ".T." } else { ".F." }
+                    ),
+                ))
+            }
+            _ => None,
+        }
     }
 
     fn emit_curve(&mut self, curve_id: &str) -> Option<Ref> {
         if let Some(r) = self.curve_refs.get(curve_id) {
             return Some(*r);
         }
+        if !self.active_curves.insert(curve_id.to_string()) {
+            return None;
+        }
         let geometry = self.curves.get(curve_id)?.geometry.clone();
-        let r = if let CurveGeometry::Composite {
+        let procedural = self
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|procedural| procedural.curve.as_str() == curve_id)
+            .map(|procedural| (procedural.id.0.clone(), procedural.definition.clone()));
+        let emitted = procedural.and_then(|(id, definition)| {
+            self.emit_procedural_curve(&definition)
+                .map(|reference| (id, reference))
+        });
+        let r = if let Some((id, reference)) = emitted {
+            self.written_procedural_curves.insert(id);
+            reference
+        } else if let CurveGeometry::Composite {
             segments,
             self_intersect,
         } = &geometry
@@ -1658,8 +1826,50 @@ impl<'a> Builder<'a> {
         } else {
             geometry::curve(&mut self.emitter, &geometry)
         };
+        self.active_curves.remove(curve_id);
         self.curve_refs.insert(curve_id.to_string(), r);
         Some(r)
+    }
+
+    fn emit_procedural_curve(&mut self, definition: &ProceduralCurveDefinition) -> Option<Ref> {
+        match definition {
+            ProceduralCurveDefinition::Subset {
+                source,
+                parameter_range: [start, end],
+            } => {
+                let source = self.emit_curve(source.as_str())?;
+                Some(self.emitter.emit(
+                    "TRIMMED_CURVE",
+                    &format!(
+                        "'',{source},(PARAMETER_VALUE({})),(PARAMETER_VALUE({})),.T.,.PARAMETER.",
+                        real(*start),
+                        real(*end)
+                    ),
+                ))
+            }
+            ProceduralCurveDefinition::SpatialOffset {
+                source,
+                distance,
+                reference_direction,
+                self_intersect,
+            } => {
+                let source = self.emit_curve(source.as_str())?;
+                let direction = geometry::direction(&mut self.emitter, *reference_direction);
+                let self_intersect = match self_intersect {
+                    Some(true) => ".T.",
+                    Some(false) => ".F.",
+                    None => ".U.",
+                };
+                Some(self.emitter.emit(
+                    "OFFSET_CURVE_3D",
+                    &format!(
+                        "'',{source},{},{self_intersect},{direction}",
+                        real(*distance)
+                    ),
+                ))
+            }
+            _ => None,
+        }
     }
 
     fn emit_pmi(&mut self, context: Ref) {
@@ -2188,6 +2398,7 @@ impl<'a> Builder<'a> {
             .model
             .procedural_surfaces
             .iter()
+            .filter(|procedural| !self.written_procedural_surfaces.contains(&procedural.id.0))
             .filter(|procedural| match &procedural.definition {
                 ProceduralSurfaceDefinition::Exact { .. }
                 | ProceduralSurfaceDefinition::Compound { .. }
@@ -2218,14 +2429,21 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Unknown { .. } => true,
             })
             .count();
-        if procedural_surface_count > 0 || !self.ir.model.procedural_curves.is_empty() {
+        let procedural_curve_count = self
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .filter(|procedural| !self.written_procedural_curves.contains(&procedural.id.0))
+            .count();
+        if procedural_surface_count > 0 || procedural_curve_count > 0 {
             self.loss(
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
                     "{} procedural surface definition(s) and {} procedural curve definition(s) were reduced to their solved STEP carriers",
                     procedural_surface_count,
-                    self.ir.model.procedural_curves.len()
+                    procedural_curve_count
                 ),
             );
         }

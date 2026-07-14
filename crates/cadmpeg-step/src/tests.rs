@@ -583,6 +583,72 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
 }
 
 #[test]
+fn procedural_step_geometry_round_trips_as_native_entities() {
+    let source = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_geometry.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode procedural geometry");
+
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &source.ir,
+        &mut bytes,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            ..StepWriteOptions::default()
+        },
+    )
+    .expect("write procedural geometry");
+    let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
+    for entity in [
+        "GEOMETRIC_SET",
+        "TRIMMED_CURVE",
+        "OFFSET_CURVE_3D",
+        "SURFACE_OF_LINEAR_EXTRUSION",
+        "SURFACE_OF_REVOLUTION",
+        "OFFSET_SURFACE",
+        "DEGENERATE_TOROIDAL_SURFACE",
+    ] {
+        assert!(text.contains(entity), "missing {entity}");
+    }
+    assert!(!report.losses.iter().any(|loss| loss
+        .message
+        .contains("reduced to their solved STEP carriers")));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written procedural geometry");
+    assert_eq!(decoded.ir.model.procedural_curves.len(), 3);
+    assert_eq!(decoded.ir.model.procedural_surfaces.len(), 4);
+
+    let bounded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_geometric_set.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode curve-bounded surface");
+    let mut bytes = Vec::new();
+    write_step(&bounded.ir, &mut bytes, &StepWriteOptions::default())
+        .expect("write curve-bounded surface");
+    let text = String::from_utf8(bytes.clone()).expect("utf8 STEP");
+    assert!(text.contains("CURVE_BOUNDED_SURFACE"));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written curve-bounded surface");
+    assert!(decoded
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .any(|surface| matches!(
+            surface.definition,
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::CurveBounded { .. }
+        )));
+}
+
+#[test]
 fn decode_conical_apex_and_context_plane_angle_units() {
     let bytes = include_bytes!("../tests/fixtures/ap242_degree_cone.p21");
     let result = StepCodec::default()
