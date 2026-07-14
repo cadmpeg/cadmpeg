@@ -114,8 +114,8 @@ impl SurfacePrototypeFamily {
             "cylinder" => Self::Cylinder,
             "cone" => Self::Cone,
             "torus" | "sphere" => Self::Torus,
-            "spline" | "fillet" => Self::Spline,
-            "surface_of_extrusion" | "extrusion" => Self::Extrusion,
+            "spline" | "splsrf" | "fillet" | "fillet_srf" => Self::Spline,
+            "surface_of_extrusion" | "extrusion" | "tab_cyl" | "ruled_srf" => Self::Extrusion,
             other => Self::Other(other.to_string()),
         }
     }
@@ -450,6 +450,10 @@ const PROTOTYPE_PARAMETER_NAMES: &[&str] = &[
 ];
 
 fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> SurfaceNamedValue {
+    let scalar_field = matches!(name, "radius" | "radius1" | "radius2" | "half_angle");
+    if scalar_field && body == [0x18] {
+        return SurfaceNamedValue::ScalarSequence(vec![0.0]);
+    }
     if body.first() == Some(&psb::token::ARRAY_OPEN) {
         let (count, mut cursor) = compact_int(body, 1);
         if cursor > 1 {
@@ -514,7 +518,6 @@ fn named_surface_value(name: &str, body: &[u8], cache: &scalar::ScalarCache) -> 
     if !values.is_empty() {
         return SurfaceNamedValue::ScalarSequence(values);
     }
-    let scalar_field = matches!(name, "radius" | "radius1" | "radius2" | "half_angle");
     let (value, end) = compact_int(body, 0);
     if !scalar_field && end == body.len() && end != 0 {
         SurfaceNamedValue::CompactInt(value)
@@ -1014,7 +1017,35 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
 /// Decode fully specified scalar fields in labeled `srf_prim_ptr` prototype
 /// records. A prototype is emitted only when its named kind is known.
 pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
-    let mut prototypes = Vec::new();
+    let mut prototypes = named_prototype_records(payload)
+        .into_iter()
+        .filter_map(|record| {
+            let kind = match record.family {
+                SurfacePrototypeFamily::Plane => SurfaceKind::Plane,
+                SurfacePrototypeFamily::Cylinder => SurfaceKind::Cylinder,
+                SurfacePrototypeFamily::Cone => SurfaceKind::Cone,
+                SurfacePrototypeFamily::Torus => SurfaceKind::TorusOrSphere,
+                SurfacePrototypeFamily::Spline => SurfaceKind::Spline,
+                SurfacePrototypeFamily::Extrusion => SurfaceKind::Extrusion,
+                SurfacePrototypeFamily::Other(_) => return None,
+            };
+            let scalar = |name: &str| match &record.field(name)?.value {
+                SurfaceNamedValue::ScalarSequence(values) if values.len() == 1 => Some(values[0]),
+                _ => None,
+            };
+            let radius = match kind {
+                SurfaceKind::TorusOrSphere => scalar("radius1"),
+                _ => scalar("radius"),
+            };
+            Some(SurfacePrototype {
+                kind,
+                radius,
+                radius2: scalar("radius2"),
+                half_angle: scalar("half_angle").filter(|value| valid_half_angle(*value)),
+                offset: record.offset,
+            })
+        })
+        .collect::<Vec<_>>();
     let mut start = 0;
     while let Some(record) = find(payload, b"srf_prim_ptr\0", start) {
         start = record + b"srf_prim_ptr\0".len();
@@ -1045,6 +1076,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
             offset: record,
         });
     }
+    prototypes.sort_by_key(|prototype| prototype.offset);
     prototypes
 }
 
@@ -1160,7 +1192,7 @@ mod tests {
     }
 
     #[test]
-    fn withholds_incomplete_scalar_field_from_compact_integer_fallback() {
+    fn terminal_zero_decodes_in_a_bounded_named_scalar_field() {
         let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe3";
         let records = named_prototype_records(payload);
 
@@ -1168,7 +1200,23 @@ mod tests {
         assert_eq!(records[0].parameters.len(), 1);
         assert_eq!(
             records[0].parameters[0].value,
-            SurfaceNamedValue::Opaque(vec![0x18])
+            SurfaceNamedValue::ScalarSequence(vec![0.0])
+        );
+    }
+
+    #[test]
+    fn summarizes_parenthesized_analytic_prototypes() {
+        let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x18\xe0\x01radius2\0\x2e\x05\x33\xf1\xf7\x0e\xe3";
+
+        assert_eq!(
+            prototypes(payload),
+            vec![SurfacePrototype {
+                kind: SurfaceKind::TorusOrSphere,
+                radius: Some(0.0),
+                radius2: Some(2.65),
+                half_angle: None,
+                offset: 0,
+            }]
         );
     }
 

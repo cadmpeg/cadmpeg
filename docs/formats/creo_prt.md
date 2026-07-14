@@ -186,7 +186,7 @@ A decoder must not infer the kind of a row without a materialized parameter row 
 
 ### 3.2 Surface prototypes
 
-`srf_prim_ptr` records contain the surface prototype fields. The prototype block closes with `f1 f7 <entity_ref> e3`.
+`srf_prim_ptr` records contain the surface prototype fields. The prototype block closes with `f1 f7 <entity_ref> e3`. A scalar field ending with bare `18` before that structural close stores zero.
 
 | Prototype                                             | Named fields                                                    |
 | ----------------------------------------------------- | --------------------------------------------------------------- |
