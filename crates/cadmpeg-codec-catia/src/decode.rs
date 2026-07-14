@@ -1158,12 +1158,12 @@ mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
-        e5_boundary_curve, e5_pcurve_on_surface, equivalent_e5_curve_carriers,
-        fit_rank_one_e5_plane_axes, include_native_endpoint_pairs, intersection_line_direction,
-        ordered_range, point_distance, point_on_known_surface, quintic_jet_pcurve,
-        rational_pcurve_arc, resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
-        standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
-        unique_native_identity_points,
+        e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
+        equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
+        intersection_line_direction, ordered_range, point_distance, point_on_known_surface,
+        quintic_jet_pcurve, rational_pcurve_arc, resolve_standard_endpoint_pairs,
+        reverse_e5_pcurve_geometry, standard_circle_endpoint_candidates,
+        standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
@@ -1716,6 +1716,38 @@ mod chart_tests {
     }
 
     #[test]
+    fn occurrence_intersection_accepts_roundoff_equivalent_side_ranges() {
+        let sides = vec![
+            (
+                SurfaceId("left".to_string()),
+                PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                [-2.0, 3.0],
+            ),
+            (
+                SurfaceId("right".to_string()),
+                PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 1.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                [-2.0 - 1e-14, 3.0 + 1e-14],
+            ),
+        ];
+        let context = e5_occurrence_intersection_context(&sides).expect("intersection context");
+        assert_eq!(context.parameter_range, [-2.0, 3.0]);
+        assert_eq!(
+            context.sides[0].surface.as_ref().expect("left surface").0,
+            "left"
+        );
+        assert_eq!(
+            context.sides[1].surface.as_ref().expect("right surface").0,
+            "right"
+        );
+    }
+
+    #[test]
     fn quintic_jet_reproduces_endpoint_second_order_data() {
         let curve = quintic_jet_pcurve(
             5,
@@ -2048,6 +2080,8 @@ fn transfer_e5_topology(
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
     let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
     let mut surface_curve_plan = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
+    let mut occurrence_intersection_sides =
+        BTreeMap::<u32, Vec<(SurfaceId, PcurveGeometry, [f64; 2])>>::new();
     for face in &topology.faces {
         let Some((_, decoded_surface)) = surface_for_ref.get(&face.surface) else {
             return false;
@@ -2082,6 +2116,22 @@ fn transfer_e5_topology(
                 if forward.min(reversed) > 2e-3 {
                     return false;
                 }
+                let oriented_pcurve = if reversed < forward {
+                    reverse_e5_pcurve_geometry(&geometry, range)
+                } else {
+                    geometry.clone()
+                };
+                if support.intersection {
+                    let side = (
+                        surface_for_ref[&face.surface].0.clone(),
+                        oriented_pcurve.clone(),
+                        range,
+                    );
+                    let sides = occurrence_intersection_sides.entry(edge_ref).or_default();
+                    if !sides.contains(&side) {
+                        sides.push(side);
+                    }
+                }
                 if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
                     &decoded_surface.geometry,
                     pcurve,
@@ -2106,13 +2156,12 @@ fn transfer_e5_topology(
                         }
                     }
                 } else if !support.intersection {
-                    let oriented = if reversed < forward {
-                        reverse_e5_pcurve_geometry(&geometry, range)
-                    } else {
-                        geometry.clone()
-                    };
                     surface_curve_plan.entry(edge_ref).or_insert_with(|| {
-                        (surface_for_ref[&face.surface].0.clone(), oriented, range)
+                        (
+                            surface_for_ref[&face.surface].0.clone(),
+                            oriented_pcurve,
+                            range,
+                        )
                     });
                 }
                 if let Some((existing, existing_range)) = pcurve_plan.get(&pcurve_ref) {
@@ -2125,7 +2174,6 @@ fn transfer_e5_topology(
             }
         }
     }
-
     let mut intersection_sides =
         BTreeMap::<u32, BTreeMap<u32, (SurfaceId, PcurveGeometry, CurveGeometry, [f64; 2])>>::new();
     for (&edge_ref, edge) in &topology.edges {
@@ -2143,7 +2191,7 @@ fn transfer_e5_topology(
         };
         for pcurve_ref in &support.pcurves {
             let Some(pcurve) = topology.pcurves.get(pcurve_ref) else {
-                return false;
+                continue;
             };
             let surface_ref = match pcurve {
                 crate::e5::E5Pcurve::Line { surface, .. }
@@ -2151,7 +2199,7 @@ fn transfer_e5_topology(
                 | crate::e5::E5Pcurve::Jet { surface, .. } => *surface,
             };
             let Some((surface_id, decoded_surface)) = surface_for_ref.get(&surface_ref) else {
-                return false;
+                continue;
             };
             let Some((geometry, range, endpoints)) = e5_pcurve_on_surface(pcurve, decoded_surface)
             else {
@@ -2217,6 +2265,22 @@ fn transfer_e5_topology(
                 discontinuities: std::array::from_fn(|_| Vec::new()),
             },
         );
+    }
+    for (&edge_ref, sides) in &occurrence_intersection_sides {
+        if intersection_plan.contains_key(&edge_ref) {
+            continue;
+        }
+        let Some(context) = e5_occurrence_intersection_context(sides) else {
+            continue;
+        };
+        edge_curve_plan.insert(
+            edge_ref,
+            (
+                CurveGeometry::Unknown { record: None },
+                context.parameter_range,
+            ),
+        );
+        intersection_plan.insert(edge_ref, context);
     }
 
     for (&edge_ref, (_, _, range)) in &surface_curve_plan {
@@ -2944,6 +3008,25 @@ fn reverse_e5_pcurve_geometry(geometry: &PcurveGeometry, range: [f64; 2]) -> Pcu
             }
         }
     }
+}
+
+fn e5_occurrence_intersection_context(
+    sides: &[(SurfaceId, PcurveGeometry, [f64; 2])],
+) -> Option<IntcurveSupportContext> {
+    let [left, right] = sides else {
+        return None;
+    };
+    if (left.2[0] - right.2[0]).abs() > 1e-9 || (left.2[1] - right.2[1]).abs() > 1e-9 {
+        return None;
+    }
+    Some(IntcurveSupportContext {
+        sides: [left, right].map(|side| IntcurveSupportSide {
+            surface: Some(side.0.clone()),
+            pcurve: Some(side.1.clone()),
+        }),
+        parameter_range: left.2,
+        discontinuities: std::array::from_fn(|_| Vec::new()),
+    })
 }
 
 fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
