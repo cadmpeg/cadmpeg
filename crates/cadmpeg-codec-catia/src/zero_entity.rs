@@ -223,6 +223,20 @@ pub struct ZeroResolvedEdge {
     pub occurrence_endpoints: [[[f64; 3]; 2]; 2],
 }
 
+/// Exact two-surface support construction and its tolerance-bounded solved
+/// carrier cache.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ZeroIntersectionCurve {
+    /// Support occurrence indices in radial order.
+    pub supports: [usize; 2],
+    /// Shared native curve parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Piecewise-linear NURBS cache fitted to the first support lift.
+    pub cache: NurbsCurve,
+    /// Maximum admitted cache deviation in model length units.
+    pub fit_tolerance: f64,
+}
+
 /// Lift one decoded support pcurve through its owner carrier.
 ///
 /// Plane lifts preserve the complete NURBS representation. Analytic quadric
@@ -240,6 +254,179 @@ pub fn support_curve(
         .iter()
         .find(|run| run.carrier_ordinal == support.owner_carrier_ordinal)?;
     lift_pcurve(pcurve, run.geometry.as_ref()?)
+}
+
+/// Reconstruct a physical curve carried by two complete radial pcurves.
+///
+/// Both pcurves must share one increasing parameter interval. The returned
+/// NURBS follows the midpoint of the two stored support traces; its fit contract
+/// includes half their measured separation. The paired surface construction
+/// remains authoritative.
+#[must_use]
+pub fn intersection_curve(
+    topology: &ZeroEntityTopology,
+    edge: &ZeroResolvedEdge,
+) -> Option<ZeroIntersectionCurve> {
+    const FIT_TOLERANCE: f64 = 1e-4;
+    const MAX_DEPTH: u8 = 20;
+
+    let supports = edge.occurrences.map(|occurrence| occurrence.support_index);
+    let ranges = supports.map(|index| support_parameter_range(&topology.supports[index]));
+    let [Some(first_range), Some(second_range)] = ranges else {
+        return None;
+    };
+    if first_range[0] >= first_range[1]
+        || first_range
+            .into_iter()
+            .zip(second_range)
+            .any(|(left, right)| (left - right).abs() > 1e-12 * (1.0 + left.abs()))
+    {
+        return None;
+    }
+    let (first, _) = radial_midpoint(topology, supports, first_range[0])?;
+    let (last, _) = radial_midpoint(topology, supports, first_range[1])?;
+    let mut samples = vec![(first_range[0], first)];
+    subdivide_support_curve(
+        topology,
+        supports,
+        first_range[0],
+        first,
+        first_range[1],
+        last,
+        FIT_TOLERANCE,
+        MAX_DEPTH,
+        &mut samples,
+    )?;
+    let radial_error = samples.iter().try_fold(0.0f64, |maximum, (parameter, _)| {
+        let (_, separation) = radial_midpoint(topology, supports, *parameter)?;
+        Some(maximum.max(separation * 0.5))
+    })?;
+    let mut knots = Vec::with_capacity(samples.len() + 2);
+    knots.push(first_range[0]);
+    knots.extend(samples.iter().map(|(parameter, _)| *parameter));
+    knots.push(first_range[1]);
+    Some(ZeroIntersectionCurve {
+        supports,
+        parameter_range: first_range,
+        cache: NurbsCurve {
+            degree: 1,
+            knots,
+            control_points: samples.into_iter().map(|(_, point)| point).collect(),
+            weights: None,
+            periodic: false,
+        },
+        fit_tolerance: FIT_TOLERANCE + radial_error,
+    })
+}
+
+fn support_parameter_range(support: &ZeroSupport) -> Option<[f64; 2]> {
+    let PcurveGeometry::Nurbs { degree, knots, .. } = support.pcurve.as_ref()? else {
+        return None;
+    };
+    let degree = usize::try_from(*degree).ok()?;
+    Some([
+        *knots.get(degree)?,
+        *knots.get(knots.len().checked_sub(degree + 1)?)?,
+    ])
+}
+
+fn support_point(
+    topology: &ZeroEntityTopology,
+    support_index: usize,
+    parameter: f64,
+) -> Option<Point3> {
+    let support = topology.supports.get(support_index)?;
+    let uv = cadmpeg_ir::eval::pcurve_uv(support.pcurve.as_ref()?, parameter)?;
+    let run = topology
+        .carrier_runs
+        .iter()
+        .find(|run| run.carrier_ordinal == support.owner_carrier_ordinal)?;
+    cadmpeg_ir::eval::surface_point(run.geometry.as_ref()?, uv.u, uv.v)
+}
+
+fn radial_midpoint(
+    topology: &ZeroEntityTopology,
+    supports: [usize; 2],
+    parameter: f64,
+) -> Option<(Point3, f64)> {
+    let points = supports.map(|support| support_point(topology, support, parameter));
+    let [Some(first), Some(second)] = points else {
+        return None;
+    };
+    let separation = point_distance([first.x, first.y, first.z], [second.x, second.y, second.z]);
+    Some((
+        Point3::new(
+            (first.x + second.x) * 0.5,
+            (first.y + second.y) * 0.5,
+            (first.z + second.z) * 0.5,
+        ),
+        separation,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn subdivide_support_curve(
+    topology: &ZeroEntityTopology,
+    supports: [usize; 2],
+    start_parameter: f64,
+    start: Point3,
+    end_parameter: f64,
+    end: Point3,
+    tolerance: f64,
+    depth: u8,
+    output: &mut Vec<(f64, Point3)>,
+) -> Option<()> {
+    let fractions = [0.25, 0.5, 0.75];
+    let probes = fractions.map(|fraction| {
+        let parameter = start_parameter + fraction * (end_parameter - start_parameter);
+        Some((parameter, radial_midpoint(topology, supports, parameter)?.0))
+    });
+    let probes = probes.into_iter().collect::<Option<Vec<_>>>()?;
+    let within_tolerance = probes.iter().zip(fractions).all(|((_, point), fraction)| {
+        point_lerp_distance(*point, start, end, fraction) <= tolerance
+    });
+    if within_tolerance {
+        output.push((end_parameter, end));
+        return Some(());
+    }
+    if depth == 0 {
+        return None;
+    }
+    let (middle_parameter, middle) = probes[1];
+    subdivide_support_curve(
+        topology,
+        supports,
+        start_parameter,
+        start,
+        middle_parameter,
+        middle,
+        tolerance,
+        depth - 1,
+        output,
+    )?;
+    subdivide_support_curve(
+        topology,
+        supports,
+        middle_parameter,
+        middle,
+        end_parameter,
+        end,
+        tolerance,
+        depth - 1,
+        output,
+    )
+}
+
+fn point_lerp_distance(point: Point3, start: Point3, end: Point3, fraction: f64) -> f64 {
+    let expected = Point3::new(
+        start.x + fraction * (end.x - start.x),
+        start.y + fraction * (end.y - start.y),
+        start.z + fraction * (end.z - start.z),
+    );
+    point_distance(
+        [point.x, point.y, point.z],
+        [expected.x, expected.y, expected.z],
+    )
 }
 
 fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<CurveGeometry> {
@@ -1350,6 +1537,74 @@ mod occurrence_tests {
         assert_eq!(center, Point3::new(1.0, 2.0, 7.0));
         assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
         assert_eq!(radius, 2.0);
+    }
+
+    #[test]
+    fn paired_support_traces_produce_bounded_intersection_cache() {
+        let pcurve = |v| PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, v), Point2::new(1.0, v)],
+            weights: None,
+            periodic: false,
+        };
+        let mut first = support(0, Some([[0.0; 3]; 2]));
+        first.owner_carrier_ordinal = 10;
+        first.pcurve = Some(pcurve(0.0));
+        let mut second = support(1, Some([[0.0; 3]; 2]));
+        second.owner_carrier_ordinal = 11;
+        second.pcurve = Some(pcurve(0.008));
+        let plane = || SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let topology = ZeroEntityTopology {
+            records: Vec::new(),
+            faces: Vec::new(),
+            loops: Vec::new(),
+            carrier_runs: vec![
+                ZeroCarrierRun {
+                    carrier_ordinal: 10,
+                    support_ordinals: vec![0],
+                    geometry: Some(plane()),
+                },
+                ZeroCarrierRun {
+                    carrier_ordinal: 11,
+                    support_ordinals: vec![1],
+                    geometry: Some(plane()),
+                },
+            ],
+            supports: vec![first, second],
+            physical_edges: Vec::new(),
+            coedge_twins: Vec::new(),
+            side_pairs: Vec::new(),
+            vertices: Vec::new(),
+        };
+        let edge = ZeroResolvedEdge {
+            endpoints: [[0.0; 3]; 2],
+            occurrences: [
+                ZeroResolvedOccurrence {
+                    loop_index: 0,
+                    member_index: 0,
+                    support_index: 0,
+                },
+                ZeroResolvedOccurrence {
+                    loop_index: 1,
+                    member_index: 0,
+                    support_index: 1,
+                },
+            ],
+            occurrence_endpoints: [[[0.0; 3]; 2]; 2],
+        };
+
+        let intersection = intersection_curve(&topology, &edge).expect("intersection cache");
+        assert_eq!(intersection.parameter_range, [0.0, 1.0]);
+        assert_eq!(
+            intersection.cache.control_points[0],
+            Point3::new(0.0, 0.004, 0.0)
+        );
+        assert!((intersection.fit_tolerance - 0.0041).abs() < 1e-12);
     }
 
     #[test]

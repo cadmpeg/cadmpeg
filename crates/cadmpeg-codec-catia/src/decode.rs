@@ -14,13 +14,14 @@
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
+    Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, Pcurve, PcurveGeometry,
+    ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition,
     RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
-    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
+    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -170,7 +171,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
                 category: LossCategory::Topology,
                 severity: Severity::Warning,
                 message: format!(
-                    "The zero-entity B-rep graph and physical edge carriers are reconstructed; {unresolved_pcurves} referenced-pole pcurve occurrences remain unresolved."
+                    "The zero-entity B-rep graph is reconstructed; {unresolved_pcurves} referenced-pole pcurve occurrences remain unresolved."
                 ),
                 provenance: None,
             });
@@ -494,28 +495,78 @@ fn transfer_zero_entity_topology(
 
     for (edge_index, pair) in edge_vertices.iter().enumerate() {
         let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
-        let curve = edges[edge_index]
+        let direct_geometry = edges[edge_index]
             .occurrences
             .iter()
-            .find_map(|occurrence| crate::zero_entity::support_curve(topology, *occurrence))
-            .map(|geometry| {
-                let curve_id = CurveId(format!("catia:zero-entity:curve#{edge_index}"));
+            .find_map(|occurrence| crate::zero_entity::support_curve(topology, *occurrence));
+        let intersection = direct_geometry
+            .is_none()
+            .then(|| crate::zero_entity::intersection_curve(topology, &edges[edge_index]))
+            .flatten();
+        let geometry = direct_geometry.or_else(|| {
+            intersection
+                .as_ref()
+                .map(|intersection| CurveGeometry::Nurbs(intersection.cache.clone()))
+        });
+        let curve = geometry.map(|geometry| {
+            let curve_id = CurveId(format!("catia:zero-entity:curve#{edge_index}"));
+            annotate(
+                annotations,
+                &curve_id,
+                "zero_entity_a9_03",
+                0,
+                "support_pcurve_lift",
+                Exactness::Derived,
+            );
+            annotations.derived(&curve_id, "geometry");
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry,
+                source_object: None,
+            });
+            if let Some(intersection) = intersection {
+                let sides = intersection.supports.map(|support_index| {
+                    let support = &topology.supports[support_index];
+                    let surface_index = topology
+                        .carrier_runs
+                        .iter()
+                        .position(|run| run.carrier_ordinal == support.owner_carrier_ordinal)
+                        .expect("support owner is a parsed carrier run");
+                    IntcurveSupportSide {
+                        surface: Some(SurfaceId(format!("catia:zero-entity:surf#{surface_index}"))),
+                        pcurve: support.pcurve.clone(),
+                    }
+                });
+                let procedural_id =
+                    ProceduralCurveId(format!("catia:zero-entity:intersection#{edge_index}"));
                 annotate(
                     annotations,
-                    &curve_id,
+                    &procedural_id,
                     "zero_entity_a9_03",
                     0,
-                    "support_pcurve_lift",
+                    "radial_support_intersection",
                     Exactness::Derived,
                 );
-                annotations.derived(&curve_id, "geometry");
-                ir.model.curves.push(Curve {
-                    id: curve_id.clone(),
-                    geometry,
-                    source_object: None,
+                annotations
+                    .derived(&procedural_id, "curve")
+                    .derived(&procedural_id, "definition")
+                    .derived(&procedural_id, "cache_fit_tolerance");
+                ir.model.procedural_curves.push(ProceduralCurve {
+                    id: procedural_id,
+                    curve: curve_id.clone(),
+                    definition: ProceduralCurveDefinition::Intersection {
+                        context: IntcurveSupportContext {
+                            sides,
+                            parameter_range: intersection.parameter_range,
+                            discontinuities: std::array::from_fn(|_| Vec::new()),
+                        },
+                        discontinuity_flag: false,
+                    },
+                    cache_fit_tolerance: Some(intersection.fit_tolerance),
                 });
-                curve_id
-            });
+            }
+            curve_id
+        });
         annotate(
             annotations,
             &id,
