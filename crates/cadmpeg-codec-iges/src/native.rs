@@ -380,6 +380,26 @@ struct NativeProductOccurrence {
     world_transform: [[f64; 4]; 3],
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeView {
+    id: String,
+    source_entity: String,
+    form: i64,
+    projection: String,
+    view_number: Option<i64>,
+    scale: Option<f64>,
+    model_to_view: Option<String>,
+    clipping_planes: Vec<Option<String>>,
+    view_plane_normal: Option<[Option<f64>; 3]>,
+    view_reference_point: Option<[Option<f64>; 3]>,
+    center_of_projection: Option<[Option<f64>; 3]>,
+    view_up: Option<[Option<f64>; 3]>,
+    view_plane_distance: Option<f64>,
+    clipping_window: Option<[Option<f64>; 4]>,
+    depth_clipping: Option<i64>,
+    depth_range: Option<[Option<f64>; 2]>,
+}
+
 #[derive(Clone)]
 struct OccurrenceDefinition {
     members: Vec<u32>,
@@ -1555,6 +1575,70 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let views = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let vector = |start| {
+                [
+                    record.and_then(|record| record.number(start)),
+                    record.and_then(|record| record.number(start + 1)),
+                    record.and_then(|record| record.number(start + 2)),
+                ]
+            };
+            NativeView {
+                id: format!("iges:presentation:view#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                projection: if entry.form == 0 {
+                    "orthographic_parallel".into()
+                } else {
+                    "perspective".into()
+                },
+                view_number: record.and_then(|record| record.integer(1)),
+                scale: record.and_then(|record| record.number(2)),
+                model_to_view: (entry.form == 0 && entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+                clipping_planes: if entry.form == 0 {
+                    (3..=8)
+                        .map(|index| {
+                            record
+                                .and_then(|record| record.integer(index))
+                                .filter(|sequence| *sequence != 0)
+                                .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                        })
+                        .collect()
+                } else {
+                    Vec::new()
+                },
+                view_plane_normal: (entry.form == 1).then(|| vector(3)),
+                view_reference_point: (entry.form == 1).then(|| vector(6)),
+                center_of_projection: (entry.form == 1).then(|| vector(9)),
+                view_up: (entry.form == 1).then(|| vector(12)),
+                view_plane_distance: (entry.form == 1)
+                    .then(|| record.and_then(|record| record.number(15)))
+                    .flatten(),
+                clipping_window: (entry.form == 1).then(|| {
+                    [
+                        record.and_then(|record| record.number(16)),
+                        record.and_then(|record| record.number(17)),
+                        record.and_then(|record| record.number(18)),
+                        record.and_then(|record| record.number(19)),
+                    ]
+                }),
+                depth_clipping: (entry.form == 1)
+                    .then(|| record.and_then(|record| record.integer(20)))
+                    .flatten(),
+                depth_range: (entry.form == 1).then(|| {
+                    [
+                        record.and_then(|record| record.number(21)),
+                        record.and_then(|record| record.number(22)),
+                    ]
+                }),
+            }
+        })
+        .collect::<Vec<_>>();
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
@@ -1678,6 +1762,7 @@ pub(crate) fn store(
     namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
     namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
     namespace.set_arena("product_properties", &product_properties)?;
+    namespace.set_arena("views", &views)?;
     namespace.set_arena("product_occurrences", &product_occurrences)?;
     Ok(())
 }

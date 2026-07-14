@@ -2407,6 +2407,25 @@ fn product_property_file() -> Vec<u8> {
     ])
 }
 
+fn view_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "ORTHO".into(),
+            status: "00000000",
+            parameters: "410,1,,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 1,
+            label: "PERSP".into(),
+            status: "00000000",
+            parameters: "410,2,1.5,0,0,1,0,0,0,0,0,10,0,1,0,5,-2,2,-1,1,3,-5,5;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3701,6 +3720,34 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
         .is_empty());
     assert_eq!(owner.fields["property_links"][0], "iges:entity:directory#3");
     assert_eq!(owner.fields["property_links"][1], "iges:entity:directory#5");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_orthographic_and_perspective_views() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(view_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let views = &result.ir.native.namespace("iges").unwrap().arenas["views"];
+    assert_eq!(views.len(), 2);
+    assert_eq!(views[0].fields["projection"], "orthographic_parallel");
+    assert!(views[0].fields["scale"].is_null());
+    assert_eq!(
+        views[0].fields["clipping_planes"].as_array().unwrap().len(),
+        6
+    );
+    assert_eq!(views[1].fields["projection"], "perspective");
+    assert_eq!(views[1].fields["view_plane_normal"][2], 1.0);
+    assert_eq!(views[1].fields["center_of_projection"][2], 10.0);
+    assert_eq!(views[1].fields["clipping_window"][0], -2.0);
+    assert_eq!(views[1].fields["depth_clipping"], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

@@ -94,6 +94,10 @@ Type 406 Form 7 attaches one nonempty reference-designator string to component e
 
 Every entity may append two counted pointer groups after its entity-specific parameters. The first contains Type 402 associativity, Type 212 general-note, or Type 312 text-display-template pointers. The second contains Type 406 property, Type 322 attribute-table definition, or Type 422 attribute-table instance pointers. A present suffix consumes the complete remaining token sequence and contains at least one pointer; each count and odd Directory pointer is validated before the suffix is typed. The native entity's `association_links` and `property_links` preserve group membership and pointer order independently from Directory references. The complete original token sequence remains in `parameters`.
 
+## Views and drawings
+
+Type 410 Form 0 defines an orthographic parallel view. It stores an integer view number, positive scale defaulting to one, and six nullable Type 108 clipping-plane pointers ordered left, top, right, bottom, back, and front. Its Directory transformation is zero or a Type 124 Form 0 model-to-view transformation. Type 410 Form 1 defines a perspective view and carries no Directory transformation. It stores a positive explicit scale; nonzero view-plane normal; finite view-reference point and center of projection; a view-up vector with a nonzero component in the view plane; finite view-plane distance; strictly ordered U and V clipping-window limits; depth-clipping indicator `0` through `3`; and finite W limits, strictly ordered when both depth planes are enabled. The `views` arena preserves projection kind, native view fields, transform identity, and clipping identities separately from model geometry.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

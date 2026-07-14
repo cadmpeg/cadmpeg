@@ -896,6 +896,10 @@ pub(crate) fn project_geometry(
     handled.extend(presentation.handled);
     decoded.extend(presentation.decoded);
     losses.extend(presentation.losses);
+    let drawing = super::drawing::project(ir, directory, parameters, global);
+    handled.extend(drawing.handled);
+    decoded.extend(drawing.decoded);
+    losses.extend(drawing.losses);
     Projection {
         handled,
         decoded,
