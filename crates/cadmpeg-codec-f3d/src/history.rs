@@ -677,7 +677,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.changed_boundary_edge_slots.clear();
         operand.changed_boundary_edge_contexts.clear();
         operand.recipe_reference_contexts.clear();
-        operand.recipe_candidate_edge_slots.clear();
+        operand.recipe_selectors.clear();
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -762,40 +762,60 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 })
             })
             .collect();
-        operand.recipe_candidate_edge_slots = recipe_boundary_count_candidates(operand);
+        operand.recipe_selectors = recipe_selector_candidates(
+            operand.recipe_structure.as_ref(),
+            &operand.changed_boundary_edge_contexts,
+        );
     }
 }
 
-fn recipe_boundary_count_candidates(operand: &crate::records::DesignEdgeOperand) -> Vec<i64> {
-    let Some(structure) = &operand.recipe_structure else {
+fn recipe_selector_candidates(
+    structure: Option<&crate::records::DesignEdgeRecipeStructure>,
+    contexts: &[crate::records::DesignHistoricalEdgeContext],
+) -> Vec<crate::records::DesignEdgeRecipeSelector> {
+    let Some(structure) = structure else {
         return Vec::new();
     };
-    if structure.sides.iter().any(|side| side.entries.len() > 1)
-        || structure.sides.iter().all(|side| side.entries.is_empty())
-    {
-        return Vec::new();
-    }
-    let required = structure
+    let selectors = structure
         .sides
         .iter()
-        .map(|side| {
-            side.entries
-                .first()
-                .map(|entry| i64::from(entry.boundary_edge_count.get()))
-        })
-        .collect::<Vec<_>>();
-    operand
-        .changed_boundary_edge_contexts
+        .flat_map(|side| side.entries.iter().map(|entry| entry.selector))
+        .collect::<BTreeSet<_>>();
+    selectors
         .iter()
-        .filter(|context| {
-            let counts = context
-                .incident_loops
+        .map(|selector| {
+            let clause_entries = structure.sides.each_ref().map(|side| {
+                side.entries
+                    .iter()
+                    .find(|entry| entry.selector == *selector)
+                    .cloned()
+            });
+            let required = clause_entries
                 .iter()
-                .map(|incident| i64::from(incident.boundary_edge_count))
+                .map(|entry| {
+                    entry
+                        .as_ref()
+                        .map(|entry| i64::from(entry.boundary_edge_count.get()))
+                })
                 .collect::<Vec<_>>();
-            incident_loop_counts_satisfy_sides(&counts, &required)
+            let candidate_edge_slots = contexts
+                .iter()
+                .filter(|context| {
+                    let counts = context
+                        .incident_loops
+                        .iter()
+                        .map(|incident| i64::from(incident.boundary_edge_count))
+                        .collect::<Vec<_>>();
+                    incident_loop_counts_satisfy_sides(&counts, &required)
+                })
+                .map(|context| context.edge_slot)
+                .collect();
+            crate::records::DesignEdgeRecipeSelector {
+                selector: *selector,
+                clause_entries,
+                candidate_edge_slots,
+            }
         })
-        .map(|context| context.edge_slot)
         .collect()
 }
 
@@ -1704,6 +1724,64 @@ mod tests {
                 }],
             }
         );
+        let entry = |selector, boundary_edge_count| crate::records::DesignTopologyRecipeEntry {
+            selector,
+            boundary_edge_count: std::num::NonZeroU32::new(boundary_edge_count).unwrap(),
+            topology_triplets: [
+                crate::records::DesignTopologyRecipeTriplet {
+                    outer: std::num::NonZeroU32::new(1).unwrap(),
+                    middle: 0,
+                },
+                crate::records::DesignTopologyRecipeTriplet {
+                    outer: std::num::NonZeroU32::new(1).unwrap(),
+                    middle: 1,
+                },
+            ],
+        };
+        let side = |entries: Vec<crate::records::DesignTopologyRecipeEntry>| {
+            crate::records::DesignTopologyRecipeSide {
+                field_count: std::num::NonZeroU32::new(3).unwrap(),
+                header_value: 0,
+                first: 0,
+                second: 0,
+                third: None,
+                payload_entry_count: u32::try_from(entries.len()).unwrap(),
+                entries,
+            }
+        };
+        let structure = crate::records::DesignEdgeRecipeStructure {
+            root: 2,
+            sides: [
+                side(vec![entry(1, 1), entry(2, 1)]),
+                side(vec![entry(1, 2)]),
+            ],
+        };
+        let loop_context =
+            |coedge_slot, boundary_edge_count| crate::records::DesignHistoricalEdgeLoopContext {
+                coedge_slot,
+                loop_slot: coedge_slot + 10,
+                face_slot: coedge_slot + 20,
+                boundary_edge_count,
+                coedge_ordinal: 0,
+                previous_edge_slot: coedge_slot + 30,
+                next_edge_slot: coedge_slot + 40,
+            };
+        let contexts = [
+            crate::records::DesignHistoricalEdgeContext {
+                edge_slot: 7,
+                incident_loops: vec![loop_context(70, 1)],
+            },
+            crate::records::DesignHistoricalEdgeContext {
+                edge_slot: 8,
+                incident_loops: vec![loop_context(80, 1), loop_context(81, 2)],
+            },
+        ];
+        let selectors = recipe_selector_candidates(Some(&structure), &contexts);
+        assert_eq!(selectors.len(), 2);
+        assert_eq!(selectors[0].selector, 1);
+        assert_eq!(selectors[0].candidate_edge_slots, [8]);
+        assert_eq!(selectors[1].selector, 2);
+        assert_eq!(selectors[1].candidate_edge_slots, [7, 8]);
         assert!(incident_loop_counts_satisfy_sides(
             &[4, 5],
             &[Some(5), Some(4)]
