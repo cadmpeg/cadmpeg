@@ -349,115 +349,130 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let explicit_outer = entry.entity_type == 144;
-        let (surface_sequence, boundary_sequences, mut valid) = if explicit_outer {
-            let Some(surface) = pointer(record, 1) else {
-                losses.push(entity_loss(
-                    entry,
-                    "trimmed-surface support pointer is invalid",
-                ));
-                continue;
-            };
-            if record.integer(2) != Some(1) {
-                losses.push(entity_loss(
-                    entry,
-                    "implicit parameter-domain outer boundary is not projected",
-                ));
-                continue;
-            }
-            let Some(inner_count) = record
-                .integer(3)
-                .and_then(|value| usize::try_from(value).ok())
-            else {
-                losses.push(entity_loss(
-                    entry,
-                    "trimmed-surface inner-boundary count is invalid",
-                ));
-                continue;
-            };
-            let Some(outer) = pointer(record, 4) else {
-                losses.push(entity_loss(
-                    entry,
-                    "trimmed-surface outer-boundary pointer is invalid",
-                ));
-                continue;
-            };
-            let mut sequences = vec![outer];
-            let mut valid = true;
-            for index in 0..inner_count {
-                let Some(sequence) = pointer(record, 5 + index) else {
+        let trimmed_surface = entry.entity_type == 144;
+        let (surface_sequence, boundary_sequences, has_explicit_outer, mut valid) =
+            if trimmed_surface {
+                let Some(surface) = pointer(record, 1) else {
                     losses.push(entity_loss(
                         entry,
-                        "trimmed-surface inner-boundary pointer is invalid",
+                        "trimmed-surface support pointer is invalid",
                     ));
-                    valid = false;
-                    break;
+                    continue;
                 };
-                sequences.push(sequence);
-            }
-            (surface, sequences, valid)
-        } else {
-            let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
-            else {
-                losses.push(entity_loss(
-                    entry,
-                    "bounded-surface representation type is not 0 or 1",
-                ));
-                continue;
-            };
-            let Some(surface) = pointer(record, 2) else {
-                losses.push(entity_loss(
-                    entry,
-                    "bounded-surface support pointer is invalid",
-                ));
-                continue;
-            };
-            let Some(count) = record
-                .integer(3)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0)
-            else {
-                losses.push(entity_loss(
-                    entry,
-                    "bounded-surface boundary count is not positive",
-                ));
-                continue;
-            };
-            let mut sequences = Vec::with_capacity(count);
-            let mut valid = true;
-            for index in 0..count {
-                let Some(sequence) = pointer(record, 4 + index) else {
+                let Some(has_explicit_outer) = record.integer(2).and_then(|value| match value {
+                    0 => Some(false),
+                    1 => Some(true),
+                    _ => None,
+                }) else {
                     losses.push(entity_loss(
                         entry,
-                        "bounded-surface boundary pointer is invalid",
+                        "trimmed-surface outer-boundary flag is not 0 or 1",
                     ));
-                    valid = false;
-                    break;
+                    continue;
                 };
-                if boundaries.get(&sequence).is_some_and(|boundary| {
-                    (representation == 0
-                        && boundary
-                            .segments
-                            .iter()
-                            .all(|segment| segment.pcurves.is_empty()))
-                        || (representation == 1
+                let Some(inner_count) = record
+                    .integer(3)
+                    .and_then(|value| usize::try_from(value).ok())
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "trimmed-surface inner-boundary count is invalid",
+                    ));
+                    continue;
+                };
+                let mut sequences =
+                    Vec::with_capacity(inner_count + usize::from(has_explicit_outer));
+                if has_explicit_outer {
+                    let Some(outer) = pointer(record, 4) else {
+                        losses.push(entity_loss(
+                            entry,
+                            "trimmed-surface outer-boundary pointer is invalid",
+                        ));
+                        continue;
+                    };
+                    sequences.push(outer);
+                } else if record.integer(4) != Some(0) {
+                    losses.push(entity_loss(
+                        entry,
+                        "trimmed-surface parameter-domain outer boundary has a nonzero pointer",
+                    ));
+                    continue;
+                }
+                let mut valid = true;
+                for index in 0..inner_count {
+                    let Some(sequence) = pointer(record, 5 + index) else {
+                        losses.push(entity_loss(
+                            entry,
+                            "trimmed-surface inner-boundary pointer is invalid",
+                        ));
+                        valid = false;
+                        break;
+                    };
+                    sequences.push(sequence);
+                }
+                (surface, sequences, has_explicit_outer, valid)
+            } else {
+                let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "bounded-surface representation type is not 0 or 1",
+                    ));
+                    continue;
+                };
+                let Some(surface) = pointer(record, 2) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "bounded-surface support pointer is invalid",
+                    ));
+                    continue;
+                };
+                let Some(count) = record
+                    .integer(3)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .filter(|count| *count > 0)
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "bounded-surface boundary count is not positive",
+                    ));
+                    continue;
+                };
+                let mut sequences = Vec::with_capacity(count);
+                let mut valid = true;
+                for index in 0..count {
+                    let Some(sequence) = pointer(record, 4 + index) else {
+                        losses.push(entity_loss(
+                            entry,
+                            "bounded-surface boundary pointer is invalid",
+                        ));
+                        valid = false;
+                        break;
+                    };
+                    if boundaries.get(&sequence).is_some_and(|boundary| {
+                        (representation == 0
                             && boundary
                                 .segments
                                 .iter()
-                                .all(|segment| !segment.pcurves.is_empty()))
-                }) {
-                    sequences.push(sequence);
-                } else {
-                    losses.push(entity_loss(
-                        entry,
-                        "bounded-surface representation disagrees with its boundary",
-                    ));
-                    valid = false;
-                    break;
+                                .all(|segment| segment.pcurves.is_empty()))
+                            || (representation == 1
+                                && boundary
+                                    .segments
+                                    .iter()
+                                    .all(|segment| !segment.pcurves.is_empty()))
+                    }) {
+                        sequences.push(sequence);
+                    } else {
+                        losses.push(entity_loss(
+                            entry,
+                            "bounded-surface representation disagrees with its boundary",
+                        ));
+                        valid = false;
+                        break;
+                    }
                 }
-            }
-            (surface, sequences, valid)
-        };
+                (surface, sequences, false, valid)
+            };
         if !valid {
             continue;
         }
@@ -640,8 +655,8 @@ pub(super) fn project(
             candidate.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                boundary_role: if explicit_outer {
-                    if boundary_index == 0 {
+                boundary_role: if trimmed_surface {
+                    if has_explicit_outer && boundary_index == 0 {
                         cadmpeg_ir::topology::LoopBoundaryRole::Outer
                     } else {
                         cadmpeg_ir::topology::LoopBoundaryRole::Inner

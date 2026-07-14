@@ -56,6 +56,8 @@ Boundary, curve-on-surface, bounded-surface, and trimmed-surface entities carry 
 
 A Form 0 Boundary Entity (Type 141) stores `TYPE`, `PREF`, the support-surface pointer, and a positive model-curve count. Each ordered model-curve item stores its curve pointer, sense (`1` forward or `2` reversed), pcurve count, and that many parameter-curve pointers. `TYPE=0` requires every pcurve count to be zero. `TYPE=1` requires every pcurve count to be positive. The parameter curves of one item remain ordered and together form that coedge's parameter-space image.
 
+A Form 0 Trimmed Surface Entity (Type 144) stores a support-surface pointer, an outer-boundary flag, an inner-boundary count, an outer Curve on a Parametric Surface pointer or zero, and the ordered inner Curve on a Parametric Surface pointers. When the outer-boundary flag is zero, the outer pointer is zero and the rectangular parameter domain of the support surface supplies the outer boundary. The entity then produces no explicit outer loop; each listed loop is `inner`. When the flag is one, the outer pointer produces the single `outer` loop and each listed loop is `inner`.
+
 ## Byte accounting
 
 Every source byte belongs to one nonempty half-open ledger span. Typed spans cover values with decoded semantics. Structural spans cover framing, delimiters, padding, and sequence fields. Opaque spans name the native record that retains their bytes or their length and digest. Canonical ledger order is ascending start offset. Adjacent spans may be coalesced only when class, owner, and meaning are identical. Coverage starts at zero, ends at source length, and has neither gaps nor overlaps.

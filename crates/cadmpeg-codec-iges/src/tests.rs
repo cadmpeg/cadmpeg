@@ -2019,6 +2019,27 @@ fn trimmed_plane_with_inner_loop_file() -> Vec<u8> {
     ])
 }
 
+fn parameter_domain_trimmed_surface_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 128,
+            form: 0,
+            label: "SURFACE".into(),
+            status: "00010000",
+            parameters:
+                "128,1,1,1,1,0,0,1,0,0,0,0,1,1,0,0,1,1,1,1,1,1,0,0,0,1,0,0,0,1,0,1,1,0,0,1,0,1;"
+                    .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 144,
+            form: 0,
+            label: "DOMAIN".into(),
+            status: "00000000",
+            parameters: "144,1,0,0,0;".into(),
+        },
+    ])
+}
+
 #[test]
 fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
     let result = IgesCodec
@@ -2056,6 +2077,31 @@ fn decode_classifies_explicit_outer_and_inner_trimmed_surface_loops() {
             cadmpeg_ir::topology::LoopBoundaryRole::Inner,
         ]
     );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_parameter_domain_as_implicit_outer_boundary() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parameter_domain_trimmed_surface_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D3")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    assert!(face.loops.is_empty());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
