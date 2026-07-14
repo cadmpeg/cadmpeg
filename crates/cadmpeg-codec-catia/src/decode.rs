@@ -1169,7 +1169,7 @@ mod chart_tests {
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
-    use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::topology::{Point, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
@@ -1437,6 +1437,45 @@ mod chart_tests {
         );
         assert!(point_distance(endpoints[0], Point3::new(2.0, 0.0, 3.0)) < 1e-12);
         assert!(point_distance(endpoints[1], Point3::new(0.0, 2.0, 3.0)) < 1e-12);
+    }
+
+    #[test]
+    fn e5_nonplanar_circle_scales_its_rational_uv_control_net() {
+        let surface = crate::geometry::E5Surface {
+            pos: 0,
+            record_id: 7,
+            geometry: SurfaceGeometry::Torus {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius: 5.0,
+                minor_radius: 2.0,
+            },
+            uv_scale: [0.2, 0.5],
+        };
+        let pcurve = crate::e5::E5Pcurve::Circle {
+            surface: 7,
+            center: [10.0, 4.0],
+            codes: [0, 0],
+            radius: 2.0,
+            range: [0.0, std::f64::consts::PI],
+            tail: [0.0, 0.0],
+        };
+        let (geometry, range, endpoints) =
+            e5_pcurve_on_surface(&pcurve, &surface).expect("normalized torus circle");
+        assert_eq!(range, [0.0, std::f64::consts::FRAC_PI_2]);
+        let PcurveGeometry::Nurbs { control_points, .. } = geometry else {
+            panic!("expected rational NURBS pcurve");
+        };
+        let first = control_points.first().expect("first control");
+        let last = control_points.last().expect("last control");
+        assert!((first.u - 2.4).abs() < 1e-12 && (first.v - 2.0).abs() < 1e-12);
+        assert!((last.u - 2.0).abs() < 1e-12 && (last.v - 3.0).abs() < 1e-12);
+        let expected = [Point2::new(2.4, 2.0), Point2::new(2.0, 3.0)].map(|uv| {
+            cadmpeg_ir::eval::surface_point(&surface.geometry, uv.u, uv.v).expect("torus point")
+        });
+        assert!(point_distance(endpoints[0], expected[0]) < 1e-12);
+        assert!(point_distance(endpoints[1], expected[1]) < 1e-12);
     }
 
     #[test]
@@ -2462,14 +2501,35 @@ fn e5_pcurve_on_surface(
             radius,
             range,
             ..
-        } if matches!(surface, SurfaceGeometry::Plane { .. }) => {
+        } => {
             let angular_range = ordered_range([range[0] / radius, range[1] / radius]);
             let geometry = rational_pcurve_arc(*center, *radius, angular_range)?;
+            let PcurveGeometry::Nurbs {
+                degree,
+                knots,
+                control_points,
+                weights,
+                periodic,
+            } = geometry
+            else {
+                return None;
+            };
+            let scale = decoded_surface.uv_scale;
+            let geometry = PcurveGeometry::Nurbs {
+                degree,
+                knots,
+                control_points: control_points
+                    .into_iter()
+                    .map(|point| Point2::new(point.u * scale[0], point.v * scale[1]))
+                    .collect(),
+                weights,
+                periodic,
+            };
             let endpoints = angular_range.map(|angle| {
                 cadmpeg_ir::eval::surface_point(
                     surface,
-                    center[0] + radius * angle.cos(),
-                    center[1] + radius * angle.sin(),
+                    (center[0] + radius * angle.cos()) * scale[0],
+                    (center[1] + radius * angle.sin()) * scale[1],
                 )
             });
             Some((
@@ -2523,7 +2583,6 @@ fn e5_pcurve_on_surface(
                     .ok()?,
             ))
         }
-        crate::e5::E5Pcurve::Circle { .. } => None,
     }
 }
 
