@@ -4415,6 +4415,11 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
         native.design_objects[0].field_classes,
         [String::new(), "Sketch".to_string()]
     );
+    assert_eq!(
+        native.design_objects[0].owner_class.as_deref(),
+        Some("Sketch")
+    );
+    assert_eq!(native.design_objects[0].owner_storage_ref, None);
 }
 
 #[test]
