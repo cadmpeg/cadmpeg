@@ -94,6 +94,20 @@ fn segment_om_record_area_payload() -> Vec<u8> {
     payload
 }
 
+fn segment_om_record_area_with_input_store_payload() -> Vec<u8> {
+    let mut payload = segment_om_record_area_payload();
+    let mut store = offset_only_indexed_om_section();
+    let base = payload.len() as u32;
+    let index_start = 8 + 1 + b"UGS::ModlFeature".len() + 1;
+    for index in 0..4 {
+        let at = index_start + index * 4;
+        let value = u32::from_le_bytes(store[at..at + 4].try_into().unwrap());
+        store[at..at + 4].copy_from_slice(&(value + base).to_le_bytes());
+    }
+    payload.extend_from_slice(&store);
+    payload
+}
+
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
@@ -389,7 +403,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 22);
+    assert_eq!(namespace.version, 23);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -629,6 +643,32 @@ fn decode_retains_role_scoped_om_record_area_header() {
 }
 
 #[test]
+fn decode_resolves_feature_header_input_to_unique_data_block() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        segment_om_record_area_with_input_store_payload(),
+    )]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let inputs = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::FeatureInputBlock>("feature_input_blocks")
+        .unwrap();
+    assert_eq!(inputs.len(), 1);
+    assert_eq!(inputs[0].input_slot, 0);
+    assert_eq!(inputs[0].object_index, 1);
+    assert!(inputs[0].data_block.ends_with(":block#2"));
+    assert_eq!(
+        result.ir.model.features[0].source_properties["input_block.0"],
+        inputs[0].data_block
+    );
+}
+
+#[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     use crate::om::CompactIndex::{Null, Value};
 
@@ -653,6 +693,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         offset: 100,
         value: "EXTRUDE",
         object_indices: [None; 4],
+        object_index_offsets: [0; 4],
     };
     let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
     let record = crate::om::OperationRecord {
@@ -3416,7 +3457,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 22);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 23);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

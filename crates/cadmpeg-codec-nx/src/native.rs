@@ -200,6 +200,23 @@ pub struct FeatureBodyReference {
     pub source_offset: u64,
 }
 
+/// Operation-header input resolved to one bounded offset-only OM data block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureInputBlock {
+    /// Globally unique input-binding identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Zero-based operation-header input slot.
+    pub input_slot: u8,
+    /// Object index serialized in that slot.
+    pub object_index: u32,
+    /// Target in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -417,6 +434,69 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
         }
     }
     references
+}
+
+/// Resolve operation-header object indices to unique offset-only data blocks.
+pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut inputs = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, label) in section.operation_labels().into_iter().enumerate() {
+            for (input_slot, object_index) in label.object_indices.into_iter().enumerate() {
+                let Some(object_index) = object_index else {
+                    continue;
+                };
+                let candidates = indexed
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, (_, candidate))| {
+                        candidate
+                            .records
+                            .first()
+                            .is_some_and(|record| record.object_id.is_none())
+                            && candidate.records.get(object_index as usize).is_some()
+                    })
+                    .map(|(section_ordinal, (_, candidate))| {
+                        let block_ordinal =
+                            object_index as usize + usize::from(candidate.control.is_some());
+                        format!("nx:om-data-blocks-{section_ordinal}:block#{block_ordinal}")
+                    })
+                    .collect::<Vec<_>>();
+                let [data_block] = candidates.as_slice() else {
+                    continue;
+                };
+                let operation_label =
+                    format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+                inputs.push(FeatureInputBlock {
+                    id: format!(
+                        "nx:feature-history:input-block#{section_key}-{operation_ordinal}-{input_slot}"
+                    ),
+                    operation_label,
+                    input_slot: input_slot as u8,
+                    object_index,
+                    data_block: data_block.clone(),
+                    source_offset: entry_offset + label.object_index_offsets[input_slot] as u64,
+                });
+            }
+        }
+    }
+    inputs
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

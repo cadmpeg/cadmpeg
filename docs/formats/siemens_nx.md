@@ -91,6 +91,10 @@ slots, then `03 length:u8 name 00`. An index below 128 is one byte. Values
 through 4095 use `80..8f low:u8` and decode as `(prefix - 80) * 256 + low`.
 Larger values use `90 value:u16 BE`; `ff` is null. `name` contains printable
 ASCII bytes and `length = name_length + 2`.
+Each non-null header slot addresses the zero-based entity-record ordinal in the
+offset-only OM store. The addressed record retains its external index boundary
+as the operation's ordered input block. A slot binds only when exactly one
+offset-only store contains that ordinal.
 The fixed marker begins an operation record. A record extends through the byte
 before the next validated operation marker; the final record extends through
 the feature-history record-area boundary.

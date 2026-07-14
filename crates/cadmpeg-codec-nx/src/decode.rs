@@ -2679,6 +2679,7 @@ fn attach_native_object_model(
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
     let feature_body_references = crate::native::feature_body_references(&scan.container);
+    let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
@@ -2703,6 +2704,7 @@ fn attach_native_object_model(
         && feature_operation_labels.is_empty()
         && feature_operation_records.is_empty()
         && feature_body_references.is_empty()
+        && feature_input_blocks.is_empty()
         && feature_boolean_operations.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
@@ -2769,6 +2771,12 @@ fn attach_native_object_model(
             .note(&reference.id, annotation_stream, reference.source_offset)
             .tag("FEATURE_BODY_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
+    }
+    for input in &feature_input_blocks {
+        annotations
+            .note(&input.id, annotation_stream, input.source_offset)
+            .tag("FEATURE_INPUT_BLOCK");
+        annotations.exactness(&input.id, Exactness::ByteExact);
     }
     for operation in &feature_boolean_operations {
         annotations
@@ -2879,6 +2887,7 @@ fn attach_native_object_model(
         &feature_operation_labels,
         &feature_boolean_operations,
         &feature_body_references,
+        &feature_input_blocks,
         &segment_body_bindings,
         annotations,
     );
@@ -2887,7 +2896,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(22);
+    namespace.version = namespace.version.max(23);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2911,6 +2920,9 @@ fn attach_native_object_model(
     }
     if !feature_body_references.is_empty() {
         namespace.set_arena("feature_body_references", &feature_body_references)?;
+    }
+    if !feature_input_blocks.is_empty() {
+        namespace.set_arena("feature_input_blocks", &feature_input_blocks)?;
     }
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
@@ -2962,6 +2974,7 @@ fn attach_feature_operations(
     labels: &[crate::native::FeatureOperationLabel],
     booleans: &[crate::native::FeatureBooleanOperation],
     body_references: &[crate::native::FeatureBodyReference],
+    input_blocks: &[crate::native::FeatureInputBlock],
     body_bindings: &[crate::native::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
 ) {
@@ -2981,6 +2994,14 @@ fn attach_feature_operations(
         })
         .collect::<BTreeMap<_, _>>();
     let mut last_body_writer = BTreeMap::<u32, FeatureId>::new();
+    let mut input_blocks_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureInputBlock>>::new();
+    for input in input_blocks {
+        input_blocks_by_operation
+            .entry(input.operation_label.as_str())
+            .or_default()
+            .push(input);
+    }
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
     for binding in body_bindings {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
@@ -3021,6 +3042,16 @@ fn attach_feature_operations(
             source_properties.insert(
                 format!("object_index.{slot}"),
                 value.map_or_else(|| "null".to_string(), |value| value.to_string()),
+            );
+        }
+        for input in input_blocks_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("input_block.{}", input.input_slot),
+                input.data_block.clone(),
             );
         }
         let definition = booleans.get(label.id.as_str()).map_or_else(

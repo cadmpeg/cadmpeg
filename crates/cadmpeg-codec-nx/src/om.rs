@@ -206,6 +206,8 @@ pub struct OperationLabel<'a> {
     pub value: &'a str,
     /// Four object-index slots in header order; `None` is the `ff` sentinel.
     pub object_indices: [Option<u32>; 4],
+    /// Absolute byte offset of each object-index token in header order.
+    pub object_index_offsets: [usize; 4],
 }
 
 /// One operation record bounded by consecutive validated operation headers.
@@ -408,8 +410,13 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
     {
         let mut at = marker + HEADER.len();
         let mut object_indices = [None; 4];
+        let mut object_index_offsets = [0; 4];
         let mut valid = true;
-        for slot in &mut object_indices {
+        for (slot, offset) in object_indices
+            .iter_mut()
+            .zip(object_index_offsets.iter_mut())
+        {
+            *offset = base_offset + at;
             let Some((value, next)) = feature_object_index(bytes, at) else {
                 valid = false;
                 break;
@@ -449,6 +456,7 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
             offset: base_offset + at,
             value,
             object_indices,
+            object_index_offsets,
         });
     }
     labels
