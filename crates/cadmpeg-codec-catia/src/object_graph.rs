@@ -106,7 +106,7 @@ pub enum PayloadField {
         /// Byte offset within the payload.
         offset: usize,
     },
-    /// `0x81` reference field.
+    /// Compact `0x81` or fixed-width `0x32` reference field.
     Reference {
         /// Referenced ordinal.
         value: u32,
@@ -540,8 +540,7 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                         offset,
                     }
                 } else {
-                    PayloadField::Scalar {
-                        tag,
+                    PayloadField::Reference {
                         value: u32_le(bytes, at + 1).expect("checked scalar extent"),
                         offset,
                     }

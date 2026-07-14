@@ -4009,7 +4009,7 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
         object_graph_record(
             &[0x04, 0x01, 0x81, 0x83],
             &[
-                0x80, 0x78, 0x56, 0x34, 0x12, 0x32, 0xef, 0xcd, 0xab, 0x89, 0xfe,
+                0x80, 0x78, 0x56, 0x34, 0x12, 0x32, 2, 0, 0, 0, 0x32, 0xef, 0xcd, 0xab, 0x89, 0xfe,
             ],
         ),
         object_graph_record(&[0x04, 0x01, 0x81, 0x84], &[0xfe]),
@@ -4022,13 +4022,21 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
                 value: 0x1234_5678,
                 offset: 0,
             },
-            PayloadField::Scalar {
-                tag: 0x32,
-                value: 0x89ab_cdef,
+            PayloadField::Reference {
+                value: 2,
                 offset: 5,
+            },
+            PayloadField::Reference {
+                value: 0x89ab_cdef,
+                offset: 10,
             },
             PayloadField::Terminator,
         ]
+    );
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(
+        native.object_graphs[0].records[0].references,
+        [native.object_graphs[0].records[1].id.clone()]
     );
 }
 
