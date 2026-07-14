@@ -257,6 +257,82 @@ pub struct SurfaceParameterScalar {
     pub length: usize,
 }
 
+/// Complete positional construction for a line-generated extrusion surface.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LineExtrusionFrame {
+    /// Stored model-space sweep direction.
+    pub direction: [f64; 3],
+    /// Two model-space points defining the straight directrix.
+    pub directrix: [[f64; 3]; 2],
+}
+
+impl SurfaceParameterRecord {
+    /// Decode the two-frame positional body used by a straight
+    /// `surface_of_extrusion` instance.
+    #[must_use]
+    pub fn line_extrusion_frame(&self) -> Option<LineExtrusionFrame> {
+        if self.boundary != SurfaceBodyBoundary::CompoundClose {
+            return None;
+        }
+        let [direction, directrix] = self.scalar_frames.as_slice() else {
+            return None;
+        };
+        let [direction_x, direction_y, direction_z] = direction.slots.as_slice() else {
+            return None;
+        };
+        let [start_x, start_y, start_z, end_x, end_y, end_z] = directrix.slots.as_slice() else {
+            return None;
+        };
+        let values = [
+            direction_x.value?,
+            direction_y.value?,
+            direction_z.value?,
+            start_x.value?,
+            start_y.value?,
+            start_z.value?,
+            end_x.value?,
+            end_y.value?,
+            end_z.value?,
+        ];
+        values.iter().all(|value| value.is_finite()).then_some(())?;
+        let first_gap = self.opaque_spans.first()?;
+        if first_gap.offset
+            != direction.offset
+                + direction
+                    .slots
+                    .iter()
+                    .map(|slot| slot.length)
+                    .sum::<usize>()
+            || first_gap.raw != [0x00, 0x0c, 0x9a]
+            || directrix.offset != first_gap.offset + first_gap.length
+        {
+            return None;
+        }
+        if self.opaque_spans.len() > 2 {
+            return None;
+        }
+        if let Some(reference) = self.opaque_spans.get(1) {
+            let directrix_end = directrix.offset
+                + directrix
+                    .slots
+                    .iter()
+                    .map(|slot| slot.length)
+                    .sum::<usize>();
+            if reference.offset != directrix_end || reference.raw.first() != Some(&0xf7) {
+                return None;
+            }
+            let (_, end) = psb::reference_id(&reference.raw, 1).ok()?;
+            if end != reference.raw.len() {
+                return None;
+            }
+        }
+        Some(LineExtrusionFrame {
+            direction: values[0..3].try_into().ok()?,
+            directrix: [values[3..6].try_into().ok()?, values[6..9].try_into().ok()?],
+        })
+    }
+}
+
 /// Structural classification of a plane-row local-system chunk.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LocalSystemClassification {

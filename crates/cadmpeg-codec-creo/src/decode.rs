@@ -12576,6 +12576,131 @@ fn transfer_first_instance_prototype_surfaces(
     transferred
 }
 
+fn transfer_positional_line_extrusion_planes(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let kinds = scan
+        .surface_rows
+        .iter()
+        .map(|row| (row.id, row.kind))
+        .collect::<BTreeMap<_, _>>();
+    let mut transferred = 0;
+    for record in &scan.surface_parameters {
+        if kinds.get(&record.surface_id) != Some(&crate::surface::SurfaceKind::Extrusion) {
+            continue;
+        }
+        let Some(frame) = record.line_extrusion_frame() else {
+            continue;
+        };
+        let directrix =
+            std::array::from_fn(|axis| frame.directrix[1][axis] - frame.directrix[0][axis]);
+        let (Some(_direction), Some(u_axis), Some(normal)) = (
+            normalized(frame.direction),
+            normalized(directrix),
+            normalized(cross(directrix, frame.direction)),
+        ) else {
+            continue;
+        };
+        let surface_id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
+        if ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == surface_id)
+        {
+            continue;
+        }
+        let curve_id = CurveId(format!(
+            "creo:visibgeom:surface_directrix#{}",
+            record.surface_id
+        ));
+        let procedural_id = ProceduralSurfaceId(format!(
+            "creo:visibgeom:surface_extrusion#{}",
+            record.surface_id
+        ));
+        annotate(
+            annotations,
+            &curve_id,
+            "VisibGeom",
+            record.body_offset as u64,
+            "positional_line_extrusion_directrix",
+            Exactness::Derived,
+        );
+        annotate(
+            annotations,
+            &surface_id,
+            "VisibGeom",
+            record.body_offset as u64,
+            "positional_line_extrusion_plane",
+            Exactness::Derived,
+        );
+        annotate(
+            annotations,
+            &procedural_id,
+            "VisibGeom",
+            record.body_offset as u64,
+            "positional_line_extrusion_construction",
+            Exactness::Derived,
+        );
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Line {
+                origin: Point3::new(
+                    frame.directrix[0][0],
+                    frame.directrix[0][1],
+                    frame.directrix[0][2],
+                ),
+                direction: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:surface_directrix#{}", record.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: Point3::new(
+                    frame.directrix[0][0],
+                    frame.directrix[0][1],
+                    frame.directrix[0][2],
+                ),
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", record.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Extrusion {
+                directrix: curve_id,
+                parameter_interval: None,
+                direction: Vector3::new(frame.direction[0], frame.direction[1], frame.direction[2]),
+                native_position: None,
+            },
+            cache_fit_tolerance: None,
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn fc05_model_frame(
     axis_index: usize,
     axis_ordinate: f64,
@@ -13674,6 +13799,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     }
     let first_instance_prototype_surface_count =
         transfer_first_instance_prototype_surfaces(scan, &mut ir, &mut annotations);
+    let positional_line_extrusion_plane_count =
+        transfer_positional_line_extrusion_planes(scan, &mut ir, &mut annotations);
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
@@ -13695,6 +13822,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_first_instance_prototype_surface_count".to_string(),
             first_instance_prototype_surface_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_positional_line_extrusion_plane_count".to_string(),
+            positional_line_extrusion_plane_count.to_string(),
         );
         source.attributes.insert(
             "transferred_saved_spline_curve_count".to_string(),
@@ -14417,6 +14548,16 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         })
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
+    let positional_line_extrusion_plane_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("transferred_positional_line_extrusion_plane_count")
+        })
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
 
     let mut losses = Vec::new();
 
@@ -14446,7 +14587,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, complete first-instance \
-             analytic prototypes, topology-bound `fc 05` \
+             analytic prototypes, straight positional surface-of-extrusion planes, \
+             topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
              and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
              other parameter bodies remain structural records.",
@@ -14499,6 +14641,19 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance analytic \
                  surface carrier(s) from complete named local frames and parameters."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && positional_line_extrusion_plane_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {positional_line_extrusion_plane_count} straight positional \
+                 surface-of-extrusion carrier(s) from complete sweep-direction and directrix \
+                 frames."
             ),
             provenance: None,
         });

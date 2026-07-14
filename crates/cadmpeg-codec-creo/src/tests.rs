@@ -316,6 +316,76 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
 }
 
 #[test]
+fn decode_transfers_positional_line_extrusion_plane() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 0]);
+    for value in [0.0, 0.0, 1.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(&[0x00, 0x0c, 0x9a]);
+    for value in [0.0, 0.0, 0.0, 2.0, 0.0, 0.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.push(0xe3);
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("extrusion plane");
+    assert!(matches!(
+        surface.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3 {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0
+            },
+            normal: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: -1.0,
+                z: 0.0
+            },
+            u_axis: cadmpeg_ir::math::Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0
+            },
+        }
+    ));
+    let carrier_id = surface.id.clone();
+    let construction = result
+        .ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|surface| surface.surface == carrier_id)
+        .expect("extrusion construction");
+    assert!(matches!(
+        construction.definition,
+        cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion {
+            parameter_interval: None,
+            direction: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+            native_position: None,
+            ..
+        }
+    ));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
     let mut payload = visibgeom_payload(1, 0);
     let scalar = [0x2d, 0x31, 0xa6, 0x66, 0x66, 0x66, 0x66, 0x66];
