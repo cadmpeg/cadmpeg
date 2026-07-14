@@ -3856,6 +3856,19 @@ impl MeshSelectionSearch<'_> {
         {
             return;
         }
+        let selected_edges = self
+            .selected
+            .iter()
+            .enumerate()
+            .filter_map(|(face, selected)| {
+                selected
+                    .as_ref()
+                    .and_then(|(index, _)| self.assignments[face].get(*index))
+            })
+            .flat_map(|assignment| &assignment.boundaries)
+            .flatten()
+            .map(|use_| use_.edge)
+            .collect::<HashSet<_>>();
         let next = self
             .selected
             .iter()
@@ -3870,9 +3883,15 @@ impl MeshSelectionSearch<'_> {
                     })
                     .count();
                 if supported == 0 {
-                    return Some((0, 0, face));
+                    return Some((0, 0, 0, face));
                 }
                 let assignment = self.assignments[face].first()?;
+                let selected_incidence = assignment
+                    .boundaries
+                    .iter()
+                    .flatten()
+                    .filter(|use_| selected_edges.contains(&use_.edge))
+                    .count();
                 let constrained = assignment
                     .boundaries
                     .iter()
@@ -3884,10 +3903,15 @@ impl MeshSelectionSearch<'_> {
                             || measured.domains[right].len() < self.vertex_points.len()
                     })
                     .count();
-                Some((supported, usize::MAX - constrained, face))
+                Some((
+                    supported,
+                    usize::MAX - selected_incidence,
+                    usize::MAX - constrained,
+                    face,
+                ))
             })
             .min();
-        let Some((supported, _, face)) = next else {
+        let Some((supported, _, _, face)) = next else {
             let mut quotient = quotient.clone();
             let Some(root_points) =
                 quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
