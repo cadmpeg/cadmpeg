@@ -478,11 +478,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         let expected_placements = if joint.kind == "grounded" { 1 } else { 2 };
         let invalid_frames = joint.placements.len() != expected_placements
+            || (!joint.offsets.is_empty() && joint.offsets.len() != expected_placements)
             || joint
                 .placements
                 .iter()
                 .flatten()
                 .flatten()
+                .chain(joint.offsets.iter().flatten().flatten())
                 .any(|value| !value.is_finite());
         if missing_link || invalid_frames {
             findings.push(finding(

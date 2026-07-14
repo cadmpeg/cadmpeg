@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "48");
+    assert_eq!(result.ir.ir_version, "49");
     let feature = |name: &str| {
         &result
             .ir
@@ -2979,7 +2979,7 @@ fn recovers_assembly_joint_operands_frames_and_state() {
 </Objects>
 <ObjectData Count="2">
  <Object name="Assembly"><Properties Count="0"/></Object>
- <Object name="Joint"><Properties Count="12">
+ <Object name="Joint"><Properties Count="14">
   <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="A.Face1"/><Sub value="A.Edge2"/></XLink></Property>
   <Property name="Reference2" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="1"><Sub value="B.Edge3"/></XLink></Property>
@@ -2992,6 +2992,8 @@ fn recovers_assembly_joint_operands_frames_and_state() {
   <Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="EnableAngleMax" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Detach1" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Offset1" type="App::PropertyPlacement"><PropertyPlacement Px="0.5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="Offset2" type="App::PropertyPlacement"><PropertyPlacement Px="1.5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -3029,6 +3031,9 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         .iter()
         .all(|operand| operand.component.is_some()));
     assert_eq!(joint.frames[1][0][3], 2.0);
+    assert_eq!(joint.offset_frames.len(), 2);
+    assert_eq!(joint.offset_frames[0][0][3], 0.5);
+    assert_eq!(joint.offset_frames[1][0][3], 1.5);
     assert!(joint.suppressed);
     assert_eq!(joint.detached, [true, false]);
     assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1e-12);
@@ -4321,7 +4326,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 16);
+    assert_eq!(namespace.version, 17);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");

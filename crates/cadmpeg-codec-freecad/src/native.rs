@@ -59,7 +59,7 @@ mod tests {
 }
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 16;
+pub const VERSION: u32 = 17;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -238,6 +238,8 @@ pub struct JointRecord {
     pub references: Vec<LinkTarget>,
     /// Connector-local coordinate frames in connector order.
     pub placements: Vec<[[f64; 4]; 4]>,
+    /// Connector attachment-offset frames in connector order.
+    pub offsets: Vec<[[f64; 4]; 4]>,
     /// Joint scalar, limit, detach, enable, and suppression properties.
     pub parameters: BTreeMap<String, String>,
 }

@@ -51,6 +51,14 @@ pub(crate) fn transfer(
                 .filter_map(|name| placement(&owned, name))
                 .collect()
         };
+        let offsets = if grounded {
+            Vec::new()
+        } else {
+            ["Offset1", "Offset2"]
+                .into_iter()
+                .filter_map(|name| placement(&owned, name))
+                .collect()
+        };
         let parameters = owned
             .iter()
             .filter(|property| {
@@ -93,6 +101,7 @@ pub(crate) fn transfer(
             },
             references,
             placements,
+            offsets,
             parameters,
         });
     }
@@ -169,6 +178,7 @@ pub(crate) fn transfer_neutral(
                     })
                     .collect(),
                 frames: record.placements.clone(),
+                offset_frames: record.offsets.clone(),
                 suppressed: bool_value("Suppressed").unwrap_or(false),
                 detached: [
                     bool_value("Detach1").unwrap_or(false),
@@ -205,6 +215,14 @@ fn joint_kind(kind: &str) -> JointKind {
         "slider" | "prismatic" => JointKind::Slider,
         "cylindrical" => JointKind::Cylindrical,
         "ball" | "spherical" => JointKind::Ball,
+        "distance" => JointKind::Distance,
+        "parallel" => JointKind::Parallel,
+        "perpendicular" => JointKind::Perpendicular,
+        "angle" => JointKind::Angle,
+        "rackpinion" | "rack_pinion" => JointKind::RackPinion,
+        "screw" => JointKind::Screw,
+        "gears" => JointKind::Gears,
+        "belt" => JointKind::Belt,
         "grounded" => JointKind::Grounded,
         _ => JointKind::Native(kind.to_owned()),
     }
@@ -247,4 +265,34 @@ fn links(properties: &[&PropertyRecord], name: &str) -> Vec<crate::native::LinkT
 
 fn placement(properties: &[&PropertyRecord], name: &str) -> Option<[[f64; 4]; 4]> {
     crate::product::placement_matrix(properties.iter().find(|property| property.name == name)?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::joint_kind;
+
+    #[test]
+    fn every_primary_joint_family_has_a_neutral_variant() {
+        for family in [
+            "Fixed",
+            "Revolute",
+            "Cylindrical",
+            "Slider",
+            "Ball",
+            "Distance",
+            "Parallel",
+            "Perpendicular",
+            "Angle",
+            "RackPinion",
+            "Screw",
+            "Gears",
+            "Belt",
+            "grounded",
+        ] {
+            assert!(
+                !matches!(joint_kind(family), cadmpeg_ir::JointKind::Native(_)),
+                "{family} must not fall through to a native joint family"
+            );
+        }
+    }
 }

@@ -202,9 +202,11 @@ linear, limit-enable, detach, and suppression values remain independently named 
 Python proxy payloads remain inert native properties; decoding never imports their module.
 
 CADIR assembly joints resolve local connector objects to component ids while retaining exact
-object and persistent subelement paths. Known fixed, revolute, slider, cylindrical, ball, and
-grounded families are typed; an unfamiliar family remains explicitly native. Connector frames,
-suppression and detach flags, linear offsets, and enabled limit intervals are independent fields.
+object and persistent subelement paths. Fixed, revolute, slider, cylindrical, ball, distance,
+parallel, perpendicular, angle, rack-pinion, screw, gears, belt, and grounded families are typed;
+an unfamiliar future family remains explicitly native. Connector frames, connector attachment
+offset frames, suppression and detach flags, linear offsets, and enabled limit intervals are
+independent fields.
 Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
 operand/frame cardinality, component references, finite values, and ordered intervals.
 

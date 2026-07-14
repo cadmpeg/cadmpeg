@@ -167,6 +167,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         };
         let operands_valid = joint.operands.len() == expected
             && joint.frames.len() == expected
+            && (joint.offset_frames.is_empty() || joint.offset_frames.len() == expected)
             && joint.operands.iter().all(|operand| {
                 let external_valid = operand.external_document.as_ref().is_none_or(|document| {
                     document.path.is_some() ^ document.document_id.is_some()
@@ -188,6 +189,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .iter()
             .flatten()
             .flatten()
+            .chain(joint.offset_frames.iter().flatten().flatten())
             .copied()
             .chain(joint.angle)
             .chain(joint.distance)

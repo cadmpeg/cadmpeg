@@ -213,6 +213,22 @@ pub enum JointKind {
     Cylindrical,
     /// Rotation about a common point.
     Ball,
+    /// Maintains a scalar separation.
+    Distance,
+    /// Maintains parallel connector directions.
+    Parallel,
+    /// Maintains perpendicular connector directions.
+    Perpendicular,
+    /// Maintains an angular separation.
+    Angle,
+    /// Couples rack translation to pinion rotation.
+    RackPinion,
+    /// Couples translation and rotation by screw pitch.
+    Screw,
+    /// Couples two gear rotations.
+    Gears,
+    /// Couples two pulley rotations through a belt.
+    Belt,
     /// Persisted grounding of a component.
     Grounded,
     /// Future application-defined family retained without relabeling.
@@ -258,6 +274,9 @@ pub struct AssemblyJoint {
     pub operands: Vec<JointOperand>,
     /// Connector-local frames in operand order.
     pub frames: Vec<[[f64; 4]; 4]>,
+    /// Connector attachment offsets in operand order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub offset_frames: Vec<[[f64; 4]; 4]>,
     /// Whether solving this joint is suppressed.
     pub suppressed: bool,
     /// Per-connector detach flags.
