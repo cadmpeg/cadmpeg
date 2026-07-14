@@ -8864,10 +8864,28 @@ mod relation_tests {
             region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
             None
         );
+        assert_eq!(
+            super::selection_containing_points(
+                &sketch,
+                std::slice::from_ref(&entity),
+                &[point],
+                1.0e-6,
+            ),
+            Some(super::ResolvedProfileSelection::Loops(vec![0]))
+        );
 
         sketch.profiles.push(sketch.profiles[0].clone());
         assert_eq!(
-            region_containing_points(&sketch, &[entity], &[point], 1.0e-6),
+            region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
+            None
+        );
+        assert_eq!(
+            super::selection_containing_points(
+                &sketch,
+                std::slice::from_ref(&entity),
+                &[point],
+                1.0e-6,
+            ),
             None
         );
     }
@@ -8901,6 +8919,26 @@ mod relation_tests {
                 geometry: SketchGeometry::Line { start, end },
             });
         }
+        let circle_id = SketchEntityId("unrelated-circle".into());
+        let profiles = vec![
+            profile,
+            vec![SketchEntityUse {
+                entity: circle_id.clone(),
+                reversed: false,
+            }],
+        ];
+        entities.push(SketchEntity {
+            id: circle_id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(20.0, 20.0),
+                radius: Length(1.0),
+            },
+        });
         let sketch = Sketch {
             id: sketch_id,
             name: None,
@@ -8908,7 +8946,7 @@ mod relation_tests {
             origin: Point3::new(10.0, 20.0, 5.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
-            profiles: vec![profile],
+            profiles,
             native_ref: None,
         };
 
