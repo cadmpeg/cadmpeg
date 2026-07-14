@@ -181,6 +181,13 @@ pub fn decode(
                 &native.sketch_curve_identities,
                 ir.tolerances.linear,
             );
+            crate::design::bind_extrude_profile_selections(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &native.design_extrude_selection_groups,
+                &native.design_extrude_selection_members,
+                &ir.model.sketches,
+            );
             ir.model.sketch_constraints = crate::design::project_sketch_constraints(
                 &native.design_sketch_placements,
                 &native.sketch_points,
@@ -362,6 +369,13 @@ pub fn decode(
         &native.sketch_points,
         &native.sketch_curve_identities,
         ir.tolerances.linear,
+    );
+    crate::design::bind_extrude_profile_selections(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_extrude_selection_groups,
+        &native.design_extrude_selection_members,
+        &ir.model.sketches,
     );
     ir.model.sketch_constraints = crate::design::project_sketch_constraints(
         &native.design_sketch_placements,

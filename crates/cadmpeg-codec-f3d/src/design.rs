@@ -1176,6 +1176,117 @@ pub fn project_sketch_design(
     (sketches, entities)
 }
 
+/// Bind each Extrude's counted sketch selection to exact neutral profile loops
+/// when every member identifies one unambiguous loop. Otherwise retain the
+/// native selection together with the known sketch.
+pub fn bind_extrude_profile_selections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[DesignParameterScope],
+    groups: &[DesignExtrudeSelectionGroup],
+    members: &[DesignExtrudeSelectionMember],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    for feature in features {
+        let Some(scope) = feature.native_ref.as_deref() else {
+            continue;
+        };
+        let Some(scope) = scopes.iter().find(|candidate| candidate.id == scope) else {
+            continue;
+        };
+        let mut matching_groups = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+            })
+            .collect::<Vec<_>>();
+        matching_groups.sort_by_key(|group| group.scope_reference_ordinal);
+        if matching_groups.is_empty() {
+            continue;
+        }
+        let FeatureDefinition::Extrude { profile, .. } = &mut feature.definition else {
+            continue;
+        };
+        let ProfileRef::Sketch(sketch_id) = profile else {
+            continue;
+        };
+        let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+            continue;
+        };
+        *profile = if let [group] = matching_groups.as_slice() {
+            resolved_extrude_profile_selection(sketch_id, group, members, sketch)
+        } else {
+            ProfileRef::SketchSelection {
+                sketch: sketch_id.clone(),
+                selections: matching_groups
+                    .iter()
+                    .map(|group| group.id.clone())
+                    .collect(),
+            }
+        };
+    }
+}
+
+fn resolved_extrude_profile_selection(
+    sketch_id: &cadmpeg_ir::sketches::SketchId,
+    group: &DesignExtrudeSelectionGroup,
+    members: &[DesignExtrudeSelectionMember],
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> cadmpeg_ir::features::ProfileRef {
+    use cadmpeg_ir::features::ProfileRef;
+
+    let mut selection_members = members
+        .iter()
+        .filter(|member| {
+            native_stream(&member.id) == native_stream(&group.id)
+                && member.group_record_index == group.record_index
+        })
+        .collect::<Vec<_>>();
+    selection_members.sort_by_key(|member| member.group_member_ordinal);
+    let exact_member_run = selection_members.len() == group.members.len()
+        && selection_members
+            .iter()
+            .zip(&group.members)
+            .all(|(member, record_index)| member.record_index == *record_index);
+    let resolved_profiles = exact_member_run.then(|| {
+        let mut selected = Vec::new();
+        for member in &selection_members {
+            let SketchRelationOperand::Curve { record_index, .. } =
+                member.resolved_geometry.as_ref()?
+            else {
+                return None;
+            };
+            let entity = neutral_sketch_entity_id(&member.id, *record_index);
+            let matches = sketch
+                .profiles
+                .iter()
+                .enumerate()
+                .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity))
+                .map(|(index, _)| u32::try_from(index).ok())
+                .collect::<Option<Vec<_>>>()?;
+            let [profile_index] = matches.as_slice() else {
+                return None;
+            };
+            if !selected.contains(profile_index) {
+                selected.push(*profile_index);
+            }
+        }
+        (!selected.is_empty()).then_some(selected)
+    });
+    match resolved_profiles.flatten() {
+        Some(profiles) => ProfileRef::SketchProfiles {
+            sketch: sketch_id.clone(),
+            profiles,
+        },
+        None => ProfileRef::SketchSelection {
+            sketch: sketch_id.clone(),
+            selections: vec![group.id.clone()],
+        },
+    }
+}
+
 fn closed_sketch_profiles(
     sketch: &cadmpeg_ir::sketches::SketchId,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -7163,15 +7274,16 @@ mod relation_tests {
         closed_sketch_profiles, companion_owned_interval, decode_fillet_radius_groups,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indirect_angular_lines, neutral_sketch_id,
-        next_indexed_record_offset, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, remove_dimension_frame_relations, resolved_face_group,
+        find_dimension_locus_pair, identity_matrix, indirect_angular_lines,
+        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
         two_locus_distance_dimension,
     };
     use crate::records::{
@@ -7188,7 +7300,8 @@ mod relation_tests {
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
+        SketchGeometry, SketchId,
     };
     use std::collections::{HashMap, HashSet};
 
@@ -8101,6 +8214,47 @@ mod relation_tests {
                 primary_id: 586,
                 secondary_id: 0,
             })
+        ));
+
+        group.members.truncate(1);
+        let sketch_id = SketchId("f3d:model:sketch#172".into());
+        let sketch = Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: vec![vec![SketchEntityUse {
+                entity: neutral_sketch_entity_id(&member.id, 400),
+                reversed: false,
+            }]],
+            native_ref: None,
+        };
+        assert!(matches!(
+            resolved_extrude_profile_selection(
+                &sketch_id,
+                &group,
+                std::slice::from_ref(&member),
+                &sketch,
+            ),
+            cadmpeg_ir::features::ProfileRef::SketchProfiles {
+                sketch: ref actual_sketch,
+                ref profiles,
+            } if actual_sketch == &sketch_id && profiles == &[0]
+        ));
+        member.resolved_geometry = None;
+        assert!(matches!(
+            resolved_extrude_profile_selection(
+                &sketch_id,
+                &group,
+                std::slice::from_ref(&member),
+                &sketch,
+            ),
+            cadmpeg_ir::features::ProfileRef::SketchSelection {
+                sketch: ref actual_sketch,
+                selections: ref actual_selections,
+            } if actual_sketch == &sketch_id && actual_selections == &[group.id.clone()]
         ));
     }
 

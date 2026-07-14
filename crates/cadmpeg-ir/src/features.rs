@@ -1143,6 +1143,20 @@ pub enum ProfileRef {
     Native(String),
     /// Solved neutral sketch profile.
     Sketch(crate::sketches::SketchId),
+    /// Specific solved profile loops within one neutral sketch.
+    SketchProfiles {
+        /// Sketch containing the selected loops.
+        sketch: crate::sketches::SketchId,
+        /// Zero-based indices into [`crate::sketches::Sketch::profiles`].
+        profiles: Vec<u32>,
+    },
+    /// Source-native selection within a known neutral sketch.
+    SketchSelection {
+        /// Sketch containing the unresolved selected geometry.
+        sketch: crate::sketches::SketchId,
+        /// Full-fidelity native selection records in source order.
+        selections: Vec<String>,
+    },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
 }

@@ -2269,6 +2269,78 @@ fn sketch_feature_ownership_and_order_are_validated() {
 }
 
 #[test]
+fn sketch_profile_subselections_are_bounds_checked() {
+    use crate::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+    use crate::sketches::{Sketch, SketchId};
+
+    let mut ir = unit_cube();
+    let sketch_id = SketchId("synthetic:test:sketch#selection".into());
+    ir.model.sketches.push(Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    let feature = |suffix: &str, ordinal, profile| Feature {
+        id: FeatureId(format!("synthetic:test:feature#{suffix}")),
+        ordinal,
+        name: None,
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile,
+            direction: None,
+            start: crate::features::ExtrudeStart::ProfilePlane,
+            extent: Extent::Blind {
+                length: Length(1.0),
+            },
+            op: BooleanOp::NewBody,
+            draft: None,
+        },
+        native_ref: None,
+    };
+    ir.model.features.push(feature(
+        "invalid-profile-index",
+        1,
+        ProfileRef::SketchProfiles {
+            sketch: sketch_id.clone(),
+            profiles: vec![0, 0],
+        },
+    ));
+    ir.model.features.push(feature(
+        "empty-native-selection",
+        2,
+        ProfileRef::SketchSelection {
+            sketch: sketch_id,
+            selections: Vec::new(),
+        },
+    ));
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(findings.iter().any(|finding| {
+        finding.message == "sketch profile indices are empty, repeated, or out of range"
+    }));
+    assert!(
+        findings
+            .iter()
+            .any(|finding| finding.message
+                == "native sketch profile selections are empty or repeated")
+    );
+}
+
+#[test]
 fn spatial_sketch_cannot_own_planar_geometry() {
     use crate::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
     use crate::sketches::{Sketch, SketchId};

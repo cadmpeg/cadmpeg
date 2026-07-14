@@ -2224,21 +2224,63 @@ fn check_feature_sketch_references(
             _ => {}
         }
         for profile in profiles {
-            if let ProfileRef::Sketch(sketch) = profile {
-                if !sketches.contains(sketch.0.as_str()) {
-                    ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
-                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
-                    if *ordinal >= feature.ordinal {
-                        findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "sketch owner `{owner}` does not precede its profile consumer"
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        });
+            let sketch = match profile {
+                ProfileRef::Sketch(sketch)
+                | ProfileRef::SketchProfiles { sketch, .. }
+                | ProfileRef::SketchSelection { sketch, .. } => sketch,
+                ProfileRef::Native(_) | ProfileRef::Faces(_) => continue,
+            };
+            if !sketches.contains(sketch.0.as_str()) {
+                ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
+            } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+                if *ordinal >= feature.ordinal {
+                    findings.push(Finding {
+                        check: Check::ReferentialIntegrity,
+                        severity: Severity::Error,
+                        message: format!(
+                            "sketch owner `{owner}` does not precede its profile consumer"
+                        ),
+                        entity: Some(feature.id.0.clone()),
+                    });
+                }
+            }
+            match profile {
+                ProfileRef::SketchProfiles { profiles, .. } => {
+                    let sketch_profile_count = ir
+                        .model
+                        .sketches
+                        .iter()
+                        .find(|candidate| candidate.id == *sketch)
+                        .map_or(0, |sketch| sketch.profiles.len());
+                    let unique = profiles.iter().copied().collect::<HashSet<_>>();
+                    if profiles.is_empty()
+                        || unique.len() != profiles.len()
+                        || profiles
+                            .iter()
+                            .any(|index| *index as usize >= sketch_profile_count)
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "sketch profile indices are empty, repeated, or out of range",
+                        );
                     }
                 }
+                ProfileRef::SketchSelection { selections, .. }
+                    if selections.is_empty()
+                        || selections.iter().any(String::is_empty)
+                        || selections.iter().collect::<HashSet<_>>().len() != selections.len() =>
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "native sketch profile selections are empty or repeated",
+                    );
+                }
+                ProfileRef::Native(_)
+                | ProfileRef::Sketch(_)
+                | ProfileRef::SketchSelection { .. }
+                | ProfileRef::Faces(_) => {}
             }
         }
         for path in paths {
