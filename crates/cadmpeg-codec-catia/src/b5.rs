@@ -591,8 +591,11 @@ fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
     let references = (0..5)
         .map(|_| reference(&record.payload, &mut position, record.object_id))
         .collect::<Option<Vec<_>>>()?;
-    matches!(record.payload.get(position), Some(0x01 | 0x21 | 0x22))
-        .then_some([references[1], references[2]])
+    matches!(
+        record.payload.get(position),
+        Some(0x01 | 0x21 | 0x22 | 0x25 | 0x29 | 0x2a)
+    )
+    .then_some([references[1], references[2]])
 }
 
 fn incidence_vertex_coordinates(
@@ -2386,6 +2389,23 @@ mod tests {
     }
 
     #[test]
+    fn pcurve_evaluation_preserves_the_native_parameter() {
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![-1.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[2.0, 3.0], [4.0, 7.0]],
+            weights: None,
+            lifted_endpoints: None,
+        };
+        assert_eq!(evaluate_pcurve(&pcurve, 0.0), Some([3.0, 5.0]));
+        assert_eq!(evaluate_pcurve(&pcurve, -1.0), Some([2.0, 3.0]));
+        assert_eq!(evaluate_pcurve(&pcurve, 1.0), Some([4.0, 7.0]));
+    }
+
+    #[test]
     fn opaque_conic_pcurves_retain_support_identity_and_payload() {
         let mut ellipse = vec![0x81, 0x82];
         ellipse.extend_from_slice(&[0; 16]);
@@ -2736,6 +2756,11 @@ mod tests {
         let mut standard = record;
         *standard.payload.last_mut().expect("tail") = 0x01;
         assert_eq!(parse_edge_vertex_refs(&standard), Some([15, 21]));
+        for tail in [0x22, 0x25, 0x29, 0x2a] {
+            *standard.payload.last_mut().expect("tail") = tail;
+            assert_eq!(parse_edge_vertex_refs(&standard), Some([15, 21]));
+        }
+        *standard.payload.last_mut().expect("tail") = 0x01;
 
         let mut bytes = vec![0xb5, 0x03, 0x5e, 7];
         bytes.extend_from_slice(&standard.object_id.to_le_bytes());
