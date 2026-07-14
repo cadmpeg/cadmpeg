@@ -713,10 +713,22 @@ pub struct B2OwnerPacket {
     pub pos: usize,
     /// Width-coded header token.
     pub header_token: u32,
+    /// Encoding selected by the first strong reference token.
+    pub reference_encoding: B2OwnerReferenceEncoding,
     /// Nine compact persistent identities following the `0x89` count.
     pub references: [u32; 9],
     /// Fixed-width numeric tail retained byte-exactly.
     pub numeric_tail: [u8; 62],
+}
+
+/// Reference dialect used by a nine-reference class-`0x62` owner packet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum B2OwnerReferenceEncoding {
+    /// Strong identities use `0x0a <u16le>` and weak identities use compact integers.
+    TaggedU16Strong,
+    /// Strong identities use width-coded compact integers and weak identities
+    /// are raw one-byte values.
+    WidthCodedStrong,
 }
 
 /// Count-prefixed class-`0x61` reference record.
@@ -730,6 +742,17 @@ pub struct B2Counted61 {
     pub references: Vec<u32>,
     /// Remaining class-specific bytes, including the terminal `0x03`.
     pub tail: Vec<u8>,
+}
+
+/// Fixed-shape class-`0x5f` link record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2Link5f {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Width-coded persistent target between `0x82` and the `03 05` tail.
+    pub target: u32,
 }
 
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
@@ -950,19 +973,38 @@ pub fn b2_owner_packets(data: &[u8]) -> Vec<B2OwnerPacket> {
     b_family_frames(data, 0x62)
         .into_iter()
         .filter_map(|frame| {
-            if frame.end - frame.payload != 0x52 || data.get(frame.payload) != Some(&0x89) {
+            if data.get(frame.payload) != Some(&0x89) {
                 return None;
             }
             let mut at = frame.payload + 1;
-            let references: [u32; 9] = (0..9)
-                .map(|_| persistent_ref(data, &mut at))
-                .collect::<Option<Vec<_>>>()?
-                .try_into()
-                .ok()?;
+            let reference_encoding = if data.get(at) == Some(&0x0a) {
+                B2OwnerReferenceEncoding::TaggedU16Strong
+            } else {
+                B2OwnerReferenceEncoding::WidthCodedStrong
+            };
+            let mut references = [0u32; 9];
+            for (index, reference) in references.iter_mut().enumerate() {
+                *reference = match (reference_encoding, index % 2) {
+                    (B2OwnerReferenceEncoding::TaggedU16Strong, 0) => {
+                        persistent_ref(data, &mut at)?
+                    }
+                    (B2OwnerReferenceEncoding::TaggedU16Strong, 1)
+                    | (B2OwnerReferenceEncoding::WidthCodedStrong, 0) => {
+                        compact_int(data, &mut at)?
+                    }
+                    (B2OwnerReferenceEncoding::WidthCodedStrong, 1) => {
+                        let value = u32::from(*data.get(at)?);
+                        at += 1;
+                        value
+                    }
+                    _ => unreachable!(),
+                };
+            }
             let numeric_tail = data.get(at..frame.end)?.try_into().ok()?;
             Some(B2OwnerPacket {
                 pos: frame.pos,
                 header_token: frame.header_token,
+                reference_encoding,
                 references,
                 numeric_tail,
             })
@@ -996,6 +1038,28 @@ pub fn b2_counted_61(data: &[u8]) -> Vec<B2Counted61> {
                 references,
                 tail: tail.to_vec(),
             })
+        })
+        .collect()
+}
+
+/// Decode fixed `82 <width-coded target> 03 05` class-`0x5f` links.
+#[must_use]
+pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
+    b_family_frames(data, 0x5f)
+        .into_iter()
+        .filter_map(|frame| {
+            if frame.end - frame.payload != 6 || data.get(frame.payload) != Some(&0x82) {
+                return None;
+            }
+            let mut at = frame.payload + 1;
+            let target = compact_int(data, &mut at)?;
+            (at + 2 == frame.end && data.get(at..frame.end) == Some(&[0x03, 0x05])).then_some(
+                B2Link5f {
+                    pos: frame.pos,
+                    header_token: frame.header_token,
+                    target,
+                },
+            )
         })
         .collect()
 }
