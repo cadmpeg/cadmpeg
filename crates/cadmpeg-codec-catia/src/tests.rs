@@ -4533,6 +4533,45 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
 }
 
 #[test]
+fn decode_object_stream_transfers_a8_rolling_ball_jet() {
+    let file = object_main_catpart(&a8_freeform_curve_stream());
+    assert_eq!(
+        crate::container::scan_bytes(file.clone()).variant,
+        Variant::FloatPackedInnerNoFbb
+    );
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode rolling-ball object stream");
+    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+        panic!("one rolling-ball construction");
+    };
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
+        degree,
+        knots,
+        sites,
+    } = &procedural.definition
+    else {
+        panic!("rolling-ball jet");
+    };
+    assert_eq!(*degree, 5);
+    assert_eq!(knots, &[0.0, 1.0]);
+    assert_eq!(sites.len(), 2);
+    assert_eq!(sites[1].first_limit, Point3::new(2.0, 0.0, 0.0));
+    assert_eq!(sites[1].angle, std::f64::consts::FRAC_PI_2);
+    let provenance = &decoded.ir.annotations.provenance[&procedural.id.0];
+    assert_eq!(
+        decoded.ir.annotations.streams[provenance.stream as usize],
+        "catia:object_stream_a8_03_32"
+    );
+    let tag = provenance
+        .tag
+        .as_deref()
+        .expect("rolling-ball provenance tag");
+    assert!(tag.contains("object_id:12345678"));
+    assert!(tag.contains("multiplicities:[6, 6]"));
+}
+
+#[test]
 fn decode_float_packed_stream_transfers_a8_nurbs() {
     assert_eq!(
         crate::container::scan_bytes(a8_catpart()).variant,

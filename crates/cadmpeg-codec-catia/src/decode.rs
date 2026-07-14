@@ -2111,7 +2111,9 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
-    if fallback_surfaces.as_ref().is_some_and(Vec::is_empty) {
+    if fallback_surfaces.as_ref().is_some_and(Vec::is_empty)
+        && geometry::a8_freeform_curves(&scan.data).is_empty()
+    {
         return None;
     }
     let mut ir = CadIr::empty(Units::default());
@@ -2144,6 +2146,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             });
         }
     }
+    append_a8_rolling_ball_pools(&mut ir, &mut annotations, &scan.data);
     link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
     Some((
@@ -2380,6 +2383,76 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
             "consolidated_a5_03_32",
             jet.pos as u64,
             format!("header_token:{:08x}", jet.header_token),
+            Exactness::ByteExact,
+        );
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::RollingBallJet {
+                degree: jet.degree,
+                knots: jet.knots,
+                sites,
+            },
+            cache_fit_tolerance: None,
+        });
+    }
+
+    append_a8_rolling_ball_pools(ir, annotations, data);
+}
+
+fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
+    for jet in geometry::a8_freeform_curves(data) {
+        let sites = jet
+            .sites
+            .iter()
+            .zip(&jet.first_derivatives)
+            .zip(&jet.second_derivatives)
+            .map(|((site, first), second)| RollingBallJetSite {
+                first_limit: Point3::new(site.limit1[0], site.limit1[1], site.limit1[2]),
+                second_limit: Point3::new(site.limit2[0], site.limit2[1], site.limit2[2]),
+                center: Point3::new(site.center[0], site.center[1], site.center[2]),
+                angle: site.theta,
+                first_derivative: rolling_ball_derivative(*first),
+                second_derivative: rolling_ball_derivative(*second),
+            })
+            .collect::<Vec<_>>();
+        if jet.degree != 5
+            || sites.len() != jet.knots.len()
+            || jet.multiplicities.len() != jet.knots.len()
+        {
+            continue;
+        }
+        let surface_id = SurfaceId(format!(
+            "catia:a8:rolling-ball:surf#{}",
+            ir.model.surfaces.len()
+        ));
+        annotate(
+            annotations,
+            &surface_id,
+            "object_stream_a8_03_32_cache",
+            jet.pos as u64,
+            format!("object_id:{:08x}", jet.object_id),
+            Exactness::Unknown,
+        );
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+
+        let procedural_id = ProceduralSurfaceId(format!(
+            "catia:a8:rolling-ball:construction#{}",
+            ir.model.procedural_surfaces.len()
+        ));
+        annotate(
+            annotations,
+            &procedural_id,
+            "object_stream_a8_03_32",
+            jet.pos as u64,
+            format!(
+                "object_id:{:08x}:multiplicities:{:?}",
+                jet.object_id, jet.multiplicities
+            ),
             Exactness::ByteExact,
         );
         ir.model.procedural_surfaces.push(ProceduralSurface {

@@ -375,7 +375,7 @@ The start/end references form a global native vertex-identity namespace across c
 
 ### 6.6 `a8 03` common object-stream freeform class
 
-Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 03 32` stores a 3D curve and `a8 03 20` stores a pcurve.
+Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>`. The family stores an inline `object_id` at `+7`, explicit multiplicity vectors, mixed degrees, and an inline rational weight grid after the poles. `a8 03 32` stores the same complete degree-5 rolling-ball value/derivative jet and exact procedural surface as the consolidated `a5 03 32` form, with an explicit multiplicity per distinct knot. `a8 03 20` stores a pcurve.
 
 For `a8 03 34`, the lead byte, U degree/flags/distinct knots/multiplicities, V degree/flags/distinct knots/multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
 
