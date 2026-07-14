@@ -573,6 +573,8 @@ B(t,s) = C(t) + r · Rot_about_T(t)( s·α(t) ) · E0(t)
 
 `σ0, σ1 ∈ {+1,−1}` are the `range` signs, with `|range| = r`. The spine identity is `S0+σ0·r·N0 == S1+σ1·r·N1`. Rail incidence is `B(t,0)=Q0(t)`. At each rail, the canal normal equals the support surface normal.
 
+For an intersection CHART_s point on a constant-radius BLEND_SURF, the nearest resolved spine point supplies `t`. The normalized ball-centre-to-chart vector supplies the section direction. Its signed angle from `E0` about `T`, divided by `α`, supplies `s`, including integral-turn alternatives. The derived `(t,s)` lane transfers only when the spine is an evaluable line or NURBS carrier, both support contact points resolve, and forward canal evaluation reproduces every CHART_s point within `chordal_error`. Continuation seeds each spine solve after the first chart point.
+
 **Chained blend-on-blend** recurses into the support blend canal. Offsetting a constant-radius canal along its normal gives a canal with radius `r+δ`: `B(t,s; r+δ) = B(t,s; r) + δ·n(t,s)`. A spine uses one branch pair `(i0,i1)` for each polyline point.
 
 **Primitive reduction.** A constant-radius blend with a circular spine has torus parameters `major = circle radius`, `minor = r`. A line spine has cylinder radius `r`. Reduction requires `|range[0]| == |range[1]|` and a circular or linear spine with at least five points.

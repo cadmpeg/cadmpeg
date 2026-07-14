@@ -1707,6 +1707,9 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                     }
                     SurfaceGeometry::Procedural { .. } => {
                         offset_surface_parameters(ir, surface_id, *point, uv.last().copied())
+                            .or_else(|| {
+                                blend_surface_parameters(ir, surface_id, *point, uv.last().copied())
+                            })
                     }
                     geometry => analytic_surface_parameters(geometry, *point),
                 };
@@ -1732,7 +1735,7 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                 }
             }
             let reproduces_chart = uv.iter().zip(points).all(|(uv, point)| {
-                model_surface_point(ir, surface_id, uv.u, uv.v)
+                decoded_surface_point(ir, surface_id, uv.u, uv.v)
                     .is_some_and(|actual| point_distance(actual, *point) <= *fit_tolerance)
             });
             if reproduces_chart {
@@ -1767,6 +1770,245 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
             context.sides[side].pcurve = Some(pcurve);
         }
     }
+}
+
+fn decoded_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
+    model_surface_point(ir, surface, u, v).or_else(|| blend_surface_point(ir, surface, u, v))
+}
+
+pub(crate) fn blend_surface_parameters(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+) -> Option<Point2> {
+    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let u = closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u))?;
+    let (center, tangent, first, second, _) = blend_surface_frame(ir, surface, u)?;
+    let radial = unit_vector(Vector3::new(
+        point.x - center.x,
+        point.y - center.y,
+        point.z - center.z,
+    ))?;
+    let alpha = signed_angle(first, second, tangent);
+    if !alpha.is_finite() || alpha.abs() <= 1.0e-12 {
+        return None;
+    }
+    let theta = signed_angle(first, radial, tangent);
+    let mut best = None;
+    let mut best_distance = f64::INFINITY;
+    for turn in -2..=2 {
+        let v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
+        let Some(candidate) = blend_surface_point(ir, surface, u, v) else {
+            continue;
+        };
+        let distance = point_distance(candidate, point);
+        if distance < best_distance {
+            best = Some(Point2::new(u, v));
+            best_distance = distance;
+        }
+    }
+    best
+}
+
+pub(crate) fn blend_surface_point(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+) -> Option<Point3> {
+    let (center, tangent, first, second, radius) = blend_surface_frame(ir, surface, u)?;
+    let alpha = signed_angle(first, second, tangent);
+    let radial = rodrigues_rotate(first, tangent, v * alpha);
+    Some(Point3::new(
+        center.x + radius * radial.x,
+        center.y + radius * radial.y,
+        center.z + radius * radial.z,
+    ))
+}
+
+fn blend_surface_frame(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    u: f64,
+) -> Option<(Point3, Vector3, Vector3, Vector3, f64)> {
+    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
+    let center = model_curve_point(ir, &spine, u)?;
+    let tangent = model_curve_tangent(ir, &spine, u)?;
+    let first = surface_contact_direction(ir, &supports[0], center)?;
+    let second = surface_contact_direction(ir, &supports[1], center)?;
+    Some((center, tangent, first, second, radius))
+}
+
+fn blend_surface_definition(
+    ir: &CadIr,
+    surface: &SurfaceId,
+) -> Option<([SurfaceId; 2], CurveId, f64, [bool; 2])> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
+        return None;
+    };
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| &candidate.id == construction && &candidate.surface == surface)?;
+    let ProceduralSurfaceDefinition::Blend {
+        supports: [Some(first), Some(second)],
+        spine: Some(spine),
+        radius: BlendRadiusLaw::Constant { signed_radius },
+        cross_section: BlendCrossSection::Circular,
+        ..
+    } = &procedural.definition
+    else {
+        return None;
+    };
+    let radius = signed_radius.abs();
+    (radius.is_finite() && radius > 0.0).then(|| {
+        (
+            [first.surface.clone(), second.surface.clone()],
+            spine.clone(),
+            radius,
+            [first.reversed, second.reversed],
+        )
+    })
+}
+
+fn surface_contact_direction(ir: &CadIr, surface: &SurfaceId, center: Point3) -> Option<Vector3> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    let parameters = match &carrier.geometry {
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, center, None),
+        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None),
+        geometry => analytic_surface_parameters(geometry, center),
+    }?;
+    let contact = decoded_surface_point(ir, surface, parameters.u, parameters.v)?;
+    unit_vector(Vector3::new(
+        contact.x - center.x,
+        contact.y - center.y,
+        contact.z - center.z,
+    ))
+}
+
+fn model_curve_point(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Point3> {
+    let carrier = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)?;
+    curve_point(&carrier.geometry, parameter)
+}
+
+fn model_curve_tangent(ir: &CadIr, curve: &CurveId, parameter: f64) -> Option<Vector3> {
+    let step = 1.0e-6 * (1.0 + parameter.abs());
+    let before = model_curve_point(ir, curve, parameter - step)?;
+    let after = model_curve_point(ir, curve, parameter + step)?;
+    unit_vector(Vector3::new(
+        after.x - before.x,
+        after.y - before.y,
+        after.z - before.z,
+    ))
+}
+
+fn closest_spine_parameter(
+    ir: &CadIr,
+    curve: &CurveId,
+    point: Point3,
+    seed: Option<f64>,
+) -> Option<f64> {
+    let carrier = ir
+        .model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == curve)?;
+    match &carrier.geometry {
+        CurveGeometry::Line { origin, direction } => Some(
+            (point.x - origin.x) * direction.x
+                + (point.y - origin.y) * direction.y
+                + (point.z - origin.z) * direction.z,
+        ),
+        CurveGeometry::Nurbs(nurbs) => {
+            let degree = usize::try_from(nurbs.degree).ok()?;
+            let count = nurbs.control_points.len();
+            let domain = [*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?];
+            let mut parameter = seed.unwrap_or_else(|| {
+                let mut best = domain[0];
+                let mut best_distance = f64::INFINITY;
+                for index in 0..=32 {
+                    let candidate = domain[0] + (domain[1] - domain[0]) * f64::from(index) / 32.0;
+                    let Some(position) = curve_point(&carrier.geometry, candidate) else {
+                        continue;
+                    };
+                    let distance = point_distance(position, point);
+                    if distance < best_distance {
+                        best = candidate;
+                        best_distance = distance;
+                    }
+                }
+                best
+            });
+            for _ in 0..24 {
+                let step = 1.0e-6 * (domain[1] - domain[0]).abs().max(1.0);
+                let before = curve_point(&carrier.geometry, (parameter - step).max(domain[0]))?;
+                let center = curve_point(&carrier.geometry, parameter)?;
+                let after = curve_point(&carrier.geometry, (parameter + step).min(domain[1]))?;
+                let first =
+                    (point_distance(after, point) - point_distance(before, point)) / (2.0 * step);
+                let second = (point_distance(after, point) - 2.0 * point_distance(center, point)
+                    + point_distance(before, point))
+                    / (step * step);
+                if !second.is_finite() || second.abs() <= f64::EPSILON {
+                    break;
+                }
+                let delta = first / second;
+                parameter = (parameter - delta).clamp(domain[0], domain[1]);
+                if delta.abs() <= 1.0e-12 * (1.0 + parameter.abs()) {
+                    break;
+                }
+            }
+            Some(parameter)
+        }
+        _ => None,
+    }
+}
+
+fn signed_angle(first: Vector3, second: Vector3, axis: Vector3) -> f64 {
+    dot_vector(cross_vector(first, second), axis).atan2(dot_vector(first, second))
+}
+
+fn rodrigues_rotate(vector: Vector3, axis: Vector3, angle: f64) -> Vector3 {
+    let cross = cross_vector(axis, vector);
+    let dot = dot_vector(axis, vector);
+    Vector3::new(
+        vector.x * angle.cos() + cross.x * angle.sin() + axis.x * dot * (1.0 - angle.cos()),
+        vector.y * angle.cos() + cross.y * angle.sin() + axis.y * dot * (1.0 - angle.cos()),
+        vector.z * angle.cos() + cross.z * angle.sin() + axis.z * dot * (1.0 - angle.cos()),
+    )
+}
+
+fn cross_vector(first: Vector3, second: Vector3) -> Vector3 {
+    Vector3::new(
+        first.y * second.z - first.z * second.y,
+        first.z * second.x - first.x * second.z,
+        first.x * second.y - first.y * second.x,
+    )
+}
+
+fn dot_vector(first: Vector3, second: Vector3) -> f64 {
+    first.x * second.x + first.y * second.y + first.z * second.z
+}
+
+fn unit_vector(vector: Vector3) -> Option<Vector3> {
+    let norm = dot_vector(vector, vector).sqrt();
+    (norm.is_finite() && norm > 0.0)
+        .then(|| Vector3::new(vector.x / norm, vector.y / norm, vector.z / norm))
 }
 
 pub(crate) fn offset_surface_parameters(

@@ -8334,6 +8334,82 @@ fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
 }
 
 #[test]
+fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
+    use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
+    use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let first = SurfaceId("synthetic:first-plane".into());
+    let second = SurfaceId("synthetic:second-plane".into());
+    ir.model.surfaces.extend([
+        Surface {
+            id: first.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(1.0, 0.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+        Surface {
+            id: second.clone(),
+            geometry: SurfaceGeometry::Plane {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 1.0, 0.0),
+                u_axis: Vector3::new(0.0, 0.0, 1.0),
+            },
+            source_object: None,
+        },
+    ]);
+    let spine = CurveId("synthetic:spine".into());
+    ir.model.curves.push(Curve {
+        id: spine.clone(),
+        geometry: CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(2.0, 2.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    let surface = SurfaceId("synthetic:blend".into());
+    let construction = ProceduralSurfaceId("synthetic:blend-construction".into());
+    ir.model.surfaces.push(Surface {
+        id: surface.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: construction,
+        surface: surface.clone(),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: [
+                Some(BlendSupport {
+                    surface: first,
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: second,
+                    reversed: false,
+                }),
+            ],
+            spine: Some(spine),
+            radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+    });
+    let expected = Point2::new(8.0, 0.35);
+    let point = crate::decode::blend_surface_point(&ir, &surface, expected.u, expected.v).unwrap();
+
+    let actual = crate::decode::blend_surface_parameters(&ir, &surface, point, None).unwrap();
+
+    assert!((actual.u - expected.u).abs() < 1.0e-8);
+    assert!((actual.v - expected.v).abs() < 1.0e-8);
+}
+
+#[test]
 fn decode_emits_both_intersection_support_pcurves() {
     let stream = two_support_charted_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
