@@ -489,6 +489,166 @@ pub fn parse_payloads(
         .collect()
 }
 
+/// Derive an exhaustive family census from successfully parsed exact-shape payloads.
+pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::CarrierCensusRecord> {
+    payloads
+        .iter()
+        .filter_map(|payload| {
+            let (version, curve2ds, curves, surfaces, polygons3d, indexed, triangulations, tshapes) =
+                if let Some(facts) = &payload.text {
+                    (
+                        facts.topology_version,
+                        &facts.curve2ds,
+                        &facts.curves,
+                        &facts.surfaces,
+                        facts.polygons3d.len(),
+                        facts.polygons_on_triangulations.len(),
+                        facts.triangulations.len(),
+                        &facts.tshapes,
+                    )
+                } else if let Some(facts) = &payload.binary {
+                    (
+                        facts.topology_version,
+                        &facts.curve2ds,
+                        &facts.curves,
+                        &facts.surfaces,
+                        facts.polygons3d.len(),
+                        facts.polygons_on_triangulations.len(),
+                        facts.triangulations.len(),
+                        &facts.tshapes,
+                    )
+                } else {
+                    return None;
+                };
+            let mut record = crate::native::CarrierCensusRecord {
+                id: format!("{}:carrier-census", payload.id),
+                payload: payload.id.clone(),
+                form: match payload.form {
+                    ShapePayloadForm::Text => "text".into(),
+                    ShapePayloadForm::Binary => "binary".into(),
+                },
+                topology_version: version,
+                curves_2d: BTreeMap::new(),
+                curves_3d: BTreeMap::new(),
+                surfaces: BTreeMap::new(),
+                topology: BTreeMap::new(),
+                polygons_3d: polygons3d as u64,
+                polygons_on_triangulations: indexed as u64,
+                triangulations: triangulations as u64,
+            };
+            for curve in curve2ds {
+                census_curve2d(curve, &mut record.curves_2d);
+            }
+            for curve in curves {
+                census_curve(curve, &mut record.curves_3d);
+            }
+            for surface in surfaces {
+                census_surface(surface, &mut record.surfaces, &mut record.curves_3d);
+            }
+            for shape in tshapes {
+                increment(
+                    &mut record.topology,
+                    match shape.kind {
+                        TextShapeKind::Vertex => "vertex",
+                        TextShapeKind::Edge => "edge",
+                        TextShapeKind::Wire => "wire",
+                        TextShapeKind::Face => "face",
+                        TextShapeKind::Shell => "shell",
+                        TextShapeKind::Solid => "solid",
+                        TextShapeKind::CompSolid => "compsolid",
+                        TextShapeKind::Compound => "compound",
+                    },
+                );
+            }
+            Some(record)
+        })
+        .collect()
+}
+
+fn increment(counts: &mut BTreeMap<String, u64>, family: &str) {
+    *counts.entry(family.into()).or_default() += 1;
+}
+
+fn census_curve2d(curve: &TextCurve2d, counts: &mut BTreeMap<String, u64>) {
+    let family = match curve {
+        TextCurve2d::Line { .. } => "line",
+        TextCurve2d::Circle { .. } => "circle",
+        TextCurve2d::Ellipse { .. } => "ellipse",
+        TextCurve2d::Parabola { .. } => "parabola",
+        TextCurve2d::Hyperbola { .. } => "hyperbola",
+        TextCurve2d::Nurbs(_) => "nurbs",
+        TextCurve2d::Trimmed { basis, .. } => {
+            increment(counts, "trimmed");
+            census_curve2d(basis, counts);
+            return;
+        }
+        TextCurve2d::Offset { basis, .. } => {
+            increment(counts, "offset");
+            census_curve2d(basis, counts);
+            return;
+        }
+    };
+    increment(counts, family);
+}
+
+fn census_curve(curve: &TextCurve, counts: &mut BTreeMap<String, u64>) {
+    let family = match curve {
+        TextCurve::Line { .. } => "line",
+        TextCurve::Circle { .. } => "circle",
+        TextCurve::Ellipse { .. } => "ellipse",
+        TextCurve::Parabola { .. } => "parabola",
+        TextCurve::Hyperbola { .. } => "hyperbola",
+        TextCurve::Nurbs(_) => "nurbs",
+        TextCurve::Trimmed { basis, .. } => {
+            increment(counts, "trimmed");
+            census_curve(basis, counts);
+            return;
+        }
+        TextCurve::Offset { basis, .. } => {
+            increment(counts, "offset");
+            census_curve(basis, counts);
+            return;
+        }
+    };
+    increment(counts, family);
+}
+
+fn census_surface(
+    surface: &TextSurface,
+    counts: &mut BTreeMap<String, u64>,
+    curves: &mut BTreeMap<String, u64>,
+) {
+    let family = match surface {
+        TextSurface::Plane { .. } => "plane",
+        TextSurface::Cylinder { .. } => "cylinder",
+        TextSurface::Cone { .. } => "cone",
+        TextSurface::Sphere { .. } => "sphere",
+        TextSurface::Torus { .. } => "torus",
+        TextSurface::Nurbs(_) => "nurbs",
+        TextSurface::Extrusion { directrix, .. } => {
+            increment(counts, "extrusion");
+            census_curve(directrix, curves);
+            return;
+        }
+        TextSurface::Revolution { directrix, .. } => {
+            increment(counts, "revolution");
+            census_curve(directrix, curves);
+            return;
+        }
+        TextSurface::Trimmed { basis, .. } => {
+            increment(counts, "trimmed");
+            census_surface(basis, counts, curves);
+            return;
+        }
+        TextSurface::Offset { basis, .. } => {
+            increment(counts, "offset");
+            census_surface(basis, counts, curves);
+            return;
+        }
+    };
+    increment(counts, family);
+}
+
 fn parse_text(bytes: &[u8]) -> Result<TextFacts, CodecError> {
     const MAX_TEXT_BREP_BYTES: usize = 256 * 1024 * 1024;
     if bytes.len() > MAX_TEXT_BREP_BYTES {

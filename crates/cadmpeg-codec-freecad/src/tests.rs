@@ -2177,7 +2177,17 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 11);
+    assert_eq!(namespace.version, 12);
+    let census = namespace
+        .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
+        .expect("carrier census");
+    assert_eq!(census.len(), 1);
+    assert_eq!(census[0].topology_version, 1);
+    assert_eq!(census[0].curves_2d["line"], 2);
+    assert_eq!(census[0].curves_3d["line"], 2);
+    assert_eq!(census[0].surfaces["plane"], 1);
+    assert_eq!(census[0].topology["edge"], 2);
+    assert_eq!(census[0].topology["vertex"], 2);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");

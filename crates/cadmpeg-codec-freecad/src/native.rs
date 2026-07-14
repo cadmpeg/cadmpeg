@@ -5,7 +5,34 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
+
+/// Machine-derived carrier and topology-family census for one exact shape payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CarrierCensusRecord {
+    /// Stable census identity derived from the shape payload.
+    pub id: String,
+    /// Shape payload being counted.
+    pub payload: String,
+    /// `text` or `binary` carrier grammar.
+    pub form: String,
+    /// Grammar version declared by the shape-set header.
+    pub topology_version: u8,
+    /// Recursive 2D-curve family counts.
+    pub curves_2d: BTreeMap<String, u64>,
+    /// Recursive 3D-curve family counts.
+    pub curves_3d: BTreeMap<String, u64>,
+    /// Recursive surface-family counts.
+    pub surfaces: BTreeMap<String, u64>,
+    /// Topological shape-family counts.
+    pub topology: BTreeMap<String, u64>,
+    /// Standalone polygon carrier count.
+    pub polygons_3d: u64,
+    /// Polygon-on-triangulation carrier count.
+    pub polygons_on_triangulations: u64,
+    /// Triangulation carrier count.
+    pub triangulations: u64,
+}
 
 /// One support attachment and its distinct persisted frames.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

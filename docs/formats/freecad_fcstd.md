@@ -76,6 +76,13 @@ indices, locations, geometry carriers, topology, tolerances, flags, parameter ra
 Transient table indices do not constitute persistent element identity. Persistent element names
 exist only when an element-map record supplies them.
 
+Text shape sets accept the complete declared header band V1 through V3. Binary shape sets accept
+V1 through V4. The version controls checked-flag restoration, cached curve-on-surface UV endpoints,
+point-representation framing, and triangulation normals. Headers outside those closed ranges are
+rejected before table parsing. Successfully parsed payloads emit a machine-derived census of every
+recursive 2D curve, 3D curve, surface, polygon, triangulation, and topology family. Native
+validation recomputes that census from the retained shape tables and rejects any mismatch.
+
 A shape value optionally carries an element-map version and a zero-based document string-table
 index. A newly encoded string table consists of a legacy marker followed by a second XML element,
 either containing the table stream or naming a side entry. Side-entry streams begin with
@@ -266,6 +273,10 @@ subelement identity separately from the map mode. The persisted resolved `Placem
 `AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it
 is present and otherwise the offset; the decoder never multiplies both speculatively. Validation
 checks support identity, finite matrices, and this effective-frame rule.
+
+Native namespace version 12 adds one carrier-census record per exact-shape payload. Census records
+identify text versus binary framing, the declared topology version, recursive carrier-family
+counts, all eight topology families, and polygon and triangulation counts.
 
 Sketch point, line, circle, circular-arc, ellipse, and elliptical-arc carriers transfer only when
 all family-required numeric fields are present and finite. Ellipse orientation may be carried as a

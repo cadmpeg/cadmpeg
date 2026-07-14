@@ -123,8 +123,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let shape_payloads = match namespace.arena_as::<brep::ShapePayloadRecord>("shape_payloads") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let carrier_census = match namespace.arena_as::<native::CarrierCensusRecord>("carrier_census") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
 
     let mut findings = Vec::new();
+    if carrier_census != brep::carrier_census(&shape_payloads) {
+        findings.push(finding(
+            Check::PayloadIntegrity,
+            "FCStd carrier census does not match parsed shape payloads",
+            None,
+        ));
+    }
     let object_ids = objects
         .iter()
         .map(|record| record.id.as_str())
@@ -953,6 +968,7 @@ impl Codec for FcstdCodec {
             namespace.set_arena("properties", &graph.properties)?;
             namespace.set_arena("entries", &entry_records)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
+            namespace.set_arena("carrier_census", &brep::carrier_census(&shape_payloads))?;
             namespace.set_arena("string_tables", &string_tables)?;
             namespace.set_arena(
                 "product_nodes",
