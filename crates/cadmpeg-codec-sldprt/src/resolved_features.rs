@@ -3846,9 +3846,7 @@ fn typed_marker_relation_definition(
         let mut entities = marker
             .links
             .iter()
-            .filter_map(|link| loci_by_marker.get(&link.entity_ref))
-            .flatten()
-            .map(locus_entity)
+            .flat_map(|link| marker_entities(&link.entity_ref, markers_by_id, loci_by_marker))
             .collect::<Vec<_>>();
         entities.sort_by(|left, right| left.0.cmp(&right.0));
         entities.dedup();
@@ -5176,6 +5174,7 @@ mod profile_join_tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        SketchNativeOperand,
     };
     use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -5505,6 +5504,28 @@ mod profile_join_tests {
             Some(SketchConstraintDefinition::HorizontalPoints {
                 first: joins["marker-a"][0].clone(),
                 second: joins["marker-b"][0].clone(),
+            })
+        );
+        let mut nested_native = nested_reference.clone();
+        nested_native.kind = SketchInputKind::Native(28);
+        assert_eq!(
+            typed_marker_relation_definition(&nested_native, &markers, &joins),
+            Some(SketchConstraintDefinition::Native {
+                native_kind: "sldprt:marker-relation:28".into(),
+                entities: vec![first.clone()],
+                parameter: None,
+                operands: vec![
+                    SketchNativeOperand {
+                        native_kind: "sldprt:marker-local-id".into(),
+                        object_index: 1,
+                        native_ref: Some("wrapper".into()),
+                    },
+                    SketchNativeOperand {
+                        native_kind: "sldprt:marker-local-id".into(),
+                        object_index: 2,
+                        native_ref: Some("marker-b".into()),
+                    },
+                ],
             })
         );
         let mut coordinate_horizontal = marker("coordinate-horizontal", Some([0.0, 0.0]));
