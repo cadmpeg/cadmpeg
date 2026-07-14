@@ -4967,6 +4967,11 @@ pub(crate) fn project_relation_point_geometry(
         })
         .collect::<HashMap<_, _>>();
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    let markers_by_id = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
     let mut referenced = lanes
         .iter()
         .flat_map(|lane| {
@@ -4978,24 +4983,27 @@ pub(crate) fn project_relation_point_geometry(
                     lane.sketch_entities
                         .iter()
                         .filter(|marker| matches!(marker.kind, SketchInputKind::Relation(_)))
-                        .flat_map(|marker| &marker.links)
-                        .map(|link| link.entity_ref.as_str()),
+                        .map(|marker| marker.id.as_str()),
                 )
         })
         .collect::<HashSet<_>>();
-    let markers_by_id = lanes
-        .iter()
-        .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| (marker.id.as_str(), marker))
-        .collect::<HashMap<_, _>>();
     loop {
-        let linked = referenced
-            .iter()
-            .filter_map(|marker| markers_by_id.get(marker).copied())
-            .flat_map(|marker| &marker.links)
-            .map(|link| link.entity_ref.as_str())
-            .filter(|marker| !referenced.contains(marker))
-            .collect::<Vec<_>>();
+        let mut linked = Vec::new();
+        for marker in markers_by_id.values().copied() {
+            let marker_referenced = referenced.contains(marker.id.as_str());
+            for link in &marker.links {
+                let adjacent = if marker_referenced {
+                    Some(link.entity_ref.as_str())
+                } else if referenced.contains(link.entity_ref.as_str()) {
+                    Some(marker.id.as_str())
+                } else {
+                    None
+                };
+                if let Some(id) = adjacent.filter(|id| !referenced.contains(id)) {
+                    linked.push(id);
+                }
+            }
+        }
         if linked.is_empty() {
             break;
         }
@@ -5090,19 +5098,11 @@ pub(crate) fn project_relation_point_geometry(
                 continue;
             };
             let sketch_frame = sketches.iter().find(|candidate| candidate.id == *sketch);
-            let endpoints = marker
-                .links
-                .iter()
-                .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
-                .filter(|endpoint| {
-                    matches!(
-                        endpoint.kind,
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    )
-                })
-                .filter_map(|endpoint| endpoint.coordinates_m)
-                .collect::<Vec<_>>();
+            let endpoints = line_endpoint_markers(marker, &markers_by_id);
             let [first, second] = endpoints.as_slice() else {
+                continue;
+            };
+            let (Some(first), Some(second)) = (first.coordinates_m, second.coordinates_m) else {
                 continue;
             };
             let first_native = quantize(
@@ -5114,8 +5114,8 @@ pub(crate) fn project_relation_point_geometry(
                 QUANTUM,
             );
             let principal = sketch_frame.and_then(|sketch| {
-                principal_plane_marker_point(sketch, *first, QUANTUM)
-                    .zip(principal_plane_marker_point(sketch, *second, QUANTUM))
+                principal_plane_marker_point(sketch, first, QUANTUM)
+                    .zip(principal_plane_marker_point(sketch, second, QUANTUM))
             });
             let candidates = principal
                 .into_iter()
@@ -5621,6 +5621,34 @@ fn relation_owner_markers<'a>(
         .collect::<Vec<_>>();
     owners.sort_unstable_by_key(|marker| marker.offset);
     owners
+}
+
+fn line_endpoint_markers<'a>(
+    line: &SketchInputEntity,
+    markers_by_id: &'a HashMap<&str, &SketchInputEntity>,
+) -> Vec<&'a SketchInputEntity> {
+    let mut endpoints = line
+        .links
+        .iter()
+        .filter_map(|link| markers_by_id.get(link.entity_ref.as_str()).copied())
+        .chain(markers_by_id.values().copied().filter(|candidate| {
+            candidate
+                .links
+                .iter()
+                .any(|link| link.entity_ref == line.id)
+        }))
+        .filter(|endpoint| {
+            endpoint.feature_ref == line.feature_ref
+                && endpoint.coordinates_m.is_some()
+                && matches!(
+                    endpoint.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
+    endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
+    endpoints
 }
 
 fn linked_single_arc_entity(
@@ -7035,8 +7063,8 @@ mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, bind_detached_relation_drivers,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, marker_entities, principal_plane_marker_point,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        implicit_circle_marker, line_endpoint_markers, marker_entities,
+        principal_plane_marker_point, profile_loci_by_marker, project_dimensioned_sketch_geometry,
         project_relation_point_geometry, relation_owner_markers,
         relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
@@ -7125,6 +7153,31 @@ mod profile_join_tests {
                     native_ref: Some(point.id),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn construction_line_endpoints_accept_reverse_incidence() {
+        let mut line = marker("line", Some([0.5, 0.0]));
+        line.kind = SketchInputKind::LineOrCircle;
+        let mut first = marker("first", Some([0.0, 0.0]));
+        first.offset = 1;
+        first.links = vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: line.id.clone(),
+        }];
+        let mut second = marker("second", Some([1.0, 0.0]));
+        second.offset = 2;
+        second.links = first.links.clone();
+        let markers = HashMap::from([
+            (line.id.as_str(), &line),
+            (first.id.as_str(), &first),
+            (second.id.as_str(), &second),
+        ]);
+
+        assert_eq!(
+            line_endpoint_markers(&line, &markers),
+            vec![&first, &second]
         );
     }
 
