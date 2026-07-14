@@ -1593,16 +1593,9 @@ fn exact_atomic_constraint(
         .then(|| (entities[0].id.clone(), entities[1].id.clone()))
     };
     match kind {
-        SketchConstraintKind::Coincident
-            if entities.len() == 2
-                && entities
-                    .iter()
-                    .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
-        {
-            Some(Definition::Coincident {
-                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
-            })
-        }
+        SketchConstraintKind::Coincident if entities.len() >= 2 => Some(Definition::Coincident {
+            entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+        }),
         SketchConstraintKind::Colinear => {
             lines().map(|(first, second)| Definition::Collinear { first, second })
         }
@@ -6952,6 +6945,25 @@ mod relation_tests {
             return_member_offsets: vec![80],
             raw_bytes: Vec::new(),
         };
+        let mut curve_point_coincidence = relation(
+            702,
+            217,
+            SketchRelationOperand::Curve {
+                record_index: 217,
+                primary_id: 20,
+                secondary_id: 0,
+            },
+        );
+        curve_point_coincidence.members.push(175);
+        curve_point_coincidence
+            .resolved_members
+            .push(SketchRelationOperand::Point {
+                record_index: 175,
+                persistent_id: 10,
+            });
+        curve_point_coincidence.member_offsets.push(40);
+        curve_point_coincidence.state = 1;
+        curve_point_coincidence.constraint_kinds = vec![SketchConstraintKind::Coincident];
         let constraints = project_sketch_constraints(
             &placements,
             &points,
@@ -6974,6 +6986,7 @@ mod relation_tests {
                         persistent_id: 10,
                     },
                 ),
+                curve_point_coincidence,
             ],
             &entities,
         );
@@ -6989,6 +7002,10 @@ mod relation_tests {
                 ref operands,
                 ..
             } if native_kind == "horizontal" && entities.len() == 1 && operands.is_empty()
+        ));
+        assert!(matches!(
+            constraints[2].definition,
+            SketchConstraintDefinition::Coincident { ref entities } if entities.len() == 2
         ));
     }
 
