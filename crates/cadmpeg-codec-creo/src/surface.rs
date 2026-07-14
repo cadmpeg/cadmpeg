@@ -3,7 +3,7 @@
 //!
 //! A [`SurfaceRow`] identifies a surface family and its feature, orientation,
 //! boundary, and namespace links. A [`SurfacePrototype`] contains named template
-//! parameters. Prototype values do not locate a surface instance in model space.
+//! parameters. A named prototype locates its adjacent first positional instance.
 
 use crate::psb::{self, compact_int};
 use crate::scalar;

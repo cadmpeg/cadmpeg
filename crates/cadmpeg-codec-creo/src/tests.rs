@@ -121,13 +121,23 @@ fn push_generated_topology_row(
     payload.extend_from_slice(&[0, 0, 0xe3, 0xe1, 0xf5, 0x05, 0xf6, 0xe3]);
 }
 
-fn push_named_cylinder_prototype(payload: &mut Vec<u8>) {
-    payload.extend_from_slice(b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03");
+fn push_named_analytic_prototype(payload: &mut Vec<u8>, family: &str, fields: &[(&str, f64)]) {
+    payload.extend_from_slice(format!("srf_prim_ptr({family})\0").as_bytes());
+    payload.extend_from_slice(b"\xe0\x02local_sys\0\xf9\x04\x03");
     for value in [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0] {
         push_generated_scalar(payload, value);
     }
     payload.push(0x18);
-    payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
+    for (name, value) in fields {
+        payload.extend_from_slice(b"\xe0\x01");
+        payload.extend_from_slice(name.as_bytes());
+        payload.push(0);
+        if *name == "half_angle" {
+            payload.extend_from_slice(&[0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23]);
+        } else {
+            push_generated_scalar(payload, *value);
+        }
+    }
 }
 
 fn jpeg_payload() -> Vec<u8> {
@@ -2512,7 +2522,7 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
 fn decode_places_first_cylinder_instance_from_named_prototype() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
-    push_named_cylinder_prototype(&mut payload);
+    push_named_analytic_prototype(&mut payload, "cylinder", &[("radius", 1.0)]);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
 
     let result = decode::decode(
@@ -2539,9 +2549,71 @@ fn decode_places_first_cylinder_instance_from_named_prototype() {
     );
     assert_eq!(
         result.ir.source.as_ref().unwrap().attributes
-            ["transferred_first_instance_prototype_cylinder_count"],
+            ["transferred_first_instance_prototype_surface_count"],
         "1"
     );
+}
+
+#[test]
+fn decode_places_first_cone_sphere_and_torus_instances_from_named_prototypes() {
+    let cases = [
+        (
+            0x25,
+            "cone",
+            vec![("half_angle", 0.5)],
+            cadmpeg_ir::geometry::SurfaceGeometry::Cone {
+                origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: f64::from_be_bytes([0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x23]),
+            },
+        ),
+        (
+            0x26,
+            "torus",
+            vec![("radius1", 0.0), ("radius2", 1.0)],
+            cadmpeg_ir::geometry::SurfaceGeometry::Sphere {
+                center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                radius: 1.0,
+            },
+        ),
+        (
+            0x26,
+            "torus",
+            vec![("radius1", 2.0), ("radius2", 1.0)],
+            cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+                center: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+                major_radius: 2.0,
+                minor_radius: 1.0,
+            },
+        ),
+    ];
+
+    for (kind, family, fields, expected) in cases {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, kind, 4, 0x01, 0, 0]);
+        push_named_analytic_prototype(&mut payload, family, &fields);
+        payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        let result = decode::decode(
+            &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+            &DecodeOptions::default(),
+        )
+        .expect("decode");
+        let surface = result
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+            .unwrap_or_else(|| panic!("first {family} instance"));
+        assert_eq!(surface.geometry, expected);
+    }
 }
 
 #[test]

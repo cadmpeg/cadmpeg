@@ -11878,16 +11878,23 @@ fn prototype_local_frame(
     Some((origin, axis, reference))
 }
 
-fn transfer_first_instance_prototype_cylinders(
+fn transfer_first_instance_prototype_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
     for record in &scan.surface_prototype_records {
-        if record.family != crate::surface::SurfacePrototypeFamily::Cylinder {
-            continue;
-        }
+        let row_kind = match record.family {
+            crate::surface::SurfacePrototypeFamily::Cylinder => {
+                crate::surface::SurfaceKind::Cylinder
+            }
+            crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
+            crate::surface::SurfacePrototypeFamily::Torus => {
+                crate::surface::SurfaceKind::TorusOrSphere
+            }
+            _ => continue,
+        };
         let Some(section) = scan.sections.iter().find(|section| {
             record.offset >= section.offset
                 && record.offset < section.offset.saturating_add(section.length)
@@ -11908,18 +11915,75 @@ fn transfer_first_instance_prototype_cylinders(
             })
             .min_by_key(|row| row.offset);
         let row = preceding
-            .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
-            .or_else(|| following.filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder));
+            .filter(|row| row.kind == row_kind)
+            .or_else(|| following.filter(|row| row.kind == row_kind));
         let Some(row) = row else {
-            continue;
-        };
-        let Some(radius) =
-            prototype_scalar(record, "radius").filter(|radius| radius.is_finite() && *radius > 0.0)
-        else {
             continue;
         };
         let Some((origin, axis, reference)) = prototype_local_frame(record) else {
             continue;
+        };
+        let point = Point3::new(origin[0], origin[1], origin[2]);
+        let axis = Vector3::new(axis[0], axis[1], axis[2]);
+        let reference = Vector3::new(reference[0], reference[1], reference[2]);
+        let geometry = match record.family {
+            crate::surface::SurfacePrototypeFamily::Cylinder => {
+                let Some(radius) = prototype_scalar(record, "radius")
+                    .filter(|radius| radius.is_finite() && *radius > 0.0)
+                else {
+                    continue;
+                };
+                SurfaceGeometry::Cylinder {
+                    origin: point,
+                    axis,
+                    ref_direction: reference,
+                    radius,
+                }
+            }
+            crate::surface::SurfacePrototypeFamily::Cone => {
+                let Some(half_angle) = prototype_scalar(record, "half_angle").filter(|angle| {
+                    angle.is_finite() && *angle > 0.0 && *angle < std::f64::consts::FRAC_PI_2
+                }) else {
+                    continue;
+                };
+                SurfaceGeometry::Cone {
+                    origin: point,
+                    axis,
+                    ref_direction: reference,
+                    radius: 0.0,
+                    ratio: 1.0,
+                    half_angle,
+                }
+            }
+            crate::surface::SurfacePrototypeFamily::Torus => {
+                let Some(radius1) = prototype_scalar(record, "radius1")
+                    .filter(|radius| radius.is_finite() && *radius >= 0.0)
+                else {
+                    continue;
+                };
+                let Some(radius2) = prototype_scalar(record, "radius2")
+                    .filter(|radius| radius.is_finite() && *radius > 0.0)
+                else {
+                    continue;
+                };
+                if radius1 == 0.0 {
+                    SurfaceGeometry::Sphere {
+                        center: point,
+                        axis,
+                        ref_direction: reference,
+                        radius: radius2,
+                    }
+                } else {
+                    SurfaceGeometry::Torus {
+                        center: point,
+                        axis,
+                        ref_direction: reference,
+                        major_radius: radius1,
+                        minor_radius: radius2,
+                    }
+                }
+            }
+            _ => unreachable!("prototype family was filtered above"),
         };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
         if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -11930,17 +11994,12 @@ fn transfer_first_instance_prototype_cylinders(
             &id,
             &section.name,
             record.offset as u64,
-            "first_instance_cylinder_prototype",
+            "first_instance_surface_prototype",
             Exactness::Derived,
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: SurfaceGeometry::Cylinder {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                axis: Vector3::new(axis[0], axis[1], axis[2]),
-                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                radius,
-            },
+            geometry,
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("{}:{}", section.name, row.id),
@@ -13095,8 +13154,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
-    let first_instance_prototype_cylinder_count =
-        transfer_first_instance_prototype_cylinders(scan, &mut ir, &mut annotations);
+    let first_instance_prototype_surface_count =
+        transfer_first_instance_prototype_surfaces(scan, &mut ir, &mut annotations);
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
@@ -13116,8 +13175,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
-            "transferred_first_instance_prototype_cylinder_count".to_string(),
-            first_instance_prototype_cylinder_count.to_string(),
+            "transferred_first_instance_prototype_surface_count".to_string(),
+            first_instance_prototype_surface_count.to_string(),
         );
         source.attributes.insert(
             "transferred_saved_spline_curve_count".to_string(),
@@ -13752,13 +13811,13 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         .collect::<BTreeSet<_>>();
     placed_plane_ids.extend(scan.outline_planes.iter().map(|plane| plane.surface_id));
     let placed_plane_count = placed_plane_ids.len();
-    let first_instance_prototype_cylinder_count = ir
+    let first_instance_prototype_surface_count = ir
         .source
         .as_ref()
         .and_then(|source| {
             source
                 .attributes
-                .get("transferred_first_instance_prototype_cylinder_count")
+                .get("transferred_first_instance_prototype_surface_count")
         })
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
@@ -13791,7 +13850,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, complete first-instance \
-             cylinder prototypes, topology-bound `fc 05` \
+             analytic prototypes, topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
              and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
              other parameter bodies remain structural records.",
@@ -13837,13 +13896,13 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    if !container_only && first_instance_prototype_cylinder_count != 0 {
+    if !container_only && first_instance_prototype_surface_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {first_instance_prototype_cylinder_count} first-instance cylinder \
-                 carrier(s) from complete named local frames and radii."
+                "Transferred {first_instance_prototype_surface_count} first-instance analytic \
+                 surface carrier(s) from complete named local frames and parameters."
             ),
             provenance: None,
         });
