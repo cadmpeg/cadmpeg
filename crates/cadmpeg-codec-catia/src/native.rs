@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 18;
+pub const CATIA_NATIVE_VERSION: u32 = 19;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -311,7 +311,7 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                     }
                 }
                 CatiaDesignObject {
-                    id: format!("{}:owner#{owner_ordinal}", graph.id),
+                    id: design_object_id(graph.byte_offset, owner_ordinal),
                     parent: graph.id.clone(),
                     owner_ordinal,
                     owner_record,
@@ -327,12 +327,16 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                         }),
                     dependencies: dependency_owners
                         .into_iter()
-                        .map(|owner| format!("{}:owner#{owner}", graph.id))
+                        .map(|owner| design_object_id(graph.byte_offset, owner))
                         .collect(),
                 }
             })
         })
         .collect()
+}
+
+fn design_object_id(graph_offset: u64, owner_ordinal: u32) -> String {
+    format!("catia:outer:design-object#{graph_offset:010}-{owner_ordinal:010}")
 }
 
 fn payload_references(payload: &ObjectPayload) -> impl Iterator<Item = u32> + '_ {
@@ -796,7 +800,7 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
             record.design_object = record
                 .owner_ref
                 .filter(|owner| owners.contains(owner))
-                .map(|owner| format!("{id}:owner#{owner}"));
+                .map(|owner| design_object_id(graph.pos as u64, owner));
             record.references = payload_references(&record.payload)
                 .map(|ordinal| CatiaObjectRecordReference {
                     ordinal,

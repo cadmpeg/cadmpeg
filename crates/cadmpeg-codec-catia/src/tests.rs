@@ -2127,7 +2127,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     );
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    assert_eq!(native.version, 18);
+    assert_eq!(native.version, 19);
     assert_eq!(native.external_references.len(), 2);
     assert_eq!(native.external_references[0].target, "Support.CATPart");
     assert_eq!(
@@ -4439,6 +4439,11 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
             .map(|record| record.id.clone())
             .collect::<Vec<_>>()
     );
+    let validation = cadmpeg_ir::validate::validate(&decoded.ir, Vec::new());
+    assert!(validation
+        .findings
+        .iter()
+        .all(|finding| finding.check != cadmpeg_ir::report::Check::Identity));
 }
 
 #[test]
