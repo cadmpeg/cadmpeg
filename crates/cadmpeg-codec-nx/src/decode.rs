@@ -16,7 +16,8 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{
-    analytic_surface_parameters, curve_point, model_surface_point, pcurve_uv, surface_point,
+    analytic_surface_parameters, curve_point, model_surface_point, nurbs_surface_partials,
+    pcurve_uv, surface_point,
 };
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
@@ -25,7 +26,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
-    IntcurveSupportSide, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
+    IntcurveSupportSide, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
     SurfaceCurveFamily, SurfaceGeometry,
 };
@@ -34,7 +35,7 @@ use cadmpeg_ir::ids::{
     AttributeId, BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId,
     ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1684,13 +1685,23 @@ pub(crate) fn complete_analytic_support_uv(ir: &mut CadIr, pending: &[PendingExt
             else {
                 continue;
             };
-            let Some(mut uv) = points
-                .iter()
-                .map(|point| analytic_surface_parameters(&surface.geometry, *point))
-                .collect::<Option<Vec<_>>>()
-            else {
+            let mut uv = Vec::with_capacity(points.len());
+            for point in points {
+                let parameters = match &surface.geometry {
+                    SurfaceGeometry::Nurbs(nurbs) => {
+                        nurbs_parameters(nurbs, *point, uv.last().copied())
+                    }
+                    geometry => analytic_surface_parameters(geometry, *point),
+                };
+                let Some(parameters) = parameters else {
+                    uv.clear();
+                    break;
+                };
+                uv.push(parameters);
+            }
+            if uv.len() != points.len() {
                 continue;
-            };
+            }
             if matches!(
                 surface.geometry,
                 SurfaceGeometry::Cylinder { .. }
@@ -1739,6 +1750,90 @@ pub(crate) fn complete_analytic_support_uv(ir: &mut CadIr, pending: &[PendingExt
             context.sides[side].pcurve = Some(pcurve);
         }
     }
+}
+
+pub(crate) fn nurbs_parameters(
+    surface: &NurbsSurface,
+    point: Point3,
+    seed: Option<Point2>,
+) -> Option<Point2> {
+    let u_degree = usize::try_from(surface.u_degree).ok()?;
+    let v_degree = usize::try_from(surface.v_degree).ok()?;
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let u_domain = [
+        *surface.u_knots.get(u_degree)?,
+        *surface.u_knots.get(u_count)?,
+    ];
+    let v_domain = [
+        *surface.v_knots.get(v_degree)?,
+        *surface.v_knots.get(v_count)?,
+    ];
+    if u_domain[0] >= u_domain[1] || v_domain[0] >= v_domain[1] {
+        return None;
+    }
+    let squared_distance = |candidate: Point3| {
+        (candidate.x - point.x).powi(2)
+            + (candidate.y - point.y).powi(2)
+            + (candidate.z - point.z).powi(2)
+    };
+    let mut parameters = seed.unwrap_or_else(|| {
+        let mut best = Point2::new(u_domain[0], v_domain[0]);
+        let mut best_distance = f64::INFINITY;
+        for ui in 0..=8 {
+            for vi in 0..=8 {
+                let candidate = Point2::new(
+                    u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
+                    v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
+                );
+                let Some(position) =
+                    cadmpeg_ir::eval::nurbs_surface_point(surface, candidate.u, candidate.v)
+                else {
+                    continue;
+                };
+                let distance = squared_distance(position);
+                if distance < best_distance {
+                    best = candidate;
+                    best_distance = distance;
+                }
+            }
+        }
+        best
+    });
+    parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
+    parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
+    for _ in 0..32 {
+        let position = cadmpeg_ir::eval::nurbs_surface_point(surface, parameters.u, parameters.v)?;
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        let (du, dv) = nurbs_surface_partials(surface, parameters.u, parameters.v)?;
+        let dot =
+            |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+        let du_squared = dot(du, du);
+        let mixed = dot(du, dv);
+        let dv_squared = dot(dv, dv);
+        let determinant = du_squared * dv_squared - mixed * mixed;
+        if !determinant.is_finite()
+            || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
+        {
+            break;
+        }
+        let du_residual = dot(du, residual);
+        let dv_residual = dot(dv, residual);
+        let step_u = (dv_squared * du_residual - mixed * dv_residual) / determinant;
+        let step_v = (du_squared * dv_residual - mixed * du_residual) / determinant;
+        parameters.u = (parameters.u - step_u).clamp(u_domain[0], u_domain[1]);
+        parameters.v = (parameters.v - step_v).clamp(v_domain[0], v_domain[1]);
+        if step_u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
+            && step_v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
+        {
+            break;
+        }
+    }
+    Some(parameters)
 }
 
 fn point_distance(first: Point3, second: Point3) -> f64 {

@@ -8259,6 +8259,34 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
 }
 
 #[test]
+fn nurbs_parameter_solver_inverts_a_rational_surface_point() {
+    let surface = cadmpeg_ir::geometry::NurbsSurface {
+        u_degree: 1,
+        v_degree: 1,
+        u_knots: vec![0.0, 0.0, 1.0, 1.0],
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: 2,
+        v_count: 2,
+        control_points: vec![
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(0.0, 10.0, 0.0),
+            cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 2.0, 3.0, 4.0]),
+        u_periodic: false,
+        v_periodic: false,
+    };
+    let expected = Point2::new(0.37, 0.61);
+    let point = cadmpeg_ir::eval::nurbs_surface_point(&surface, expected.u, expected.v).unwrap();
+
+    let actual = crate::decode::nurbs_parameters(&surface, point, None).unwrap();
+
+    assert!((actual.u - expected.u).abs() < 1.0e-10);
+    assert!((actual.v - expected.v).abs() < 1.0e-10);
+}
+
+#[test]
 fn decode_emits_both_intersection_support_pcurves() {
     let stream = two_support_charted_intersection_curve_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
