@@ -83,14 +83,7 @@ impl StandardTopology {
             return None;
         }
 
-        let mut solutions = Vec::new();
-        unique_bijections(
-            &domains,
-            &mut vec![None; domains.len()],
-            &mut HashSet::new(),
-            &mut solutions,
-        );
-        (solutions.len() == 1).then(|| solutions.remove(0))
+        unique_coordinate_bijection(&domains, &self.vertex_points)
     }
 
     /// Logical endpoint components in physical edge-row direction.
@@ -155,10 +148,66 @@ impl StandardTopology {
     }
 }
 
-fn unique_bijections(
+fn unique_coordinate_bijection(
+    domains: &[HashSet<usize>],
+    points: &[[f64; 3]],
+) -> Option<Vec<usize>> {
+    let mut representatives = Vec::<usize>::new();
+    let mut point_classes = Vec::with_capacity(points.len());
+    for (point, position) in points.iter().enumerate() {
+        let class = representatives
+            .iter()
+            .position(|representative| points[*representative] == *position)
+            .unwrap_or_else(|| {
+                representatives.push(point);
+                representatives.len() - 1
+            });
+        point_classes.push(class);
+    }
+    let class_domains = domains
+        .iter()
+        .map(|domain| {
+            domain
+                .iter()
+                .map(|point| point_classes[*point])
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut capacities = vec![0usize; representatives.len()];
+    for class in &point_classes {
+        capacities[*class] += 1;
+    }
+    let mut solutions = Vec::new();
+    coordinate_bijections(
+        &class_domains,
+        &mut vec![None; domains.len()],
+        &mut capacities,
+        &mut solutions,
+    );
+    let [classes] = solutions.as_slice() else {
+        return None;
+    };
+    let mut available = vec![Vec::new(); representatives.len()];
+    for (point, class) in point_classes.into_iter().enumerate() {
+        available[class].push(point);
+    }
+    let mut used = vec![0usize; available.len()];
+    Some(
+        classes
+            .iter()
+            .map(|class| {
+                let point = available[*class][used[*class]];
+                used[*class] += 1;
+                point
+            })
+            .collect(),
+    )
+}
+
+fn coordinate_bijections(
     domains: &[HashSet<usize>],
     assignment: &mut [Option<usize>],
-    used: &mut HashSet<usize>,
+    capacities: &mut [usize],
     solutions: &mut Vec<Vec<usize>>,
 ) {
     if solutions.len() > 1 {
@@ -171,7 +220,7 @@ fn unique_bijections(
         .min_by_key(|(vertex, _)| {
             domains[*vertex]
                 .iter()
-                .filter(|point| !used.contains(point))
+                .filter(|class| capacities[**class] != 0)
                 .count()
         })
         .map(|(vertex, _)| vertex);
@@ -186,17 +235,17 @@ fn unique_bijections(
     };
     let mut candidates: Vec<usize> = domains[vertex]
         .iter()
-        .filter(|point| !used.contains(point))
+        .filter(|class| capacities[**class] != 0)
         .copied()
         .collect();
     candidates.sort_unstable();
-    for point in candidates {
-        assignment[vertex] = Some(point);
-        used.insert(point);
-        unique_bijections(domains, assignment, used, solutions);
-        used.remove(&point);
+    for class in candidates {
+        assignment[vertex] = Some(class);
+        capacities[class] -= 1;
+        coordinate_bijections(domains, assignment, capacities, solutions);
+        capacities[class] += 1;
         assignment[vertex] = None;
-        if solutions.len() > 9 {
+        if solutions.len() > 1 {
             return;
         }
     }
@@ -3744,11 +3793,13 @@ impl UnionFind {
 
 #[cfg(test)]
 mod motif_tests {
+    use std::collections::HashSet;
+
     use super::{
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments, motif_port_points,
         parse_trim_chain, propagate_edge_port_points, reconstruct_incidence,
-        reconstruct_incidence_candidates, EdgeBoundaryLayout, EdgeRow, MeshBoundaryEdgeCandidate,
-        MeshFaceBoundaryAssignment, MeshQuotient, TrimRecord, UnionFind,
+        reconstruct_incidence_candidates, unique_coordinate_bijection, EdgeBoundaryLayout, EdgeRow,
+        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient, TrimRecord, UnionFind,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -4078,6 +4129,24 @@ mod motif_tests {
         assert_eq!(
             bind_edge_port_candidates(&ports, &candidates),
             Some(vec![[0, 1], [2, 3], [0, 2], [1, 3]])
+        );
+    }
+
+    #[test]
+    fn duplicate_coordinate_rows_have_one_geometric_bijection() {
+        let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
+        assert_eq!(
+            unique_coordinate_bijection(&domains, &[[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]]),
+            Some(vec![0, 1])
+        );
+    }
+
+    #[test]
+    fn distinct_coordinate_bijections_remain_ambiguous() {
+        let domains = [HashSet::from([0, 1]), HashSet::from([0, 1])];
+        assert_eq!(
+            unique_coordinate_bijection(&domains, &[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+            None
         );
     }
 }
