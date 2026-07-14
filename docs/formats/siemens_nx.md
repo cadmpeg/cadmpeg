@@ -62,10 +62,12 @@ complete zlib payload accepted by the stream grammar. The containing row
 ordinal and word position preserve the wrapper's segment order.
 
 A partition or plain cached-body wrapper word begins a five-word segment tuple.
-The following word is zero, and the next word is the body-image object index
-used by feature-history Boolean target and tool lists. The tuple can cross a
-12-byte row boundary. The body-image binding is valid only when the wrapper
-word resolves to the exact compressed stream position.
+The following word is zero, the next two words are object-index aliases naming
+the same body image, and the final word is the stream role. Either body alias
+may occur in feature-history primary-body and Boolean operand fields. The tuple
+can cross a 12-byte row boundary. The body-image binding is valid only when the
+wrapper word resolves to the exact compressed stream position and both aliases
+are non-zero.
 
 A deltas stream applies to the nearest preceding partition stream in segment
 order with the same Parasolid schema token. Non-history compressed streams do

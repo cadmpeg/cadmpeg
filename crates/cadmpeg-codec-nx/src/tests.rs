@@ -419,7 +419,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 25);
+    assert_eq!(namespace.version, 26);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -469,6 +469,8 @@ fn decode_binds_segment_body_object_index_to_partition_stream() {
     assert_eq!(bindings[0].stream_ordinal, 0);
     assert_eq!(bindings[0].stream_kind, "partition");
     assert_eq!(bindings[0].body_object_index, 94);
+    assert_eq!(bindings[0].body_alias_object_index, 150);
+    assert_eq!(bindings[0].stream_role, 19);
     assert_eq!(bindings[0].source_offset, 104);
 }
 
@@ -490,6 +492,8 @@ fn decode_links_extended_partition_wrapper_and_body_identity() {
         .unwrap();
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].body_object_index, 94);
+    assert_eq!(bindings[0].body_alias_object_index, 150);
+    assert_eq!(bindings[0].stream_role, 19);
 }
 
 #[test]
@@ -3581,7 +3585,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 25);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 26);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

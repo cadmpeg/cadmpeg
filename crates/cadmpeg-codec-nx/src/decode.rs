@@ -1095,9 +1095,16 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
         .iter()
         .filter(|binding| binding.stream_kind == "partition")
     {
-        if !written.contains(&binding.body_object_index) {
+        let identities = [binding.body_object_index, binding.body_alias_object_index];
+        let statuses = identities
+            .into_iter()
+            .filter(|identity| written.contains(identity))
+            .map(|identity| terminal.contains(&identity))
+            .collect::<BTreeSet<_>>();
+        if statuses.len() != 1 {
             return false;
         }
+        let is_terminal = *statuses.first().expect("one terminal status");
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = ir
             .model
@@ -1110,7 +1117,7 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
             continue;
         }
         mapped.extend(stream_bodies.iter().cloned());
-        if terminal.contains(&binding.body_object_index) {
+        if is_terminal {
             selected.extend(stream_bodies);
         }
     }
@@ -2991,7 +2998,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(25);
+    namespace.version = namespace.version.max(26);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3109,17 +3116,23 @@ fn attach_feature_operations(
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
     for binding in body_bindings {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
-        let bodies = bodies_by_object_index
-            .entry(binding.body_object_index)
-            .or_default();
+        let mut stream_bodies = Vec::new();
         for body in ir
             .model
             .bodies
             .iter()
             .filter(|body| body.id.0.starts_with(&prefix))
         {
-            if !bodies.contains(&body.id) {
-                bodies.push(body.id.clone());
+            if !stream_bodies.contains(&body.id) {
+                stream_bodies.push(body.id.clone());
+            }
+        }
+        for identity in [binding.body_object_index, binding.body_alias_object_index] {
+            let bodies = bodies_by_object_index.entry(identity).or_default();
+            for body in &stream_bodies {
+                if !bodies.contains(body) {
+                    bodies.push(body.clone());
+                }
             }
         }
     }

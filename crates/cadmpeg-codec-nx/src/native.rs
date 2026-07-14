@@ -93,6 +93,10 @@ pub struct SegmentBodyBinding {
     pub stream_kind: String,
     /// Object index used by feature-history body operands.
     pub body_object_index: u32,
+    /// Second object index naming the same body image in feature history.
+    pub body_alias_object_index: u32,
+    /// Serialized role word completing the five-word segment tuple.
+    pub stream_role: u32,
     /// Absolute file offset of the object-index word in the segment index.
     pub source_offset: u64,
 }
@@ -758,13 +762,17 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
             let pointer_word = row.checked_mul(3)?.checked_add(slot)?;
             (words.get(pointer_word + 1) == Some(&0)).then_some(())?;
             let body_object_index = *words.get(pointer_word + 2)?;
-            (body_object_index != 0).then_some(())?;
+            let body_alias_object_index = *words.get(pointer_word + 3)?;
+            let stream_role = *words.get(pointer_word + 4)?;
+            (body_object_index != 0 && body_alias_object_index != 0).then_some(())?;
             Some(SegmentBodyBinding {
                 id: format!("nx:segment-body-bindings:binding#{}", link.stream_ordinal),
                 stream_link: link.id,
                 stream_ordinal: link.stream_ordinal,
                 stream_kind: link.stream_kind,
                 body_object_index,
+                body_alias_object_index,
+                stream_role,
                 source_offset: entry_offset + ((pointer_word + 2) * 4) as u64,
             })
         })
