@@ -194,7 +194,7 @@ pub struct TolerantCoedgeParameters {
 }
 
 /// Release-selected fixed fields following a tolerant-coedge parameter interval.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case", tag = "layout")]
 pub enum TolerantCoedgeExtension {
     /// Releases below 215 have no fixed extension fields.
@@ -205,12 +205,21 @@ pub enum TolerantCoedgeExtension {
         /// Referenced record index; `None` is the native null reference.
         target: Option<i64>,
     },
-    /// Releases above 219 carry a boolean followed by a nullable reference.
-    BooleanReference {
-        /// Stored boolean token.
-        flag: bool,
-        /// Referenced record index; `None` is the native null reference.
+    /// Modern releases carry no embedded tolerant-curve payload.
+    Empty {
+        /// Nullable record reference preceding the zero selector.
         target: Option<i64>,
+    },
+    /// Modern releases carry one balanced embedded tolerant-curve payload.
+    EmbeddedCurve {
+        /// Nullable record reference preceding the one selector.
+        target: Option<i64>,
+        /// Boolean stored immediately before the embedded subtype.
+        flag: bool,
+        /// Number of tokens inside the balanced outer subtype delimiters.
+        payload_token_count: u32,
+        /// Optional parameter interval following the embedded subtype.
+        parameter_range: Option<[f64; 2]>,
     },
 }
 

@@ -433,8 +433,9 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     let mut parameter_tail = Vec::new();
     t_dbl(&mut parameter_tail, 0.25);
     t_dbl(&mut parameter_tail, 0.75);
-    parameter_tail.push(0x0b);
     t_ref(&mut parameter_tail, -1);
+    t_long(&mut parameter_tail, 0);
+    t_long(&mut parameter_tail, 0);
     append_generated_record_tail(&mut smbh, "coedge", &parameter_tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
     let mut decoded = F3dCodec
@@ -460,10 +461,7 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         .iter()
         .all(|parameters| matches!(
             parameters.extension,
-            crate::records::TolerantCoedgeExtension::BooleanReference {
-                flag: false,
-                target: None
-            }
+            crate::records::TolerantCoedgeExtension::Empty { target: None }
         )));
 
     decoded.ir.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
@@ -490,6 +488,28 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
 #[test]
 fn decode_selects_tolerant_coedge_extension_from_asm_release() {
     for (release, fixed_tail, expected) in [
+        (
+            23000u32,
+            {
+                let mut bytes = Vec::new();
+                t_ref(&mut bytes, -1);
+                t_long(&mut bytes, 1);
+                bytes.extend_from_slice(&[0x0b, 0x0f]);
+                t_long(&mut bytes, 22800);
+                bytes.extend_from_slice(&[0x10, 0x0a]);
+                t_dbl(&mut bytes, -2.0);
+                bytes.push(0x0a);
+                t_dbl(&mut bytes, 3.0);
+                t_long(&mut bytes, 0);
+                bytes
+            },
+            crate::records::TolerantCoedgeExtension::EmbeddedCurve {
+                target: None,
+                flag: false,
+                payload_token_count: 1,
+                parameter_range: Some([-2.0, 3.0]),
+            },
+        ),
         (
             21900u32,
             {
@@ -524,7 +544,7 @@ fn decode_selects_tolerant_coedge_extension_from_asm_release() {
             f3d_native(&decoded.ir)
                 .tolerant_coedge_parameters
                 .iter()
-                .map(|parameters| parameters.extension)
+                .map(|parameters| parameters.extension.clone())
                 .collect::<Vec<_>>(),
             vec![expected; 3]
         );
@@ -5782,10 +5802,17 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             .iter()
             .find(|record| record.head == "tcoedge")
             .expect("canonical tolerant coedge record");
-        assert!(matches!(tolerant.chunk(13), Some(crate::sab::Token::False)));
+        assert!(matches!(
+            tolerant.chunk(13),
+            Some(crate::sab::Token::Ref(-1))
+        ));
         assert!(matches!(
             tolerant.chunk(14),
-            Some(crate::sab::Token::Ref(-1))
+            Some(crate::sab::Token::Long(0))
+        ));
+        assert!(matches!(
+            tolerant.chunk(15),
+            Some(crate::sab::Token::Long(0))
         ));
     }
     let round_trip = F3dCodec

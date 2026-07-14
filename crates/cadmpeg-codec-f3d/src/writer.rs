@@ -901,6 +901,18 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
                 parameters.id
             )));
         }
+        match &parameters.extension {
+            crate::records::TolerantCoedgeExtension::None
+            | crate::records::TolerantCoedgeExtension::Empty { target: None } => {}
+            crate::records::TolerantCoedgeExtension::Empty { target: Some(_) }
+            | crate::records::TolerantCoedgeExtension::Reference { .. }
+            | crate::records::TolerantCoedgeExtension::EmbeddedCurve { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less F3D cannot relocate tolerant-coedge extension {}",
+                    parameters.id
+                )));
+            }
+        }
     }
 
     let vertices = target
@@ -1089,6 +1101,34 @@ fn tolerant_coedge_range(
             .find(|parameters| parameters.coedge == *coedge)
             .map(|parameters| parameters.parameter_range)
     }))
+}
+
+fn native_tolerant_coedge_extension(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    coedge: &CoedgeId,
+) -> Result<(), CodecError> {
+    let extension = f3d_native(target)?
+        .and_then(|native| {
+            native
+                .tolerant_coedge_parameters
+                .into_iter()
+                .find(|parameters| parameters.coedge == *coedge)
+        })
+        .map(|parameters| parameters.extension)
+        .unwrap_or_default();
+    match extension {
+        crate::records::TolerantCoedgeExtension::None
+        | crate::records::TolerantCoedgeExtension::Empty { target: None } => {
+            native_ref(records, -1);
+            native_i64(records, 0);
+            native_i64(records, 0);
+            Ok(())
+        }
+        _ => Err(CodecError::NotImplemented(format!(
+            "source-less F3D cannot serialize nonempty tolerant-coedge extension for {coedge}"
+        ))),
+    }
 }
 
 fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
@@ -2292,8 +2332,7 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         if let Some(range) = tolerant_range {
             native_f64(&mut records, range[0]);
             native_f64(&mut records, range[1]);
-            records.push(native_bool(false));
-            native_ref(&mut records, -1);
+            native_tolerant_coedge_extension(&mut records, target, &coedge.id)?;
         }
         records.push(0x11);
     }
@@ -3692,8 +3731,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         if let Some(range) = tolerant_range {
             native_f64(&mut records, range[0]);
             native_f64(&mut records, range[1]);
-            records.push(native_bool(false));
-            native_ref(&mut records, -1);
+            native_tolerant_coedge_extension(&mut records, target, &coedge.id)?;
         }
         records.push(0x11);
     }

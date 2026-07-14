@@ -401,6 +401,58 @@ fn is_coedge_record(record: &Record) -> bool {
     matches!(record.head.as_str(), "coedge" | "tcoedge")
 }
 
+fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension> {
+    let target = match record.chunk(13)? {
+        Token::Ref(target) => (*target >= 0).then_some(*target),
+        _ => return None,
+    };
+    match record.chunk(14)? {
+        Token::Long(0) if matches!(record.chunk(15), Some(Token::Long(0))) => {
+            Some(TolerantCoedgeExtension::Empty { target })
+        }
+        Token::Long(1) => {
+            let flag = match record.chunk(15)? {
+                Token::True => true,
+                Token::False => false,
+                _ => return None,
+            };
+            if !matches!(record.chunk(16), Some(Token::SubtypeOpen)) {
+                return None;
+            }
+            let mut depth = 0usize;
+            let mut close = None;
+            for (index, token) in record.tokens.iter().enumerate().skip(16) {
+                match token {
+                    Token::SubtypeOpen => depth += 1,
+                    Token::SubtypeClose => {
+                        depth = depth.checked_sub(1)?;
+                        if depth == 0 {
+                            close = Some(index);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let close = close?;
+            let parameter_range = match record.tokens.get(close + 1..) {
+                Some([Token::False, Token::False, Token::Long(0)]) => None,
+                Some(
+                    [Token::True, Token::Double(start), Token::True, Token::Double(end), Token::Long(0)],
+                ) if start.is_finite() && end.is_finite() => Some([*start, *end]),
+                _ => return None,
+            };
+            Some(TolerantCoedgeExtension::EmbeddedCurve {
+                target,
+                flag,
+                payload_token_count: u32::try_from(close.checked_sub(17)?).ok()?,
+                parameter_range,
+            })
+        }
+        _ => None,
+    }
+}
+
 fn is_known_record_head(head: &str) -> bool {
     matches!(
         head,
@@ -4082,20 +4134,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     (r.chunk(11), r.chunk(12))
                 {
                     let extension = match release_major {
-                        Some(major) if major > 219 => {
-                            let flag = match r.chunk(13) {
-                                Some(Token::True) => Some(true),
-                                Some(Token::False) => Some(false),
-                                _ => None,
-                            };
-                            let target = match r.chunk(14) {
-                                Some(Token::Ref(target)) => Some((*target >= 0).then_some(*target)),
-                                _ => None,
-                            };
-                            flag.zip(target).map(|(flag, target)| {
-                                TolerantCoedgeExtension::BooleanReference { flag, target }
-                            })
-                        }
+                        Some(major) if major > 219 => tolerant_coedge_extension(r),
                         Some(215..=219) => match r.chunk(13) {
                             Some(Token::Ref(target)) => Some(TolerantCoedgeExtension::Reference {
                                 target: (*target >= 0).then_some(*target),

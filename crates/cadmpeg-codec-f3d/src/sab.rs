@@ -792,6 +792,10 @@ mod tests {
             bytes.push(0x06);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+        for value in [-1i64, 0, 0] {
+            bytes.push(if value == -1 { 0x0c } else { 0x04 });
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
         bytes.push(0x11);
         bytes
     }
@@ -1117,6 +1121,9 @@ mod tests {
                     .expect("tolerant coedge parameter offset");
                 assert_eq!(coedge[offset], 0x06);
             }
+            assert!(matches!(records[0].chunk(13), Some(super::Token::Ref(-1))));
+            assert!(matches!(records[0].chunk(14), Some(super::Token::Long(0))));
+            assert!(matches!(records[0].chunk(15), Some(super::Token::Long(0))));
         }
     }
 

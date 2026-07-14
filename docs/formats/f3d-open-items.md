@@ -30,7 +30,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Tolerant topology variants
 
-- After the release-selected fixed fields, a `tcoedge` may carry a variable tail containing integers or embedded curve records. The tail termination and embedded-record boundaries are undefined.
+- The geometric role and parameterization of the balanced curve subtype embedded by a modern `tcoedge` selector-one extension are unresolved.
 
 ## Material assets
 
