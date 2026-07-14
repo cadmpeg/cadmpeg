@@ -6163,6 +6163,32 @@ fn plane_envelope_corners(envelope: &crate::surface::PlaneEnvelope) -> Option<[[
 }
 
 type HoleCapOutline = (u32, [f64; 3], [f64; 3], [[f64; 3]; 2]);
+type PartialCapOutline = (u32, [f64; 3], [f64; 3], Option<[[f64; 3]; 2]>);
+
+fn cap_square_center_radius(corners: [[f64; 3]; 2], axis_index: usize) -> Option<([f64; 3], f64)> {
+    let radial = (0..3)
+        .filter(|index| *index != axis_index)
+        .collect::<Vec<_>>();
+    let spans = [
+        (corners[1][radial[0]] - corners[0][radial[0]]).abs(),
+        (corners[1][radial[1]] - corners[0][radial[1]]).abs(),
+    ];
+    let scale = spans[0]
+        .max(spans[1])
+        .max(corners[0][axis_index].abs())
+        .max(corners[1][axis_index].abs())
+        .max(1.0);
+    if (corners[1][axis_index] - corners[0][axis_index]).abs() > 1e-9 * scale
+        || spans[0] <= 1e-9
+        || (spans[0] - spans[1]).abs() > 1e-9 * scale
+    {
+        return None;
+    }
+    Some((
+        std::array::from_fn(|index| 0.5 * (corners[0][index] + corners[1][index])),
+        0.5 * spans[0],
+    ))
+}
 
 fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceGeometry> {
     let placement = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
@@ -6177,18 +6203,9 @@ fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceG
     let mut centers = Vec::<[f64; 3]>::new();
     let mut radii = Vec::new();
     for (_, _, _, corners) in caps {
-        let spans = radial
-            .iter()
-            .map(|index| (corners[1][*index] - corners[0][*index]).abs())
-            .collect::<Vec<_>>();
-        let scale = spans[0].max(spans[1]).max(1.0);
-        if spans[0] <= 1e-9 || (spans[0] - spans[1]).abs() > 1e-9 * scale {
-            return None;
-        }
-        centers.push(std::array::from_fn(|index| {
-            0.5 * (corners[0][index] + corners[1][index])
-        }));
-        radii.push(0.5 * spans[0]);
+        let (center, radius) = cap_square_center_radius(corners, axis_index)?;
+        centers.push(center);
+        radii.push(radius);
     }
     let scale = centers
         .iter()
@@ -6210,6 +6227,45 @@ fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceG
         axis: Vector3::new(axis[0], axis[1], axis[2]),
         ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
         radius: radii[0],
+    })
+}
+
+fn circular_sweep_cylinder_from_cap_outlines(
+    caps: [PartialCapOutline; 2],
+) -> Option<SurfaceGeometry> {
+    let (_, axis, _) = hole_placement(caps.map(|(id, origin, normal, _)| (id, origin, normal)))?;
+    let axis_index = (0..3).find(|index| {
+        axis[*index].abs() > 1.0 - 1e-9
+            && (0..3).all(|other| other == *index || axis[other].abs() < 1e-9)
+    })?;
+    let radial = (0..3)
+        .filter(|index| *index != axis_index)
+        .collect::<Vec<_>>();
+    let circles = caps
+        .iter()
+        .filter_map(|(_, _, _, corners)| cap_square_center_radius((*corners)?, axis_index))
+        .collect::<Vec<_>>();
+    let (center, radius) = *circles.first()?;
+    let scale = center
+        .iter()
+        .chain(std::iter::once(&radius))
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    if circles.iter().skip(1).any(|(other_center, other_radius)| {
+        radial
+            .iter()
+            .any(|index| (center[*index] - other_center[*index]).abs() > 1e-9 * scale)
+            || (radius - other_radius).abs() > 1e-9 * scale
+    }) {
+        return None;
+    }
+    let mut ref_direction = [0.0; 3];
+    ref_direction[radial[0]] = 1.0;
+    Some(SurfaceGeometry::Cylinder {
+        origin: Point3::new(center[0], center[1], center[2]),
+        axis: Vector3::new(axis[0], axis[1], axis[2]),
+        ref_direction: Vector3::new(ref_direction[0], ref_direction[1], ref_direction[2]),
+        radius,
     })
 }
 
@@ -6907,6 +6963,26 @@ mod resolved_sketch_tests {
             ),
         ])
         .is_none());
+        assert!(matches!(
+            circular_sweep_cylinder_from_cap_outlines([
+                (
+                    828,
+                    [0.0, 4.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    Some([[-13.25, 4.0, -0.75], [-11.75, 4.0, 0.75]]),
+                ),
+                (
+                    831,
+                    [0.0, -4.0, 0.0],
+                    [0.0, 1.0, 0.0],
+                    None,
+                ),
+            ]),
+            Some(SurfaceGeometry::Cylinder { origin, axis, radius, .. })
+                if origin == Point3::new(-12.5, 4.0, 0.0)
+                    && axis == Vector3::new(0.0, -1.0, 0.0)
+                    && radius == 0.75
+        ));
     }
 
     #[test]
@@ -11244,6 +11320,102 @@ fn transfer_hole_cylinders(
     transferred
 }
 
+fn transfer_circular_sweep_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let sweep_feature_ids = scan
+        .feature_rows
+        .iter()
+        .filter(|row| row.root_schema_class == Some(917))
+        .map(|row| row.feature_id)
+        .collect::<BTreeSet<_>>();
+    let mut transferred = 0;
+    for feature_id in sweep_feature_ids {
+        let tables = scan
+            .feature_entity_tables
+            .iter()
+            .filter(|table| table.feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        let [table] = tables.as_slice() else {
+            continue;
+        };
+        let [first_plane, second_plane, first_cylinder, second_cylinder] =
+            table.entry_ids.as_slice()
+        else {
+            continue;
+        };
+        let placed_planes = feature_outline_planes(scan, feature_id);
+        let [first, second] = placed_planes.as_slice() else {
+            continue;
+        };
+        if first.0 != *first_plane || second.0 != *second_plane {
+            continue;
+        }
+        let cap = |plane: &(u32, [f64; 3], [f64; 3])| {
+            let envelopes = scan
+                .plane_envelopes
+                .iter()
+                .filter(|envelope| envelope.surface_id == plane.0)
+                .collect::<Vec<_>>();
+            let corners = match envelopes.as_slice() {
+                [envelope] => plane_envelope_corners(&envelope.envelope),
+                _ => None,
+            };
+            (plane.0, plane.1, plane.2, corners)
+        };
+        let cylinder_ids = [*first_cylinder, *second_cylinder];
+        if cylinder_ids.iter().any(|id| {
+            !scan.surface_rows.iter().any(|row| {
+                row.id == *id
+                    && row.feature_id == feature_id
+                    && row.kind == crate::surface::SurfaceKind::Cylinder
+            })
+        }) {
+            continue;
+        }
+        let Some(geometry) = circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])
+        else {
+            continue;
+        };
+        for cylinder_id in cylinder_ids {
+            let row = scan
+                .surface_rows
+                .iter()
+                .find(|row| row.id == cylinder_id)
+                .expect("validated cylinder row");
+            let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
+            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &id,
+                "AllFeatur",
+                row.offset as u64,
+                "circular_sweep_cap_outline_cylinder",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id,
+                geometry: geometry.clone(),
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{cylinder_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            transferred += 1;
+        }
+    }
+    transferred
+}
+
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
 /// The stream is read from its beginning. When `options.container_only` is set,
@@ -11445,6 +11617,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
     let feature_extrusion_surface_count =
         transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
+    let circular_sweep_cylinder_count =
+        transfer_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, &mut ir, &mut annotations);
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
@@ -11464,6 +11638,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         source.attributes.insert(
             "transferred_feature_extrusion_surface_count".to_string(),
             feature_extrusion_surface_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_circular_sweep_cylinder_count".to_string(),
+            circular_sweep_cylinder_count.to_string(),
         );
         source.attributes.insert(
             "transferred_hole_cylinder_count".to_string(),
@@ -12103,8 +12281,9 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, topology-bound `fc 05` \
-             cylinders with a resolved axis-normal cap plane, and four-entry simple-hole cylinders \
-             with agreeing cap outlines transfer as carriers; other parameter bodies remain structural records.",
+             cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
+             and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
+             other parameter bodies remain structural records.",
             scan.sections.len(),
             scan.layout.token(),
             scan.surface_rows.len(),
@@ -12124,8 +12303,9 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              when every loop is solved from placed-plane intersections and one strict containment \
              outer boundary exists per face. Selected \
              cylinders transfer when either an exact `fc 05` record and placed cap outline or a \
-             four-entry class-911 simple-hole table with agreeing square cap outlines establishes \
-             the complete axis placement, parameterization, and radius. VisibGeom \
+             four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
+             square cap outline establishes the complete axis placement, parameterization, and \
+             radius. VisibGeom \
              stores one surface prototype per family (a first-instance template), not per-instance \
              located geometry, so other prototype scalars cannot be emitted as model surfaces \
              without mislabeling most instances \

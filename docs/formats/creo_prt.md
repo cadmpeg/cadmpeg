@@ -552,6 +552,15 @@ hole radius. The two squares have equal nonzero in-plane spans and equal radial
 midpoints. Both cylinder uses share this carrier. Layouts with additional
 entries do not use this simple-hole rule.
 
+A class-917 circular section sweep uses the same four-entry order: first cap
+plane, second cap plane, first cylinder use, and second cylinder use. The cap
+planes are distinct and parallel. A complete cap outline whose two in-plane
+spans are equal and nonzero is the circle's axis-normal bounding square. Its
+midpoint lies on the cylinder axis and half either span is the radius. When both
+cap outlines are complete, their radial midpoints and radii agree. One complete
+cap outline is sufficient because the second placed cap plane fixes the sweep
+direction and axial span independently. Both cylinder uses share this carrier.
+
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
