@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "47");
+    assert_eq!(result.ir.ir_version, "48");
     let feature = |name: &str| {
         &result
             .ir
@@ -3048,6 +3048,87 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid assembly joint")));
+    let mut corrupted = result.ir.clone();
+    corrupted.model.assembly_joints[0].operands[0].component = None;
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid assembly joint operands")));
+}
+
+#[test]
+fn composes_nested_link_prototype_placements_once_by_policy() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="App::Part" name="Assembly" id="1"/>
+ <Object type="Part::Feature" name="Prototype" id="2"/>
+ <Object type="App::Link" name="Inner" id="3"/>
+ <Object type="App::Link" name="Outer" id="4"/>
+ <Object type="App::Link" name="Override" id="5"/>
+</Objects>
+<ObjectData Count="5">
+ <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="2"><Link value="Outer"/><Link value="Override"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="5" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Inner"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Prototype"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="3" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Outer"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property></Properties></Object>
+ <Object name="Override"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyLink"><Link value="Inner"/></Property><Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property><Property name="LinkTransform" type="App::PropertyBool"><Bool value="false"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("nested links");
+    let occurrence = |name: &str| {
+        result
+            .ir
+            .model
+            .occurrences
+            .iter()
+            .find(|occurrence| {
+                occurrence
+                    .native_ref
+                    .as_deref()
+                    .is_some_and(|id| id.ends_with(name))
+            })
+            .expect("named occurrence")
+    };
+    assert_eq!(occurrence("Inner").prototype_transform[0][3], 5.0);
+    assert_eq!(occurrence("Inner").resolved_transform[0][3], 8.0);
+    assert_eq!(occurrence("Outer").prototype_transform[0][3], 8.0);
+    assert_eq!(occurrence("Outer").resolved_transform[0][3], 20.0);
+    assert_eq!(occurrence("Override").prototype_transform[0][3], 0.0);
+    assert_eq!(occurrence("Override").resolved_transform[0][3], 14.0);
+    assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
+    let inner_component = result
+        .ir
+        .model
+        .components
+        .iter()
+        .find(|component| component.source_name.as_deref() == Some("Inner"))
+        .expect("inner link component")
+        .id
+        .clone();
+    let mut corrupted = result.ir.clone();
+    let inner = corrupted
+        .model
+        .occurrences
+        .iter_mut()
+        .find(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("Inner"))
+        })
+        .expect("inner link occurrence");
+    inner.prototype = cadmpeg_ir::ComponentReference::Local {
+        component: inner_component,
+    };
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("prototype cycle")));
 }
 
 #[test]
@@ -3128,6 +3209,39 @@ fn distinguishes_external_product_paths_document_ids_and_targets() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("invalid occurrence reference")));
+}
+
+#[test]
+fn transfers_grounded_assembly_state_with_resolved_component() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Feature" name="BasePlate" id="1"/>
+ <Object type="App::FeaturePython" name="Ground" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="BasePlate"><Properties Count="0"/></Object>
+ <Object name="Ground"><Properties Count="2">
+  <Property name="ObjectToGround" type="App::PropertyLink"><Link value="BasePlate"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="7" Py="8" Pz="9" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("grounded assembly object");
+    assert_eq!(result.ir.model.assembly_joints.len(), 1);
+    let joint = &result.ir.model.assembly_joints[0];
+    assert_eq!(joint.kind, cadmpeg_ir::JointKind::Grounded);
+    assert_eq!(joint.operands.len(), 1);
+    assert!(joint.operands[0].component.is_some());
+    assert_eq!(joint.frames.len(), 1);
+    assert_eq!(joint.frames[0][0][3], 7.0);
+    assert_eq!(joint.frames[0][1][3], 8.0);
+    assert_eq!(joint.frames[0][2][3], 9.0);
+    assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]

@@ -20,6 +20,17 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|occurrence| (occurrence.id.0.as_str(), occurrence))
         .collect::<HashMap<_, _>>();
+    let occurrence_by_native = ir
+        .model
+        .occurrences
+        .iter()
+        .filter_map(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .map(|native| (native, occurrence))
+        })
+        .collect::<HashMap<_, _>>();
 
     for component in &ir.model.components {
         let parent_valid = component.parent.as_ref().is_none_or(|parent| {
@@ -106,10 +117,11 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             .local_transform
             .iter()
             .flatten()
+            .chain(occurrence.prototype_transform.iter().flatten())
             .chain(occurrence.resolved_transform.iter().flatten())
             .chain(occurrence.scale.iter())
             .all(|value| value.is_finite());
-        let expected_transform =
+        let container_transform =
             occurrence
                 .parent
                 .as_ref()
@@ -120,6 +132,7 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                             multiply(parent.resolved_transform, occurrence.local_transform)
                         })
                 });
+        let expected_transform = multiply(container_transform, occurrence.prototype_transform);
         if !valid_prototype
             || !valid_parent
             || !auxiliary_components
@@ -130,6 +143,18 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                 findings,
                 &occurrence.id.0,
                 "invalid occurrence reference or transform",
+            );
+        }
+        if occurrence_prototype_cycle(
+            occurrence.id.0.as_str(),
+            &occurrences,
+            &components,
+            &occurrence_by_native,
+        ) {
+            invalid(
+                findings,
+                &occurrence.id.0,
+                "product occurrence prototype cycle",
             );
         }
     }
@@ -146,11 +171,16 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
                 let external_valid = operand.external_document.as_ref().is_none_or(|document| {
                     document.path.is_some() ^ document.document_id.is_some()
                 });
-                operand
-                    .component
-                    .as_ref()
-                    .is_none_or(|component| components.contains_key(component.0.as_str()))
-                    && (operand.external_document.is_some() || operand.object.is_some())
+                let resolution_valid = match &operand.external_document {
+                    Some(_) => operand.component.is_none(),
+                    None => operand.component.is_some(),
+                };
+                operand.object.is_some()
+                    && resolution_valid
+                    && operand
+                        .component
+                        .as_ref()
+                        .is_none_or(|component| components.contains_key(component.0.as_str()))
                     && external_valid
             });
         let finite = joint
@@ -186,6 +216,54 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+fn occurrence_prototype_cycle<'a>(
+    start: &str,
+    occurrences: &HashMap<&'a str, &'a crate::products::Occurrence>,
+    components: &HashMap<&'a str, &'a crate::products::Component>,
+    occurrence_by_native: &HashMap<&'a str, &'a crate::products::Occurrence>,
+) -> bool {
+    fn visit<'a>(
+        current: &'a str,
+        start: &str,
+        occurrences: &HashMap<&'a str, &'a crate::products::Occurrence>,
+        components: &HashMap<&'a str, &'a crate::products::Component>,
+        occurrence_by_native: &HashMap<&'a str, &'a crate::products::Occurrence>,
+        seen: &mut HashSet<&'a str>,
+    ) -> bool {
+        let Some(occurrence) = occurrences.get(current) else {
+            return false;
+        };
+        let ComponentReference::Local { component } = &occurrence.prototype else {
+            return false;
+        };
+        let Some(target) = components
+            .get(component.0.as_str())
+            .and_then(|component| component.native_ref.as_deref())
+            .and_then(|native| occurrence_by_native.get(native))
+        else {
+            return false;
+        };
+        target.id.0 == start
+            || (seen.insert(target.id.0.as_str())
+                && visit(
+                    target.id.0.as_str(),
+                    start,
+                    occurrences,
+                    components,
+                    occurrence_by_native,
+                    seen,
+                ))
+    }
+    visit(
+        start,
+        start,
+        occurrences,
+        components,
+        occurrence_by_native,
+        &mut HashSet::from([start]),
+    )
 }
 
 fn finite_transform(transform: &[[f64; 4]; 4]) -> bool {

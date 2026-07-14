@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::native::{ObjectRecord, ProductNodeRecord, PropertyRecord};
+use crate::native::{JointRecord, ObjectRecord, ProductNodeRecord, PropertyRecord};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::products::{
     Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
@@ -91,6 +91,7 @@ pub(crate) fn transfer(
 /// Project the lossless native product records into reusable definitions and placed uses.
 pub(crate) fn transfer_neutral(
     records: &[ProductNodeRecord],
+    joints: &[JointRecord],
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
 ) -> Result<(Vec<Component>, Vec<Occurrence>), CodecError> {
@@ -119,8 +120,23 @@ pub(crate) fn transfer_neutral(
         component_objects.extend(record.copy_on_change_group.iter().cloned());
         component_objects.extend(record.element_objects.iter().cloned());
     }
+    component_objects.extend(
+        joints
+            .iter()
+            .flat_map(|joint| &joint.references)
+            .filter(|reference| reference.document.is_none())
+            .filter_map(|reference| reference.object.clone()),
+    );
     component_objects.sort();
     component_objects.dedup();
+
+    let placements_by_object = properties
+        .iter()
+        .filter(|property| matches!(property.name.as_str(), "LinkPlacement" | "Placement"))
+        .filter_map(|property| {
+            placement_matrix(property).map(|placement| (property.owner.as_str(), placement))
+        })
+        .collect::<HashMap<_, _>>();
 
     let component_id =
         |object: &str| ComponentId(crate::native::model_id("component", object, "definition"));
@@ -153,6 +169,12 @@ pub(crate) fn transfer_neutral(
                 record.local_transform.unwrap_or_else(identity),
                 element_transform.unwrap_or_else(identity),
             );
+            let prototype_transform = linked_prototype_transform(
+                record,
+                records,
+                &placements_by_object,
+                &mut Vec::new(),
+            )?;
             let element_scale = record
                 .element_scales
                 .get(index)
@@ -160,13 +182,16 @@ pub(crate) fn transfer_neutral(
                 .unwrap_or([1.0; 3]);
             let base_scale = record.scale.unwrap_or([1.0; 3]);
             let scale = std::array::from_fn(|axis| base_scale[axis] * element_scale[axis]);
-            let resolved_transform = resolve_container_transform(
-                parent_by_object.get(record.object.as_str()).copied(),
-                records,
-                &parent_by_object,
-                local_transform,
-                &mut Vec::new(),
-            )?;
+            let resolved_transform = multiply(
+                resolve_container_transform(
+                    parent_by_object.get(record.object.as_str()).copied(),
+                    records,
+                    &parent_by_object,
+                    local_transform,
+                    &mut Vec::new(),
+                )?,
+                prototype_transform,
+            );
             occurrences.push(Occurrence {
                 id: OccurrenceId(crate::native::model_id(
                     "occurrence",
@@ -195,6 +220,7 @@ pub(crate) fn transfer_neutral(
                 parent: parent.clone(),
                 array_index: element.then_some(index as u32),
                 local_transform,
+                prototype_transform,
                 resolved_transform,
                 scale,
                 linked_subelements: record.linked_subelements.clone(),
@@ -253,6 +279,7 @@ pub(crate) fn transfer_neutral(
             let members = record.map_or(&[][..], |record| record.members.as_slice());
             let local_transform = record
                 .and_then(|record| record.local_transform)
+                .or_else(|| placements_by_object.get(object.as_str()).copied())
                 .unwrap_or_else(identity);
             let parent_object = parent_by_object.get(object.as_str()).copied();
             let source_object = object_by_id.get(object.as_str()).copied();
@@ -296,6 +323,39 @@ pub(crate) fn transfer_neutral(
         })
         .collect::<Result<Vec<_>, CodecError>>()?;
     Ok((components, occurrences))
+}
+
+fn linked_prototype_transform(
+    record: &ProductNodeRecord,
+    records: &[ProductNodeRecord],
+    placements: &HashMap<&str, [[f64; 4]; 4]>,
+    stack: &mut Vec<String>,
+) -> Result<[[f64; 4]; 4], CodecError> {
+    if record.link_transform != Some(true) || record.external_document.is_some() {
+        return Ok(identity());
+    }
+    let Some(prototype) = record.prototype.as_deref() else {
+        return Ok(identity());
+    };
+    if stack.iter().any(|object| object == &record.object) {
+        return Err(CodecError::Malformed(format!(
+            "nested link cycle reaches {}",
+            record.object
+        )));
+    }
+    stack.push(record.object.clone());
+    let target_record = records
+        .iter()
+        .find(|candidate| candidate.object == prototype);
+    let placement = target_record
+        .and_then(|target| target.local_transform)
+        .or_else(|| placements.get(prototype).copied())
+        .unwrap_or_else(identity);
+    let nested = target_record.map_or(Ok(identity()), |target| {
+        linked_prototype_transform(target, records, placements, stack)
+    });
+    stack.pop();
+    nested.map(|nested| multiply(placement, nested))
 }
 
 fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {

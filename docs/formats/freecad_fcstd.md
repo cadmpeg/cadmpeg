@@ -174,6 +174,9 @@ empty reference is a distinct `missing_reference` state.
 Components retain their own local and hierarchy-resolved placements as well as explicit parentage.
 Neutral validation recomposes every component and occurrence world matrix from its direct parent
 and local matrix and rejects any mismatch, including finite but stale or double-applied transforms.
+For nested links, `prototype_transform` records the linked placement chain selected by
+`LinkTransform`; the evaluated occurrence is container × local × prototype, each exactly once.
+Prototype cycles are invalid in both the native and neutral product graphs.
 Component identity keeps the stable source object name separately from its user-visible label,
 description, part number, and additional named BOM fields. Generated BOM spreadsheets remain
 spreadsheet objects; they are not treated as the authoritative identity of their source component.

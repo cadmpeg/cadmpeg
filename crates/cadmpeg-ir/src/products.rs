@@ -160,6 +160,9 @@ pub struct Occurrence {
     pub array_index: Option<u32>,
     /// Placement relative to the direct container.
     pub local_transform: [[f64; 4]; 4],
+    /// Linked prototype placement contribution selected by link-transform policy.
+    #[serde(default = "identity_transform")]
+    pub prototype_transform: [[f64; 4]; 4],
     /// Placement composed through all containers exactly once.
     pub resolved_transform: [[f64; 4]; 4],
     /// Per-axis instance scale.
