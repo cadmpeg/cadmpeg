@@ -8170,6 +8170,36 @@ fn decode_assigns_ext11_uv_lanes_by_unique_surface_evaluation() {
 }
 
 #[test]
+fn ext11_uv_assignment_eliminates_the_complementary_support_lane() {
+    let stream = two_support_ext11_charted_intersection_curve_stream(false);
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let mut result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let surfaces = [
+        result.ir.model.surfaces[0].id.clone(),
+        result.ir.model.surfaces[1].id.clone(),
+    ];
+    result.ir.model.surfaces[1].geometry = SurfaceGeometry::Unknown { record: None };
+    let lanes = [
+        Some(vec![[0.0, 0.0], [0.01, 0.0]]),
+        Some(vec![[0.0, 0.0], [0.0, 0.01]]),
+    ];
+
+    let assigned = crate::decode::assign_ext11_support_uv_to_surfaces(
+        &result.ir,
+        [&surfaces[0], &surfaces[1]],
+        &[
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Point3::new(10.0, 0.0, 0.0),
+        ],
+        0.01,
+        &lanes,
+    )
+    .unwrap();
+
+    assert_eq!(assigned, lanes);
+}
+
+#[test]
 fn decode_replaces_ambiguous_ext11_uv_lanes_from_analytic_supports() {
     let stream = two_support_ext11_charted_intersection_curve_stream(true);
     let mut cur = Cursor::new(prt_with_partition(&stream));

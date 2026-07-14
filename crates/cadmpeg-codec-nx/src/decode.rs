@@ -1521,7 +1521,7 @@ pub(crate) fn assign_ext11_support_uv(
     )
 }
 
-fn assign_ext11_support_uv_to_surfaces(
+pub(crate) fn assign_ext11_support_uv_to_surfaces(
     ir: &CadIr,
     surfaces: [&SurfaceId; 2],
     points: &[Point3],
@@ -1561,6 +1561,7 @@ fn assign_ext11_support_uv_to_surfaces(
         ],
     ];
     let mut assigned = [None, None];
+    let mut assigned_lanes = [None, None];
     for lane in 0..2 {
         let support_matches = [matches[0][lane], matches[1][lane]];
         let Some(support) = support_matches
@@ -1574,6 +1575,19 @@ fn assign_ext11_support_uv_to_surfaces(
             return None;
         }
         assigned[support].clone_from(&lanes[lane]);
+        assigned_lanes[support] = Some(lane);
+    }
+    if surfaces[0] != surfaces[1] && assigned.iter().filter(|lane| lane.is_some()).count() == 1 {
+        let assigned_support = assigned.iter().position(Option::is_some)?;
+        let assigned_lane = assigned_lanes[assigned_support]?;
+        let other_support = 1 - assigned_support;
+        let other_lane = 1 - assigned_lane;
+        if lanes[other_lane]
+            .as_ref()
+            .is_some_and(|values| values.len() == points.len())
+        {
+            assigned[other_support].clone_from(&lanes[other_lane]);
+        }
     }
     assigned.iter().any(Option::is_some).then_some(assigned)
 }
@@ -1777,8 +1791,12 @@ pub(crate) fn offset_surface_parameters(
     let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
         return None;
     };
-    let mut parameters = seed.or_else(|| initial_surface_parameters(ir, support, point, None))?;
     let domain = surface_parameter_domain(ir, support);
+    let mut parameters = seed
+        .or_else(|| {
+            domain.and_then(|domain| coarse_model_surface_parameters(ir, surface, point, domain))
+        })
+        .or_else(|| initial_surface_parameters(ir, support, point, None))?;
     clamp_surface_parameters(&mut parameters, domain);
     for _ in 0..32 {
         let position = model_surface_point(ir, surface, parameters.u, parameters.v)?;
@@ -1804,6 +1822,37 @@ pub(crate) fn offset_surface_parameters(
         }
     }
     Some(parameters)
+}
+
+fn coarse_model_surface_parameters(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    domain: ([f64; 2], [f64; 2]),
+) -> Option<Point2> {
+    let (u_domain, v_domain) = domain;
+    let mut best = None;
+    let mut best_distance = f64::INFINITY;
+    for ui in 0..=8 {
+        for vi in 0..=8 {
+            let parameters = Point2::new(
+                u_domain[0] + (u_domain[1] - u_domain[0]) * f64::from(ui) / 8.0,
+                v_domain[0] + (v_domain[1] - v_domain[0]) * f64::from(vi) / 8.0,
+            );
+            let Some(candidate) = model_surface_point(ir, surface, parameters.u, parameters.v)
+            else {
+                continue;
+            };
+            let distance = (candidate.x - point.x).powi(2)
+                + (candidate.y - point.y).powi(2)
+                + (candidate.z - point.z).powi(2);
+            if distance < best_distance {
+                best = Some(parameters);
+                best_distance = distance;
+            }
+        }
+    }
+    best
 }
 
 fn initial_surface_parameters(
