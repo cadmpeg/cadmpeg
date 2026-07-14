@@ -1357,22 +1357,40 @@ fn historical_selection_profiles(
     histories: &[crate::history_records::AsmHistory],
     linear_tolerance: f64,
 ) -> Option<Vec<u32>> {
-    let points = members
+    let member_points = members
         .iter()
         .map(|member| historical_member_points(member, histories))
-        .collect::<Option<Vec<_>>>()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<_>>();
-    if points.is_empty() {
+        .collect::<Option<Vec<_>>>()?;
+    if member_points.iter().any(Vec::is_empty) {
         return None;
     }
     let tolerance = linear_tolerance.max(1.0e-7);
-    let matches = profiles_containing_points(sketch, entities, &points, tolerance)?;
-    let [profile] = matches.as_slice() else {
-        return None;
-    };
-    Some(vec![*profile])
+    let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
+    let common = profiles_containing_points(sketch, entities, &all_points, tolerance)?;
+    if let [profile] = common.as_slice() {
+        return Some(vec![*profile]);
+    }
+    ordered_unique_profile_matches(
+        member_points
+            .iter()
+            .map(|points| profiles_containing_points(sketch, entities, points, tolerance)),
+    )
+}
+
+fn ordered_unique_profile_matches(
+    matches: impl IntoIterator<Item = Option<Vec<u32>>>,
+) -> Option<Vec<u32>> {
+    let mut profiles = Vec::new();
+    for matches in matches {
+        let matches = matches?;
+        let [profile] = matches.as_slice() else {
+            return None;
+        };
+        if !profiles.contains(profile) {
+            profiles.push(*profile);
+        }
+    }
+    (!profiles.is_empty()).then_some(profiles)
 }
 
 fn profiles_containing_points(
@@ -8535,6 +8553,27 @@ mod relation_tests {
                 1.0e-6,
             ),
             Some(Vec::new())
+        );
+    }
+
+    #[test]
+    fn historical_selection_preserves_first_member_profile_order() {
+        assert_eq!(
+            super::ordered_unique_profile_matches([
+                Some(vec![3]),
+                Some(vec![1]),
+                Some(vec![3]),
+                Some(vec![2]),
+            ]),
+            Some(vec![3, 1, 2])
+        );
+        assert_eq!(
+            super::ordered_unique_profile_matches([Some(vec![3]), Some(vec![1, 2])]),
+            None
+        );
+        assert_eq!(
+            super::ordered_unique_profile_matches([Some(vec![3]), None]),
+            None
         );
     }
 
