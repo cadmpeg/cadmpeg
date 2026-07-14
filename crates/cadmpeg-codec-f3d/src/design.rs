@@ -232,6 +232,7 @@ pub fn project_parameter_design(
     scopes: &[DesignParameterScope],
     construction_groups: &[DesignConstructionOperandGroup],
     fillet_radius_groups: &[DesignFilletRadiusGroup],
+    face_operands: &[DesignFaceOperand],
     placements: &[DesignSketchPlacement],
 ) -> (
     Vec<cadmpeg_ir::features::Feature>,
@@ -294,29 +295,34 @@ pub fn project_parameter_design(
                         .cloned(),
                 }
             } else if scope.kind == "Extrude" {
-                project_extrude(scope, &parameters, construction_groups, placements).unwrap_or_else(
-                    || {
-                        let mut properties = BTreeMap::new();
-                        if let Some(profile) = scope.extrude_profile.as_ref() {
-                            if let Some(placement) = placements.iter().find(|placement| {
-                                native_stream(&placement.id) == Some(native_scope)
-                                    && placement.entity_id == profile.entity_id
-                            }) {
-                                properties.insert("profile".into(), neutral_sketch_id(placement).0);
-                            }
-                        }
-                        FeatureDefinition::Native {
-                            kind: scope.kind.clone(),
-                            parameters: parameters
-                                .iter()
-                                .map(|(_, parameter)| {
-                                    (parameter.name.clone(), parameter.expression.clone())
-                                })
-                                .collect(),
-                            properties,
-                        }
-                    },
+                project_extrude(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    face_operands,
+                    placements,
                 )
+                .unwrap_or_else(|| {
+                    let mut properties = BTreeMap::new();
+                    if let Some(profile) = scope.extrude_profile.as_ref() {
+                        if let Some(placement) = placements.iter().find(|placement| {
+                            native_stream(&placement.id) == Some(native_scope)
+                                && placement.entity_id == profile.entity_id
+                        }) {
+                            properties.insert("profile".into(), neutral_sketch_id(placement).0);
+                        }
+                    }
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties,
+                    }
+                })
             } else if scope.kind == "Fillet" {
                 let mut assignments = fillet_radius_groups
                     .iter()
@@ -673,6 +679,7 @@ fn project_extrude(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
     placements: &[DesignSketchPlacement],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -765,7 +772,8 @@ fn project_extrude(
             };
             let offset = profile_offset?;
             ExtrudeStart::FromFace {
-                face: FaceSelection::Native(start.id.clone()),
+                face: resolved_face_group(start, face_operands)
+                    .unwrap_or_else(|| FaceSelection::Native(start.id.clone())),
                 offset: (offset.0 != 0.0).then_some(offset),
             }
         }
@@ -804,7 +812,8 @@ fn project_extrude(
             };
             (
                 Extent::ToFace {
-                    face: FaceSelection::Native(termination.id.clone()),
+                    face: resolved_face_group(termination, face_operands)
+                        .unwrap_or_else(|| FaceSelection::Native(termination.id.clone())),
                     offset: (offset.0 != 0.0).then_some(offset),
                 },
                 scope.extrude_direction_reversed?,
@@ -842,6 +851,35 @@ fn project_extrude(
         extent,
         op,
         draft,
+    })
+}
+
+fn resolved_face_group(
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FaceSelection> {
+    let stream = native_stream(&group.id)?;
+    let mut faces = Vec::with_capacity(group.members.len());
+    for record_index in &group.members {
+        let mut matches = operands.iter().filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == group.scope_record_index
+                && operand.record_index == *record_index
+        });
+        let operand = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let [face] = operand.candidate_faces.as_slice() else {
+            return None;
+        };
+        if !faces.contains(face) {
+            faces.push(face.clone());
+        }
+    }
+    (!faces.is_empty()).then(|| cadmpeg_ir::features::FaceSelection::Resolved {
+        faces,
+        native: group.id.clone(),
     })
 }
 
@@ -6613,7 +6651,7 @@ mod relation_tests {
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
         parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
         project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations,
+        remove_dimension_frame_relations, resolved_face_group,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -6625,7 +6663,7 @@ mod relation_tests {
         SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
-    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -7638,6 +7676,39 @@ mod relation_tests {
             operand.candidate_faces,
             [FaceId("f3d:brep:entity#50".into())]
         );
+        let group = DesignConstructionOperandGroup {
+            id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
+            scope_record_index: face_scope.record_index,
+            scope_reference_ordinal: 0,
+            record_index: 90,
+            byte_offset: 900,
+            class_tag: "306".into(),
+            member_count_offset: 920,
+            members: vec![operand.record_index],
+            member_offsets: vec![924],
+            identity_record_index: 91,
+            identity_record_offset: 935,
+            role: 0x0000_0011_0000_0000,
+            extrude_role: Some(DesignExtrudeOperandRole::Faces),
+            extrude_face_role: Some(DesignExtrudeFaceRole::Termination),
+            role_offset: 946,
+            opaque_index: 1,
+            opaque_index_offset: 954,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 958,
+            variant: false,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 980,
+        };
+        assert!(matches!(
+            resolved_face_group(&group, std::slice::from_ref(&operand)),
+            Some(FaceSelection::Resolved { faces, native })
+                if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+        ));
+        operand
+            .candidate_faces
+            .push(FaceId("f3d:brep:entity#51".into()));
+        assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
     }
 
     #[test]
@@ -8466,6 +8537,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
         );
         let half = parameters
             .iter()
@@ -8534,7 +8606,7 @@ mod relation_tests {
         half.source_ordinal = 5;
 
         let (features, projected) =
-            project_parameter_design(&[half, width], &[], &[], &[], &[], &[]);
+            project_parameter_design(&[half, width], &[], &[], &[], &[], &[], &[]);
         assert!(features.is_empty());
         assert_eq!(projected[0].name, "Width");
         assert_eq!(projected[0].owner, None);
@@ -8598,7 +8670,7 @@ mod relation_tests {
         };
 
         let (features, parameters) =
-            project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[]);
+            project_parameter_design(&[parameter], &[owner], &[scope], &[], &[], &[], &[]);
         assert_eq!(features.len(), 1);
         assert!(matches!(
             &features[0].definition,
@@ -8702,6 +8774,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &taper)],
             &[],
+            &[],
             std::slice::from_ref(&placement),
         )
         .expect("typed blind Extrude");
@@ -8738,6 +8811,7 @@ mod relation_tests {
             &[owned_along],
             &[owner],
             &[sketch_scope, scope.clone()],
+            &[],
             &[],
             &[],
             std::slice::from_ref(&placement),
@@ -8781,6 +8855,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &taper)],
             std::slice::from_ref(&body_group),
+            &[],
             std::slice::from_ref(&placement),
         )
         .expect("typed target-body Extrude");
@@ -8811,6 +8886,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &taper)],
             &[body_group.clone(), face_group.clone()],
+            &[],
             std::slice::from_ref(&placement),
         )
         .is_none());
@@ -8820,6 +8896,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &profile_offset)],
             std::slice::from_ref(&body_group),
+            &[],
             std::slice::from_ref(&placement),
         )
         .is_none());
@@ -8828,6 +8905,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &profile_offset)],
             std::slice::from_ref(&body_group),
+            &[],
             std::slice::from_ref(&placement),
         )
         .expect("typed offset-profile-plane Extrude");
@@ -8848,6 +8926,7 @@ mod relation_tests {
             &scope,
             &[(0, &along), (1, &against)],
             &[],
+            &[],
             std::slice::from_ref(&placement),
         )
         .is_none());
@@ -8855,6 +8934,7 @@ mod relation_tests {
         let two_sided = project_extrude(
             &scope,
             &[(0, &along), (1, &against)],
+            &[],
             &[],
             std::slice::from_ref(&placement),
         )
@@ -8875,6 +8955,7 @@ mod relation_tests {
         let reversed = project_extrude(
             &scope,
             &[(0, &reversed_along)],
+            &[],
             &[],
             std::slice::from_ref(&placement),
         )
@@ -8903,6 +8984,7 @@ mod relation_tests {
             &scope,
             &[(0, &side_offset), (1, &taper)],
             &[body_group.clone(), face_group.clone()],
+            &[],
             std::slice::from_ref(&placement),
         )
         .expect("typed reversed to-face Extrude");
@@ -8934,6 +9016,7 @@ mod relation_tests {
                 (2, &taper),
             ],
             &[body_group, start_group.clone(), face_group],
+            &[],
             &[placement],
         )
         .expect("typed selected-face start Extrude");
@@ -9028,6 +9111,7 @@ mod relation_tests {
                 owner(64, 22, 65, 1),
             ],
             &scopes,
+            &[],
             &[],
             &[],
             &[],
@@ -9185,6 +9269,7 @@ mod relation_tests {
             &groups,
             &assignments,
             &[],
+            &[],
         );
         let FeatureDefinition::Fillet { groups } = &features[0].definition else {
             panic!("expected typed Fillet");
@@ -9280,6 +9365,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
         );
         let width = parameters
             .iter()
@@ -9339,7 +9425,7 @@ mod relation_tests {
         let predecessor = scope(12, 200, "Fillet", Some(10), Some(9));
         let successor = scope(22, 100, "Chamfer", Some(11), Some(10));
         let (features, _) =
-            project_parameter_design(&[], &[], &[successor, predecessor], &[], &[], &[]);
+            project_parameter_design(&[], &[], &[successor, predecessor], &[], &[], &[], &[]);
         let predecessor = features
             .iter()
             .find(|feature| feature.native_ref.as_deref() == Some("f3d:native:scope#12"))

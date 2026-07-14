@@ -172,6 +172,7 @@ pub fn decode(
                 &native.design_parameter_scopes,
                 &native.design_construction_operand_groups,
                 &native.design_fillet_radius_groups,
+                &native.design_face_operands,
                 &native.design_sketch_placements,
             );
             (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
@@ -352,6 +353,7 @@ pub fn decode(
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_fillet_radius_groups,
+        &native.design_face_operands,
         &native.design_sketch_placements,
     );
     (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
