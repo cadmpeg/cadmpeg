@@ -8407,6 +8407,74 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
+
+    let third = SurfaceId("synthetic:third-plane".into());
+    ir.model.surfaces.push(Surface {
+        id: third.clone(),
+        geometry: SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 8.0, 0.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    let outer_spine = CurveId("synthetic:outer-spine".into());
+    ir.model.curves.push(Curve {
+        id: outer_spine.clone(),
+        geometry: CurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point3::new(4.0, 6.0, 0.0),
+            direction: Vector3::new(0.0, 0.0, 1.0),
+        },
+        source_object: None,
+    });
+    let outer = SurfaceId("synthetic:outer-blend".into());
+    let outer_construction = ProceduralSurfaceId("synthetic:outer-blend-construction".into());
+    ir.model.surfaces.push(Surface {
+        id: outer.clone(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: outer_construction.clone(),
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(ProceduralSurface {
+        id: outer_construction,
+        surface: outer.clone(),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: [
+                Some(BlendSupport {
+                    surface,
+                    reversed: false,
+                }),
+                Some(BlendSupport {
+                    surface: third,
+                    reversed: false,
+                }),
+            ],
+            spine: Some(outer_spine),
+            radius: BlendRadiusLaw::Constant { signed_radius: 1.5 },
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+    });
+    let expected = Point2::new(4.0, 0.2);
+    let point = crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).unwrap();
+    let actual = crate::decode::blend_surface_parameters(&ir, &outer, point, None).unwrap();
+    assert!((actual.u - expected.u).abs() < 1.0e-8);
+    assert!((actual.v - expected.v).abs() < 1.0e-8);
+
+    let outer_definition = ir
+        .model
+        .procedural_surfaces
+        .iter_mut()
+        .find(|candidate| candidate.surface == outer)
+        .unwrap();
+    let ProceduralSurfaceDefinition::Blend { supports, .. } = &mut outer_definition.definition
+    else {
+        panic!("blend definition");
+    };
+    supports[0].as_mut().unwrap().surface = outer.clone();
+    assert!(crate::decode::blend_surface_point(&ir, &outer, expected.u, expected.v).is_none());
 }
 
 #[test]

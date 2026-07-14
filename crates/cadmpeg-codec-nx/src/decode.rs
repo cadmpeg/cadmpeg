@@ -1773,7 +1773,19 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
 }
 
 fn decoded_surface_point(ir: &CadIr, surface: &SurfaceId, u: f64, v: f64) -> Option<Point3> {
-    model_surface_point(ir, surface, u, v).or_else(|| blend_surface_point(ir, surface, u, v))
+    decoded_surface_point_inner(ir, surface, u, v, 0)
+}
+
+fn decoded_surface_point_inner(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    depth: usize,
+) -> Option<Point3> {
+    (depth < 32).then_some(())?;
+    model_surface_point(ir, surface, u, v)
+        .or_else(|| blend_surface_point_inner(ir, surface, u, v, depth + 1))
 }
 
 pub(crate) fn blend_surface_parameters(
@@ -1782,9 +1794,20 @@ pub(crate) fn blend_surface_parameters(
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
+    blend_surface_parameters_inner(ir, surface, point, seed, 0)
+}
+
+fn blend_surface_parameters_inner(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    depth: usize,
+) -> Option<Point2> {
+    (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
     let u = closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u))?;
-    let (center, tangent, first, second, _) = blend_surface_frame(ir, surface, u)?;
+    let (center, tangent, first, second, _) = blend_surface_frame(ir, surface, u, depth + 1)?;
     let radial = unit_vector(Vector3::new(
         point.x - center.x,
         point.y - center.y,
@@ -1797,27 +1820,45 @@ pub(crate) fn blend_surface_parameters(
     let theta = signed_angle(first, radial, tangent);
     let mut best = None;
     let mut best_distance = f64::INFINITY;
+    let mut best_branch_distance = f64::INFINITY;
     for turn in -2..=2 {
         let v = (theta + f64::from(turn) * std::f64::consts::TAU) / alpha;
-        let Some(candidate) = blend_surface_point(ir, surface, u, v) else {
+        let Some(candidate) = blend_surface_point_inner(ir, surface, u, v, depth + 1) else {
             continue;
         };
         let distance = point_distance(candidate, point);
-        if distance < best_distance {
+        let branch_distance = seed.map_or(v.abs(), |seed| (v - seed.v).abs());
+        let same_point = (distance - best_distance).abs() <= 1.0e-12;
+        if distance < best_distance && !same_point
+            || same_point && branch_distance < best_branch_distance
+        {
             best = Some(Point2::new(u, v));
             best_distance = distance;
+            best_branch_distance = branch_distance;
         }
     }
     best
 }
 
+#[cfg(test)]
 pub(crate) fn blend_surface_point(
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
     v: f64,
 ) -> Option<Point3> {
-    let (center, tangent, first, second, radius) = blend_surface_frame(ir, surface, u)?;
+    blend_surface_point_inner(ir, surface, u, v, 0)
+}
+
+fn blend_surface_point_inner(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    u: f64,
+    v: f64,
+    depth: usize,
+) -> Option<Point3> {
+    (depth < 32).then_some(())?;
+    let (center, tangent, first, second, radius) = blend_surface_frame(ir, surface, u, depth + 1)?;
     let alpha = signed_angle(first, second, tangent);
     let radial = rodrigues_rotate(first, tangent, v * alpha);
     Some(Point3::new(
@@ -1831,12 +1872,14 @@ fn blend_surface_frame(
     ir: &CadIr,
     surface: &SurfaceId,
     u: f64,
+    depth: usize,
 ) -> Option<(Point3, Vector3, Vector3, Vector3, f64)> {
+    (depth < 32).then_some(())?;
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     let center = model_curve_point(ir, &spine, u)?;
     let tangent = model_curve_tangent(ir, &spine, u)?;
-    let first = surface_contact_direction(ir, &supports[0], center)?;
-    let second = surface_contact_direction(ir, &supports[1], center)?;
+    let first = surface_contact_direction(ir, &supports[0], center, depth + 1)?;
+    let second = surface_contact_direction(ir, &supports[1], center, depth + 1)?;
     Some((center, tangent, first, second, radius))
 }
 
@@ -1878,7 +1921,13 @@ fn blend_surface_definition(
     })
 }
 
-fn surface_contact_direction(ir: &CadIr, surface: &SurfaceId, center: Point3) -> Option<Vector3> {
+fn surface_contact_direction(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    center: Point3,
+    depth: usize,
+) -> Option<Vector3> {
+    (depth < 32).then_some(())?;
     let carrier = ir
         .model
         .surfaces
@@ -1886,10 +1935,11 @@ fn surface_contact_direction(ir: &CadIr, surface: &SurfaceId, center: Point3) ->
         .find(|candidate| &candidate.id == surface)?;
     let parameters = match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, center, None),
-        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None),
+        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None)
+            .or_else(|| blend_surface_parameters_inner(ir, surface, center, None, depth + 1)),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
-    let contact = decoded_surface_point(ir, surface, parameters.u, parameters.v)?;
+    let contact = decoded_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
     unit_vector(Vector3::new(
         contact.x - center.x,
         contact.y - center.y,
