@@ -1347,14 +1347,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 .get(3..)
                                 .and_then(design::face_recipe_structure)
                         && node.recipe_structure.as_ref().map_or_else(
-                            || node.referenced_node_ordinals.is_empty(),
+                            || node.local_topology_references.is_empty(),
                             |structure| {
-                                design::face_recipe_node_references(
+                                design::face_recipe_local_topology_references(
                                     structure,
                                     operand.recipe_nodes.len(),
                                 )
                                 .as_ref()
-                                    == Some(&node.referenced_node_ordinals)
+                                    == Some(&node.local_topology_references)
                             },
                         )
                         && u64::try_from(node.program.len()).ok().is_some_and(|words| {
