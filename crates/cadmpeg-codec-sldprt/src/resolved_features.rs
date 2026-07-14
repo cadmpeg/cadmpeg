@@ -370,14 +370,16 @@ mod marker_tests {
         component_profile_source_at, component_reference_curve_path_at,
         coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, marker_object_index, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
-        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
         SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
     };
+    use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
     use std::collections::HashSet;
 
@@ -489,6 +491,65 @@ mod marker_tests {
         );
         payload[24] = 4;
         assert_eq!(compact_line_chain_addresses(&payload), None);
+    }
+
+    #[test]
+    fn compact_line_endpoint_pairs_form_one_oriented_cycle() {
+        let marker = SketchInputEntity {
+            id: "marker".into(),
+            parent: "lane".into(),
+            feature_ref: None,
+            ordinal: 0,
+            offset: 0,
+            object_index: None,
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m: None,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let point = |u, v| Point2::new(u, v);
+        let lines = vec![
+            (
+                SketchEntityId("top".into()),
+                &marker,
+                point(0.0, 1.0),
+                point(1.0, 1.0),
+            ),
+            (
+                SketchEntityId("bottom".into()),
+                &marker,
+                point(0.0, 0.0),
+                point(1.0, 0.0),
+            ),
+            (
+                SketchEntityId("right".into()),
+                &marker,
+                point(1.0, 0.0),
+                point(1.0, 1.0),
+            ),
+            (
+                SketchEntityId("left".into()),
+                &marker,
+                point(0.0, 1.0),
+                point(0.0, 0.0),
+            ),
+        ];
+
+        let profile = ordered_compact_line_profile(&lines).expect("closed line cycle");
+        assert_eq!(
+            profile
+                .iter()
+                .map(|use_| (use_.entity.0.as_str(), use_.reversed))
+                .collect::<Vec<_>>(),
+            [
+                ("top", false),
+                ("right", true),
+                ("bottom", true),
+                ("left", true)
+            ]
+        );
     }
 
     #[test]
@@ -4945,6 +5006,65 @@ pub(crate) fn project_compact_sketch_profiles(
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
             };
+            if let (Some(curves), Some(vertices)) =
+                (region_addresses.as_deref(), chain_addresses.as_deref())
+            {
+                let lines = curves
+                    .iter()
+                    .zip(vertices)
+                    .enumerate()
+                    .filter_map(|(index, (curve, vertex))| {
+                        let curve = markers.get(usize::from(*curve).checked_sub(1)?)?;
+                        let vertex = markers.get(usize::from(*vertex).checked_sub(1)?)?;
+                        let project = |marker: &SketchInputEntity| {
+                            let [u, v] = marker.coordinates_m?;
+                            let native =
+                                quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
+                            let point = transform.apply(native)?;
+                            Some(Point2::new(
+                                point.0 as f64 * QUANTUM,
+                                point.1 as f64 * QUANTUM,
+                            ))
+                        };
+                        let start = project(curve)?;
+                        let end = project(vertex)?;
+                        (start != end).then(|| {
+                            (
+                                SketchEntityId(format!(
+                                    "sldprt:model:sketch-entity#compact:{lane_key}:{}:{index}",
+                                    native_feature.ordinal
+                                )),
+                                *curve,
+                                start,
+                                end,
+                            )
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let Some(profile) = ordered_compact_line_profile(&lines) else {
+                    continue;
+                };
+                for (entity_id, marker, start, end) in lines {
+                    sketch_entities.push(SketchEntity {
+                        id: entity_id,
+                        sketch: sketch_id.clone(),
+                        construction: false,
+                        native_ref: Some(marker.id.clone()),
+                        geometry_ref: None,
+                        endpoint_refs: Vec::new(),
+                        geometry: SketchGeometry::Line { start, end },
+                    });
+                }
+                let mut sketch = sketch;
+                sketch.profiles.push(profile);
+                sketches.push(sketch);
+                features[feature_index].definition =
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
+                        sketch: Some(sketch_id),
+                    };
+                continue;
+            }
             let points = addresses
                 .iter()
                 .filter_map(|address| {
@@ -4996,6 +5116,48 @@ pub(crate) fn project_compact_sketch_profiles(
             };
         }
     }
+}
+
+fn ordered_compact_line_profile(
+    lines: &[(SketchEntityId, &SketchInputEntity, Point2, Point2)],
+) -> Option<Vec<SketchEntityUse>> {
+    if lines.len() < 3 {
+        return None;
+    }
+    let mut used = vec![false; lines.len()];
+    let mut profile = Vec::with_capacity(lines.len());
+    let first = lines.first()?;
+    used[0] = true;
+    profile.push(SketchEntityUse {
+        entity: first.0.clone(),
+        reversed: false,
+    });
+    let origin = first.2;
+    let mut current = first.3;
+    while profile.len() < lines.len() {
+        let mut candidates = lines.iter().enumerate().filter_map(|(index, line)| {
+            if used[index] {
+                None
+            } else if line.2 == current {
+                Some((index, false, line.3))
+            } else if line.3 == current {
+                Some((index, true, line.2))
+            } else {
+                None
+            }
+        });
+        let candidate = candidates.next()?;
+        if candidates.next().is_some() {
+            return None;
+        }
+        used[candidate.0] = true;
+        profile.push(SketchEntityUse {
+            entity: lines[candidate.0].0.clone(),
+            reversed: candidate.1,
+        });
+        current = candidate.2;
+    }
+    (current == origin).then_some(profile)
 }
 
 fn compact_line_region_addresses(payload: &[u8]) -> Option<Vec<u16>> {
