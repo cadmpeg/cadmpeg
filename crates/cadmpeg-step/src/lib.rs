@@ -79,6 +79,8 @@ use writer::{real, refs, string, Emitter, Ref};
 pub struct StepWriteOptions {
     /// Application protocol and edition declared by `FILE_SCHEMA`.
     pub schema: StepSchema,
+    /// Handling of IR content the selected writer cannot represent exactly.
+    pub unsupported: StepUnsupportedPolicy,
     /// The `FILE_NAME` name field.
     ///
     /// The STEP `PRODUCT` id and name come from the first IR body name, or
@@ -101,6 +103,7 @@ impl Default for StepWriteOptions {
     fn default() -> Self {
         StepWriteOptions {
             schema: StepSchema::Ap214,
+            unsupported: StepUnsupportedPolicy::Report,
             product_name: "cadmpeg_model".to_string(),
             author: String::new(),
             organization: String::new(),
@@ -108,6 +111,16 @@ impl Default for StepWriteOptions {
             originating_system: "cadmpeg".to_string(),
         }
     }
+}
+
+/// Policy for semantic content not representable by the selected STEP target.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StepUnsupportedPolicy {
+    /// Emit the representable subset and return machine-readable loss notes.
+    #[default]
+    Report,
+    /// Reject the document before writing any output byte.
+    Reject,
 }
 
 /// STEP application-protocol targets supported by the Part 21 writer.
@@ -151,6 +164,9 @@ impl StepSchema {
 /// successful write.
 #[derive(Debug, thiserror::Error)]
 pub enum StepError {
+    /// Strict writing found semantics that would be reduced or omitted.
+    #[error("STEP target cannot represent the document without loss: {0}")]
+    Unsupported(String),
     /// The output sink rejected a write.
     #[error("failed to write STEP output: {0}")]
     Io(#[from] std::io::Error),
@@ -177,6 +193,17 @@ pub fn write_step(
     b.build();
     let report = b.finish_report();
     let lines = b.emitter.into_lines();
+
+    if opts.unsupported == StepUnsupportedPolicy::Reject && !report.losses.is_empty() {
+        return Err(StepError::Unsupported(
+            report
+                .losses
+                .iter()
+                .map(|loss| loss.message.as_str())
+                .collect::<Vec<_>>()
+                .join("; "),
+        ));
+    }
 
     write_header(w, opts)?;
     writeln!(w, "DATA;")?;
@@ -1438,6 +1465,7 @@ fn is_part28_xml(bytes: &[u8]) -> bool {
 impl From<StepError> for CodecError {
     fn from(error: StepError) -> Self {
         match error {
+            StepError::Unsupported(message) => Self::NotImplemented(message),
             StepError::Io(error) => Self::Io(error),
         }
     }

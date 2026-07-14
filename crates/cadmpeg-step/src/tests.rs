@@ -15,7 +15,9 @@ use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 use std::io::Cursor;
 
-use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
+use crate::{
+    write_step, StepCodec, StepError, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
 
 #[test]
 fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
@@ -1657,6 +1659,28 @@ fn parametric_history_reduction_is_reported() {
     assert!(report.losses.iter().any(|loss| loss
         .message
         .contains("parametric design/history record(s) were not represented in STEP")));
+}
+
+#[test]
+fn strict_writer_rejects_before_emitting_bytes() {
+    let mut ir = unit_cube();
+    ir.native.namespace_mut("f3d").arenas.insert(
+        "asm_histories".into(),
+        vec![cadmpeg_ir::NativeRecord {
+            id: "asm-history-0".into(),
+            fields: Default::default(),
+        }],
+    );
+    ir.finalize();
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+
+    let mut bytes = Vec::new();
+    let error = write_step(&ir, &mut bytes, &options).expect_err("strict rejection");
+    assert!(matches!(error, StepError::Unsupported(_)));
+    assert!(bytes.is_empty());
 }
 
 #[test]
