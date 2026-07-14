@@ -191,7 +191,7 @@ fn nx_formula_dependencies_resolve_to_section_parameters() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &mut annotations);
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &mut annotations);
 
     assert_eq!(ir.model.parameters[2].value, None);
     assert_eq!(
@@ -223,7 +223,7 @@ fn nx_formula_dependencies_reject_ambiguous_parameter_names() {
     ];
     let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
     let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
-    crate::decode::attach_expression_parameters(&mut ir, &expressions, &mut annotations);
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &mut annotations);
 
     assert!(ir.model.parameters[2].dependencies.is_empty());
 }
@@ -3768,6 +3768,21 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(
         expressions[0].declaration.as_deref(),
         Some(declarations[0].id.as_str())
+    );
+    let parameter = result
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == expressions[0].name)
+        .unwrap();
+    assert_eq!(
+        parameter.properties.get("declaration"),
+        Some(&declarations[0].id)
+    );
+    assert_eq!(
+        parameter.properties.get("declaration_object_id"),
+        Some(&"258".to_string())
     );
     let om_records = result
         .ir

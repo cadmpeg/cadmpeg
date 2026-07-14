@@ -3029,7 +3029,7 @@ fn attach_native_object_model(
         },
         annotations,
     );
-    attach_expression_parameters(ir, &expressions, annotations);
+    attach_expression_parameters(ir, &expressions, &expression_declarations, annotations);
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
@@ -3411,8 +3411,13 @@ pub(crate) fn feature_body_outputs(
 pub(crate) fn attach_expression_parameters(
     ir: &mut CadIr,
     expressions: &[crate::native::Expression],
+    declarations: &[crate::native::ExpressionDeclaration],
     annotations: &mut AnnotationBuilder,
 ) {
+    let declarations = declarations
+        .iter()
+        .map(|declaration| (declaration.id.as_str(), declaration))
+        .collect::<BTreeMap<_, _>>();
     let mut sections = BTreeMap::<String, Vec<&crate::native::Expression>>::new();
     for expression in expressions {
         let Some((section, _)) = expression.id.split_once(":expression#") else {
@@ -3495,6 +3500,19 @@ pub(crate) fn attach_expression_parameters(
                     ParameterValue::Angle(Angle(value.to_radians()))
                 }
             });
+            let mut properties = BTreeMap::new();
+            if let Some(declaration) = expression
+                .declaration
+                .as_deref()
+                .and_then(|id| declarations.get(id))
+            {
+                properties.insert("declaration".to_string(), declaration.id.clone());
+                properties.insert(
+                    "declaration_object_id".to_string(),
+                    declaration.object_id.to_string(),
+                );
+                annotations.derived(&id.0, "properties");
+            }
             ir.model.parameters.push(DesignParameter {
                 id,
                 owner: feature_id.clone(),
@@ -3504,7 +3522,7 @@ pub(crate) fn attach_expression_parameters(
                 display: None,
                 value,
                 dependencies,
-                properties: BTreeMap::new(),
+                properties,
                 pmi: None,
                 native_ref: Some(expression.id.clone()),
             });
