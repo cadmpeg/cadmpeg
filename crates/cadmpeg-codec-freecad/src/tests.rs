@@ -108,6 +108,44 @@ fn transfers_bounded_rational_sketch_nurbs() {
 }
 
 #[test]
+fn neutralizes_symmetric_and_locus_distance_constraints_and_reports_fallbacks() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
+<Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="3">
+ <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="1" EndY="0"/></Geometry>
+ <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
+ <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
+</GeometryList></Property>
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="3">
+ <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
+ <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
+ <Constrain Type="13" First="0" FirstPos="1" Second="2" SecondPos="0"/>
+</ConstraintList></Property>
+</Properties></Object></ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("sketch constraints");
+    assert!(matches!(
+        result.ir.model.sketch_constraints[0].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Symmetric { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[1].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[2].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+    ));
+    assert_eq!(result.report.losses.len(), 1);
+    assert!(result.report.losses[0].message.contains("point_on_object"));
+}
+
+#[test]
 fn transfers_revolution_fillet_and_chamfer_semantics() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">

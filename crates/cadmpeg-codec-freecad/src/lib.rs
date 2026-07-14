@@ -1126,6 +1126,26 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             }),
         })
     }));
+    losses.extend(ir.model.sketch_constraints.iter().filter_map(|constraint| {
+        let cadmpeg_ir::sketches::SketchConstraintDefinition::Native { native_kind, .. } =
+            &constraint.definition
+        else {
+            return None;
+        };
+        Some(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Blocking,
+            message: format!(
+                "FCStd sketch constraint {native_kind} is retained natively but is not neutralized"
+            ),
+            provenance: Some(cadmpeg_ir::LossProvenance {
+                format: "fcstd".into(),
+                stream: "Document.xml".into(),
+                offset: 0,
+                tag: constraint.native_ref.clone(),
+            }),
+        })
+    }));
     losses
 }
 

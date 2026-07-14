@@ -265,3 +265,10 @@ multiplicity. Declared pole and knot counts must match; values and weights must 
 must be positive; planar pole z-coordinates must be zero; and degree must be smaller than the pole
 count. A non-periodic full knot vector must contain `pole_count + degree + 1` entries. Invalid or
 resource-exceeding records remain named native carriers.
+
+Constraint transfer distinguishes whole entities from endpoint and center loci. Two-locus distance
+constraints remain locus-to-locus measurements rather than being reduced to a duplicate entity
+list, and three-operand symmetry retains both loci plus its axis entity. Dimension parameters keep
+their driving flag and native identity; angular values use radians, geometric distances use model
+lengths, and spline-weight values are dimensionless. Any constraint family left in the native
+variant emits its own attributable blocking design-loss record.

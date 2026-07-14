@@ -665,7 +665,11 @@ fn parse_constraints(
                         object.name,
                         index + 1
                     ));
-                    let angle = type_code == 9;
+                    let value = match type_code {
+                        9 => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
+                        19 => ParameterValue::Real(value),
+                        _ => ParameterValue::Length(Length(value)),
+                    };
                     let path = format!("Constraints[{index}]");
                     let expression = expression_binding(properties, &path);
                     let mut parameter_properties = [(
@@ -691,11 +695,7 @@ fn parse_constraints(
                             |(_, expression)| expression,
                         ),
                         display: None,
-                        value: Some(if angle {
-                            ParameterValue::Angle(cadmpeg_ir::features::Angle(value))
-                        } else {
-                            ParameterValue::Length(Length(value))
-                        }),
+                        value: Some(value),
                         dependencies: Vec::new(),
                         properties: parameter_properties,
                         pmi: None,
@@ -837,6 +837,11 @@ fn neutral_constraint(
             SketchConstraintDefinition::Equal { first, second }
         }
         17 => SketchConstraintDefinition::Fixed { entity: entity(0)? },
+        6 if loci.len() == 2 => SketchConstraintDefinition::DistanceLoci {
+            first: loci[0].clone(),
+            second: loci[1].clone(),
+            parameter: parameter?,
+        },
         6 => SketchConstraintDefinition::Distance {
             entities: loci.iter().map(locus_entity).cloned().collect(),
             parameter: parameter?,
@@ -863,6 +868,11 @@ fn neutral_constraint(
         18 => SketchConstraintDefinition::Diameter {
             entity: entity(0)?,
             parameter: parameter?,
+        },
+        14 => SketchConstraintDefinition::Symmetric {
+            first: loci.first()?.clone(),
+            second: loci.get(1)?.clone(),
+            axis: entity(2)?,
         },
         _ => return None,
     })
