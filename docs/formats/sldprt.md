@@ -215,6 +215,8 @@ A primary line-or-circle geometry handle on a transformed line segment identifie
 
 When a point or constrained-point marker maps to a shared profile coordinate, its incident start and end loci are geometrically equivalent. The lexicographically first locus is the canonical operand. Line-or-circle and arc markers retain every compatible entity at a shared coordinate.
 
+A coordinate-less point or constrained-point marker linked to two or more resolved profile entities identifies their endpoint only when every linked entity has exactly one common stored endpoint coordinate. The lexicographically first locus at that coordinate is canonical. Center loci, analytic intersections away from stored endpoints, multiple shared endpoints, unresolved links, and links spanning sketches leave the point marker unresolved.
+
 Point-distance operands select explicit profile loci. Line-distance and angular operands select the profile entity shared by their linked endpoint markers. A relation with resolved operands and one driving scalar maps to the corresponding neutral distance, horizontal-distance, vertical-distance, angle, radius, or diameter constraint. Relation-marker coordinates do not identify constraint operands. A relation marker without linked local identifiers does not produce a sketch constraint.
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
