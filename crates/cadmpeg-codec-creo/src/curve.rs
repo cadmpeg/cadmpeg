@@ -442,6 +442,25 @@ fn explicit_local_system_slots(body: &[u8], cache: &scalar::ScalarCache) -> Opti
     let mut values = Vec::with_capacity(12);
     let mut cursor = 0;
     while cursor < body.len() && values.len() < 12 {
+        if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
+            values.extend([0.0, 1.0, 0.0]);
+            cursor += 2;
+            continue;
+        }
+        if body.get(cursor) == Some(&0x18)
+            && body
+                .get(cursor + 1)
+                .is_some_and(|byte| matches!(byte, 0x10 | 0xe4 | 0xe6))
+        {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
+        if body.get(cursor) == Some(&0x10) {
+            values.push(0.0);
+            cursor += 1;
+            continue;
+        }
         let (value, next) = scalar::decode_in_row_lane(body, cursor, cache)?;
         values.push(value);
         cursor = next;
@@ -1436,6 +1455,28 @@ mod tests {
         assert_eq!(records[0].assignments[2].value, None);
         assert_eq!(records[0].assignments[3].dependencies, ["r"]);
         assert_eq!(records[0].assignments[3].value, Some(11.0));
+    }
+
+    #[test]
+    fn decodes_only_complete_explicit_curve_expression_frames() {
+        let complete = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
+            \xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x0f\x0f\
+            \xe0\x0aexpression\0\xf8\x01r=5\0";
+        assert_eq!(
+            expression_records(complete)[0]
+                .local_system
+                .as_ref()
+                .and_then(|frame| frame.explicit_slots),
+            Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        );
+
+        let inherited = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x08\
+            \xe0\x02local_sys\0\xf9\x04\x03\x18\xe4\x0f\xe4\x18\xe5\x0f\x18\xe6\
+            \xe0\x0aexpression\0\xf8\x01r=5\0";
+        assert!(expression_records(inherited)[0]
+            .local_system
+            .as_ref()
+            .is_some_and(|frame| frame.explicit_slots.is_none()));
     }
 
     #[test]

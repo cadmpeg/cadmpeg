@@ -2146,7 +2146,7 @@ fn decode_preserves_counted_curve_expression_programs() {
 #[test]
 fn decode_places_helix_from_complete_curve_expression_frame() {
     let payload = b"\xe0\x00entity(crv_fr_eqn)\0\xe3\xe0\x01id\0\x07\
-        \xe0\x02local_sys\0\xf9\x04\x03\xe4\x0f\x0f\x0f\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x0f\
+        \xe0\x02local_sys\0\xf9\x04\x03\xe4\x0f\x0f\x0f\x0f\x0f\x18\xe5\x0f\x0f\x0f\
         \xe0\x0aexpression\0\xf8\x03r=5\0theta=0-t*360\0z=-2+10*t\0"
         .to_vec();
     let data = build_prt("c", &[("DEPDB_DATA", payload)]);
