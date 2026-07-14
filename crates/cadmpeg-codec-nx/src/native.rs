@@ -1606,6 +1606,25 @@ pub struct FeatureSketchNamedPointBlockUse {
     pub source_offset: u64,
 }
 
+/// Exact predecessor relation between a named point and a sketch construction lane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchPrecedingNamedPointUse {
+    /// Globally unique predecessor-use identity.
+    pub id: String,
+    /// Sketch operation carrying the construction lane.
+    pub operation_label: String,
+    /// First typed sketch-reference occurrence.
+    pub first_sketch_reference: String,
+    /// Typed named-point object ending immediately before the construction lane.
+    pub named_point: String,
+    /// Complete ordered block span of the named point.
+    pub point_data_blocks: Vec<String>,
+    /// First construction block immediately following the point span.
+    pub following_data_block: String,
+    /// Absolute source offset of the first sketch reference.
+    pub source_offset: u64,
+}
+
 /// Exact identity of one solved sketch point across its payload and reference lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchPointUse {
@@ -3986,6 +4005,84 @@ pub fn feature_sketch_named_point_block_uses(
                 source_offset: reference.source_offset,
             });
         }
+    }
+    uses
+}
+
+/// Join one named point to a complete sketch lane through unique consecutive block adjacency.
+pub fn feature_sketch_preceding_named_point_uses(
+    references: &[FeatureSketchReference],
+    points: &[OffsetStoreNamedPoint],
+) -> Vec<FeatureSketchPrecedingNamedPointUse> {
+    fn block_key(block: &str) -> Option<(&str, u32)> {
+        let (store, ordinal) = block.rsplit_once(":block#")?;
+        Some((store, ordinal.parse().ok()?))
+    }
+
+    let mut references_by_operation = BTreeMap::<&str, Vec<&FeatureSketchReference>>::new();
+    for reference in references {
+        references_by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
+    }
+    let mut uses = Vec::new();
+    for (operation_label, mut operation_references) in references_by_operation {
+        operation_references.sort_by_key(|reference| reference.ordinal);
+        let complete_lane = !operation_references.is_empty()
+            && operation_references
+                .iter()
+                .enumerate()
+                .all(|(ordinal, reference)| {
+                    reference.ordinal == ordinal as u32
+                        && usize::from(reference.declared_count) == operation_references.len()
+                        && reference.data_block.is_some()
+                        && reference.terminal == (ordinal + 1 == operation_references.len())
+                });
+        if !complete_lane {
+            continue;
+        }
+        let first_reference = operation_references[0];
+        let first_block = first_reference
+            .data_block
+            .as_deref()
+            .expect("complete lane has resolved references");
+        let Some((first_store, first_ordinal)) = block_key(first_block) else {
+            continue;
+        };
+        let candidates = points
+            .iter()
+            .filter(|point| {
+                let Some(last_block) = point.data_blocks.last() else {
+                    return false;
+                };
+                let Some((point_store, point_ordinal)) = block_key(last_block) else {
+                    return false;
+                };
+                point_store == first_store && point_ordinal.checked_add(1) == Some(first_ordinal)
+            })
+            .collect::<Vec<_>>();
+        let [point] = candidates.as_slice() else {
+            continue;
+        };
+        let operation_key = operation_label
+            .rsplit_once('#')
+            .map_or(operation_label, |(_, key)| key);
+        let point_key = point
+            .id
+            .rsplit_once('#')
+            .map_or(point.id.as_str(), |(_, key)| key);
+        uses.push(FeatureSketchPrecedingNamedPointUse {
+            id: format!(
+                "nx:feature-history:sketch-preceding-named-point-use#{operation_key}-{point_key}"
+            ),
+            operation_label: operation_label.to_string(),
+            first_sketch_reference: first_reference.id.clone(),
+            named_point: point.id.clone(),
+            point_data_blocks: point.data_blocks.clone(),
+            following_data_block: first_block.to_string(),
+            source_offset: first_reference.source_offset,
+        });
     }
     uses
 }

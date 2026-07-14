@@ -4931,6 +4931,11 @@ fn attach_native_object_model(
             &feature_sketch_references,
             &offset_store_named_points,
         );
+    let feature_sketch_preceding_named_point_uses =
+        crate::native::feature_sketch_preceding_named_point_uses(
+            &feature_sketch_references,
+            &offset_store_named_points,
+        );
     let feature_sketch_point_uses = crate::native::feature_sketch_point_uses(
         &feature_sketch_point_groups,
         &offset_store_named_points,
@@ -5061,6 +5066,7 @@ fn attach_native_object_model(
         && feature_sketch_point_groups.is_empty()
         && offset_store_named_points.is_empty()
         && feature_sketch_named_point_block_uses.is_empty()
+        && feature_sketch_preceding_named_point_uses.is_empty()
         && feature_sketch_point_uses.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
@@ -5257,6 +5263,12 @@ fn attach_native_object_model(
             .note(&block_use.id, annotation_stream, block_use.source_offset)
             .tag("SKETCH_NAMED_POINT_BLOCK_USE");
         annotations.exactness(&block_use.id, Exactness::ByteExact);
+    }
+    for point_use in &feature_sketch_preceding_named_point_uses {
+        annotations
+            .note(&point_use.id, annotation_stream, point_use.source_offset)
+            .tag("SKETCH_PRECEDING_NAMED_POINT_USE");
+        annotations.exactness(&point_use.id, Exactness::ByteExact);
     }
     for point_use in &feature_sketch_point_uses {
         annotations
@@ -5548,6 +5560,7 @@ fn attach_native_object_model(
             datum_plane_csys_identity_uses: &feature_datum_plane_csys_identity_uses,
             sketch_references: &feature_sketch_references,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
+            sketch_preceding_named_point_uses: &feature_sketch_preceding_named_point_uses,
             sketch_point_uses: &feature_sketch_point_uses,
             sketch_point_groups: &feature_sketch_point_groups,
             extrude_profile_references: &feature_extrude_profile_references,
@@ -5981,6 +5994,12 @@ fn attach_native_object_model(
             &feature_sketch_named_point_block_uses,
         )?;
     }
+    if !feature_sketch_preceding_named_point_uses.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_preceding_named_point_uses",
+            &feature_sketch_preceding_named_point_uses,
+        )?;
+    }
     if !feature_sketch_point_uses.is_empty() {
         namespace.set_arena("feature_sketch_point_uses", &feature_sketch_point_uses)?;
     }
@@ -6356,6 +6375,7 @@ struct FeatureOperationSources<'a> {
     datum_plane_csys_identity_uses: &'a [crate::native::FeatureDatumPlaneCsysIdentityUse],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
+    sketch_preceding_named_point_uses: &'a [crate::native::FeatureSketchPrecedingNamedPointUse],
     sketch_point_uses: &'a [crate::native::FeatureSketchPointUse],
     sketch_point_groups: &'a [crate::native::FeatureSketchPointGroup],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
@@ -6401,6 +6421,7 @@ fn attach_feature_operations(
         datum_plane_csys_identity_uses,
         sketch_references,
         sketch_named_point_block_uses,
+        sketch_preceding_named_point_uses,
         sketch_point_uses,
         sketch_point_groups,
         extrude_profile_references,
@@ -6521,6 +6542,14 @@ fn attach_feature_operations(
             .entry(block_use.operation_label.as_str())
             .or_default()
             .push(block_use);
+    }
+    let mut sketch_preceding_named_point_uses_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPrecedingNamedPointUse>>::new();
+    for point_use in sketch_preceding_named_point_uses {
+        sketch_preceding_named_point_uses_by_operation
+            .entry(point_use.operation_label.as_str())
+            .or_default()
+            .push(point_use);
     }
     let mut sketch_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchPointUse>>::new();
@@ -6926,6 +6955,17 @@ fn attach_feature_operations(
             source_properties.insert(
                 format!("sketch_named_point_block_use.{ordinal}"),
                 block_use.id.clone(),
+            );
+        }
+        for (ordinal, point_use) in sketch_preceding_named_point_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("sketch_preceding_named_point_use.{ordinal}"),
+                point_use.id.clone(),
             );
         }
         for (ordinal, point_use) in sketch_point_uses_by_operation

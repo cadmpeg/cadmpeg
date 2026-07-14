@@ -1892,6 +1892,85 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
 }
 
 #[test]
+fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane() {
+    use crate::native::{
+        feature_sketch_preceding_named_point_uses, FeatureSketchReference, OffsetStoreNamedPoint,
+    };
+
+    let reference = |ordinal, terminal, block: Option<&str>| FeatureSketchReference {
+        id: format!("reference-{ordinal}"),
+        operation_label: "nx:feature-history:operation-label#1-4".to_string(),
+        ordinal,
+        declared_count: 2,
+        terminal,
+        object_index: 12 + ordinal,
+        data_block: block.map(str::to_string),
+        source_offset: 300 + u64::from(ordinal),
+    };
+    let references = [
+        reference(0, false, Some("nx:om-data-blocks-2:block#12")),
+        reference(1, true, Some("nx:om-data-blocks-2:block#13")),
+    ];
+    let point = |id: &str, blocks: &[&str]| OffsetStoreNamedPoint {
+        id: id.to_string(),
+        name: "Point1".to_string(),
+        data_blocks: blocks.iter().map(|block| (*block).to_string()).collect(),
+        values: [1.0, 2.0],
+        value_source_offsets: [200, 220],
+        source_offset: 190,
+    };
+    let preceding = point(
+        "nx:offset-store:named-point#2-10",
+        &[
+            "nx:om-data-blocks-2:block#10",
+            "nx:om-data-blocks-2:block#11",
+        ],
+    );
+    let uses =
+        feature_sketch_preceding_named_point_uses(&references, std::slice::from_ref(&preceding));
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].first_sketch_reference, references[0].id);
+    assert_eq!(uses[0].named_point, preceding.id);
+    assert_eq!(uses[0].following_data_block, "nx:om-data-blocks-2:block#12");
+
+    let ambiguous = point(
+        "nx:offset-store:named-point#2-11",
+        &["nx:om-data-blocks-2:block#11"],
+    );
+    assert!(feature_sketch_preceding_named_point_uses(
+        &references,
+        &[preceding.clone(), ambiguous]
+    )
+    .is_empty());
+    let gap = point(
+        "nx:offset-store:named-point#2-9",
+        &["nx:om-data-blocks-2:block#9"],
+    );
+    let other_store = point(
+        "nx:offset-store:named-point#3-11",
+        &["nx:om-data-blocks-3:block#11"],
+    );
+    assert!(feature_sketch_preceding_named_point_uses(&references, &[gap, other_store]).is_empty());
+
+    let unresolved = [references[0].clone(), reference(1, true, None)];
+    assert!(
+        feature_sketch_preceding_named_point_uses(&unresolved, &[preceding.clone()]).is_empty()
+    );
+    let noncontiguous = [
+        references[0].clone(),
+        reference(2, true, Some("nx:om-data-blocks-2:block#13")),
+    ];
+    assert!(
+        feature_sketch_preceding_named_point_uses(&noncontiguous, &[preceding.clone()]).is_empty()
+    );
+    let bad_terminal = [
+        references[0].clone(),
+        reference(1, false, Some("nx:om-data-blocks-2:block#13")),
+    ];
+    assert!(feature_sketch_preceding_named_point_uses(&bad_terminal, &[preceding]).is_empty());
+}
+
+#[test]
 fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     use crate::native::{
         feature_sketch_point_groups, feature_sketch_point_uses, FeatureSketchNamedPointBlockUse,
