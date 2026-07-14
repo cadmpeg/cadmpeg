@@ -95,10 +95,8 @@ pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<F
     if body_start >= end {
         return Vec::new();
     }
-    let positions: Vec<usize> = data[body_start..end]
-        .windows(FINJPL_MARKER.len())
-        .enumerate()
-        .filter_map(|(relative, bytes)| (bytes == FINJPL_MARKER).then_some(body_start + relative))
+    let positions: Vec<usize> = memchr::memmem::find_iter(&data[body_start..end], FINJPL_MARKER)
+        .map(|relative| body_start + relative)
         .collect();
     positions
         .iter()
@@ -139,8 +137,13 @@ fn finjpl_primary_name(data: &[u8], pos: usize, end: usize) -> Option<String> {
 /// boundary; incidental JPEG signatures outside this segment family are ignored.
 #[must_use]
 pub fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
-    finjpl_segments(data, 0, data.len())
-        .into_iter()
+    let segments = finjpl_segments(data, 0, data.len());
+    preview_images_in_segments(data, &segments)
+}
+
+fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<PreviewImage> {
+    segments
+        .iter()
         .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
         .filter_map(|segment| {
             let bytes = &data[segment.range.clone()];
@@ -163,10 +166,18 @@ pub fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
 /// the version instead of selecting by position.
 #[must_use]
 pub fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
-    let mut versions = finjpl_segments(data, 0, data.len())
-        .into_iter()
+    let segments = finjpl_segments(data, 0, data.len());
+    last_save_version_in_segments(data, &segments)
+}
+
+fn last_save_version_in_segments(
+    data: &[u8],
+    segments: &[FinjplSegment],
+) -> Option<LastSaveVersion> {
+    let mut versions = segments
+        .iter()
         .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
-        .filter_map(|segment| parse_last_save_version(&data[segment.range]))
+        .filter_map(|segment| parse_last_save_version(&data[segment.range.clone()]))
         .collect::<Vec<_>>();
     versions.dedup();
     (versions.len() == 1).then(|| versions.remove(0))
@@ -176,9 +187,17 @@ pub fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
 /// project-flags segments.
 #[must_use]
 pub fn external_references(data: &[u8]) -> Vec<ExternalReference> {
+    let segments = finjpl_segments(data, 0, data.len());
+    external_references_in_segments(data, &segments)
+}
+
+fn external_references_in_segments(
+    data: &[u8],
+    segments: &[FinjplSegment],
+) -> Vec<ExternalReference> {
     const STORAGE: &[u8] = b"\x34\x12CATStorageProperty";
-    finjpl_segments(data, 0, data.len())
-        .into_iter()
+    segments
+        .iter()
         .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
         .flat_map(|segment| {
             let bytes = &data[segment.range.clone()];
@@ -335,6 +354,11 @@ fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
 /// `0x0000_008e` breaking ties.
 #[must_use]
 pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
+    let segments = finjpl_segments(data, 0, data.len());
+    e5_record_stream_in_segments(data, &segments)
+}
+
+fn e5_record_stream_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Option<Range<usize>> {
     if !data.starts_with(OUTER_MAGIC) {
         return None;
     }
@@ -354,11 +378,16 @@ pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
         return Some(preamble);
     }
 
-    finjpl_segments(data, directory_length, data.len())
-        .into_iter()
+    segments
+        .iter()
+        .filter(|segment| segment.range.start >= directory_length)
         .filter_map(|segment| {
             let count = count_e5_records(&data[segment.range.clone()]);
-            (count >= 10).then_some((count, segment.type_word == 0x0000_008e, segment.range))
+            (count >= 10).then_some((
+                count,
+                segment.type_word == 0x0000_008e,
+                segment.range.clone(),
+            ))
         })
         .max_by_key(|(count, preferred, _)| (*count, *preferred))
         .map(|(_, _, range)| range)
@@ -527,10 +556,7 @@ fn count_subslice(haystack: &[u8], needle: &[u8]) -> usize {
     if needle.is_empty() || haystack.len() < needle.len() {
         return 0;
     }
-    haystack
-        .windows(needle.len())
-        .filter(|w| *w == needle)
-        .count()
+    memchr::memmem::find_iter(haystack, needle).count()
 }
 
 /// Parse the nested-container stream directory by the self-consistency scan
@@ -790,10 +816,10 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let outer = parse_outer_stream_directory(&data);
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
-    let previews = preview_images(&data);
-    let last_save_version = last_save_version(&data);
-    let external_references = external_references(&data);
     let finjpl_segments = finjpl_segments(&data, 0, data.len());
+    let previews = preview_images_in_segments(&data, &finjpl_segments);
+    let last_save_version = last_save_version_in_segments(&data, &finjpl_segments);
+    let external_references = external_references_in_segments(&data, &finjpl_segments);
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
@@ -810,7 +836,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         inner.as_ref(),
         brep.as_deref(),
         &census,
-        e5_record_stream(&data).is_some(),
+        e5_record_stream_in_segments(&data, &finjpl_segments).is_some(),
     );
 
     ContainerScan {
