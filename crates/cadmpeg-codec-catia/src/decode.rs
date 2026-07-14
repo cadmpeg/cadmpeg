@@ -1158,9 +1158,9 @@ mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
-        fit_rank_one_e5_plane_axes, include_native_endpoint_pairs, intersection_line_direction,
-        ordered_range, point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
-        resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
+        e5_boundary_curve, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
+        intersection_line_direction, ordered_range, point_on_known_surface, quintic_jet_pcurve,
+        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
@@ -1247,6 +1247,36 @@ mod chart_tests {
             [0, 1],
         );
         assert_eq!(range, Some([0.0, 5.0]));
+    }
+
+    #[test]
+    fn e5_cylinder_isoparametric_boundary_lifts_to_circle_carrier() {
+        let surface = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let pcurve = PcurveGeometry::Line {
+            origin: cadmpeg_ir::math::Point2::new(0.0, 3.0),
+            direction: cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        };
+        let (curve, range) = e5_boundary_curve(
+            &surface,
+            &pcurve,
+            [0.0, std::f64::consts::FRAC_PI_2],
+            [Point3::new(2.0, 0.0, 3.0), Point3::new(0.0, 2.0, 3.0)],
+        )
+        .expect("cylinder boundary circle");
+        assert!(matches!(
+            curve,
+            CurveGeometry::Circle {
+                center,
+                radius,
+                ..
+            } if center == Point3::new(0.0, 0.0, 3.0) && radius == 2.0
+        ));
+        assert!((range[1] - range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     }
 
     #[test]
@@ -1765,6 +1795,7 @@ fn transfer_e5_topology(
         .collect();
 
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
+    let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
     for face in &topology.faces {
         let Some((_, decoded_surface)) = surface_for_ref.get(&face.surface) else {
             return false;
@@ -1798,6 +1829,22 @@ fn transfer_e5_topology(
                     point_distance(endpoints[0], *end).max(point_distance(endpoints[1], *start));
                 if forward.min(reversed) > 2e-3 {
                     return false;
+                }
+                if !support.intersection {
+                    if let Some((curve, mut curve_range)) =
+                        e5_boundary_curve(&decoded_surface.geometry, &geometry, range, endpoints)
+                    {
+                        if reversed < forward {
+                            curve_range.swap(0, 1);
+                        }
+                        if let Some(existing) = edge_curve_plan.get(&edge_ref) {
+                            if existing != &(curve, curve_range) {
+                                return false;
+                            }
+                        } else {
+                            edge_curve_plan.insert(edge_ref, (curve, curve_range));
+                        }
+                    }
                 }
                 if let Some((existing, existing_range)) = pcurve_plan.get(&pcurve_ref) {
                     if existing != &geometry || existing_range != &range {
@@ -1845,6 +1892,27 @@ fn transfer_e5_topology(
         .keys()
         .map(|record_id| (*record_id, EdgeId(format!("catia:e5:edge#{record_id}"))))
         .collect();
+    let edge_curve_ids: HashMap<u32, CurveId> = edge_curve_plan
+        .iter()
+        .map(|(&record_id, (geometry, _))| {
+            let id = CurveId(format!("catia:e5:curve#{record_id}"));
+            annotate(
+                annotations,
+                &id,
+                "e5_0d_03",
+                0,
+                "lifted_boundary_curve",
+                Exactness::Derived,
+            );
+            annotations.derived(&id, "geometry");
+            ir.model.curves.push(Curve {
+                id: id.clone(),
+                geometry: geometry.clone(),
+                source_object: None,
+            });
+            (record_id, id)
+        })
+        .collect();
     for (&record_id, edge) in &topology.edges {
         let id = edge_ids[&record_id].clone();
         annotate(
@@ -1858,12 +1926,17 @@ fn transfer_e5_topology(
         for field in ["start", "end"] {
             annotations.derived(&id, field);
         }
+        if edge_curve_ids.contains_key(&record_id) {
+            annotations
+                .derived(&id, "curve")
+                .derived(&id, "param_range");
+        }
         ir.model.edges.push(Edge {
             id,
-            curve: None,
+            curve: edge_curve_ids.get(&record_id).cloned(),
             start: vertex_for_ref[&edge.start_vertex].clone(),
             end: vertex_for_ref[&edge.end_vertex].clone(),
-            param_range: None,
+            param_range: edge_curve_plan.get(&record_id).map(|(_, range)| *range),
             tolerance: None,
         });
     }
@@ -2154,6 +2227,184 @@ fn e5_pcurve_on_surface(
         }
         _ => None,
     }
+}
+
+fn e5_boundary_curve(
+    surface: &SurfaceGeometry,
+    pcurve: &PcurveGeometry,
+    range: [f64; 2],
+    endpoints: [Point3; 2],
+) -> Option<(CurveGeometry, [f64; 2])> {
+    let PcurveGeometry::Line { origin, direction } = pcurve else {
+        return None;
+    };
+    let start_uv = Point2::new(
+        origin.u + range[0] * direction.u,
+        origin.v + range[0] * direction.v,
+    );
+    let span = range[1] - range[0];
+    let span_direction = Point2::new(span * direction.u, span * direction.v);
+
+    let circle = if direction.v.abs() <= 1e-12 && direction.u.abs() > 1e-12 {
+        e5_constant_v_circle(surface, start_uv.v)
+    } else if direction.u.abs() <= 1e-12 && direction.v.abs() > 1e-12 {
+        e5_constant_u_circle(surface, start_uv.u)
+    } else {
+        None
+    };
+    if let Some((center, radius, axis)) = circle {
+        let candidates = [axis, scale_vector(axis, -1.0)]
+            .into_iter()
+            .filter_map(|axis| {
+                let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
+                let range = circle_parameter_range_from_surface_branch(
+                    surface,
+                    center,
+                    radius,
+                    axis,
+                    ref_direction,
+                    endpoints[0],
+                    endpoints[1],
+                    start_uv,
+                    span_direction,
+                )?;
+                Some((axis, ref_direction, canonical_periodic_range(range)?))
+            })
+            .collect::<Vec<_>>();
+        let [(axis, ref_direction, curve_range)] = candidates.as_slice() else {
+            return None;
+        };
+        return Some((
+            CurveGeometry::Circle {
+                center,
+                axis: *axis,
+                ref_direction: *ref_direction,
+                radius,
+            },
+            *curve_range,
+        ));
+    }
+
+    if !(matches!(surface, SurfaceGeometry::Plane { .. })
+        || (direction.u.abs() <= 1e-12
+            && matches!(
+                surface,
+                SurfaceGeometry::Cylinder { .. } | SurfaceGeometry::Cone { .. }
+            )))
+    {
+        return None;
+    }
+    let delta = point_delta(endpoints[1], endpoints[0]);
+    let length = vector_norm(delta);
+    (length > f64::EPSILON).then_some((
+        CurveGeometry::Line {
+            origin: endpoints[0],
+            direction: scale_vector(delta, 1.0 / length),
+        },
+        [0.0, length],
+    ))
+}
+
+fn e5_constant_v_circle(surface: &SurfaceGeometry, v: f64) -> Option<(Point3, f64, Vector3)> {
+    match surface {
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        } => Some((add_scaled_point(*origin, *axis, v), *radius, *axis)),
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            radius,
+            half_angle,
+            ..
+        } => Some((
+            add_scaled_point(*origin, *axis, v),
+            (radius + v * half_angle.tan()).abs(),
+            *axis,
+        )),
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            radius,
+            ..
+        } => Some((
+            add_scaled_point(*center, *axis, radius * v.sin()),
+            radius * v.cos().abs(),
+            *axis,
+        )),
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => Some((
+            add_scaled_point(*center, *axis, minor_radius * v.sin()),
+            (major_radius + minor_radius * v.cos()).abs(),
+            *axis,
+        )),
+        _ => None,
+    }
+}
+
+fn e5_constant_u_circle(surface: &SurfaceGeometry, u: f64) -> Option<(Point3, f64, Vector3)> {
+    match surface {
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            radius,
+            ref_direction,
+        } => {
+            let tangent = cross_vector(*axis, *ref_direction);
+            let radial = add_vectors(
+                scale_vector(*ref_direction, u.cos()),
+                scale_vector(tangent, u.sin()),
+            );
+            Some((*center, *radius, cross_vector(*axis, radial)))
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let tangent = cross_vector(*axis, *ref_direction);
+            let radial = add_vectors(
+                scale_vector(*ref_direction, u.cos()),
+                scale_vector(tangent, u.sin()),
+            );
+            Some((
+                add_scaled_point(*center, radial, *major_radius),
+                *minor_radius,
+                cross_vector(*axis, radial),
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn add_scaled_point(point: Point3, vector: Vector3, scale: f64) -> Point3 {
+    Point3::new(
+        point.x + scale * vector.x,
+        point.y + scale * vector.y,
+        point.z + scale * vector.z,
+    )
+}
+
+fn add_vectors(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(left.x + right.x, left.y + right.y, left.z + right.z)
+}
+
+fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
+    let sweep = range[1] - range[0];
+    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + 1e-9 {
+        return None;
+    }
+    let start = range[0].rem_euclid(std::f64::consts::TAU);
+    Some([start, start + sweep])
 }
 
 fn rational_pcurve_arc(center: [f64; 2], radius: f64, range: [f64; 2]) -> Option<PcurveGeometry> {
@@ -3966,7 +4217,7 @@ fn standard_pcurve_geometry(
 
 fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
     let delta = short_end - start;
-    if delta.abs() <= 1e-9 || (delta.abs() - std::f64::consts::PI).abs() <= 1e-9 {
+    if delta.abs() <= 1e-9 {
         return None;
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
@@ -4240,20 +4491,34 @@ fn build_standard_edge_curve(
             {
                 return (None, None);
             }
-            let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
-            let param_range = standard_circle_param_range(
-                ir,
-                bindings,
-                surface_indices,
-                brep,
-                support,
-                *center,
-                *radius,
-                axis,
-                ref_direction,
-                start,
-                end,
-            );
+            let candidates = [axis, scale_vector(axis, -1.0)]
+                .into_iter()
+                .filter_map(|axis| {
+                    let ref_direction = cadmpeg_ir::geometry::derive_reference_direction(axis);
+                    let range = standard_circle_param_range(
+                        ir,
+                        bindings,
+                        surface_indices,
+                        brep,
+                        support,
+                        *center,
+                        *radius,
+                        axis,
+                        ref_direction,
+                        start,
+                        end,
+                    )?;
+                    Some((axis, ref_direction, canonical_periodic_range(range)?))
+                })
+                .collect::<Vec<_>>();
+            let (axis, ref_direction, param_range) = match candidates.as_slice() {
+                [(axis, reference, range)] => (*axis, *reference, Some(*range)),
+                _ => (
+                    axis,
+                    cadmpeg_ir::geometry::derive_reference_direction(axis),
+                    None,
+                ),
+            };
             (
                 CurveGeometry::Circle {
                     center: *center,
@@ -4364,7 +4629,7 @@ fn circle_parameter_range_from_surface_branch(
     let start = angle(start);
     let short_end = unwrap_angle(angle(end), start);
     let delta = short_end - start;
-    if delta.abs() <= 1e-9 || (delta.abs() - std::f64::consts::PI).abs() <= 1e-9 {
+    if delta.abs() <= 1e-9 {
         return None;
     }
     let long_end = short_end - delta.signum() * std::f64::consts::TAU;
