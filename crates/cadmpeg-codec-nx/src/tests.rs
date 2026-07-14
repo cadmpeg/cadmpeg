@@ -3407,6 +3407,45 @@ fn topology_partition_stream() -> Vec<u8> {
 }
 
 #[test]
+fn topology_retains_entity_attribute_list_references() {
+    let mut stream = topology_partition_stream();
+    for (kind, attribute) in [(14, 41), (15, 42), (17, 43), (16, 44), (18, 45)] {
+        let at = stream
+            .windows(2)
+            .position(|window| window == [0, kind])
+            .expect("topology record");
+        put_ref(&mut stream, at + if kind == 17 { 4 } else { 8 }, attribute);
+    }
+
+    let graph = crate::topology::Graph::parse(&stream);
+    assert_eq!(
+        graph.get(14, 4).unwrap().face_fields().unwrap().attributes,
+        41
+    );
+    assert_eq!(
+        graph.get(15, 5).unwrap().loop_fields().unwrap().attributes,
+        42
+    );
+    assert_eq!(
+        graph.get(17, 7).unwrap().fin_fields().unwrap().attributes,
+        43
+    );
+    assert_eq!(
+        graph.get(16, 8).unwrap().edge_fields().unwrap().attributes,
+        44
+    );
+    assert_eq!(
+        graph
+            .get(18, 10)
+            .unwrap()
+            .vertex_fields()
+            .unwrap()
+            .attributes,
+        45
+    );
+}
+
+#[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
     let graph = crate::topology::Graph::parse(&valid);

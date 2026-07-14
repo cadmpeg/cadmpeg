@@ -27,6 +27,8 @@ pub struct Node {
 /// Decoded fields needed from a sequentially framed FACE record.
 #[derive(Debug, Clone, Copy)]
 pub struct FaceFields {
+    /// Attribute-list reference.
+    pub attributes: u32,
     /// Face tolerance in Parasolid metres.
     pub tolerance: f64,
     /// Next face in the owning shell, or the null reference.
@@ -46,6 +48,8 @@ pub struct FaceFields {
 /// Decoded fields needed from a sequentially framed EDGE record.
 #[derive(Debug, Clone, Copy)]
 pub struct EdgeFields {
+    /// Attribute-list reference.
+    pub attributes: u32,
     /// Edge tolerance in Parasolid metres.
     pub tolerance: f64,
     /// First fin reference.
@@ -79,6 +83,8 @@ pub struct ShellFields {
 /// Sequentially decoded LOOP references.
 #[derive(Debug, Clone, Copy)]
 pub struct LoopFields {
+    /// Attribute-list reference.
+    pub attributes: u32,
     /// First fin in the loop.
     pub fin: u32,
     /// Owning face.
@@ -90,6 +96,8 @@ pub struct LoopFields {
 /// Sequentially decoded FIN references and sense.
 #[derive(Debug, Clone, Copy)]
 pub struct FinFields {
+    /// Attribute-list reference.
+    pub attributes: u32,
     /// Owning loop.
     pub loop_xmt: u32,
     /// Forward fin in the ring.
@@ -111,6 +119,8 @@ pub struct FinFields {
 /// Sequentially decoded VERTEX fields.
 #[derive(Debug, Clone, Copy)]
 pub struct VertexFields {
+    /// Attribute-list reference.
+    pub attributes: u32,
     /// Referenced point record.
     pub point: u32,
     /// Vertex tolerance in Parasolid metres.
@@ -188,13 +198,14 @@ impl Node {
     pub fn face_fields(&self) -> Option<FaceFields> {
         (self.kind == 14).then_some(())?;
         let mut at = 8 + self.shift;
-        read_and_advance(&self.bytes, &mut at)?;
+        let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = be::f64_at(&self.bytes, at)?;
         at += 8;
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
         let sense = *self.bytes.get(at)?;
         matches!(sense, b'+' | b'-').then_some(())?;
         Some(FaceFields {
+            attributes,
             tolerance,
             next_face: refs[0],
             previous_face: refs[1],
@@ -209,11 +220,12 @@ impl Node {
     pub fn edge_fields(&self) -> Option<EdgeFields> {
         (self.kind == 16).then_some(())?;
         let mut at = 8 + self.shift;
-        read_and_advance(&self.bytes, &mut at)?;
+        let attributes = read_and_advance(&self.bytes, &mut at)?;
         let tolerance = be::f64_at(&self.bytes, at)?;
         at += 8;
         let refs = read_sequence_at(&self.bytes, &mut at, 7)?;
         Some(EdgeFields {
+            attributes,
             tolerance,
             fin: refs[0],
             curve: refs[3],
@@ -243,6 +255,7 @@ impl Node {
         let mut at = 8 + self.shift;
         let refs = read_sequence_at(&self.bytes, &mut at, 4)?;
         Some(LoopFields {
+            attributes: refs[0],
             fin: refs[1],
             face: refs[2],
             next_loop: refs[3],
@@ -257,6 +270,7 @@ impl Node {
         let sense = *self.bytes.get(at)?;
         matches!(sense, b'+' | b'-').then_some(())?;
         Some(FinFields {
+            attributes: refs[0],
             loop_xmt: refs[1],
             forward: refs[2],
             backward: refs[3],
@@ -275,6 +289,7 @@ impl Node {
         let refs = read_sequence_at(&self.bytes, &mut at, 5)?;
         let tolerance = be::f64_at(&self.bytes, at)?;
         Some(VertexFields {
+            attributes: refs[0],
             point: refs[4],
             tolerance,
         })
