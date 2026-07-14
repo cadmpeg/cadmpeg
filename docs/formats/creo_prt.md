@@ -1166,4 +1166,7 @@ The pointer is a configuration-root record even when it is null. A referenced
 form retains the canonical entity identifier; interpreting the referenced
 driver-table rows requires their table grammar.
 
+A null pointer establishes that the part has no family-table configurations.
+It is a complete configuration state, not an undecoded table.
+
 Unix-compress streams with header `1f 9d 10` grow code width from 9 to 16 bits. Code 256 is a literal dictionary entry rather than a clear code.

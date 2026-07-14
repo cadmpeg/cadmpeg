@@ -15264,6 +15264,15 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
                 crate::container::FamilyTablePointer::Entity(id) => format!("entity:{id}"),
             },
         );
+        attributes.insert(
+            "configuration_state".to_string(),
+            match family_table.pointer {
+                crate::container::FamilyTablePointer::Null => "none".to_string(),
+                crate::container::FamilyTablePointer::Entity(_) => {
+                    "driver_table_unresolved".to_string()
+                }
+            },
+        );
     }
     attributes.insert(
         "decoded_pcurve_count".to_string(),
@@ -15697,16 +15706,39 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         provenance: None,
     });
 
+    if scan
+        .family_table
+        .is_some_and(|record| record.pointer == crate::container::FamilyTablePointer::Null)
+    {
+        losses.push(LossNote {
+            category: LossCategory::Attribute,
+            severity: Severity::Info,
+            message: "FamilyInf declares a null configuration driver-table pointer; the part has \
+                      no family-table configurations."
+                .to_string(),
+            provenance: None,
+        });
+    }
+
+    let configuration_gap = match scan.family_table.map(|record| record.pointer) {
+        Some(crate::container::FamilyTablePointer::Null) => "",
+        Some(crate::container::FamilyTablePointer::Entity(_)) => {
+            ", configuration driver-table rows"
+        }
+        None => ", configuration presence",
+    };
+
     // Features, history, materials.
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Named feature operations and their decoded dependency/input tables transfer as \
-                  typed or native design records. Curve-equation assignments transfer with their \
-                  source, dependencies, and closed arithmetic values. Full neutral operation \
-                  semantics, configurations, remaining expression families, materials, and \
-                  display data remain untransferred."
-            .to_string(),
+        message: format!(
+            "Named feature operations and their decoded dependency/input tables transfer as typed \
+             or native design records. Curve-equation assignments transfer with their source, \
+             dependencies, and closed arithmetic values. Full neutral operation semantics\
+             {configuration_gap}, remaining expression families, materials, and display data \
+             remain untransferred."
+        ),
         provenance: None,
     });
 

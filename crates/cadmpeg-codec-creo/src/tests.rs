@@ -4059,6 +4059,13 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     assert_eq!(configuration[0].id, "creo:family_info:driver_table#root");
     assert_eq!(configuration[0].fields["pointer_kind"], "null");
     assert!(configuration[0].fields["table_entity_id"].is_null());
+    assert_eq!(
+        decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
+        "none"
+    );
+    assert!(decoded.report.losses.iter().any(|loss| loss
+        .message
+        .contains("the part has no family-table configurations")));
 
     let referenced_data = build_prt(
         "c",
@@ -4077,6 +4084,10 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
     let configuration = &decoded.ir.native.namespace("creo").unwrap().arenas["configuration"];
     assert_eq!(configuration[0].fields["pointer_kind"], "entity_reference");
     assert_eq!(configuration[0].fields["table_entity_id"], 0x0123);
+    assert_eq!(
+        decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
+        "driver_table_unresolved"
+    );
 }
 
 #[test]
