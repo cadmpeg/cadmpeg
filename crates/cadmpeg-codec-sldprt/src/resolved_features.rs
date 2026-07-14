@@ -473,14 +473,37 @@ mod marker_tests {
             links: Vec::new(),
             link_selector: None,
         };
+        for tag in [0x837b, 0xbc7c] {
+            assert_eq!(
+                resolve_operand_marker(
+                    std::slice::from_ref(&marker),
+                    FeatureInputOperandKind::Native(tag),
+                    16,
+                )
+                .map(|resolved| resolved.id.as_str()),
+                Some("line-locus")
+            );
+        }
+        let mut markers = vec![marker];
+        markers.extend((0..3).map(|index| SketchInputEntity {
+            id: format!("point-{index}"),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: index,
+            offset: u64::from(index + 1),
+            object_index: None,
+            local_id: Some(10 + index),
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m: Some([f64::from(index), 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        }));
+        markers[0].local_id = Some(1);
         assert_eq!(
-            resolve_operand_marker(
-                std::slice::from_ref(&marker),
-                FeatureInputOperandKind::Native(0x837b),
-                16,
-            )
-            .map(|resolved| resolved.id.as_str()),
-            Some("line-locus")
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0xbc7c), 1)
+                .map(|resolved| resolved.id.as_str()),
+            Some("point-1")
         );
     }
 
@@ -1977,7 +2000,28 @@ fn resolve_operand_marker_excluding<'a>(
                     Some(*entity)
                 }
                 [] if operand_allows_compatible_ordinal_fallback(kind) => {
-                    compatible.get(usize::from(address)).copied()
+                    compatible.get(usize::from(address)).copied().or_else(|| {
+                        (kind == FeatureInputOperandKind::Native(0xbc7c))
+                            .then(|| {
+                                entities
+                                    .iter()
+                                    .copied()
+                                    .filter(|entity| {
+                                        matches!(
+                                            entity.kind,
+                                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                                        ) && entity.local_id == Some(u32::from(address))
+                                            && !excluded.contains(&entity.id)
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .and_then(|candidates| {
+                                let [candidate] = candidates.as_slice() else {
+                                    return None;
+                                };
+                                Some(*candidate)
+                            })
+                    })
                 }
                 _ => None,
             }
