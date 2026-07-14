@@ -8884,7 +8884,7 @@ fn decode_yields_metadata_and_honest_report() {
     assert_eq!(result.ir.tolerances.linear, 1e-6);
     assert_f3d_native_parity(&result.ir);
     assert!(result
-        .ir
+        .source_fidelity
         .annotations
         .provenance
         .contains_key(&unknowns[0].id.0));
@@ -8994,10 +8994,11 @@ fn decode_builds_valid_topology_and_geometry() {
         .all(|metadata| metadata.sense == cadmpeg_ir::topology::Sense::Forward));
     assert_f3d_native_parity(&result.ir);
     assert!(result
-        .ir
+        .source_fidelity
         .annotations
         .provenance
         .contains_key(&result.ir.model.bodies[0].id.0));
+    assert_eq!(result.ir.annotations, cadmpeg_ir::Annotations::default());
 
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir.model.surfaces[0].geometry {

@@ -36,7 +36,7 @@ pub fn decode(
         populate_annotations(&mut ir, &scan, &F3dNative::default(), None);
         preserve_source_image(&scan, &mut ir)?;
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return Ok(decode_result(ir, report));
     }
 
     // `try_decode_brep` returns `Some` after producing carriers or points.
@@ -145,7 +145,7 @@ pub fn decode(
                 Some((&active.name, &annotation_records)),
             );
             preserve_source_image(&scan, &mut ir)?;
-            return Ok(DecodeResult::new(ir, report));
+            return Ok(decode_result(ir, report));
         }
     }
 
@@ -191,7 +191,19 @@ pub fn decode(
     populate_annotations(&mut ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult::new(ir, report))
+    Ok(decode_result(ir, report))
+}
+
+fn decode_result(mut ir: CadIr, report: DecodeReport) -> DecodeResult {
+    let annotations = std::mem::take(&mut ir.annotations);
+    DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        cadmpeg_ir::SourceFidelity {
+            annotations,
+            ..cadmpeg_ir::SourceFidelity::default()
+        },
+    )
 }
 
 fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> Result<(), CodecError> {
