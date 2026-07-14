@@ -10,11 +10,12 @@ use cadmpeg_ir::features::{
     BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
     DesignParameter, EdgeSelection, Extent, ExtrusionDirectionSource, ExtrusionFaceMaker, Feature,
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw,
-    HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper,
-    Length, ParameterId, ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternStage,
-    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
-    RevolutionConstruction, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
-    SketchSpace, SweepMode, SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
+    HelixConstructionStyle, HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification,
+    HoleThreadDepth, InnerWireTaper, Length, ParameterId, ParameterValue, PathRef, PatternKind,
+    PatternScaleCenter, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef,
+    RadiusSpec, RevolutionAxis, RevolutionConstruction, RuledCurveOrientation, ScaleCenter,
+    ScaleFactors, ShellJoin, ShellMode, SketchSpace, SweepMode, SweepOrientation,
+    SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -149,6 +150,14 @@ pub(crate) fn transfer(
             })
         } else if is_helical_sweep(&object.type_name) {
             helical_sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if matches!(object.type_name.as_str(), "Part::Helix" | "Part::Spiral") {
+            parametric_helix_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -1661,6 +1670,63 @@ fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3
     ))
 }
 
+fn parametric_helix_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Option<FeatureDefinition> {
+    let radius = scalar_named(properties, "Radius").filter(|value| *value > 0.0)?;
+    let segment_turns = if property(properties, "SegmentLength").is_some() {
+        let value = scalar_named(properties, "SegmentLength").filter(|value| *value >= 0.0)?;
+        (value > 0.0).then_some(value)
+    } else {
+        None
+    };
+    let (pitch, revolutions, clockwise, radial_growth, cone_angle, construction_style) =
+        if kind == "Part::Helix" {
+            let pitch = scalar_named(properties, "Pitch").filter(|value| *value > 0.0)?;
+            let height = scalar_named(properties, "Height").filter(|value| *value > 0.0)?;
+            let angle = scalar_named(properties, "Angle").unwrap_or(0.0);
+            if !angle.is_finite() || angle.abs() >= 90.0 {
+                return None;
+            }
+            let clockwise = match integer_property(properties, "LocalCoord").unwrap_or(0) {
+                0 => false,
+                1 => true,
+                _ => return None,
+            };
+            let construction_style = match integer_property(properties, "Style") {
+                None => None,
+                Some(0) => Some(HelixConstructionStyle::Legacy),
+                Some(1) => Some(HelixConstructionStyle::Corrected),
+                Some(_) => return None,
+            };
+            (
+                pitch,
+                height / pitch,
+                clockwise,
+                None,
+                (angle != 0.0).then_some(cadmpeg_ir::features::Angle(angle.to_radians())),
+                construction_style,
+            )
+        } else {
+            let growth = scalar_named(properties, "Growth").filter(|value| *value >= 0.0)?;
+            let revolutions = scalar_named(properties, "Rotations").filter(|value| *value > 0.0)?;
+            (0.0, revolutions, false, Some(Length(growth)), None, None)
+        };
+    (revolutions.is_finite() && revolutions > 0.0).then_some(FeatureDefinition::Helix {
+        axis_origin: Point3::new(0.0, 0.0, 0.0),
+        axis_direction: Vector3::new(0.0, 0.0, 1.0),
+        radius: Length(radius),
+        pitch: Length(pitch),
+        revolutions,
+        clockwise,
+        radial_growth,
+        cone_angle,
+        segment_turns,
+        construction_style,
+    })
+}
+
 fn extrusion_definition(
     kind: &str,
     properties: &[&PropertyRecord],
@@ -3144,6 +3210,9 @@ fn is_helical_sweep(kind: &str) -> bool {
         "PartDesign::AdditiveHelix" | "PartDesign::SubtractiveHelix"
     )
 }
+fn is_parametric_helix(kind: &str) -> bool {
+    matches!(kind, "Part::Helix" | "Part::Spiral")
+}
 fn is_binder(kind: &str) -> bool {
     matches!(
         kind,
@@ -3184,6 +3253,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_loft(kind)
         || is_sweep(kind)
         || is_helical_sweep(kind)
+        || is_parametric_helix(kind)
         || is_binder(kind)
         || is_pattern(kind)
         || kind == "Part::Scale"

@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "27");
+    assert_eq!(result.ir.ir_version, "28");
     let feature = |name: &str| {
         &result
             .ir
@@ -567,6 +567,76 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             .all(|finding| finding.check != cadmpeg_ir::Check::GeometricConsistency),
         "{findings:#?}"
     );
+}
+
+#[test]
+fn transfers_parametric_part_helix_and_spiral_construction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="Part::Helix" name="Helix" id="1"/>
+ <Object type="Part::Spiral" name="Spiral" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Helix"><Properties Count="7">
+  <Property name="Pitch" type="App::PropertyLength"><Float value="4"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="20"/></Property>
+  <Property name="Radius" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="12"/></Property>
+  <Property name="SegmentLength" type="App::PropertyQuantity"><Float value="0.5"/></Property>
+  <Property name="LocalCoord" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Style" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+ </Properties></Object>
+ <Object name="Spiral"><Properties Count="4">
+  <Property name="Growth" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Radius" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="Rotations" type="App::PropertyQuantity"><Float value="3.5"/></Property>
+  <Property name="SegmentLength" type="App::PropertyQuantity"><Float value="0.25"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("parametric curves");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    assert!(matches!(
+        definition("Helix"),
+        cadmpeg_ir::features::FeatureDefinition::Helix {
+            radius: cadmpeg_ir::features::Length(3.0),
+            pitch: cadmpeg_ir::features::Length(4.0),
+            revolutions: 5.0,
+            clockwise: true,
+            cone_angle: Some(cadmpeg_ir::features::Angle(angle)),
+            segment_turns: Some(0.5),
+            construction_style: Some(cadmpeg_ir::features::HelixConstructionStyle::Corrected),
+            radial_growth: None,
+            ..
+        } if (*angle - 12_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("Spiral"),
+        cadmpeg_ir::features::FeatureDefinition::Helix {
+            radius: cadmpeg_ir::features::Length(5.0),
+            pitch: cadmpeg_ir::features::Length(0.0),
+            revolutions: 3.5,
+            radial_growth: Some(cadmpeg_ir::features::Length(2.0)),
+            cone_angle: None,
+            segment_turns: Some(0.25),
+            construction_style: None,
+            ..
+        }
+    ));
+    assert!(result.report.losses.is_empty());
 }
 
 #[test]

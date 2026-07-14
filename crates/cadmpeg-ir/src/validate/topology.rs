@@ -2229,6 +2229,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 radius,
                 pitch,
                 revolutions,
+                radial_growth,
+                cone_angle,
+                segment_turns,
                 ..
             } => {
                 let valid = [axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
@@ -2238,7 +2241,13 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     && radius.0.is_finite()
                     && radius.0 > 0.0
                     && revolutions.is_finite()
-                    && *revolutions > 0.0;
+                    && *revolutions > 0.0
+                    && radial_growth.is_none_or(|value| value.0.is_finite())
+                    && cone_angle.is_none_or(|value| {
+                        value.0.is_finite() && value.0.abs() < std::f64::consts::FRAC_PI_2
+                    })
+                    && segment_turns.is_none_or(|value| value.is_finite() && value > 0.0)
+                    && !(radial_growth.is_some() && cone_angle.is_some());
                 if !valid {
                     feature_geometry_error(findings, feature, "helix geometry is invalid");
                 }

@@ -380,6 +380,12 @@ plane as an origin and unit normal. When present, the native plane, face, or cir
 supplied that resolved plane remains attached for attribution and dependency recovery. A missing
 source or zero-length normal leaves the operation attributable and native.
 
+Parametric Part helices retain radius, pitch, height-derived revolution count, handedness, conical
+angle, optional curve-subdivision length, and legacy-versus-corrected construction style. Planar
+Part spirals use the same neutral curve family with zero axial pitch and retain radius growth per
+revolution, total rotations, and subdivision length. Invalid dimensions or enumeration values
+leave the operation attributable and native.
+
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class

@@ -339,6 +339,18 @@ pub enum FeatureDefinition {
         revolutions: f64,
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
+        /// Radial growth per revolution for a planar spiral, when non-cylindrical.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        radial_growth: Option<Length>,
+        /// Cone half-angle for a conical helix, when non-cylindrical.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cone_angle: Option<Angle>,
+        /// Number of turns per generated curve subdivision, when requested.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        segment_turns: Option<f64>,
+        /// Persisted construction algorithm generation, when selectable.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        construction_style: Option<HelixConstructionStyle>,
     },
     /// Circular helix with retained native axis placement.
     HelixNativeAxis {
@@ -1429,6 +1441,16 @@ pub enum InnerWireTaper {
     Inverted,
     /// Inner wires taper in the same direction as outer wires.
     SameAsOuter,
+}
+
+/// Persisted construction algorithm used for a parametric helix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum HelixConstructionStyle {
+    /// Historical construction retained for document compatibility.
+    Legacy,
+    /// Corrected construction used by newly created features.
+    Corrected,
 }
 
 /// Boolean effect of a solid-producing feature.

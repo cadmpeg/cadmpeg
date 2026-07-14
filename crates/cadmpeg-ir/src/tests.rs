@@ -2360,6 +2360,10 @@ fn feature_operation_geometry_is_validated() {
             pitch: Length(f64::NAN),
             revolutions: 0.0,
             clockwise: false,
+            radial_growth: None,
+            cone_angle: None,
+            segment_turns: None,
+            construction_style: None,
         },
         FeatureDefinition::HelixNativeAxis {
             axis_native_ref: String::new(),

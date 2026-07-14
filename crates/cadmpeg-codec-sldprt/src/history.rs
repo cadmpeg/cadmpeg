@@ -1515,6 +1515,10 @@ fn project_helix(feature: &Feature) -> Option<FeatureDefinition> {
         pitch: Length(pitch),
         revolutions,
         clockwise,
+        radial_growth: None,
+        cone_angle: None,
+        segment_turns: None,
+        construction_style: None,
     })
 }
 
@@ -4353,7 +4357,21 @@ pub fn sync_neutral_features(
                 pitch,
                 revolutions,
                 clockwise,
+                radial_growth,
+                cone_angle,
+                segment_turns,
+                construction_style,
             } => {
+                if radial_growth.is_some()
+                    || cone_angle.is_some()
+                    || segment_turns.is_some()
+                    || construction_style.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses unsupported helix construction controls",
+                        feature.id
+                    )));
+                }
                 if ![axis_origin.x, axis_origin.y, axis_origin.z, pitch.0]
                     .into_iter()
                     .all(f64::is_finite)

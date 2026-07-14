@@ -9596,6 +9596,7 @@ fn semantic_writer_round_trips_helix() {
             pitch: Length(-2.0),
             revolutions: 3.5,
             clockwise: true,
+            ..
         }
     ));
 
@@ -9606,6 +9607,7 @@ fn semantic_writer_round_trips_helix() {
         pitch,
         revolutions,
         clockwise,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed helix");
@@ -9651,6 +9653,7 @@ fn semantic_writer_round_trips_helix() {
             pitch: Length(8.0),
             revolutions: 9.25,
             clockwise: false,
+            ..
         }
     ));
 }
@@ -9691,6 +9694,7 @@ fn semantic_writer_round_trips_slash_named_helix() {
         pitch,
         revolutions,
         clockwise,
+        ..
     } = &mut decoded.ir.model.features[0].definition
     else {
         panic!("typed helix");
