@@ -2867,8 +2867,13 @@ fn attach_standard_topology(
                     changed |= options[edge] != previous;
                 }
             }
-            if let Some(boundary_domains) =
-                topology::standard_mesh_prune_endpoint_candidates(brep, &edge_faces, options)
+            if let Some(boundary_domains) = options
+                .iter()
+                .all(|domain| !domain.is_empty())
+                .then(|| {
+                    topology::standard_mesh_prune_endpoint_candidates(brep, &edge_faces, options)
+                })
+                .flatten()
             {
                 for (edge, domain) in boundary_domains.into_iter().enumerate() {
                     let previous = options[edge].clone();
@@ -3051,6 +3056,10 @@ fn attach_standard_topology(
     {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
+    } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
+        topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options)
+    }) {
+        bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
         const MAX_INCIDENCE_SEARCH_WORK: usize = 1_000_000;
 
@@ -3090,7 +3099,9 @@ fn attach_standard_topology(
     if edge_vertices.iter().enumerate().any(|(edge, vertices)| {
         let start = point_assignment[vertices[0]];
         let end = point_assignment[vertices[1]];
-        !endpoint_candidates[edge].contains(&start) || !endpoint_candidates[edge].contains(&end)
+        !endpoint_candidates[edge].is_empty()
+            && (!endpoint_candidates[edge].contains(&start)
+                || !endpoint_candidates[edge].contains(&end))
     }) {
         return false;
     }

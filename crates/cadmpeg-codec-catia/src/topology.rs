@@ -2438,6 +2438,355 @@ fn reconstruct_mesh_selection(
     })
 }
 
+#[derive(Clone)]
+struct MeshQuotient {
+    union: UnionFind,
+    domains: Vec<HashSet<usize>>,
+}
+
+impl MeshQuotient {
+    fn root_count(&mut self) -> usize {
+        (0..self.union.len())
+            .filter(|node| self.union.find(*node) == *node)
+            .count()
+    }
+
+    fn merge(&mut self, left: usize, right: usize) -> Option<()> {
+        let left = self.union.find(left);
+        let right = self.union.find(right);
+        if left == right {
+            return Some(());
+        }
+        let intersection = self.domains[left]
+            .intersection(&self.domains[right])
+            .copied()
+            .collect::<HashSet<_>>();
+        if intersection.is_empty() {
+            return None;
+        }
+        self.union.union(left, right);
+        let root = self.union.find(left);
+        self.domains[root] = intersection;
+        Some(())
+    }
+
+    fn apply_face(
+        &mut self,
+        assignment: &MeshFaceBoundaryAssignment,
+        directions: &[Vec<bool>],
+    ) -> Option<()> {
+        if assignment.boundaries.len() != directions.len() {
+            return None;
+        }
+        for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
+            if boundary.len() != directions.len() || boundary.is_empty() {
+                return None;
+            }
+            for use_index in 0..boundary.len() {
+                let current = boundary[use_index];
+                let next = boundary[(use_index + 1) % boundary.len()];
+                let current_reversed = directions[use_index];
+                let next_reversed = directions[(use_index + 1) % boundary.len()];
+                if current
+                    .reversed
+                    .is_some_and(|stored| stored != current_reversed)
+                    || next.reversed.is_some_and(|stored| stored != next_reversed)
+                {
+                    return None;
+                }
+                let current_end = current
+                    .edge
+                    .checked_mul(2)?
+                    .checked_add(usize::from(!current_reversed))?;
+                let next_start = next
+                    .edge
+                    .checked_mul(2)?
+                    .checked_add(usize::from(next_reversed))?;
+                self.merge(current_end, next_start)?;
+            }
+        }
+        Some(())
+    }
+
+    fn point_assignment(&mut self, point_count: usize) -> Option<HashMap<usize, usize>> {
+        let mut roots = Vec::new();
+        for node in 0..self.union.len() {
+            let root = self.union.find(node);
+            if root == node {
+                roots.push(root);
+            }
+        }
+        if roots.len() != point_count {
+            return None;
+        }
+        let domains = roots
+            .iter()
+            .map(|root| self.domains[*root].clone())
+            .collect::<Vec<_>>();
+        let mut solutions = Vec::new();
+        unique_bijections(
+            &domains,
+            &mut vec![None; domains.len()],
+            &mut HashSet::new(),
+            &mut solutions,
+        );
+        (solutions.len() == 1).then(|| roots.into_iter().zip(solutions.remove(0)).collect())
+    }
+}
+
+struct MeshSelectionSearch<'a> {
+    assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
+    face_work: Vec<Option<usize>>,
+    edge_candidates: &'a [Vec<[usize; 2]>],
+    edge_rows: &'a [EdgeRow],
+    vertex_points: &'a [[f64; 3]],
+    selected: Vec<Option<(usize, Vec<Vec<bool>>)>>,
+    states: usize,
+    solution: Option<(StandardTopology, Vec<usize>)>,
+}
+
+impl MeshSelectionSearch<'_> {
+    fn direction_count(assignment: &MeshFaceBoundaryAssignment) -> Option<usize> {
+        const MAX_DIRECTIONS_PER_ASSIGNMENT: usize = 4_096;
+
+        let unresolved = assignment
+            .boundaries
+            .iter()
+            .flatten()
+            .filter(|use_| use_.reversed.is_none())
+            .count();
+        let count = 1usize.checked_shl(u32::try_from(unresolved).ok()?)?;
+        (count <= MAX_DIRECTIONS_PER_ASSIGNMENT).then_some(count)
+    }
+
+    fn directions(assignment: &MeshFaceBoundaryAssignment) -> Option<Vec<Vec<Vec<bool>>>> {
+        let count = Self::direction_count(assignment)?;
+        Some(
+            (0..count)
+                .map(|mask| {
+                    let mut bit = 0usize;
+                    assignment
+                        .boundaries
+                        .iter()
+                        .map(|boundary| {
+                            boundary
+                                .iter()
+                                .map(|use_| {
+                                    use_.reversed.unwrap_or_else(|| {
+                                        let reversed = mask & (1 << bit) != 0;
+                                        bit += 1;
+                                        reversed
+                                    })
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect(),
+        )
+    }
+
+    fn search(&mut self, quotient: &MeshQuotient) {
+        const MAX_SELECTION_STATES: usize = 64;
+
+        if self.solution.is_some() || self.states >= MAX_SELECTION_STATES {
+            return;
+        }
+        self.states += 1;
+        let mut measured = quotient.clone();
+        let root_count = measured.root_count();
+        if root_count < self.vertex_points.len() {
+            return;
+        }
+        let remaining_merges = self
+            .selected
+            .iter()
+            .enumerate()
+            .filter(|(_, selected)| selected.is_none())
+            .filter_map(|(face, _)| self.assignments[face].first())
+            .flat_map(|assignment| &assignment.boundaries)
+            .map(Vec::len)
+            .sum::<usize>();
+        if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
+            return;
+        }
+        let next = self
+            .selected
+            .iter()
+            .enumerate()
+            .filter(|(_, selected)| selected.is_none())
+            .filter_map(|(face, _)| {
+                let work = self.face_work[face]?;
+                let assignment = self.assignments[face].first()?;
+                let constrained = assignment
+                    .boundaries
+                    .iter()
+                    .flatten()
+                    .filter(|use_| {
+                        let left = measured.union.find(use_.edge * 2);
+                        let right = measured.union.find(use_.edge * 2 + 1);
+                        measured.domains[left].len() < self.vertex_points.len()
+                            || measured.domains[right].len() < self.vertex_points.len()
+                    })
+                    .count();
+                Some((usize::MAX - constrained, work, face))
+            })
+            .min();
+        let Some((_, _, face)) = next else {
+            let mut quotient = quotient.clone();
+            let Some(root_points) = quotient.point_assignment(self.vertex_points.len()) else {
+                return;
+            };
+            let selected = self.selected.iter().cloned().collect::<Option<Vec<_>>>();
+            let Some(selected) = selected else {
+                return;
+            };
+            let assignment_indices = selected.iter().map(|(index, _)| *index).collect::<Vec<_>>();
+            let directions = selected
+                .into_iter()
+                .map(|(_, directions)| directions)
+                .collect::<Vec<_>>();
+            let selected_assignments = self
+                .assignments
+                .iter()
+                .zip(&assignment_indices)
+                .map(|(assignments, &index)| assignments.get(index).cloned())
+                .collect::<Option<Vec<_>>>();
+            let Some(selected_assignments) = selected_assignments else {
+                return;
+            };
+            self.solution = reconstruct_mesh_selection(
+                self.edge_rows.to_vec(),
+                self.vertex_points.to_vec(),
+                &selected_assignments,
+                &directions,
+            )
+            .and_then(|topology| {
+                let edge_vertices = topology.edge_vertices()?;
+                let mut point_assignment = vec![None; topology.logical_vertex_count];
+                for (edge, vertices) in edge_vertices.into_iter().enumerate() {
+                    for (port, vertex) in vertices.into_iter().enumerate() {
+                        let root = quotient.union.find(edge * 2 + port);
+                        let point = *root_points.get(&root)?;
+                        match point_assignment[vertex] {
+                            Some(stored) if stored != point => return None,
+                            Some(_) => {}
+                            None => point_assignment[vertex] = Some(point),
+                        }
+                    }
+                    let points = <[usize; 2]>::try_from(
+                        vertices
+                            .map(|vertex| point_assignment[vertex])
+                            .into_iter()
+                            .collect::<Option<Vec<_>>>()?,
+                    )
+                    .ok()?;
+                    if points[0] == points[1]
+                        || (!self.edge_candidates[edge].is_empty()
+                            && !self.edge_candidates[edge]
+                                .iter()
+                                .any(|candidate| same_unordered_pair(*candidate, points)))
+                    {
+                        return None;
+                    }
+                }
+                Some((
+                    topology,
+                    point_assignment.into_iter().collect::<Option<Vec<_>>>()?,
+                ))
+            });
+            return;
+        };
+        for assignment_index in 0..self.assignments[face].len() {
+            let assignment = &self.assignments[face][assignment_index];
+            let Some(directions) = Self::directions(assignment) else {
+                continue;
+            };
+            for directions in directions {
+                let mut next_quotient = quotient.clone();
+                if next_quotient.apply_face(assignment, &directions).is_none() {
+                    continue;
+                }
+                self.selected[face] = Some((assignment_index, directions));
+                self.search(&next_quotient);
+                self.selected[face] = None;
+                if self.solution.is_some() || self.states >= MAX_SELECTION_STATES {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+/// Resolve standard trim assignments through their abstract physical-port
+/// quotient before binding the quotient bijectively to coordinate rows.
+#[must_use]
+pub fn parse_standard_mesh_endpoint_candidates(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+) -> Option<(StandardTopology, Vec<usize>)> {
+    const MAX_SELECTION_WORK: usize = 100_000;
+
+    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    if edge_rows.len() != edge_faces.len() || edge_rows.len() != edge_candidates.len() {
+        return None;
+    }
+    let all_points = (0..vertex_points.len()).collect::<HashSet<_>>();
+    let mut domains = Vec::with_capacity(edge_rows.len() * 2);
+    for candidates in edge_candidates {
+        let domain = if candidates.is_empty() {
+            all_points.clone()
+        } else {
+            candidates.iter().flatten().copied().collect::<HashSet<_>>()
+        };
+        if domain.is_empty() || domain.iter().any(|point| *point >= vertex_points.len()) {
+            return None;
+        }
+        domains.push(domain.clone());
+        domains.push(domain);
+    }
+    let assignments = standard_mesh_boundary_assignments(bytes, edge_faces)?;
+    if assignments.len() != face_count {
+        return None;
+    }
+    let face_work = assignments
+        .iter()
+        .map(|assignments| {
+            assignments.iter().try_fold(0usize, |work, assignment| {
+                work.checked_add(MeshSelectionSearch::direction_count(assignment)?)
+            })
+        })
+        .collect::<Vec<_>>();
+    let total_work = face_work
+        .iter()
+        .copied()
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .try_fold(0usize, usize::checked_add)?;
+    if total_work > MAX_SELECTION_WORK {
+        return None;
+    }
+    let mut search = MeshSelectionSearch {
+        assignments: &assignments,
+        face_work,
+        edge_candidates,
+        edge_rows: &edge_rows,
+        vertex_points: &vertex_points,
+        selected: vec![None; face_count],
+        states: 0,
+        solution: None,
+    };
+    let quotient = MeshQuotient {
+        union: UnionFind::new(edge_rows.len() * 2),
+        domains,
+    };
+    search.search(&quotient);
+    search.solution
+}
+
 fn parse_fbb_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize, usize)> {
     [3, 2, 1]
         .into_iter()
@@ -2963,7 +3312,7 @@ fn cover_cycle_by_rows(cycle: &[u32], rows: &[EdgeRow], union: &mut UnionFind) -
     Some(Boundary { coedges })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct UnionFind {
     parents: Vec<usize>,
 }

@@ -299,6 +299,26 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
         selected.edge_vertices().expect("selected edge vertices"),
         [[0, 1], [1, 2], [2, 3], [3, 0]]
     );
+    let (searched, point_assignment) = crate::topology::parse_standard_mesh_endpoint_candidates(
+        &bytes,
+        &[[0, 0]; 4],
+        &[Vec::new(), vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+    )
+    .expect("abstract mesh quotient search");
+    assert_eq!(searched.logical_vertex_count(), 4);
+    assert_eq!(
+        searched
+            .edge_vertices()
+            .expect("searched edge vertices")
+            .into_iter()
+            .map(|vertices| {
+                let mut points = vertices.map(|vertex| point_assignment[vertex]);
+                points.sort_unstable();
+                points
+            })
+            .collect::<Vec<_>>(),
+        [[0, 1], [1, 2], [2, 3], [0, 3]]
+    );
     let cycle_domains = crate::topology::standard_mesh_prune_endpoint_candidates(
         &bytes,
         &[[0, 0]; 4],
