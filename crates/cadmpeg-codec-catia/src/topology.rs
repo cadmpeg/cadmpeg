@@ -2470,42 +2470,102 @@ impl MeshQuotient {
         Some(())
     }
 
-    fn apply_face(
-        &mut self,
+    fn assignment_options(
+        &self,
         assignment: &MeshFaceBoundaryAssignment,
-        directions: &[Vec<bool>],
-    ) -> Option<()> {
-        if assignment.boundaries.len() != directions.len() {
-            return None;
+    ) -> Vec<(Vec<Vec<bool>>, Self)> {
+        const MAX_ORIENTED_OPTIONS: usize = 4_096;
+
+        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
         }
-        for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
-            if boundary.len() != directions.len() || boundary.is_empty() {
-                return None;
-            }
-            for use_index in 0..boundary.len() {
-                let current = boundary[use_index];
-                let next = boundary[(use_index + 1) % boundary.len()];
-                let current_reversed = directions[use_index];
-                let next_reversed = directions[(use_index + 1) % boundary.len()];
-                if current
-                    .reversed
-                    .is_some_and(|stored| stored != current_reversed)
-                    || next.reversed.is_some_and(|stored| stored != next_reversed)
-                {
-                    return None;
+
+        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge
+                .checked_mul(2)?
+                .checked_add(usize::from(!reversed))
+        }
+
+        fn boundary_options(
+            quotient: &MeshQuotient,
+            boundary: &[MeshBoundaryEdgeCandidate],
+        ) -> Vec<(Vec<bool>, MeshQuotient)> {
+            fn walk(
+                boundary: &[MeshBoundaryEdgeCandidate],
+                at: usize,
+                directions: &mut Vec<bool>,
+                quotient: &MeshQuotient,
+                output: &mut Vec<(Vec<bool>, MeshQuotient)>,
+            ) {
+                if output.len() >= MAX_ORIENTED_OPTIONS {
+                    return;
                 }
-                let current_end = current
-                    .edge
-                    .checked_mul(2)?
-                    .checked_add(usize::from(!current_reversed))?;
-                let next_start = next
-                    .edge
-                    .checked_mul(2)?
-                    .checked_add(usize::from(next_reversed))?;
-                self.merge(current_end, next_start)?;
+                if at == boundary.len() {
+                    let mut quotient = quotient.clone();
+                    let Some(last_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
+                        return;
+                    };
+                    let Some(first_start) = edge_start(boundary[0], directions[0]) else {
+                        return;
+                    };
+                    if quotient.merge(last_end, first_start).is_some() {
+                        output.push((directions.clone(), quotient));
+                    }
+                    return;
+                }
+                let choices = boundary[at]
+                    .reversed
+                    .map_or([Some(false), Some(true)], |value| [Some(value), None]);
+                for reversed in choices.into_iter().flatten() {
+                    let mut quotient = quotient.clone();
+                    if at > 0 {
+                        let Some(previous_end) = edge_end(boundary[at - 1], directions[at - 1])
+                        else {
+                            continue;
+                        };
+                        let Some(current_start) = edge_start(boundary[at], reversed) else {
+                            continue;
+                        };
+                        if quotient.merge(previous_end, current_start).is_none() {
+                            continue;
+                        }
+                    }
+                    directions.push(reversed);
+                    walk(boundary, at + 1, directions, &quotient, output);
+                    directions.pop();
+                }
+            }
+
+            if boundary.is_empty() {
+                return Vec::new();
+            }
+            let mut output = Vec::new();
+            walk(boundary, 0, &mut Vec::new(), quotient, &mut output);
+            output
+        }
+
+        let mut options = vec![(Vec::new(), self.clone())];
+        for boundary in &assignment.boundaries {
+            let mut next = Vec::new();
+            for (directions, quotient) in options {
+                for (boundary_directions, quotient) in boundary_options(&quotient, boundary) {
+                    let mut directions = directions.clone();
+                    directions.push(boundary_directions);
+                    next.push((directions, quotient));
+                    if next.len() >= MAX_ORIENTED_OPTIONS {
+                        break;
+                    }
+                }
+                if next.len() >= MAX_ORIENTED_OPTIONS {
+                    break;
+                }
+            }
+            options = next;
+            if options.is_empty() {
+                break;
             }
         }
-        Some(())
+        options
     }
 
     fn point_assignment(&mut self, point_count: usize) -> Option<HashMap<usize, usize>> {
@@ -2546,46 +2606,6 @@ struct MeshSelectionSearch<'a> {
 }
 
 impl MeshSelectionSearch<'_> {
-    fn direction_count(assignment: &MeshFaceBoundaryAssignment) -> Option<usize> {
-        const MAX_DIRECTIONS_PER_ASSIGNMENT: usize = 4_096;
-
-        let unresolved = assignment
-            .boundaries
-            .iter()
-            .flatten()
-            .filter(|use_| use_.reversed.is_none())
-            .count();
-        let count = 1usize.checked_shl(u32::try_from(unresolved).ok()?)?;
-        (count <= MAX_DIRECTIONS_PER_ASSIGNMENT).then_some(count)
-    }
-
-    fn directions(assignment: &MeshFaceBoundaryAssignment) -> Option<Vec<Vec<Vec<bool>>>> {
-        let count = Self::direction_count(assignment)?;
-        Some(
-            (0..count)
-                .map(|mask| {
-                    let mut bit = 0usize;
-                    assignment
-                        .boundaries
-                        .iter()
-                        .map(|boundary| {
-                            boundary
-                                .iter()
-                                .map(|use_| {
-                                    use_.reversed.unwrap_or_else(|| {
-                                        let reversed = mask & (1 << bit) != 0;
-                                        bit += 1;
-                                        reversed
-                                    })
-                                })
-                                .collect::<Vec<_>>()
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .collect(),
-        )
-    }
-
     fn search(&mut self, quotient: &MeshQuotient) {
         const MAX_SELECTION_STATES: usize = 64;
 
@@ -2699,14 +2719,7 @@ impl MeshSelectionSearch<'_> {
         };
         for assignment_index in 0..self.assignments[face].len() {
             let assignment = &self.assignments[face][assignment_index];
-            let Some(directions) = Self::directions(assignment) else {
-                continue;
-            };
-            for directions in directions {
-                let mut next_quotient = quotient.clone();
-                if next_quotient.apply_face(assignment, &directions).is_none() {
-                    continue;
-                }
+            for (directions, next_quotient) in quotient.assignment_options(assignment) {
                 self.selected[face] = Some((assignment_index, directions));
                 self.search(&next_quotient);
                 self.selected[face] = None;
@@ -2754,11 +2767,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
     }
     let face_work = assignments
         .iter()
-        .map(|assignments| {
-            assignments.iter().try_fold(0usize, |work, assignment| {
-                work.checked_add(MeshSelectionSearch::direction_count(assignment)?)
-            })
-        })
+        .map(|assignments| Some(assignments.len()))
         .collect::<Vec<_>>();
     let total_work = face_work
         .iter()
