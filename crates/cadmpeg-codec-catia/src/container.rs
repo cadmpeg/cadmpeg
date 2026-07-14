@@ -412,12 +412,12 @@ pub mod role {
     pub const FINJPL_SEGMENT: &str = "finjpl-segment";
 }
 
-/// One physical extent of a logical stream. `phys_off` is measured from the inner
-/// magic (absolute file offset = `inner + phys_off`).
+/// One physical extent of a logical stream. `phys_off` is measured from the
+/// directory's physical storage base.
 #[derive(Debug, Clone)]
 pub struct Extent {
-    /// Physical byte offset from the inner `V5_CFV2` magic (absolute file
-    /// offset = `inner + phys_off`).
+    /// Physical byte offset from the storage base. The base is zero for an
+    /// outer directory and the nested magic offset for an inner directory.
     pub phys_off: u32,
     /// Physical byte length of this extent.
     pub phys_len: u32,
@@ -443,7 +443,8 @@ pub struct Descriptor {
     pub extents: Vec<Extent>,
 }
 
-/// The parsed inner sub-container directory.
+/// A parsed stream directory. `inner` is the physical storage base: zero for
+/// the outer directory and the nested `V5_CFV2` offset for an inner directory.
 #[derive(Debug, Clone)]
 pub struct InnerDir {
     /// File offset of the inner `V5_CFV2` magic.
@@ -477,6 +478,9 @@ pub struct ContainerScan {
     pub outer_dir_offset: u32,
     /// Outer directory length (big-endian, from `+12`).
     pub outer_dir_length: u32,
+    /// Parsed outer stream directory. Its descriptor physical offsets are
+    /// absolute because `inner == 0`.
+    pub outer: Option<InnerDir>,
     /// Parsed inner directory, when the file is nested and cataloguable.
     pub inner: Option<InnerDir>,
     /// Reconstructed BREP stream (largest `MainDataStream` + `SurfacicReps`).
@@ -551,7 +555,32 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
     if b == 0 || dir_offset + b_usize > data.len() {
         return None;
     }
-    let dirbuf = &data[dir_offset..dir_offset + b_usize];
+    parse_directory_region(data, inner, dir_offset, b_usize)
+}
+
+/// Parse the outer `CATIA_V5 CB0001` stream directory. Physical extent offsets
+/// in its descriptors are absolute file offsets.
+#[must_use]
+pub fn parse_outer_stream_directory(data: &[u8]) -> Option<InnerDir> {
+    let dir_offset = usize::try_from(u32_be(data, 8)?).ok()?;
+    let dir_length = usize::try_from(u32_be(data, 12)?).ok()?;
+    (dir_offset.checked_add(dir_length)? == data.len()).then_some(())?;
+    parse_directory_region(data, 0, dir_offset, dir_length)
+}
+
+fn parse_directory_region(
+    data: &[u8],
+    physical_base: usize,
+    dir_offset: usize,
+    dir_length: usize,
+) -> Option<InnerDir> {
+    if dir_length == 0
+        || dir_offset.checked_add(dir_length)? > data.len()
+        || data.get(dir_offset..dir_offset + 16) != Some(DIR_MAGIC)
+    {
+        return None;
+    }
+    let dirbuf = &data[dir_offset..dir_offset + dir_length];
     let file_len = data.len();
     let mut descriptors = Vec::new();
 
@@ -564,7 +593,7 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
             break;
         };
         if (1..=64).contains(&k) && o + 4 + 20 * k <= dirbuf.len() {
-            if let Some((extents, cum)) = parse_extents(dirbuf, o, k, inner, file_len) {
+            if let Some((extents, cum)) = parse_extents(dirbuf, o, k, physical_base, file_len) {
                 if cum > 0 && o >= 0x50 {
                     let ds = o - 0x50;
                     let logical_length = u32_be(dirbuf, ds + 0x0c).unwrap_or(0);
@@ -586,7 +615,7 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
         return None;
     }
     Some(InnerDir {
-        inner,
+        inner: physical_base,
         dir_offset,
         descriptors,
     })
@@ -599,7 +628,7 @@ fn parse_extents(
     dirbuf: &[u8],
     o: usize,
     k: usize,
-    inner: usize,
+    physical_base: usize,
     file_len: usize,
 ) -> Option<(Vec<Extent>, usize)> {
     let mut extents = Vec::with_capacity(k);
@@ -612,7 +641,7 @@ fn parse_extents(
         let log_off = u32_be(dirbuf, base + 12)?;
         let flags = u32_be(dirbuf, base + 16)?;
         if phys_len == 0
-            || inner + phys_off as usize + phys_len as usize > file_len
+            || physical_base + phys_off as usize + phys_len as usize > file_len
             || log_off as usize != cum
             || log_len != phys_len
         {
@@ -758,6 +787,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let outer_dir_offset = u32_be(&data, 8).unwrap_or(0);
     let outer_dir_length = u32_be(&data, 12).unwrap_or(0);
 
+    let outer = parse_outer_stream_directory(&data);
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let previews = preview_images(&data);
@@ -787,6 +817,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         data,
         outer_dir_offset,
         outer_dir_length,
+        outer,
         inner,
         brep,
         previews,
@@ -798,20 +829,25 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     }
 }
 
-/// Build a [`ContainerSummary`] enumerating the inner directory's named streams
-/// and the identified variant.
+/// Build a [`ContainerSummary`] enumerating the outer and inner directories'
+/// streams and the identified variant.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut entries = Vec::new();
 
-    if let Some(dir) = &scan.inner {
+    for (directory, dir) in [
+        ("outer", scan.outer.as_ref()),
+        ("inner", scan.inner.as_ref()),
+    ] {
+        let Some(dir) = dir else { continue };
         for d in &dir.descriptors {
             let mut attributes = BTreeMap::new();
+            attributes.insert("directory".to_string(), directory.to_string());
             attributes.insert("desc_offset".to_string(), d.desc_offset.to_string());
             attributes.insert("extent_count".to_string(), d.extents.len().to_string());
             let phys: u64 = d.extents.iter().map(|e| e.phys_len as u64).sum();
             entries.push(ContainerEntry {
                 name: if d.name.is_empty() {
-                    format!("stream@{}", d.desc_offset)
+                    format!("{directory}-stream@{}", d.desc_offset)
                 } else {
                     d.name.clone()
                 },
@@ -887,6 +923,13 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         scan.data.len(),
         scan.variant.description(),
     )];
+
+    if let Some(dir) = &scan.outer {
+        notes.push(format!(
+            "outer CATIA_V5 CB0001 directory with {} stream(s)",
+            dir.descriptors.len()
+        ));
+    }
 
     match &scan.inner {
         Some(dir) => notes.push(format!(

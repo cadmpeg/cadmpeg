@@ -177,7 +177,7 @@ See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-op
 
 ### Read profile
 
-- **Container and versions: Partial.** The codec decodes `V5_CFV2` containers, inventories every bounded outer `FINJPL` block by stored name/type/family, reads the saved-by CATIA version/release/service-pack/hot-fix tuple, enumerates CATIA document references, and distinguishes standard-nested, FBB-only, zero-entity, float-packed, E5, and inner-without-directory layouts.
+- **Container and versions: Partial.** The codec decodes `V5_CFV2` containers, enumerates named outer and inner directory streams with reconstructed extents, inventories every bounded outer `FINJPL` block by stored name/type/family, reads the saved-by CATIA version/release/service-pack/hot-fix tuple, enumerates CATIA document references, and distinguishes standard-nested, FBB-only, zero-entity, float-packed, E5, and inner-without-directory layouts.
 - **Geometry: Partial.** Standard-nested files transfer vertices, planes when their bridge records resolve, curved analytic surfaces, supported edge curves, consolidated NURBS carriers, uniquely domain-bound constant-offset constructions, and fit-free rolling-ball surface jets. Other layouts transfer subsets of analytic or freeform carriers.
 - **Topology: Partial.** Standard-nested files can emit a connected body, shell, face, loop, coedge, edge, and vertex graph when trim, support, and endpoint assignment resolve. Other parsed topology families remain disconnected from the common IR.
 - **Tessellation: None.**

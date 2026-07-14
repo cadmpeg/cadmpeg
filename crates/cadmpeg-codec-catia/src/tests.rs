@@ -625,6 +625,22 @@ fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8> {
     f
 }
 
+fn outer_directory_catpart() -> Vec<u8> {
+    let payload = b"outer logical stream";
+    let mut dir = Vec::new();
+    dir.extend_from_slice(DIR_MAGIC);
+    dir.extend_from_slice(&descriptor("RootStorage", 16, payload.len() as u32));
+    dir.extend_from_slice(b"CB__END");
+
+    let mut file = Vec::new();
+    file.extend_from_slice(OUTER_MAGIC);
+    file.extend_from_slice(&be32(16 + payload.len() as u32));
+    file.extend_from_slice(&be32(dir.len() as u32));
+    file.extend_from_slice(payload);
+    file.extend_from_slice(&dir);
+    file
+}
+
 fn tetrahedron_topology_catpart() -> Vec<u8> {
     let mut main = Vec::new();
     let boundaries: [[u16; 9]; 4] = [
@@ -1917,6 +1933,29 @@ fn scan_parses_directory_and_identifies_standard() {
     assert!(scan.census.fbb_runs >= 2);
     assert!(scan.census.edge_delimiters >= 1);
     assert_eq!(scan.census.vertex_markers, 3);
+}
+
+#[test]
+fn scan_parses_outer_directory_with_absolute_extents() {
+    let bytes = outer_directory_catpart();
+    let scan = crate::container::scan_bytes(bytes.clone());
+    let outer = scan.outer.as_ref().expect("outer directory");
+    assert_eq!(outer.inner, 0);
+    assert_eq!(outer.descriptors.len(), 1);
+    let descriptor = &outer.descriptors[0];
+    assert_eq!(descriptor.name, "RootStorage");
+    assert_eq!(
+        crate::container::reconstruct_logical_stream(&bytes, descriptor, outer.inner),
+        b"outer logical stream"
+    );
+
+    let summary = crate::container::summarize(&scan);
+    let entry = summary
+        .entries
+        .iter()
+        .find(|entry| entry.name == "RootStorage")
+        .expect("outer stream summary");
+    assert_eq!(entry.attributes["directory"], "outer");
 }
 
 #[test]
