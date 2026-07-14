@@ -44,6 +44,10 @@ pub(crate) struct AsmDeltaState {
     /// revision identities are normalized to stable entity slots.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub record_table_complete: bool,
+    /// Stable `RecordTable` identities emitted by the ordinary B-rep decoder for
+    /// this historical state.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub topology: Option<AsmHistoricalTopology>,
 }
 
 /// Record revision occupying one stable entity slot at an ASM history state.
@@ -51,6 +55,19 @@ pub(crate) struct AsmDeltaState {
 pub(crate) struct AsmEntityVersion {
     pub entity_ref: i64,
     pub record_ref: i64,
+}
+
+/// Stable entity-slot membership of one re-derived historical B-rep.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalTopology {
+    pub bodies: Vec<i64>,
+    pub regions: Vec<i64>,
+    pub shells: Vec<i64>,
+    pub faces: Vec<i64>,
+    pub loops: Vec<i64>,
+    pub coedges: Vec<i64>,
+    pub edges: Vec<i64>,
+    pub vertices: Vec<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

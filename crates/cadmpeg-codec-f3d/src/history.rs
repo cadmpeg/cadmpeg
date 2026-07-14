@@ -7,7 +7,7 @@
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistory, AsmHistoryRecord,
+    AsmHistoricalTopology, AsmHistory, AsmHistoryRecord,
 };
 use cadmpeg_ir::le::int_at;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -158,6 +158,7 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
             records,
             entity_versions: Vec::new(),
             record_table_complete: false,
+            topology: None,
         });
     }
     bind_snapshot_revision_ids(&mut states);
@@ -328,15 +329,44 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
     let Some(active_records) = framed.get(..active_count) else {
         return;
     };
-    let complete = states
+    let topology = states
         .iter()
-        .map(|state| materialize_record_table(states, state, active_records, bytes, width).is_some())
-        .collect::<Vec<_>>();
-    if complete.iter().all(|complete| *complete) {
-        for state in states {
+        .map(|state| {
+            let records = materialize_record_table(states, state, active_records, bytes, width)?;
+            historical_topology(&crate::brep::decode(&records, bytes, "history"))
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(topology) = topology {
+        for (state, topology) in states.iter_mut().zip(topology) {
             state.record_table_complete = true;
+            state.topology = Some(topology);
         }
     }
+}
+
+fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology> {
+    fn refs<'a>(ids: impl Iterator<Item = &'a str>) -> Option<Vec<i64>> {
+        ids.map(|id| {
+            id.rsplit_once('#')?
+                .1
+                .split(':')
+                .next()?
+                .parse::<i64>()
+                .ok()
+        })
+        .collect()
+    }
+
+    Some(AsmHistoricalTopology {
+        bodies: refs(brep.bodies.iter().map(|entity| entity.id.0.as_str()))?,
+        regions: refs(brep.regions.iter().map(|entity| entity.id.0.as_str()))?,
+        shells: refs(brep.shells.iter().map(|entity| entity.id.0.as_str()))?,
+        faces: refs(brep.faces.iter().map(|entity| entity.id.0.as_str()))?,
+        loops: refs(brep.loops.iter().map(|entity| entity.id.0.as_str()))?,
+        coedges: refs(brep.coedges.iter().map(|entity| entity.id.0.as_str()))?,
+        edges: refs(brep.edges.iter().map(|entity| entity.id.0.as_str()))?,
+        vertices: refs(brep.vertices.iter().map(|entity| entity.id.0.as_str()))?,
+    })
 }
 
 fn materialize_record_table(
@@ -627,6 +657,7 @@ mod tests {
                 .collect(),
             entity_versions: Vec::new(),
             record_table_complete: false,
+            topology: None,
         };
 
         bind_snapshot_revision_ids(std::slice::from_mut(&mut state));
@@ -698,6 +729,7 @@ mod tests {
                 },
             ],
             record_table_complete: false,
+            topology: None,
         };
         let active = ["asmheader", "edge"]
             .into_iter()
@@ -765,6 +797,7 @@ mod tests {
                 records: Vec::new(),
                 entity_versions: Vec::new(),
                 record_table_complete: false,
+                topology: None,
             }
         };
         let mut states = vec![
