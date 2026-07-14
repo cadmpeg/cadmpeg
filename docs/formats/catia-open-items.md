@@ -29,7 +29,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The `a5 03 20` `op1` or persistent-tag reference to serialized-record mapping is unspecified.
 - The field split within the 62-byte numeric tail of `b2/b3/b4 03 62` owner packets and the owner packet's binding to a face record are unspecified.
 - The semantic roles of counted `b2/b3/b4 03 61` references and tails, and the separate long-form `61` payload grammar, are unspecified.
-- The referent role of the width-coded target in `b2/b3/b4 03 5f` links is unspecified.
+- The higher-level object role of each `b2/b3/b4 03 5f` → `62` allocation-linked owner remains unspecified.
 
 ## Object stream
 

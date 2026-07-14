@@ -755,6 +755,16 @@ pub struct B2Link5f {
     pub target: u32,
 }
 
+/// Adjacent class-`0x5f` link and class-`0x62` owner packet joined by their
+/// allocation-successor identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B2LinkedOwner {
+    /// Fixed link immediately preceding the owner packet.
+    pub link: B2Link5f,
+    /// Nine-reference owner packet.
+    pub owner: B2OwnerPacket,
+}
+
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct B2ConeFace {
@@ -1060,6 +1070,34 @@ pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
                     target,
                 },
             )
+        })
+        .collect()
+}
+
+/// Bind immediately adjacent `5f,62` records when the owner's ninth identity
+/// is the checked successor of the link target.
+#[must_use]
+pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
+    let links = b2_links_5f(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let owners = b2_owner_packets(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
+        .windows(2)
+        .filter_map(|window| {
+            let [link_record, owner_record] = window else {
+                return None;
+            };
+            let link = links.get(&link_record.range.start)?;
+            let owner = owners.get(&owner_record.range.start)?;
+            (link.target.checked_add(1) == Some(owner.references[8])).then(|| B2LinkedOwner {
+                link: *link,
+                owner: owner.clone(),
+            })
         })
         .collect()
 }

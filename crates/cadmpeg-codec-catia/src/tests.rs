@@ -991,6 +991,14 @@ fn b2_link_5f_stream() -> Vec<u8> {
     ]
 }
 
+fn b2_linked_owner_stream() -> Vec<u8> {
+    let mut bytes = vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x08, 0xeb, 0x03, 0x03, 0x05,
+    ];
+    bytes.extend_from_slice(&b2_owner_packet_stream());
+    bytes
+}
+
 fn b2_cone_face_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
     for value in 0u8..16 {
@@ -2948,6 +2956,19 @@ fn b2_link_5f_parser_reads_width_coded_target_and_fixed_tail() {
     assert_eq!(links.len(), 1);
     assert_eq!(links[0].header_token, 5);
     assert_eq!(links[0].target, 0x025d);
+}
+
+#[test]
+fn b2_linked_owner_requires_adjacency_and_successor_identity() {
+    let pairs = crate::geometry::b2_linked_owners(&b2_linked_owner_stream());
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].link.target, 1003);
+    assert_eq!(pairs[0].owner.references[8], 1004);
+
+    let mut separated = b2_link_5f_stream();
+    separated.extend_from_slice(&[0xb2, 0x03, 0x2e, 0x01, 0x05, 0x05]);
+    separated.extend_from_slice(&b2_owner_packet_stream());
+    assert!(crate::geometry::b2_linked_owners(&separated).is_empty());
 }
 
 #[test]
