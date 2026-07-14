@@ -222,7 +222,34 @@ fn entity_parameter_end(
         .map_or(record.tokens.len(), |groups| groups.token_start)
 }
 
-fn property_fields_valid(entry: &DirectoryEntry, record: &ParameterRecord, end: usize) -> bool {
+fn generic_property_value_valid(
+    record: &ParameterRecord,
+    index: usize,
+    data_type: i64,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    match data_type {
+        0 => matches!(
+            record.tokens.get(index).map(|token| &token.value),
+            Some(TokenValue::Omitted)
+        ),
+        1 => record.integer(index).is_some(),
+        2 => record.number(index).is_some_and(f64::is_finite),
+        3 => record.string(index).is_some(),
+        4 => existing_pointer(record, index, entries).is_some(),
+        6 => record
+            .integer(index)
+            .is_some_and(|value| matches!(value, 0..=1)),
+        _ => false,
+    }
+}
+
+fn property_fields_valid(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    end: usize,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
     let exact = |count: i64| record.integer(1) == Some(count) && end == count as usize + 2;
     let integer_range = |index, range: std::ops::RangeInclusive<i64>| {
         record
@@ -258,6 +285,58 @@ fn property_fields_valid(entry: &DirectoryEntry, record: &ParameterRecord, end: 
         7 | 8 | 15 => exact(1) && record.string(2).is_some_and(|value| !value.is_empty()),
         9 => exact(4) && (2..=5).all(|index| record.string(index).is_some()),
         10 => exact(6) && (2..=7).all(|index| integer_range(index, 0..=1)),
+        11 => {
+            let dependent_count = record
+                .integer(3)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0 && *count <= end);
+            let independent_count = record
+                .integer(4)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count <= end);
+            let Some((dependent_count, independent_count)) = dependent_count.zip(independent_count)
+            else {
+                return false;
+            };
+            let types_valid = (0..independent_count).all(|offset| integer_range(5 + offset, 1..=8));
+            let counts = (0..independent_count)
+                .map(|offset| {
+                    record
+                        .integer(5 + independent_count + offset)
+                        .and_then(|value| usize::try_from(value).ok())
+                        .filter(|count| *count > 0)
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(counts) = counts else {
+                return false;
+            };
+            let independent_values = counts
+                .iter()
+                .try_fold(0_usize, |total, count| total.checked_add(*count));
+            let point_count = counts
+                .iter()
+                .try_fold(1_usize, |total, count| total.checked_mul(*count));
+            let expected_end = independent_values.zip(point_count).and_then(
+                |(independent_values, point_count)| {
+                    dependent_count
+                        .checked_mul(point_count)
+                        .and_then(|dependent_values| {
+                            5_usize
+                                .checked_add(2 * independent_count)?
+                                .checked_add(independent_values)?
+                                .checked_add(dependent_values)
+                        })
+                },
+            );
+            record
+                .integer(2)
+                .is_some_and(|value| matches!(value, 1..=9999))
+                && types_valid
+                && expected_end == Some(end)
+                && record.integer(1) == i64::try_from(end - 2).ok()
+                && (5 + 2 * independent_count..end)
+                    .all(|index| record.number(index).is_some_and(f64::is_finite))
+        }
         12 | 14 => record
             .integer(1)
             .and_then(|value| usize::try_from(value).ok())
@@ -318,7 +397,7 @@ fn property_fields_valid(entry: &DirectoryEntry, record: &ParameterRecord, end: 
         25 => record
             .integer(3)
             .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
+            .filter(|count| *count > 0 && *count <= end)
             .is_some_and(|count| {
                 exact(i64::try_from(2 + count).unwrap_or_default())
                     && record.string(2).is_some_and(|value| !value.is_empty())
@@ -336,6 +415,20 @@ fn property_fields_valid(entry: &DirectoryEntry, record: &ParameterRecord, end: 
                     .integer(4)
                     .is_some_and(|value| matches!(value, 1..=5 | 5001..=9999))
         }
+        27 => record
+            .integer(3)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+            .is_some_and(|count| {
+                exact(i64::try_from(2 + 2 * count).unwrap_or_default())
+                    && record.string(2).is_some_and(|value| !value.is_empty())
+                    && (0..count).all(|offset| {
+                        let index = 4 + offset * 2;
+                        record.integer(index).is_some_and(|data_type| {
+                            generic_property_value_valid(record, index + 1, data_type, entries)
+                        })
+                    })
+            }),
         _ => false,
     }
 }
@@ -731,9 +824,10 @@ pub(super) fn project(
         })
         .collect::<BTreeMap<_, _>>();
 
-    for entry in directory.iter().filter(|entry| {
-        entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=26)
-    }) {
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=27))
+    {
         handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -747,8 +841,12 @@ pub(super) fn project(
                 .then_some(*sequence)
             })
             .collect::<Vec<_>>();
-        let fields_valid =
-            property_fields_valid(entry, record, entity_parameter_end(record, &entries));
+        let fields_valid = property_fields_valid(
+            entry,
+            record,
+            entity_parameter_end(record, &entries),
+            &entries,
+        );
         let attachment_valid = entry.status.subordinate == 0 || !owners.is_empty();
         let reference_designator_valid = entry.form != 7
             || owners.iter().all(|owner| {
@@ -781,6 +879,7 @@ pub(super) fn project(
                             .is_some_and(|owner| matches!(owner.entity_type, 116 | 132))
                     })
             }
+            27 => entry.status.subordinate == 1 && owners.len() == 1,
             _ => true,
         };
         if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {

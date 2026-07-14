@@ -599,6 +599,29 @@ enum NativePropertyValue {
         finished_diameter: Option<f64>,
         function_code: Option<i64>,
     },
+    TabularData {
+        property_type: Option<i64>,
+        declared_dependent_count: Option<i64>,
+        independent_variables: Vec<NativeIndependentVariable>,
+        dependent_values: Vec<Option<f64>>,
+    },
+    GenericData {
+        name: Option<Vec<u8>>,
+        values: Vec<NativeGenericPropertyValue>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeIndependentVariable {
+    variable_type: Option<i64>,
+    declared_value_count: Option<i64>,
+    values: Vec<Option<f64>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeGenericPropertyValue {
+    data_type: Option<i64>,
+    value: NativeTokenValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2340,15 +2363,17 @@ pub(crate) fn store(
         .collect::<Vec<_>>();
     let properties = directory
         .iter()
-        .filter(|entry| {
-            entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=26)
-        })
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=27))
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
-            let count = record
-                .integer(1)
-                .and_then(|value| usize::try_from(value).ok())
-                .unwrap_or_default();
+            let bounded_count = |index| {
+                record
+                    .integer(index)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .filter(|count| *count <= record.tokens.len())
+                    .unwrap_or_default()
+            };
+            let count = bounded_count(1);
             let strings = |start: usize, count: usize| {
                 (0..count)
                     .map(|offset| record.string(start + offset).map(<[u8]>::to_vec))
@@ -2398,6 +2423,48 @@ pub(crate) fn store(
                     line_weight: record.integer(6),
                     color: record.integer(7),
                 },
+                11 => {
+                    let dependent_count = bounded_count(3);
+                    let independent_count = bounded_count(4);
+                    let counts = (0..independent_count)
+                        .map(|offset| bounded_count(5 + independent_count + offset))
+                        .collect::<Vec<_>>();
+                    let mut cursor = 5 + independent_count * 2;
+                    let independent_variables = counts
+                        .iter()
+                        .enumerate()
+                        .map(|(offset, count)| {
+                            let values = (0..*count)
+                                .map(|index| record.number(cursor + index))
+                                .collect();
+                            cursor += count;
+                            NativeIndependentVariable {
+                                variable_type: record.integer(5 + offset),
+                                declared_value_count: record
+                                    .integer(5 + independent_count + offset),
+                                values,
+                            }
+                        })
+                        .collect();
+                    let point_count = counts
+                        .iter()
+                        .try_fold(1_usize, |product, count| product.checked_mul(*count))
+                        .filter(|count| *count <= record.tokens.len())
+                        .unwrap_or_default()
+                        .max(1);
+                    let dependent_value_count = dependent_count
+                        .checked_mul(point_count)
+                        .filter(|count| *count <= record.tokens.len())
+                        .unwrap_or_default();
+                    NativePropertyValue::TabularData {
+                        property_type: record.integer(2),
+                        declared_dependent_count: record.integer(3),
+                        independent_variables,
+                        dependent_values: (0..dependent_value_count)
+                            .map(|offset| record.number(cursor + offset))
+                            .collect(),
+                    }
+                }
                 12 => NativePropertyValue::ExternalReferenceFileList {
                     names: strings(2, count),
                 },
@@ -2437,10 +2504,7 @@ pub(crate) fn store(
                     name: record.string(3).map(<[u8]>::to_vec),
                 },
                 24 => {
-                    let definition_count = record
-                        .integer(2)
-                        .and_then(|value| usize::try_from(value).ok())
-                        .unwrap_or_default();
+                    let definition_count = bounded_count(2);
                     NativePropertyValue::LevelToLepLayerMap {
                         definitions: (0..definition_count)
                             .map(|offset| {
@@ -2458,10 +2522,7 @@ pub(crate) fn store(
                     }
                 }
                 25 => {
-                    let level_count = record
-                        .integer(3)
-                        .and_then(|value| usize::try_from(value).ok())
-                        .unwrap_or_default();
+                    let level_count = bounded_count(3);
                     NativePropertyValue::LepArtworkStackup {
                         identification: record.string(2).map(<[u8]>::to_vec),
                         levels: (0..level_count)
@@ -2474,6 +2535,25 @@ pub(crate) fn store(
                     finished_diameter: record.number(3),
                     function_code: record.integer(4),
                 },
+                27 => {
+                    let value_count = bounded_count(3);
+                    NativePropertyValue::GenericData {
+                        name: record.string(2).map(<[u8]>::to_vec),
+                        values: (0..value_count)
+                            .map(|offset| {
+                                let index = 4 + offset * 2;
+                                NativeGenericPropertyValue {
+                                    data_type: record.integer(index),
+                                    value: record
+                                        .tokens
+                                        .get(index + 1)
+                                        .map(token)
+                                        .map_or(NativeTokenValue::Omitted, |token| token.value),
+                                }
+                            })
+                            .collect(),
+                    }
+                }
                 _ => return None,
             };
             Some(NativeProperty {

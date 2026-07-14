@@ -2522,6 +2522,32 @@ fn lep_property_forms_file() -> Vec<u8> {
     ])
 }
 
+fn variable_schema_property_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "OWNER".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 27,
+            label: "GENERIC".into(),
+            status: "00010000",
+            parameters: "406,14,4HMETA,6,0,,1,42,2,3.5,3,5HSTEEL,4,1,6,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 11,
+            label: "TABULAR".into(),
+            status: "00000000",
+            parameters: "406,9,5,1,1,2,2,50,25,33,46;".into(),
+        },
+    ])
+}
+
 fn view_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4489,6 +4515,37 @@ fn decode_types_grid_group_and_lep_property_forms() {
     assert_eq!(property(26).fields["function_code"], 5);
     assert_eq!(property(26).fields["owners"][0], "iges:entity:directory#5");
     assert!(lep.report.losses.is_empty(), "{:#?}", lep.report.losses);
+}
+
+#[test]
+fn decode_types_tabular_and_generic_data_properties() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(variable_schema_property_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let properties = &result.ir.native.namespace("iges").unwrap().arenas["properties"];
+    let property = |form| {
+        properties
+            .iter()
+            .find(|value| value.fields["form"] == form)
+            .unwrap()
+    };
+    assert_eq!(property(11).fields["property_kind"], "tabular_data");
+    assert_eq!(
+        property(11).fields["independent_variables"][0]["values"][1],
+        25.0
+    );
+    assert_eq!(property(11).fields["dependent_values"][1], 46.0);
+    assert_eq!(property(27).fields["values"].as_array().unwrap().len(), 6);
+    assert_eq!(property(27).fields["values"][4]["value"]["kind"], "integer");
+    assert_eq!(property(27).fields["owners"][0], "iges:entity:directory#1");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
 }
 
 #[test]
