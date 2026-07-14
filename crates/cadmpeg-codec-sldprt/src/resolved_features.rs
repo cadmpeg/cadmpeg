@@ -252,9 +252,9 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        arc_angle_relation_kind, compact_body_path_at, compact_body_selection_at,
-        compact_body_selection_vector, compact_body_state_ids, compact_edge_selection_at,
-        compact_extrusion_through_all_at, compact_extrusion_to_face_at,
+        arc_angle_relation_kind, compact_body_path_at, compact_body_retention_mode,
+        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
+        compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_surface_selection_at, component_profile_source_at,
         coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
@@ -303,6 +303,36 @@ mod marker_tests {
 
         payload[12 + 15..12 + 19].copy_from_slice(&206u32.to_le_bytes());
         assert!(compact_body_state_ids(&payload, 0, 180, token).is_empty());
+    }
+
+    #[test]
+    fn compact_body_retention_mode_follows_the_state_roster() {
+        use cadmpeg_ir::features::BodyRetentionMode::{DeleteSelected, KeepSelected};
+
+        let token = 0x89a4u16;
+        let mut payload = vec![0; 112];
+        let header = &mut payload[12..95];
+        header[0..2].copy_from_slice(&token.to_le_bytes());
+        header[2..11].copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]);
+        header[11..15].copy_from_slice(&205u32.to_le_bytes());
+        header[15..19].copy_from_slice(&205u32.to_le_bytes());
+        header[47..63].fill(0xff);
+        payload[95..97].copy_from_slice(&[0x30, 0x80]);
+
+        assert_eq!(
+            compact_body_retention_mode(&payload, 0, payload.len(), token),
+            Some(KeepSelected)
+        );
+        payload[97..101].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            compact_body_retention_mode(&payload, 0, payload.len(), token),
+            Some(DeleteSelected)
+        );
+        payload[101] = 1;
+        assert_eq!(
+            compact_body_retention_mode(&payload, 0, payload.len(), token),
+            None
+        );
     }
 
     #[test]
@@ -1641,6 +1671,9 @@ fn compact_body_selections(
             body_state_ids: state_token.map_or_else(Vec::new, |token| {
                 compact_body_state_ids(&lane.native_payload, start, offset, token)
             }),
+            mode: state_token.and_then(|token| {
+                compact_body_retention_mode(&lane.native_payload, start, offset, token)
+            }),
         });
     }
     result
@@ -1685,23 +1718,63 @@ pub(crate) fn compact_body_state_ids_for_selection(
     compact_body_state_ids(&lane.native_payload, start, end, token)
 }
 
+pub(crate) fn compact_body_retention_mode_for_selection(
+    lane: &FeatureInputLane,
+    selection: &FeatureInputBodySelection,
+) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+    let token = compact_body_state_token(lane)?;
+    let start = lane
+        .names
+        .iter()
+        .find(|name| name.id == selection.object_name_ref)
+        .and_then(|name| usize::try_from(name.offset).ok())?;
+    let end = usize::try_from(selection.offset).ok()?;
+    compact_body_retention_mode(&lane.native_payload, start, end, token)
+}
+
+fn compact_body_retention_mode(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    token: u16,
+) -> Option<cadmpeg_ir::features::BodyRetentionMode> {
+    const HEADER_LEN: usize = 83;
+    let token = token.to_le_bytes();
+    let state_end = (start..end.saturating_sub(HEADER_LEN - 1))
+        .filter(|offset| compact_body_state_header(payload, *offset, token).is_some())
+        .map(|offset| offset + HEADER_LEN)
+        .max()?;
+    let field = payload.get(state_end..state_end + 10)?;
+    if field[0..2] != [0x30, 0x80] || field[6..10] != [0; 4] {
+        return None;
+    }
+    match u32::from_le_bytes(field[2..6].try_into().ok()?) {
+        0 => Some(cadmpeg_ir::features::BodyRetentionMode::KeepSelected),
+        1 => Some(cadmpeg_ir::features::BodyRetentionMode::DeleteSelected),
+        _ => None,
+    }
+}
+
+fn compact_body_state_header(payload: &[u8], offset: usize, token: [u8; 2]) -> Option<&[u8]> {
+    const HEADER_LEN: usize = 83;
+    let header = payload.get(offset..offset + HEADER_LEN)?;
+    (header[0..2] == token
+        && header[2..11] == [0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]
+        && header[11..15] == header[15..19]
+        && header[19..47].iter().all(|byte| *byte == 0)
+        && header[47..63].iter().all(|byte| *byte == 0xff)
+        && header[63..83].iter().all(|byte| *byte == 0))
+    .then_some(header)
+}
+
 fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) -> Vec<u32> {
     const HEADER_LEN: usize = 83;
     let token = token.to_le_bytes();
     let mut result = Vec::new();
     for offset in start..end.saturating_sub(HEADER_LEN - 1) {
-        let Some(header) = payload.get(offset..offset + HEADER_LEN) else {
+        let Some(header) = compact_body_state_header(payload, offset, token) else {
             continue;
         };
-        if header[0..2] != token
-            || header[2..11] != [0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0]
-            || header[11..15] != header[15..19]
-            || !header[19..47].iter().all(|byte| *byte == 0)
-            || !header[47..63].iter().all(|byte| *byte == 0xff)
-            || !header[63..83].iter().all(|byte| *byte == 0)
-        {
-            continue;
-        }
         result.push(u32::from_le_bytes(
             header[11..15].try_into().expect("four-byte body id"),
         ));
@@ -4060,13 +4133,18 @@ pub(crate) fn project_compact_body_selections(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::DeleteBody { bodies, .. } = &mut feature.definition else {
+        let FeatureDefinition::DeleteBody { bodies, mode } = &mut feature.definition else {
             continue;
         };
         if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
             *bodies = cadmpeg_ir::features::BodySelection::Native(compact_body_selection_value(
                 &selection.local_body_ids,
             ));
+        }
+        if matches!(mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
+            if let Some(native_mode) = selection.mode {
+                *mode = native_mode;
+            }
         }
     }
 }

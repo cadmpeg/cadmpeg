@@ -239,6 +239,9 @@ pub struct FeatureInputBodySelection {
     /// Ordered body-state records stored before the selection vector.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body_state_ids: Vec<u32>,
+    /// Retention mode carried by the delete-body data record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<cadmpeg_ir::features::BodyRetentionMode>,
 }
 
 /// One compact feature-local edge-selection vector.

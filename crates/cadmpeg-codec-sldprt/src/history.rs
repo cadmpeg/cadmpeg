@@ -3391,7 +3391,7 @@ fn validate_compact_body_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
-        let FeatureDefinition::DeleteBody { bodies, .. } = &feature.definition else {
+        let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
             continue;
         };
         let expected = BodySelection::Native(
@@ -3400,6 +3400,16 @@ fn validate_compact_body_selection_edits(
         if bodies != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact body selection",
+                feature.id
+            )));
+        }
+        if selection
+            .mode
+            .as_ref()
+            .is_some_and(|expected| mode != expected)
+        {
+            return Err(CodecError::NotImplemented(format!(
+                "SLDPRT feature {} changes a compact body retention mode",
                 feature.id
             )));
         }

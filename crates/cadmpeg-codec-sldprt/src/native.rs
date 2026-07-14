@@ -11,7 +11,7 @@ use crate::records::{
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 5;
+pub const SLDPRT_NATIVE_VERSION: u32 = 6;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -458,6 +458,20 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.body_selections.sort_by_key(|record| record.ordinal);
+            if namespace.version <= 5 {
+                let modes = lane
+                    .body_selections
+                    .iter()
+                    .map(|selection| {
+                        crate::resolved_features::compact_body_retention_mode_for_selection(
+                            lane, selection,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                for (selection, mode) in lane.body_selections.iter_mut().zip(modes) {
+                    selection.mode = mode;
+                }
+            }
             if let Some(record) = lane.body_selections.iter().find(|record| {
                 usize::try_from(record.offset).ok().and_then(|offset| {
                     crate::resolved_features::compact_body_selection_at(
@@ -465,6 +479,9 @@ impl SldprtNative {
                         offset,
                     )
                 }) != Some(record.local_body_ids.clone())
+                    || crate::resolved_features::compact_body_retention_mode_for_selection(
+                        lane, record,
+                    ) != record.mode
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input body selection {} disagrees with its payload",
@@ -603,6 +620,9 @@ impl SldprtNative {
                     }) != Some(record.local_body_ids.clone())
                     || crate::resolved_features::compact_body_state_ids_for_selection(lane, record)
                         != record.body_state_ids
+                    || crate::resolved_features::compact_body_retention_mode_for_selection(
+                        lane, record,
+                    ) != record.mode
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input body selection {} has inconsistent ownership",
