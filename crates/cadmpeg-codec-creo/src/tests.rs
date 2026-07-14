@@ -772,7 +772,8 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
     payload.extend_from_slice(b"\xe0\x00parent_feats\0\xf8\x02\x07\x08");
     payload.extend_from_slice(b"\xe0\x00i_pnts\0\xf8\x03\xf7\x80\x80\xfb");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.surface_prototype_records.len(), 1);
     let prototype = &scan.surface_prototype_records[0];
@@ -808,6 +809,24 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
                 entity_ids: vec![128, 129, 130],
             }
         )
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_prototypes"][0];
+    assert_eq!(native.fields["family"], "cylinder");
+    assert_eq!(native.fields["parameters"][0]["name"], "local_sys");
+    assert_eq!(native.fields["parameters"][0]["value_kind"], "scalar_array");
+    assert_eq!(native.fields["parameters"][0]["scalar_dimensions"], 4);
+    assert_eq!(native.fields["parameters"][0]["scalar_values"][0], 1.0);
+    assert_eq!(native.fields["parameters"][1]["name"], "radius");
+    assert_eq!(native.fields["parameters"][1]["body"][0], 0xe4);
+    assert_eq!(native.fields["parameters"][2]["compact_values"][0], 7);
+    assert_eq!(native.fields["parameters"][2]["compact_values"][1], 8);
+    assert_eq!(native.fields["parameters"][3]["compact_values"][0], 128);
+    assert_eq!(native.fields["parameters"][3]["compact_values"][1], 129);
+    assert_eq!(native.fields["parameters"][3]["compact_values"][2], 130);
+    assert_eq!(
+        result.ir.annotations.provenance[&native.id].tag.as_deref(),
+        Some("surface_prototype_record")
     );
 }
 

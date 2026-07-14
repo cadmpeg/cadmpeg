@@ -384,6 +384,28 @@ struct CreoSurfaceRowRecord {
 }
 
 #[derive(Serialize)]
+struct CreoSurfacePrototypeRecord {
+    id: String,
+    family: String,
+    parameters: Vec<CreoSurfaceNamedParameterRecord>,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoSurfaceNamedParameterRecord {
+    name: String,
+    value_kind: &'static str,
+    compact_values: Vec<u32>,
+    scalar_dimensions: Option<u8>,
+    scalar_values: Vec<Option<f64>>,
+    opaque: Vec<u8>,
+    body: Vec<u8>,
+    offset: usize,
+    value_offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoCurveParameterRecord {
     id: String,
     curve_id: u32,
@@ -467,6 +489,92 @@ fn surface_row_records(scan: &ContainerScan) -> Vec<CreoSurfaceRowRecord> {
             next_surface: row.next_surface,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
+        })
+        .collect()
+}
+
+fn surface_prototype_family_name(family: &crate::surface::SurfacePrototypeFamily) -> String {
+    match family {
+        crate::surface::SurfacePrototypeFamily::Plane => "plane".to_string(),
+        crate::surface::SurfacePrototypeFamily::Cylinder => "cylinder".to_string(),
+        crate::surface::SurfacePrototypeFamily::Cone => "cone".to_string(),
+        crate::surface::SurfacePrototypeFamily::Torus => "torus_or_sphere".to_string(),
+        crate::surface::SurfacePrototypeFamily::Spline => "spline".to_string(),
+        crate::surface::SurfacePrototypeFamily::Fillet => "fillet".to_string(),
+        crate::surface::SurfacePrototypeFamily::Extrusion => "extrusion".to_string(),
+        crate::surface::SurfacePrototypeFamily::Other(name) => format!("other:{name}"),
+    }
+}
+
+fn surface_named_parameter_record(
+    parameter: &crate::surface::SurfaceNamedParameter,
+) -> CreoSurfaceNamedParameterRecord {
+    let (value_kind, compact_values, scalar_dimensions, scalar_values, opaque) = match &parameter
+        .value
+    {
+        crate::surface::SurfaceNamedValue::CompactInt(value) => {
+            ("compact_int", vec![*value], None, Vec::new(), Vec::new())
+        }
+        crate::surface::SurfaceNamedValue::CompactIntArray(values) => (
+            "compact_int_array",
+            values.clone(),
+            None,
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ContiguousEntityReferences { entity_ids, .. } => (
+            "contiguous_entity_references",
+            entity_ids.clone(),
+            None,
+            Vec::new(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarArray {
+            dimensions, values, ..
+        } => (
+            "scalar_array",
+            Vec::new(),
+            Some(*dimensions),
+            values.clone(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::ScalarSequence(values) => (
+            "scalar_sequence",
+            Vec::new(),
+            None,
+            values.iter().copied().map(Some).collect(),
+            Vec::new(),
+        ),
+        crate::surface::SurfaceNamedValue::Opaque(value) => {
+            ("opaque", Vec::new(), None, Vec::new(), value.clone())
+        }
+    };
+    CreoSurfaceNamedParameterRecord {
+        name: parameter.name.clone(),
+        value_kind,
+        compact_values,
+        scalar_dimensions,
+        scalar_values,
+        opaque,
+        body: parameter.body.clone(),
+        offset: parameter.offset,
+        value_offset: parameter.value_offset,
+    }
+}
+
+fn surface_prototype_records(scan: &ContainerScan) -> Vec<CreoSurfacePrototypeRecord> {
+    scan.surface_prototype_records
+        .iter()
+        .map(|record| CreoSurfacePrototypeRecord {
+            id: format!("creo:visibgeom:surface_prototype#{}", record.offset),
+            family: surface_prototype_family_name(&record.family),
+            parameters: record
+                .parameters
+                .iter()
+                .map(surface_named_parameter_record)
+                .collect(),
+            offset: record.offset,
+            source_section: source_section(scan, record.offset),
         })
         .collect()
 }
@@ -14292,6 +14400,22 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("surface_rows", &surface_rows)?;
+    }
+    let surface_prototypes = surface_prototype_records(scan);
+    if !surface_prototypes.is_empty() {
+        for record in &surface_prototypes {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "surface_prototype_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("surface_prototypes", &surface_prototypes)?;
     }
     let curve_parameters = curve_parameter_records(scan);
     if !curve_parameters.is_empty() {
