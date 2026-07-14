@@ -69,6 +69,12 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
             pair.companion_record_index,
         ));
     }
+    for record in &native.design_dimension_recipe_records {
+        typed.insert((
+            crate::design::native_stream(&record.id).unwrap_or("f3d:design"),
+            record.companion_record_index,
+        ));
+    }
     native
         .design_parameter_companions
         .iter()
@@ -299,6 +305,8 @@ pub fn decode(
                     &native.design_dimension_locus_pairs,
                     &native.design_dimension_locus_groups,
                     &native.design_dimension_null_locus_pairs,
+                    &native.design_parameter_companions,
+                    &native.design_dimension_recipe_records,
                     &native.sketch_points,
                     &native.sketch_curve_identities,
                     &ir.model.sketch_entities,
@@ -510,6 +518,8 @@ pub fn decode(
             &native.design_dimension_locus_pairs,
             &native.design_dimension_locus_groups,
             &native.design_dimension_null_locus_pairs,
+            &native.design_parameter_companions,
+            &native.design_dimension_recipe_records,
             &native.sketch_points,
             &native.sketch_curve_identities,
             &ir.model.sketch_entities,
@@ -1560,12 +1570,12 @@ mod tests {
     use super::unresolved_dimension_companion_count;
     use crate::native::F3dNative;
     use crate::records::{
-        DesignDimensionLocusPair, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-        DesignParameterOwner,
+        DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignParameter,
+        DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
     };
 
     #[test]
-    fn payload_bearing_dimension_companion_requires_a_typed_locus_frame() {
+    fn payload_bearing_dimension_companion_requires_a_typed_dimension_frame() {
         let stream = "f3d:test/BulkStream.dat";
         let mut native = F3dNative::default();
         native.design_parameters.push(DesignParameter {
@@ -1618,6 +1628,25 @@ mod tests {
                 owned_recipe_ids: Vec::new(),
             });
         assert_eq!(unresolved_dimension_companion_count(&native), 1);
+
+        let mut recipe_backed = native.clone();
+        recipe_backed
+            .design_dimension_recipe_records
+            .push(DesignDimensionRecipeRecord {
+                id: format!("{stream}:design-dimension-recipe-record#31"),
+                companion_record_index: 30,
+                recipe_ordinal: 0,
+                recipe_id: format!("{stream}:construction-recipe#31"),
+                byte_offset: 278,
+                class_tag: "423".into(),
+                record_index: 31,
+                frame_length: 100,
+                prefix_offset: 300,
+                prefix_bytes: Vec::new(),
+                program_offset: 320,
+                program: vec![-1],
+            });
+        assert_eq!(unresolved_dimension_companion_count(&recipe_backed), 0);
 
         native
             .design_dimension_locus_pairs

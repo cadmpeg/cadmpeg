@@ -5,7 +5,7 @@
 //! selected by [`crate::container`]. Returned records retain source offsets and
 //! stable identifiers for native regeneration.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
@@ -1771,6 +1771,8 @@ pub fn project_dimension_constraints(
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
     null_pairs: &[DesignDimensionNullLocusPair],
+    companions: &[DesignParameterCompanion],
+    recipe_records: &[DesignDimensionRecipeRecord],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -1787,6 +1789,15 @@ pub fn project_dimension_constraints(
             u32::try_from(placement.entity_suffix)
                 .ok()
                 .map(|suffix| ((scope, suffix), neutral_sketch_id(placement)))
+        })
+        .collect::<HashMap<_, _>>();
+    let sketches_by_scope = placements
+        .iter()
+        .filter_map(|placement| {
+            Some((
+                (native_stream(&placement.id)?, placement.scope_record_index),
+                neutral_sketch_id(placement),
+            ))
         })
         .collect::<HashMap<_, _>>();
     let parameters = parameters
@@ -1999,6 +2010,27 @@ pub fn project_dimension_constraints(
             .map(|_| (scope.to_owned(), pair.companion_record_index))
         })
         .collect::<HashSet<_>>();
+    let locus_companions = pairs
+        .iter()
+        .filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.companion_record_index,
+            ))
+        })
+        .chain(groups.iter().filter_map(|group| {
+            Some((
+                native_stream(&group.id)?.to_owned(),
+                group.companion_record_index,
+            ))
+        }))
+        .chain(null_pairs.iter().filter_map(|pair| {
+            Some((
+                native_stream(&pair.id)?.to_owned(),
+                pair.companion_record_index,
+            ))
+        }))
+        .collect::<HashSet<_>>();
 
     let mut constraints = pairs
         .iter()
@@ -2100,6 +2132,75 @@ pub fn project_dimension_constraints(
             })
         }))
         .collect::<Vec<_>>();
+    let companions_by_key = companions
+        .iter()
+        .filter_map(|companion| {
+            Some((
+                (
+                    native_stream(&companion.id)?.to_owned(),
+                    companion.record_index,
+                ),
+                companion,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let owners_by_companion = owners
+        .iter()
+        .filter_map(|owner| {
+            Some((
+                (
+                    native_stream(&owner.id)?.to_owned(),
+                    owner.companion_record_index,
+                ),
+                owner,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut recipes_by_companion = BTreeMap::<(String, u32), Vec<_>>::new();
+    for record in recipe_records {
+        let Some(scope) = native_stream(&record.id) else {
+            continue;
+        };
+        let key = (scope.to_owned(), record.companion_record_index);
+        if !locus_companions.contains(&key) {
+            recipes_by_companion.entry(key).or_default().push(record);
+        }
+    }
+    for records in recipes_by_companion.values_mut() {
+        records.sort_by_key(|record| record.recipe_ordinal);
+    }
+    constraints.extend(recipes_by_companion.into_iter().filter_map(
+        |((scope, companion_record_index), records)| {
+            let companion = companions_by_key.get(&(scope.clone(), companion_record_index))?;
+            let owner = owners_by_companion.get(&(scope.clone(), companion_record_index))?;
+            let (parameter, parameter_id) = parameter_for(&scope, companion_record_index)?;
+            let sketch = sketches_by_scope
+                .get(&(scope.as_str(), owner.scope_record_index))?
+                .clone();
+            Some(SketchConstraint {
+                id: neutral_dimension_constraint_id(
+                    &companion.id,
+                    "recipe-group",
+                    companion.record_index,
+                ),
+                sketch,
+                definition: Definition::Native {
+                    native_kind: parameter.source_kind.clone(),
+                    entities: Vec::new(),
+                    parameter: Some(parameter_id),
+                    operands: records
+                        .into_iter()
+                        .map(|record| SketchNativeOperand {
+                            native_kind: "construction_recipe".into(),
+                            object_index: record.record_index,
+                            native_ref: Some(record.id.clone()),
+                        })
+                        .collect(),
+                },
+                native_ref: Some(companion.id.clone()),
+            })
+        },
+    ));
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
 }
@@ -7889,20 +7990,21 @@ mod relation_tests {
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
         parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
-        two_locus_distance_dimension,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_dimension_constraints,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, remove_dimension_frame_relations,
+        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
         DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
-        DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-        DesignExtrudeStart, DesignObjectKind, DesignParameterCompanion, DesignParameterKind,
-        DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignEntityHeader,
+        DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
+        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind,
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
+        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+        SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ParameterValue};
@@ -10066,6 +10168,118 @@ mod relation_tests {
                 .map(|point| point.owner_reference)
                 .collect::<Vec<_>>(),
             [Some(100), Some(100), Some(200), Some(200)]
+        );
+    }
+
+    #[test]
+    fn recipe_backed_dimension_projects_ordered_native_operands() {
+        let stream = "f3d:A";
+        let placement = DesignSketchPlacement {
+            id: format!("{stream}:design-sketch-placement#0"),
+            scope_record_index: 10,
+            entity_id: "0_100".into(),
+            entity_suffix: 100,
+            byte_offset: 0,
+            class_tag: "356".into(),
+            record_index: 11,
+            frame_length: 201,
+            transform: identity_matrix(),
+            transform_offset: None,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 201,
+        };
+        let parameter = DesignParameter {
+            id: format!("{stream}:design-parameter#20"),
+            byte_offset: 0,
+            class_tag: "305".into(),
+            record_index: 20,
+            prefix_value: 0,
+            prefix_value_offset: 0,
+            source_ordinal: 4,
+            owner_record_index: Some(21),
+            expression: "thickness".into(),
+            expression_offset: 0,
+            source_kind: "Linear Dimension-4".into(),
+            source_kind_offset: 0,
+            kind: DesignParameterKind::Dimension,
+            unit: Some("mm".into()),
+            unit_offset: Some(0),
+            name: "d4".into(),
+            name_offset: 0,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 0,
+        };
+        let owner = DesignParameterOwner {
+            id: format!("{stream}:design-parameter-owner#21"),
+            byte_offset: 0,
+            class_tag: "292".into(),
+            record_index: 21,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 0.2,
+            evaluated_value_offset: 0,
+            parameter_record_index: 20,
+            owned_ordinal: 0,
+            variant: 0,
+            companion_record_index: 22,
+        };
+        let companion = DesignParameterCompanion {
+            id: format!("{stream}:design-parameter-companion#22"),
+            byte_offset: 0,
+            class_tag: "408".into(),
+            record_index: 22,
+            owner_record_index: 21,
+            timestamp_micros: 1,
+            timestamp_micros_offset: 0,
+            payload_byte_offset: 58,
+            payload_byte_length: 200,
+            owned_recipe_ids: Vec::new(),
+        };
+        let recipe = |ordinal, record_index| DesignDimensionRecipeRecord {
+            id: format!("{stream}:design-dimension-recipe-record#{record_index}"),
+            companion_record_index: 22,
+            recipe_ordinal: ordinal,
+            recipe_id: format!("{stream}:construction-recipe#{record_index}"),
+            byte_offset: 0,
+            class_tag: "423".into(),
+            record_index,
+            frame_length: 10,
+            prefix_offset: 0,
+            prefix_bytes: Vec::new(),
+            program_offset: 0,
+            program: vec![-1],
+        };
+        let constraints = project_dimension_constraints(
+            &[placement],
+            &[parameter],
+            &[owner],
+            &[],
+            &[],
+            &[],
+            &[companion],
+            &[recipe(1, 31), recipe(0, 30)],
+            &[],
+            &[],
+            &[],
+        );
+        let [constraint] = constraints.as_slice() else {
+            panic!("expected one recipe-backed dimension")
+        };
+        let SketchConstraintDefinition::Native {
+            operands,
+            parameter,
+            ..
+        } = &constraint.definition
+        else {
+            panic!("expected native recipe-backed dimension")
+        };
+        assert!(parameter.is_some());
+        assert_eq!(
+            operands
+                .iter()
+                .map(|operand| operand.object_index)
+                .collect::<Vec<_>>(),
+            [30, 31]
         );
     }
 
