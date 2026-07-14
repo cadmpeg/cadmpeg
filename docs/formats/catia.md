@@ -201,6 +201,8 @@ Merging an assignment with the exact interior-handle occurrences produces one or
 
 Selecting one assignment per face and one direction per unresolved occurrence defines the logical-corner quotient independently of coordinate rows. Consecutive uses in a trim cycle share a face-local corner. Each occurrence maps those two corners to the physical edge row's start and end ports according to its direction. Equal physical ports across the two incident occurrences collapse their face-local corners into one logical vertex.
 
+Initialize the quotient by collapsing equal serialized port identities. Use complete mesh-occurrence components when available; otherwise use equality within each `01 01` or `01 02` table-local namespace. Face-boundary corner equations extend this initial quotient.
+
 Assignments with the same ordered physical-edge rows and the same resolved occurrence directions induce the same logical-corner quotient. Differences confined to boundary-segment allocation do not create distinct quotient choices. Positional assignments remain distinct while deriving trim-corner endpoint constraints.
 
 Each physical port initially admits every coordinate row present in one of its edge's endpoint-pair candidates. An edge with no local endpoint predicate admits the complete coordinate-row table. Collapsing two ports intersects their coordinate domains. Reject an empty intersection immediately. A complete quotient is valid only when it has one component per coordinate row and the component domains have one bijective coordinate assignment.

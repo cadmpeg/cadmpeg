@@ -2808,10 +2808,26 @@ pub fn parse_standard_mesh_endpoint_candidates(
         states: 0,
         solution: None,
     };
-    let quotient = MeshQuotient {
+    let mut quotient = MeshQuotient {
         union: UnionFind::new(edge_rows.len() * 2),
         domains,
     };
+    let port_identities =
+        standard_mesh_edge_ports(bytes).or_else(|| standard_edge_port_identities(bytes))?;
+    if port_identities.len() != edge_rows.len() {
+        return None;
+    }
+    let mut node_by_identity = HashMap::new();
+    for (edge, ports) in port_identities.into_iter().enumerate() {
+        for (port, identity) in ports.into_iter().enumerate() {
+            let node = edge * 2 + port;
+            if let Some(&previous) = node_by_identity.get(&identity) {
+                quotient.merge(previous, node)?;
+            } else {
+                node_by_identity.insert(identity, node);
+            }
+        }
+    }
     search.search(&quotient);
     search.solution
 }
