@@ -514,7 +514,7 @@ A printable OM string value is framed as `66 32 03, declared_len:u8, text[declar
 
 ### 7.2 Partition and deltas merge
 
-A complex part contains an active body and sub-bodies, each with its own partition/deltas pair and stream-local xmt namespace, plus optional plain cached tool bodies. The final solid is the load-time feature-history Boolean composition of those bodies. NX OM feature-history records encode operand binding and order.
+A complex part contains current body images and historical or tool bodies, each with its own partition/deltas pair and stream-local xmt namespace, plus optional plain cached tool bodies. `RMFastLoad` object-ID membership identifies the current body images. Multiple decisively represented images are distinct current bodies. When membership does not distinguish current images from historical or tool bodies, the final body set requires the operand bindings and order encoded by NX OM feature-history records.
 
 `/Root/part/attrs` is a versioned XML attribute table. Each `Attr` element
 contains its owner token, UTF-8 title and value, schema type, PDM-ownership flag,

@@ -716,7 +716,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
 
     attach_native_object_model(&mut ir, scan, &mut annotations).ok()?;
 
-    select_active_body(
+    let active_body_selection = select_active_body(
         &mut ir,
         &body_node_ids,
         &scan.container.rmfastload_object_ids(),
@@ -740,7 +740,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         scan,
         &counts,
         !ir.model.faces.is_empty(),
-        ir.model.bodies.len() > 1,
+        ir.model.bodies.len() > 1 && !active_body_selection,
     );
     Some((ir, report))
 }
@@ -1010,9 +1010,9 @@ fn select_active_body(
     ir: &mut CadIr,
     body_node_ids: &BTreeMap<BodyId, BTreeSet<u32>>,
     rmfastload_ids: &[u32],
-) {
+) -> bool {
     if rmfastload_ids.is_empty() || ir.model.bodies.len() <= 1 {
-        return;
+        return false;
     }
     let active: BTreeSet<_> = rmfastload_ids.iter().copied().collect();
     let mut scored: Vec<_> = ir
@@ -1028,7 +1028,7 @@ fn select_active_body(
         .collect();
     scored.sort_by(|first, second| second.0.cmp(&first.0).then(second.1.cmp(&first.1)));
     let Some(&(top_hits, top_count, ref top_body)) = scored.first() else {
-        return;
+        return false;
     };
     let next_hits = scored.get(1).map_or(0, |score| score.0);
     let mut selected: BTreeSet<_> = scored
@@ -1045,7 +1045,7 @@ fn select_active_body(
         || selected.is_empty()
         || (selected.len() == 1 && !dominant)
     {
-        return;
+        return false;
     }
     prune_inactive_topology(ir, &selected);
     if let Some(source) = &mut ir.source {
@@ -1061,6 +1061,7 @@ fn select_active_body(
             selected.len().to_string(),
         );
     }
+    true
 }
 
 fn prune_inactive_topology(ir: &mut CadIr, selected: &BTreeSet<BodyId>) {

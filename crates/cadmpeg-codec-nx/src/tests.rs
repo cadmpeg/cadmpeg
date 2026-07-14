@@ -5083,6 +5083,11 @@ fn decode_retains_every_rmfastload_active_body() {
             .map(String::as_str),
         Some("2")
     );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("sub-body partition")));
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }
 
@@ -5113,6 +5118,11 @@ fn decode_keeps_bodies_when_rmfastload_overlap_is_weak() {
         .source
         .as_ref()
         .is_none_or(|source| !source.attributes.contains_key("active_body_selector")));
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("sub-body partition")));
 }
 
 #[test]
