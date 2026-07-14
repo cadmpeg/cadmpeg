@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Read ZIP-packaged `FreeCAD` `.FCStd` documents.
+//! Read and write ZIP-packaged `FreeCAD` `.FCStd` documents.
 
 mod annotation;
 mod application;
@@ -16,12 +16,13 @@ mod native;
 mod persistence;
 mod product;
 mod topology_transfer;
+mod writer;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, ReadSeek,
+    Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
@@ -30,14 +31,45 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{CurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
+use cadmpeg_ir::report::ExportReport;
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssociation};
 
-/// Input-only `FCStd` codec.
+/// `FCStd` document codec.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FcstdCodec;
+
+/// Selects the persistence band emitted by [`FcstdCodec::encode_with_options`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FcstdWriteOptions {
+    /// `Document.xml` schema version.
+    pub schema_version: u32,
+    /// `Document.xml` file version.
+    pub file_version: u32,
+}
+
+impl Default for FcstdWriteOptions {
+    fn default() -> Self {
+        Self {
+            schema_version: 4,
+            file_version: 1,
+        }
+    }
+}
+
+impl FcstdCodec {
+    /// Write a document for an explicitly selected persistence band.
+    pub fn encode_with_options(
+        &self,
+        ir: &CadIr,
+        writer: &mut dyn std::io::Write,
+        options: &FcstdWriteOptions,
+    ) -> Result<ExportReport, CodecError> {
+        writer::write(ir, writer, options)
+    }
+}
 
 /// Validate FCStd-native identities, graph links, payloads, and byte ledgers.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
@@ -1221,6 +1253,20 @@ impl Codec for FcstdCodec {
                 notes: container::summarize(&scan).notes,
             },
         ))
+    }
+}
+
+impl Encoder for FcstdCodec {
+    fn id(&self) -> &'static str {
+        "fcstd"
+    }
+
+    fn encode(
+        &self,
+        ir: &CadIr,
+        output: &mut dyn std::io::Write,
+    ) -> Result<ExportReport, CodecError> {
+        self.encode_with_options(ir, output, &FcstdWriteOptions::default())
     }
 }
 

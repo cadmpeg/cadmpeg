@@ -1,9 +1,115 @@
 use std::io::{Cursor, Write};
 
-use cadmpeg_ir::{Codec, Confidence, DecodeOptions};
+use cadmpeg_ir::{Codec, Confidence, DecodeOptions, Encoder};
 use zip::write::SimpleFileOptions;
 
 use crate::FcstdCodec;
+
+const CORE_DESIGN_PRODUCT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
+));
+
+#[test]
+fn writes_typed_property_edits_and_preserves_other_entries() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let source_entries = decoded
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let mut edited = decoded.ir.clone();
+    let namespace = edited.native.namespace_mut("fcstd");
+    let mut properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let label = properties
+        .iter_mut()
+        .find(|property| {
+            property.owner == crate::native::native_id("document", "0") && property.name == "Label"
+        })
+        .expect("document Label");
+    label.values[0]
+        .attributes
+        .insert("value".into(), "edited & verified".into());
+    namespace
+        .set_arena("properties", &properties)
+        .expect("replace properties");
+
+    let mut encoded = Vec::new();
+    let report = FcstdCodec
+        .encode(&edited, &mut encoded)
+        .expect("encode edit");
+    assert!(report.losses.is_empty());
+    let round_trip = FcstdCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("decode output");
+    let output_namespace = round_trip.ir.native.namespace("fcstd").expect("namespace");
+    let output_properties = output_namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .expect("properties");
+    let output_label = output_properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("document", "0") && property.name == "Label"
+        })
+        .expect("document Label");
+    assert_eq!(
+        output_label.values[0]
+            .attributes
+            .get("value")
+            .map(String::as_str),
+        Some("edited & verified")
+    );
+    let output_entries = output_namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    for source in source_entries
+        .iter()
+        .filter(|entry| entry.name != "Document.xml")
+    {
+        let output = output_entries
+            .iter()
+            .find(|entry| entry.name == source.name)
+            .expect("preserved entry");
+        assert_eq!(output.data, source.data, "{}", source.name);
+    }
+    assert!(crate::validate_native(&round_trip.ir).is_empty());
+}
+
+#[test]
+fn write_target_and_source_requirements_are_explicit() {
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .expect("decode source");
+    let unsupported = FcstdCodec
+        .encode_with_options(
+            &decoded.ir,
+            &mut Vec::new(),
+            &crate::FcstdWriteOptions {
+                schema_version: 3,
+                file_version: 1,
+            },
+        )
+        .expect_err("unsupported target must fail");
+    assert!(unsupported.to_string().contains("SchemaVersion=3"));
+
+    let source_less = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let missing_graph = FcstdCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("missing graph must fail");
+    assert!(missing_graph.to_string().contains("source-less"));
+}
 
 fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
     let errors = cadmpeg_ir::validate(ir, Vec::new())

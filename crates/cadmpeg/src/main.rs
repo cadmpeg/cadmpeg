@@ -3,7 +3,7 @@
 //!
 //! The CLI detects supported native CAD containers, decodes model data through
 //! CADIR, validates and compares CADIR models, and writes CADIR, STEP AP214,
-//! `.f3d`, or `.sldprt` output. See the package README for workflows, format
+//! `.FCStd`, `.f3d`, or `.sldprt` output. See the package README for workflows, format
 //! limits, loss reporting, and exit-status semantics.
 
 mod commands;
@@ -37,6 +37,8 @@ enum Format {
     Cadir,
     /// ISO 10303-21 STEP AP214.
     Step,
+    /// `FreeCAD` `.FCStd`.
+    Fcstd,
     /// Autodesk Fusion `.f3d`.
     F3d,
     /// `SolidWorks` `.sldprt`.
@@ -48,6 +50,7 @@ impl Format {
         match extension.to_ascii_lowercase().as_str() {
             "cadir" | "json" => Some(Self::Cadir),
             "step" | "stp" => Some(Self::Step),
+            "fcstd" => Some(Self::Fcstd),
             "f3d" => Some(Self::F3d),
             "sldprt" => Some(Self::Sldprt),
             _ => None,
@@ -55,7 +58,7 @@ impl Format {
     }
 
     fn is_geometry_export(self) -> bool {
-        matches!(self, Self::Step | Self::F3d | Self::Sldprt)
+        matches!(self, Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt)
     }
 
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
@@ -68,6 +71,7 @@ impl Format {
         match self {
             Self::Cadir => "cadir",
             Self::Step => "step",
+            Self::Fcstd => "fcstd",
             Self::F3d => "f3d",
             Self::Sldprt => "sldprt",
         }

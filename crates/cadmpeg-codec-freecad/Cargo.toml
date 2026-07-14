@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-codec-freecad"
-description = "Read FreeCAD FCStd document archives."
+description = "Read and write FreeCAD FCStd document archives."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
