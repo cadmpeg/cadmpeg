@@ -356,6 +356,21 @@ fn scan_decodes_standard_and_compact_plane_envelopes() {
 }
 
 #[test]
+fn scan_derives_named_surface_plane_from_outline_corners() {
+    let mut payload = b"srf_array\0geom_id\0\x05geom_type\0\x22feat_id\0\x04orient\0\x01boundary_type\0\x01next_geom_ptr\0\0\
+        outline\0\xf9\x02\x03"
+        .to_vec();
+    payload.extend_from_slice(&[0xe4, 0x0f, 0x2f, 0, 0, 0x0d, 0x0f, 0x48, 0, 0]);
+    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", payload)]));
+
+    assert_eq!(scan.plane_envelopes.len(), 1);
+    assert_eq!(scan.outline_planes.len(), 1);
+    assert_eq!(scan.outline_planes[0].surface_id, 5);
+    assert_eq!(scan.outline_planes[0].origin, [0.0, 0.0, 0.0]);
+    assert_eq!(scan.outline_planes[0].normal, [0.0, 1.0, 0.0]);
+}
+
+#[test]
 fn scan_discovers_labeled_surface_namespace_row() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(

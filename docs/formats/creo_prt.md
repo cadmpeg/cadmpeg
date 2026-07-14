@@ -497,6 +497,10 @@ In plane `local_sys` rows, `18 e5` encodes `[0, 1, 0]`. `18 10`, `18 e4`, `18 e6
 
 Positional `ActDatums` plane rows contain flat `envlp(2x2)` and `outline(2x3)` scalar sequences without `f9` array openers. Their outlines use the held-coordinate plane rule of named rows. The datum-plane set includes the named datum row and positional `geom_type = 0x22` rows.
 
+Named `srf_array` plane rows store `outline\0 f9 02 03` followed by two
+model-space corner triples. A complete outline with exactly one equal
+coordinate pair defines the corresponding axis-aligned plane and offset.
+
 In the positional datum scalar lane, `a5` and `9f` each occupy seven bytes.
 Their numeric values are not required by the held-coordinate rule: identical
 raw tokens compare equal and distinct raw tokens compare unequal.

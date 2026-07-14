@@ -700,11 +700,21 @@ fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<O
     slots
 }
 
+type ScalarTokenSlot = (Option<f64>, Vec<u8>);
+
 fn scalar_slots_with_tokens(
     body: &[u8],
     count: usize,
     cache: &scalar::ScalarCache,
-) -> Vec<(Option<f64>, Vec<u8>)> {
+) -> Vec<ScalarTokenSlot> {
+    scalar_slots_with_tokens_and_end(body, count, cache).0
+}
+
+fn scalar_slots_with_tokens_and_end(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> (Vec<ScalarTokenSlot>, usize) {
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
@@ -719,7 +729,7 @@ fn scalar_slots_with_tokens(
         }
     }
     slots.resize_with(count, || (None, Vec::new()));
-    slots
+    (slots, cursor)
 }
 
 fn slot_equality(first: &(Option<f64>, Vec<u8>), second: &(Option<f64>, Vec<u8>)) -> Option<bool> {
@@ -878,10 +888,13 @@ pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
 
 /// Decode plane positional envelope bodies into their two defined layouts.
 pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
+    const NAMED_OUTLINE: &[u8] = b"outline\0\xf9\x02\x03";
     let cache = scalar::ScalarCache::from_section(payload);
-    let headers = rows(payload)
-        .into_iter()
+    let all_rows = rows(payload);
+    let headers = all_rows
+        .iter()
         .filter(|row| row.kind == SurfaceKind::Plane && row.boundary_type == 0)
+        .cloned()
         .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
         .collect::<Vec<_>>();
     let mut envelopes = Vec::new();
@@ -937,6 +950,55 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
             offset: *body_start,
         });
     }
+    for (index, row) in all_rows
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| row.kind == SurfaceKind::Plane && row.boundary_type != 0)
+    {
+        let row_end = all_rows
+            .get(index + 1)
+            .map_or(payload.len(), |next| next.offset);
+        let named_end = payload[row.offset..row_end]
+            .windows(b"srf_prim_ptr(".len())
+            .position(|window| window == b"srf_prim_ptr(")
+            .map_or(row_end, |relative| row.offset + relative);
+        let Some(relative) = payload[row.offset..named_end]
+            .windows(NAMED_OUTLINE.len())
+            .position(|window| window == NAMED_OUTLINE)
+        else {
+            continue;
+        };
+        let outline = row.offset + relative;
+        let scalar_start = outline + NAMED_OUTLINE.len();
+        let (slots, consumed) =
+            scalar_slots_with_tokens_and_end(&payload[scalar_start..named_end], 6, &cache);
+        if slots
+            .iter()
+            .any(|slot| slot.0.is_none() || slot.1.is_empty())
+        {
+            continue;
+        }
+        let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
+        envelopes.push(PlaneEnvelopeRecord {
+            surface_id: row.id,
+            body: payload[scalar_start..scalar_start + consumed].to_vec(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[None; 2]; 2],
+                corners_3d: [
+                    [values[0], values[1], values[2]],
+                    [values[3], values[4], values[5]],
+                ],
+            },
+            corner_coordinate_equal: [
+                slot_equality(&slots[0], &slots[3]),
+                slot_equality(&slots[1], &slots[4]),
+                slot_equality(&slots[2], &slots[5]),
+            ],
+            row_offset: row.offset,
+            offset: scalar_start,
+        });
+    }
+    envelopes.sort_by_key(|envelope| envelope.offset);
     envelopes
 }
 
