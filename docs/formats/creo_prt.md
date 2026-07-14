@@ -565,7 +565,10 @@ slots; the first `18` does not consume the second as a dictionary index.
 The saved spline identifier is null when the spline is not assigned an
 `order_table.int_id`. `end_tangts f9 02 03` carries two endpoint tangent
 triples. `params f8 <count>` carries one scalar interpolation parameter per
-point.
+point. The first parameter is zero and each later parameter is the cumulative
+section-space chord length through `i_pnts`. In the `params` lane, `18` before
+a parameter prefix is standalone zero; `6d`, `85`, `93`, and `9e` use the
+positive DICT head rule; and `2d <tail7>` reconstructs `40 <tail7>`.
 
 A saved-line family may contain a named `entity(point)` prototype between
 positional line rows. Positional line replay resumes after that prototype's

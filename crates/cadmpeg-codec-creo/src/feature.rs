@@ -2767,7 +2767,7 @@ fn saved_spline_entities(
                     (count == u32::from(point_count) && at > count_at).then_some(())?;
                     let mut values = Vec::with_capacity(usize::from(point_count));
                     for _ in 0..count {
-                        let (value, next) = scalar::decode_in_lane(payload, at, cache)?;
+                        let (value, next) = saved_spline_parameter(payload, at, cache)?;
                         values.push(value);
                         at = next;
                     }
@@ -2784,6 +2784,38 @@ fn saved_spline_entities(
         search = body_start;
     }
     entities
+}
+
+fn saved_spline_parameter(
+    payload: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(f64, usize)> {
+    let prefix = *payload.get(offset)?;
+    if prefix == 0x18
+        && payload
+            .get(offset + 1)
+            .is_some_and(|next| matches!(next, 0x2d | 0x6d | 0x85 | 0x93 | 0x9e))
+    {
+        return Some((0.0, offset + 1));
+    }
+    if matches!(prefix, 0x6d | 0x85 | 0x93 | 0x9e) {
+        let tail = payload.get(offset + 1..offset + 7)?;
+        let second = prefix.wrapping_sub(0x8b);
+        let mut raw = [0; 8];
+        raw[0] = if second >= 0x80 { 0x3f } else { 0x40 };
+        raw[1] = second;
+        raw[2..].copy_from_slice(tail);
+        return Some((f64::from_be_bytes(raw), offset + 7));
+    }
+    if prefix == 0x2d {
+        let tail = payload.get(offset + 1..offset + 8)?;
+        let mut raw = [0; 8];
+        raw[0] = 0x40;
+        raw[1..].copy_from_slice(tail);
+        return Some((f64::from_be_bytes(raw), offset + 8));
+    }
+    scalar::decode_in_lane(payload, offset, cache)
 }
 
 fn saved_entity_offset(entity: &FeatureSavedEntity) -> usize {
@@ -4020,5 +4052,30 @@ mod tests {
             Some([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
         );
         assert_eq!(spline.parameters, Some(vec![0.0, 1.0]));
+    }
+
+    #[test]
+    fn decodes_saved_spline_chord_parameter_lane() {
+        let body = [
+            0x18, 0x6d, 0x31, 0xd2, 0x2a, 0x7f, 0x68, 0x39, 0x85, 0x06, 0x5f, 0x25, 0x83, 0xf4,
+            0x6c, 0x93, 0xd8, 0xd4, 0xfb, 0x45, 0xbc, 0x38, 0x9e, 0x51, 0xef, 0x1e, 0x96, 0xe2,
+            0x6c, 0x2d, 0x1a, 0xfc, 0x59, 0x51, 0xbd, 0x0a, 0x38,
+        ];
+        let cache = scalar::ScalarCache::default();
+        let expected = [
+            0.0,
+            0.568_581_660_273_827_7,
+            1.626_555_582_565_994_3,
+            3.105_874_980_035_448_4,
+            4.830_013_730_963_952,
+            6.746_434_476_054_269,
+        ];
+        let mut cursor = 0;
+        for expected in expected {
+            let (value, next) = saved_spline_parameter(&body, cursor, &cache).expect("parameter");
+            assert_eq!(value, expected);
+            cursor = next;
+        }
+        assert_eq!(cursor, body.len());
     }
 }
