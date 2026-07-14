@@ -6547,6 +6547,7 @@ pub(crate) fn non_boolean_feature_definition(
             position: None,
             direction: None,
             kind: simple_hole_kind(payload_strings),
+            exit_kind: simple_hole_exit_kind(payload_strings),
             diameter: None,
             extent: simple_hole_extent(payload_strings),
         },
@@ -6580,6 +6581,19 @@ fn simple_hole_kind(payload_strings: &[&str]) -> HoleKind {
     } else {
         HoleKind::Simple
     }
+}
+
+fn simple_hole_exit_kind(payload_strings: &[&str]) -> Option<HoleKind> {
+    payload_strings
+        .iter()
+        .any(|value| crate::native::parse_simple_hole_template(value).is_some())
+        .then_some(HoleKind::Unresolved {
+            form: Some(HoleForm::Chamfer),
+            counterbore_diameter: None,
+            counterbore_depth: None,
+            countersink_diameter: None,
+            countersink_angle: None,
+        })
 }
 
 pub(crate) fn feature_body_selection(

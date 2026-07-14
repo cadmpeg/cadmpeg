@@ -2450,6 +2450,10 @@ fn feature_operation_geometry_is_validated() {
             position: None,
             direction: None,
             kind: HoleKind::Simple,
+            exit_kind: Some(HoleKind::Countersink {
+                diameter: Length(-1.0),
+                angle: crate::features::Angle(std::f64::consts::FRAC_PI_2),
+            }),
             diameter: Some(Length(0.0)),
             extent: Some(Extent::ThroughAll),
         },

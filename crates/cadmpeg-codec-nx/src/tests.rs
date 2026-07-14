@@ -732,6 +732,13 @@ fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
                 countersink_diameter: None,
                 countersink_angle: None,
             },
+            exit_kind: Some(cadmpeg_ir::features::HoleKind::Unresolved {
+                form: Some(cadmpeg_ir::features::HoleForm::Chamfer),
+                counterbore_diameter: None,
+                counterbore_depth: None,
+                countersink_diameter: None,
+                countersink_angle: None,
+            }),
             diameter: None,
             extent: Some(cadmpeg_ir::features::Extent::ThroughAll),
         }

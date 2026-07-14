@@ -2289,6 +2289,7 @@ fn encoder_writes_source_less_native_features() {
                 diameter: Length(8.0),
                 angle: Angle(1.4),
             },
+            exit_kind: None,
             diameter: Some(Length(5.0)),
             extent: Some(Extent::Blind {
                 length: Length(20.0),
@@ -10566,6 +10567,7 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
             position: None,
             direction: None,
             kind: HoleKind::Simple,
+            exit_kind: None,
             diameter: Some(Length(6.35)),
             extent: Some(Extent::Blind {
                 length: Length(12.0),

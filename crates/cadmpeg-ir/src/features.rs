@@ -657,6 +657,9 @@ pub enum FeatureDefinition {
         direction: Option<Vector3>,
         /// Entry-shape family of the hole.
         kind: HoleKind,
+        /// Exit-shape family, when the far-side treatment resolves independently.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        exit_kind: Option<HoleKind>,
         /// Hole diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diameter: Option<Length>,

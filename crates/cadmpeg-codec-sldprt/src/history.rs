@@ -2080,6 +2080,7 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
             None => None,
         },
         kind,
+        exit_kind: None,
         diameter,
         extent,
     }
@@ -5873,6 +5874,7 @@ pub fn sync_neutral_features(
                 position,
                 direction,
                 kind,
+                exit_kind,
                 diameter,
                 extent,
             } => {
@@ -5888,6 +5890,12 @@ pub fn sync_neutral_features(
                 if existing.is_none() && diameter.is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has an unresolved hole diameter",
+                        feature.id
+                    )));
+                }
+                if exit_kind.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unsupported hole exit treatment",
                         feature.id
                     )));
                 }
