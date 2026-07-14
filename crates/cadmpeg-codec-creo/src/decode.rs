@@ -4155,6 +4155,30 @@ fn section_skamp_constraints(
                         second: section_skamp_endpoint(definition, second)?,
                     }
                 }
+                (9, [first, second])
+                    if first.sense == 0
+                        && second.sense == 0
+                        && matches!(
+                            (
+                                section_skamp_segment(&segments.rows, first)?.kind,
+                                section_skamp_segment(&segments.rows, second)?.kind,
+                            ),
+                            (
+                                crate::feature::FeatureSegmentKind::Line,
+                                crate::feature::FeatureSegmentKind::Point
+                            ) | (
+                                crate::feature::FeatureSegmentKind::Point,
+                                crate::feature::FeatureSegmentKind::Line
+                            )
+                        ) =>
+                {
+                    SketchConstraintDefinition::CoincidentLoci {
+                        loci: vec![
+                            section_skamp_locus(definition, first)?,
+                            section_skamp_locus(definition, second)?,
+                        ],
+                    }
+                }
                 (14, [axis, first, second])
                     if axis.sense == 0
                         && section_skamp_segment(&segments.rows, axis)?.kind
@@ -7665,6 +7689,23 @@ mod resolved_sketch_tests {
                     ],
                     offset: 76,
                 },
+                crate::feature::FeatureSkamp {
+                    id: 12,
+                    kind: 9,
+                    flags: 0,
+                    status: 0,
+                    items: vec![
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 12,
+                            sense: 0,
+                        },
+                        crate::feature::FeatureSkampItem {
+                            entity_id: 14,
+                            sense: 0,
+                        },
+                    ],
+                    offset: 77,
+                },
             ],
             triples: Vec::new(),
             offset: 45,
@@ -7787,6 +7828,19 @@ mod resolved_sketch_tests {
                     )),
                     SketchLocus::Center(SketchEntityId(
                         "creo:featdefs:sketch_entity#917:13".to_string()
+                    )),
+                ],
+            }
+        );
+        assert_eq!(
+            constraints[9].0.definition,
+            SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::Entity(SketchEntityId(
+                        "creo:featdefs:sketch_entity#917:12".to_string()
+                    )),
+                    SketchLocus::Entity(SketchEntityId(
+                        "creo:featdefs:sketch_entity#917:14".to_string()
                     )),
                 ],
             }
