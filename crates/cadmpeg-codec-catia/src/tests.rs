@@ -207,6 +207,19 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
 }
 
 #[test]
+fn standard_mesh_runs_include_flanking_segments() {
+    let runs = crate::topology::standard_mesh_edge_runs(&standard_quad_topology_stream())
+        .expect("mesh edge runs");
+    assert_eq!(runs.len(), 4);
+    assert_eq!(
+        runs.iter()
+            .map(|run| (run.edge, run.start, run.segment_count))
+            .collect::<Vec<_>>(),
+        vec![(0, 0, 2), (1, 2, 2), (2, 4, 2), (3, 6, 2)]
+    );
+}
+
+#[test]
 fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 10, 0, 0, 0, 10];
     for handle in [
@@ -258,6 +271,9 @@ fn fbb_topology_reads_u24_mesh_and_edge_handles() {
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 8);
     assert_eq!(topology.logical_vertex_count(), 8);
     assert!(topology.vertex_points().is_empty());
+    let runs = crate::topology::standard_mesh_edge_runs(&bytes).expect("u24 edge runs");
+    assert_eq!(runs.len(), 8);
+    assert!(runs.iter().all(|run| run.segment_count == 1));
     assert_eq!(
         crate::topology::standard_vertex_points(&bytes)
             .unwrap()

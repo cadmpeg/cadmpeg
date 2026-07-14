@@ -666,6 +666,23 @@ struct MeshEdgeOccurrence {
     reversed: bool,
 }
 
+/// One exact occurrence of a physical edge row on a trim-mesh boundary.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeshEdgeRun {
+    /// Physical edge-row ordinal.
+    pub edge: usize,
+    /// Positional face ordinal.
+    pub face: usize,
+    /// Boundary-cycle ordinal within the face.
+    pub cycle: usize,
+    /// First covered boundary-segment index in cycle traversal order.
+    pub start: usize,
+    /// Number of consecutive boundary segments covered by this occurrence.
+    pub segment_count: usize,
+    /// Whether cycle traversal follows the row's handle sequence in reverse.
+    pub reversed: bool,
+}
+
 fn mesh_edge_occurrences(
     edge_rows: &[EdgeRow],
     cycles: &[Vec<Vec<u32>>],
@@ -730,6 +747,50 @@ fn mesh_edge_occurrences(
             Some(occurrences)
         })
         .collect()
+}
+
+/// Recover every exact physical-edge occurrence on the trim mesh.
+///
+/// Standard `u16be` rows match their interior handles and include the two
+/// flanking boundary segments. FBB `u24be` rows match their complete handle
+/// sequence and cover one fewer segment than handles. A result exists only
+/// when exactly one trim-handle width parses the complete face chain.
+#[must_use]
+pub fn standard_mesh_edge_runs(bytes: &[u8]) -> Option<Vec<MeshEdgeRun>> {
+    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let mut solutions = Vec::new();
+    for width in [2, 3] {
+        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
+            continue;
+        };
+        let cycles = trims
+            .iter()
+            .map(|trim| boundary_cycles(&trim.triangles))
+            .collect::<Option<Vec<_>>>()?;
+        let occurrences = mesh_edge_occurrences(&edge_rows, &cycles)?;
+        let mut runs = Vec::new();
+        for (edge, edge_occurrences) in occurrences.iter().enumerate() {
+            for occurrence in edge_occurrences {
+                let cycle_len = cycles[occurrence.face][occurrence.cycle].len();
+                let (start, segment_count) =
+                    edge_rows[edge].boundary_span(occurrence.start, cycle_len)?;
+                runs.push(MeshEdgeRun {
+                    edge,
+                    face: occurrence.face,
+                    cycle: occurrence.cycle,
+                    start,
+                    segment_count,
+                    reversed: occurrence.reversed,
+                });
+            }
+        }
+        runs.sort_by_key(|run| (run.face, run.cycle, run.start, run.edge));
+        solutions.push(runs);
+    }
+    <[Vec<MeshEdgeRun>; 1]>::try_from(solutions)
+        .ok()
+        .map(|[runs]| runs)
 }
 
 /// One uncovered run in a trim-mesh boundary cycle.
