@@ -1164,6 +1164,70 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 }
 
 #[test]
+fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
+    use cadmpeg_ir::features::{FeatureDefinition, RadiusForm, RadiusSpec};
+    use cadmpeg_ir::geometry::{
+        BlendCrossSection, BlendRadiusLaw, ProceduralSurface, ProceduralSurfaceDefinition,
+    };
+    use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let output = BodyId("nx:s4:body#3".into());
+    let make_blend = |ordinal: u32, radius: BlendRadiusLaw| ProceduralSurface {
+        id: ProceduralSurfaceId(format!("nx:s4:blend-construction#{ordinal}")),
+        surface: SurfaceId(format!("nx:s4:blend-surf#{ordinal}")),
+        definition: ProceduralSurfaceDefinition::Blend {
+            supports: [None, None],
+            spine: None,
+            radius,
+            cross_section: BlendCrossSection::Circular,
+            native: None,
+        },
+        cache_fit_tolerance: None,
+    };
+    ir.model.procedural_surfaces.push(make_blend(
+        0,
+        BlendRadiusLaw::Constant { signed_radius: 5.0 },
+    ));
+    ir.model.procedural_surfaces.push(make_blend(
+        1,
+        BlendRadiusLaw::Constant {
+            signed_radius: -5.0,
+        },
+    ));
+
+    let (definition, surfaces) =
+        crate::decode::blend_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("one circular constant-radius blend result");
+    assert_eq!(surfaces.len(), 2);
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Fillet {
+            radius: RadiusSpec::Constant {
+                radius: cadmpeg_ir::features::Length(5.0)
+            },
+            ..
+        }
+    ));
+
+    ir.model.procedural_surfaces.push(make_blend(
+        2,
+        BlendRadiusLaw::Constant { signed_radius: 7.0 },
+    ));
+    let (definition, _) = crate::decode::blend_feature_definition(&ir, &[output]).unwrap();
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Fillet {
+            radius: RadiusSpec::Unresolved {
+                form: Some(RadiusForm::Constant)
+            },
+            ..
+        }
+    ));
+    assert!(crate::decode::blend_feature_definition(&ir, &[]).is_none());
+}
+
+#[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use crate::native::{
         FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,

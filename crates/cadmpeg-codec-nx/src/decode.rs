@@ -21,8 +21,9 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::{
     Angle, BodySelection, BodyTrimSide, BooleanOp, ConfigurationId, DesignConfiguration,
-    DesignParameter, FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId, ParameterValue, SketchSpace,
+    DesignParameter, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
+    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId,
+    ParameterValue, RadiusForm, RadiusSpec, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -7046,10 +7047,22 @@ fn attach_feature_operations(
                 );
             }
         }
+        let blend_projection = (label.value == "BLEND")
+            .then(|| blend_feature_definition(ir, &outputs))
+            .flatten();
+        if let Some((_, surfaces)) = &blend_projection {
+            for (surface_ordinal, surface) in surfaces.iter().enumerate() {
+                source_properties.insert(
+                    format!("blend_result_surface.{surface_ordinal}"),
+                    surface.0.clone(),
+                );
+            }
+        }
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
                 trim_body_projection
                     .or(sew_projection)
+                    .or_else(|| blend_projection.map(|(definition, _)| definition))
                     .or_else(|| offset_projection.map(|(definition, _)| definition))
                     .unwrap_or_else(|| {
                         non_boolean_feature_definition(
@@ -7121,6 +7134,81 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn blend_feature_definition(
+    ir: &CadIr,
+    outputs: &[BodyId],
+) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
+    let [body] = outputs else {
+        return None;
+    };
+    let (prefix, _) = body.0.rsplit_once("body#")?;
+    let mut surfaces = Vec::new();
+    let mut laws = Vec::new();
+    for procedural in &ir.model.procedural_surfaces {
+        if !procedural.surface.0.starts_with(prefix) {
+            continue;
+        }
+        let ProceduralSurfaceDefinition::Blend {
+            radius,
+            cross_section: BlendCrossSection::Circular,
+            ..
+        } = &procedural.definition
+        else {
+            continue;
+        };
+        surfaces.push(procedural.surface.clone());
+        laws.push(radius);
+    }
+    if laws.is_empty() {
+        return None;
+    }
+    surfaces.sort();
+    let constant_radii = laws
+        .iter()
+        .map(|law| match law {
+            BlendRadiusLaw::Constant { signed_radius }
+                if signed_radius.is_finite() && *signed_radius != 0.0 =>
+            {
+                Some(signed_radius.abs())
+            }
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>();
+    let radius = constant_radii
+        .as_ref()
+        .filter(|radii| {
+            radii
+                .iter()
+                .all(|radius| radius.to_bits() == radii[0].to_bits())
+        })
+        .map_or_else(
+            || RadiusSpec::Unresolved {
+                form: if constant_radii.is_some() {
+                    Some(RadiusForm::Constant)
+                } else if laws.iter().all(|law| {
+                    matches!(
+                        law,
+                        BlendRadiusLaw::Linear { .. } | BlendRadiusLaw::Law { .. }
+                    )
+                }) {
+                    Some(RadiusForm::Variable)
+                } else {
+                    None
+                },
+            },
+            |radii| RadiusSpec::Constant {
+                radius: Length(radii[0]),
+            },
+        );
+    Some((
+        FeatureDefinition::Fillet {
+            edges: EdgeSelection::Unresolved,
+            radius,
+        },
+        surfaces,
+    ))
 }
 
 pub(crate) fn offset_surface_feature_definition(
