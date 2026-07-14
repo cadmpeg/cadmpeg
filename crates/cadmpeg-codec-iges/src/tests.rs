@@ -2437,6 +2437,91 @@ fn scalar_property_forms_file() -> Vec<u8> {
     owned_test_file(&entities)
 }
 
+fn grid_property_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00020000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 22,
+            label: "GRID".into(),
+            status: "00010000",
+            parameters: "406,9,1,1,0,0,0,5,10,20,30;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 404,
+            form: 1,
+            label: "DRAWING".into(),
+            status: "00000000",
+            parameters: "404,1,1,0,0,0,0,0,1,3;".into(),
+        },
+    ])
+}
+
+fn group_type_property_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "ITEM".into(),
+            status: "00000000",
+            parameters: "116,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 7,
+            label: "GROUP".into(),
+            status: "00000000",
+            parameters: "402,1,1,0,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 23,
+            label: "GROUPTYP".into(),
+            status: "00010000",
+            parameters: "406,2,5,5HDRILL;".into(),
+        },
+    ])
+}
+
+fn lep_property_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 24,
+            label: "LAYERMAP".into(),
+            status: "00000000",
+            parameters: "406,9,2,10,4HTOP1,1,8HSIGNAL_T,20,4HCORE,0,9HUNDEFINED;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 25,
+            label: "STACKUP".into(),
+            status: "00000000",
+            parameters: "406,5,5HBOARD,3,10,20,30;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "HOLE".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,1,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 26,
+            label: "DRILL".into(),
+            status: "00010000",
+            parameters: "406,3,0.8,0.7,5;".into(),
+        },
+    ])
+}
+
 fn view_forms_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4367,6 +4452,43 @@ fn decode_types_scalar_and_string_property_forms() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_types_grid_group_and_lep_property_forms() {
+    let decode = |bytes| {
+        IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap()
+    };
+    let grid = decode(grid_property_file());
+    let property = &grid.ir.native.namespace("iges").unwrap().arenas["properties"][0];
+    assert_eq!(property.fields["property_kind"], "uniform_rectangular_grid");
+    assert_eq!(property.fields["owners"][0], "iges:entity:directory#5");
+    assert!(grid.report.losses.is_empty(), "{:#?}", grid.report.losses);
+
+    let group = decode(group_type_property_file());
+    let property = &group.ir.native.namespace("iges").unwrap().arenas["properties"][0];
+    assert_eq!(property.fields["associativity_type"], 5);
+    assert_eq!(property.fields["owners"][0], "iges:entity:directory#3");
+    assert!(group.report.losses.is_empty(), "{:#?}", group.report.losses);
+
+    let lep = decode(lep_property_forms_file());
+    let properties = &lep.ir.native.namespace("iges").unwrap().arenas["properties"];
+    let property = |form| {
+        properties
+            .iter()
+            .find(|value| value.fields["form"] == form)
+            .unwrap()
+    };
+    assert_eq!(
+        property(24).fields["definitions"].as_array().unwrap().len(),
+        2
+    );
+    assert_eq!(property(25).fields["levels"].as_array().unwrap().len(), 3);
+    assert_eq!(property(26).fields["function_code"], 5);
+    assert_eq!(property(26).fields["owners"][0], "iges:entity:directory#5");
+    assert!(lep.report.losses.is_empty(), "{:#?}", lep.report.losses);
 }
 
 #[test]

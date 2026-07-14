@@ -575,6 +575,38 @@ enum NativePropertyValue {
     Pick {
         pickable: Option<bool>,
     },
+    UniformRectangularGrid {
+        finite: Option<bool>,
+        lines: Option<bool>,
+        weighted: Option<bool>,
+        origin: [Option<f64>; 2],
+        spacing: [Option<f64>; 2],
+        counts: [Option<i64>; 2],
+    },
+    AssociativityGroupType {
+        associativity_type: Option<i64>,
+        name: Option<Vec<u8>>,
+    },
+    LevelToLepLayerMap {
+        definitions: Vec<NativeLepLayerDefinition>,
+    },
+    LepArtworkStackup {
+        identification: Option<Vec<u8>>,
+        levels: Vec<Option<i64>>,
+    },
+    LepDrilledHole {
+        drill_diameter: Option<f64>,
+        finished_diameter: Option<f64>,
+        function_code: Option<i64>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeLepLayerDefinition {
+    exchange_level: Option<i64>,
+    native_identifier: Option<Vec<u8>>,
+    physical_layer: Option<i64>,
+    functional_identifier: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2309,7 +2341,7 @@ pub(crate) fn store(
     let properties = directory
         .iter()
         .filter(|entry| {
-            entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=21)
+            entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=26)
         })
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
@@ -2391,6 +2423,56 @@ pub(crate) fn store(
                 },
                 21 => NativePropertyValue::Pick {
                     pickable: record.integer(2).map(|value| value == 0),
+                },
+                22 => NativePropertyValue::UniformRectangularGrid {
+                    finite: record.integer(2).map(|value| value == 1),
+                    lines: record.integer(3).map(|value| value == 1),
+                    weighted: record.integer(4).map(|value| value == 0),
+                    origin: [record.number(5), record.number(6)],
+                    spacing: [record.number(7), record.number(8)],
+                    counts: [record.integer(9), record.integer(10)],
+                },
+                23 => NativePropertyValue::AssociativityGroupType {
+                    associativity_type: record.integer(2),
+                    name: record.string(3).map(<[u8]>::to_vec),
+                },
+                24 => {
+                    let definition_count = record
+                        .integer(2)
+                        .and_then(|value| usize::try_from(value).ok())
+                        .unwrap_or_default();
+                    NativePropertyValue::LevelToLepLayerMap {
+                        definitions: (0..definition_count)
+                            .map(|offset| {
+                                let start = 3 + offset * 4;
+                                NativeLepLayerDefinition {
+                                    exchange_level: record.integer(start),
+                                    native_identifier: record.string(start + 1).map(<[u8]>::to_vec),
+                                    physical_layer: record.integer(start + 2),
+                                    functional_identifier: record
+                                        .string(start + 3)
+                                        .map(<[u8]>::to_vec),
+                                }
+                            })
+                            .collect(),
+                    }
+                }
+                25 => {
+                    let level_count = record
+                        .integer(3)
+                        .and_then(|value| usize::try_from(value).ok())
+                        .unwrap_or_default();
+                    NativePropertyValue::LepArtworkStackup {
+                        identification: record.string(2).map(<[u8]>::to_vec),
+                        levels: (0..level_count)
+                            .map(|offset| record.integer(4 + offset))
+                            .collect(),
+                    }
+                }
+                26 => NativePropertyValue::LepDrilledHole {
+                    drill_diameter: record.number(2),
+                    finished_diameter: record.number(3),
+                    function_code: record.integer(4),
                 },
                 _ => return None,
             };

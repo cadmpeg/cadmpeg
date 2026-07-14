@@ -281,6 +281,61 @@ fn property_fields_valid(entry: &DirectoryEntry, record: &ParameterRecord, end: 
         }
         19 => exact(1) && record.integer(2).is_some(),
         20 | 21 => exact(1) && integer_range(2, 0..=1),
+        22 => {
+            exact(9)
+                && (2..=4).all(|index| integer_range(index, 0..=1))
+                && (5..=6).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && (7..=8).all(|index| {
+                    record
+                        .number(index)
+                        .is_some_and(|value| value.is_finite() && value > 0.0)
+                })
+                && (9..=10).all(|index| record.integer(index).is_some_and(|value| value >= 0))
+                && (record.integer(2) != Some(1)
+                    || (9..=10).all(|index| record.integer(index).is_some_and(|value| value > 0)))
+        }
+        23 => {
+            exact(2)
+                && integer_range(2, 1..=9999)
+                && record.string(3).is_some_and(|value| !value.is_empty())
+        }
+        24 => record
+            .integer(2)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+            .is_some_and(|count| {
+                exact(i64::try_from(1 + 4 * count).unwrap_or_default())
+                    && (0..count).all(|offset| {
+                        let start = 3 + offset * 4;
+                        record.integer(start).is_some_and(|value| value >= 0)
+                            && record.string(start + 1).is_some()
+                            && record.integer(start + 2).is_some_and(|value| value >= 0)
+                            && record
+                                .string(start + 3)
+                                .is_some_and(|value| !value.is_empty())
+                    })
+            }),
+        25 => record
+            .integer(3)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+            .is_some_and(|count| {
+                exact(i64::try_from(2 + count).unwrap_or_default())
+                    && record.string(2).is_some_and(|value| !value.is_empty())
+                    && (0..count)
+                        .all(|offset| record.integer(4 + offset).is_some_and(|value| value >= 0))
+            }),
+        26 => {
+            exact(3)
+                && (2..=3).all(|index| {
+                    record
+                        .number(index)
+                        .is_some_and(|value| value.is_finite() && value > 0.0)
+                })
+                && record
+                    .integer(4)
+                    .is_some_and(|value| matches!(value, 1..=5 | 5001..=9999))
+        }
         _ => false,
     }
 }
@@ -677,7 +732,7 @@ pub(super) fn project(
         .collect::<BTreeMap<_, _>>();
 
     for entry in directory.iter().filter(|entry| {
-        entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=21)
+        entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=10 | 12..=15 | 18..=26)
     }) {
         handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
@@ -701,7 +756,34 @@ pub(super) fn project(
                     .get(owner)
                     .is_some_and(|owner| owner.entity_type != 420)
             });
-        if fields_valid && attachment_valid && reference_designator_valid {
+        let owner_kind_valid = match entry.form {
+            22 => {
+                !owners.is_empty()
+                    && owners.iter().all(|owner| {
+                        entries
+                            .get(owner)
+                            .is_some_and(|owner| owner.entity_type == 404)
+                    })
+            }
+            23 => {
+                !owners.is_empty()
+                    && owners.iter().all(|owner| {
+                        entries.get(owner).is_some_and(|owner| {
+                            owner.entity_type == 402 && matches!(owner.form, 1 | 7 | 14 | 15)
+                        })
+                    })
+            }
+            26 => {
+                !owners.is_empty()
+                    && owners.iter().all(|owner| {
+                        entries
+                            .get(owner)
+                            .is_some_and(|owner| matches!(owner.entity_type, 116 | 132))
+                    })
+            }
+            _ => true,
+        };
+        if fields_valid && attachment_valid && reference_designator_valid && owner_kind_valid {
             decoded.insert(entry.sequence);
         } else {
             losses.push(entity_loss(
