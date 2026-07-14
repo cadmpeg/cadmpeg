@@ -1237,7 +1237,7 @@ mod chart_tests {
     #[test]
     fn standard_spline_retains_complete_surface_incidence_pair_domain() {
         let mut ir = CadIr::empty(Units::default());
-        for index in 0..3 {
+        for index in 0..138 {
             ir.model.points.push(Point {
                 id: PointId(format!("p{index}")),
                 position: Point3::new(index as f64, 0.0, 0.0),
@@ -1266,10 +1266,17 @@ mod chart_tests {
             faces: [0, 1],
             geometry: StandardCurveGeometry::Bspline,
         };
-        let choices =
-            resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1, 2]])
-                .expect("endpoint option pass");
-        assert_eq!(choices[0], [[0, 1], [0, 2], [1, 2]]);
+        let choices = resolve_standard_endpoint_pairs(
+            &ir,
+            &bindings,
+            &indices,
+            &[support],
+            &[(0..138).collect()],
+        )
+        .expect("endpoint option pass");
+        assert_eq!(choices[0].len(), 9_453);
+        assert_eq!(choices[0].first(), Some(&[0, 1]));
+        assert_eq!(choices[0].last(), Some(&[136, 137]));
     }
 
     #[test]
@@ -2797,8 +2804,8 @@ fn attach_standard_topology(
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<_>>>());
     let native_endpoint_pairs = graph_propagated_pairs.or_else(|| {
         endpoint_options.as_ref().and_then(|options| {
-            const MAX_NATIVE_PORT_CHOICES: usize = 8_192;
-            const MAX_NATIVE_PORT_WORK: usize = 1_000_000;
+            const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
+            const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
 
             let ports = native_ports.as_ref()?;
             let seeds = options
@@ -3250,7 +3257,7 @@ fn resolve_standard_endpoint_pairs(
             resolved[edge].rotate_left(rank % pairs.len());
         }
     }
-    let mut fallback_relation_budget = 8_192usize;
+    let mut fallback_relation_budget = 65_536usize;
     for (edge, pairs) in resolved.iter_mut().enumerate() {
         if !pairs.is_empty() {
             continue;
