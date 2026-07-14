@@ -1015,74 +1015,74 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     }
 
     let mut wire_edges_by_shell = HashMap::<i64, Vec<i64>>::new();
+    let mut free_vertices_by_shell = HashMap::<i64, Vec<i64>>::new();
     for shell in records.iter().filter(|record| record.head == "shell") {
         let shell_index = shell.index as i64;
-        let mut wire_ref = shell.ref_at(6);
         let mut wire_guard = HashSet::new();
-        while let Some(wire_index) = wire_ref.filter(|index| wire_guard.insert(*index)) {
-            let Some(wire) = by_index
-                .get(&wire_index)
-                .filter(|record| record.head == "wire")
-            else {
-                break;
-            };
-            let side = match wire.chunk(7) {
-                Some(Token::True) => Some(WireSide::In),
-                Some(Token::False) => Some(WireSide::Out),
-                _ => None,
-            };
-            if let Some(side) = side {
-                out.wire_topologies.push(WireTopology {
-                    id: format!("f3d:asm:wire-topology#{wire_index}"),
-                    shell: ShellId(id(shell_index)),
-                    record_index: wire.index as u32,
-                    side,
-                });
-            }
-            if let Some(first_coedge) = wire.ref_at(4) {
-                let mut coedge_ref = Some(first_coedge);
-                let mut coedge_guard = HashSet::new();
-                while let Some(coedge_index) =
-                    coedge_ref.filter(|index| coedge_guard.insert(*index))
-                {
-                    let Some(coedge) = by_index
-                        .get(&coedge_index)
-                        .filter(|record| is_coedge_record(record))
-                    else {
-                        break;
-                    };
-                    if let Some(edge_index) = coedge.ref_at(6) {
-                        let edges = wire_edges_by_shell.entry(shell_index).or_default();
-                        if !edges.contains(&edge_index) {
-                            edges.push(edge_index);
-                        }
-                        if let Some(edge) = by_index.get(&edge_index) {
-                            if is_edge_record(edge) && kept_edges.insert(edge_index) {
-                                for slot in [3usize, 5] {
-                                    if let Some(vertex_index) = edge.ref_at(slot) {
-                                        if let Some(vertex) = by_index.get(&vertex_index) {
-                                            if is_vertex_record(vertex) {
-                                                kept_vertices.insert(vertex_index);
-                                                if let Some(point_index) = vertex.ref_at(5) {
-                                                    kept_points.insert(point_index);
+        for root in shell_wire_roots(shell, &by_index) {
+            let mut wire_ref = Some(root);
+            while let Some(wire_index) = wire_ref.filter(|index| wire_guard.insert(*index)) {
+                let Some(wire) = by_index
+                    .get(&wire_index)
+                    .filter(|record| record.head == "wire")
+                else {
+                    break;
+                };
+                let side = match wire.chunk(7) {
+                    Some(Token::True) => Some(WireSide::In),
+                    Some(Token::False) => Some(WireSide::Out),
+                    _ => None,
+                };
+                let mut wire_edges = Vec::new();
+                if let Some(first_coedge) = wire.ref_at(4) {
+                    let mut coedge_ref = Some(first_coedge);
+                    let mut coedge_guard = HashSet::new();
+                    while let Some(coedge_index) =
+                        coedge_ref.filter(|index| coedge_guard.insert(*index))
+                    {
+                        let Some(coedge) = by_index
+                            .get(&coedge_index)
+                            .filter(|record| is_coedge_record(record))
+                        else {
+                            break;
+                        };
+                        if let Some(edge_index) = coedge.ref_at(6) {
+                            if !wire_edges.contains(&edge_index) {
+                                wire_edges.push(edge_index);
+                            }
+                            let edges = wire_edges_by_shell.entry(shell_index).or_default();
+                            if !edges.contains(&edge_index) {
+                                edges.push(edge_index);
+                            }
+                            if let Some(edge) = by_index.get(&edge_index) {
+                                if is_edge_record(edge) && kept_edges.insert(edge_index) {
+                                    for slot in [3usize, 5] {
+                                        if let Some(vertex_index) = edge.ref_at(slot) {
+                                            if let Some(vertex) = by_index.get(&vertex_index) {
+                                                if is_vertex_record(vertex) {
+                                                    kept_vertices.insert(vertex_index);
+                                                    if let Some(point_index) = vertex.ref_at(5) {
+                                                        kept_points.insert(point_index);
+                                                    }
                                                 }
                                             }
                                         }
                                     }
-                                }
-                                if let Some(curve_index) = edge.ref_at(8) {
-                                    match curve_geo.entry(curve_index) {
-                                        std::collections::hash_map::Entry::Occupied(_) => {
-                                            kept_curves.insert(curve_index);
-                                        }
-                                        std::collections::hash_map::Entry::Vacant(entry) => {
-                                            if let Some(curve_record) = by_index.get(&curve_index) {
-                                                if let Some(decoded) =
-                                                    nurbs::decode_procedural_curve_resolving_refs(
-                                                        record_slice(curve_record, bytes),
-                                                        bytes,
-                                                        &subtype_tables,
-                                                    )
+                                    if let Some(curve_index) = edge.ref_at(8) {
+                                        match curve_geo.entry(curve_index) {
+                                            std::collections::hash_map::Entry::Occupied(_) => {
+                                                kept_curves.insert(curve_index);
+                                            }
+                                            std::collections::hash_map::Entry::Vacant(entry) => {
+                                                if let Some(curve_record) =
+                                                    by_index.get(&curve_index)
+                                                {
+                                                    if let Some(decoded) =
+                                                        nurbs::decode_procedural_curve_resolving_refs(
+                                                            record_slice(curve_record, bytes),
+                                                            bytes,
+                                                            &subtype_tables,
+                                                        )
                                                 {
                                                     let mut curve = decoded.curve;
                                                     if record_reversed(curve_record) {
@@ -1116,20 +1116,53 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     undecoded_carriers.insert(curve_index);
                                                     out.stats.procedural_curve_edges += 1;
                                                 }
+                                                }
                                             }
                                         }
                                     }
                                 }
                             }
                         }
-                    }
-                    coedge_ref = coedge.ref_at(3);
-                    if coedge_ref == Some(first_coedge) {
-                        break;
+                        coedge_ref = coedge.ref_at(3);
+                        if coedge_ref == Some(first_coedge) {
+                            break;
+                        }
                     }
                 }
+                let free_vertex = if wire.ref_at(4).is_none() {
+                    wire.ref_at(6).filter(|vertex| {
+                        by_index
+                            .get(vertex)
+                            .is_some_and(|record| is_vertex_record(record))
+                    })
+                } else {
+                    None
+                };
+                if let Some(vertex) = free_vertex {
+                    kept_vertices.insert(vertex);
+                    let vertices = free_vertices_by_shell.entry(shell_index).or_default();
+                    if !vertices.contains(&vertex) {
+                        vertices.push(vertex);
+                    }
+                    if let Some(point) = by_index.get(&vertex).and_then(|record| record.ref_at(5)) {
+                        kept_points.insert(point);
+                    }
+                }
+                if let Some(side) = side {
+                    out.wire_topologies.push(WireTopology {
+                        id: format!("f3d:asm:wire-topology#{wire_index}"),
+                        shell: ShellId(id(shell_index)),
+                        record_index: wire.index as u32,
+                        edges: wire_edges
+                            .into_iter()
+                            .map(|edge| EdgeId(id(edge)))
+                            .collect(),
+                        free_vertex: free_vertex.map(|vertex| VertexId(id(vertex))),
+                        side,
+                    });
+                }
+                wire_ref = wire.ref_at(3);
             }
-            wire_ref = wire.ref_at(3);
         }
     }
 
@@ -3891,9 +3924,14 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             });
                         }
                     }
-                    if let (Some(owning_edge), Some(Token::Long(endpoint_index @ 0..=1))) =
-                        (r.ref_at(3), r.chunk(4))
-                    {
+                    if let (Some(owning_edge), Some(Token::Long(endpoint_index @ 0..=1))) = (
+                        r.ref_at(3).filter(|owner| {
+                            by_index
+                                .get(owner)
+                                .is_some_and(|record| is_edge_record(record))
+                        }),
+                        r.chunk(4),
+                    ) {
                         out.vertex_ownerships.push(VertexOwnership {
                             id: format!("f3d:asm:vertex-ownership#{i}"),
                             vertex: VertexId(id(i)),
@@ -4142,7 +4180,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         .flatten()
                         .map(|edge| EdgeId(id(*edge)))
                         .collect(),
-                    free_vertices: Vec::new(),
+                    free_vertices: free_vertices_by_shell
+                        .get(&i)
+                        .into_iter()
+                        .flatten()
+                        .map(|vertex| VertexId(id(*vertex)))
+                        .collect(),
                 });
             }
             // ASM release 231 names this record `region`; release 227 streams
@@ -5133,6 +5176,30 @@ fn shell_faces(
     out
 }
 
+fn shell_wire_roots(shell: &Record, by_index: &HashMap<i64, &Record>) -> Vec<i64> {
+    let mut out = shell.ref_at(6).into_iter().collect::<Vec<_>>();
+    let mut pending = shell.ref_at(4).into_iter().collect::<Vec<_>>();
+    let mut guard = HashSet::new();
+    while let Some(index) = pending.pop().filter(|index| guard.insert(*index)) {
+        let Some(record) = by_index
+            .get(&index)
+            .filter(|record| record.head == "subshell")
+        else {
+            break;
+        };
+        if let Some(wire) = record.ref_at(7) {
+            out.push(wire);
+        }
+        if let Some(next) = record.ref_at(4) {
+            pending.push(next);
+        }
+        if let Some(child) = record.ref_at(5) {
+            pending.push(child);
+        }
+    }
+    out
+}
+
 fn face_chain_from(
     mut current: Option<i64>,
     by_index: &HashMap<i64, &Record>,
@@ -5243,6 +5310,26 @@ mod topology_tests {
             subshell_ancestor_shells(&records, &by_index).get(&3),
             Some(&1)
         );
+    }
+
+    #[test]
+    fn subshell_wires_project_onto_the_nearest_shell() {
+        let mut bytes = Vec::new();
+        record(&mut bytes, "asmheader", &[]); // 0
+        record(&mut bytes, "shell", &[-1, -1, -1, -1, 2, -1, 4, -1]); // 1
+        record(&mut bytes, "subshell", &[-1, -1, -1, 1, -1, 3, -1, 5]); // 2
+        record(&mut bytes, "subshell", &[-1, -1, -1, 2, -1, -1, -1, 6]); // 3
+        record(&mut bytes, "wire", &[]); // 4
+        record(&mut bytes, "wire", &[]); // 5
+        record(&mut bytes, "wire", &[]); // 6
+
+        let records = crate::sab::frame(&bytes, 0, bytes.len(), 8)
+            .expect("generated subshell-wire bytes must frame");
+        let by_index = records
+            .iter()
+            .map(|record| (record.index as i64, record))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(shell_wire_roots(&records[1], &by_index), [4, 5, 6]);
     }
 
     #[test]

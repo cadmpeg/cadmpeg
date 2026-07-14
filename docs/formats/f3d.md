@@ -239,11 +239,17 @@ their nearest shell ancestor in the neutral IR; retained-source writing preserve
 the native subshell records and ownership references byte-for-byte.
 
 **Wire:** `chunk[3]` = next sibling wire, `chunk[4]` = first coedge,
-`chunk[5]` = owner shell/body/subshell, `chunk[6]` = reserved reference, and
-`chunk[7]` = side (`0x0a` in, `0x0b` out). Each wire record is retained as typed
-metadata on its normalized shell. Retained writing patches the side token in place;
-source-less writing emits the stored side and rejects multiple native wire records
-that would otherwise collapse into one neutral shell edge list.
+`chunk[5]` = owner shell/body/subshell, `chunk[6]` = isolated vertex, and
+`chunk[7]` = side (`0x0a` in, `0x0b` out). The member references are mutually
+exclusive: an edge wire has a non-null first coedge and a null isolated vertex;
+a point wire has a null first coedge and a non-null isolated vertex. Coedges form
+an ordered closed ring. A point wire's vertex names that wire as its owner and
+uses endpoint index `-1`. Wires owned by a subshell project onto the nearest shell
+ancestor. Each wire record retains its ordered edges or isolated vertex and side
+as typed metadata on the normalized shell. Retained writing patches the side token
+in place; source-less writing emits edge wires and rejects free vertices and
+multiple native wire records that would otherwise collapse into one neutral shell
+edge list.
 
 **Face (81 B; +1 chunk if double-sided):**
 

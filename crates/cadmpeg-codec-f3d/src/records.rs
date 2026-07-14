@@ -227,10 +227,16 @@ pub enum WireSide {
 pub struct WireTopology {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Neutral shell containing the wire's edge ring.
+    /// Neutral shell containing the wire.
     pub shell: ShellId,
     /// Source SAB record index.
     pub record_index: u32,
+    /// Ordered edge ring owned through the wire's first-coedge reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edges: Vec<EdgeId>,
+    /// Isolated vertex owned when the first-coedge reference is null.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub free_vertex: Option<VertexId>,
     /// Native side classification.
     pub side: WireSide,
 }

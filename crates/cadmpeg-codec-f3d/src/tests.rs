@@ -1771,6 +1771,65 @@ fn synthetic_wire_body_smbh() -> Vec<u8> {
     out
 }
 
+fn synthetic_free_vertex_body_smbh() -> Vec<u8> {
+    let mut records = Vec::new();
+    t_ident(&mut records, "asmheader");
+    push_u8_string(&mut records, "231.6.3.65535");
+    t_end(&mut records);
+
+    t_ident(&mut records, "body");
+    t_ref(&mut records, -1);
+    t_long(&mut records, 1);
+    for reference in [-1, 2, 4, -1] {
+        t_ref(&mut records, reference);
+    }
+    t_end(&mut records);
+
+    t_ident(&mut records, "region");
+    for reference in [-1, -1, -1, -1, 3, 1] {
+        t_ref(&mut records, reference);
+    }
+    t_end(&mut records);
+
+    t_ident(&mut records, "shell");
+    t_ref(&mut records, -1);
+    t_long(&mut records, -1);
+    for reference in [-1, -1, -1, -1, 4, 2] {
+        t_ref(&mut records, reference);
+    }
+    t_end(&mut records);
+
+    t_ident(&mut records, "wire");
+    t_ref(&mut records, -1);
+    t_long(&mut records, -1);
+    for reference in [-1, -1, -1, 3, 5] {
+        t_ref(&mut records, reference);
+    }
+    records.push(0x0b);
+    t_end(&mut records);
+
+    t_ident(&mut records, "vertex");
+    t_ref(&mut records, -1);
+    t_long(&mut records, -1);
+    t_ref(&mut records, -1);
+    t_ref(&mut records, 4);
+    t_long(&mut records, -1);
+    t_ref(&mut records, 6);
+    t_end(&mut records);
+
+    t_ident(&mut records, "point");
+    t_ref(&mut records, -1);
+    t_long(&mut records, -1);
+    t_ref(&mut records, -1);
+    t_pos(&mut records, [1.0, 2.0, 3.0]);
+    t_end(&mut records);
+    t_ident(&mut records, "delta_state");
+
+    let mut out = smbh_header_prefix();
+    out.extend_from_slice(&records);
+    out
+}
+
 fn synthetic_mixed_face_wire_body_smbh() -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
@@ -9731,6 +9790,42 @@ fn decode_transfers_generated_wire_body_topology() {
     assert!(
         validation.is_ok(),
         "wire findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn decode_transfers_isolated_vertex_wire_topology() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_free_vertex_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated free-vertex body decode");
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(
+        result.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert!(result.ir.model.shells[0].wire_edges.is_empty());
+    assert_eq!(result.ir.model.shells[0].free_vertices.len(), 1);
+    assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir.model.points.len(), 1);
+    assert_eq!(
+        result.ir.model.points[0].position,
+        cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+    );
+    assert!(f3d_native(&result.ir).vertex_ownerships.is_empty());
+    let wire = &f3d_native(&result.ir).wire_topologies[0];
+    assert!(wire.edges.is_empty());
+    assert_eq!(
+        wire.free_vertex,
+        Some(result.ir.model.vertices[0].id.clone())
+    );
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "free-vertex findings: {:?}",
         validation.findings
     );
 }

@@ -945,7 +945,21 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
         vertices,
         "tolerant-vertex"
     );
-    validate_unique_targets!(&native.wire_topologies, shell, shells, "wire-topology");
+    let mut wire_record_indices = BTreeSet::new();
+    for wire in &native.wire_topologies {
+        if !shells.contains(&wire.shell) {
+            return Err(CodecError::Malformed(format!(
+                "F3D wire-topology metadata {} targets missing entity {}",
+                wire.id, wire.shell
+            )));
+        }
+        if !wire_record_indices.insert(wire.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "multiple F3D wire-topology records use native index {}",
+                wire.record_index
+            )));
+        }
+    }
 
     for visibility in &native.body_visibilities {
         let body = target
@@ -1004,15 +1018,22 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
         }
     }
     for wire in &native.wire_topologies {
-        if target
+        let shell = target
             .model
             .shells
             .iter()
             .find(|shell| shell.id == wire.shell)
-            .is_none_or(|shell| shell.wire_edges.is_empty())
-        {
+            .expect("validated wire-topology target");
+        let member_form_is_valid = match (&wire.edges[..], &wire.free_vertex) {
+            (edges, None) if !edges.is_empty() => {
+                edges.iter().all(|edge| shell.wire_edges.contains(edge))
+            }
+            ([], Some(vertex)) => shell.free_vertices.contains(vertex),
+            _ => false,
+        };
+        if !member_form_is_valid {
             return Err(CodecError::Malformed(format!(
-                "F3D wire metadata {} targets a shell without wire edges",
+                "F3D wire metadata {} has invalid edge-ring or isolated-vertex membership",
                 wire.id
             )));
         }
