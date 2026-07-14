@@ -627,6 +627,8 @@ A datum-coordinate-system scalar-pair frame is `08 02 03 01 03 01 c0 45 04 00 80
 
 Each of datum-coordinate-system construction lanes 5–7 is an independently bounded descriptor block. A typed block contains exactly one maximal run of 30–32 lowercase hexadecimal digits. Bytes before and after the identity remain exact prefix and suffix fields. The descriptor retains its construction lane, resolved block, identity, exact prefix and suffix, block offset, and identity offset. A block with no qualifying run or multiple qualifying runs remains untyped.
 
+Equal typed descriptor identities join datum-plane and datum-coordinate-system constructions. The relation retains both typed descriptors, both operations, the shared identity, and the coordinate-system lane ordinal. Feature dependency follows serialized operation order: the later operation depends on the earlier operation. Identity equality does not impose a fixed plane-to-coordinate-system ownership direction.
+
 Each resolved coordinate-system block is joined to every operation-header input addressing the identical store block. The relation retains the coordinate-system construction, reference ordinal, shared block, input binding, consuming operation, and input slot. Equal numeric indices in different stores do not join. No origin, axis, input, or output role follows from block equality alone.
 
 A `DATUM_PLANE` payload begins `control:u8, 00 00 01 00 01, declared_count:u8, branch_tag:u8, 01 02`, with `declared_count >= 2`. The control, count, and branch tag are retained independently. The branch tag selects the following construction grammar; the common header assigns no reference, plane-kind, origin, or normal role to branch bytes.

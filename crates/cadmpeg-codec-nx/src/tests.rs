@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 95);
+    assert_eq!(namespace.version, 96);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1523,6 +1523,40 @@ fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
     let mut ambiguous = bytes.to_vec();
     ambiguous.extend_from_slice(b"012345678901234567890123456789");
     assert!(crate::om::datum_csys_descriptor_block(&ambiguous).is_none());
+}
+
+#[test]
+fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
+    let plane = crate::native::FeatureDatumPlaneDescriptor {
+        id: "plane-descriptor".into(),
+        operation_label: "operation#4".into(),
+        datum_plane_header: "plane-header".into(),
+        ordinal: 0,
+        data_block: "plane-block".into(),
+        identity: "012345678901234567890123456789".into(),
+        suffix: vec![b'?', b'A'],
+        schema_index: 1,
+        label: "p".into(),
+        source_offset: 10,
+    };
+    let csys = crate::native::FeatureDatumCsysDescriptor {
+        id: "csys-descriptor".into(),
+        operation_label: "operation#2".into(),
+        construction: "csys-construction".into(),
+        reference_ordinal: 7,
+        data_block: "csys-block".into(),
+        prefix: vec![2, 1],
+        identity: plane.identity.clone(),
+        suffix: vec![b'?', b'A'],
+        source_offset: 20,
+        identity_source_offset: 22,
+    };
+    let uses = crate::native::feature_datum_plane_csys_identity_uses(&[plane], &[csys]);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].identity, "012345678901234567890123456789");
+    assert_eq!(uses[0].datum_plane_operation_label, "operation#4");
+    assert_eq!(uses[0].datum_csys_operation_label, "operation#2");
+    assert_eq!(uses[0].datum_csys_reference_ordinal, 7);
 }
 
 #[test]
@@ -5318,7 +5352,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 95);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 96);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

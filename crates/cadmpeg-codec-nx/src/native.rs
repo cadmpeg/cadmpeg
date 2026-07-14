@@ -496,6 +496,25 @@ pub struct FeatureDatumCsysDescriptor {
     pub identity_source_offset: u64,
 }
 
+/// Exact shared descriptor identity between datum-plane and datum-CSYS history.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumPlaneCsysIdentityUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Shared lowercase hexadecimal identity.
+    pub identity: String,
+    /// Typed datum-plane descriptor.
+    pub datum_plane_descriptor: String,
+    /// Datum-plane operation carrying the descriptor.
+    pub datum_plane_operation_label: String,
+    /// Typed datum-CSYS descriptor.
+    pub datum_csys_descriptor: String,
+    /// Datum-CSYS operation carrying the descriptor.
+    pub datum_csys_operation_label: String,
+    /// Datum-CSYS construction reference ordinal.
+    pub datum_csys_reference_ordinal: u8,
+}
+
 /// Common typed header of one datum-plane construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumPlaneHeader {
@@ -2109,6 +2128,37 @@ pub fn feature_datum_csys_descriptors(
                         source_offset,
                         identity_source_offset: source_offset + descriptor.identity_offset as u64,
                     })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Join equal typed descriptor identities across datum-plane and datum-CSYS history.
+pub fn feature_datum_plane_csys_identity_uses(
+    plane_descriptors: &[FeatureDatumPlaneDescriptor],
+    csys_descriptors: &[FeatureDatumCsysDescriptor],
+) -> Vec<FeatureDatumPlaneCsysIdentityUse> {
+    plane_descriptors
+        .iter()
+        .flat_map(|plane| {
+            csys_descriptors
+                .iter()
+                .filter(|csys| csys.identity == plane.identity)
+                .map(|csys| {
+                    let plane_key = plane.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+                    let csys_key = csys.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+                    FeatureDatumPlaneCsysIdentityUse {
+                        id: format!(
+                            "nx:feature-history:datum-plane-csys-identity-use#{plane_key}-{csys_key}"
+                        ),
+                        identity: plane.identity.clone(),
+                        datum_plane_descriptor: plane.id.clone(),
+                        datum_plane_operation_label: plane.operation_label.clone(),
+                        datum_csys_descriptor: csys.id.clone(),
+                        datum_csys_operation_label: csys.operation_label.clone(),
+                        datum_csys_reference_ordinal: csys.reference_ordinal,
+                    }
                 })
                 .collect::<Vec<_>>()
         })

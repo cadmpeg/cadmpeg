@@ -2818,6 +2818,11 @@ fn attach_native_object_model(
         &scan.container,
         &feature_datum_plane_headers,
     );
+    let feature_datum_plane_csys_identity_uses =
+        crate::native::feature_datum_plane_csys_identity_uses(
+            &feature_datum_plane_descriptors,
+            &feature_datum_csys_descriptors,
+        );
     let feature_datum_csys_block_uses = crate::native::feature_datum_csys_block_uses(
         &feature_datum_csys_constructions,
         &feature_input_blocks,
@@ -3241,6 +3246,7 @@ fn attach_native_object_model(
             datum_plane_headers: &feature_datum_plane_headers,
             datum_plane_block_uses: &feature_datum_plane_block_uses,
             datum_plane_payloads: &feature_datum_plane_payloads,
+            datum_plane_csys_identity_uses: &feature_datum_plane_csys_identity_uses,
             sketch_references: &feature_sketch_references,
             extrude_profile_references: &feature_extrude_profile_references,
             extrude_construction_profiles: &feature_extrude_construction_profiles,
@@ -3265,7 +3271,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(95);
+    namespace.version = namespace.version.max(96);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3378,6 +3384,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_datum_plane_descriptors",
             &feature_datum_plane_descriptors,
+        )?;
+    }
+    if !feature_datum_plane_csys_identity_uses.is_empty() {
+        namespace.set_arena(
+            "feature_datum_plane_csys_identity_uses",
+            &feature_datum_plane_csys_identity_uses,
         )?;
     }
     if !feature_sketch_references.is_empty() {
@@ -3592,6 +3604,7 @@ struct FeatureOperationSources<'a> {
     datum_plane_headers: &'a [crate::native::FeatureDatumPlaneHeader],
     datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
     datum_plane_payloads: &'a [crate::native::FeatureDatumPlanePayload],
+    datum_plane_csys_identity_uses: &'a [crate::native::FeatureDatumPlaneCsysIdentityUse],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
@@ -3626,6 +3639,7 @@ fn attach_feature_operations(
         datum_plane_headers,
         datum_plane_block_uses,
         datum_plane_payloads,
+        datum_plane_csys_identity_uses,
         sketch_references,
         extrude_profile_references,
         extrude_construction_profiles,
@@ -3703,6 +3717,18 @@ fn attach_feature_operations(
         .enumerate()
         .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
+    let mut datum_identity_uses_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureDatumPlaneCsysIdentityUse>>::new();
+    for identity_use in datum_plane_csys_identity_uses {
+        datum_identity_uses_by_operation
+            .entry(identity_use.datum_plane_operation_label.as_str())
+            .or_default()
+            .push(identity_use);
+        datum_identity_uses_by_operation
+            .entry(identity_use.datum_csys_operation_label.as_str())
+            .or_default()
+            .push(identity_use);
+    }
     let mut sketch_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchReference>>::new();
     for reference in sketch_references {
@@ -3857,6 +3883,28 @@ fn attach_feature_operations(
                 dependencies.push(dependency);
             }
         }
+        for identity_use in datum_identity_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            let other = if identity_use.datum_plane_operation_label == label.id {
+                identity_use.datum_csys_operation_label.as_str()
+            } else {
+                identity_use.datum_plane_operation_label.as_str()
+            };
+            let Some(other_position) = operation_positions.get(other) else {
+                continue;
+            };
+            if *other_position >= ordinal {
+                continue;
+            }
+            let other_key = other.rsplit_once('#').map_or("unknown", |(_, key)| key);
+            let dependency = FeatureId(format!("nx:feature-history:feature#{other_key}"));
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+        }
         let mut source_properties = BTreeMap::new();
         let outputs = body_references
             .get(label.id.as_str())
@@ -3915,6 +3963,17 @@ fn attach_feature_operations(
         }
         if let Some(payload) = datum_plane_payloads_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_payload".to_string(), payload.id.clone());
+        }
+        for (ordinal, identity_use) in datum_identity_uses_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("datum_identity_use.{ordinal}"),
+                identity_use.id.clone(),
+            );
         }
         for block_use in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
