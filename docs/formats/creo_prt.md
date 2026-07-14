@@ -201,7 +201,9 @@ A decoder must not infer the kind of a row without a materialized parameter row 
 | `srf_prim_ptr(fillet_srf)`                            | Nested spline, tangent, flip, and `i_pnts` fields               |
 | `srf_prim_ptr(tab_cyl)` and `srf_prim_ptr(ruled_srf)` | Local-system, curve/spline, parameter, and control-point fields |
 
-Named prototype fields describe the first surface instance. Positional row bodies carry the per-instance values for subsequent instances.
+Named prototype fields describe the first surface instance. The first instance is the adjacent same-family positional surface row. The preceding adjacent row is the first instance when the prototype separates it from replay rows; otherwise the following adjacent row is the first instance. Positional row bodies carry the per-instance values for subsequent instances.
+
+For a cylinder, a complete prototype `local_sys` and positive `radius` define the first instance carrier. The first and second support triples occupy slots 0 through 2 and 6 through 8, slots 3 through 5 are zero, and slots 9 through 11 are the origin. The normalized cross product of the two orthogonal support directions is the cylinder axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot.
 
 The next named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. Bytes after that close belong to subsequent instance or namespace records.
 

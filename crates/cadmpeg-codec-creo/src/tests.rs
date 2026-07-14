@@ -121,6 +121,15 @@ fn push_generated_topology_row(
     payload.extend_from_slice(&[0, 0, 0xe3, 0xe1, 0xf5, 0x05, 0xf6, 0xe3]);
 }
 
+fn push_named_cylinder_prototype(payload: &mut Vec<u8>) {
+    payload.extend_from_slice(b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03");
+    for value in [0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0] {
+        push_generated_scalar(payload, value);
+    }
+    payload.push(0x18);
+    payload.extend_from_slice(b"\xe0\x01radius\0\xe4");
+}
+
 fn jpeg_payload() -> Vec<u8> {
     vec![0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]
 }
@@ -2497,6 +2506,42 @@ fn scan_decodes_fc_curve_world_coordinate_lane() {
     assert_eq!(control_points.curve_id, 7);
     assert_eq!(control_points.subtype, 8);
     assert_eq!(control_points.values_mm, vec![3.0, -3.0, 2.0, -2.0]);
+}
+
+#[test]
+fn decode_places_first_cylinder_instance_from_named_prototype() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 0]);
+    push_named_cylinder_prototype(&mut payload);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+    let cylinder = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("first cylinder instance");
+
+    assert_eq!(
+        cylinder.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Cylinder {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+            radius: 1.0,
+        }
+    );
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes
+            ["transferred_first_instance_prototype_cylinder_count"],
+        "1"
+    );
 }
 
 #[test]

@@ -769,6 +769,11 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
+        if body[cursor] == 0x18 && cursor + 1 == body.len() {
+            slots.push(Some(0.0));
+            cursor += 1;
+            continue;
+        }
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
             slots.extend([Some(0.0), Some(1.0), Some(0.0)]);
             cursor += 2;
@@ -1342,6 +1347,34 @@ mod tests {
                     Some(1.0),
                 ],
             }
+        );
+    }
+
+    #[test]
+    fn named_local_system_decodes_terminal_zero_slot() {
+        let payload = b"srf_prim_ptr(cylinder)\0\xe0\x02local_sys\0\xf9\x04\x03\x18\xe5\x0f\x0f\x0f\xe4\x0f\x0f\x0f\x2f\x2e\0\x18\xe0\x01radius\0\xe4";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(
+            records[0].field("local_sys").map(|field| &field.value),
+            Some(&SurfaceNamedValue::ScalarArray {
+                dimensions: 4,
+                count: 3,
+                values: vec![
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(1.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(0.0),
+                    Some(15.0),
+                    Some(0.0),
+                ],
+            })
         );
     }
 

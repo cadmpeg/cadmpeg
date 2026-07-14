@@ -11842,6 +11842,120 @@ fn transfer_cap_pair_cylinders(
     }
 }
 
+fn prototype_scalar(record: &crate::surface::SurfacePrototypeRecord, name: &str) -> Option<f64> {
+    match &record.field(name)?.value {
+        crate::surface::SurfaceNamedValue::ScalarSequence(values) if values.len() == 1 => {
+            Some(values[0])
+        }
+        _ => None,
+    }
+}
+
+fn prototype_local_frame(
+    record: &crate::surface::SurfacePrototypeRecord,
+) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
+    let crate::surface::SurfaceNamedValue::ScalarArray {
+        dimensions: 4,
+        count: 3,
+        values,
+    } = &record.field("local_sys")?.value
+    else {
+        return None;
+    };
+    let slots = values.iter().copied().collect::<Option<Vec<_>>>()?;
+    let slots: [f64; 12] = slots.try_into().ok()?;
+    let scale = slots.iter().copied().map(f64::abs).fold(1.0, f64::max);
+    if slots[3..6].iter().any(|value| value.abs() > 1e-10 * scale) {
+        return None;
+    }
+    let reference = normalized(slots[0..3].try_into().ok()?)?;
+    let second = normalized(slots[6..9].try_into().ok()?)?;
+    if dot(reference, second).abs() > 1e-10 {
+        return None;
+    }
+    let axis = normalized(cross(reference, second))?;
+    let origin = slots[9..12].try_into().ok()?;
+    Some((origin, axis, reference))
+}
+
+fn transfer_first_instance_prototype_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for record in &scan.surface_prototype_records {
+        if record.family != crate::surface::SurfacePrototypeFamily::Cylinder {
+            continue;
+        }
+        let Some(section) = scan.sections.iter().find(|section| {
+            record.offset >= section.offset
+                && record.offset < section.offset.saturating_add(section.length)
+        }) else {
+            continue;
+        };
+        let preceding = scan
+            .surface_rows
+            .iter()
+            .filter(|row| row.offset >= section.offset && row.offset < record.offset)
+            .max_by_key(|row| row.offset);
+        let following = scan
+            .surface_rows
+            .iter()
+            .filter(|row| {
+                row.offset > record.offset
+                    && row.offset < section.offset.saturating_add(section.length)
+            })
+            .min_by_key(|row| row.offset);
+        let row = preceding
+            .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+            .or_else(|| following.filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder));
+        let Some(row) = row else {
+            continue;
+        };
+        let Some(radius) =
+            prototype_scalar(record, "radius").filter(|radius| radius.is_finite() && *radius > 0.0)
+        else {
+            continue;
+        };
+        let Some((origin, axis, reference)) = prototype_local_frame(record) else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            &section.name,
+            record.offset as u64,
+            "first_instance_cylinder_prototype",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(origin[0], origin[1], origin[2]),
+                axis: Vector3::new(axis[0], axis[1], axis[2]),
+                ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("{}:{}", section.name, row.id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn fc05_model_frame(
     axis_index: usize,
     axis_ordinate: f64,
@@ -12981,6 +13095,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
+    let first_instance_prototype_cylinder_count =
+        transfer_first_instance_prototype_cylinders(scan, &mut ir, &mut annotations);
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
@@ -12999,6 +13115,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "transferred_first_instance_prototype_cylinder_count".to_string(),
+            first_instance_prototype_cylinder_count.to_string(),
+        );
         source.attributes.insert(
             "transferred_saved_spline_curve_count".to_string(),
             saved_spline_curve_count.to_string(),
@@ -13632,6 +13752,16 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         .collect::<BTreeSet<_>>();
     placed_plane_ids.extend(scan.outline_planes.iter().map(|plane| plane.surface_id));
     let placed_plane_count = placed_plane_ids.len();
+    let first_instance_prototype_cylinder_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("transferred_first_instance_prototype_cylinder_count")
+        })
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
 
     let mut losses = Vec::new();
 
@@ -13660,7 +13790,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             "PSB container decoded structurally: {} section(s), {} layout, VisibGeom namespace \
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
-             Outline-backed planes, guarded non-axis support frames, topology-bound `fc 05` \
+             Outline-backed planes, guarded non-axis support frames, complete first-instance \
+             cylinder prototypes, topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
              and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
              other parameter bodies remain structural records.",
@@ -13682,13 +13813,12 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             "General model B-rep transfer remains incomplete. Exact planar components transfer \
              when every loop is solved from placed-plane intersections and one strict containment \
              outer boundary exists per face. Selected \
-             cylinders transfer when either an exact `fc 05` record and placed cap outline or a \
+             cylinders transfer when a complete named prototype binds the adjacent first \
+             positional instance, an exact `fc 05` record and placed cap outline binds a row, or a \
              four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
              square cap outline establishes the complete axis placement, parameterization, and \
-             radius. VisibGeom \
-             stores one surface prototype per family (a first-instance template), not per-instance \
-             located geometry, so other prototype scalars cannot be emitted as model surfaces \
-             without mislabeling most instances \
+             radius. Later positional instances do not inherit prototype placement or scalar \
+             defaults; they require their per-instance parameter bodies \
              ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
              records."
         ),
@@ -13702,6 +13832,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Transferred {placed_plane_count} model-space plane carrier(s) from complete \
                  VisibGeom local-system support frames."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && first_instance_prototype_cylinder_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {first_instance_prototype_cylinder_count} first-instance cylinder \
+                 carrier(s) from complete named local frames and radii."
             ),
             provenance: None,
         });
