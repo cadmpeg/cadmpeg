@@ -1,6 +1,18 @@
 schema_version = 1
 
 [[fixture_class]]
+name = "fixed-ascii-container"
+tests = ["fixed_ascii_detection_requires_two_consistent_cards", "inspect_reports_sections_and_physical_line_endings", "inspect_parses_alternate_delimiters_and_cross_card_hollerith", "compressed_and_binary_representations_are_detected_inspected_and_refused", "legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3"]
+
+[[fixture_class]]
+name = "reference-graph"
+tests = ["inspect_preserves_transform_cycles_as_named_reference_states", "decode_rejects_cyclic_boolean_tree_references", "decode_rejects_cyclic_solid_assembly_definitions"]
+
+[[fixture_class]]
+name = "byte-ledger"
+tests = ["decode_preserves_native_entities_graph_and_complete_byte_ledger", "decode_classifies_cross_card_hollerith_bytes_as_one_global_value", "decode_retains_and_accounts_for_post_terminate_records"]
+
+[[fixture_class]]
 name = "analytic-curves"
 tests = ["decode_projects_a_counterclockwise_circular_arc"]
 

@@ -60,6 +60,19 @@ struct LadderDecisionFile {
     decision: Vec<LadderDecision>,
 }
 
+#[derive(Deserialize)]
+struct LadderGateFile {
+    schema_version: u64,
+    gate: Vec<LadderGate>,
+}
+
+#[derive(Deserialize)]
+struct LadderGate {
+    level: String,
+    fixture_classes: Vec<String>,
+    assertions: Vec<String>,
+}
+
 #[derive(Clone, Deserialize, Serialize)]
 struct LadderDecision {
     gate: String,
@@ -100,6 +113,7 @@ struct Report {
     approvals: ApprovalReport,
     ladder_decisions: Vec<LadderDecision>,
     summary: Summary,
+    ladder_gates: Vec<ReportGate>,
     rows: Vec<ReportRow>,
     evidence_errors: Vec<String>,
 }
@@ -120,7 +134,21 @@ struct Summary {
     original_complete_rows: usize,
     public_complete_rows: usize,
     complete_rows: usize,
+    structurally_complete_gates: usize,
+    original_complete_gates: usize,
+    public_complete_gates: usize,
+    complete_gates: usize,
     release_ready: bool,
+}
+
+#[derive(Serialize)]
+struct ReportGate {
+    level: String,
+    fixture_classes: Vec<String>,
+    assertions: Vec<String>,
+    original_tests: Vec<String>,
+    public_fixtures: Vec<String>,
+    missing: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -213,11 +241,13 @@ fn build_report(root: &Path) -> Result<Report, String> {
     let public: PublicEvidence = read_toml(&root.join("corpus/iges-public-evidence.toml"))?;
     let approvals: Approvals = read_toml(&root.join("corpus/iges-approvals.toml"))?;
     let decisions: LadderDecisionFile = read_toml(&root.join("corpus/iges-ladder-decisions.toml"))?;
+    let gates: LadderGateFile = read_toml(&root.join("corpus/iges-ladder-gates.toml"))?;
     if matrix.schema_version != 1
         || original.schema_version != 1
         || public.schema_version != 1
         || approvals.schema_version != 1
         || decisions.schema_version != 1
+        || gates.schema_version != 1
     {
         return Err("IGES proof inputs require schema_version = 1".into());
     }
@@ -300,6 +330,62 @@ fn build_report(root: &Path) -> Result<Report, String> {
         }
     }
 
+    let required_gate_levels = (0..=8).map(|level| format!("L{level}")).collect::<Vec<_>>();
+    let gate_levels = gates
+        .gate
+        .iter()
+        .map(|gate| gate.level.as_str())
+        .collect::<BTreeSet<_>>();
+    for level in &required_gate_levels {
+        if !gate_levels.contains(level.as_str()) {
+            evidence_errors.push(format!("missing ladder gate {level}"));
+        }
+    }
+    for level in &gate_levels {
+        if !required_gate_levels
+            .iter()
+            .any(|required| required == level)
+        {
+            evidence_errors.push(format!("unexpected ladder gate {level}"));
+        }
+    }
+    if gate_levels.len() != gates.gate.len() {
+        evidence_errors.push("duplicate ladder gate level".into());
+    }
+    let mut ladder_gates = Vec::new();
+    for gate in gates.gate {
+        let mut missing = Vec::new();
+        if gate.assertions.is_empty() {
+            missing.push("assertion".into());
+        }
+        let mut original_tests = BTreeSet::new();
+        let mut gate_public_ids = BTreeSet::new();
+        for class in &gate.fixture_classes {
+            match originals.get(class) {
+                Some(tests) => original_tests.extend(tests.iter().cloned()),
+                None => missing.push(format!("original_fixture_class:{class}")),
+            }
+            let fixtures = valid_public
+                .iter()
+                .filter(|fixture| fixture.fixture_classes.contains(class))
+                .collect::<Vec<_>>();
+            if fixtures.is_empty() {
+                missing.push(format!("public_fixture_class:{class}"));
+            } else {
+                gate_public_ids
+                    .extend(fixtures.into_iter().map(|fixture| fixture.filename.clone()));
+            }
+        }
+        ladder_gates.push(ReportGate {
+            level: gate.level,
+            fixture_classes: gate.fixture_classes,
+            assertions: gate.assertions,
+            original_tests: original_tests.into_iter().collect(),
+            public_fixtures: gate_public_ids.into_iter().collect(),
+            missing,
+        });
+    }
+
     let mut rows = Vec::new();
     for entity in matrix.entity {
         let mut missing = Vec::new();
@@ -368,11 +454,38 @@ fn build_report(root: &Path) -> Result<Report, String> {
         })
         .count();
     let complete_rows = rows.iter().filter(|row| row.missing.is_empty()).count();
+    let structurally_complete_gates = ladder_gates
+        .iter()
+        .filter(|gate| !gate.missing.iter().any(|missing| missing == "assertion"))
+        .count();
+    let original_complete_gates = ladder_gates
+        .iter()
+        .filter(|gate| {
+            !gate
+                .missing
+                .iter()
+                .any(|missing| missing.starts_with("original_fixture_class:"))
+        })
+        .count();
+    let public_complete_gates = ladder_gates
+        .iter()
+        .filter(|gate| {
+            !gate
+                .missing
+                .iter()
+                .any(|missing| missing.starts_with("public_fixture_class:"))
+        })
+        .count();
+    let complete_gates = ladder_gates
+        .iter()
+        .filter(|gate| gate.missing.is_empty())
+        .count();
     let release_ready = approvals.envelope_matrix == "approved"
         && approvals.ladder_decisions == "approved"
         && approvals.byte_ledger == "approved"
         && evidence_errors.is_empty()
-        && complete_rows == rows.len();
+        && complete_rows == rows.len()
+        && complete_gates == ladder_gates.len();
     Ok(Report {
         schema_version: 1,
         envelope: matrix.envelope,
@@ -392,8 +505,13 @@ fn build_report(root: &Path) -> Result<Report, String> {
             original_complete_rows,
             public_complete_rows,
             complete_rows,
+            structurally_complete_gates,
+            original_complete_gates,
+            public_complete_gates,
+            complete_gates,
             release_ready,
         },
+        ladder_gates,
         rows,
         evidence_errors,
     })
@@ -462,6 +580,10 @@ mod tests {
         assert_eq!(report.summary.original_complete_rows, 81);
         assert_eq!(report.summary.public_complete_rows, 0);
         assert_eq!(report.summary.complete_rows, 0);
+        assert_eq!(report.summary.structurally_complete_gates, 9);
+        assert_eq!(report.summary.original_complete_gates, 9);
+        assert_eq!(report.summary.public_complete_gates, 2);
+        assert_eq!(report.summary.complete_gates, 2);
         assert!(!report.summary.release_ready);
         assert!(report.evidence_errors.is_empty());
     }
