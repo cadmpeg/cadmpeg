@@ -2203,6 +2203,71 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
     })
 }
 
+fn positional_order_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Option<FeatureOrderTable> {
+    let (table, declared_count, mut cursor) = (start..end).find_map(|table| {
+        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (class, after_reference) = psb::reference_id(payload, after_count + 1).ok()?;
+        (class == table_class
+            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
+        .then_some((table, declared_count, after_reference + 2))
+    })?;
+    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, after_entry_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    cursor = after_entry_class;
+    for _ in 0..3 {
+        let (_, next) = segment_int(payload, cursor);
+        (next > cursor).then_some(())?;
+        cursor = next;
+    }
+    (payload.get(cursor..cursor + 2) == Some(&[0xf1, psb::token::ENTITY_REF])).then_some(())?;
+    let (class, after_reference) = psb::reference_id(payload, cursor + 2).ok()?;
+    (class == table_class && payload.get(after_reference) == Some(&0xe2)).then_some(())?;
+    cursor = after_reference + 1;
+    let row_limit = usize::try_from(declared_count.saturating_sub(1)).unwrap_or(usize::MAX);
+    let mut rows = Vec::with_capacity(row_limit.min(1024));
+    let mut external_ids = BTreeSet::new();
+    let mut internal_ids = BTreeSet::new();
+    while cursor < end && rows.len() < row_limit {
+        let row_offset = cursor;
+        let (external_id, next) = segment_int(payload, cursor);
+        let (internal_id, next) = segment_int(payload, next);
+        let (bitmask, next) = segment_int(payload, next);
+        let (Some(external_id), Some(internal_id), Some(bitmask)) =
+            (external_id, internal_id, bitmask)
+        else {
+            return None;
+        };
+        if !external_ids.insert(external_id) || !internal_ids.insert(internal_id) {
+            return None;
+        }
+        rows.push(FeatureOrderRow {
+            external_id,
+            internal_id,
+            bitmask,
+            offset: row_offset,
+        });
+        cursor = next;
+        if rows.len() == row_limit {
+            break;
+        }
+        (payload.get(cursor) == Some(&0xe2)).then_some(())?;
+        cursor += 1;
+    }
+    (rows.len() == row_limit).then_some(FeatureOrderTable {
+        declared_count,
+        entity_ref: Some(table_class),
+        rows,
+        offset: table,
+    })
+}
+
 fn named_compact_int(payload: &[u8], label: &[u8], start: usize, end: usize) -> Option<u32> {
     let at = find_bytes(payload, label, start, end)? + label.len();
     let (value, next) = segment_int(payload, at);
@@ -4144,6 +4209,7 @@ fn definitions_in_ranges(
     let mut replay_relation_class = None;
     let mut replay_trim_entity_classes = None;
     let mut replay_trim_vertex_classes = None;
+    let mut replay_order_class = None;
     for (index, &(start, id, owner_override)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
@@ -4272,7 +4338,13 @@ fn definitions_in_ranges(
         if owner_override.is_none() {
             replay_trim_vertex_classes = trim_table_classes(payload, b"vert_tab\0", start, end);
         }
-        let order_table = order_table(payload, start, end);
+        let order_table = order_table(payload, start, end).or_else(|| {
+            owner_override
+                .and_then(|_| positional_order_table(payload, start, end, replay_order_class?))
+        });
+        if owner_override.is_none() {
+            replay_order_class = order_table.as_ref().and_then(|table| table.entity_ref);
+        }
         let section_3d = section_3d(payload, start, end)
             .or_else(|| owner_override.and_then(|_| positional_section_3d(payload, start, end)));
         let dimensions = dimension_table(payload, start, end, &cache).or_else(|| {
@@ -4869,6 +4941,24 @@ mod tests {
         assert_eq!(entities.solved_external_ids, vec![9]);
         assert_eq!(entities.rows[0].vertices, [3, 4]);
         assert_eq!(entities.rows[0].kind, TrimEntityKind::Line);
+    }
+
+    #[test]
+    fn positional_order_table_replays_prototype_and_following_rows() {
+        let payload = b"prefix\xf8\x03\xf7\x42\xfb\xe2\xf7\x43\
+            \x09\x01\x00\xf1\xf7\x42\xe2\
+            \x0a\x02\x01\xe2\x0b\x03\x00";
+
+        let order =
+            positional_order_table(payload, 0, payload.len(), 66).expect("positional order_table");
+
+        assert_eq!(order.declared_count, 3);
+        assert_eq!(order.entity_ref, Some(66));
+        assert_eq!(order.rows.len(), 2);
+        assert_eq!(order.rows[0].external_id, 10);
+        assert_eq!(order.rows[0].internal_id, 2);
+        assert_eq!(order.rows[0].bitmask, 1);
+        assert_eq!(order.rows[1].external_id, 11);
     }
 
     #[test]
