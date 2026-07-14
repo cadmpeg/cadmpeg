@@ -207,6 +207,8 @@ Sketch relations use named scalar records with reference cells at fixed scalar-r
 
 A `7b 83` point reference is qualified by its local identifier. The identifier can select a point, constrained-point, line-or-circle, or arc marker. For a selected curve marker, the marker's stored coordinate is the point locus; the curve marker retains its curve identity independently of that qualified locus.
 
+A coordinate-less point or constrained-point handle used by a dimensional relation can be relation-qualified. When exactly one point-point distance operand has a profile locus and the stored distance selects one physical coordinate in the complete owning sketch, that coordinate is the other operand's construction-point locus for that relation. Coincident profile loci at the selected coordinate are one physical-coordinate match. The relation-qualified locus does not assign a global position to the native handle and is distinct for each relation and operand position.
+
 Distinct operand addresses in one binary relation select distinct markers. When address resolution initially converges on one marker, resolution of either operand excludes that marker from the other operand's exact local-identifier and reference-link candidates.
 
 A point-point dimension projects to neutral form only when its operands resolve to distinct profile loci. A line-line distance or angular dimension projects only when its operands resolve to distinct profile entities.
