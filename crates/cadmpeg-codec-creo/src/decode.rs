@@ -32,7 +32,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus,
+    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
@@ -2556,7 +2556,41 @@ fn section_skamp_constraints(
                         definition.id, second.entity_id
                     )),
                 },
-                _ => return None,
+                _ => {
+                    let entities = skamp
+                        .items
+                        .iter()
+                        .map(|item| {
+                            segments
+                                .rows
+                                .iter()
+                                .any(|segment| segment.external_id == item.entity_id)
+                                .then(|| {
+                                    SketchEntityId(format!(
+                                        "creo:featdefs:sketch_entity#{}:{}",
+                                        definition.id, item.entity_id
+                                    ))
+                                })
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    if entities.is_empty() {
+                        return None;
+                    }
+                    SketchConstraintDefinition::Native {
+                        native_kind: format!("creo:skamp:{}", skamp.kind),
+                        entities,
+                        parameter: None,
+                        operands: skamp
+                            .items
+                            .iter()
+                            .map(|item| SketchNativeOperand {
+                                native_kind: "sense".to_string(),
+                                object_index: item.sense,
+                                native_ref: None,
+                            })
+                            .collect(),
+                    }
+                }
             };
             Some((
                 SketchConstraint {
@@ -4708,6 +4742,17 @@ mod resolved_sketch_tests {
                     }],
                     offset: 60,
                 },
+                crate::feature::FeatureSkamp {
+                    id: 5,
+                    kind: 7,
+                    flags: 0,
+                    status: 0,
+                    items: vec![crate::feature::FeatureSkampItem {
+                        entity_id: 12,
+                        sense: 4,
+                    }],
+                    offset: 70,
+                },
             ],
             triples: Vec::new(),
             offset: 45,
@@ -4744,6 +4789,21 @@ mod resolved_sketch_tests {
             constraints[1].0.definition,
             SketchConstraintDefinition::Vertical { .. }
         ));
+        assert_eq!(
+            constraints[2].0.definition,
+            SketchConstraintDefinition::Native {
+                native_kind: "creo:skamp:7".to_string(),
+                entities: vec![SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )],
+                parameter: None,
+                operands: vec![SketchNativeOperand {
+                    native_kind: "sense".to_string(),
+                    object_index: 4,
+                    native_ref: None,
+                }],
+            }
+        );
     }
 
     #[test]
