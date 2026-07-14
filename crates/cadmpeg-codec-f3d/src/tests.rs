@@ -8998,7 +8998,6 @@ fn decode_builds_valid_topology_and_geometry() {
         .annotations
         .provenance
         .contains_key(&result.ir.model.bodies[0].id.0));
-    assert_eq!(result.ir.annotations, cadmpeg_ir::Annotations::default());
 
     // The plane decoded with its stored origin and complete parameter frame.
     match &result.ir.model.surfaces[0].geometry {

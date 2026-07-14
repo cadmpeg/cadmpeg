@@ -33,10 +33,10 @@ pub fn decode(
 
     if options.container_only {
         let mut ir = build_metadata_ir(&scan)?;
-        populate_annotations(&mut ir, &scan, &F3dNative::default(), None);
+        let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None);
         preserve_source_image(&scan, &mut ir)?;
         let report = build_container_report(&scan, true);
-        return Ok(decode_result(ir, report));
+        return Ok(decode_result(ir, report, annotations));
     }
 
     // `try_decode_brep` returns `Some` after producing carriers or points.
@@ -138,14 +138,14 @@ pub fn decode(
                 }
             }
             native.store(ir.native.namespace_mut("f3d"))?;
-            populate_annotations(
-                &mut ir,
+            let annotations = populate_annotations(
+                &ir,
                 &scan,
                 &native,
                 Some((&active.name, &annotation_records)),
             );
             preserve_source_image(&scan, &mut ir)?;
-            return Ok(decode_result(ir, report));
+            return Ok(decode_result(ir, report, annotations));
         }
     }
 
@@ -188,14 +188,17 @@ pub fn decode(
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     native.store(ir.native.namespace_mut("f3d"))?;
-    populate_annotations(&mut ir, &scan, &native, None);
+    let annotations = populate_annotations(&ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
     let report = build_container_report(&scan, false);
-    Ok(decode_result(ir, report))
+    Ok(decode_result(ir, report, annotations))
 }
 
-fn decode_result(mut ir: CadIr, report: DecodeReport) -> DecodeResult {
-    let annotations = std::mem::take(&mut ir.annotations);
+fn decode_result(
+    ir: CadIr,
+    report: DecodeReport,
+    annotations: cadmpeg_ir::Annotations,
+) -> DecodeResult {
     DecodeResult::with_source_fidelity(
         ir,
         report,
@@ -255,11 +258,11 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
 }
 
 fn populate_annotations(
-    ir: &mut CadIr,
+    ir: &CadIr,
     scan: &ContainerScan,
     native: &F3dNative,
     brep: Option<(&str, &[brep::AnnotationRecord])>,
-) {
+) -> cadmpeg_ir::Annotations {
     let mut annotations = AnnotationBuilder::new();
     if let Some((stream_name, records)) = brep {
         let stream = annotations.stream(format!("f3d:{stream_name}"));
@@ -371,7 +374,7 @@ fn populate_annotations(
             }
         }
     }
-    ir.annotations = annotations.build();
+    annotations.build()
 }
 
 fn trailing_offset(id: &str) -> u64 {
