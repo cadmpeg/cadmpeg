@@ -2623,6 +2623,41 @@ fn decode_places_first_cylinder_instance_from_named_prototype() {
 }
 
 #[test]
+fn decode_places_first_plane_instance_from_named_prototype() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    push_named_analytic_prototype(&mut payload, "plane", &[]);
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+    let plane = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("first plane instance");
+
+    assert_eq!(
+        plane.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        }
+    );
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes
+            ["transferred_first_instance_prototype_surface_count"],
+        "1"
+    );
+}
+
+#[test]
 fn decode_places_first_cone_sphere_and_torus_instances_from_named_prototypes() {
     let cases = [
         (

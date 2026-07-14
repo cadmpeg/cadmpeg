@@ -11886,6 +11886,7 @@ fn transfer_first_instance_prototype_surfaces(
     let mut transferred = 0;
     for record in &scan.surface_prototype_records {
         let row_kind = match record.family {
+            crate::surface::SurfacePrototypeFamily::Plane => crate::surface::SurfaceKind::Plane,
             crate::surface::SurfacePrototypeFamily::Cylinder => {
                 crate::surface::SurfaceKind::Cylinder
             }
@@ -11927,6 +11928,11 @@ fn transfer_first_instance_prototype_surfaces(
         let axis = Vector3::new(axis[0], axis[1], axis[2]);
         let reference = Vector3::new(reference[0], reference[1], reference[2]);
         let geometry = match record.family {
+            crate::surface::SurfacePrototypeFamily::Plane => SurfaceGeometry::Plane {
+                origin: point,
+                normal: axis,
+                u_axis: reference,
+            },
             crate::surface::SurfacePrototypeFamily::Cylinder => {
                 let Some(radius) = prototype_scalar(record, "radius")
                     .filter(|radius| radius.is_finite() && *radius > 0.0)
