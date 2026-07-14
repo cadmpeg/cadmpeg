@@ -1469,8 +1469,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && companion.opaque_value != 0
-            && companion.opaque_value_offset == companion.byte_offset.saturating_add(42)
+            && companion.timestamp_micros != 0
+            && companion.timestamp_micros_offset == companion.byte_offset.saturating_add(42)
             && companion.payload_byte_offset == companion.byte_offset.saturating_add(58)
             && payload_end.is_some()
             && companion

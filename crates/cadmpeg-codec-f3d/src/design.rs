@@ -3403,7 +3403,7 @@ pub fn decode_parameter_companions(
             entry.name, header.byte_offset
         );
         companion.byte_offset = header.byte_offset;
-        companion.opaque_value_offset += header.byte_offset;
+        companion.timestamp_micros_offset += header.byte_offset;
         companion.payload_byte_offset += header.byte_offset;
         out.push(companion);
     }
@@ -3424,8 +3424,8 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> 
     {
         return None;
     }
-    let opaque_value = read_u64(prefix, 42)?;
-    if opaque_value == 0 {
+    let timestamp_micros = read_u64(prefix, 42)?;
+    if timestamp_micros == 0 {
         return None;
     }
     Some(DesignParameterCompanion {
@@ -3434,8 +3434,8 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> 
         class_tag,
         record_index: u32_at(prefix, 7)?,
         owner_record_index: u32_at(prefix, 32)?,
-        opaque_value,
-        opaque_value_offset: 42,
+        timestamp_micros,
+        timestamp_micros_offset: 42,
         payload_byte_offset: 58,
         payload_byte_length: 0,
         owned_recipe_ids: Vec::new(),
@@ -7901,7 +7901,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn parameter_companion_prefix_has_owner_backlink_and_opaque_value() {
+    fn parameter_companion_prefix_has_owner_backlink_and_timestamp() {
         let mut prefix = vec![0; 58];
         prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
         prefix[4..7].copy_from_slice(b"408");
@@ -7913,8 +7913,8 @@ mod relation_tests {
         let parsed = parse_parameter_companion(&prefix).unwrap();
         assert_eq!(parsed.record_index, 46);
         assert_eq!(parsed.owner_record_index, 44);
-        assert_eq!(parsed.opaque_value, 1_678_000_000_000_000);
-        assert_eq!(parsed.opaque_value_offset, 42);
+        assert_eq!(parsed.timestamp_micros, 1_678_000_000_000_000);
+        assert_eq!(parsed.timestamp_micros_offset, 42);
 
         prefix[32..36].copy_from_slice(&45u32.to_le_bytes());
         assert_eq!(
@@ -8190,8 +8190,8 @@ mod relation_tests {
             class_tag: "300".into(),
             record_index: 11,
             owner_record_index: 10,
-            opaque_value: 1,
-            opaque_value_offset: 42,
+            timestamp_micros: 1,
+            timestamp_micros_offset: 42,
             payload_byte_offset: 58,
             payload_byte_length: 0,
             owned_recipe_ids: Vec::new(),

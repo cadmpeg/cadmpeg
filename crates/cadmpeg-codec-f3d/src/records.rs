@@ -380,10 +380,12 @@ pub struct DesignParameterCompanion {
     pub record_index: u32,
     /// Indexed parameter-owner record referenced by this prefix.
     pub owner_record_index: u32,
-    /// Opaque nonzero u64 stored by the companion prefix.
-    pub opaque_value: u64,
-    /// Byte offset of `opaque_value`.
-    pub opaque_value_offset: u64,
+    /// Nonzero Unix-epoch timestamp in microseconds.
+    #[serde(alias = "opaque_value")]
+    pub timestamp_micros: u64,
+    /// Byte offset of `timestamp_micros`.
+    #[serde(alias = "opaque_value_offset")]
+    pub timestamp_micros_offset: u64,
     /// First byte owned after the fixed companion prefix.
     #[serde(default)]
     pub payload_byte_offset: u64,
