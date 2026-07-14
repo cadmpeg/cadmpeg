@@ -498,6 +498,29 @@ pub struct FeatureDatumPlanePayload {
     pub index_lane_trailer: Option<u32>,
 }
 
+/// One exactly framed scalar pair in a reconstructed datum-plane payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureDatumPlanePayloadScalarPair {
+    /// Globally unique scalar-pair identity.
+    pub id: String,
+    /// Owning `DATUM_PLANE` operation label.
+    pub operation_label: String,
+    /// Reconstructed payload carrying the frame.
+    pub datum_plane_payload: String,
+    /// Zero-based frame order within the payload.
+    pub ordinal: u32,
+    /// Ordered finite shifted-IEEE values.
+    pub values: [f64; 2],
+    /// Payload-relative offset of the discriminator.
+    pub payload_offset: u64,
+    /// Payload-relative offsets of the scalar encodings.
+    pub value_payload_offsets: [u64; 2],
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the scalar encodings.
+    pub value_source_offsets: [u64; 2],
+}
+
 /// Datum-plane construction lane containing a reused block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1881,6 +1904,54 @@ pub fn feature_datum_plane_payloads(
                 }),
                 index_lane_trailer: lane.map(|lane| lane.trailer),
             })
+        })
+        .collect()
+}
+
+/// Decode exact scalar-pair frames from reconstructed datum-plane payloads.
+pub fn feature_datum_plane_payload_scalar_pairs(
+    container: &Container,
+    payloads: &[FeatureDatumPlanePayload],
+) -> Vec<FeatureDatumPlanePayloadScalarPair> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            let source_offset =
+                |relative: usize| {
+                    let relative = relative as u64;
+                    starts.iter().zip(&lengths).zip(&sources).find_map(
+                        |((start, length), source)| {
+                            (relative >= *start && relative < start.saturating_add(*length))
+                                .then_some(source + relative - start)
+                        },
+                    )
+                };
+            crate::om::datum_plane_object_scalar_pairs(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, pair)| {
+                    Some(FeatureDatumPlanePayloadScalarPair {
+                        id: format!("{}-scalar-pair-{ordinal}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        datum_plane_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        values: pair.values,
+                        payload_offset: pair.offset as u64,
+                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                        source_offset: source_offset(pair.offset)?,
+                        value_source_offsets: [
+                            source_offset(pair.value_offsets[0])?,
+                            source_offset(pair.value_offsets[1])?,
+                        ],
+                    })
+                })
+                .collect()
         })
         .collect()
 }

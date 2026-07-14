@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 89);
+    assert_eq!(namespace.version, 90);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1450,6 +1450,26 @@ fn om_datum_plane_object_index_lane_ends_at_logical_payload_boundary() {
     let mut trailing = bytes.to_vec();
     trailing.push(0);
     assert!(crate::om::datum_plane_object_index_lanes(&trailing).is_empty());
+}
+
+#[test]
+fn om_datum_plane_object_scalar_pairs_require_the_complete_discriminator() {
+    let mut bytes = vec![0x7f, 0x01, 0x01, 0xff];
+    bytes.extend_from_slice(&[
+        0x6d, 0x00, 0xf0, 0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86,
+        0x02, 0x00, 0x03,
+    ]);
+    bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0);
+    bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
+    let pairs = crate::om::datum_plane_object_scalar_pairs(&bytes);
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].offset, 4);
+    assert_eq!(pairs[0].value_offsets, [22, 31]);
+    assert_eq!(pairs[0].values, [10.0, -20.0]);
+
+    bytes[10] ^= 1;
+    assert!(crate::om::datum_plane_object_scalar_pairs(&bytes).is_empty());
 }
 
 #[test]
@@ -5245,7 +5265,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 89);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 90);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
