@@ -1260,7 +1260,7 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecErr
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len()];
+    let mesh_presence = vec![0; model.faces.len() + 1];
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = 0_i32.to_le_bytes();
@@ -1935,7 +1935,7 @@ fn multi_face_brep_payload(
         payload.extend(bytes);
         direct.extend(bytes);
     }
-    let mesh_presence = vec![0; model.faces.len()];
+    let mesh_presence = vec![0; model.faces.len() + 1];
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     payload.extend(crc_chunk(0x4000_8000, &mesh_presence));
     let solid = i32::from(body.kind == BodyKind::Solid).to_le_bytes();
@@ -4758,6 +4758,15 @@ mod tests {
             let decoded = RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
+            assert!(
+                decoded
+                    .report
+                    .losses
+                    .iter()
+                    .all(|loss| !loss.message.contains("Brep mesh cache degraded")),
+                "{version:?}: {:?}",
+                decoded.report.losses
+            );
             assert_eq!(decoded.ir.model.bodies.len(), 1, "{version:?}");
             assert_eq!(
                 decoded.ir.model.bodies[0].kind,
