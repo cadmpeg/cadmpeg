@@ -560,9 +560,8 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    let mut ir = build_ir(&scan)?;
+    let (ir, annotations) = build_ir(&scan)?;
     let report = build_report(&scan, options.container_only);
-    let annotations = std::mem::take(&mut ir.annotations);
     Ok(DecodeResult::with_source_fidelity(
         ir,
         report,
@@ -574,7 +573,7 @@ pub fn decode(
 }
 
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
-fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_ir(scan: &ContainerScan) -> Result<(CadIr, cadmpeg_ir::Annotations), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -796,8 +795,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("sketches", &sketches)?;
     }
-    ir.annotations = annotations.build();
-    Ok(ir)
+    Ok((ir, annotations.build()))
 }
 
 fn annotate(

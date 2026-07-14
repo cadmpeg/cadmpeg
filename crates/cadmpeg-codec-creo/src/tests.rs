@@ -1466,7 +1466,6 @@ fn decode_annotations_cover_every_emitted_entity() {
         result.source_fidelity.annotations.exactness.len(),
         emitted_entity_count
     );
-    assert_eq!(result.ir.annotations, cadmpeg_ir::Annotations::default());
 }
 
 #[test]
