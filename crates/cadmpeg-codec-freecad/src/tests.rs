@@ -336,7 +336,90 @@ Co 1001000 +2 0 *
 }
 
 #[test]
-fn composes_outer_and_nested_mirrored_shape_locations_once() {
+fn binds_both_seam_pcurves_and_closes_the_radial_pair() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 2
+1 0 0 0 1
+1 6.283185307179586 0 0 1
+Curves 1
+1 1 0 0 0 0 1
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 1
+2 0 0 0 0 0 1 1 0 0 0 1 0 1
+Triangulations 0
+TShapes 8
+Ve 0.001 1 0 0 0 0 1001000 *
+Ve 0.001 1 0 1 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 3 1 2 C0 1 0 0 1 0 1001000 +8 0 -7 0 *
+Wi 1001000 +6 0 -6 0 *
+Fa 0 0.001 1 0 1001000 +5 0 *
+Sh 1001000 +4 0 *
+So 1001000 +3 0 *
+Co 1001000 +2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("cylindrical seam");
+    assert_eq!(result.ir.model.edges.len(), 1);
+    assert_eq!(result.ir.model.coedges.len(), 2);
+    let first = &result.ir.model.coedges[0];
+    let second = &result.ir.model.coedges[1];
+    assert_eq!(first.radial_next, second.id);
+    assert_eq!(second.radial_next, first.id);
+    assert_ne!(first.pcurve, second.pcurve);
+    assert!(first.pcurve.is_some() && second.pcurve.is_some());
+    let errors = cadmpeg_ir::validate(&result.ir, Vec::new())
+        .findings
+        .into_iter()
+        .filter(|finding| finding.severity == cadmpeg_ir::Severity::Error)
+        .filter(|finding| finding.check != cadmpeg_ir::Check::Identity)
+        .collect::<Vec<_>>();
+    assert!(errors.is_empty(), "{errors:#?}");
+}
+
+#[test]
+fn preserves_a_free_edge_as_a_wire_body() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 1 0 0
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 3
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Shape.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("free edge");
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(
+        result.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert_eq!(result.ir.model.shells.len(), 1);
+    assert_eq!(result.ir.model.shells[0].wire_edges.len(), 1);
+    assert!(result.ir.model.shells[0].faces.is_empty());
+}
+
+#[test]
+fn preserves_compound_ownership_and_composes_nested_mirrored_locations_once() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
@@ -372,18 +455,15 @@ Co 1001000 +2 1 +2 3 *
     let result = FcstdCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("located topology");
-    assert_eq!(result.ir.model.bodies.len(), 2);
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(
+        result.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::General
+    );
+    assert_eq!(result.ir.model.bodies[0].regions.len(), 2);
+    assert!(result.ir.model.bodies[0].transform.is_none());
     assert_eq!(result.ir.model.edges.len(), 4);
     assert_eq!(result.ir.model.vertices.len(), 4);
-    let mut body_translations = result
-        .ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.transform.expect("outer body transform").rows[0][3])
-        .collect::<Vec<_>>();
-    body_translations.sort_by(f64::total_cmp);
-    assert_eq!(body_translations, [10.0, 20.0]);
     let mut positions = result
         .ir
         .model
@@ -410,9 +490,11 @@ Co 1001000 +2 1 +2 3 *
         .collect::<Vec<_>>();
     positions.sort_by(|left, right| left.x.total_cmp(&right.x));
     positions.dedup();
-    assert_eq!(positions.len(), 2);
-    assert_eq!([positions[0].x, positions[0].y], [-2.0, 5.0]);
-    assert_eq!([positions[1].x, positions[1].y], [0.0, 5.0]);
+    assert_eq!(positions.len(), 4);
+    assert_eq!([positions[0].x, positions[0].y], [8.0, 5.0]);
+    assert_eq!([positions[1].x, positions[1].y], [10.0, 5.0]);
+    assert_eq!([positions[2].x, positions[2].y], [18.0, 5.0]);
+    assert_eq!([positions[3].x, positions[3].y], [20.0, 5.0]);
     let face = &result.ir.model.faces[0];
     let surface = result
         .ir
@@ -432,7 +514,7 @@ Co 1001000 +2 1 +2 3 *
     assert_eq!(transform.rows[0][0], -2.0);
     assert_eq!(transform.rows[1][1], 2.0);
     let origin = cadmpeg_ir::eval::surface_point(&surface.geometry, 0.0, 0.0).unwrap();
-    assert_eq!([origin.x, origin.y], [0.0, 5.0]);
+    assert_eq!([origin.x, origin.y], [10.0, 5.0]);
     for edge in &result.ir.model.edges {
         let curve = result
             .ir

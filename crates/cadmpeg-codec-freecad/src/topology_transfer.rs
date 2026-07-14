@@ -168,40 +168,18 @@ impl<'a> Builder<'a> {
     }
 
     fn body_roots(&self) -> Result<Vec<BodyRoot>, CodecError> {
-        fn visit(
-            builder: &Builder<'_>,
-            shape_use: &TextShapeUse,
-            parent: Transform,
-            reversed: bool,
-            output: &mut Vec<BodyRoot>,
-        ) -> Result<(), CodecError> {
-            let shape = builder.shape(shape_use.shape)?;
-            let transform = multiply(parent, builder.tables.location(shape_use.location));
-            let reversed = reversed ^ is_reversed(shape_use.orientation);
-            match shape.kind {
-                TextShapeKind::Solid
-                | TextShapeKind::Shell
-                | TextShapeKind::Wire
-                | TextShapeKind::Face => output.push(BodyRoot {
-                    shape: shape_use.shape,
-                    transform,
-                    reversed,
-                }),
-                TextShapeKind::CompSolid | TextShapeKind::Compound => {
-                    for child in &shape.children {
-                        visit(builder, child, transform, reversed, output)?;
-                    }
-                }
-                TextShapeKind::Vertex | TextShapeKind::Edge => {}
-            }
-            Ok(())
-        }
-
-        let mut output = Vec::new();
-        for root in self.tables.roots {
-            visit(self, root, Transform::identity(), false, &mut output)?;
-        }
-        Ok(output)
+        self.tables
+            .roots
+            .iter()
+            .map(|root| {
+                self.shape(root.shape)?;
+                Ok(BodyRoot {
+                    shape: root.shape,
+                    transform: self.tables.location(root.location),
+                    reversed: is_reversed(root.orientation),
+                })
+            })
+            .collect()
     }
 
     fn append_body(&mut self, ir: &mut CadIr, root: BodyRoot) -> Result<(), CodecError> {
@@ -209,57 +187,90 @@ impl<'a> Builder<'a> {
         let root_shape = self.shape(root.shape)?;
         let body_key = occurrence_label(root.shape, root.transform);
         let body_id = BodyId(format!("{}:body#{body_key}", self.payload.id));
-        let region_id = RegionId(format!("{}:region#{body_key}", self.payload.id));
         let kind = match root_shape.kind {
             TextShapeKind::Solid => BodyKind::Solid,
-            TextShapeKind::Wire => BodyKind::Wire,
+            TextShapeKind::Wire | TextShapeKind::Edge => BodyKind::Wire,
             TextShapeKind::Shell | TextShapeKind::Face => BodyKind::Sheet,
             _ => BodyKind::General,
         };
-        let root_children = root_shape.children.clone();
-        let mut shell_ids = Vec::new();
-        match root_shape.kind {
-            TextShapeKind::Solid => {
-                for child in root_children.iter().filter(|child| {
-                    self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell
-                }) {
-                    shell_ids.push(self.append_shell(
-                        ir,
-                        &region_id,
-                        child,
-                        Transform::identity(),
-                        root.reversed,
-                    )?);
-                }
-            }
-            TextShapeKind::Shell | TextShapeKind::Face | TextShapeKind::Wire => {
-                shell_ids.push(self.append_shell_shape(
-                    ir,
-                    &region_id,
-                    root.shape,
-                    Transform::identity(),
-                    root.reversed,
-                )?);
-            }
-            _ => {}
-        }
-        if shell_ids.is_empty() {
+        let mut regions = Vec::new();
+        self.append_shape_regions(
+            ir,
+            &body_id,
+            root.shape,
+            Transform::identity(),
+            root.reversed,
+            &mut regions,
+        )?;
+        if regions.is_empty() {
             return Ok(());
         }
         ir.model.bodies.push(Body {
             id: body_id.clone(),
             kind,
-            regions: vec![region_id.clone()],
+            regions,
             transform: (!is_identity(root.transform)).then_some(root.transform),
             name: None,
             color: None,
             visible: None,
         });
-        ir.model.regions.push(Region {
-            id: region_id,
-            body: body_id,
-            shells: shell_ids,
-        });
+        Ok(())
+    }
+
+    fn append_shape_regions(
+        &mut self,
+        ir: &mut CadIr,
+        body: &BodyId,
+        shape_index: usize,
+        transform: Transform,
+        reversed: bool,
+        output: &mut Vec<RegionId>,
+    ) -> Result<(), CodecError> {
+        let shape = self.shape(shape_index)?.clone();
+        if matches!(
+            shape.kind,
+            TextShapeKind::Compound | TextShapeKind::CompSolid
+        ) {
+            for child in &shape.children {
+                self.append_shape_regions(
+                    ir,
+                    body,
+                    child.shape,
+                    multiply(transform, self.tables.location(child.location)),
+                    reversed ^ is_reversed(child.orientation),
+                    output,
+                )?;
+            }
+            return Ok(());
+        }
+        let key = self.topology_label(shape_index, transform);
+        let region_id = RegionId(format!("{}:region#{key}", self.payload.id));
+        let mut shells = Vec::new();
+        if shape.kind == TextShapeKind::Solid {
+            for child in shape
+                .children
+                .iter()
+                .filter(|child| self.tables.tshapes[child.shape - 1].kind == TextShapeKind::Shell)
+            {
+                shells.push(self.append_shell(ir, &region_id, child, transform, reversed)?);
+            }
+        } else {
+            shells.push(self.append_shell_shape(
+                ir,
+                &region_id,
+                shape_index,
+                transform,
+                reversed,
+            )?);
+        }
+        if !shells.is_empty() {
+            ir.model.regions.push(Region {
+                id: region_id.clone(),
+                body: body.clone(),
+                shells,
+            });
+            output.push(region_id);
+        }
         Ok(())
     }
 
@@ -324,6 +335,34 @@ impl<'a> Builder<'a> {
                         wire_edges.push(self.ensure_edge(ir, child, transform)?);
                     }
                 }
+            }
+            TextShapeKind::Edge => {
+                let edge_use = TextShapeUse {
+                    shape: shape_index,
+                    orientation: if reversed {
+                        TextOrientation::Reversed
+                    } else {
+                        TextOrientation::Forward
+                    },
+                    location: 0,
+                };
+                wire_edges.push(self.ensure_edge(ir, &edge_use, transform)?);
+            }
+            TextShapeKind::Vertex => {
+                let vertex_use = TextShapeUse {
+                    shape: shape_index,
+                    orientation: TextOrientation::Forward,
+                    location: 0,
+                };
+                let vertex = self.ensure_vertex(ir, &vertex_use, transform)?;
+                ir.model.shells.push(Shell {
+                    id: shell_id.clone(),
+                    region: region.clone(),
+                    faces,
+                    wire_edges,
+                    free_vertices: vec![vertex],
+                });
+                return Ok(shell_id);
             }
             _ => {}
         }
