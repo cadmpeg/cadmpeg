@@ -3503,9 +3503,14 @@ pub fn decode_dimension_locus_pairs(
             )
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) =
-            companion_owned_interval(companion, owners, scopes, headers, bytes.len())
-        else {
+        let Some((start, end)) = companion_owned_interval(
+            companion,
+            parameters.values().copied(),
+            owners,
+            scopes,
+            headers,
+            bytes.len(),
+        ) else {
             continue;
         };
         let Some(mut pair) =
@@ -3725,9 +3730,14 @@ pub fn decode_dimension_null_locus_pairs(
             )
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) =
-            companion_owned_interval(companion, owners, scopes, headers, bytes.len())
-        else {
+        let Some((start, end)) = companion_owned_interval(
+            companion,
+            parameters.values().copied(),
+            owners,
+            scopes,
+            headers,
+            bytes.len(),
+        ) else {
             continue;
         };
         let parse = |at| {
@@ -3897,9 +3907,14 @@ pub fn decode_dimension_locus_groups(
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) =
-            companion_owned_interval(companion, owners, scopes, headers, bytes.len())
-        else {
+        let Some((start, end)) = companion_owned_interval(
+            companion,
+            parameters.values().copied(),
+            owners,
+            scopes,
+            headers,
+            bytes.len(),
+        ) else {
             continue;
         };
         let candidates = find_dimension_locus_groups(
@@ -3956,8 +3971,9 @@ fn find_dimension_locus_groups(
     candidates
 }
 
-fn companion_owned_interval(
+fn companion_owned_interval<'a>(
     companion: &DesignParameterCompanion,
+    parameters: impl IntoIterator<Item = &'a DesignParameter>,
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -3989,6 +4005,15 @@ fn companion_owned_interval(
                 && owner.byte_offset > companion.byte_offset
         })
         .filter_map(|owner| usize::try_from(owner.byte_offset).ok())
+        .chain(
+            parameters
+                .into_iter()
+                .filter(|parameter| {
+                    native_stream(&parameter.id) == Some(native_scope)
+                        && parameter.byte_offset > companion.byte_offset
+                })
+                .filter_map(|parameter| usize::try_from(parameter.byte_offset).ok()),
+        )
         .chain(
             scopes
                 .iter()
@@ -7828,12 +7853,26 @@ mod relation_tests {
         scope.id = "f3d:native:parameter-scope#12".into();
         scope.byte_offset = 58;
         assert_eq!(
-            companion_owned_interval(&companion, &[], &[scope.clone()], &[], 100),
+            companion_owned_interval(
+                &companion,
+                std::iter::empty(),
+                &[],
+                &[scope.clone()],
+                &[],
+                100,
+            ),
             None
         );
         scope.byte_offset = 80;
         assert_eq!(
-            companion_owned_interval(&companion, &[], &[scope.clone()], &[], 100),
+            companion_owned_interval(
+                &companion,
+                std::iter::empty(),
+                &[],
+                &[scope.clone()],
+                &[],
+                100,
+            ),
             Some((58, 80))
         );
         scope.byte_offset = 90;
@@ -7844,8 +7883,31 @@ mod relation_tests {
             byte_offset: 70,
         };
         assert_eq!(
-            companion_owned_interval(&companion, &[], &[scope], &[foreign_header], 100),
+            companion_owned_interval(
+                &companion,
+                std::iter::empty(),
+                &[],
+                &[scope],
+                &[foreign_header],
+                100,
+            ),
             Some((58, 70))
+        );
+
+        let mut parameter = parse_design_parameter(&parameter_record(
+            None,
+            "1",
+            "User Parameter",
+            None,
+            "p",
+            1.0,
+        ))
+        .expect("generated parameter");
+        parameter.id = "f3d:native:design-parameter#65".into();
+        parameter.byte_offset = 65;
+        assert_eq!(
+            companion_owned_interval(&companion, std::iter::once(&parameter), &[], &[], &[], 100,),
+            Some((58, 65))
         );
     }
 
