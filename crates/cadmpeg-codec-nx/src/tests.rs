@@ -338,7 +338,7 @@ fn size_framed_om_section_with_record_area() -> Vec<u8> {
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
     bytes.extend_from_slice(&44u32.to_le_bytes());
-    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00");
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x31\x00\x00\x01\x00\x14\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\x00\x00\xe0\x7f\xff\xff\xff\x01\x01\x01\x02\x90\x19\x42\x00\x01\x03\x90\x19\x4c\x7f\x00\x01\x02\x10\x90\x19\x42\xff");
     let payload_len = (bytes.len() - 16) as u32;
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
@@ -389,7 +389,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 21);
+    assert_eq!(namespace.version, 22);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -588,6 +588,16 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(booleans[0].kind, crate::native::FeatureBooleanKind::Unite);
     assert_eq!(booleans[0].target_object_index, 6466);
     assert_eq!(booleans[0].tool_object_indices, [6476, 127]);
+    let body_references = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::FeatureBodyReference>("feature_body_references")
+        .unwrap();
+    assert_eq!(body_references.len(), 1);
+    assert_eq!(body_references[0].operation_label, labels[0].id);
+    assert_eq!(body_references[0].body_object_index, 6466);
     let feature = result.ir.model.features.first().expect("neutral feature");
     assert_eq!(feature.name.as_deref(), Some("UNITE"));
     assert_eq!(feature.native_ref.as_deref(), Some(labels[0].id.as_str()));
@@ -618,6 +628,39 @@ fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
         ])
     );
     assert_eq!(crate::om::compact_indices(&[0x80]), None);
+}
+
+#[test]
+fn om_operation_primary_body_reference_requires_one_complete_field() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 100,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+    };
+    let bytes = [0x01, 0x02, 0x10, 0x90, 0x19, 0x42, 0xff];
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &bytes,
+        label,
+    };
+    assert_eq!(
+        crate::om::operation_body_reference(record),
+        Some(crate::om::OperationBodyReference {
+            offset: 103,
+            object_index: 6466,
+        })
+    );
+
+    let duplicate = [bytes.as_slice(), bytes.as_slice()].concat();
+    assert!(
+        crate::om::operation_body_reference(crate::om::OperationRecord {
+            offset: 100,
+            bytes: &duplicate,
+            label,
+        })
+        .is_none()
+    );
 }
 
 #[test]
@@ -3357,7 +3400,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 21);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 22);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -187,6 +187,19 @@ pub struct FeatureOperationRecord {
     pub source_offset: u64,
 }
 
+/// Primary body object read or written by one feature-history operation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBodyReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Primary body object index.
+    pub body_object_index: u32,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -370,6 +383,40 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
         ));
     }
     records
+}
+
+/// Decode primary body lineage references from feature-history operations.
+pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReference> {
+    let sections = container.om_sections();
+    let mut references = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (ordinal, reference) in section.operation_body_references() {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{ordinal}");
+            references.push(FeatureBodyReference {
+                id: format!("nx:feature-history:body-reference#{section_key}-{ordinal}"),
+                operation_label,
+                body_object_index: reference.object_index,
+                source_offset: entry_offset + reference.offset as u64,
+            });
+        }
+    }
+    references
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

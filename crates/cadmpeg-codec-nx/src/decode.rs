@@ -2678,6 +2678,7 @@ fn attach_native_object_model(
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
+    let feature_body_references = crate::native::feature_body_references(&scan.container);
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
@@ -2701,6 +2702,7 @@ fn attach_native_object_model(
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
         && feature_operation_records.is_empty()
+        && feature_body_references.is_empty()
         && feature_boolean_operations.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
@@ -2761,6 +2763,12 @@ fn attach_native_object_model(
             .note(&record.id, annotation_stream, record.source_offset)
             .tag("FEATURE_OPERATION_RECORD");
         annotations.exactness(&record.id, Exactness::ByteExact);
+    }
+    for reference in &feature_body_references {
+        annotations
+            .note(&reference.id, annotation_stream, reference.source_offset)
+            .tag("FEATURE_BODY_REFERENCE");
+        annotations.exactness(&reference.id, Exactness::ByteExact);
     }
     for operation in &feature_boolean_operations {
         annotations
@@ -2870,6 +2878,7 @@ fn attach_native_object_model(
         ir,
         &feature_operation_labels,
         &feature_boolean_operations,
+        &feature_body_references,
         &segment_body_bindings,
         annotations,
     );
@@ -2878,7 +2887,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(21);
+    namespace.version = namespace.version.max(22);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2899,6 +2908,9 @@ fn attach_native_object_model(
     }
     if !feature_operation_records.is_empty() {
         namespace.set_arena("feature_operation_records", &feature_operation_records)?;
+    }
+    if !feature_body_references.is_empty() {
+        namespace.set_arena("feature_body_references", &feature_body_references)?;
     }
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
@@ -2949,6 +2961,7 @@ fn attach_feature_operations(
     ir: &mut CadIr,
     labels: &[crate::native::FeatureOperationLabel],
     booleans: &[crate::native::FeatureBooleanOperation],
+    body_references: &[crate::native::FeatureBodyReference],
     body_bindings: &[crate::native::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
 ) {
@@ -2958,6 +2971,16 @@ fn attach_feature_operations(
         .iter()
         .map(|operation| (operation.operation_label.as_str(), operation))
         .collect::<BTreeMap<_, _>>();
+    let body_references = body_references
+        .iter()
+        .map(|reference| {
+            (
+                reference.operation_label.as_str(),
+                reference.body_object_index,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut last_body_writer = BTreeMap::<u32, FeatureId>::new();
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
     for binding in body_bindings {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
@@ -2978,6 +3001,21 @@ fn attach_feature_operations(
     for (ordinal, label) in labels.iter().enumerate() {
         let key = label.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let id = FeatureId(format!("nx:feature-history:feature#{key}"));
+        let mut dependencies = Vec::new();
+        if let Some(body) = body_references.get(label.id.as_str()) {
+            if let Some(writer) = last_body_writer.get(body) {
+                dependencies.push(writer.clone());
+            }
+        }
+        if let Some(operation) = booleans.get(label.id.as_str()) {
+            for body in &operation.tool_object_indices {
+                if let Some(writer) = last_body_writer.get(body) {
+                    if !dependencies.contains(writer) {
+                        dependencies.push(writer.clone());
+                    }
+                }
+            }
+        }
         let mut source_properties = BTreeMap::new();
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
@@ -3022,12 +3060,12 @@ fn attach_feature_operations(
             .tag("FEATURE_OPERATION");
         annotations.exactness(&id, Exactness::Derived);
         ir.model.features.push(Feature {
-            id,
+            id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
             name: Some(label.value.clone()),
             suppressed: false,
             parent: None,
-            dependencies: Vec::new(),
+            dependencies,
             source_properties,
             source_tag: Some(label.value.clone()),
             source_text: None,
@@ -3036,6 +3074,9 @@ fn attach_feature_operations(
             definition,
             native_ref: Some(label.id.clone()),
         });
+        if let Some(body) = body_references.get(label.id.as_str()) {
+            last_body_writer.insert(*body, id);
+        }
     }
 }
 

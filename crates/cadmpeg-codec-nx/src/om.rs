@@ -219,6 +219,15 @@ pub struct OperationRecord<'a> {
     pub label: OperationLabel<'a>,
 }
 
+/// Primary body-object reference carried by one bounded operation record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OperationBodyReference {
+    /// Absolute offset of the object-index token.
+    pub offset: usize,
+    /// Referenced body object index.
+    pub object_index: u32,
+}
+
 /// Boolean operation kind stored after an operation label.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BooleanOperationKind {
@@ -373,6 +382,17 @@ impl<'a> Section<'a> {
         };
         operation_records(bytes, base_offset)
     }
+
+    /// Decode unambiguous primary body references from bounded operation records.
+    pub fn operation_body_references(&self) -> Vec<(usize, OperationBodyReference)> {
+        self.operation_records()
+            .into_iter()
+            .enumerate()
+            .filter_map(|(ordinal, record)| {
+                operation_body_reference(record).map(|reference| (ordinal, reference))
+            })
+            .collect()
+    }
 }
 
 /// Decode complete feature-operation headers and their label frames.
@@ -452,6 +472,30 @@ pub fn operation_records(bytes: &[u8], base_offset: usize) -> Vec<OperationRecor
             })
         })
         .collect()
+}
+
+/// Decode the unique `01 02 10 index ff` primary-body field in one operation.
+pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<OperationBodyReference> {
+    let mut matches = Vec::new();
+    for marker in record
+        .bytes
+        .windows(3)
+        .enumerate()
+        .filter_map(|(offset, window)| (window == [0x01, 0x02, 0x10]).then_some(offset))
+    {
+        let token = marker + 3;
+        let (value, end) = feature_object_index(record.bytes, token)?;
+        if record.bytes.get(end) == Some(&0xff) {
+            matches.push(OperationBodyReference {
+                offset: record.offset + token,
+                object_index: value?,
+            });
+        }
+    }
+    let [reference] = matches.as_slice() else {
+        return None;
+    };
+    Some(*reference)
 }
 
 fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {

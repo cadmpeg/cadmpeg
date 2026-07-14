@@ -103,6 +103,13 @@ operation-header index encoding, and contains no null indices. The target list
 contains exactly one reference. The tool list contains at least one reference
 and preserves tool order.
 
+A body-affecting operation record contains exactly one primary-body field
+`01 02 10 body_object_index ff`. The object index uses the operation-header
+encoding. Operations sharing the index form one ordered body lineage. An
+operation depends on the preceding operation in its primary-body lineage. A
+Boolean additionally depends on the preceding operation in each tool-body
+lineage, preserving tool order and omitting duplicate dependencies.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |
