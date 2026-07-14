@@ -1511,6 +1511,12 @@ fn parse_fbb_edge_tables_width(
     mut position: usize,
     handle_width: usize,
 ) -> Option<(Vec<EdgeRow>, usize, usize)> {
+    const U16_EDGE_DELIMITER: [u8; 8] = [0x10, 0x94, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
+    let delimiter = if handle_width == 2 {
+        U16_EDGE_DELIMITER.as_slice()
+    } else {
+        EDGE_DELIMITER.as_slice()
+    };
     let mut rows = Vec::new();
     let mut table_count = 0;
     loop {
@@ -1547,8 +1553,8 @@ fn parse_fbb_edge_tables_width(
             });
         }
         table_count += 1;
-        if bytes.get(position..)?.starts_with(&EDGE_DELIMITER) {
-            position += EDGE_DELIMITER.len();
+        if bytes.get(position..)?.starts_with(delimiter) {
+            position += delimiter.len();
         } else {
             return None;
         }

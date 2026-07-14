@@ -391,7 +391,7 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
                 bytes.extend_from_slice(&handle.to_be_bytes());
             }
         }
-        bytes.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
+        bytes.extend_from_slice(&[0x10, 0x94, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
     }
     bytes.extend_from_slice(&[0x01, 0x06, 4]);
     for index in 0..4 {
