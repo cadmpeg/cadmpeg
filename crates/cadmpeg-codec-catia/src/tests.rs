@@ -2570,7 +2570,7 @@ fn e5_torus_topology_stream() -> Vec<u8> {
 
     let raw_corners = [
         [0.0, 0.0],
-        [5.0 * std::f64::consts::PI, 0.0],
+        [5.0 * std::f64::consts::PI, std::f64::consts::FRAC_PI_2],
         [5.0 * std::f64::consts::PI, std::f64::consts::PI],
         [0.0, std::f64::consts::PI],
     ];
@@ -2628,7 +2628,11 @@ fn e5_torus_topology_stream() -> Vec<u8> {
 
     for xyz in [
         [12.0f32, 0.0, 0.0],
-        [0.0, 12.0, 0.0],
+        [
+            0.0,
+            10.0 + std::f32::consts::SQRT_2,
+            std::f32::consts::SQRT_2,
+        ],
         [0.0, 10.0, 2.0],
         [10.0, 0.0, 2.0],
     ] {
@@ -4948,6 +4952,14 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
     assert_eq!(result.ir.model.vertices.len(), 4);
     assert_eq!(result.ir.model.pcurves.len(), 4);
     assert_eq!(result.ir.model.curves.len(), 4);
+    assert_eq!(result.ir.model.procedural_curves.len(), 1);
+    assert!(matches!(
+        result.ir.model.procedural_curves[0].definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric,
+            ..
+        }
+    ));
     assert!(result
         .ir
         .model

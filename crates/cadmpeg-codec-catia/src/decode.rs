@@ -17,7 +17,7 @@ use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
     PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, RollingBallJetDerivative, RollingBallJetSite, Surface,
-    SurfaceGeometry,
+    SurfaceCurveFamily, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -1161,8 +1161,9 @@ mod chart_tests {
         e5_boundary_curve, e5_pcurve_on_surface, equivalent_e5_curve_carriers,
         fit_rank_one_e5_plane_axes, include_native_endpoint_pairs, intersection_line_direction,
         ordered_range, point_distance, point_on_known_surface, quintic_jet_pcurve,
-        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
-        standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
+        rational_pcurve_arc, resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
+        standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
+        unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
@@ -1699,6 +1700,22 @@ mod chart_tests {
     }
 
     #[test]
+    fn reversed_surface_pcurve_preserves_domain_and_swaps_endpoints() {
+        let geometry = PcurveGeometry::Line {
+            origin: Point2::new(2.0, -1.0),
+            direction: Point2::new(3.0, 4.0),
+        };
+        let range = [5.0, 9.0];
+        let reversed = reverse_e5_pcurve_geometry(&geometry, range);
+        for (parameter, source_parameter) in [(5.0, 9.0), (9.0, 5.0)] {
+            let actual = pcurve_uv(&reversed, parameter).expect("reversed evaluation");
+            let expected = pcurve_uv(&geometry, source_parameter).expect("source evaluation");
+            assert!((actual.u - expected.u).abs() < 1e-12);
+            assert!((actual.v - expected.v).abs() < 1e-12);
+        }
+    }
+
+    #[test]
     fn quintic_jet_reproduces_endpoint_second_order_data() {
         let curve = quintic_jet_pcurve(
             5,
@@ -2030,6 +2047,7 @@ fn transfer_e5_topology(
 
     let mut pcurve_plan = BTreeMap::<u32, (PcurveGeometry, [f64; 2])>::new();
     let mut edge_curve_plan = BTreeMap::<u32, (CurveGeometry, [f64; 2])>::new();
+    let mut surface_curve_plan = BTreeMap::<u32, (SurfaceId, PcurveGeometry, [f64; 2])>::new();
     for face in &topology.faces {
         let Some((_, decoded_surface)) = surface_for_ref.get(&face.surface) else {
             return false;
@@ -2087,6 +2105,15 @@ fn transfer_e5_topology(
                             edge_curve_plan.insert(edge_ref, (curve, curve_range));
                         }
                     }
+                } else if !support.intersection {
+                    let oriented = if reversed < forward {
+                        reverse_e5_pcurve_geometry(&geometry, range)
+                    } else {
+                        geometry.clone()
+                    };
+                    surface_curve_plan.entry(edge_ref).or_insert_with(|| {
+                        (surface_for_ref[&face.surface].0.clone(), oriented, range)
+                    });
                 }
                 if let Some((existing, existing_range)) = pcurve_plan.get(&pcurve_ref) {
                     if existing != &geometry || existing_range != &range {
@@ -2192,6 +2219,12 @@ fn transfer_e5_topology(
         );
     }
 
+    for (&edge_ref, (_, _, range)) in &surface_curve_plan {
+        edge_curve_plan
+            .entry(edge_ref)
+            .or_insert((CurveGeometry::Unknown { record: None }, *range));
+    }
+
     let body_faces: Vec<(Option<u32>, Vec<u32>)> = if topology.bodies.is_empty() {
         vec![(
             None,
@@ -2268,6 +2301,46 @@ fn transfer_e5_topology(
             definition: ProceduralCurveDefinition::Intersection {
                 context: context.clone(),
                 discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+    }
+    for (&record_id, (surface, pcurve, range)) in &surface_curve_plan {
+        if intersection_plan.contains_key(&record_id) {
+            continue;
+        }
+        let Some(curve) = edge_curve_ids.get(&record_id) else {
+            return false;
+        };
+        let id = ProceduralCurveId(format!("catia:e5:surface-curve#{record_id}"));
+        annotate(
+            annotations,
+            &id,
+            "e5_0d_03",
+            0,
+            "parametric_surface_curve",
+            Exactness::Derived,
+        );
+        annotations.derived(&id, "curve").derived(&id, "definition");
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id,
+            curve: curve.clone(),
+            definition: ProceduralCurveDefinition::SurfaceCurve {
+                family: SurfaceCurveFamily::Parametric,
+                context: IntcurveSupportContext {
+                    sides: [
+                        IntcurveSupportSide {
+                            surface: Some(surface.clone()),
+                            pcurve: Some(pcurve.clone()),
+                        },
+                        IntcurveSupportSide {
+                            surface: None,
+                            pcurve: None,
+                        },
+                    ],
+                    parameter_range: *range,
+                    discontinuities: std::array::from_fn(|_| Vec::new()),
+                },
             },
             cache_fit_tolerance: None,
         });
@@ -2830,6 +2903,46 @@ fn reverse_e5_boundary_curve(
             ))
         }
         _ => None,
+    }
+}
+
+fn reverse_e5_pcurve_geometry(geometry: &PcurveGeometry, range: [f64; 2]) -> PcurveGeometry {
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => PcurveGeometry::Line {
+            origin: Point2::new(
+                origin.u + (range[0] + range[1]) * direction.u,
+                origin.v + (range[0] + range[1]) * direction.v,
+            ),
+            direction: Point2::new(-direction.u, -direction.v),
+        },
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => {
+            let sum = range[0] + range[1];
+            let mut reversed_knots = knots
+                .iter()
+                .rev()
+                .map(|knot| sum - knot)
+                .collect::<Vec<_>>();
+            for knot in &mut reversed_knots {
+                if *knot == -0.0 {
+                    *knot = 0.0;
+                }
+            }
+            PcurveGeometry::Nurbs {
+                degree: *degree,
+                knots: reversed_knots,
+                control_points: control_points.iter().rev().copied().collect(),
+                weights: weights
+                    .as_ref()
+                    .map(|weights| weights.iter().rev().copied().collect()),
+                periodic: *periodic,
+            }
+        }
     }
 }
 
