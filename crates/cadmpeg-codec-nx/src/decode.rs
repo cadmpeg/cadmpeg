@@ -806,24 +806,13 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
 
 pub(crate) fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
     let mut semantic = topology_streams(scan);
-    let mut index = 0;
-    while index < scan.streams.len() {
-        if scan.streams[index].kind != StreamKind::Partition {
-            index += 1;
-            continue;
-        }
-        let mut next = index + 1;
-        while next < scan.streams.len()
-            && scan.streams[next].kind == StreamKind::Deltas
-            && scan.streams[next].schema == scan.streams[index].schema
-        {
-            semantic[index].extend_from_slice(&crate::deltas::procedural_residual(
-                &scan.streams[next].inflated,
+    for (partition, deltas) in paired_delta_streams(scan) {
+        for delta in deltas {
+            semantic[partition].extend_from_slice(&crate::deltas::procedural_residual(
+                &scan.streams[delta].inflated,
             ));
-            semantic[next].clear();
-            next += 1;
+            semantic[delta].clear();
         }
-        index = next;
     }
     semantic
 }
@@ -834,24 +823,50 @@ pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
         .iter()
         .map(|stream| stream.inflated.clone())
         .collect::<Vec<_>>();
-    let mut index = 0;
-    while index < scan.streams.len() {
-        if scan.streams[index].kind != StreamKind::Partition {
-            index += 1;
-            continue;
+    for (partition, deltas) in paired_delta_streams(scan) {
+        for delta in deltas {
+            semantic[partition] =
+                crate::deltas::merge_full_records(&semantic[partition], &semantic[delta]);
+            semantic[delta].clear();
         }
-        let mut next = index + 1;
-        while next < scan.streams.len()
-            && scan.streams[next].kind == StreamKind::Deltas
-            && scan.streams[next].schema == scan.streams[index].schema
-        {
-            semantic[index] = crate::deltas::merge_full_records(&semantic[index], &semantic[next]);
-            semantic[next].clear();
-            next += 1;
-        }
-        index = next;
     }
     semantic
+}
+
+fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
+    let links = crate::native::segment_stream_links(&scan.container, &scan.streams);
+    let linked_deltas = links
+        .iter()
+        .filter(|link| link.stream_kind == "deltas")
+        .map(|link| link.stream_ordinal as usize)
+        .collect::<BTreeSet<_>>();
+    pair_stream_indices(&scan.streams, (!links.is_empty()).then_some(&linked_deltas))
+}
+
+pub(crate) fn pair_stream_indices(
+    streams: &[Stream],
+    eligible_deltas: Option<&BTreeSet<usize>>,
+) -> BTreeMap<usize, Vec<usize>> {
+    let mut pairs = BTreeMap::<usize, Vec<usize>>::new();
+    for (delta, stream) in streams.iter().enumerate() {
+        if stream.kind != StreamKind::Deltas
+            || eligible_deltas.is_some_and(|eligible| !eligible.contains(&delta))
+        {
+            continue;
+        }
+        let partition = streams[..delta]
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, candidate)| {
+                candidate.kind == StreamKind::Partition && candidate.schema == stream.schema
+            })
+            .map(|(partition, _)| partition);
+        if let Some(partition) = partition {
+            pairs.entry(partition).or_default().push(delta);
+        }
+    }
+    pairs
 }
 
 fn retain_live_annotations(ir: &mut CadIr) {
@@ -2613,7 +2628,8 @@ fn build_geometry_report(
             category: LossCategory::Topology,
             severity: Severity::Warning,
             message: format!(
-                "{} Parasolid deltas stream(s) were paired by adjacency and equal schema. Exact-key \
+                "{} Parasolid deltas stream(s) were paired with the preceding equal-schema partition \
+                 in validated UG_PART segment order. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, B_SURFACE, and B_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
                  each key; validated partition topology remained authoritative. Tombstones \

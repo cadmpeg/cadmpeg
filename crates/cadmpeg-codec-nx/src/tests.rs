@@ -369,6 +369,32 @@ fn decode_links_segment_index_word_to_validated_stream_wrapper() {
 }
 
 #[test]
+fn segment_order_pairs_delta_across_intervening_non_history_stream() {
+    use crate::parasolid::{Stream, StreamKind};
+    use std::collections::BTreeSet;
+
+    let stream = |kind, schema: Option<&str>, file_offset| Stream {
+        file_offset,
+        inflated: Vec::new(),
+        kind,
+        schema: schema.map(str::to_string),
+    };
+    let streams = vec![
+        stream(StreamKind::Partition, Some("SCH_A"), 10),
+        stream(StreamKind::Preview, None, 20),
+        stream(StreamKind::Deltas, Some("SCH_A"), 30),
+        stream(StreamKind::Partition, Some("SCH_B"), 40),
+        stream(StreamKind::Deltas, Some("SCH_A"), 50),
+        stream(StreamKind::Deltas, Some("SCH_B"), 60),
+    ];
+    let eligible = BTreeSet::from([2usize, 5]);
+    assert_eq!(
+        crate::decode::pair_stream_indices(&streams, Some(&eligible)),
+        std::collections::BTreeMap::from([(0, vec![2]), (3, vec![5])])
+    );
+}
+
+#[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     use crate::om::CompactIndex::{Null, Value};
 
