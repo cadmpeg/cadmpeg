@@ -261,6 +261,28 @@ plane. The normalized directrix is the plane's first parameter direction, and
 the normalized cross product of the directrix with the sweep direction is the
 plane normal.
 
+A repeated `tab_cyl` cubic-curve replay has this structure:
+
+```text
+<curve_id_ci> 13 e2 01 00 03
+18 e6 0f e6
+f8 04 f7 <control_point_0_ref> fb e2
+f7 <successor_ref> <point_0_body>
+18 f1 f7 <control_point_0_ref> e2 <point_1_body>
+18 e2 <point_2_body>
+18 e2 <point_3_body>
+18 f2 f7 <terminal_ref> f6 e3
+```
+
+`13` is the curve type, `01` is the flip byte, `00` is the tangent condition,
+and `03` is the cubic degree. The `f8 04` field names four contiguous control
+point entities beginning at `control_point_0_ref`. The four packed point bodies
+are bounded by the reference-bearing first separator, exactly two middle
+separators, and the reference-bearing terminal trailer. A replay binds the
+first following `geom_type = 2c` surface row before the next replay signature;
+intervening rows from other surface families do not consume it. Ambiguous
+separators or an intervening replay leave the bytes opaque.
+
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
 ### 3.3 Torus and sphere representation

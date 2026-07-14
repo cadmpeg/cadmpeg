@@ -437,6 +437,25 @@ struct CreoCurveTopologyRowRecord {
 }
 
 #[derive(Serialize)]
+struct CreoTabulatedCylinderCurveReplayRecord {
+    id: String,
+    surface_id: u32,
+    curve_id: u32,
+    curve_type: u8,
+    flip: u8,
+    tangent_condition: u8,
+    degree: u8,
+    parameter_body: Vec<u8>,
+    control_point_ids: [u32; 4],
+    successor_reference: u32,
+    control_point_bodies: [Vec<u8>; 4],
+    terminal_reference: u32,
+    offset: usize,
+    surface_row_offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
 struct CreoSurfaceParameterScalarFrame {
     offset: usize,
     slots: Vec<CreoSurfaceParameterSlot>,
@@ -632,6 +651,34 @@ fn curve_topology_row_records(scan: &ContainerScan) -> Vec<CreoCurveTopologyRowR
             next_edges: row.next_edges,
             offset: row.offset,
             source_section: source_section(scan, row.offset),
+        })
+        .collect()
+}
+
+fn tabulated_cylinder_curve_replay_records(
+    scan: &ContainerScan,
+) -> Vec<CreoTabulatedCylinderCurveReplayRecord> {
+    scan.tabulated_cylinder_curve_replays
+        .iter()
+        .map(|record| CreoTabulatedCylinderCurveReplayRecord {
+            id: format!(
+                "creo:visibgeom:tabulated_cylinder_curve_replay#{}",
+                record.surface_id
+            ),
+            surface_id: record.surface_id,
+            curve_id: record.curve_id,
+            curve_type: record.curve_type,
+            flip: record.flip,
+            tangent_condition: record.tangent_condition,
+            degree: record.degree,
+            parameter_body: record.parameter_body.clone(),
+            control_point_ids: record.control_point_ids,
+            successor_reference: record.successor_reference,
+            control_point_bodies: record.control_point_bodies.clone(),
+            terminal_reference: record.terminal_reference,
+            offset: record.offset,
+            surface_row_offset: record.surface_row_offset,
+            source_section: source_section(scan, record.offset),
         })
         .collect()
 }
@@ -14429,6 +14476,25 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("surface_prototypes", &surface_prototypes)?;
     }
+    let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
+    if !tabulated_cylinder_curve_replays.is_empty() {
+        for record in &tabulated_cylinder_curve_replays {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "tabulated_cylinder_curve_replay",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "tabulated_cylinder_curve_replays",
+            &tabulated_cylinder_curve_replays,
+        )?;
+    }
     let curve_parameters = curve_parameter_records(scan);
     if !curve_parameters.is_empty() {
         for record in &curve_parameters {
@@ -14721,6 +14787,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_named_surface_prototype_count".to_string(),
         scan.surface_prototype_records.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_tabulated_cylinder_curve_replay_count".to_string(),
+        scan.tabulated_cylinder_curve_replays.len().to_string(),
     );
     attributes.insert(
         "decoded_curve_prototype_count".to_string(),

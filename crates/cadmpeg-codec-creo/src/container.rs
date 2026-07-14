@@ -31,7 +31,7 @@ use crate::placement::{self, FeatureSectionTransform};
 use crate::psb;
 use crate::surface::{
     self, OutlinePlane, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceParameterRecord,
-    SurfacePrototype, SurfacePrototypeRecord, SurfaceRow,
+    SurfacePrototype, SurfacePrototypeRecord, SurfaceRow, TabulatedCylinderCurveReplay,
 };
 use crate::topology::{
     self, FaceComponent, HalfEdge, HalfEdgeVertexIncidence, Loop, TopologicalVertex,
@@ -170,6 +170,8 @@ pub struct ContainerScan {
     pub surface_rows: Vec<SurfaceRow>,
     /// Bounded scalar parameter bodies from positional surface rows.
     pub surface_parameters: Vec<SurfaceParameterRecord>,
+    /// Cubic curve replay records bound to following tabulated-cylinder rows.
+    pub tabulated_cylinder_curve_replays: Vec<TabulatedCylinderCurveReplay>,
     /// Inherited support frames following positional plane envelopes.
     pub plane_local_systems: Vec<PlaneLocalSystem>,
     /// Plane-specific standard and compact positional envelopes.
@@ -572,6 +574,30 @@ fn surface_parameters(data: &[u8], sections: &[Section]) -> Vec<SurfaceParameter
                 .map(|mut record| {
                     record.offset += section.offset;
                     record.body_offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
+fn tabulated_cylinder_curve_replays(
+    data: &[u8],
+    sections: &[Section],
+) -> Vec<TabulatedCylinderCurveReplay> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| is_model_geometry_namespace(data, sections, section))
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            surface::tabulated_cylinder_curve_replays(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.surface_row_offset += section.offset;
                     record
                 }),
         );
@@ -1123,6 +1149,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let family_table = family_table(&data, &sections);
     let surface_rows = surface_rows(&data, &sections);
     let surface_parameters = surface_parameters(&data, &sections);
+    let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replays(&data, &sections);
     let plane_local_systems = plane_local_systems(&data, &sections);
     let plane_envelopes = plane_envelopes(&data, &sections);
     let outline_planes = surface::outline_planes(&plane_envelopes);
@@ -1208,6 +1235,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         family_table,
         surface_rows,
         surface_parameters,
+        tabulated_cylinder_curve_replays,
         plane_local_systems,
         plane_envelopes,
         outline_planes,

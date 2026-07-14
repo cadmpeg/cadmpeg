@@ -283,6 +283,38 @@ pub struct LineExtrusionFrame {
     pub directrix: [[f64; 3]; 2],
 }
 
+/// One positional cubic B-spline replay bound to a following tabulated-
+/// cylinder surface row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TabulatedCylinderCurveReplay {
+    /// Owning `geom_type = 2c` surface identifier.
+    pub surface_id: u32,
+    /// Replayed curve identifier.
+    pub curve_id: u32,
+    /// Raw curve-family discriminator.
+    pub curve_type: u8,
+    /// Stored curve flip byte.
+    pub flip: u8,
+    /// Stored tangent-condition byte.
+    pub tangent_condition: u8,
+    /// B-spline degree.
+    pub degree: u8,
+    /// Exact count-budgeted parameter body.
+    pub parameter_body: Vec<u8>,
+    /// Four contiguous control-point entity identifiers.
+    pub control_point_ids: [u32; 4],
+    /// Reference following the control-point-array header.
+    pub successor_reference: u32,
+    /// Four individually bounded packed control-point bodies.
+    pub control_point_bodies: [Vec<u8>; 4],
+    /// Reference in the terminal control-point trailer.
+    pub terminal_reference: u32,
+    /// Byte offset of the replay curve identifier.
+    pub offset: usize,
+    /// Byte offset of the owning surface row.
+    pub surface_row_offset: usize,
+}
+
 impl SurfaceParameterRecord {
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
@@ -1091,6 +1123,121 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         });
     }
     records
+}
+
+/// Decode the cubic curve replay that precedes a positional
+/// `geom_type = 2c` tabulated-cylinder row.
+pub fn tabulated_cylinder_curve_replays(payload: &[u8]) -> Vec<TabulatedCylinderCurveReplay> {
+    const SIGNATURE: &[u8] = &[
+        0x13, 0xe2, 0x01, 0x00, 0x03, 0x18, 0xe6, 0x0f, 0xe6, 0xf8, 0x04, 0xf7,
+    ];
+    let surface_rows = rows(payload);
+    let mut signatures = Vec::new();
+    let mut search = 0;
+    while let Some(offset) = find(payload, SIGNATURE, search) {
+        signatures.push(offset);
+        search = offset + SIGNATURE.len();
+    }
+    let mut replays = Vec::new();
+    for (index, signature) in signatures.iter().copied().enumerate() {
+        let limit = signatures.get(index + 1).copied().unwrap_or(payload.len());
+        let Some((curve_id, replay_offset)) = id_ending_at(payload, signature) else {
+            continue;
+        };
+        let reference_start = signature + SIGNATURE.len();
+        let Ok((control_point_start, after_control_point_start)) =
+            psb::reference_id(payload, reference_start)
+        else {
+            continue;
+        };
+        if payload.get(after_control_point_start..after_control_point_start + 3)
+            != Some(&[0xfb, 0xe2, 0xf7])
+        {
+            continue;
+        }
+        let Ok((successor_reference, control_body_start)) =
+            psb::reference_id(payload, after_control_point_start + 3)
+        else {
+            continue;
+        };
+        let first_separators = (control_body_start..limit.saturating_sub(3))
+            .filter_map(|offset| {
+                (payload.get(offset..offset + 3) == Some(&[0x18, 0xf1, 0xf7]))
+                    .then(|| {
+                        let (reference, after) = psb::reference_id(payload, offset + 3).ok()?;
+                        (reference == control_point_start && payload.get(after) == Some(&0xe2))
+                            .then_some((offset, after + 1))
+                    })
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        let [(first_separator, first_body_start)] = first_separators.as_slice() else {
+            continue;
+        };
+        let terminals = (*first_body_start..limit.saturating_sub(4))
+            .filter_map(|offset| {
+                (payload.get(offset..offset + 3) == Some(&[0x18, 0xf2, 0xf7]))
+                    .then(|| {
+                        let (reference, after) = psb::reference_id(payload, offset + 3).ok()?;
+                        (payload.get(after..after + 2) == Some(&[0xf6, 0xe3])).then_some((
+                            offset,
+                            after + 2,
+                            reference,
+                        ))
+                    })
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
+        let [(terminal, terminal_end, terminal_reference)] = terminals.as_slice() else {
+            continue;
+        };
+        let middle_separators = (*first_body_start..*terminal)
+            .filter(|offset| payload.get(*offset..*offset + 2) == Some(&[0x18, 0xe2]))
+            .collect::<Vec<_>>();
+        let [second_separator, third_separator] = middle_separators.as_slice() else {
+            continue;
+        };
+        let bodies = [
+            payload[control_body_start..*first_separator].to_vec(),
+            payload[*first_body_start..*second_separator].to_vec(),
+            payload[*second_separator + 2..*third_separator].to_vec(),
+            payload[*third_separator + 2..*terminal].to_vec(),
+        ];
+        if bodies.iter().any(Vec::is_empty) {
+            continue;
+        }
+        let Some(owner) = surface_rows
+            .iter()
+            .find(|row| row.offset >= *terminal_end && row.offset < limit && row.type_byte == 0x2c)
+        else {
+            continue;
+        };
+        let Some(last_control_point) = control_point_start.checked_add(3) else {
+            continue;
+        };
+        replays.push(TabulatedCylinderCurveReplay {
+            surface_id: owner.id,
+            curve_id,
+            curve_type: 0x13,
+            flip: 0x01,
+            tangent_condition: 0x00,
+            degree: 3,
+            parameter_body: vec![0x18, 0xe6, 0x0f, 0xe6],
+            control_point_ids: [
+                control_point_start,
+                control_point_start + 1,
+                control_point_start + 2,
+                last_control_point,
+            ],
+            successor_reference,
+            control_point_bodies: bodies,
+            terminal_reference: *terminal_reference,
+            offset: replay_offset,
+            surface_row_offset: owner.offset,
+        });
+    }
+    replays.sort_by_key(|replay| replay.offset);
+    replays
 }
 
 fn surface_body_compound_close(
