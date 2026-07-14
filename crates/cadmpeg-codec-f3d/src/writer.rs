@@ -8458,9 +8458,17 @@ fn native_procedural_curve(
         bytes.push(0x10);
         return Ok(true);
     }
-    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family, context } =
-        &procedural.definition
+    if let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+        family,
+        context,
+        tail,
+    } = &procedural.definition
     {
+        if tail.is_some() {
+            return Err(CodecError::NotImplemented(
+                "cache-first surface-curve generation is not implemented".into(),
+            ));
+        }
         let name = match family {
             cadmpeg_ir::geometry::SurfaceCurveFamily::Blend => "blend_int_cur",
             cadmpeg_ir::geometry::SurfaceCurveFamily::SurfaceConstrained => "surf_int_cur",
@@ -14213,13 +14221,16 @@ fn validate_procedural_curve_edits(
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
                     family: before_family,
                     context: before_context,
+                    tail: before_tail,
                 },
                 cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
                     family: after_family,
                     context: after_context,
+                    tail: after_tail,
                 },
             ) if before_family == after_family
                 && before_context.sides == after_context.sides
+                && before_tail == after_tail
                 && before_context
                     .discontinuities
                     .iter()
@@ -16064,8 +16075,9 @@ fn patch_surface_curve_definition(
     record: &sab::Record,
     definition: &cadmpeg_ir::geometry::ProceduralCurveDefinition,
 ) -> Result<(), CodecError> {
-    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve { family, context } =
-        definition
+    let cadmpeg_ir::geometry::ProceduralCurveDefinition::SurfaceCurve {
+        family, context, ..
+    } = definition
     else {
         return Err(CodecError::Malformed(
             "surface-curve patch received another definition".into(),

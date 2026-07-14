@@ -4468,6 +4468,7 @@ pub struct DecodedProceduralCurve {
     pub(crate) embedded_surface_curve: Option<(
         cadmpeg_ir::geometry::SurfaceCurveFamily,
         EmbeddedIntersection,
+        Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
     )>,
     /// Embedded silhouette support, cast surface, and light vector.
     pub(crate) embedded_silhouette: Option<EmbeddedSilhouette>,
@@ -4542,6 +4543,8 @@ fn decode_procedural_curve_recursive(
         };
         let embedded_intersection =
             decode_embedded_intersection(bytes, int_width, &decoded.curve, active_bytes, tables);
+        let embedded_surface_curve =
+            decode_embedded_surface_curve(bytes, int_width, &decoded.curve, active_bytes, tables);
         return Some(DecodedProceduralCurve {
             curve: decoded.curve,
             native_kind,
@@ -4554,7 +4557,7 @@ fn decode_procedural_curve_recursive(
             embedded_three_surface_intersection: decode_embedded_three_surface_intersection(
                 bytes, int_width,
             ),
-            embedded_surface_curve: decode_embedded_surface_curve(bytes, int_width),
+            embedded_surface_curve,
             embedded_silhouette: decode_embedded_silhouette(bytes, int_width),
             embedded_surface_offset: decode_embedded_surface_offset(bytes, int_width),
             embedded_spring: decode_embedded_spring(bytes, int_width),
@@ -5278,9 +5281,13 @@ pub(crate) fn silhouette_patch_layout(
 fn decode_embedded_surface_curve(
     bytes: &[u8],
     int_width: usize,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
 ) -> Option<(
     cadmpeg_ir::geometry::SurfaceCurveFamily,
     EmbeddedIntersection,
+    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
 )> {
     use cadmpeg_ir::geometry::SurfaceCurveFamily;
     let names = [
@@ -5310,7 +5317,31 @@ fn decode_embedded_surface_curve(
             })
             .map(|marker| (marker, name, family))
     })?;
-    let mut position = marker + name.len() + 3;
+    let position = marker + name.len() + 3;
+    decode_context_first_surface_curve(bytes, position, int_width, family.clone()).or_else(|| {
+        (family == SurfaceCurveFamily::Blend).then_some(())?;
+        decode_cache_first_surface_curve(
+            bytes,
+            position,
+            int_width,
+            family,
+            solved,
+            active_bytes,
+            tables,
+        )
+    })
+}
+
+fn decode_context_first_surface_curve(
+    bytes: &[u8],
+    mut position: usize,
+    int_width: usize,
+    family: cadmpeg_ir::geometry::SurfaceCurveFamily,
+) -> Option<(
+    cadmpeg_ir::geometry::SurfaceCurveFamily,
+    EmbeddedIntersection,
+    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
+)> {
     let surfaces = [
         decode_embedded_surface(bytes, &mut position, int_width)?,
         decode_embedded_surface(bytes, &mut position, int_width)?,
@@ -5336,6 +5367,69 @@ fn decode_embedded_surface_curve(
             parameter_range,
             discontinuities,
         },
+        None,
+    ))
+}
+
+fn decode_cache_first_surface_curve(
+    bytes: &[u8],
+    mut position: usize,
+    int_width: usize,
+    family: cadmpeg_ir::geometry::SurfaceCurveFamily,
+    solved: &NurbsCurve,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<(
+    cadmpeg_ir::geometry::SurfaceCurveFamily,
+    EmbeddedIntersection,
+    Option<cadmpeg_ir::geometry::SurfaceCurveTail>,
+)> {
+    let revision = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    (revision > 0).then_some(())?;
+    (take_tagged_int(bytes, &mut position, 0x15, int_width)? == 0).then_some(())?;
+    position = decode_curve_block(bytes, position, int_width)?.end;
+    take_f64(bytes, &mut position)?;
+    let surfaces = [
+        decode_optional_embedded_surface_resolving_ref(
+            bytes,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?,
+        decode_optional_embedded_surface_resolving_ref(
+            bytes,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?,
+    ];
+    let pcurves = [
+        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
+        decode_nullable_embedded_pcurve(bytes, &mut position, int_width)?,
+    ];
+    let domain = nurbs_curve_parameter_domain(solved)?;
+    let parameter_range = [
+        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[0]),
+        take_optional_range_value(bytes, &mut position)?.unwrap_or(domain[1]),
+    ];
+    let discontinuities = [
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+        take_float_array(bytes, &mut position, int_width)?,
+    ];
+    let extension = take_tagged_int(bytes, &mut position, 0x04, int_width)?;
+    let flag = take_bool(bytes, &mut position)?;
+    Some((
+        family,
+        EmbeddedIntersection {
+            surfaces,
+            pcurves,
+            parameter_range,
+            discontinuities,
+        },
+        Some(cadmpeg_ir::geometry::SurfaceCurveTail { extension, flag }),
     ))
 }
 
@@ -6019,6 +6113,9 @@ fn decode_optional_embedded_surface_resolving_ref(
 ) -> Option<Option<SurfaceGeometry>> {
     let saved = *position;
     let kind = take_native_ident(bytes, position);
+    if kind.as_deref() == Some("null_surface") {
+        return Some(None);
+    }
     if kind.as_deref() == Some("spline") {
         if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
             take_bool(bytes, position)?;
@@ -7313,6 +7410,62 @@ mod width_tests {
             assert!(context.pcurves[0].is_none());
             assert!(context.pcurves[1].is_some());
             assert!(context.discontinuities.iter().all(Vec::is_empty));
+        }
+    }
+
+    #[test]
+    fn cache_first_blend_curve_retains_nullable_supports_and_tail() {
+        use cadmpeg_ir::geometry::SurfaceCurveFamily;
+
+        for int_width in [4usize, 8] {
+            let mut support = vec![0x0f];
+            push_ident(&mut support, "blend_support");
+            support.extend_from_slice(&surface_block(int_width));
+            support.push(0x10);
+
+            let mut record = vec![0x0f];
+            push_ident(&mut record, "blend_int_cur");
+            push_int(&mut record, 0x04, 22_507, int_width);
+            push_int(&mut record, 0x15, 0, int_width);
+            record.extend_from_slice(&curve_block(int_width));
+            push_f64(&mut record, 1.0e-6);
+            push_ident(&mut record, "spline");
+            record.push(0x0b);
+            record.push(0x0f);
+            push_ident(&mut record, "ref");
+            push_int(&mut record, 0x04, 0, int_width);
+            record.push(0x10);
+            record.extend_from_slice(&[0x0b; 4]);
+            push_ident(&mut record, "null_surface");
+            record.extend_from_slice(&pcurve_block(int_width));
+            push_ident(&mut record, "nullbs");
+            record.extend_from_slice(&[0x0b, 0x0b]);
+            for _ in 0..3 {
+                push_int(&mut record, 0x04, 0, int_width);
+            }
+            push_int(&mut record, 0x04, 7, int_width);
+            record.push(0x0a);
+            record.push(0x10);
+
+            let mut active = support;
+            active.extend_from_slice(&record);
+            let tables = SubtypeTables::from_stream(&active);
+            let decoded = decode_procedural_curve_resolving_refs(&record, &active, &tables)
+                .unwrap_or_else(|| panic!("cache-first blend curve at width {int_width}"));
+            let (family, context, tail) =
+                decoded.embedded_surface_curve.expect("typed blend context");
+            assert_eq!(family, SurfaceCurveFamily::Blend);
+            assert_eq!(context.parameter_range, [0.0, 1.0]);
+            assert!(matches!(
+                context.surfaces[0],
+                Some(SurfaceGeometry::Nurbs(_))
+            ));
+            assert!(context.surfaces[1].is_none());
+            assert!(context.pcurves[0].is_some());
+            assert!(context.pcurves[1].is_none());
+            let tail = tail.expect("cache-first tail");
+            assert_eq!(tail.extension, 7);
+            assert!(tail.flag);
         }
     }
 

@@ -15801,8 +15801,9 @@ fn generated_prefix_only_surface_curves_decode_and_write_source_less() {
                 &DecodeOptions::default(),
             )
             .unwrap_or_else(|error| panic!("{name} decode failed: {error}"));
-        let ProceduralCurveDefinition::SurfaceCurve { family, context } =
-            &result.ir.model.procedural_curves[0].definition
+        let ProceduralCurveDefinition::SurfaceCurve {
+            family, context, ..
+        } = &result.ir.model.procedural_curves[0].definition
         else {
             panic!("expected {name} surface curve")
         };

@@ -401,7 +401,7 @@ Evaluation formulas for all four carriers follow directly from the frame vectors
 
 **`sss_int_cur`**: the surface-related prefix, an integer selector, then a third support surface and its paired BS2 parameter curve. The solved cache and fit tolerance follow the third support pair. All three support sides retain their serialized order.
 
-**Prefix-only surface curves**: `blend_int_cur`, `surf_int_cur`, `par_int_cur`, and `skin_int_cur` contain the surface-related prefix with no subtype-specific tail, followed by the solved cache and fit tolerance. The subtype name distinguishes blend-edge, surface-constrained, parametric, and skin construction semantics.
+**Surface curves**: `blend_int_cur`, `surf_int_cur`, `par_int_cur`, and `skin_int_cur` have a context-first form containing the surface-related prefix with no subtype-specific tail, followed by the solved cache and fit tolerance. The subtype name distinguishes blend-edge, surface-constrained, parametric, and skin construction semantics. `blend_int_cur` also has a cache-first form: positive serializer-revision integer, enum zero, solved cache and fit tolerance, two ordered support surfaces with the same optional bound fields as cache-first `int_int_cur`, two nullable ordered parameter curves, two optional solved-curve interval endpoints, three discontinuity arrays, one integer extension, and one terminating boolean flag.
 
 **Silhouette curves**: `silh_int_cur` and `para_silh_int_cur` append a cast surface and light vector to the surface-related prefix. `taper_silh_int_cur` adds one unscaled draft-factor double after the light vector. The solved cache and fit tolerance follow the silhouette tail.
 

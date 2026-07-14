@@ -3355,7 +3355,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 pcurve: Some(pcurves[2].clone()),
                             },
                         }
-                    } else if let Some((family, embedded)) = procedural.8 {
+                    } else if let Some((family, embedded, tail)) = procedural.8 {
                         let surfaces: [Option<SurfaceId>; 2] = embedded
                             .surfaces
                             .into_iter()
@@ -3396,6 +3396,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 parameter_range: embedded.parameter_range,
                                 discontinuities: embedded.discontinuities,
                             },
+                            tail,
                         }
                     } else if let Some(embedded) = procedural.9 {
                         let support_ids: [Option<SurfaceId>; 2] = embedded

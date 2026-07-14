@@ -1922,6 +1922,15 @@ pub struct IntcurveSupportContext {
     pub discontinuities: [Vec<f64>; 3],
 }
 
+/// Tail fields carried by the cache-first surface-curve layout.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SurfaceCurveTail {
+    /// Native integer following the discontinuity arrays.
+    pub extension: i64,
+    /// Native boolean terminating the subtype payload.
+    pub flag: bool,
+}
+
 /// Mutually exclusive tail forms of a native projected intcurve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -2054,6 +2063,9 @@ pub enum ProceduralCurveDefinition {
         family: SurfaceCurveFamily,
         /// Shared surfaces, UV curves, interval, and discontinuities.
         context: IntcurveSupportContext,
+        /// Cache-first subtype tail, absent from the prefix-first layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tail: Option<SurfaceCurveTail>,
     },
     /// Silhouette of a cast surface in a light direction.
     Silhouette {
