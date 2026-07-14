@@ -1680,14 +1680,11 @@ fn section_skamp_selected_point_id(
 pub(crate) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
-    let mut candidates = BTreeMap::<u32, BTreeSet<u64>>::new();
+    let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
     for row in definition.variables.iter().flat_map(|table| &table.rows) {
         if row.variable_type == 3 {
             if let Some(value) = row.value.filter(|value| value.is_finite() && *value > 0.0) {
-                candidates
-                    .entry(row.key)
-                    .or_default()
-                    .insert(value.to_bits());
+                candidates.entry(row.key).or_default().push(value);
             }
         }
     }
@@ -1713,10 +1710,44 @@ pub(crate) fn resolved_section_radii(
         else {
             continue;
         };
-        candidates
-            .entry(radius_id)
-            .or_default()
-            .insert(value.to_bits());
+        candidates.entry(radius_id).or_default().push(value);
+    }
+    let points = resolved_section_points(definition);
+    for segment in definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+    {
+        if unique_section_skamp_segment(definition, segment.external_id) != Some(segment) {
+            continue;
+        }
+        let Some(radius_id) = segment.radius_ref else {
+            continue;
+        };
+        let Some(center) = segment.center_id.and_then(|id| points.get(&id)) else {
+            continue;
+        };
+        let endpoint_radii = segment
+            .point_ids
+            .iter()
+            .filter_map(|id| points.get(id))
+            .map(|point| (point[0] - center[0]).hypot(point[1] - center[1]))
+            .filter(|radius| radius.is_finite() && *radius > 1e-12)
+            .collect::<Vec<_>>();
+        let Some(radius) = endpoint_radii.first().copied() else {
+            continue;
+        };
+        let scale = endpoint_radii
+            .iter()
+            .copied()
+            .fold(radius.max(1.0), f64::max);
+        if endpoint_radii
+            .iter()
+            .all(|candidate| (*candidate - radius).abs() <= 1e-9 * scale)
+        {
+            candidates.entry(radius_id).or_default().push(radius);
+        }
     }
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
     for skamp in definition.relations.iter().flat_map(|table| &table.skamps) {
@@ -1767,9 +1798,16 @@ pub(crate) fn resolved_section_radii(
             .iter()
             .flat_map(|radius_id| candidates.get(radius_id).into_iter().flatten())
             .copied()
-            .collect::<BTreeSet<_>>();
-        if let [bits] = values.iter().copied().collect::<Vec<_>>().as_slice() {
-            let value = f64::from_bits(*bits);
+            .collect::<Vec<_>>();
+        if let Some(value) = values.first().copied() {
+            let scale = values.iter().copied().fold(value.max(1.0), f64::max);
+            if !values
+                .iter()
+                .all(|candidate| (*candidate - value).abs() <= 1e-9 * scale)
+            {
+                remaining.retain(|radius_id| !component.contains(radius_id));
+                continue;
+            }
             radii.extend(component.iter().map(|radius_id| (*radius_id, value)));
         }
         remaining.retain(|radius_id| !component.contains(radius_id));
@@ -8657,18 +8695,21 @@ mod resolved_sketch_tests {
         equal_radius_segments[1].radius_ref = Some(101);
         equal_radius_segments[4].radius_ref = Some(102);
         equal_radius_definition.variables = Some(crate::feature::FeatureVariableTable {
-            declared_count: 1,
+            declared_count: 0,
             entity_ref: None,
-            rows: vec![crate::feature::FeatureVariableRow {
-                variable_type: 3,
-                key: 101,
-                value: Some(3.0),
-                guess: None,
-                uvar_id: None,
-                dimension_driven: false,
-                offset: 90,
-            }],
-            points: Vec::new(),
+            rows: Vec::new(),
+            points: vec![
+                crate::feature::FeatureSectionPoint {
+                    point_id: 2,
+                    u: Some(3.0),
+                    v: Some(0.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 4,
+                    u: Some(0.0),
+                    v: Some(0.0),
+                },
+            ],
             offset: 89,
         });
         assert_eq!(
