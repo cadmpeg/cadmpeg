@@ -248,7 +248,7 @@ mod marker_tests {
         compact_body_selection_vector, compact_body_state_ids, compact_edge_selection_at,
         compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_region_addresses,
-        compact_reference_plane_source, compact_surface_selection_at,
+        compact_reference_plane_source, compact_surface_selection_at, component_profile_source_at,
         coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
@@ -593,6 +593,27 @@ mod marker_tests {
         assert!(compact_general_curve_ref_at(&payload, 2));
         payload[12] = 1;
         assert!(!compact_general_curve_ref_at(&payload, 2));
+    }
+
+    #[test]
+    fn general_curve_component_profile_requires_a_complete_reference_record() {
+        let mut payload = vec![0; 192];
+        let prefix = 24;
+        payload[prefix..prefix + 10].copy_from_slice(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]);
+        payload[prefix + 45..prefix + 61].fill(0xff);
+        let source = prefix + 81;
+        payload[source..source + 4].copy_from_slice(&134u32.to_le_bytes());
+        payload[source + 4..source + 8].copy_from_slice(&0x5edf_5674u32.to_le_bytes());
+        payload[source + 16..source + 20].copy_from_slice(&0x65u32.to_le_bytes());
+        payload[source + 24..source + 28].fill(0xff);
+        for at in [source + 32, source + 36, source + 40] {
+            payload[at..at + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        }
+        payload[source + 48..source + 52].copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+
+        assert_eq!(component_profile_source_at(&payload, prefix), Some(134));
+        payload[source + 40] ^= 1;
+        assert_eq!(component_profile_source_at(&payload, prefix), None);
     }
 
     #[test]
@@ -1885,6 +1906,59 @@ pub(crate) fn compact_body_selection_at(payload: &[u8], offset: usize) -> Option
 fn compact_general_curve_ref_at(payload: &[u8], offset: usize) -> bool {
     payload.get(offset + 2..offset + 4) == Some(&[0; 2])
         && payload.get(offset + 6..offset + 16) == Some(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0])
+}
+
+fn compact_profile_general_curve_ref_at(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + 6) == Some(&[1, 0, 0xdd, 0x94, 0xdf, 0x94])
+        && payload.get(offset + 6..offset + 16) == Some(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0])
+}
+
+fn declared_general_curve_profile_prefix(payload: &[u8], offset: usize) -> Option<usize> {
+    const COMPONENT_PROFILE: &[u8] = b"moCompProfile_c";
+    let interval = payload.get(offset..offset.checked_add(96)?.min(payload.len()))?;
+    let name = interval
+        .windows(COMPONENT_PROFILE.len())
+        .position(|bytes| bytes == COMPONENT_PROFILE)?;
+    let prefix = offset.checked_add(name + COMPONENT_PROFILE.len())?;
+    (payload.get(prefix..prefix + 10) == Some(&[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0]))
+        .then_some(prefix)
+}
+
+fn component_profile_source_at(payload: &[u8], prefix: usize) -> Option<u32> {
+    const PREFIX: &[u8] = &[0x2b, 0x80, 0x02, 0, 0, 0, 0, 0, 0, 0];
+    const HANDLE: &[u8] = &[0xc7, 0xcf, 0xff, 0xff];
+    const RECORD_END: &[u8] = &[0xf8, 0x2a, 0, 0];
+    if payload.get(prefix..prefix + PREFIX.len()) != Some(PREFIX)
+        || payload.get(prefix + 45..prefix + 61) != Some(&[0xff; 16])
+    {
+        return None;
+    }
+    let mut sources = [prefix + 69, prefix + 81].into_iter().filter_map(|source| {
+        let id = u32::from_le_bytes(payload.get(source..source + 4)?.try_into().ok()?);
+        let stamp = u32::from_le_bytes(payload.get(source + 4..source + 8)?.try_into().ok()?);
+        if id == 0 || stamp == 0 {
+            return None;
+        }
+        let older = payload.get(source + 12..source + 16) == Some(&[0; 4])
+            && payload.get(source + 20..source + 32) == Some(&[0; 12])
+            && payload.get(source + 32..source + 36) == Some(HANDLE)
+            && payload.get(source + 36..source + 40) == Some(HANDLE)
+            && payload.get(source + 40..source + 44) == Some(&[0; 4])
+            && payload.get(source + 44..source + 48) == Some(RECORD_END);
+        let newer = payload.get(source + 8..source + 16) == Some(&[0; 8])
+            && payload.get(source + 16..source + 20) == Some(&0x65u32.to_le_bytes())
+            && payload.get(source + 20..source + 24) == Some(&[0; 4])
+            && payload.get(source + 24..source + 28) == Some(&[0xff; 4])
+            && payload.get(source + 28..source + 32) == Some(&[0; 4])
+            && payload.get(source + 32..source + 36) == Some(HANDLE)
+            && payload.get(source + 36..source + 40) == Some(HANDLE)
+            && payload.get(source + 40..source + 44) == Some(HANDLE)
+            && payload.get(source + 44..source + 48) == Some(&[0; 4])
+            && payload.get(source + 48..source + 52) == Some(RECORD_END);
+        (older || newer).then_some(id)
+    });
+    let source = sources.next()?;
+    sources.next().is_none().then_some(source)
 }
 
 fn unique_marker_candidate(candidates: &[(String, bool)]) -> Option<&str> {
@@ -3918,9 +3992,10 @@ pub(crate) fn enrich_history_sweep_paths(
             else {
                 continue;
             };
-            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                != NativeClassKind::Sweep
-                || feature.properties.contains_key("Path")
+            if !matches!(
+                native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
+                NativeClassKind::Sweep | NativeClassKind::SweepReferenceSurface
+            ) || feature.properties.contains_key("Path")
             {
                 continue;
             }
@@ -3933,7 +4008,7 @@ pub(crate) fn enrich_history_sweep_paths(
             ) else {
                 continue;
             };
-            let mut candidates = lane
+            let declared = lane
                 .classes
                 .iter()
                 .filter(|class| {
@@ -3943,30 +4018,55 @@ pub(crate) fn enrich_history_sweep_paths(
                 })
                 .filter_map(|class| usize::try_from(class.offset).ok())
                 .collect::<Vec<_>>();
-            candidates.extend(
-                (start..end.saturating_sub(16))
-                    .filter(|offset| compact_general_curve_ref_at(&lane.native_payload, *offset)),
-            );
+            let compact = (start..end.saturating_sub(16))
+                .filter(|offset| compact_general_curve_ref_at(&lane.native_payload, *offset))
+                .collect::<Vec<_>>();
+            let compact_profiles = (start..end.saturating_sub(16))
+                .filter(|offset| {
+                    compact_profile_general_curve_ref_at(&lane.native_payload, *offset)
+                })
+                .collect::<Vec<_>>();
+            let mut source_candidates = declared
+                .iter()
+                .filter_map(|offset| {
+                    declared_general_curve_profile_prefix(&lane.native_payload, *offset)
+                })
+                .chain(compact_profiles.iter().map(|offset| offset + 6))
+                .filter_map(|prefix| component_profile_source_at(&lane.native_payload, prefix))
+                .collect::<Vec<_>>();
+            source_candidates.sort_unstable();
+            source_candidates.dedup();
+            if let [source] = source_candidates.as_slice() {
+                paths.insert(feature_id.clone(), source.to_string());
+                continue;
+            }
+            let mut candidates = declared;
+            candidates.extend(compact);
+            candidates.extend(compact_profiles);
             candidates.sort_unstable();
             candidates.dedup();
             if let [offset] = candidates.as_slice() {
-                paths.insert(feature_id.clone(), *offset);
+                let lane_key = lane
+                    .id
+                    .rsplit_once('#')
+                    .map_or(lane.id.as_str(), |(_, key)| key);
+                paths.insert(
+                    feature_id.clone(),
+                    format!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}"),
+                );
             }
         }
-        let lane_key = lane
-            .id
-            .rsplit_once('#')
-            .map_or(lane.id.as_str(), |(_, key)| key);
         for feature in histories
             .iter_mut()
             .flat_map(|history| &mut history.features)
         {
-            let Some(offset) = paths.get(&feature.id) else {
+            let Some(path) = paths.get(&feature.id) else {
                 continue;
             };
-            feature.properties.entry("Path".into()).or_insert_with(|| {
-                format!("sldprt:feature-input:general-curve-ref:{lane_key}:{offset}")
-            });
+            feature
+                .properties
+                .entry("Path".into())
+                .or_insert_with(|| path.clone());
         }
     }
 }

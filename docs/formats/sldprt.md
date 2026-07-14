@@ -181,7 +181,9 @@ An integer or Boolean Keywords dimension without dimensional-relation ownership 
 
 `moSweep_c` produces a solid sweep. Compact operation code `15` joins the swept result to the existing body. Its Boolean operation remains independently unresolved when no recognized operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
 
-A solid sweep's `moGeneralCurveRef_w` child identifies its path independently of path-to-sketch or path-to-B-rep resolution. A first class instance begins at its class declaration. A repeated instance contains a two-byte wrapper token, two zero bytes, a two-byte child token, and the compact child prefix `2b 80 02 00 00 00 00 00 00 00`. The wrapper offset is the stable native path identity.
+A solid or surface sweep's `moGeneralCurveRef_w` child identifies its path. A declared component-profile form contains an `moCompProfile_c` child followed immediately by `2b 80 02 00 00 00 00 00 00 00`. A compact component-profile form prefixes the same bytes with `01 00 dd 94 df 94`. In both forms, prefix +45 through +60 is `ff`. The older record stores the referenced feature's nonzero u32 source ID at prefix +69; source +12 through +15 and +20 through +31 are zero, source +32 and +36 are `c7 cf ff ff`, source +40 is zero, and source +44 is `f8 2a 00 00`. The newer record stores the source ID at prefix +81; source +8 through +15 are zero, source +16 is u32 `0x65`, source +20 is zero, source +24 is `ff ff ff ff`, source +28 is zero, source +32, +36, and +40 are `c7 cf ff ff`, source +44 is zero, and source +48 is `f8 2a 00 00`. A component-profile source ID naming a planar sketch feature makes that sketch the sweep path.
+
+A repeated general-curve form with a two-byte wrapper token, two zero bytes, a two-byte child token, and the compact child prefix `2b 80 02 00 00 00 00 00 00 00` retains the wrapper offset as its stable native path identity when it carries no component-profile source record.
 
 A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. An absent attribute leaves that field unresolved.
 
