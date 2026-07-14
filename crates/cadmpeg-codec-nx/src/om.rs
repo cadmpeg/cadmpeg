@@ -262,7 +262,9 @@ pub struct SketchPayloadNamedField<'a> {
     /// Payload-relative offset of the `66` marker.
     pub offset: usize,
     /// Decoded non-null compact type code following the marker.
-    pub type_code: u32,
+    pub type_code: Option<u32>,
+    /// Whether the field uses the type-free payload-leading form.
+    pub payload_leading: bool,
     /// Exact nonempty printable ASCII value.
     pub value: &'a str,
 }
@@ -270,6 +272,16 @@ pub struct SketchPayloadNamedField<'a> {
 /// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
 pub fn sketch_payload_named_fields(bytes: &[u8]) -> Vec<SketchPayloadNamedField<'_>> {
     let mut fields = Vec::new();
+    if bytes.first() == Some(&0x03) {
+        if let Some(value) = sketch_payload_name_text(bytes, 1) {
+            fields.push(SketchPayloadNamedField {
+                offset: 0,
+                type_code: None,
+                payload_leading: true,
+                value,
+            });
+        }
+    }
     for start in 0..bytes.len().saturating_sub(5) {
         if bytes[start] != 0x66 {
             continue;
@@ -283,37 +295,31 @@ pub fn sketch_payload_named_fields(bytes: &[u8]) -> Vec<SketchPayloadNamedField<
         if bytes.get(marker) != Some(&0x03) {
             continue;
         }
-        let Some(text_len) = bytes
-            .get(marker + 1)
-            .copied()
-            .and_then(|declared| declared.checked_sub(2))
-            .map(usize::from)
-        else {
-            continue;
-        };
-        let text_start = marker + 2;
-        let Some(text_end) = text_start.checked_add(text_len) else {
-            continue;
-        };
-        let Some(text) = bytes.get(text_start..text_end) else {
-            continue;
-        };
-        if text.is_empty()
-            || !text.iter().all(u8::is_ascii_graphic)
-            || bytes.get(text_end) != Some(&0x00)
-        {
-            continue;
-        }
-        let Ok(value) = std::str::from_utf8(text) else {
+        let Some(value) = sketch_payload_name_text(bytes, marker + 1) else {
             continue;
         };
         fields.push(SketchPayloadNamedField {
             offset: start,
-            type_code,
+            type_code: Some(type_code),
+            payload_leading: false,
             value,
         });
     }
     fields
+}
+
+fn sketch_payload_name_text(bytes: &[u8], length_offset: usize) -> Option<&str> {
+    let text_len = usize::from(bytes.get(length_offset).copied()?.checked_sub(2)?);
+    let text_start = length_offset.checked_add(1)?;
+    let text_end = text_start.checked_add(text_len)?;
+    let text = bytes.get(text_start..text_end)?;
+    if text.is_empty()
+        || !text.iter().all(u8::is_ascii_graphic)
+        || bytes.get(text_end) != Some(&0x00)
+    {
+        return None;
+    }
+    std::str::from_utf8(text).ok()
 }
 
 /// One tagged reference occurrence in an externally bounded OM record.

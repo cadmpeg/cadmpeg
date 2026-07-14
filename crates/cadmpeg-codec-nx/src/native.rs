@@ -808,8 +808,11 @@ pub struct FeatureSketchPayloadName {
     pub construction_payload: String,
     /// Zero-based name-field order within the reconstructed payload.
     pub ordinal: u32,
-    /// Decoded compact type code following the `66` marker.
-    pub type_code: u32,
+    /// Decoded compact type code following the `66` marker, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_code: Option<u32>,
+    /// Whether the field uses the type-free payload-leading form.
+    pub payload_leading: bool,
     /// Exact printable field value.
     pub value: String,
     /// Byte offset of the `66` marker within the reconstructed payload.
@@ -2798,6 +2801,7 @@ pub fn feature_sketch_payload_names(
                         construction_payload: construction_payload.clone(),
                         ordinal: ordinal as u32,
                         type_code: field.type_code,
+                        payload_leading: field.payload_leading,
                         value: field.value.to_string(),
                         payload_offset: relative,
                         source_offset,

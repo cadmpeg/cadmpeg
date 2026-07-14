@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 109);
+    assert_eq!(namespace.version, 110);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1229,11 +1229,11 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
     assert_eq!(fields.len(), 2);
     assert_eq!(
         (fields[0].offset, fields[0].type_code, fields[0].value),
-        (0, 0x32, "Point1")
+        (0, Some(0x32), "Point1")
     );
     assert_eq!(
         (fields[1].offset, fields[1].type_code, fields[1].value),
-        (12, 0x83, "Line2")
+        (12, Some(0x83), "Line2")
     );
 
     assert!(crate::om::sketch_payload_named_fields(&[
@@ -1242,6 +1242,23 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
     .is_empty());
     assert!(crate::om::sketch_payload_named_fields(&[
         0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',
+    ])
+    .is_empty());
+}
+
+#[test]
+fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
+    let fields = crate::om::sketch_payload_named_fields(&[
+        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0x04,
+    ]);
+    assert_eq!(fields.len(), 1);
+    assert_eq!(fields[0].offset, 0);
+    assert_eq!(fields[0].type_code, None);
+    assert!(fields[0].payload_leading);
+    assert_eq!(fields[0].value, "Point1");
+
+    assert!(crate::om::sketch_payload_named_fields(&[
+        0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1',
     ])
     .is_empty());
 }
@@ -5482,7 +5499,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 109);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 110);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
