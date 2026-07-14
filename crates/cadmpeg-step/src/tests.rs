@@ -1257,6 +1257,15 @@ fn decode_transfers_ap242_semantic_pmi() {
     ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+    let options = StepWriteOptions {
+        schema: StepSchema::Ap242Edition3,
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    let error = write_step(&result.ir, &mut output, &options).expect_err("PMI refusal");
+    assert!(matches!(error, StepError::Unsupported(message) if message.contains("PMI annotation")));
+    assert!(output.is_empty());
 }
 
 #[test]

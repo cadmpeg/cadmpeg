@@ -1747,6 +1747,16 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
+        if !self.ir.model.pmi.is_empty() {
+            self.loss(
+                LossCategory::Attribute,
+                Severity::Warning,
+                format!(
+                    "{} PMI annotation(s) were not written to STEP",
+                    self.ir.model.pmi.len()
+                ),
+            );
+        }
         let source_object_count = self
             .ir
             .model
