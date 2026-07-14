@@ -2478,6 +2478,53 @@ fn segmented_view_visibility_file() -> Vec<u8> {
     ])
 }
 
+fn drawing_with_properties_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00020000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "NOTELOC".into(),
+            status: "00010100",
+            parameters: "116,5,6,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 16,
+            label: "SIZE".into(),
+            status: "00010000",
+            parameters: "406,2,210,297;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 17,
+            label: "UNITS".into(),
+            status: "00010000",
+            parameters: "406,2,2,2HMM;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME".into(),
+            status: "00010000",
+            parameters: "406,1,7HDETAIL1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 404,
+            form: 1,
+            label: "DRAWING".into(),
+            status: "00000000",
+            parameters: "404,1,1,10,20,0.5,1,3,0,3,5,7,9;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3849,6 +3896,35 @@ fn decode_preserves_ordered_segmented_view_display() {
     assert_eq!(segmented.fields["blocks"][1]["breakpoint"], 1.0);
     assert_eq!(segmented.fields["blocks"][1]["color"]["value"], 2);
     assert_eq!(segmented.fields["blocks"][1]["line_font"]["value"], 3);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_drawing_view_placement_annotations_and_sheet_properties() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(drawing_with_properties_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let drawing = &result.ir.native.namespace("iges").unwrap().arenas["drawings"][0];
+    assert_eq!(drawing.fields["form"], 1);
+    assert_eq!(
+        drawing.fields["views"][0]["view"],
+        "iges:presentation:view#D1"
+    );
+    assert_eq!(drawing.fields["views"][0]["origin"][0], 10.0);
+    assert_eq!(drawing.fields["views"][0]["rotation"], 0.5);
+    assert_eq!(drawing.fields["annotations"][0], "iges:entity:directory#3");
+    assert_eq!(drawing.fields["size"][0], 210.0);
+    assert_eq!(drawing.fields["size"][1], 297.0);
+    assert_eq!(drawing.fields["units_flag"], 2);
+    assert_eq!(drawing.fields["units_name"][0], 77);
+    assert_eq!(drawing.fields["name"][0], 68);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

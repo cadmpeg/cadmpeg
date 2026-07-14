@@ -102,6 +102,8 @@ Type 402 Form 3 associates one or more Type 410 views with zero or more displaye
 
 Type 402 Form 19 applies display parameters to ordered curve segments in views. Each block stores a Type 410 view, finite parameter breakpoint, display flag `0` or `1`, and independently omitted or explicit color, line-font, and nonnegative line-weight values. Negative color and line-font values resolve to Type 314 and Type 304 definitions. Blocks for one view are adjacent and have strictly increasing breakpoints; a view does not recur after a later view begins. The `segmented_visibility` arena preserves block order and omission versus explicit override for every display field.
 
+Type 404 Forms 0 and 1 define a drawing as ordered view placements followed by ordered drawing-space annotation pointers. Each view is a logically dependent Type 410 entity and stores a finite drawing-space origin. Form 1 additionally stores a finite rotation angle defaulting to zero. Each direct annotation has entity-use flag `01` and physically dependent status. Type 406 Form 16 stores two positive drawing extents. Type 406 Form 17 stores a units flag `1` through `11` and a nonempty units name. These properties and Form 15 drawing names attach through the drawing's second trailing pointer group. The `drawings` arena preserves view and annotation order, native drawing coordinates, rotations, property identities, name bytes, sheet size, and drawing-space units separately from model units.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

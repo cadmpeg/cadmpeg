@@ -44,6 +44,94 @@ pub(super) fn project(
 
     for entry in directory
         .iter()
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 16 | 17))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let valid = if entry.form == 16 {
+            record.integer(1) == Some(2)
+                && (2..=3).all(|index| {
+                    record
+                        .number(index)
+                        .is_some_and(|value| value.is_finite() && value > 0.0)
+                })
+        } else {
+            record.integer(1) == Some(2)
+                && record
+                    .integer(2)
+                    .is_some_and(|value| matches!(value, 1..=11))
+                && record.string(3).is_some_and(|value| !value.is_empty())
+        };
+        if valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "drawing size or unit property fields are invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let view_count = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok());
+        let width = if entry.form == 0 { 3 } else { 4 };
+        let views_valid = view_count.is_some_and(|count| {
+            (0..count).all(|index| {
+                let start = 2 + index * width;
+                record
+                    .integer(start)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .and_then(|sequence| entries.get(&sequence).copied())
+                    .is_some_and(|view| view.entity_type == 410 && view.status.subordinate == 2)
+                    && (start + 1..=start + 2)
+                        .all(|index| record.number(index).is_some_and(f64::is_finite))
+                    && (entry.form == 0
+                        || match record.tokens.get(start + 3).map(|token| &token.value) {
+                            None | Some(crate::parameter::TokenValue::Omitted) => true,
+                            _ => record.number(start + 3).is_some_and(f64::is_finite),
+                        })
+            })
+        });
+        let annotation_count_index = 2 + view_count.unwrap_or_default() * width;
+        let annotation_count = record
+            .integer(annotation_count_index)
+            .and_then(|value| usize::try_from(value).ok());
+        let annotations_valid = annotation_count.is_some_and(|count| {
+            (0..count).all(|index| {
+                record
+                    .integer(annotation_count_index + 1 + index)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .and_then(|sequence| entries.get(&sequence).copied())
+                    .is_some_and(|annotation| {
+                        annotation.status.use_flag == 1 && annotation.status.subordinate == 1
+                    })
+            })
+        });
+        if views_valid && annotations_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "drawing view placements or drawing-space annotations are invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
         .filter(|entry| entry.entity_type == 410 && matches!(entry.form, 0 | 1))
     {
         handled.insert(entry.sequence);

@@ -435,6 +435,29 @@ struct NativeSegmentedVisibility {
     blocks: Vec<NativeSegmentDisplay>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeDrawingView {
+    view: Option<String>,
+    origin: [Option<f64>; 2],
+    rotation: Option<f64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeDrawing {
+    id: String,
+    source_entity: String,
+    form: i64,
+    views: Vec<NativeDrawingView>,
+    annotations: Vec<Option<String>>,
+    name_property: Option<String>,
+    size_property: Option<String>,
+    units_property: Option<String>,
+    name: Option<Vec<u8>>,
+    size: Option<[Option<f64>; 2]>,
+    units_flag: Option<i64>,
+    units_name: Option<Vec<u8>>,
+}
+
 #[derive(Clone)]
 struct OccurrenceDefinition {
     members: Vec<u32>,
@@ -1762,6 +1785,87 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let drawings = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 404 && matches!(entry.form, 0 | 1))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let view_count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let width = if entry.form == 0 { 3 } else { 4 };
+            let annotation_count_index = 2 + view_count * width;
+            let annotation_count = record
+                .and_then(|record| record.integer(annotation_count_index))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let trailing = record.and_then(|record| trailing_pointer_groups(record, &entries));
+            let property = |form| {
+                trailing.as_ref().and_then(|groups| {
+                    groups.properties.iter().find_map(|sequence| {
+                        entries
+                            .get(sequence)
+                            .filter(|property| property.entity_type == 406 && property.form == form)
+                            .map(|_| *sequence)
+                    })
+                })
+            };
+            let name_property = property(15);
+            let size_property = property(16);
+            let units_property = property(17);
+            NativeDrawing {
+                id: format!("iges:presentation:drawing#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                views: (0..view_count)
+                    .map(|index| {
+                        let start = 2 + index * width;
+                        NativeDrawingView {
+                            view: record
+                                .and_then(|record| record.integer(start))
+                                .map(|sequence| format!("iges:presentation:view#D{sequence}")),
+                            origin: [
+                                record.and_then(|record| record.number(start + 1)),
+                                record.and_then(|record| record.number(start + 2)),
+                            ],
+                            rotation: (entry.form == 1)
+                                .then(|| record.and_then(|record| record.number(start + 3)))
+                                .flatten(),
+                        }
+                    })
+                    .collect(),
+                annotations: (0..annotation_count)
+                    .map(|index| {
+                        record
+                            .and_then(|record| record.integer(annotation_count_index + 1 + index))
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    })
+                    .collect(),
+                name_property: name_property
+                    .map(|sequence| format!("iges:product:property#D{sequence}")),
+                size_property: size_property
+                    .map(|sequence| format!("iges:presentation:drawing-size#D{sequence}")),
+                units_property: units_property
+                    .map(|sequence| format!("iges:presentation:drawing-units#D{sequence}")),
+                name: name_property
+                    .and_then(|sequence| by_directory.get(&sequence))
+                    .and_then(|record| record.string(2))
+                    .map(<[u8]>::to_vec),
+                size: size_property.and_then(|sequence| {
+                    let record = by_directory.get(&sequence)?;
+                    Some([record.number(2), record.number(3)])
+                }),
+                units_flag: units_property
+                    .and_then(|sequence| by_directory.get(&sequence))
+                    .and_then(|record| record.integer(2)),
+                units_name: units_property
+                    .and_then(|sequence| by_directory.get(&sequence))
+                    .and_then(|record| record.string(3))
+                    .map(<[u8]>::to_vec),
+            }
+        })
+        .collect::<Vec<_>>();
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
@@ -1888,6 +1992,7 @@ pub(crate) fn store(
     namespace.set_arena("views", &views)?;
     namespace.set_arena("view_visibility", &view_visibility)?;
     namespace.set_arena("segmented_visibility", &segmented_visibility)?;
+    namespace.set_arena("drawings", &drawings)?;
     namespace.set_arena("product_occurrences", &product_occurrences)?;
     Ok(())
 }
