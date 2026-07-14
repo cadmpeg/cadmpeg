@@ -3836,7 +3836,7 @@ impl MeshSelectionSearch<'_> {
         self.orientable_with(None)
     }
 
-    fn remaining_faces_have_orientable_option(&self, quotient: &MeshQuotient) -> bool {
+    fn fixed_remaining_faces_are_orientable(&self) -> bool {
         self.selected
             .iter()
             .enumerate()
@@ -3846,12 +3846,19 @@ impl MeshSelectionSearch<'_> {
                     .iter()
                     .enumerate()
                     .any(|(assignment_index, assignment)| {
-                        quotient
-                            .assignment_options(assignment, self.edge_candidates)
-                            .into_iter()
-                            .any(|(directions, _)| {
-                                self.orientable_with(Some((face, assignment_index, &directions)))
+                        let directions = assignment
+                            .boundaries
+                            .iter()
+                            .map(|boundary| {
+                                boundary
+                                    .iter()
+                                    .map(|use_| use_.reversed)
+                                    .collect::<Option<Vec<_>>>()
                             })
+                            .collect::<Option<Vec<_>>>();
+                        directions.is_none_or(|directions| {
+                            self.orientable_with(Some((face, assignment_index, &directions)))
+                        })
                     })
             })
     }
@@ -3889,7 +3896,7 @@ impl MeshSelectionSearch<'_> {
         {
             return;
         }
-        if !self.remaining_faces_have_orientable_option(&measured) {
+        if !self.fixed_remaining_faces_are_orientable() {
             return;
         }
         let selected_edges = self
@@ -5204,15 +5211,9 @@ mod motif_tests {
             ambiguous: false,
             exhausted: false,
         };
-        let quotient = MeshQuotient {
-            union: UnionFind::new(6),
-            domains: vec![HashSet::from([0, 1, 2]); 6],
-            members: (0..6).map(|node| vec![node]).collect(),
-        };
-
-        assert!(!search.remaining_faces_have_orientable_option(&quotient));
+        assert!(!search.fixed_remaining_faces_are_orientable());
         search.selected[1] = Some((0, vec![vec![false, true]]));
-        assert!(search.remaining_faces_have_orientable_option(&quotient));
+        assert!(search.fixed_remaining_faces_are_orientable());
     }
 
     #[test]
