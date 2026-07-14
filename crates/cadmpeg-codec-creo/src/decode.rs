@@ -2198,51 +2198,16 @@ fn transfer_feature_extrusion_surfaces(
             .iter()
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        let cylinder_entries = table
-            .entry_ids
-            .iter()
-            .filter(|id| {
-                scan.surface_rows
-                    .iter()
-                    .any(|row| row.id == **id && row.kind == crate::surface::SurfaceKind::Cylinder)
-            })
-            .copied()
-            .collect::<Vec<_>>();
-        let mut arcs = segments
-            .rows
-            .iter()
-            .filter(|segment| {
-                solved.contains(&segment.external_id)
-                    && segment.kind == crate::feature::FeatureSegmentKind::Arc
-            })
-            .filter_map(|segment| Some((order_table.internal_id(segment.external_id)?, segment)))
-            .collect::<Vec<_>>();
-        arcs.sort_by_key(|(internal_id, _)| *internal_id);
-        let arc_bindings = if arcs.len() == cylinder_entries.len() {
-            arcs.iter()
-                .zip(&cylinder_entries)
-                .map(|((_, segment), surface_id)| (segment.external_id, *surface_id))
-                .collect::<BTreeMap<_, _>>()
-        } else {
-            BTreeMap::new()
-        };
-
         for segment in segments
             .rows
             .iter()
             .filter(|segment| solved.contains(&segment.external_id))
         {
             let surface_id = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line => order_table
+                crate::feature::FeatureSegmentKind::Line
+                | crate::feature::FeatureSegmentKind::Arc => order_table
                     .internal_id(segment.external_id)
-                    .and_then(|internal_id| internal_id.checked_sub(1))
-                    .and_then(|index| usize::try_from(index).ok())
-                    .and_then(|index| table.entry_ids.get(index))
-                    .copied()
-                    .filter(|id| table.surface_ids.contains(id)),
-                crate::feature::FeatureSegmentKind::Arc => {
-                    arc_bindings.get(&segment.external_id).copied()
-                }
+                    .and_then(|_| generated_surface_id(table, segment.external_id)),
                 crate::feature::FeatureSegmentKind::Point => None,
             };
             let Some(surface_id) = surface_id else {
@@ -2284,7 +2249,7 @@ fn transfer_feature_extrusion_surfaces(
             transferred += 1;
         }
 
-        let mut splines = definition
+        let splines = definition
             .saved_section
             .iter()
             .flat_map(|saved| &saved.entities)
@@ -2293,24 +2258,19 @@ fn transfer_feature_extrusion_surfaces(
                 _ => None,
             })
             .filter_map(|spline| {
-                let entity_id = spline.entity_id?;
-                Some((order_table.internal_id(entity_id)?, spline))
-            })
-            .collect::<Vec<_>>();
-        splines.sort_by_key(|(internal_id, _)| *internal_id);
-        let extrusion_entries = table
-            .entry_ids
-            .iter()
-            .filter(|id| {
+                let internal_id = spline.entity_id?;
+                let external_id = order_table.external_id(internal_id)?;
+                let surface_id = generated_surface_id(table, external_id)?;
                 scan.surface_rows
                     .iter()
-                    .any(|row| row.id == **id && row.kind == crate::surface::SurfaceKind::Extrusion)
+                    .any(|row| {
+                        row.id == surface_id
+                            && row.feature_id == feature_id
+                            && row.kind == crate::surface::SurfaceKind::Extrusion
+                    })
+                    .then_some((surface_id, spline))
             })
-            .copied()
             .collect::<Vec<_>>();
-        if splines.len() != extrusion_entries.len() {
-            continue;
-        }
         let Some(span) = extrusion_span(
             transform.origin,
             transform.normal,
@@ -2322,7 +2282,7 @@ fn transfer_feature_extrusion_surfaces(
         let sweep = transform
             .normal
             .map(|value| value * (span.upper - span.lower));
-        for ((_, spline), native_surface_id) in splines.into_iter().zip(extrusion_entries) {
+        for (native_surface_id, spline) in splines {
             let Some(section_curve) = saved_spline_nurbs(spline) else {
                 continue;
             };
@@ -3779,6 +3739,23 @@ fn surface_kind_for_geometry(geometry: &SurfaceGeometry) -> Option<crate::surfac
     }
 }
 
+fn generated_surface_id(
+    table: &crate::feature::FeatureEntityTable,
+    source_entity_id: u32,
+) -> Option<u32> {
+    let mut matches = table
+        .entries
+        .iter()
+        .filter(|entry| entry.source_entity_id == Some(source_entity_id))
+        .map(|entry| entry.entity_id);
+    let surface_id = matches.next()?;
+    matches.next().is_none().then_some(())?;
+    table
+        .surface_ids
+        .contains(&surface_id)
+        .then_some(surface_id)
+}
+
 fn ordered_line_surface_id(
     surface_rows: &[crate::surface::SurfaceRow],
     feature_id: u32,
@@ -3787,12 +3764,8 @@ fn ordered_line_surface_id(
     external_id: u32,
     geometry: &SurfaceGeometry,
 ) -> Option<u32> {
-    let index = order
-        .internal_id(external_id)?
-        .checked_sub(1)
-        .and_then(|value| usize::try_from(value).ok())?;
-    let surface_id = *table.entry_ids.get(index)?;
-    table.surface_ids.contains(&surface_id).then_some(())?;
+    order.internal_id(external_id)?;
+    let surface_id = generated_surface_id(table, external_id)?;
     let expected_kind = surface_kind_for_geometry(geometry)?;
     surface_rows
         .iter()
@@ -3810,29 +3783,24 @@ fn ordered_family_surface_bindings(
     external_ids: impl IntoIterator<Item = u32>,
     expected_kind: crate::surface::SurfaceKind,
 ) -> BTreeMap<u32, u32> {
-    let mut entities = external_ids
-        .into_iter()
-        .filter_map(|external_id| Some((order.internal_id(external_id)?, external_id)))
-        .collect::<Vec<_>>();
-    entities.sort_unstable();
-    let surfaces = table
-        .entry_ids
-        .iter()
-        .copied()
-        .filter(|surface_id| {
-            surface_rows.iter().any(|row| {
-                row.id == *surface_id && row.feature_id == feature_id && row.kind == expected_kind
-            })
-        })
-        .collect::<Vec<_>>();
-    if entities.len() != surfaces.len() {
-        return BTreeMap::new();
+    let mut bindings = BTreeMap::new();
+    let mut bound_surfaces = BTreeSet::new();
+    for external_id in external_ids {
+        if order.internal_id(external_id).is_none() {
+            return BTreeMap::new();
+        }
+        let Some(surface_id) = generated_surface_id(table, external_id) else {
+            return BTreeMap::new();
+        };
+        if !surface_rows.iter().any(|row| {
+            row.id == surface_id && row.feature_id == feature_id && row.kind == expected_kind
+        }) || !bound_surfaces.insert(surface_id)
+        {
+            return BTreeMap::new();
+        }
+        bindings.insert(external_id, surface_id);
     }
-    entities
-        .into_iter()
-        .zip(surfaces)
-        .map(|((_, external_id), surface_id)| (external_id, surface_id))
-        .collect()
+    bindings
 }
 
 fn transfer_resolved_revolution_surfaces(
@@ -4942,11 +4910,36 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn revolution_order_join_distinguishes_line_index_and_arc_family_order() {
+    fn generated_source_ids_bind_carriers_independently_of_table_position() {
         let table = crate::feature::FeatureEntityTable {
             feature_id: Some(17),
-            entry_ids: vec![41, 42, 43],
-            entries: Vec::new(),
+            entry_ids: vec![42, 41, 43],
+            entries: vec![
+                crate::feature::FeatureEntityTableEntry {
+                    entity_id: 42,
+                    class_id: 200,
+                    source_entity_id: Some(10),
+                    prefixed: false,
+                    offset: 0,
+                    end_offset: 0,
+                },
+                crate::feature::FeatureEntityTableEntry {
+                    entity_id: 41,
+                    class_id: 200,
+                    source_entity_id: Some(8),
+                    prefixed: false,
+                    offset: 0,
+                    end_offset: 0,
+                },
+                crate::feature::FeatureEntityTableEntry {
+                    entity_id: 43,
+                    class_id: 200,
+                    source_entity_id: Some(9),
+                    prefixed: false,
+                    offset: 0,
+                    end_offset: 0,
+                },
+            ],
             surface_ids: vec![41, 42, 43],
             non_surface_entity_ids: Vec::new(),
             offset: 0,
