@@ -153,6 +153,10 @@ World-coordinate tokens normally occupy eight bytes. Their final seven bytes hol
 
 `0d` encodes negative one, `0f` and `e6` encode zero, and `e4` encodes one. In row and `f9` scalar lanes, `e8 00` encodes standalone `1.0`; other contexts use a different selector grammar. `18 <index>` indexes a raw section-local `46` cache. Build that cache by scanning the raw section bytes, including `46` values that occur within other token tails. In a row or `f9` body, `18 <float-opener>` encodes a standalone zero and the following byte begins a new token. In a saved-line coordinate row, `18` immediately before the row close or trailing entity reference is a standalone zero. At the byte-bounded end of a positional scalar-slot array, terminal `18` is a standalone zero.
 
+The following token may itself begin with `18`. In a positional surface row,
+the surface-only `73`, `a0`, and `bb` openers also terminate the preceding
+standalone `18` zero.
+
 The seven-byte scalar `5e b2 b3 b4 b5 b6 b7` reconstructs IEEE-754 bytes `3f d3 b2 b3 b4 b5 b6 b7`.
 
 ## 3. Surface namespace: `srf_array`
