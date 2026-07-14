@@ -4129,7 +4129,27 @@ fn profile_loci_by_marker(
                 .push((point, locus));
         }
     }
-    let mut result = HashMap::new();
+    let mut result = HashMap::<String, Vec<SketchLocus>>::new();
+    for entity in sketch_entities {
+        let Some(native_ref) = entity
+            .native_ref
+            .as_deref()
+            .filter(|native_ref| native_ref.starts_with("sldprt:feature-input:sketch-entity#"))
+        else {
+            continue;
+        };
+        let locus = match &entity.geometry {
+            SketchGeometry::Circle { .. }
+            | SketchGeometry::Arc { .. }
+            | SketchGeometry::Ellipse { .. } => SketchLocus::Center(entity.id.clone()),
+            SketchGeometry::Point { .. } => SketchLocus::Entity(entity.id.clone()),
+            _ => continue,
+        };
+        let loci = result.entry(native_ref.to_string()).or_default();
+        if !loci.contains(&locus) {
+            loci.push(locus);
+        }
+    }
     for lane in lanes {
         let mut markers_by_feature = HashMap::<&str, Vec<&SketchInputEntity>>::new();
         for marker in &lane.sketch_entities {
@@ -4182,7 +4202,12 @@ fn profile_loci_by_marker(
                     .collect::<Vec<_>>();
                 marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                 marker_loci.dedup();
-                result.insert(marker.id.clone(), marker_loci);
+                let loci = result.entry(marker.id.clone()).or_default();
+                for locus in marker_loci {
+                    if !loci.contains(&locus) {
+                        loci.push(locus);
+                    }
+                }
             }
         }
     }
@@ -5144,6 +5169,29 @@ mod profile_join_tests {
         assert_eq!(
             transform.apply((1_915_000_000, -2_385_000_000)),
             Some((2_420_000_000, -950_000_000))
+        );
+    }
+
+    #[test]
+    fn materialized_geometry_binds_its_exact_native_marker() {
+        let marker = "sldprt:feature-input:sketch-entity#1:20";
+        let entity = SketchEntity {
+            id: SketchEntityId("circle".into()),
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: Some(marker.into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(2.0, 3.0),
+                radius: Length(4.0),
+            },
+        };
+        assert_eq!(
+            profile_loci_by_marker(&[], &[], &[entity], &[]).get(marker),
+            Some(&vec![cadmpeg_ir::sketches::SketchLocus::Center(
+                SketchEntityId("circle".into())
+            )])
         );
     }
 

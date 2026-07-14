@@ -189,6 +189,8 @@ Feature-input geometry-handle coordinates and the nested Parasolid profile diffe
 
 For an axis-aligned sketch plane, a geometry-handle coordinate stores the two model-space coordinate components in X-Y-Z order with the plane-normal component omitted. Subtracting the sketch origin and projecting those components onto the sketch u-axis and `normal × u-axis` gives the sketch coordinate. This frame constrains profile- and surface-derived signed-axis transforms.
 
+A materialized point or centered sketch entity whose native reference is a feature-input sketch marker binds that marker directly to the entity or center locus, respectively. Native identity takes part independently of coordinate-frame binding.
+
 Point-distance operands select explicit profile loci. Line-distance and angular operands select the profile entity shared by their linked endpoint markers. A relation with resolved operands and one driving scalar maps to the corresponding neutral distance, horizontal-distance, vertical-distance, angle, radius, or diameter constraint. A relation marker without coordinates or linked local identifiers has no constraint operands and does not produce a sketch constraint.
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
