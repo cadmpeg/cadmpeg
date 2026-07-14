@@ -784,34 +784,33 @@ fn resolved_trim_vertex_coordinates(
         else {
             continue;
         };
-        if saved_section_arc_geometry(definition, segment).is_none() {
-            continue;
-        }
-        let Some(arc) = saved_section_arc_record(definition, segment) else {
-            continue;
-        };
-        let [[Some(first_u), Some(first_v), _], [Some(second_u), Some(second_v), _]] =
-            arc.endpoints
+        let Some(([center_u, center_v], radius)) = saved_section_arc_carrier(definition, segment)
         else {
             continue;
         };
-        let pairs = [
-            (trim.vertices[0], [first_u, first_v]),
-            (trim.vertices[1], [second_u, second_v]),
-        ];
-        let compatible = pairs.iter().all(|(vertex, candidate)| {
-            coordinates.get(vertex).is_none_or(|stored| {
+        let Some(arc) = saved_section_arc_record(definition, segment) else {
+            continue;
+        };
+        for (vertex, endpoint) in trim.vertices.into_iter().zip(arc.endpoints) {
+            let [Some(u), Some(v), _] = endpoint else {
+                continue;
+            };
+            let candidate = [u, v];
+            let candidate_radius = (u - center_u).hypot(v - center_v);
+            let radial_scale = radius.max(candidate_radius).max(1.0);
+            if (candidate_radius - radius).abs() > 1e-9 * radial_scale {
+                continue;
+            }
+            let compatible = coordinates.get(&vertex).is_none_or(|stored| {
                 let scale = stored
                     .iter()
-                    .chain(candidate)
+                    .chain(&candidate)
                     .map(|value| value.abs())
                     .fold(1.0, f64::max);
                 (stored[0] - candidate[0]).hypot(stored[1] - candidate[1]) <= 1e-9 * scale
-            })
-        });
-        if compatible {
-            for (vertex, coordinate) in pairs {
-                coordinates.entry(vertex).or_insert(coordinate);
+            });
+            if compatible {
+                coordinates.entry(vertex).or_insert(candidate);
             }
         }
     }
@@ -2983,6 +2982,19 @@ mod resolved_sketch_tests {
         assert_eq!(
             resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
             BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
+        );
+        let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+            .saved_section
+            .as_mut()
+            .expect("test definition has a saved section")
+            .entities[0]
+        else {
+            panic!("test entity is an arc");
+        };
+        arc.endpoints[0] = [None; 3];
+        assert_eq!(
+            resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
+            BTreeMap::from([(2, [-2.0, 0.0])])
         );
     }
 
