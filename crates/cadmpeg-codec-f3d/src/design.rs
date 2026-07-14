@@ -1278,6 +1278,7 @@ pub(crate) fn bind_extrude_profile_selections(
     }
 }
 
+#[derive(Debug, PartialEq)]
 enum ResolvedProfileSelection {
     Loops(Vec<u32>),
     Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
@@ -1401,14 +1402,15 @@ fn transition_profile_selection(
         let Some(points) = historical_face_points(*face, topology) else {
             continue;
         };
-        let Some(region) = region_containing_points(sketch, entities, &points, tolerance) else {
+        let Some(selection) = selection_containing_points(sketch, entities, &points, tolerance)
+        else {
             continue;
         };
-        if !profiles.contains(&region) {
-            profiles.push(region);
+        if !profiles.contains(&selection) {
+            profiles.push(selection);
         }
     }
-    (profiles.len() == 1).then_some(ResolvedProfileSelection::Regions(profiles))
+    (profiles.len() == 1).then(|| profiles.remove(0))
 }
 
 fn historical_face_points(
@@ -1470,28 +1472,83 @@ fn historical_selection_regions(
     }
     let tolerance = linear_tolerance.max(1.0e-7);
     let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
-    if let Some(region) = region_containing_points(sketch, entities, &all_points, tolerance) {
-        return Some(ResolvedProfileSelection::Regions(vec![region]));
+    if let Some(selection) = selection_containing_points(sketch, entities, &all_points, tolerance) {
+        return Some(selection);
     }
-    let regions = ordered_unique_region_matches(
+    ordered_unique_profile_selections(
         member_points
             .iter()
-            .map(|points| region_containing_points(sketch, entities, points, tolerance)),
-    )?;
-    Some(ResolvedProfileSelection::Regions(regions))
+            .map(|points| selection_containing_points(sketch, entities, points, tolerance)),
+    )
 }
 
-fn ordered_unique_region_matches(
-    matches: impl IntoIterator<Item = Option<cadmpeg_ir::features::SketchProfileRegion>>,
-) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+fn ordered_unique_profile_selections(
+    matches: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
+) -> Option<ResolvedProfileSelection> {
+    let mut loops = Vec::new();
     let mut regions = Vec::new();
-    for region in matches {
-        let region = region?;
-        if !regions.contains(&region) {
-            regions.push(region);
+    for selection in matches {
+        match selection? {
+            ResolvedProfileSelection::Loops(selected) if regions.is_empty() => {
+                for loop_index in selected {
+                    if !loops.contains(&loop_index) {
+                        loops.push(loop_index);
+                    }
+                }
+            }
+            ResolvedProfileSelection::Regions(selected) if loops.is_empty() => {
+                for region in selected {
+                    if !regions.contains(&region) {
+                        regions.push(region);
+                    }
+                }
+            }
+            _ => return None,
         }
     }
-    (!regions.is_empty()).then_some(regions)
+    if !loops.is_empty() {
+        Some(ResolvedProfileSelection::Loops(loops))
+    } else if !regions.is_empty() {
+        Some(ResolvedProfileSelection::Regions(regions))
+    } else {
+        None
+    }
+}
+
+fn selection_containing_points(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    points: &[Point3],
+    tolerance: f64,
+) -> Option<ResolvedProfileSelection> {
+    let projected = points
+        .iter()
+        .map(|point| project_to_sketch(sketch, *point))
+        .collect::<Vec<_>>();
+    let boundaries = sketch
+        .profiles
+        .iter()
+        .enumerate()
+        .filter(|(_, profile)| {
+            projected.iter().all(|point| {
+                profile.iter().any(|use_| {
+                    entities
+                        .iter()
+                        .find(|entity| entity.id == use_.entity)
+                        .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
+                })
+            })
+        })
+        .map(|(index, _)| u32::try_from(index).ok())
+        .collect::<Option<Vec<_>>>()?;
+    if let [profile] = boundaries.as_slice() {
+        return Some(ResolvedProfileSelection::Loops(vec![*profile]));
+    }
+    if !boundaries.is_empty() {
+        return None;
+    }
+    region_containing_points(sketch, entities, points, tolerance)
+        .map(|region| ResolvedProfileSelection::Regions(vec![region]))
 }
 
 fn region_containing_points(
@@ -1506,7 +1563,7 @@ fn region_containing_points(
         .profiles
         .iter()
         .map(|profile| line_profile_vertices(profile, entities, tolerance))
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
@@ -1526,33 +1583,39 @@ fn region_containing_points(
     let containing = polygons
         .iter()
         .enumerate()
+        .filter_map(|(index, polygon)| Some((index, polygon.as_ref()?)))
         .filter(|(_, polygon)| {
             projected
                 .iter()
                 .all(|point| point_in_polygon(*point, polygon))
         })
-        .map(|(index, polygon)| (index, polygon_area(polygon)))
+        .map(|(index, polygon)| (index, polygon, polygon_area(polygon)))
         .collect::<Vec<_>>();
     if containing.iter().enumerate().any(|(left_index, left)| {
         containing.iter().skip(left_index + 1).any(|right| {
-            !polygon_strictly_contains(&polygons[left.0], &polygons[right.0])
-                && !polygon_strictly_contains(&polygons[right.0], &polygons[left.0])
+            !polygon_strictly_contains(left.1, right.1)
+                && !polygon_strictly_contains(right.1, left.1)
         })
     }) {
         return None;
     }
-    let &(outer, _) = containing
+    let &(outer, outer_polygon, _) = containing
         .iter()
-        .min_by(|left, right| left.1.total_cmp(&right.1))?;
+        .min_by(|left, right| left.2.total_cmp(&right.2))?;
     let mut holes = Vec::new();
-    for (candidate, polygon) in polygons.iter().enumerate() {
-        if candidate == outer || !polygon_strictly_contains(&polygons[outer], polygon) {
+    for (candidate, polygon) in polygons
+        .iter()
+        .enumerate()
+        .filter_map(|(index, polygon)| Some((index, polygon.as_ref()?)))
+    {
+        if candidate == outer || !polygon_strictly_contains(outer_polygon, polygon) {
             continue;
         }
         let candidate_area = polygon_area(polygon);
         let parent = polygons
             .iter()
             .enumerate()
+            .filter_map(|(index, parent)| Some((index, parent.as_ref()?)))
             .filter(|(index, parent)| {
                 *index != candidate
                     && polygon_area(parent) > candidate_area
@@ -8944,16 +9007,23 @@ mod relation_tests {
             holes: Vec::new(),
         };
         assert_eq!(
-            super::ordered_unique_region_matches([
-                Some(region(3)),
-                Some(region(1)),
-                Some(region(3)),
-                Some(region(2)),
+            super::ordered_unique_profile_selections([
+                Some(super::ResolvedProfileSelection::Regions(vec![region(3)])),
+                Some(super::ResolvedProfileSelection::Regions(vec![region(1)])),
+                Some(super::ResolvedProfileSelection::Regions(vec![region(3)])),
+                Some(super::ResolvedProfileSelection::Regions(vec![region(2)])),
             ]),
-            Some(vec![region(3), region(1), region(2)])
+            Some(super::ResolvedProfileSelection::Regions(vec![
+                region(3),
+                region(1),
+                region(2),
+            ]))
         );
         assert_eq!(
-            super::ordered_unique_region_matches([Some(region(3)), None]),
+            super::ordered_unique_profile_selections([
+                Some(super::ResolvedProfileSelection::Regions(vec![region(3)])),
+                None,
+            ]),
             None
         );
     }
