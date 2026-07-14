@@ -1011,14 +1011,15 @@ impl<'a> Builder<'a> {
                 .map(|body| body.kind)
                 .unwrap_or(BodyKind::General);
             if body_kind == BodyKind::Wire {
-                self.loss(
-                    LossCategory::Topology,
-                    Severity::Warning,
-                    format!(
-                        "wire body '{}' is not yet writable as STEP topology",
-                        region.body
-                    ),
-                );
+                if let Some(item) = self.emit_wire_region(region) {
+                    items.push(item);
+                    self.body_shape_refs
+                        .entry(region.body.0.clone())
+                        .or_insert(item);
+                    self.body_step_refs
+                        .entry(region.body.0.clone())
+                        .or_insert(item);
+                }
                 continue;
             }
             let closed = body_kind == BodyKind::Solid;
@@ -1060,6 +1061,53 @@ impl<'a> Builder<'a> {
                 .or_insert(if closed { item } else { *outer });
         }
         items
+    }
+
+    fn emit_wire_region(&mut self, region: &cadmpeg_ir::topology::Region) -> Option<Ref> {
+        let shells = region
+            .shells
+            .iter()
+            .filter_map(|shell_id| {
+                self.ir
+                    .model
+                    .shells
+                    .iter()
+                    .find(|shell| shell.id == *shell_id)
+                    .cloned()
+            })
+            .collect::<Vec<_>>();
+        let mut connected_sets = Vec::new();
+        for shell in shells {
+            if !shell.free_vertices.is_empty() {
+                self.loss(
+                    LossCategory::Topology,
+                    Severity::Warning,
+                    format!(
+                        "wire shell '{}' has {} free vertex/vertices without an edge-based STEP carrier",
+                        shell.id,
+                        shell.free_vertices.len()
+                    ),
+                );
+            }
+            let edges = shell
+                .wire_edges
+                .iter()
+                .filter_map(|edge| self.emit_edge(edge.as_str()))
+                .collect::<Vec<_>>();
+            if !edges.is_empty() {
+                connected_sets.push(
+                    self.emitter
+                        .emit("CONNECTED_EDGE_SET", &format!("'',{}", refs(&edges))),
+                );
+            }
+        }
+        if connected_sets.is_empty() {
+            return None;
+        }
+        Some(self.emitter.emit(
+            "EDGE_BASED_WIREFRAME_MODEL",
+            &format!("'',{}", refs(&connected_sets)),
+        ))
     }
 
     fn emit_tessellations(&mut self, context: Ref) {

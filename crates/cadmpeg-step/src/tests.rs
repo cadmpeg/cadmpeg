@@ -980,6 +980,55 @@ fn writer_round_trips_product_body_ownership() {
 }
 
 #[test]
+fn writer_round_trips_edge_based_wire_bodies() {
+    let mut ir = unit_cube();
+    let edge = ir.model.edges[0].clone();
+    let curve = edge.curve.clone().expect("cube edge curve");
+    ir.model.edges.retain(|candidate| candidate.id == edge.id);
+    ir.model.curves.retain(|candidate| candidate.id == curve);
+    ir.model
+        .vertices
+        .retain(|vertex| vertex.id == edge.start || vertex.id == edge.end);
+    let point_ids = ir
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.point.clone())
+        .collect::<Vec<_>>();
+    ir.model
+        .points
+        .retain(|point| point_ids.contains(&point.id));
+    ir.model.coedges.clear();
+    ir.model.loops.clear();
+    ir.model.faces.clear();
+    ir.model.surfaces.clear();
+    ir.model.shells.truncate(1);
+    ir.model.shells[0].faces.clear();
+    ir.model.shells[0].wire_edges = vec![edge.id];
+    ir.model.shells[0].free_vertices.clear();
+    ir.model.regions.truncate(1);
+    ir.model.regions[0].shells = vec![ir.model.shells[0].id.clone()];
+    ir.model.bodies.truncate(1);
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    ir.model.bodies[0].regions = vec![ir.model.regions[0].id.clone()];
+
+    let mut output = Vec::new();
+    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write wire body");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode wire body");
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(
+        decoded.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert_eq!(decoded.ir.model.edges.len(), 1);
+    assert_eq!(decoded.ir.model.shells[0].wire_edges.len(), 1);
+    let validation = cadmpeg_ir::validate(&decoded.ir, decoded.report.losses);
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn decode_builds_product_occurrences_with_relative_placement() {
     use cadmpeg_ir::product::OccurrenceParent;
 

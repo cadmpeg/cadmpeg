@@ -27,6 +27,39 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
     let vertices = vertex_defs(exchange);
     let edges = edge_defs(exchange);
     let oriented = oriented_defs(exchange);
+    let wire_models = exchange
+        .records
+        .iter()
+        .filter_map(|(&id, record)| {
+            record.parameter(1).and_then(refs).map(|items| {
+                items
+                    .into_iter()
+                    .filter(|model| {
+                        exchange.records.get(model).is_some_and(|record| {
+                            record.simple_name() == Some("EDGE_BASED_WIREFRAME_MODEL")
+                        })
+                    })
+                    .map(move |model| (id, model))
+                    .collect::<Vec<_>>()
+            })
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+    for (representation, model) in wire_models {
+        if let Some(mut built) = build_wire(model, exchange, &vertices, &edges) {
+            built.typed.insert(representation);
+            result.typed_records.append(&mut built.typed);
+            ir.model.vertices.append(&mut built.vertices);
+            ir.model.edges.append(&mut built.edges);
+            ir.model.shells.append(&mut built.shells);
+            ir.model.regions.push(built.region);
+            ir.model.bodies.push(built.body);
+        } else {
+            result.warnings.push(format!(
+                "EDGE_BASED_WIREFRAME_MODEL #{model} does not resolve to connected edges"
+            ));
+        }
+    }
     for (&id, record) in &exchange.records {
         if !matches!(
             record.simple_name(),
@@ -85,6 +118,97 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         }
     }
     result
+}
+
+fn build_wire(
+    id: u64,
+    exchange: &Exchange,
+    vdefs: &BTreeMap<u64, VertexDef>,
+    edefs: &BTreeMap<u64, EdgeDef>,
+) -> Option<Built> {
+    let model = exchange.records.get(&id)?;
+    let sets = refs(model.parameter(1)?)?;
+    let mut typed = BTreeSet::from([id]);
+    let mut used_edges = BTreeSet::new();
+    for set_id in sets {
+        let set = exchange.records.get(&set_id)?;
+        if set.simple_name() != Some("CONNECTED_EDGE_SET") {
+            return None;
+        }
+        used_edges.extend(refs(set.parameter(1)?)?);
+        typed.insert(set_id);
+    }
+    if used_edges.is_empty() {
+        return None;
+    }
+    let mut used_vertices = BTreeSet::new();
+    let mut wire_edges = Vec::new();
+    let mut built_edges = Vec::new();
+    for edge_id in used_edges {
+        let edge = edefs.get(&edge_id)?;
+        let (start, end) = if edge.same {
+            (edge.start, edge.end)
+        } else {
+            (edge.end, edge.start)
+        };
+        let ir_id = EdgeId(format!("step:data:edge#{edge_id}"));
+        wire_edges.push(ir_id.clone());
+        built_edges.push(Edge {
+            id: ir_id,
+            curve: Some(CurveId(format!(
+                "step:data:curve#{}",
+                curve_carrier_step(edge.curve, exchange)?
+            ))),
+            start: VertexId(format!("step:data:vertex#{start}")),
+            end: VertexId(format!("step:data:vertex#{end}")),
+            param_range: None,
+            tolerance: None,
+        });
+        used_vertices.extend([start, end]);
+        typed.insert(edge_id);
+    }
+    let mut built_vertices = Vec::new();
+    for vertex_id in used_vertices {
+        let vertex = vdefs.get(&vertex_id)?;
+        built_vertices.push(Vertex {
+            id: VertexId(format!("step:data:vertex#{vertex_id}")),
+            point: PointId(format!("step:data:point#{}", vertex.point)),
+            tolerance: None,
+        });
+        typed.insert(vertex_id);
+    }
+    let body = BodyId(format!("step:data:body#{id}"));
+    let region = RegionId(format!("step:data:region#{id}"));
+    let shell = ShellId(format!("step:data:shell#{id}"));
+    Some(Built {
+        typed,
+        vertices: built_vertices,
+        edges: built_edges,
+        coedges: Vec::new(),
+        loops: Vec::new(),
+        faces: Vec::new(),
+        shells: vec![Shell {
+            id: shell.clone(),
+            region: region.clone(),
+            faces: Vec::new(),
+            wire_edges,
+            free_vertices: Vec::new(),
+        }],
+        region: Region {
+            id: region.clone(),
+            body: body.clone(),
+            shells: vec![shell],
+        },
+        body: Body {
+            id: body,
+            kind: BodyKind::Wire,
+            regions: vec![region],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        },
+    })
 }
 
 fn mark_standalone_geometric_set(
