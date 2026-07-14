@@ -4074,7 +4074,7 @@ fn transfer_resolved_sketches(
             entities.push(SketchEntity {
                 id: entity_id,
                 sketch: sketch_id.clone(),
-                construction: false,
+                construction: spline.entity_id.is_none(),
                 native_ref: Some(format!("creo:featdefs:saved_spline#{suffix}")),
                 geometry_ref: Some(curve_id.0.clone()),
                 endpoint_refs: Vec::new(),
