@@ -196,6 +196,15 @@ pub struct E5Loop {
     pub outer: Option<bool>,
 }
 
+impl E5Loop {
+    /// Shell-consistent traversal senses when the radial parity system closes,
+    /// otherwise the loop-local head-to-tail senses.
+    #[must_use]
+    pub fn resolved_reversed(&self) -> &[bool] {
+        self.absolute_reversed.as_deref().unwrap_or(&self.reversed)
+    }
+}
+
 /// A resolved class-`0xff` trimmed edge-use record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), grammar `85
 /// <curve_support_ref> <start_vertex> <end_vertex> <param_start>
 /// <param_end>`).
@@ -572,7 +581,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
     let mut locations = Vec::new();
     for (face_index, face) in faces.iter().enumerate() {
         for (loop_index, loop_) in face.loops.iter().enumerate() {
-            if loop_.edge_uses.len() > 2 {
+            if !loop_.edge_uses.is_empty() {
                 locations.push((face_index, loop_index));
             }
         }
@@ -587,13 +596,10 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
                 .push((node, if reversed { -1 } else { 1 }));
         }
     }
-    if occurrences.values().any(|uses| uses.len() != 2) {
-        return;
-    }
     let mut adjacency = vec![Vec::<(usize, i8)>::new(); locations.len()];
-    for uses in occurrences.values() {
+    for uses in occurrences.values().filter(|uses| uses.len() == 2) {
         let [(left, left_r), (right, right_r)] = uses.as_slice() else {
-            return;
+            unreachable!("filtered to two occurrences");
         };
         let relation = -left_r * right_r;
         adjacency[*left].push((*right, relation));
@@ -607,6 +613,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
         solved[root] = Some(1i8);
         let mut component = vec![root];
         let mut cursor = 0;
+        let mut consistent = true;
         while cursor < component.len() {
             let node = component[cursor];
             cursor += 1;
@@ -614,7 +621,7 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
             for &(neighbor, relation) in &adjacency[node] {
                 let expected = value * relation;
                 match solved[neighbor] {
-                    Some(actual) if actual != expected => return,
+                    Some(actual) if actual != expected => consistent = false,
                     Some(_) => {}
                     None => {
                         solved[neighbor] = Some(expected);
@@ -622,6 +629,12 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
                     }
                 }
             }
+        }
+        if !consistent {
+            for &node in &component {
+                solved[node] = None;
+            }
+            continue;
         }
         let plus_matches = component
             .iter()
@@ -631,9 +644,6 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
             })
             .count();
         let minus_matches = component.len() - plus_matches;
-        if plus_matches == minus_matches {
-            return;
-        }
         if minus_matches > plus_matches {
             for &node in &component {
                 solved[node] = solved[node].map(|value| -value);
@@ -641,7 +651,9 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) {
         }
     }
     for (node, &(face_index, loop_index)) in locations.iter().enumerate() {
-        let g = solved[node].expect("solved loop orientation");
+        let Some(g) = solved[node] else {
+            continue;
+        };
         let loop_ = &mut faces[face_index].loops[loop_index];
         loop_.absolute_reversed = Some(
             loop_

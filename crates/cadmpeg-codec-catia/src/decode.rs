@@ -1631,11 +1631,12 @@ fn transfer_e5_topology(
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
             });
+            let senses = loop_.resolved_reversed();
             for (index, ((&edge_ref, &pcurve_ref), &reversed)) in loop_
                 .edge_uses
                 .iter()
                 .zip(&loop_.pcurves)
-                .zip(&loop_.reversed)
+                .zip(senses)
                 .enumerate()
             {
                 let id = coedge_ids[index].clone();

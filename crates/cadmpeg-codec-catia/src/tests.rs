@@ -2441,6 +2441,10 @@ fn e5_topology_follows_face_loop_and_serialized_edge_members() {
         topology.faces[1].loops[0].absolute_reversed,
         Some(vec![true, true, true])
     );
+    assert_eq!(
+        topology.faces[1].loops[0].resolved_reversed(),
+        [true, true, true]
+    );
     assert_eq!(topology.bodies[0].faces, vec![600, 601]);
     assert_eq!(topology.pcurves.len(), 7);
     assert!(matches!(
