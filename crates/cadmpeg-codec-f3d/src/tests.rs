@@ -14306,8 +14306,11 @@ fn decode_retains_generated_procedural_curve_fit_contract() {
 
     let procedural = result.ir.model.procedural_curves.first().unwrap();
     assert!(matches!(
-        procedural.definition,
-        cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown { .. }
+        &procedural.definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
+            native_kind: Some(native_kind),
+            record: None,
+        } if native_kind == "surf_surf_int_cur"
     ));
     assert_eq!(procedural.cache_fit_tolerance, Some(0.005));
     assert_eq!(result.ir.model.curves.len(), 1);
@@ -16337,8 +16340,10 @@ fn generated_source_less_refuses_lossy_procedural_curve_fallbacks() {
         .to_string()
         .contains("lacks its native blend construction"));
 
-    source_less.model.procedural_curves[0].definition =
-        ProceduralCurveDefinition::Unknown { record: None };
+    source_less.model.procedural_curves[0].definition = ProceduralCurveDefinition::Unknown {
+        native_kind: None,
+        record: None,
+    };
     let error = F3dCodec
         .encode(&source_less, &mut Vec::new())
         .expect_err("unknown construction must not degrade to a cache-only curve");

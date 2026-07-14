@@ -2171,6 +2171,9 @@ pub enum ProceduralCurveDefinition {
     },
     /// Preserved construction without a neutral interpretation.
     Unknown {
+        /// Source construction-family discriminator, when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_kind: Option<String>,
         /// Reference to the preserved raw source record, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,

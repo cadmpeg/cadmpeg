@@ -948,13 +948,17 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralCurveDefinition::Unknown {
+                native_kind: _,
                 record: Some(record),
             } => {
                 if !ids.unknowns.contains(&record.0) {
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
-            ProceduralCurveDefinition::Unknown { record: None } => {}
+            ProceduralCurveDefinition::Unknown {
+                native_kind: _,
+                record: None,
+            } => {}
         }
     }
     let features = ir

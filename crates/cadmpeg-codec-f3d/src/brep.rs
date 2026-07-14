@@ -3795,6 +3795,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     } else {
                         procedural.1.unwrap_or(
                             cadmpeg_ir::geometry::ProceduralCurveDefinition::Unknown {
+                                native_kind: Some(procedural.0),
                                 record: None,
                             },
                         )

@@ -426,6 +426,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 curve: curve_id.clone(),
                 definition: charted.map_or_else(
                     || ProceduralCurveDefinition::Unknown {
+                        native_kind: None,
                         record: Some(unknown_id),
                     },
                     |charted| {
