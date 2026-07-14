@@ -9,13 +9,14 @@ use cadmpeg_ir::features::{
     BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
     BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
     DesignParameter, EdgeSelection, Extent, ExtrusionDirectionSource, ExtrusionFaceMaker, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw,
-    HelixConstructionStyle, HoleBottom, HoleKind, HoleProfileFilter, HoleSpecification,
-    HoleThreadDepth, InnerWireTaper, Length, ParameterId, ParameterValue, PathRef, PatternKind,
-    PatternScaleCenter, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef,
-    RadiusSpec, RevolutionAxis, RevolutionConstruction, RuledCurveOrientation, ScaleCenter,
-    ScaleFactors, ShellJoin, ShellMode, SketchSpace, SurfaceProjectionMode, SweepMode,
-    SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
+    FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance, HelicalSweepConstruction,
+    HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind, HoleProfileFilter,
+    HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, ParameterId, ParameterValue,
+    PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
+    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SketchSpace,
+    SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
+    ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -296,6 +297,13 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             }
         };
+        let definition = post_processed_definition(definition, &owned).unwrap_or_else(|| {
+            FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            }
+        });
         append_operation_parameters(&mut ir.model.parameters, object, &owned);
         let outputs = payloads
             .iter()
@@ -347,6 +355,40 @@ pub(crate) fn transfer(
     }
     bind_parameter_dependencies(&mut ir.model.parameters, objects);
     Ok(())
+}
+
+fn post_processed_definition(
+    definition: FeatureDefinition,
+    properties: &[&PropertyRecord],
+) -> Option<FeatureDefinition> {
+    if property(properties, "Refine").is_none() && property(properties, "FuzzyTolerance").is_none()
+    {
+        return Some(definition);
+    }
+    let refine = if property(properties, "Refine").is_some() {
+        bool_property(properties, "Refine")?
+    } else {
+        false
+    };
+    let value = if property(properties, "FuzzyTolerance").is_some() {
+        scalar_named(properties, "FuzzyTolerance")?
+    } else {
+        0.0
+    };
+    let fuzzy_tolerance = if value < 0.0 {
+        FuzzyTolerance::Automatic
+    } else if value == 0.0 {
+        FuzzyTolerance::KernelDefault
+    } else if value.is_finite() {
+        FuzzyTolerance::Explicit(value)
+    } else {
+        return None;
+    };
+    Some(FeatureDefinition::PostProcess {
+        operation: Box::new(definition),
+        refine,
+        fuzzy_tolerance,
+    })
 }
 
 fn append_spreadsheet_parameters(

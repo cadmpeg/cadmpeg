@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "29");
+    assert_eq!(result.ir.ir_version, "30");
     let feature = |name: &str| {
         &result
             .ir
@@ -635,6 +635,64 @@ fn transfers_parametric_part_helix_and_spiral_construction() {
             construction_style: None,
             ..
         }
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_partdesign_refine_and_fuzzy_post_processing() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="PartDesign::AdditiveBox" name="Automatic" id="1"/>
+ <Object type="PartDesign::AdditiveBox" name="Explicit" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Automatic"><Properties Count="5">
+  <Property name="Length" type="App::PropertyLength"><Float value="1"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Refine" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="-0.5"/></Property>
+ </Properties></Object>
+ <Object name="Explicit"><Properties Count="5">
+  <Property name="Length" type="App::PropertyLength"><Float value="4"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="6"/></Property>
+  <Property name="Refine" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="0.01"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("PartDesign post-processing");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    assert!(matches!(
+        definition("Automatic"),
+        cadmpeg_ir::features::FeatureDefinition::PostProcess {
+            operation,
+            refine: true,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Automatic,
+        } if matches!(operation.as_ref(), cadmpeg_ir::features::FeatureDefinition::Primitive { .. })
+    ));
+    assert!(matches!(
+        definition("Explicit"),
+        cadmpeg_ir::features::FeatureDefinition::PostProcess {
+            operation,
+            refine: false,
+            fuzzy_tolerance: cadmpeg_ir::features::FuzzyTolerance::Explicit(0.01),
+        } if matches!(operation.as_ref(), cadmpeg_ir::features::FeatureDefinition::Primitive { .. })
     ));
     assert!(result.report.losses.is_empty());
 }
@@ -2082,7 +2140,7 @@ fn transfers_datum_frames_from_persisted_placements() {
 fn reports_attributable_native_design_blockers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>
-<ObjectData Count="1"><Object name="Custom"><Properties Count="0"/></Object></ObjectData>
+<ObjectData Count="1"><Object name="Custom"><Properties Count="2"><Property name="Refine" type="App::PropertyBool"><Bool value="true"/></Property><Property name="FuzzyTolerance" type="App::PropertyFloat"><Float value="0"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let result = FcstdCodec
         .decode(

@@ -5025,6 +5025,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::PostProcess { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported topology post-processing semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Compound { .. }
             | FeatureDefinition::RefineShape { .. }
             | FeatureDefinition::ReverseShape { .. }
@@ -7207,6 +7213,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
             ..
         } => "Mirror",
         FeatureDefinition::Pattern { .. } => "Pattern",
+        FeatureDefinition::PostProcess { .. } => "Feature",
         FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
         FeatureDefinition::Native { .. } => "Feature",

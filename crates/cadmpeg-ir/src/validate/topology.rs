@@ -1534,7 +1534,21 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut edge_selections = Vec::new();
         let mut face_selections = Vec::new();
         let mut body_selections = Vec::new();
-        match &feature.definition {
+        let definition = match &feature.definition {
+            FeatureDefinition::PostProcess {
+                operation,
+                fuzzy_tolerance,
+                ..
+            } => {
+                if matches!(fuzzy_tolerance, crate::features::FuzzyTolerance::Explicit(value) if !value.is_finite() || *value <= 0.0)
+                {
+                    feature_geometry_error(findings, feature, "feature fuzzy tolerance is invalid");
+                }
+                operation.as_ref()
+            }
+            definition => definition,
+        };
+        match definition {
             FeatureDefinition::Primitive { solid, .. } => {
                 let positive = |value: Length| value.0.is_finite() && value.0 > 0.0;
                 let finite_angle = |value: crate::features::Angle| value.0.is_finite();
@@ -2408,6 +2422,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
             | FeatureDefinition::Native { .. } => {}
+            FeatureDefinition::PostProcess { .. } => feature_geometry_error(
+                findings,
+                feature,
+                "nested feature post-processing is invalid",
+            ),
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
@@ -2615,7 +2634,11 @@ fn check_feature_sketch_references(
     for feature in &ir.model.features {
         let mut profiles = Vec::new();
         let mut paths = Vec::new();
-        match &feature.definition {
+        let definition = match &feature.definition {
+            FeatureDefinition::PostProcess { operation, .. } => operation.as_ref(),
+            definition => definition,
+        };
+        match definition {
             FeatureDefinition::Extrude { profile, .. } => {
                 profiles.push(profile);
             }

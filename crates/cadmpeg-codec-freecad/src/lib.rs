@@ -1103,7 +1103,13 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
         .features
         .iter()
         .filter_map(|feature| {
-            let cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } = &feature.definition
+            let definition = match &feature.definition {
+                cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => {
+                    operation.as_ref()
+                }
+                definition => definition,
+            };
+            let cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } = definition
             else {
                 return None;
             };
@@ -1123,13 +1129,19 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
         })
         .collect::<Vec<_>>();
     losses.extend(ir.model.features.iter().filter_map(|feature| {
+        let definition = match &feature.definition {
+            cadmpeg_ir::features::FeatureDefinition::PostProcess { operation, .. } => {
+                operation.as_ref()
+            }
+            definition => definition,
+        };
         let cadmpeg_ir::features::FeatureDefinition::Pattern {
             pattern:
                 cadmpeg_ir::features::PatternKind::Linear {
                     direction: None, ..
                 },
             ..
-        } = &feature.definition
+        } = definition
         else {
             return None;
         };

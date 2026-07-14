@@ -849,6 +849,15 @@ pub enum FeatureDefinition {
         /// Spatial transform defining the repetition or reflection.
         pattern: PatternKind,
     },
+    /// Operation followed by source-requested topology cleanup.
+    PostProcess {
+        /// Underlying construction whose result is post-processed.
+        operation: Box<FeatureDefinition>,
+        /// Whether redundant splitter boundaries are removed.
+        refine: bool,
+        /// Boolean-operation tolerance selection carried by the feature family.
+        fuzzy_tolerance: FuzzyTolerance,
+    },
     /// Source-native operation without neutral semantics.
     Native {
         /// Native feature-type tag (e.g. `"Extrude"`, `"Fillet"`).
@@ -860,6 +869,18 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Selection policy for Boolean-operation fuzzy tolerance.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum FuzzyTolerance {
+    /// Let the modeling kernel use its default tolerance.
+    KernelDefault,
+    /// Determine a suitable tolerance from the participating shapes.
+    Automatic,
+    /// Use the supplied positive model-unit tolerance.
+    Explicit(f64),
 }
 
 const fn default_true() -> bool {

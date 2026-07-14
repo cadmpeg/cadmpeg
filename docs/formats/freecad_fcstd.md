@@ -391,6 +391,12 @@ support face, normalized projection direction, all-shapes, faces-only, or edges-
 solid extrusion height, and signed surface offset. Empty sources, ambiguous support selections,
 invalid modes, and zero directions leave the operation attributable and native.
 
+PartDesign operations that carry topology post-processing retain it compositionally around the
+underlying neutral operation. Redundant-boundary refinement remains independently enabled or
+disabled, and fuzzy tolerance distinguishes modeling-kernel default, automatic determination, and
+an explicit positive tolerance. Wrapping an attributable native operation does not suppress its
+design-domain loss report.
+
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class
