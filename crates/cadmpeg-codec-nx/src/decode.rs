@@ -2790,6 +2790,10 @@ fn attach_native_object_model(
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
     let feature_datum_plane_headers = crate::native::feature_datum_plane_headers(&scan.container);
+    let feature_datum_plane_block_uses = crate::native::feature_datum_plane_block_uses(
+        &feature_datum_plane_headers,
+        &feature_input_blocks,
+    );
     let feature_datum_csys_block_uses = crate::native::feature_datum_csys_block_uses(
         &feature_datum_csys_constructions,
         &feature_input_blocks,
@@ -2914,6 +2918,7 @@ fn attach_native_object_model(
         && feature_input_blocks.is_empty()
         && feature_datum_csys_constructions.is_empty()
         && feature_datum_plane_headers.is_empty()
+        && feature_datum_plane_block_uses.is_empty()
         && feature_datum_csys_block_uses.is_empty()
         && feature_sketch_references.is_empty()
         && feature_extrude_profile_references.is_empty()
@@ -3209,6 +3214,7 @@ fn attach_native_object_model(
             input_blocks: &feature_input_blocks,
             datum_csys_constructions: &feature_datum_csys_constructions,
             datum_plane_headers: &feature_datum_plane_headers,
+            datum_plane_block_uses: &feature_datum_plane_block_uses,
             sketch_references: &feature_sketch_references,
             extrude_profile_references: &feature_extrude_profile_references,
             extrude_construction_profiles: &feature_extrude_construction_profiles,
@@ -3233,7 +3239,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(85);
+    namespace.version = namespace.version.max(87);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3308,6 +3314,12 @@ fn attach_native_object_model(
     }
     if !feature_datum_plane_headers.is_empty() {
         namespace.set_arena("feature_datum_plane_headers", &feature_datum_plane_headers)?;
+    }
+    if !feature_datum_plane_block_uses.is_empty() {
+        namespace.set_arena(
+            "feature_datum_plane_block_uses",
+            &feature_datum_plane_block_uses,
+        )?;
     }
     if !feature_sketch_references.is_empty() {
         namespace.set_arena("feature_sketch_references", &feature_sketch_references)?;
@@ -3519,6 +3531,7 @@ struct FeatureOperationSources<'a> {
     input_blocks: &'a [crate::native::FeatureInputBlock],
     datum_csys_constructions: &'a [crate::native::FeatureDatumCsysConstruction],
     datum_plane_headers: &'a [crate::native::FeatureDatumPlaneHeader],
+    datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
@@ -3551,6 +3564,7 @@ fn attach_feature_operations(
         input_blocks,
         datum_csys_constructions,
         datum_plane_headers,
+        datum_plane_block_uses,
         sketch_references,
         extrude_profile_references,
         extrude_construction_profiles,
@@ -3610,6 +3624,19 @@ fn attach_feature_operations(
     let datum_plane_headers_by_operation = datum_plane_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
+        .collect::<BTreeMap<_, _>>();
+    let mut datum_plane_uses_by_input_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureDatumPlaneBlockUse>>::new();
+    for block_use in datum_plane_block_uses {
+        datum_plane_uses_by_input_operation
+            .entry(block_use.input_operation_label.as_str())
+            .or_default()
+            .push(block_use);
+    }
+    let operation_positions = labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
         .collect::<BTreeMap<_, _>>();
     let mut sketch_references_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchReference>>::new();
@@ -3743,6 +3770,28 @@ fn attach_feature_operations(
                 }
             }
         }
+        for block_use in datum_plane_uses_by_input_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            let Some(construction_position) =
+                operation_positions.get(block_use.construction_operation_label.as_str())
+            else {
+                continue;
+            };
+            if *construction_position >= ordinal {
+                continue;
+            }
+            let construction_key = block_use
+                .construction_operation_label
+                .rsplit_once('#')
+                .map_or("unknown", |(_, key)| key);
+            let dependency = FeatureId(format!("nx:feature-history:feature#{construction_key}"));
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+        }
         let mut source_properties = BTreeMap::new();
         let outputs = body_references
             .get(label.id.as_str())
@@ -3798,6 +3847,19 @@ fn attach_feature_operations(
         }
         if let Some(header) = datum_plane_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_header".to_string(), header.id.clone());
+        }
+        for block_use in datum_plane_uses_by_input_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!(
+                    "datum_plane_input.{}.{}",
+                    block_use.input_slot, block_use.reference_ordinal
+                ),
+                block_use.datum_plane_header.clone(),
+            );
         }
         source_properties.extend(simple_hole_native_properties(
             &label.id,

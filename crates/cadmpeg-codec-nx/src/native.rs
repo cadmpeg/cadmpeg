@@ -460,6 +460,39 @@ pub struct FeatureDatumPlaneHeader {
     pub source_offset: u64,
 }
 
+/// Datum-plane construction lane containing a reused block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DatumPlaneBlockLane {
+    /// Compact descriptor lane.
+    Descriptor,
+    /// Canonical object-reference lane.
+    Object,
+}
+
+/// Exact reuse of one resolved datum-plane construction block by an operation input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumPlaneBlockUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Owning datum-plane header.
+    pub datum_plane_header: String,
+    /// `DATUM_PLANE` operation owning the construction.
+    pub construction_operation_label: String,
+    /// Construction lane containing the block.
+    pub lane: DatumPlaneBlockLane,
+    /// Zero-based position within the lane.
+    pub reference_ordinal: u32,
+    /// Shared offset-store block.
+    pub data_block: String,
+    /// Matching operation-header input binding.
+    pub input_binding: String,
+    /// Operation whose header addresses the shared block.
+    pub input_operation_label: String,
+    /// Zero-based operation-header input slot.
+    pub input_slot: u8,
+}
+
 /// Exact reuse of one datum-coordinate-system construction block by an operation input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumCsysBlockUse {
@@ -1767,6 +1800,58 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
         }
     }
     headers
+}
+
+/// Join resolved datum-plane blocks to operation inputs addressing the same block.
+pub fn feature_datum_plane_block_uses(
+    headers: &[FeatureDatumPlaneHeader],
+    inputs: &[FeatureInputBlock],
+) -> Vec<FeatureDatumPlaneBlockUse> {
+    let mut uses = Vec::new();
+    for header in headers {
+        let construction_key = header
+            .operation_label
+            .rsplit_once('#')
+            .map_or(header.operation_label.as_str(), |(_, key)| key);
+        for (lane, blocks) in [
+            (
+                DatumPlaneBlockLane::Descriptor,
+                &header.descriptor_data_blocks,
+            ),
+            (DatumPlaneBlockLane::Object, &header.object_data_blocks),
+        ] {
+            for (reference_ordinal, data_block) in blocks.iter().enumerate() {
+                for input in inputs
+                    .iter()
+                    .filter(|input| input.data_block == *data_block)
+                {
+                    let input_key = input
+                        .operation_label
+                        .rsplit_once('#')
+                        .map_or(input.operation_label.as_str(), |(_, key)| key);
+                    let lane_key = match lane {
+                        DatumPlaneBlockLane::Descriptor => "descriptor",
+                        DatumPlaneBlockLane::Object => "object",
+                    };
+                    uses.push(FeatureDatumPlaneBlockUse {
+                        id: format!(
+                            "nx:feature-history:datum-plane-block-use#{construction_key}-{lane_key}-{reference_ordinal}-{input_key}-{}",
+                            input.input_slot
+                        ),
+                        datum_plane_header: header.id.clone(),
+                        construction_operation_label: header.operation_label.clone(),
+                        lane,
+                        reference_ordinal: reference_ordinal as u32,
+                        data_block: data_block.clone(),
+                        input_binding: input.id.clone(),
+                        input_operation_label: input.operation_label.clone(),
+                        input_slot: input.input_slot,
+                    });
+                }
+            }
+        }
+    }
+    uses
 }
 
 /// Join resolved datum-coordinate-system blocks to every exact operation input
