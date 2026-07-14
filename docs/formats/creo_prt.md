@@ -329,10 +329,12 @@ Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid
 
 A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A sphere uses `radius1 = 0` and radius `radius2`; a torus uses nonzero `radius1`. Per-instance row-body overrides use a separate grammar.
 
-In a `geom_type = 26` row, a two-scalar frame that consumes the parameter-body
-suffix stores the per-instance torus `radius1` and `radius2` in that order.
-Both radii are positive. A terminal frame with any other arity does not define
-the pair. The zero-major-radius sphere form uses a different override form.
+In a compound-closed `geom_type = 26` row, the final two tokens of the terminal
+scalar frame store the per-instance torus `radius1` and `radius2` in that order
+when both are positive row-radius forms of at most seven bytes. The tokens are
+contiguous and the second token ends the body. Earlier scalars in the same
+frame belong to the positional construction. The zero-major-radius sphere form
+uses a different override form.
 
 Decoded positional parameter scalars retain their source offset and token length. Structural field binding uses these spans; scalar order alone does not assign frame or radius roles.
 The unresolved seven-byte `73` and `bb` forms retain their exact bytes as one
