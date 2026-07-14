@@ -5997,8 +5997,22 @@ fn typed_relation_definition(
             })
         }
         Angle => {
-            let first = single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?;
-            let second = single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?;
+            let first = marker(0)
+                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
+            let second = marker(1)
+                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
+            let (first, second) = match (first, second) {
+                (Some(first), Some(second)) => (first, second),
+                (Some(known), None) => (
+                    known.clone(),
+                    unique_profile_line_angle_entity(sketch, &known, parameter, sketch_entities)?,
+                ),
+                (None, Some(known)) => (
+                    unique_profile_line_angle_entity(sketch, &known, parameter, sketch_entities)?,
+                    known,
+                ),
+                (None, None) => unique_profile_line_angle_pair(sketch, parameter, sketch_entities)?,
+            };
             (first != second).then_some(SketchConstraintDefinition::Angle {
                 first,
                 second,
@@ -6209,6 +6223,98 @@ fn line_line_distance(first: &SketchEntity, second: &SketchEntity) -> Option<f64
         .abs()
             / first_length,
     )
+}
+
+fn unique_profile_line_angle_entity(
+    sketch: &SketchId,
+    known: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let cadmpeg_ir::features::ParameterValue::Angle(angle) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
+    let mut candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch && entity.id != known.id)
+        .filter_map(|candidate| {
+            line_line_angle(known, candidate)
+                .filter(|measured| same_dimension_angle(*measured, angle.0))
+                .map(|_| candidate.id.clone())
+        })
+        .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn unique_profile_line_angle_pair(
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let cadmpeg_ir::features::ParameterValue::Angle(angle) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let lines = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for (first_index, first) in lines.iter().enumerate() {
+        for second in &lines[first_index + 1..] {
+            if line_line_angle(first, second)
+                .is_some_and(|measured| same_dimension_angle(measured, angle.0))
+            {
+                candidates.push((first.id.clone(), second.id.clone()));
+            }
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn line_line_angle(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
+    let SketchGeometry::Line {
+        start: first_start,
+        end: first_end,
+    } = &first.geometry
+    else {
+        return None;
+    };
+    let SketchGeometry::Line {
+        start: second_start,
+        end: second_end,
+    } = &second.geometry
+    else {
+        return None;
+    };
+    let first_direction = [first_end.u - first_start.u, first_end.v - first_start.v];
+    let second_direction = [second_end.u - second_start.u, second_end.v - second_start.v];
+    let first_length = first_direction[0].hypot(first_direction[1]);
+    let second_length = second_direction[0].hypot(second_direction[1]);
+    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
+        return None;
+    }
+    Some(
+        ((first_direction[0] * second_direction[0] + first_direction[1] * second_direction[1])
+            / (first_length * second_length))
+            .clamp(-1.0, 1.0)
+            .acos(),
+    )
+}
+
+fn same_dimension_angle(left: f64, right: f64) -> bool {
+    (left - right).abs() <= 1.0e-9 * left.abs().max(right.abs()).max(1.0)
 }
 
 fn unique_dimensioned_circle_entity(
@@ -7414,6 +7520,7 @@ mod profile_join_tests {
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
         unique_profile_distance_loci_pair, unique_profile_distance_locus,
+        unique_profile_line_angle_entity, unique_profile_line_angle_pair,
         unique_profile_line_distance_entity, unique_profile_line_distance_pair, MarkerTransform,
     };
     use crate::records::{
@@ -7423,7 +7530,7 @@ mod profile_join_tests {
         SketchRelationKind,
     };
     use cadmpeg_ir::features::{
-        DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
+        Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
         ParameterId, ParameterValue, SketchSpace,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
@@ -7831,6 +7938,55 @@ mod profile_join_tests {
                 &sketch,
                 &parameter,
                 &[first, second, unrelated, ambiguous],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn line_angle_fallback_requires_one_pair_in_the_complete_sketch() {
+        let sketch = SketchId("sketch".into());
+        let line = |id: &str, start: Point2, end: Point2| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let horizontal = line("horizontal", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
+        let vertical = line("vertical", Point2::new(0.0, 0.0), Point2::new(0.0, 10.0));
+        let diagonal = line("diagonal", Point2::new(20.0, 20.0), Point2::new(21.0, 21.0));
+        let parameter = DesignParameter {
+            id: ParameterId("angle".into()),
+            owner: FeatureId("feature".into()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "90deg".into(),
+            display: None,
+            value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let entities = [horizontal.clone(), vertical.clone(), diagonal.clone()];
+        assert_eq!(
+            unique_profile_line_angle_entity(&sketch, &horizontal.id, &parameter, &entities),
+            Some(vertical.id.clone())
+        );
+        assert_eq!(
+            unique_profile_line_angle_pair(&sketch, &parameter, &entities),
+            Some((horizontal.id.clone(), vertical.id.clone()))
+        );
+
+        let ambiguous = line("ambiguous", Point2::new(5.0, 0.0), Point2::new(5.0, 10.0));
+        assert_eq!(
+            unique_profile_line_angle_pair(
+                &sketch,
+                &parameter,
+                &[horizontal, vertical, diagonal, ambiguous],
             ),
             None
         );
