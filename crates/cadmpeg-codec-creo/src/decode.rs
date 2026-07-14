@@ -4946,6 +4946,7 @@ mod resolved_sketch_tests {
         let table = crate::feature::FeatureEntityTable {
             feature_id: Some(17),
             entry_ids: vec![41, 42, 43],
+            entries: Vec::new(),
             surface_ids: vec![41, 42, 43],
             non_surface_entity_ids: Vec::new(),
             offset: 0,
@@ -5029,6 +5030,7 @@ mod resolved_sketch_tests {
         let table = crate::feature::FeatureEntityTable {
             feature_id: Some(23),
             entry_ids: vec![10, 11, 12, 13],
+            entries: Vec::new(),
             surface_ids: vec![10, 11, 13],
             non_surface_entity_ids: vec![12],
             offset: 47,

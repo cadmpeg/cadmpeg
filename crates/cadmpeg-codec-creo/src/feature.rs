@@ -220,12 +220,27 @@ pub struct FeatureEntityTable {
     pub feature_id: Option<u32>,
     /// Entity identifiers in their declared generated-entity order.
     pub entry_ids: Vec<u32>,
+    /// Structurally bounded records in their declared generated-entity order.
+    pub entries: Vec<FeatureEntityTableEntry>,
     /// Entries that are materialized `srf_array` identifiers.
     pub surface_ids: Vec<u32>,
     /// Entries outside the materialized surface namespace.
     pub non_surface_entity_ids: Vec<u32>,
     /// Byte offset of the `f8` table opener in the original stream.
     pub offset: usize,
+}
+
+/// One record in an `AllFeatur` mixed generated-entity table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureEntityTableEntry {
+    /// Entity identifier at the start of the record body.
+    pub entity_id: u32,
+    /// Whether the record starts with the `f7 1e` entry prefix.
+    pub prefixed: bool,
+    /// Byte offset of the entity identifier in the original stream.
+    pub offset: usize,
+    /// Byte offset immediately after the record's structural `e3` close.
+    pub end_offset: usize,
 }
 
 /// One byte-bounded positional `AllFeatur` row for a known geometry owner.
@@ -4608,23 +4623,34 @@ pub fn entity_graph(payload: &[u8]) -> (Vec<FeatureEntity>, Vec<FeatureEntityRef
     (entities, references)
 }
 
-fn read_entries(payload: &[u8], body_start: usize, count: u32) -> Option<Vec<u32>> {
+fn read_entries(
+    payload: &[u8],
+    body_start: usize,
+    count: u32,
+) -> Option<Vec<FeatureEntityTableEntry>> {
     let count = usize::try_from(count).ok()?;
     let remaining = payload.len().checked_sub(body_start)?;
     (count <= remaining / 2).then_some(())?;
     let mut entries = Vec::with_capacity(count);
     let mut cursor = body_start;
     for _ in 0..count {
-        if payload.get(cursor..cursor + 2) == Some(&[0xf7, 0x1e]) {
+        let prefixed = payload.get(cursor..cursor + 2) == Some(&[0xf7, 0x1e]);
+        if prefixed {
             cursor += 2;
         }
+        let offset = cursor;
         let (id, after) = psb::reference_id(payload, cursor).ok()?;
-        let close = payload
-            .get(after..)?
-            .iter()
-            .position(|&byte| byte == 0xe3)?;
-        entries.push(id);
-        cursor = after + close + 1;
+        let close = psb::tokens(payload.get(after..)?)
+            .into_iter()
+            .find(|token| token.kind == psb::TokenKind::CompoundClose)?;
+        let end_offset = after + close.offset + close.length;
+        entries.push(FeatureEntityTableEntry {
+            entity_id: id,
+            prefixed,
+            offset,
+            end_offset,
+        });
+        cursor = end_offset;
     }
     Some(entries)
 }
@@ -4655,11 +4681,14 @@ pub fn entity_tables(
         else {
             continue;
         };
-        let Some(entry_ids) =
-            read_entries(&payload[..row_end], after_count + TABLE_TAG.len(), count)
+        let Some(entries) = read_entries(&payload[..row_end], after_count + TABLE_TAG.len(), count)
         else {
             continue;
         };
+        let entry_ids = entries
+            .iter()
+            .map(|entry| entry.entity_id)
+            .collect::<Vec<_>>();
         let surface_ids = entry_ids
             .iter()
             .copied()
@@ -4676,6 +4705,7 @@ pub fn entity_tables(
         tables.push(FeatureEntityTable {
             feature_id: Some(feature_id),
             entry_ids,
+            entries,
             surface_ids,
             non_surface_entity_ids,
             offset,

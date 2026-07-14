@@ -813,6 +813,10 @@ fn feature_entity_tables(
                 .into_iter()
                 .map(|mut table| {
                     table.offset += section.offset;
+                    for entry in &mut table.entries {
+                        entry.offset += section.offset;
+                        entry.end_offset += section.offset;
+                    }
                     table
                 }),
         );
