@@ -15,6 +15,19 @@ output = Path(os.environ["CADMPEG_FCSTD_OUTPUT"]).resolve()
 output.mkdir(parents=True, exist_ok=True)
 target = output / "product_assembly.FCStd"
 target.unlink(missing_ok=True)
+for backup in output.glob("product_assembly*.FCBak"):
+    backup.unlink()
+
+external_target = output / "external_component.FCStd"
+external_target.unlink(missing_ok=True)
+external_document = App.newDocument("ExternalComponent")
+metadata(external_document, "Externally linked product component")
+external_part = external_document.addObject("Part::Feature", "ExternalPrototype")
+external_part.Label = "External spacer"
+external_part.Shape = Part.makeCylinder(5, 4)
+external_document.recompute()
+external_document.saveAs(str(external_target))
+normalize_fcstd(external_target)
 
 document = App.newDocument("ProductAssembly")
 metadata(document, "Components, occurrences, grounding, and revolute assembly joint")
@@ -34,6 +47,11 @@ pin.Shape = Part.makeCylinder(3, 20)
 pin.addProperty("App::PropertyString", "PartNumber", "Product")
 pin.PartNumber = "CC0-PIN-01"
 
+prototype_group = document.addObject("App::DocumentObjectGroup", "PrototypeGroup")
+prototype_group.Label = "Reusable prototypes"
+prototype_group.addObject(bracket)
+prototype_group.addObject(pin)
+
 bracket_occurrence = document.addObject("App::Link", "BracketOccurrence")
 bracket_occurrence.LinkedObject = bracket
 bracket_occurrence.LinkTransform = True
@@ -47,6 +65,34 @@ pin_occurrence.LinkPlacement.Rotation = App.Rotation(App.Vector(0, 1, 0), 90)
 
 assembly.addObject(bracket_occurrence)
 assembly.addObject(pin_occurrence)
+
+link_group = document.addObject("App::LinkGroup", "OccurrenceGroup")
+link_group.Label = "Nested, array, and external occurrences"
+
+nested_occurrence = document.addObject("App::Link", "NestedBracketOccurrence")
+nested_occurrence.LinkedObject = bracket_occurrence
+nested_occurrence.LinkTransform = True
+nested_occurrence.LinkPlacement.Base = App.Vector(0, 20, 0)
+
+pin_array = document.addObject("App::Link", "PinArray")
+pin_array.LinkedObject = pin
+pin_array.LinkTransform = True
+pin_array.ElementCount = 3
+pin_array.PlacementList = [
+    App.Placement(App.Vector(0, 0, 0), App.Rotation()),
+    App.Placement(App.Vector(0, 10, 0), App.Rotation()),
+    App.Placement(App.Vector(0, 20, 0), App.Rotation()),
+]
+pin_array.ScaleList = [(1.0, 1.0, 1.0), (1.0, 1.25, 1.0), (1.0, 1.5, 1.0)]
+
+document.recompute()
+document.saveAs(str(target))
+external_occurrence = document.addObject("App::Link", "ExternalOccurrence")
+external_occurrence.LinkedObject = external_part
+external_occurrence.LinkTransform = True
+external_occurrence.LinkPlacement.Base = App.Vector(40, 0, 0)
+link_group.ElementList = [nested_occurrence, pin_array, external_occurrence]
+assembly.addObject(link_group)
 
 joint = document.addObject("App::FeaturePython", "RevoluteJoint")
 joint.addProperty("App::PropertyEnumeration", "JointType", "Assembly")
@@ -90,4 +136,7 @@ assembly.addObject(ground)
 document.recompute()
 document.saveAs(str(target))
 normalize_fcstd(target)
+for backup in output.glob("product_assembly*.FCBak"):
+    backup.unlink()
 App.closeDocument(document.Name)
+App.closeDocument(external_document.Name)

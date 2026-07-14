@@ -35,7 +35,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 
 | Codec                                      | Score          | Extras above score                                                                                    |
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
-| FreeCAD `.FCStd` (schema 4, file 1)        | **L6 tested**  | product, drawing, application retention, and exact byte accounting                                    |
+| FreeCAD `.FCStd` (schema 4, file 1)        | **L8 tested**  | read-only; no native write support                                                                     |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L3 tested**  | SubD control cages, display meshes, native extrusion and instance constructions                       |
@@ -59,13 +59,13 @@ Sketcher, Spreadsheet, Assembly, TechDraw, GUI records, text and binary B-rep en
 identity-preserving extension objects. GUI state, thumbnails, persistent element maps, and
 string-hasher tables are independently optional.
 
-**Ladder: L6 tested.** The generated public-corpus profile currently passes the cumulative
-container, persistence, geometry, connected-model, design-record, appearance, and design-complete
-gates. Public assembly-component and joint evidence is the next failed gate; higher capabilities
-remain extras until every intervening gate passes. Schema versions 2 and 3
+**Ladder: L8 tested.** The generated public-corpus profile passes every cumulative read gate for
+container, persistence, geometry, connected model, design records, appearance, design completeness,
+product structure, presentation, drawings, annotations, and deliberately retained application data.
+Schema versions 2 and 3
 and earlier layout bands are separate legacy profiles and are identified and explicitly refused.
 
-- **Read profile:** Partial. Text and binary exact shapes, connected topology, sketches,
+- **Read profile:** Complete for the primary envelope. Text and binary exact shapes, connected topology, sketches,
   constraints, core design operations, product links, TechDraw, semantic annotations, Mesh,
   Points, embedded assets, inert extension data, and exact physical/logical byte accounting are
   implemented. See the generated coverage profile for the current cumulative gate result.
@@ -88,9 +88,9 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 ## At a glance
 
-- **FreeCAD `.FCStd` schema 4/file 1 (L6 tested):** text and binary exact geometry, connected
-  topology, complete core design records, appearance, and exact byte accounting, with higher
-  document domains available as unscored extras. Read only.
+- **FreeCAD `.FCStd` schema 4/file 1 (L8 tested):** complete primary-envelope document recovery,
+  including exact geometry, design history, product structure, presentation, drawings, annotations,
+  retained application data, and exact byte accounting. Read only.
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
 - **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
 - **Rhino `.3dm` (L3 tested for archive 50/60/70/80):** curves, surfaces, meshes, connected B-rep, SubD, extrusions, and expanded instances. V3/V4 score L1; V1/V2 and archive 5 score L0. Read only.

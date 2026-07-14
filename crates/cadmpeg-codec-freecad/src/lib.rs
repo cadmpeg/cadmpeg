@@ -929,10 +929,7 @@ impl Codec for FcstdCodec {
         if !prefix.starts_with(b"PK\x03\x04") {
             return Confidence::No;
         }
-        if contains(prefix, b"Document.xml")
-            && contains(prefix, b"SchemaVersion")
-            && contains(prefix, b"FileVersion")
-        {
+        if container::has_document_markers(prefix) {
             Confidence::High
         } else if contains(prefix, b"Document.xml") {
             Confidence::Medium

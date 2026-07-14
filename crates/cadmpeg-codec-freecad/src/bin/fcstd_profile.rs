@@ -63,6 +63,10 @@ struct Observed {
     sketch_constraint_definitions: BTreeSet<String>,
     product_constructs: BTreeSet<String>,
     joint_kinds: BTreeSet<String>,
+    document_variants: BTreeSet<String>,
+    presentation_constructs: BTreeSet<String>,
+    drawing_types: BTreeSet<String>,
+    application_constructs: BTreeSet<String>,
     application_types: BTreeSet<String>,
     native_arenas: BTreeSet<String>,
     neutral_arenas: BTreeSet<String>,
@@ -139,6 +143,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .filter(|(_, records)| !records.is_empty())
                 .map(|(name, _)| name.clone()),
         );
+        let has_gui = namespace
+            .arenas
+            .get("gui_documents")
+            .is_some_and(|records| !records.is_empty());
+        observed
+            .document_variants
+            .insert(if has_gui { "gui" } else { "headless" }.to_owned());
         collect_native_observations(&first.ir, &mut observed);
         for (name, count) in &neutral.entity_counts {
             *total_counts.entry(name.clone()).or_default() += count;
@@ -180,7 +191,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        profile_version: 2,
+        profile_version: 3,
         format: "fcstd",
         manifest_sha256: sha256_hex(&manifest),
         manifest_verified: true,
@@ -290,6 +301,78 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     }
     for record in namespace.arenas.get("applications").into_iter().flatten() {
         insert_string(&record.fields, "type_name", &mut observed.application_types);
+        if record.fields.get("inert_payload").and_then(Value::as_bool) == Some(true) {
+            observed
+                .application_constructs
+                .insert("inert_payload".into());
+        }
+        if record
+            .fields
+            .get("property_records")
+            .and_then(Value::as_array)
+            .is_some_and(|properties| {
+                properties.iter().any(|property| {
+                    property
+                        .get("payloads")
+                        .and_then(Value::as_array)
+                        .is_some_and(|payloads| !payloads.is_empty())
+                })
+            })
+        {
+            observed
+                .application_constructs
+                .insert("embedded_payload".into());
+        }
+    }
+    for record in namespace.arenas.get("drawings").into_iter().flatten() {
+        insert_string(&record.fields, "kind", &mut observed.drawing_types);
+        if record
+            .fields
+            .get("side_entries")
+            .and_then(Value::as_array)
+            .is_some_and(|entries| !entries.is_empty())
+        {
+            observed
+                .presentation_constructs
+                .insert("drawing_asset".into());
+        }
+    }
+    for record in namespace.arenas.get("gui_documents").into_iter().flatten() {
+        if let Some(states) = record.fields.get("states").and_then(Value::as_array) {
+            for state in states {
+                if let Some(kind) = state.get("kind").and_then(Value::as_str) {
+                    observed
+                        .presentation_constructs
+                        .insert(format!("gui_state:{kind}"));
+                }
+            }
+        }
+    }
+    for record in namespace
+        .arenas
+        .get("gui_view_providers")
+        .into_iter()
+        .flatten()
+    {
+        if record
+            .fields
+            .get("expanded")
+            .is_some_and(|value| !value.is_null())
+        {
+            observed.presentation_constructs.insert("tree_state".into());
+        }
+    }
+    for record in namespace.arenas.get("gui_properties").into_iter().flatten() {
+        if let Some(name) = record.fields.get("name").and_then(Value::as_str) {
+            observed
+                .presentation_constructs
+                .insert(format!("view_property:{name}"));
+        }
+    }
+    for record in namespace.arenas.get("entries").into_iter().flatten() {
+        if record.fields.get("role").and_then(Value::as_str) == Some("thumbnail") {
+            observed.presentation_constructs.insert("thumbnail".into());
+        }
     }
     let product_nodes = namespace
         .arenas
@@ -617,6 +700,59 @@ fn gates(
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
+    let required_document_variants = BTreeSet::from(["gui", "headless"]);
+    let document_variants = observed
+        .document_variants
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_presentation_constructs = BTreeSet::from([
+        "drawing_asset",
+        "gui_state:Camera",
+        "thumbnail",
+        "tree_state",
+        "view_property:DisplayMode",
+        "view_property:SelectionStyle",
+        "view_property:Visibility",
+    ]);
+    let presentation_constructs = observed
+        .presentation_constructs
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_drawing_types = BTreeSet::from([
+        "TechDraw::DrawPage",
+        "TechDraw::DrawSVGTemplate",
+        "TechDraw::DrawViewAnnotation",
+        "TechDraw::DrawViewDimension",
+        "TechDraw::DrawViewPart",
+        "TechDraw::DrawViewSymbol",
+    ]);
+    let drawing_types = observed
+        .drawing_types
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_application_types = BTreeSet::from([
+        "App::FeaturePython",
+        "Fem::ConstraintTemperature",
+        "Fem::FemAnalysis",
+        "Mesh::Feature",
+        "Path::Feature",
+        "Points::Feature",
+        "Spreadsheet::Sheet",
+    ]);
+    let application_types = observed
+        .application_types
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_application_constructs = BTreeSet::from(["embedded_payload", "inert_payload"]);
+    let application_constructs = observed
+        .application_constructs
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     let mut gates = vec![
         gate(
             "L0",
@@ -786,29 +922,42 @@ fn gates(
             "L8",
             vec![
                 assertion(
-                    "presentation",
-                    count("drawings") > 0 && count("semantic_annotations") > 0,
+                    "presentation_variants",
+                    required_document_variants.is_subset(&document_variants)
+                        && count("appearance_bindings") > 0
+                        && required_presentation_constructs.is_subset(&presentation_constructs),
                     format!(
-                        "drawings={}, semantic_annotations={}",
+                        "documents={document_variants:?}, appearances={}, constructs={presentation_constructs:?}",
+                        count("appearance_bindings")
+                    ),
+                    format!(
+                        "documents={required_document_variants:?}, constructs={required_presentation_constructs:?}, appearances"
+                    ),
+                ),
+                assertion(
+                    "drawing_annotation_matrix",
+                    count("drawings") > 0
+                        && count("semantic_annotations") > 0
+                        && required_drawing_types.is_subset(&drawing_types),
+                    format!(
+                        "drawings={}, semantic_annotations={}, types={drawing_types:?}",
                         count("drawings"),
                         count("semantic_annotations")
                     ),
-                    "drawing and semantic annotation graphs",
-                ),
-                assertion(
-                    "gui_state",
-                    observed.native_arenas.contains("gui_documents"),
-                    format!("{:?}", observed.native_arenas),
-                    "GUI document state",
+                    format!("types={required_drawing_types:?}, drawings and annotations"),
                 ),
                 assertion(
                     "application_retention",
-                    observed.native_arenas.contains("applications") && exact,
+                    observed.native_arenas.contains("applications")
+                        && required_application_types.is_subset(&application_types)
+                        && required_application_constructs.is_subset(&application_constructs)
+                        && exact,
                     format!(
-                        "application types={:?}, exact={exact}",
-                        observed.application_types
+                        "types={application_types:?}, constructs={application_constructs:?}, exact={exact}"
                     ),
-                    "application records and exact byte coverage",
+                    format!(
+                        "types={required_application_types:?}, constructs={required_application_constructs:?}, exact byte coverage"
+                    ),
                 ),
             ],
         ),

@@ -13,8 +13,10 @@ import zipfile
 import zlib
 
 import FreeCAD as App
+import Fem
 import Mesh
 import Part
+import Path as PathModule
 import Points
 import Sketcher
 
@@ -42,6 +44,7 @@ def normalize_fcstd(target):
         history_tags = {}
         design_tags = {}
         element_map_child_ids = {}
+        link_owner_ids = {}
 
         def stable_persistent_id(match):
             source_id = match.group(1)
@@ -71,6 +74,13 @@ def normalize_fcstd(target):
             )
             return match.group(1) + target_id + match.group(3)
 
+        def stable_link_owner_id(match):
+            source_id = match.group(2)
+            target_id = link_owner_ids.setdefault(
+                source_id, str(len(link_owner_ids) + 1).encode()
+            )
+            return match.group(1) + target_id + match.group(3)
+
         for source_info in archive.infolist():
             data = archive.read(source_info.filename)
             if source_info.filename == "Document.xml":
@@ -95,6 +105,16 @@ def normalize_fcstd(target):
                     lambda match: match.group(1)
                     + f"00000000-0000-0000-0000-{next(next_uuid):012d}".encode()
                     + match.group(2),
+                    data,
+                )
+                data = re.sub(
+                    rb'(<Property name="_LinkOwner"[^>]*>\s*<Integer value=")([0-9]+)("/>)',
+                    stable_link_owner_id,
+                    data,
+                )
+                data = re.sub(
+                    rb'(<XLink\b[^>]*\bstamp=")[^"]*(")',
+                    rb"\g<1>2026-01-01T00:00:00Z\2",
                     data,
                 )
             if source_info.filename == "GuiDocument.xml":
@@ -254,7 +274,10 @@ def core_document():
 
 def application_document():
     document = App.newDocument("ApplicationPayloads")
-    metadata(document, "Mesh, points, embedded bytes, and inert extension data")
+    metadata(
+        document,
+        "Mesh, points, FEM, CAM, embedded bytes, and inert extension data",
+    )
 
     mesh = document.addObject("Mesh::Feature", "Mesh")
     mesh.Mesh = Mesh.Mesh(
@@ -268,17 +291,36 @@ def application_document():
         [App.Vector(1, 2, 3), App.Vector(4, 5, 6), App.Vector(-1, 0, 2)]
     )
 
-    analysis = document.addObject("App::FeaturePython", "Analysis")
-    analysis.addProperty("App::PropertyLinkList", "Members", "Application")
-    analysis.Members = [mesh, cloud]
-    analysis.addProperty("App::PropertyString", "Domain", "Application")
-    analysis.Domain = "FEM/CAM retention fixture"
-    analysis.addProperty("App::PropertyPythonObject", "SerializedState", "Application")
-    analysis.SerializedState = {"iterations": 3, "command": None}
+    fem_analysis = document.addObject("Fem::FemAnalysis", "FemAnalysis")
+    temperature = document.addObject(
+        "Fem::ConstraintTemperature", "TemperatureConstraint"
+    )
+    temperature.Temperature = 80.0
+    temperature.Suppressed = False
+    fem_analysis.addObject(temperature)
+
+    toolpath = document.addObject("Path::Feature", "Toolpath")
+    toolpath.Path = PathModule.Path(
+        [
+            PathModule.Command("G0", {"X": 0.0, "Y": 0.0, "Z": 5.0}),
+            PathModule.Command(
+                "G1", {"X": 10.0, "Y": 0.0, "Z": 0.0, "F": 120.0}
+            ),
+            PathModule.Command("G1", {"X": 10.0, "Y": 10.0, "Z": 0.0}),
+        ]
+    )
+
+    extension = document.addObject("App::FeaturePython", "ExtensionPayload")
+    extension.addProperty("App::PropertyLinkList", "Members", "Application")
+    extension.Members = [mesh, cloud, fem_analysis, toolpath]
+    extension.addProperty("App::PropertyString", "Domain", "Application")
+    extension.Domain = "Extension retention fixture"
+    extension.addProperty("App::PropertyPythonObject", "SerializedState", "Application")
+    extension.SerializedState = {"iterations": 3, "command": None}
     payload_path = OUTPUT / "cc0_payload.bin"
     payload_path.write_bytes(struct.pack("<4I", 1, 2, 3, 4))
-    analysis.addProperty("App::PropertyFileIncluded", "Payload", "Application")
-    analysis.Payload = str(payload_path)
+    extension.addProperty("App::PropertyFileIncluded", "Payload", "Application")
+    extension.Payload = str(payload_path)
 
     document.recompute()
     save(document, "application_payloads.FCStd")
@@ -462,7 +504,7 @@ def design_history_document():
 
 def techdraw_document():
     document = App.newDocument("DrawingAnnotations")
-    metadata(document, "TechDraw page, view, dimension-like note, symbol, and template")
+    metadata(document, "TechDraw page, view, dimension, note, symbol, and template")
 
     model = document.addObject("Part::Box", "Model")
     model.Length = 25
@@ -484,6 +526,13 @@ def techdraw_document():
     view.Y = 100
     view.Scale = 1.5
     page.addView(view)
+    dimension = document.addObject("TechDraw::DrawViewDimension", "Dimension")
+    dimension.Type = "Distance"
+    dimension.References2D = [(view, "Edge1")]
+    dimension.FormatSpec = "%.2w"
+    dimension.X = 80
+    dimension.Y = 125
+    page.addView(dimension)
     note = document.addObject("TechDraw::DrawViewAnnotation", "Note")
     note.Text = ["CC0 INSPECTION NOTE"]
     page.addView(note)

@@ -344,7 +344,9 @@ fn parse_link_targets(
                 .collect::<BTreeMap<_, _>>();
             let object = attribute_any(
                 &attributes,
-                &["value", "Value", "object", "Object", "name", "Name"],
+                &[
+                    "value", "Value", "object", "Object", "obj", "Obj", "name", "Name",
+                ],
             );
             let document_pair = attribute_any_named(
                 &attributes,

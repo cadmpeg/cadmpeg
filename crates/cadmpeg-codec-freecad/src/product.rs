@@ -282,7 +282,11 @@ pub(crate) fn transfer_neutral(
                 .and_then(|record| record.local_transform)
                 .or_else(|| placements_by_object.get(object.as_str()).copied())
                 .unwrap_or_else(identity);
-            let parent_object = parent_by_object.get(object.as_str()).copied();
+            let parent_object = if occurrence_records.contains_key(object.as_str()) {
+                None
+            } else {
+                parent_by_object.get(object.as_str()).copied()
+            };
             let source_object = object_by_id.get(object.as_str()).copied();
             let owned = properties_by_owner
                 .get(object.as_str())

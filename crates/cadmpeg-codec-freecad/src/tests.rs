@@ -16,7 +16,14 @@ fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
 
 #[test]
 fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
-    let fixtures: [(&str, &[u8]); 10] = [
+    let fixtures: [(&str, &[u8]); 11] = [
+        (
+            "external_component.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/external_component.FCStd"
+            )),
+        ),
         (
             "product_assembly.FCStd",
             include_bytes!(concat!(
@@ -3690,7 +3697,7 @@ fn separates_semantic_annotations_from_drawing_relationships() {
  <Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property></Properties></Object>
  <Object name="Dimension"><Properties Count="5">
   <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
-  <Property name="References2D" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Model" sub="Edge1"/></LinkList></Property>
+  <Property name="References2D" type="App::PropertyLinkSubList"><LinkList count="1"><Link obj="Model" sub="Edge1"/></LinkList></Property>
   <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
   <Property name="Measurement" type="App::PropertyLength"><Float value="12.5"/></Property>
   <Property name="Position" type="App::PropertyVector"><PropertyVector valueX="10" valueY="20" valueZ="0"/></Property>
@@ -5477,6 +5484,11 @@ fn detects_marker_but_not_arbitrary_zip() {
         )),
         Confidence::High
     );
+    let public = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
+    ));
+    assert_eq!(FcstdCodec.detect(&public[..512]), Confidence::High);
     assert_eq!(FcstdCodec.detect(b"PK\x03\x04 unrelated"), Confidence::Low);
     assert_eq!(FcstdCodec.detect(b"not zip"), Confidence::No);
 }

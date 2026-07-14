@@ -6,6 +6,7 @@ use std::io::{Cursor, Read, SeekFrom};
 use std::path::{Component, Path};
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+use flate2::{Decompress, FlushDecompress};
 use zip::CompressionMethod;
 
 use crate::native::{ArchiveSpan, DocumentFacts};
@@ -15,6 +16,49 @@ const MAX_ENTRIES: usize = 16_384;
 const MAX_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_TOTAL_BYTES: u64 = 1024 * 1024 * 1024;
 const MAX_EXPANSION_RATIO: u64 = 1_000;
+const DETECTION_XML_BYTES: usize = 8 * 1024;
+
+/// Inspect the first local entry deeply enough to confirm FCStd document markers.
+pub(crate) fn has_document_markers(prefix: &[u8]) -> bool {
+    if prefix.len() < 30 || &prefix[..4] != b"PK\x03\x04" {
+        return false;
+    }
+    let method = u16::from_le_bytes([prefix[8], prefix[9]]);
+    let name_len = u16::from_le_bytes([prefix[26], prefix[27]]) as usize;
+    let extra_len = u16::from_le_bytes([prefix[28], prefix[29]]) as usize;
+    let name_end = 30_usize.saturating_add(name_len);
+    let data_start = name_end.saturating_add(extra_len);
+    if name_end > prefix.len()
+        || data_start > prefix.len()
+        || &prefix[30..name_end] != b"Document.xml"
+    {
+        return false;
+    }
+    let compressed = &prefix[data_start..];
+    let document = match method {
+        0 => compressed.to_vec(),
+        8 => {
+            let mut output = Vec::with_capacity(DETECTION_XML_BYTES);
+            if Decompress::new(false)
+                .decompress_vec(compressed, &mut output, FlushDecompress::None)
+                .is_err()
+            {
+                return false;
+            }
+            output
+        }
+        _ => return false,
+    };
+    contains(&document, b"<Document")
+        && contains(&document, b"SchemaVersion")
+        && contains(&document, b"FileVersion")
+}
+
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
+}
 
 /// Fully scanned container used by inspection and decode.
 pub struct Scan {

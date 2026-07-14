@@ -11,5 +11,5 @@ analytic primitives, booleans, lofts, sweeps, thickness, draft, branch-complete 
 datum-resolved linear, polar, or mirror patterns.
 Pattern configurations requiring nonuniform spacing or multiple linear directions remain linked
 native records until the neutral IR can express their complete transform sequence. The manifested
-public corpus currently establishes L6 tested; the generated support profile records each higher
-gate independently and prevents higher-level extras from inflating the cumulative score.
+public corpus establishes L8 tested for the documented schema-4/file-1 read envelope; the generated
+support profile evaluates every gate cumulatively and prevents isolated extras from inflating the score.
