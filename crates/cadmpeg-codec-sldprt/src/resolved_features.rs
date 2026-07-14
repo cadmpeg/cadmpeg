@@ -252,11 +252,12 @@ mod marker_tests {
         coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
-        resolve_operand_marker_excluding, unique_locus, unique_marker_candidate,
-        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
+        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
-        FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchRelationKind,
+        FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
+        SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
     use std::collections::HashSet;
@@ -381,6 +382,78 @@ mod marker_tests {
                 .map(|marker| marker.id.as_str()),
             Some("geometry")
         );
+    }
+
+    #[test]
+    fn point_operand_follows_relation_handle_graph_and_excludes_its_sibling() {
+        let marker = |id: &str, local_id, kind, links: &[&str]| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: 0,
+            local_id,
+            kind,
+            state_value: None,
+            coordinates_m: None,
+            links: links
+                .iter()
+                .map(|target| SketchInputLink {
+                    local_id: 0,
+                    entity_ref: (*target).into(),
+                })
+                .collect(),
+            link_selector: None,
+        };
+        let markers = [
+            marker("first", Some(5), SketchInputKind::Point, &[]),
+            marker("second", Some(1), SketchInputKind::Point, &[]),
+            marker(
+                "relation-2",
+                Some(2),
+                SketchInputKind::Relation(SketchRelationKind::Distance),
+                &["relation-0"],
+            ),
+            marker(
+                "relation-0",
+                Some(0),
+                SketchInputKind::Relation(SketchRelationKind::Distance),
+                &["second"],
+            ),
+        ];
+        let operands = [
+            FeatureInputOperand {
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 0,
+                offset: 0,
+                reference_ref: "first-ref".into(),
+                entity_ref: None,
+            },
+            FeatureInputOperand {
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 2,
+                offset: 0,
+                reference_ref: "second-ref".into(),
+                entity_ref: None,
+            },
+        ];
+        let resolved = resolve_scalar_operand_markers(&markers, &operands);
+        assert_eq!(resolved[0].map(|marker| marker.id.as_str()), Some("first"));
+        assert_eq!(resolved[1].map(|marker| marker.id.as_str()), Some("second"));
+
+        let duplicate = [
+            operands[1].clone(),
+            FeatureInputOperand {
+                kind: FeatureInputOperandKind::D6,
+                entity_index: 1,
+                offset: 0,
+                reference_ref: "known-second-ref".into(),
+                entity_ref: None,
+            },
+        ];
+        let resolved = resolve_scalar_operand_markers(&markers, &duplicate);
+        assert_eq!(resolved[0].map(|marker| marker.id.as_str()), Some("first"));
+        assert_eq!(resolved[1].map(|marker| marker.id.as_str()), Some("second"));
     }
 
     #[test]
@@ -1266,6 +1339,35 @@ pub(crate) fn resolve_scalar_operand_markers<'a>(
             resolve_operand_marker(entities.iter().copied(), operand.kind, operand.entity_index)
         })
         .collect::<Vec<_>>();
+    if let ([first_operand, second_operand], [Some(first), Some(second)]) =
+        (operands, resolved.as_slice())
+    {
+        if first.id == second.id && first_operand.entity_index != second_operand.entity_index {
+            let alternatives = [
+                resolve_operand_marker_excluding(
+                    entities.iter().copied(),
+                    first_operand.kind,
+                    first_operand.entity_index,
+                    &HashSet::from([second.id.clone()]),
+                )
+                .map(|alternative| [alternative, *second]),
+                resolve_operand_marker_excluding(
+                    entities.iter().copied(),
+                    second_operand.kind,
+                    second_operand.entity_index,
+                    &HashSet::from([first.id.clone()]),
+                )
+                .map(|alternative| [*first, alternative]),
+            ]
+            .into_iter()
+            .flatten()
+            .filter(|[left, right]| left.id != right.id)
+            .collect::<Vec<_>>();
+            if let [alternative] = alternatives.as_slice() {
+                resolved = alternative.iter().copied().map(Some).collect();
+            }
+        }
+    }
     let resolved_siblings = resolved
         .iter()
         .flatten()
@@ -1305,18 +1407,31 @@ fn resolve_operand_marker_excluding<'a>(
         .filter(|entity| operand_accepts_marker(kind, entity.kind))
         .collect::<Vec<_>>();
     compatible.sort_unstable_by_key(|entity| entity.offset);
+    let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
-        return compatible.get(usize::from(address)).copied();
+        if let Some(entity) = compatible.get(usize::from(address)) {
+            return Some(*entity);
+        }
+        if !point_operand_uses_link_graph(kind) {
+            return None;
+        }
+        ordinal_link_graph = true;
     }
-    let matches = compatible
-        .iter()
-        .copied()
-        .filter(|entity| entity.local_id == Some(u32::from(address)));
-    let exact = matches.collect::<Vec<_>>();
+    let exact = (!ordinal_link_graph)
+        .then(|| {
+            compatible
+                .iter()
+                .copied()
+                .filter(|entity| entity.local_id == Some(u32::from(address)))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     match exact.as_slice() {
         [entity] => Some(*entity),
         [] => {
-            let mut indirect = if operand_accepts_link_indirection(kind) {
+            let mut indirect = if point_operand_uses_link_graph(kind) {
+                linked_point_markers(&entities, address, kind, excluded)
+            } else if operand_accepts_link_indirection(kind) {
                 entities
                     .iter()
                     .copied()
@@ -1338,6 +1453,21 @@ fn resolve_operand_marker_excluding<'a>(
             indirect.dedup_by_key(|entity| entity.id.as_str());
             match indirect.as_slice() {
                 [entity] => Some(*entity),
+                [] if point_operand_uses_link_graph(kind) && !excluded.is_empty() && {
+                    let linked = linked_point_markers(&entities, address, kind, &HashSet::new());
+                    !linked.is_empty() && linked.iter().all(|entity| excluded.contains(&entity.id))
+                } =>
+                {
+                    let remaining = compatible
+                        .iter()
+                        .copied()
+                        .filter(|entity| !excluded.contains(&entity.id))
+                        .collect::<Vec<_>>();
+                    let [entity] = remaining.as_slice() else {
+                        return None;
+                    };
+                    Some(*entity)
+                }
                 [] if operand_allows_compatible_ordinal_fallback(kind) => {
                     compatible.get(usize::from(address)).copied()
                 }
@@ -1352,6 +1482,45 @@ fn resolve_operand_marker_excluding<'a>(
         )
         .and_then(|id| exact.iter().copied().find(|entity| entity.id == id)),
     }
+}
+
+fn point_operand_uses_link_graph(kind: FeatureInputOperandKind) -> bool {
+    matches!(kind, FeatureInputOperandKind::D6)
+}
+
+fn linked_point_markers<'a>(
+    entities: &[&'a SketchInputEntity],
+    address: u16,
+    kind: FeatureInputOperandKind,
+    excluded: &HashSet<String>,
+) -> Vec<&'a SketchInputEntity> {
+    let by_id = entities
+        .iter()
+        .map(|entity| (entity.id.as_str(), *entity))
+        .collect::<HashMap<_, _>>();
+    let mut pending = entities
+        .iter()
+        .copied()
+        .filter(|entity| entity.local_id == Some(u32::from(address)))
+        .filter(|entity| !operand_accepts_marker(kind, entity.kind))
+        .map(|entity| entity.id.as_str())
+        .collect::<Vec<_>>();
+    let mut visited = HashSet::new();
+    let mut compatible = Vec::new();
+    while let Some(id) = pending.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        let Some(entity) = by_id.get(id).copied() else {
+            continue;
+        };
+        if operand_accepts_marker(kind, entity.kind) && !excluded.contains(&entity.id) {
+            compatible.push(entity);
+            continue;
+        }
+        pending.extend(entity.links.iter().map(|link| link.entity_ref.as_str()));
+    }
+    compatible
 }
 
 fn operand_accepts_link_indirection(kind: FeatureInputOperandKind) -> bool {
