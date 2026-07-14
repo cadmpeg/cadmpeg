@@ -20,7 +20,6 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 - The `a5 03 32` header token byte at `record + 7` is a small repeating type code; its value space and semantics are unresolved.
 - The semantic assignments of the width-coded `b2/b3/b4 03 5e` header token and terminal byte are unresolved.
-- The referent roles within each `b2/b3/b4 03 06` compact reference vector are unresolved.
 
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
 - Standard spline edge carrier geometry. Native `b5 03 5e` endpoint identities bind the edge topology, but the solved 3D spline carrier referenced by the standard row remains unresolved.

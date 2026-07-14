@@ -734,8 +734,9 @@ pub struct B2UseMetadata {
     pub pos: usize,
     /// Complete payload bytes.
     pub payload: Vec<u8>,
-    /// Compact persistent references preceding a settled terminal sense. `None`
-    /// when the payload does not close under that grammar.
+    /// Compact persistent references following the `0x80+n` count and
+    /// preceding a settled terminal sense. `None` when the payload does not
+    /// close under that grammar.
     pub references: Option<Vec<u32>>,
     /// Decoded terminal sense when the payload ends in `0x84` or `0x88`.
     pub sense: Option<B2UseSense>,
@@ -786,10 +787,11 @@ pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
                 _ => None,
             };
             let references = sense.and_then(|_| {
-                let mut at = frame.payload;
                 let end = frame.end.checked_sub(1)?;
+                let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
+                let mut at = frame.payload + 1;
                 let mut references = Vec::new();
-                while at < end {
+                for _ in 0..count {
                     references.push(compact_int(data, &mut at)?);
                 }
                 (at == end).then_some(references)
@@ -988,6 +990,9 @@ pub struct A5TopologyEdgeRun {
     pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
+    /// Whether the two counted use-reference vectors reproduce the edge
+    /// node's endpoint-parameter/curve identity chain.
+    pub identity_chain_consistent: bool,
 }
 
 /// Native endpoint-incidence graph of complete consolidated edge runs.
@@ -1137,13 +1142,20 @@ pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
                 && node.family == ConsolidatedFamily::B
                 && node.class == 0x5e
             {
+                let node = *nodes.get(&node.range.start)?;
+                let uses = [
+                    uses.get(&use0.range.start)?.clone(),
+                    uses.get(&use1.range.start)?.clone(),
+                ];
+                let identity_chain_consistent = uses[0].references.as_deref()
+                    == Some(&[node.end_parameter_ref, node.start_parameter_ref])
+                    && uses[1].references.as_deref()
+                        == Some(&[node.start_parameter_ref, node.curve_ref]);
                 Some(A5TopologyEdgeRun {
                     edge: edges.get(&pcurve0.range.start)?.clone(),
-                    uses: [
-                        uses.get(&use0.range.start)?.clone(),
-                        uses.get(&use1.range.start)?.clone(),
-                    ],
-                    node: *nodes.get(&node.range.start)?,
+                    uses,
+                    node,
+                    identity_chain_consistent,
                 })
             } else {
                 None
@@ -1153,8 +1165,8 @@ pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated
-/// edge runs. Duplicate curve identities invalidate the graph rather than
-/// silently merging distinct serialized runs.
+/// edge runs. A broken use/edge identity chain or duplicate curve identity
+/// invalidates the graph rather than silently accepting contradictory runs.
 #[must_use]
 pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
     let runs = a5_topology_edge_runs(data);
@@ -1166,7 +1178,7 @@ pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
     let mut vertex_identities = Vec::new();
     let mut edges = Vec::with_capacity(runs.len());
     for run in runs {
-        if !curve_identities.insert(run.node.curve_ref) {
+        if !run.identity_chain_consistent || !curve_identities.insert(run.node.curve_ref) {
             return None;
         }
         let vertices = [run.node.start_vertex_ref, run.node.end_vertex_ref].map(|identity| {
