@@ -17,7 +17,7 @@ mod persistence;
 mod product;
 mod topology_transfer;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::codec::{
@@ -75,6 +75,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
     let logical = match namespace.arena_as::<native::LogicalSpan>("logical_ledger") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let coverage_records = match namespace.arena_as::<native::ByteCoverageRecord>("byte_coverage") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
@@ -182,9 +186,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for object in &objects {
         let valid_object_bytes = match (&object.raw_xml, object.byte_start, object.byte_end) {
-            (Some(raw), Some(start), Some(end)) => {
-                start < end && end - start == raw.len() as u64
-            }
+            (Some(raw), Some(start), Some(end)) => start < end && end - start == raw.len() as u64,
             _ => false,
         };
         if !valid_object_bytes {
@@ -778,6 +780,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .and_then(|source| source.attributes.get("physical_archive_bytes"))
         .and_then(|value| value.parse().ok());
     validate_span_chain("physical archive", &physical, physical_end, &mut findings);
+    let logical_owner_ids = property_ids
+        .iter()
+        .copied()
+        .chain(gui_properties.iter().map(|record| record.id.as_str()))
+        .chain(
+            gui_documents
+                .iter()
+                .flat_map(|document| document.states.iter().map(|record| record.id.as_str())),
+        )
+        .chain(shape_payloads.iter().map(|record| record.id.as_str()))
+        .chain(string_tables.iter().map(|record| record.id.as_str()))
+        .chain(element_maps.iter().map(|record| record.id.as_str()))
+        .chain(entries.iter().map(|record| record.id.as_str()))
+        .collect::<HashSet<_>>();
     let mut logical_by_entry = BTreeMap::<&str, Vec<&native::LogicalSpan>>::new();
     for span in &logical {
         logical_by_entry.entry(&span.entry).or_default().push(span);
@@ -791,11 +807,48 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(span.id.clone()),
             ));
         }
+        let owner_valid = if span.classification == "structural" {
+            span.owner.is_none()
+        } else {
+            span.owner
+                .as_ref()
+                .is_some_and(|owner| logical_owner_ids.contains(owner.as_str()))
+        };
+        if !entry_lengths.contains_key(span.entry.as_str()) || !owner_valid {
+            findings.push(finding(
+                Check::PayloadIntegrity,
+                format!("{} has an invalid logical entry or owner", span.id),
+                Some(span.id.clone()),
+            ));
+        }
+    }
+    let covered_entries = logical_by_entry.keys().copied().collect::<HashSet<_>>();
+    for entry in &entries {
+        if entry.byte_len > 0 && !covered_entries.contains(entry.name.as_str()) {
+            findings.push(finding(
+                Check::PayloadIntegrity,
+                format!("logical ledger omits nonempty entry {}", entry.name),
+                Some(entry.id.clone()),
+            ));
+        }
     }
     for (name, mut spans) in logical_by_entry {
         spans.sort_by_key(|span| span.start);
         let expected = entry_lengths.get(name).copied();
         validate_logical_chain(name, &spans, expected, &mut findings);
+    }
+    let expected_coverage = byte_coverage(
+        &physical,
+        &entries,
+        &logical,
+        physical_end.unwrap_or_default(),
+    );
+    if coverage_records.as_slice() != [expected_coverage.clone()] || !expected_coverage.exact {
+        findings.push(finding(
+            Check::PayloadIntegrity,
+            "FCStd byte coverage report is stale or does not prove exact closure",
+            None,
+        ));
     }
     findings
 }
@@ -839,6 +892,7 @@ fn validate_span_chain(
     let mut ordered = spans.iter().collect::<Vec<_>>();
     ordered.sort_by_key(|span| span.start);
     let valid = ordered.first().is_some_and(|span| span.start == 0)
+        && ordered.iter().all(|span| span.start < span.end)
         && ordered.windows(2).all(|pair| pair[0].end == pair[1].start)
         && expected_end.is_none_or(|end| ordered.last().is_some_and(|span| span.end == end));
     if !valid {
@@ -858,6 +912,7 @@ fn validate_logical_chain(
 ) {
     let valid = expected_end.is_some()
         && spans.first().is_some_and(|span| span.start == 0)
+        && spans.iter().all(|span| span.start < span.end)
         && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
         && expected_end.is_some_and(|end| spans.last().is_some_and(|span| span.end == end));
     if !valid {
@@ -1135,6 +1190,16 @@ impl Codec for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("logical_ledger", &logical_ledger)?;
+            let physical_byte_len = scan.ledger.last().map_or(0, |span| span.end);
+            let coverage = byte_coverage(
+                &scan.ledger,
+                &entry_records,
+                &logical_ledger,
+                physical_byte_len,
+            );
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("byte_coverage", std::slice::from_ref(&coverage))?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("element_maps", &element_maps)?;
@@ -1737,6 +1802,66 @@ fn logical_ledger(
         }
     }
     Ok(output)
+}
+
+fn byte_coverage(
+    physical: &[native::ArchiveSpan],
+    entries: &[native::EntryRecord],
+    logical: &[native::LogicalSpan],
+    physical_byte_len: u64,
+) -> native::ByteCoverageRecord {
+    let mut classification_bytes = BTreeMap::new();
+    let mut named_opaque_entries = BTreeSet::new();
+    for span in logical {
+        *classification_bytes
+            .entry(span.classification.clone())
+            .or_insert(0) += span.end.saturating_sub(span.start);
+        if span.classification == "named_opaque" {
+            named_opaque_entries.insert(span.entry.clone());
+        }
+    }
+    let mut ordered_physical = physical.iter().collect::<Vec<_>>();
+    ordered_physical.sort_by_key(|span| span.start);
+    let physical_exact = ordered_physical.first().is_some_and(|span| span.start == 0)
+        && ordered_physical.iter().all(|span| span.start < span.end)
+        && ordered_physical
+            .windows(2)
+            .all(|pair| pair[0].end == pair[1].start)
+        && ordered_physical
+            .last()
+            .is_some_and(|span| span.end == physical_byte_len);
+    let logical_exact = logical.iter().all(|span| {
+        entries.iter().any(|entry| entry.name == span.entry)
+            && span.start < span.end
+            && matches!(
+                span.classification.as_str(),
+                "structural" | "typed" | "named_opaque"
+            )
+    }) && entries.iter().all(|entry| {
+        let mut spans = logical
+            .iter()
+            .filter(|span| span.entry == entry.name)
+            .collect::<Vec<_>>();
+        spans.sort_by_key(|span| span.start);
+        if entry.byte_len == 0 {
+            spans.is_empty()
+        } else {
+            spans.first().is_some_and(|span| span.start == 0)
+                && spans.windows(2).all(|pair| pair[0].end == pair[1].start)
+                && spans.last().is_some_and(|span| span.end == entry.byte_len)
+        }
+    });
+    native::ByteCoverageRecord {
+        id: native::native_id("byte-coverage", "0"),
+        physical_byte_len,
+        physical_span_count: physical.len(),
+        logical_entry_count: entries.len(),
+        logical_byte_len: entries.iter().map(|entry| entry.byte_len).sum(),
+        logical_span_count: logical.len(),
+        classification_bytes,
+        named_opaque_entries: named_opaque_entries.into_iter().collect(),
+        exact: physical_exact && logical_exact,
+    }
 }
 
 fn push_logical_span(

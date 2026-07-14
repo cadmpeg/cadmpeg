@@ -346,6 +346,15 @@ intervening XML syntax is structural. Uninterpreted embedded assets remain named
 their owning record. These claims are sorted and rejected on overlap before the ledger is emitted;
 validation then requires every logical entry to close without gaps.
 
+Native namespace version 19 adds a deterministic `byte_coverage` report. It records physical
+archive length and span count, logical entry length and span count, byte totals by the closed
+`structural`, `typed`, and `named_opaque` classes, and the sorted entries containing opaque bytes.
+Its `exact` flag is true only when the physical archive and every nonempty logical entry partition
+from zero through the declared length with positive, contiguous, nonoverlapping spans. Validation
+re-derives the report, rejects missing or unknown logical entries, validates every typed or opaque
+span owner, requires structural spans to be ownerless, and rechecks retained entry lengths and
+SHA-256 digests. Zero-length entries are represented by an empty partition and still counted.
+
 Native namespace version 11 adds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local
 `AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it

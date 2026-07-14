@@ -59,7 +59,7 @@ mod tests {
 }
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 18;
+pub const VERSION: u32 = 19;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -627,6 +627,29 @@ pub struct LogicalSpan {
     pub classification: String,
     /// Native record that owns typed or opaque bytes.
     pub owner: Option<String>,
+}
+
+/// Deterministic whole-archive byte-accounting summary.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ByteCoverageRecord {
+    /// Stable report identity.
+    pub id: String,
+    /// Complete physical archive length.
+    pub physical_byte_len: u64,
+    /// Number of physical partition spans.
+    pub physical_span_count: usize,
+    /// Number of logical archive entries.
+    pub logical_entry_count: usize,
+    /// Sum of complete logical entry lengths.
+    pub logical_byte_len: u64,
+    /// Number of logical partition spans.
+    pub logical_span_count: usize,
+    /// Byte count for each closed classification.
+    pub classification_bytes: BTreeMap<String, u64>,
+    /// Sorted logical entries containing named opaque bytes.
+    pub named_opaque_entries: Vec<String>,
+    /// Whether both physical and logical partitions close exactly.
+    pub exact: bool,
 }
 
 /// One document-wide persistent string table.

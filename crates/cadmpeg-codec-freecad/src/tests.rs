@@ -4572,7 +4572,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 18);
+    assert_eq!(namespace.version, 19);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");
@@ -5286,8 +5286,58 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert!(ledger
         .iter()
         .any(|span| span.entry == "Document.xml" && span.classification == "structural"));
+    let coverage = namespace
+        .arena_as::<crate::native::ByteCoverageRecord>("byte_coverage")
+        .expect("byte coverage");
+    assert_eq!(coverage.len(), 1);
+    assert!(coverage[0].exact);
+    assert_eq!(coverage[0].logical_entry_count, entries.len());
+    assert_eq!(
+        coverage[0].logical_byte_len,
+        entries.iter().map(|entry| entry.byte_len).sum::<u64>()
+    );
+    assert_eq!(
+        coverage[0].classification_bytes.values().sum::<u64>(),
+        coverage[0].logical_byte_len
+    );
+    assert!(coverage[0]
+        .named_opaque_entries
+        .contains(&"Payload.bin".to_owned()));
     let findings = crate::validate_native(&result.ir);
     assert!(findings.is_empty(), "{findings:#?}");
+
+    let mut corrupted = result.ir.clone();
+    let missing_payload = ledger
+        .iter()
+        .filter(|span| span.entry != "Payload.bin")
+        .cloned()
+        .collect::<Vec<_>>();
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("logical_ledger", &missing_payload)
+        .expect("replace logical ledger");
+    assert!(crate::validate_native(&corrupted)
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("logical ledger omits nonempty entry Payload.bin")));
+
+    let mut corrupted = result.ir.clone();
+    let mut invalid_owner = ledger.clone();
+    invalid_owner
+        .iter_mut()
+        .find(|span| span.classification == "typed")
+        .expect("typed span")
+        .owner = None;
+    corrupted
+        .native
+        .namespace_mut("fcstd")
+        .set_arena("logical_ledger", &invalid_owner)
+        .expect("replace logical ledger");
+    assert!(crate::validate_native(&corrupted)
+        .iter()
+        .any(|finding| finding.message.contains("invalid logical entry or owner")));
 }
 
 #[test]
