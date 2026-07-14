@@ -324,28 +324,13 @@ fn scaled_point(value: [f64; 2], scale: f64, offset: usize) -> Result<[f64; 2], 
 }
 
 fn angular_measurement(first: [f64; 2], second: [f64; 2], line: [f64; 2]) -> f64 {
-    let mut a1 = first[1].atan2(first[0]);
-    let mut a2 = second[1].atan2(second[0]);
-    let mut middle = line[1].atan2(line[0]);
-    if a1.abs() < 2.328_306_436_538_696_3e-10 {
-        a1 = 0.0;
+    let first = first[1].atan2(first[0]);
+    let counterclockwise = (second[1].atan2(second[0]) - first).rem_euclid(std::f64::consts::TAU);
+    let line = (line[1].atan2(line[0]) - first).rem_euclid(std::f64::consts::TAU);
+    if line <= counterclockwise {
+        counterclockwise
     } else {
-        a2 -= a1;
-        middle -= a1;
-        a1 = 0.0;
-    }
-    if a2 < 0.0 {
-        a2 += std::f64::consts::TAU;
-    }
-    if middle < 0.0 {
-        middle += std::f64::consts::TAU;
-    }
-    if middle > a1 && middle < a2 {
-        a2 - a1
-    } else if middle > a1 {
-        a2
-    } else {
-        0.0
+        std::f64::consts::TAU - counterclockwise
     }
 }
 
@@ -977,9 +962,13 @@ pub(crate) fn apply_userdata(
         ));
     }
     dimension.arrow_position = arrow_position;
-    dimension.distance_scale = distance_scale;
+    if dimension.dimstyle_index.is_some() {
+        dimension.distance_scale = distance_scale;
+    }
     dimension.detail_measured = detail_measured;
-    if !matches!(dimension.definition, Definition::Angular { .. }) {
+    if dimension.dimstyle_index.is_some()
+        && !matches!(dimension.definition, Definition::Angular { .. })
+    {
         dimension.measurement *= distance_scale;
     }
     Ok(())
@@ -1255,6 +1244,17 @@ pub(crate) fn semantic_json(dimension: &Dimension) -> Option<String> {
 mod tests {
     use super::*;
     use crate::archive_test_support::crc_chunk;
+
+    #[test]
+    fn angular_measurement_selects_the_arc_containing_the_dimension_line() {
+        let first = [1.0, 0.0];
+        let second = [0.0, 1.0];
+        assert_eq!(angular_measurement(first, second, [1.0, 1.0]), std::f64::consts::FRAC_PI_2);
+        assert_eq!(
+            angular_measurement(first, second, [-1.0, -1.0]),
+            3.0 * std::f64::consts::FRAC_PI_2
+        );
+    }
 
     fn utf16(value: &str) -> Vec<u8> {
         let mut units = value.encode_utf16().collect::<Vec<_>>();

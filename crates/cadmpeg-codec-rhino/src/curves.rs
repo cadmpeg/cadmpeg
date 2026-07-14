@@ -235,7 +235,7 @@ pub(crate) fn decode_2d(
     decode_inner_2d(data, class_uuid, range, archive, 0)
 }
 
-fn decode_inner(
+pub(crate) fn decode_inner(
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
@@ -247,7 +247,8 @@ fn decode_inner(
         return Err(malformed(range.start, "curve recursion limit exceeded"));
     }
     if class_uuid == CURVE_ON_SURFACE {
-        let construction = crate::curve_on_surface::decode(data, range, scale, archive)?;
+        let construction =
+            crate::curve_on_surface::decode(data, range, scale, archive, depth + 1)?;
         let Some(mut curve) = construction.model_curve else {
             return Err(unsupported(
                 construction.source_range.start,
@@ -648,7 +649,7 @@ fn merge_nurbs_segments(
     })
 }
 
-fn decode_inner_2d(
+pub(crate) fn decode_inner_2d(
     data: &[u8],
     class_uuid: Uuid,
     range: Range<usize>,
@@ -1328,6 +1329,20 @@ pub(crate) fn unsupported(offset: usize, message: &str) -> GeometryError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn curve_on_surface_obeys_the_shared_curve_recursion_limit() {
+        let error = decode_inner(
+            &[],
+            CURVE_ON_SURFACE,
+            0..0,
+            1.0,
+            ArchiveVersion::V8,
+            MAX_CURVE_DEPTH + 1,
+        )
+        .expect_err("excessive cross-family recursion must stop before payload parsing");
+        assert!(error.to_string().contains("curve recursion limit exceeded"));
+    }
     use std::f64::consts::{PI, TAU};
 
     fn unit_circle() -> Circle {

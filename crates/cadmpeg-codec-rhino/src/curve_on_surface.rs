@@ -47,11 +47,18 @@ pub(crate) fn decode(
     range: Range<usize>,
     scale: f64,
     archive: ArchiveVersion,
+    depth: usize,
 ) -> Result<CurveOnSurface, GeometryError> {
     let mut reader = BoundedReader::new(data, range.start, range.end)?;
     let mut warnings = Vec::new();
     let c2 = class(data, &mut reader, archive, &mut warnings)?;
-    let decoded = crate::curves::decode_2d(data, c2.class_uuid, c2.class_data_range, archive)?;
+    let decoded = crate::curves::decode_inner_2d(
+        data,
+        c2.class_uuid,
+        c2.class_data_range,
+        archive,
+        depth,
+    )?;
     let DecodedGeometry::Curve {
         curve: parameter_curve,
     } = decoded
@@ -79,8 +86,14 @@ pub(crate) fn decode(
                 "nested curve-on-surface C3 carrier is invalid",
             ));
         }
-        let decoded =
-            crate::curves::decode(data, c3.class_uuid, c3.class_data_range, scale, archive)?;
+        let decoded = crate::curves::decode_inner(
+            data,
+            c3.class_uuid,
+            c3.class_data_range,
+            scale,
+            archive,
+            depth,
+        )?;
         let DecodedGeometry::Curve { curve } = decoded else {
             return Err(malformed(
                 reader.position(),
@@ -164,7 +177,7 @@ mod tests {
         ));
         bytes.extend(class_wrapper(PLANE_SURFACE, &plane_surface()));
 
-        let decoded = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8).unwrap();
+        let decoded = decode(&bytes, 0..bytes.len(), 10.0, ArchiveVersion::V8, 0).unwrap();
         assert!(decoded.model_curve.is_some());
         let cadmpeg_ir::geometry::CurveGeometry::Nurbs(c2) = decoded.parameter_curve.geometry
         else {

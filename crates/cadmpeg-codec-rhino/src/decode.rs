@@ -1149,6 +1149,7 @@ impl<'a> DecodeContext<'a> {
             object.class_data_range.clone(),
             scale,
             self.archive(),
+            0,
         ) {
             Ok(value) => value,
             Err(error) => {
