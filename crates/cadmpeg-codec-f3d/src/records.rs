@@ -1157,6 +1157,9 @@ pub struct DesignEdgeRecipeSelectorContext {
     /// Entry from each ordered recipe clause; a selector occurs at most once in
     /// one clause.
     pub clause_entries: [Option<DesignTopologyRecipeEntry>; 2],
+    /// Changed historical edge slots at the loop position named by each of the
+    /// two triplets in each present clause entry.
+    pub clause_triplet_edge_slots: [Option<[Vec<i64>; 2]>; 2],
     /// Changed historical edges whose incident loop counts satisfy every
     /// present clause entry. This is a topology-context match, not a resolved
     /// selection.
@@ -1212,6 +1215,22 @@ pub struct DesignTopologyRecipeTriplet {
     pub outer: NonZeroU32,
     /// Middle word, equal to `outer` or one less.
     pub middle: u32,
+    /// Zero-based loop vertex ordinal encoded by `outer`.
+    pub vertex_ordinal: u32,
+    /// Zero-based boundary-edge ordinal incident to `vertex_ordinal`.
+    pub incident_edge_ordinal: u32,
+    /// Whether the incident edge precedes or follows the vertex in loop order.
+    pub incident_side: DesignTopologyIncidentSide,
+}
+
+/// Which loop edge incident to a recipe vertex is named by a topology triplet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignTopologyIncidentSide {
+    /// Edge immediately preceding the vertex in cyclic loop order.
+    Preceding,
+    /// Edge immediately following the vertex in cyclic loop order.
+    Following,
 }
 
 /// Face-selection operand owned by an Extrude parameter scope.

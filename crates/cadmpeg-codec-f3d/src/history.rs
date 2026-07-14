@@ -848,9 +848,26 @@ fn recipe_selector_candidates(
                 })
                 .map(|context| context.edge_slot)
                 .collect();
+            let clause_triplet_edge_slots = clause_entries.each_ref().map(|entry| {
+                entry.as_ref().map(|entry| {
+                    entry.topology_triplets.each_ref().map(|triplet| {
+                        contexts
+                            .iter()
+                            .filter(|context| {
+                                context.incident_loops.iter().any(|incident| {
+                                    incident.boundary_edge_count == entry.boundary_edge_count.get()
+                                        && incident.coedge_ordinal == triplet.incident_edge_ordinal
+                                })
+                            })
+                            .map(|context| context.edge_slot)
+                            .collect()
+                    })
+                })
+            });
             crate::records::DesignEdgeRecipeSelectorContext {
                 selector: *selector,
                 clause_entries,
+                clause_triplet_edge_slots,
                 boundary_count_matching_edge_slots,
             }
         })
@@ -1769,10 +1786,16 @@ mod tests {
                 crate::records::DesignTopologyRecipeTriplet {
                     outer: std::num::NonZeroU32::new(1).unwrap(),
                     middle: 0,
+                    vertex_ordinal: 0,
+                    incident_edge_ordinal: boundary_edge_count - 1,
+                    incident_side: crate::records::DesignTopologyIncidentSide::Preceding,
                 },
                 crate::records::DesignTopologyRecipeTriplet {
                     outer: std::num::NonZeroU32::new(1).unwrap(),
                     middle: 1,
+                    vertex_ordinal: 0,
+                    incident_edge_ordinal: 0,
+                    incident_side: crate::records::DesignTopologyIncidentSide::Following,
                 },
             ],
         };
@@ -1818,8 +1841,16 @@ mod tests {
         assert_eq!(selectors.len(), 2);
         assert_eq!(selectors[0].selector, 1);
         assert_eq!(selectors[0].boundary_count_matching_edge_slots, [8]);
+        assert_eq!(
+            selectors[0].clause_triplet_edge_slots,
+            [Some([vec![7, 8], vec![7, 8]]), Some([vec![], vec![8]])]
+        );
         assert_eq!(selectors[1].selector, 2);
         assert_eq!(selectors[1].boundary_count_matching_edge_slots, [7, 8]);
+        assert_eq!(
+            selectors[1].clause_triplet_edge_slots,
+            [Some([vec![7, 8], vec![7, 8]]), None]
+        );
         assert!(incident_loop_counts_satisfy_sides(
             &[4, 5],
             &[Some(5), Some(4)]

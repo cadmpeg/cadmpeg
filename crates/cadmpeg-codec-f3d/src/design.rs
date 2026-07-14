@@ -6997,8 +6997,8 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> 
             }
             let boundary_edge_count = std::num::NonZeroU32::new(u32::try_from(entry[1]).ok()?)?;
             let topology_triplets = [
-                edge_recipe_topology_triplet(&entry[2..5])?,
-                edge_recipe_topology_triplet(&entry[5..8])?,
+                edge_recipe_topology_triplet(&entry[2..5], boundary_edge_count)?,
+                edge_recipe_topology_triplet(&entry[5..8], boundary_edge_count)?,
             ];
             topology_triplets
                 .iter()
@@ -7016,7 +7016,10 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> 
         .then_some(entries)
 }
 
-fn edge_recipe_topology_triplet(words: &[i32]) -> Option<DesignTopologyRecipeTriplet> {
+fn edge_recipe_topology_triplet(
+    words: &[i32],
+    boundary_edge_count: std::num::NonZeroU32,
+) -> Option<DesignTopologyRecipeTriplet> {
     let [outer, middle, repeated_outer] = words else {
         return None;
     };
@@ -7025,8 +7028,30 @@ fn edge_recipe_topology_triplet(words: &[i32]) -> Option<DesignTopologyRecipeTri
     }
     let outer = std::num::NonZeroU32::new(u32::try_from(*outer).ok()?)?;
     let middle = u32::try_from(*middle).ok()?;
-    (middle == outer.get() || middle.checked_add(1) == Some(outer.get()))
-        .then_some(DesignTopologyRecipeTriplet { outer, middle })
+    let vertex_ordinal = outer.get().checked_sub(1)?;
+    let (incident_side, incident_edge_ordinal) = if middle == outer.get() {
+        (
+            crate::records::DesignTopologyIncidentSide::Following,
+            vertex_ordinal,
+        )
+    } else if middle.checked_add(1) == Some(outer.get()) {
+        (
+            crate::records::DesignTopologyIncidentSide::Preceding,
+            vertex_ordinal
+                .checked_add(boundary_edge_count.get())?
+                .checked_sub(1)?
+                % boundary_edge_count.get(),
+        )
+    } else {
+        return None;
+    };
+    Some(DesignTopologyRecipeTriplet {
+        outer,
+        middle,
+        vertex_ordinal,
+        incident_edge_ordinal,
+        incident_side,
+    })
 }
 
 fn parse_face_operand(
@@ -11308,6 +11333,18 @@ mod relation_tests {
             4
         );
         assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[0].vertex_ordinal,
+            3
+        );
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[0].incident_edge_ordinal,
+            3
+        );
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[0].incident_side,
+            crate::records::DesignTopologyIncidentSide::Following
+        );
+        assert_eq!(
             structured.sides[0].entries[0].topology_triplets[1]
                 .outer
                 .get(),
@@ -11316,6 +11353,14 @@ mod relation_tests {
         assert_eq!(
             structured.sides[0].entries[0].topology_triplets[1].middle,
             3
+        );
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[1].incident_edge_ordinal,
+            2
+        );
+        assert_eq!(
+            structured.sides[0].entries[0].topology_triplets[1].incident_side,
+            crate::records::DesignTopologyIncidentSide::Preceding
         );
         assert_eq!(structured.sides[1].field_count.get(), 3);
         assert_eq!(structured.sides[1].header_value, 0);
@@ -11342,6 +11387,13 @@ mod relation_tests {
         assert_eq!(
             structured.sides[1].entries[0].topology_triplets[1].middle,
             1
+        );
+        let wrap = super::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
+        assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal, 0);
+        assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, 4);
+        assert_eq!(
+            wrap[0].topology_triplets[0].incident_side,
+            crate::records::DesignTopologyIncidentSide::Preceding
         );
         assert!(super::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).is_none());
         assert!(super::edge_recipe_entries(&[1, 5, 6, 5, 6, 2, 1, 2]).is_none());
