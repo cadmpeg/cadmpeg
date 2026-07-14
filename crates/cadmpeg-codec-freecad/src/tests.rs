@@ -26,22 +26,16 @@ fn writes_typed_property_edits_and_preserves_other_entries() {
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
     let mut edited = decoded.ir.clone();
-    let namespace = edited.native.namespace_mut("fcstd");
-    let mut properties = namespace
-        .arena_as::<crate::native::PropertyRecord>("properties")
-        .expect("properties");
-    let label = properties
-        .iter_mut()
-        .find(|property| {
-            property.owner == crate::native::native_id("document", "0") && property.name == "Label"
-        })
-        .expect("document Label");
-    label.values[0]
-        .attributes
-        .insert("value".into(), "edited & verified".into());
-    namespace
-        .set_arena("properties", &properties)
-        .expect("replace properties");
+    FcstdCodec
+        .set_property_value_attribute(
+            &mut edited,
+            crate::FcstdPropertyOwner::Document,
+            "Label",
+            0,
+            "value",
+            "edited & verified",
+        )
+        .expect("edit Label");
 
     let mut encoded = Vec::new();
     let report = FcstdCodec
@@ -166,8 +160,11 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
         .expect("add group")
         .add_side_entry("Payload.bin", b"extension payload".to_vec())
         .expect("add payload");
-    let ir = builder.build().expect("build source-less graph");
+    let mut ir = builder.build().expect("build source-less graph");
     assert!(crate::validate_native(&ir).is_empty());
+    FcstdCodec
+        .replace_side_entry(&mut ir, "Payload.bin", b"edited payload".to_vec())
+        .expect("replace side entry");
 
     let mut encoded = Vec::new();
     FcstdCodec.encode(&ir, &mut encoded).expect("write graph");
@@ -190,7 +187,7 @@ fn builds_and_writes_a_source_less_typed_application_graph() {
             .iter()
             .find(|entry| entry.name == "Payload.bin")
             .map(|entry| entry.data.as_slice()),
-        Some(b"extension payload".as_slice())
+        Some(b"edited payload".as_slice())
     );
 }
 

@@ -13,6 +13,7 @@ mod drawing;
 mod element_map;
 mod gui;
 mod joint;
+mod mutation;
 mod native;
 mod persistence;
 mod product;
@@ -43,6 +44,7 @@ use cadmpeg_ir::{Check, Finding, Severity as FindingSeverity, SourceObjectAssoci
 pub struct FcstdCodec;
 
 pub use builder::{FcstdDocumentBuilder, FcstdPropertyValue};
+pub use mutation::FcstdPropertyOwner;
 
 /// Selects the persistence band emitted by [`FcstdCodec::encode_with_options`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +73,41 @@ impl FcstdCodec {
         options: FcstdWriteOptions,
     ) -> Result<ExportReport, CodecError> {
         writer::write(ir, writer, options)
+    }
+
+    /// Change one attribute on an ordered native property value.
+    pub fn set_property_value_attribute(
+        &self,
+        ir: &mut CadIr,
+        owner: FcstdPropertyOwner<'_>,
+        property: &str,
+        value_order: usize,
+        attribute: &str,
+        value: impl Into<String>,
+    ) -> Result<(), CodecError> {
+        mutation::set_value_attribute(ir, owner, property, value_order, attribute, value.into())
+    }
+
+    /// Change the text content of one ordered native property value.
+    pub fn set_property_value_text(
+        &self,
+        ir: &mut CadIr,
+        owner: FcstdPropertyOwner<'_>,
+        property: &str,
+        value_order: usize,
+        text: Option<String>,
+    ) -> Result<(), CodecError> {
+        mutation::set_value_text(ir, owner, property, value_order, text)
+    }
+
+    /// Replace one named side-entry payload while retaining its graph identity.
+    pub fn replace_side_entry(
+        &self,
+        ir: &mut CadIr,
+        entry: &str,
+        bytes: Vec<u8>,
+    ) -> Result<(), CodecError> {
+        mutation::replace_entry(ir, entry, bytes)
     }
 }
 
