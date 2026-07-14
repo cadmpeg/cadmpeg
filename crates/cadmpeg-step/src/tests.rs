@@ -719,6 +719,11 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         .expect("decode written pcurve");
     assert_eq!(roundtrip.ir.model.pcurves.len(), 1);
     assert_eq!(roundtrip.ir.model.bodies[0].kind, BodyKind::Sheet);
+    assert_eq!(roundtrip.ir.model.presentation_layers.len(), 1);
+    assert_eq!(
+        roundtrip.ir.model.presentation_layers[0].name,
+        "machined faces"
+    );
     assert_eq!(
         roundtrip
             .ir

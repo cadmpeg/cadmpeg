@@ -464,6 +464,7 @@ impl<'a> Builder<'a> {
 
         self.emit_presentation(context);
         self.emit_tessellations(context);
+        self.emit_layers();
         self.note_unrepresented();
     }
 
@@ -639,6 +640,67 @@ impl<'a> Builder<'a> {
             .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({usage})"));
         cache.insert(rgb, assignment);
         assignment
+    }
+
+    fn emit_layers(&mut self) {
+        use cadmpeg_ir::presentation::PresentationItem;
+
+        for layer in self.ir.model.presentation_layers.clone() {
+            let mut assigned = Vec::new();
+            let mut unsupported = 0usize;
+            for item in layer.items {
+                let reference = match item {
+                    PresentationItem::Body { body } => {
+                        self.body_shape_refs.get(body.as_str()).copied()
+                    }
+                    PresentationItem::Face { face } => {
+                        self.face_step_refs.get(face.as_str()).copied()
+                    }
+                    PresentationItem::Edge { edge } => self.edge_refs.get(edge.as_str()).copied(),
+                    PresentationItem::Vertex { vertex } => {
+                        self.vertex_refs.get(vertex.as_str()).copied()
+                    }
+                    PresentationItem::Curve { curve } => {
+                        self.curve_refs.get(curve.as_str()).copied()
+                    }
+                    PresentationItem::Surface { surface } => {
+                        self.surface_refs.get(surface.as_str()).copied()
+                    }
+                    PresentationItem::Point { .. }
+                    | PresentationItem::Product { .. }
+                    | PresentationItem::Occurrence { .. }
+                    | PresentationItem::Pmi { .. }
+                    | PresentationItem::Tessellation { .. }
+                    | PresentationItem::Source { .. } => None,
+                };
+                if let Some(reference) = reference {
+                    assigned.push(reference);
+                } else {
+                    unsupported += 1;
+                }
+            }
+            if unsupported > 0 {
+                self.loss(
+                    LossCategory::Attribute,
+                    Severity::Warning,
+                    format!(
+                        "layer '{}' has {unsupported} item(s) without a writable STEP carrier",
+                        layer.name
+                    ),
+                );
+            }
+            if !assigned.is_empty() {
+                self.emitter.emit(
+                    "PRESENTATION_LAYER_ASSIGNMENT",
+                    &format!(
+                        "{},{},{}",
+                        string(&layer.name),
+                        string(layer.description.as_deref().unwrap_or("")),
+                        refs(&assigned)
+                    ),
+                );
+            }
+        }
     }
 
     /// Emit the `PRODUCT` → `PRODUCT_DEFINITION_SHAPE` chain, returning the
