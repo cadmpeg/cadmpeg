@@ -485,7 +485,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 115);
+    assert_eq!(namespace.version, 116);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3443,6 +3443,26 @@ fn topology_retains_entity_attribute_list_references() {
             .attributes,
         45
     );
+
+    let result = NxCodec
+        .decode(
+            &mut Cursor::new(prt_with_partition(&stream)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let references = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidTopologyAttributeListReference>(
+            "parasolid_topology_attribute_list_references",
+        )
+        .unwrap();
+    assert_eq!(references.len(), 5);
+    assert_eq!(references[0].topology_type, 14);
+    assert_eq!(references[0].topology_xmt, 4);
+    assert_eq!(references[0].attribute_list_xmt, 41);
 }
 
 #[test]
@@ -3577,7 +3597,10 @@ fn topology_accepts_fixed_record_envelope_escape() {
         .expect("fin record");
     stream.insert(fin + 2, 0xff);
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.get(17, 7).is_some());
+    assert_eq!(
+        graph.get(17, 7).unwrap().attribute_field_offset(),
+        Some(fin + 5)
+    );
     assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
 }
 
@@ -5736,7 +5759,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 115);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 116);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

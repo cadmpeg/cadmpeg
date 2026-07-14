@@ -141,6 +141,23 @@ pub struct ParasolidAttributeDefinition {
     pub inflated_offset: u64,
 }
 
+/// Explicit topology-record ownership of one Parasolid attribute list.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidTopologyAttributeListReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Parasolid topology record type.
+    pub topology_type: u8,
+    /// Stream-local topology-record identity.
+    pub topology_xmt: u32,
+    /// Stream-local attribute-list identity.
+    pub attribute_list_xmt: u32,
+    /// Offset of the attribute-list field in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Validated link from a segment-index word to a framed OM section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentOmLink {
@@ -4322,6 +4339,50 @@ pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttri
                 })
         })
         .collect()
+}
+
+/// Retain every non-null topology-to-attribute-list reference.
+pub fn parasolid_topology_attribute_list_references(
+    streams: &[Stream],
+) -> Vec<ParasolidTopologyAttributeListReference> {
+    let mut references = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        let graph = crate::topology::Graph::parse(&stream.inflated);
+        for topology_type in [13, 14, 15, 16, 17, 18] {
+            for node in graph.of_kind(topology_type) {
+                let attribute_list_xmt = match topology_type {
+                    13 => node.shell_fields().map(|fields| fields.attributes),
+                    14 => node.face_fields().map(|fields| fields.attributes),
+                    15 => node.loop_fields().map(|fields| fields.attributes),
+                    16 => node.edge_fields().map(|fields| fields.attributes),
+                    17 => node.fin_fields().map(|fields| fields.attributes),
+                    18 => node.vertex_fields().map(|fields| fields.attributes),
+                    _ => unreachable!("bounded topology family"),
+                };
+                let Some(attribute_list_xmt) = attribute_list_xmt.filter(|value| *value > 1) else {
+                    continue;
+                };
+                let Some(inflated_offset) = node.attribute_field_offset() else {
+                    continue;
+                };
+                references.push(ParasolidTopologyAttributeListReference {
+                    id: format!(
+                        "nx:s{stream_ordinal}:topology-attribute-list-reference#{topology_type}-{}",
+                        node.xmt
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    topology_type,
+                    topology_xmt: node.xmt,
+                    attribute_list_xmt,
+                    inflated_offset: inflated_offset as u64,
+                });
+            }
+        }
+    }
+    references
 }
 
 /// Unit declared by an NX numeric expression.

@@ -324,6 +324,12 @@ Topology node layouts (logical offsets, pre-shift):
 
 A **body-shape SHELL** requires the invariant fields `attributes`, `next_shell`, and `+16/+18` to equal `1`, non-null `body_ref` and `region_ref`, and a resolvable `first_face`. With null `face_anchor`, `FACE.next_face` defines a finite ownership chain whose members back-reference the SHELL. With non-null `face_anchor == first_face`, every FACE that back-references the SHELL belongs to it. The body and region references remain ownership identities when the stream omits the corresponding BODY or REGION record. FACE and EDGE `tolerance` decode as the sentinel `-3.14158e13` (`c2 bc 92 8f 99 6e 00 00`) or a finite model-scale value, giving an 8-byte alignment check. `FIN.curve` is non-null only on tolerant edges (tolerant-edge trims use TRIMMED_CURVE→SP_CURVE).
 
+For SHELL, FACE, LOOP, FIN, EDGE, and VERTEX, a non-null `attributes`
+reference identifies the stream-local attribute list owned by that exact topology
+record. The topology type and xmt together identify the owner. Attribute-list
+identity does not assign a class, value, or presentation meaning until the
+referenced list and its instances resolve.
+
 ### 5.2 Reference domains
 
 - Ordinary BREP references (`FACE.surface`, `EDGE.curve`, `FIN.curve`, `VERTEX.point`, BLEND_SURF/INTERSECTION support refs) resolve within the same stream.

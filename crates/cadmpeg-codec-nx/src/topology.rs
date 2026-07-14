@@ -128,6 +128,15 @@ pub struct VertexFields {
 }
 
 impl Node {
+    /// Inflated-stream offset of this topology record's attribute-list field.
+    pub fn attribute_field_offset(&self) -> Option<usize> {
+        match self.kind {
+            13..=16 | 18 => Some(self.pos + 8 + self.shift),
+            17 => Some(self.pos + 4 + self.shift),
+            _ => None,
+        }
+    }
+
     /// First byte after this complete record in its source stream.
     pub fn end(&self) -> usize {
         self.pos + self.bytes.len()

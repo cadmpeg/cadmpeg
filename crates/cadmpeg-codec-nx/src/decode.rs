@@ -2767,6 +2767,8 @@ fn attach_native_object_model(
         crate::native::segment_body_bindings(&scan.container, &scan.streams);
     let parasolid_attribute_definitions =
         crate::native::parasolid_attribute_definitions(&scan.streams);
+    let parasolid_topology_attribute_list_references =
+        crate::native::parasolid_topology_attribute_list_references(&scan.streams);
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
@@ -2969,6 +2971,7 @@ fn attach_native_object_model(
         && segment_body_bindings.is_empty()
         && segment_body_lineage_statuses.is_empty()
         && parasolid_attribute_definitions.is_empty()
+        && parasolid_topology_attribute_list_references.is_empty()
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
         && feature_operation_records.is_empty()
@@ -3068,6 +3071,13 @@ fn attach_native_object_model(
             .note(&definition.id, source_stream, definition.inflated_offset)
             .tag("ATTRIBUTE_DEFINITION");
         annotations.exactness(&definition.id, Exactness::ByteExact);
+    }
+    for reference in &parasolid_topology_attribute_list_references {
+        let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+        annotations
+            .note(&reference.id, source_stream, reference.inflated_offset)
+            .tag("TOPOLOGY_ATTRIBUTE_LIST_REFERENCE");
+        annotations.exactness(&reference.id, Exactness::ByteExact);
     }
     for frame in &data_block_object_frames {
         annotations
@@ -3368,7 +3378,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(115);
+    namespace.version = namespace.version.max(116);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3388,6 +3398,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_attribute_definitions",
             &parasolid_attribute_definitions,
+        )?;
+    }
+    if !parasolid_topology_attribute_list_references.is_empty() {
+        namespace.set_arena(
+            "parasolid_topology_attribute_list_references",
+            &parasolid_topology_attribute_list_references,
         )?;
     }
     if !segment_om_links.is_empty() {
