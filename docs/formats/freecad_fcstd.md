@@ -217,3 +217,10 @@ identity or a count mismatch leaves the side entry retained without guessing tra
 Application data without a neutral representation retains its owning object and property,
 declared application type, links, source order, XML bytes, referenced side-entry bytes, byte spans,
 lengths, and digests.
+
+Native namespace version 8 adds an ordered `applications` census covering every declared object
+exactly once. Each record retains the exact runtime type, its application-domain prefix, ordered
+owned properties, ordered dependencies, and referenced side entries. A record is marked as carrying
+an inert payload when it owns a Python-object property. Decoding never imports, instantiates, or
+executes serialized application code. Validation derives the census again from the authoritative
+object/property graph and rejects missing, duplicate, reordered, or cross-owned records.

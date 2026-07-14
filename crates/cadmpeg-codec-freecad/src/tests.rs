@@ -300,6 +300,48 @@ fn recovers_assembly_joint_operands_frames_and_state() {
 }
 
 #[test]
+fn censuses_application_domains_and_keeps_python_payloads_inert() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="5">
+ <Object type="Mesh::Feature" name="Mesh" id="1"/>
+ <Object type="Points::Feature" name="Points" id="2"/>
+ <Object type="Fem::FemAnalysis" name="Analysis" id="3"/>
+ <Object type="Path::FeaturePython" name="Toolpath" id="4"/>
+ <Object type="LocalType" name="Local" id="5"/>
+ <ObjectDeps Name="Mesh"><Dep Name="Points"/></ObjectDeps>
+</Objects>
+<ObjectData Count="5">
+ <Object name="Mesh"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Points"/></Property></Properties></Object>
+ <Object name="Points"><Properties Count="0"/></Object>
+ <Object name="Analysis"><Properties Count="1"><Property name="Report" type="App::PropertyFileIncluded"><FileIncluded file="analysis.dat"/></Property></Properties></Object>
+ <Object name="Toolpath"><Properties Count="1"><Property name="Proxy" type="App::PropertyPythonObject"><PythonObject class="ToolController">serialized-but-inert</PythonObject></Property></Properties></Object>
+ <Object name="Local"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("analysis.dat", b"finite-element-results"),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("application census");
+    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let records = namespace
+        .arena_as::<crate::native::ApplicationRecord>("applications")
+        .expect("applications");
+    assert_eq!(records.len(), 5);
+    let by_domain = records
+        .iter()
+        .map(|record| (record.domain.as_str(), record))
+        .collect::<std::collections::HashMap<_, _>>();
+    assert_eq!(by_domain["Mesh"].dependencies, ["fcstd:object:Points"]);
+    assert_eq!(by_domain["Fem"].side_entries, ["analysis.dat"]);
+    assert!(by_domain["Path"].inert_payload);
+    assert!(!by_domain["Mesh"].inert_payload);
+    assert_eq!(by_domain["Unqualified"].type_name, "LocalType");
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn recovers_techdraw_page_template_and_view_graph() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -765,7 +807,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 7);
+    assert_eq!(namespace.version, 8);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");

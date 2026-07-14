@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Read ZIP-packaged `FreeCAD` `.FCStd` documents.
 
+mod application;
 mod brep;
 mod container;
 mod design;
@@ -104,6 +105,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let applications = match namespace.arena_as::<native::ApplicationRecord>("applications") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
 
     let mut findings = Vec::new();
     let object_ids = objects
@@ -138,6 +143,116 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(object.id.clone()),
                 ));
             }
+        }
+    }
+    let object_by_id = objects
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let property_by_id = properties
+        .iter()
+        .map(|property| (property.id.as_str(), property))
+        .collect::<HashMap<_, _>>();
+    let application_objects = applications
+        .iter()
+        .map(|record| record.object.as_str())
+        .collect::<HashSet<_>>();
+    if application_objects.len() != applications.len()
+        || application_objects.len() != objects.len()
+        || application_objects != object_ids
+    {
+        findings.push(finding(
+            Check::Identity,
+            "FCStd application census does not cover every object exactly once",
+            None,
+        ));
+    }
+    for record in &applications {
+        let Some(object) = object_by_id.get(record.object.as_str()) else {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} references a missing application object", record.id),
+                Some(record.id.clone()),
+            ));
+            continue;
+        };
+        let expected_domain = object
+            .type_name
+            .split_once("::")
+            .map_or("Unqualified", |(domain, _)| domain);
+        let mut owned = properties
+            .iter()
+            .filter(|property| property.owner == object.id)
+            .collect::<Vec<_>>();
+        owned.sort_by_key(|property| (property.byte_start, property.byte_end));
+        let expected_properties = owned
+            .iter()
+            .map(|property| property.id.as_str())
+            .collect::<Vec<_>>();
+        let expected_side_entries = owned
+            .iter()
+            .flat_map(|property| property.side_entries.iter().map(String::as_str))
+            .collect::<Vec<_>>();
+        let expected_inert_payload = owned.iter().any(|property| {
+            property.family == native::PropertyFamily::PythonObject
+                || property.type_name.contains("PropertyPythonObject")
+        });
+        let invalid_properties = record.properties.iter().any(|property| {
+            property_by_id
+                .get(property.as_str())
+                .is_none_or(|property| property.owner != object.id)
+        });
+        let mut mismatches = Vec::new();
+        if record.type_name != object.type_name {
+            mismatches.push("type");
+        }
+        if record.domain != expected_domain {
+            mismatches.push("domain");
+        }
+        if record.dependencies != object.dependencies {
+            mismatches.push("dependencies");
+        }
+        if record
+            .properties
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            != expected_properties
+        {
+            mismatches.push("properties");
+        }
+        if record
+            .side_entries
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            != expected_side_entries
+        {
+            mismatches.push("side entries");
+        }
+        if record.inert_payload != expected_inert_payload {
+            mismatches.push("inert payload classification");
+        }
+        if invalid_properties {
+            mismatches.push("property ownership");
+        }
+        if record
+            .side_entries
+            .iter()
+            .any(|entry| !entry_names.contains(entry.as_str()))
+        {
+            mismatches.push("side-entry references");
+        }
+        if !mismatches.is_empty() {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "{} does not match its application object graph: {}",
+                    record.id,
+                    mismatches.join(", ")
+                ),
+                Some(record.id.clone()),
+            ));
         }
     }
     let gui_provider_ids = gui_providers
@@ -706,6 +821,10 @@ impl Codec for FcstdCodec {
             namespace.set_arena(
                 "drawings",
                 &drawing::transfer(&graph.objects, &graph.properties),
+            )?;
+            namespace.set_arena(
+                "applications",
+                &application::transfer(&graph.objects, &graph.properties),
             )?;
             let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer =

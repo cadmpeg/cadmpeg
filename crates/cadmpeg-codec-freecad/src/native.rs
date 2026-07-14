@@ -5,7 +5,28 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 7;
+pub const VERSION: u32 = 8;
+
+/// One application-domain object projected into the L8 census.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApplicationRecord {
+    /// Stable census identity.
+    pub id: String,
+    /// Owning native application object.
+    pub object: String,
+    /// Runtime type retained exactly.
+    pub type_name: String,
+    /// Application domain derived from the runtime type prefix.
+    pub domain: String,
+    /// Ordered owned native property identities.
+    pub properties: Vec<String>,
+    /// Ordered application-object dependencies.
+    pub dependencies: Vec<String>,
+    /// Ordered referenced archive assets.
+    pub side_entries: Vec<String>,
+    /// Whether the object owns serialized code-backed data that must remain inert.
+    pub inert_payload: bool,
+}
 
 /// One `TechDraw` page, template, view, dimension, or annotation record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
