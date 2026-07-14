@@ -510,6 +510,18 @@ pub enum DesignExtrudeOperation {
     NewBody,
 }
 
+/// Extent form selected by the two fixed Extrude prologue enums.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignExtrudeExtent {
+    /// Travel a signed fixed distance on the first side of the profile.
+    OneSidedDistance,
+    /// Travel on the first side until reaching a selected face.
+    OneSidedToFace,
+    /// Travel independent fixed distances on both sides of the profile.
+    TwoSidedDistance,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -533,6 +545,12 @@ pub struct DesignParameterScope {
     /// Byte offset of the Extrude operation enum.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_operation_offset: Option<u64>,
+    /// Extrude extent form from the fixed scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_extent: Option<DesignExtrudeExtent>,
+    /// Byte offsets of the two u32 enums selecting the Extrude extent form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extrude_extent_offsets: Option<[u64; 2]>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.

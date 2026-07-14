@@ -278,12 +278,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 scope.kind.as_str(),
                 scope.extrude_operation,
                 scope.extrude_operation_offset,
+                scope.extrude_extent,
+                scope.extrude_extent_offsets,
             ) {
-                ("Extrude", Some(_), Some(offset)) => {
-                    offset > scope.byte_offset && offset < scope.reference_count_offset
+                ("Extrude", Some(_), Some(operation_offset), Some(_), Some(extent_offsets)) => {
+                    operation_offset > scope.byte_offset
+                        && extent_offsets
+                            == [
+                                operation_offset.saturating_add(4),
+                                operation_offset.saturating_add(8),
+                            ]
+                        && extent_offsets[1] < scope.reference_count_offset
                 }
-                ("Extrude", _, _) => false,
-                (_, None, None) => true,
+                ("Extrude", _, _, _, _) => false,
+                (_, None, None, None, None) => true,
                 _ => false,
             }
             && scope.frame_length > 89
@@ -535,6 +543,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         && group.scope_record_index == scope.record_index
                         && group.extrude_role == Some(records::DesignExtrudeOperandRole::Bodies)
                 });
+            let has_face_operands = native
+                .design_construction_operand_groups
+                .iter()
+                .any(|group| {
+                    design_stream(&group.id) == native_stream
+                        && group.scope_record_index == scope.record_index
+                        && group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
+                });
             let operation_matches_operands = match scope.extrude_operation {
                 Some(records::DesignExtrudeOperation::NewBody) => !has_body_operands,
                 Some(
@@ -549,6 +565,43 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     check: Check::NativeLinks,
                     severity: Severity::Error,
                     message: "Fusion Design Extrude operation conflicts with its body operands"
+                        .into(),
+                    entity: Some(scope.id.clone()),
+                });
+            }
+            let parameter_kind_count = |source_kind: &str| {
+                native
+                    .design_parameter_owners
+                    .iter()
+                    .filter(|owner| {
+                        design_stream(&owner.id) == native_stream
+                            && owner.scope_record_index == scope.record_index
+                    })
+                    .filter_map(|owner| {
+                        parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                    })
+                    .filter(|parameter| parameter.source_kind == source_kind)
+                    .count()
+            };
+            let along_count = parameter_kind_count("AlongDistance");
+            let against_count = parameter_kind_count("AgainstDistance");
+            let extent_matches_operands = match scope.extrude_extent {
+                Some(records::DesignExtrudeExtent::OneSidedDistance) => {
+                    along_count == 1 && against_count == 0
+                }
+                Some(records::DesignExtrudeExtent::OneSidedToFace) => {
+                    along_count == 0 && against_count == 0 && has_face_operands
+                }
+                Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
+                    along_count == 1 && against_count == 1
+                }
+                None => false,
+            };
+            if !extent_matches_operands {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion Design Extrude extent conflicts with its parameters and face operands"
                         .into(),
                     entity: Some(scope.id.clone()),
                 });

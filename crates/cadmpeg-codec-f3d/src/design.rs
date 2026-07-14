@@ -12,9 +12,9 @@ use crate::records::{
     DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
+    DesignExtrudeExtent, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
     DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
     DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
     PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
@@ -610,17 +610,14 @@ fn project_extrude(
             .collect::<Vec<_>>();
         (matches.len() <= 1).then(|| matches.first().copied())
     };
-    let along = design_length(unique("AlongDistance")??)?;
-    if along.0 == 0.0 {
-        return None;
-    }
+    let along = match unique("AlongDistance")? {
+        Some(parameter) => Some(design_length(parameter)?),
+        None => None,
+    };
     let against = match unique("AgainstDistance")? {
         Some(parameter) => Some(design_length(parameter)?),
         None => None,
     };
-    if against.is_some_and(|distance| distance.0 == 0.0) {
-        return None;
-    }
     for source_kind in ["ProfileOffset", "Side1Offset", "Side2Offset"] {
         if let Some(parameter) = unique(source_kind)? {
             if design_length(parameter)?.0 != 0.0 {
@@ -635,6 +632,17 @@ fn project_extrude(
     if side_two_draft.is_some_and(|angle| angle.0 != 0.0) {
         return None;
     }
+    let (along, against) = match (scope.extrude_extent?, along, against) {
+        (DesignExtrudeExtent::OneSidedDistance, Some(along), None) if along.0 != 0.0 => {
+            (along, None)
+        }
+        (DesignExtrudeExtent::TwoSidedDistance, Some(along), Some(against))
+            if along.0 != 0.0 && against.0 != 0.0 =>
+        {
+            (along, Some(against))
+        }
+        _ => return None,
+    };
     let direction = if along.0 < 0.0 {
         let profile = scope.extrude_profile.as_ref()?;
         let placement = placements.iter().find(|placement| {
@@ -3706,27 +3714,44 @@ fn parse_parameter_scope(
     else {
         return None;
     };
-    let (extrude_operation, extrude_operation_offset) = if kind == "Extrude" {
-        let direct_offset = start.checked_add(28)?;
-        let referenced_offset = start.checked_add(38)?;
-        let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
-            && bytes.get(start.checked_add(30)?..start.checked_add(36)?)? == [0; 6]
-        {
-            referenced_offset
+    let (extrude_operation, extrude_operation_offset, extrude_extent, extrude_extent_offsets) =
+        if kind == "Extrude" {
+            let direct_offset = start.checked_add(28)?;
+            let referenced_offset = start.checked_add(38)?;
+            let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
+                && bytes.get(start.checked_add(30)?..start.checked_add(36)?)? == [0; 6]
+            {
+                referenced_offset
+            } else {
+                direct_offset
+            };
+            let operation = match u32_at(bytes, operation_offset)? {
+                1 => DesignExtrudeOperation::Join,
+                2 => DesignExtrudeOperation::Cut,
+                3 => DesignExtrudeOperation::Intersect,
+                4 => DesignExtrudeOperation::NewBody,
+                _ => return None,
+            };
+            let side_offset = operation_offset.checked_add(4)?;
+            let termination_offset = operation_offset.checked_add(8)?;
+            let extent = match (
+                u32_at(bytes, side_offset)?,
+                u32_at(bytes, termination_offset)?,
+            ) {
+                (1, 1) => DesignExtrudeExtent::OneSidedToFace,
+                (1, 2) => DesignExtrudeExtent::OneSidedDistance,
+                (2, 0) => DesignExtrudeExtent::TwoSidedDistance,
+                _ => return None,
+            };
+            (
+                Some(operation),
+                Some(operation_offset as u64),
+                Some(extent),
+                Some([side_offset as u64, termination_offset as u64]),
+            )
         } else {
-            direct_offset
+            (None, None, None, None)
         };
-        let operation = match u32_at(bytes, operation_offset)? {
-            1 => DesignExtrudeOperation::Join,
-            2 => DesignExtrudeOperation::Cut,
-            3 => DesignExtrudeOperation::Intersect,
-            4 => DesignExtrudeOperation::NewBody,
-            _ => return None,
-        };
-        (Some(operation), Some(operation_offset as u64))
-    } else {
-        (None, None)
-    };
     Some(DesignParameterScope {
         id: String::new(),
         byte_offset: header.byte_offset,
@@ -3737,6 +3762,8 @@ fn parse_parameter_scope(
         kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
         extrude_operation,
         extrude_operation_offset,
+        extrude_extent,
+        extrude_extent_offsets,
         feature_ordinal,
         feature_ordinal_offset: u64::try_from(kind_end).ok()?,
         history_state_id,
@@ -5558,11 +5585,12 @@ mod relation_tests {
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
-        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignObjectKind, DesignParameterKind,
-        DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeExtent,
+        DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
+        DesignObjectKind, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignRecordHeader, DesignSketchPlacement, PersistentSubentityTag, SketchConstraintKind,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+        SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
@@ -5931,8 +5959,8 @@ mod relation_tests {
     }
 
     #[test]
-    fn extrude_scope_operation_follows_optional_indexed_reference() {
-        let scope = |operation: u32, conditional_reference: bool| {
+    fn extrude_scope_discriminators_follow_optional_indexed_reference() {
+        let scope = |operation: u32, extent: (u32, u32), conditional_reference: bool| {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(&3u32.to_le_bytes());
             bytes.extend_from_slice(b"301");
@@ -5947,6 +5975,10 @@ mod relation_tests {
                 28
             };
             bytes[operation_offset..operation_offset + 4].copy_from_slice(&operation.to_le_bytes());
+            bytes[operation_offset + 4..operation_offset + 8]
+                .copy_from_slice(&extent.0.to_le_bytes());
+            bytes[operation_offset + 8..operation_offset + 12]
+                .copy_from_slice(&extent.1.to_le_bytes());
             bytes.extend_from_slice(&1u32.to_le_bytes());
             bytes.push(1);
             bytes.extend_from_slice(&55u32.to_le_bytes());
@@ -5969,15 +6001,30 @@ mod relation_tests {
             parse_parameter_scope(&bytes, &header).unwrap()
         };
 
-        let direct = scope(1, false);
+        let direct = scope(1, (1, 2), false);
         assert_eq!(direct.extrude_operation, Some(DesignExtrudeOperation::Join));
         assert_eq!(direct.extrude_operation_offset, Some(28));
-        let shifted = scope(3, true);
+        assert_eq!(
+            direct.extrude_extent,
+            Some(DesignExtrudeExtent::OneSidedDistance)
+        );
+        assert_eq!(direct.extrude_extent_offsets, Some([32, 36]));
+        let shifted = scope(3, (2, 0), true);
         assert_eq!(
             shifted.extrude_operation,
             Some(DesignExtrudeOperation::Intersect)
         );
         assert_eq!(shifted.extrude_operation_offset, Some(38));
+        assert_eq!(
+            shifted.extrude_extent,
+            Some(DesignExtrudeExtent::TwoSidedDistance)
+        );
+        assert_eq!(shifted.extrude_extent_offsets, Some([42, 46]));
+        let to_face = scope(2, (1, 1), false);
+        assert_eq!(
+            to_face.extrude_extent,
+            Some(DesignExtrudeExtent::OneSidedToFace)
+        );
     }
 
     #[test]
@@ -6046,6 +6093,8 @@ mod relation_tests {
             kind_offset: 1100,
             extrude_operation: None,
             extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -6198,6 +6247,8 @@ mod relation_tests {
             kind_offset: 1100,
             extrude_operation: None,
             extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -6355,6 +6406,8 @@ mod relation_tests {
             kind_offset: 1100,
             extrude_operation: None,
             extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -6959,6 +7012,8 @@ mod relation_tests {
             kind_offset: 210,
             extrude_operation: Some(DesignExtrudeOperation::NewBody),
             extrude_operation_offset: Some(128),
+            extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
+            extrude_extent_offsets: Some([132, 136]),
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -7020,6 +7075,8 @@ mod relation_tests {
             kind_offset: 210,
             extrude_operation: Some(DesignExtrudeOperation::NewBody),
             extrude_operation_offset: Some(128),
+            extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
+            extrude_extent_offsets: Some([132, 136]),
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -7125,6 +7182,8 @@ mod relation_tests {
 
         scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
         let against = parameter("AgainstDistance", "mm", -0.05);
+        assert!(project_extrude(&scope, &[(0, &along), (1, &against)], &[], &[]).is_none());
+        scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
         let two_sided = project_extrude(&scope, &[(0, &along), (1, &against)], &[], &[])
             .expect("typed two-sided Extrude");
         assert!(matches!(
@@ -7138,6 +7197,7 @@ mod relation_tests {
             }
         ));
 
+        scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
         let reversed_along = parameter("AlongDistance", "mm", -0.6);
         let placement = DesignSketchPlacement {
             id: "f3d:Design/BulkStream.dat:placement#200".into(),
@@ -7220,6 +7280,8 @@ mod relation_tests {
             kind_offset: byte_offset + 100,
             extrude_operation: None,
             extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -7294,6 +7356,8 @@ mod relation_tests {
             kind_offset: 210,
             extrude_operation: None,
             extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -7462,6 +7526,8 @@ mod relation_tests {
             kind_offset: byte_offset + 100,
             extrude_operation: None,
             extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
