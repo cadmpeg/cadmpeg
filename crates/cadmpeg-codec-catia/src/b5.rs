@@ -73,6 +73,15 @@ pub enum B5Profile {
 /// A resolved `b5 03` surface node ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
 pub enum B5Surface {
+    /// An identity-bearing surface record whose carrier geometry remains opaque.
+    Unknown {
+        /// Source record family (`0xa8`).
+        family: u8,
+        /// Source class (`0x34`).
+        class: u8,
+        /// Exact source payload.
+        payload: Vec<u8>,
+    },
     /// `b5 03 27`: a plane spanned by `origin`, `direction_u`, and
     /// `direction_v`.
     Plane {
@@ -146,6 +155,8 @@ pub struct B5Pcurve {
 pub struct B5Record {
     /// Byte offset of the `b5 03` marker in the source stream.
     pub offset: usize,
+    /// Record family byte (`0xb5` or `0xa8`).
+    pub family: u8,
     /// Third header byte: the record's type/class code (`0x5f` face,
     /// `0x62` loop, `0x21` pcurve, `0x27`/`0x28`/`0x2d` surface, `0x5e`
     /// edge, `0x18` line pcurve, `0x0e`/`0x0f` profile, ...).
@@ -198,7 +209,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     }
     let mut surfaces: BTreeMap<u32, B5Surface> = records
         .iter()
-        .filter_map(|record| parse_surface(record).map(|surface| (record.object_id, surface)))
+        .filter_map(|record| surface_node(record).map(|surface| (record.object_id, surface)))
         .collect();
     for surface in crate::geometry::a8_surfaces(bytes) {
         if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
@@ -340,6 +351,7 @@ pub fn edge_vertex_references(bytes: &[u8]) -> BTreeMap<u32, [u32; 2]> {
         };
         let record = B5Record {
             offset,
+            family: 0xb5,
             class: 0x5e,
             object_id,
             payload: bytes[offset + 8..end].to_vec(),
@@ -812,6 +824,16 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
     }
 }
 
+fn surface_node(record: &B5Record) -> Option<B5Surface> {
+    parse_surface(record).or_else(|| {
+        (record.family == 0xa8 && record.class == 0x34).then(|| B5Surface::Unknown {
+            family: record.family,
+            class: record.class,
+            payload: record.payload.clone(),
+        })
+    })
+}
+
 fn lift_pcurve_endpoints(
     surface: &B5Surface,
     profiles: &BTreeMap<u32, B5Profile>,
@@ -819,6 +841,7 @@ fn lift_pcurve_endpoints(
 ) -> Option<[[f64; 3]; 2]> {
     let endpoints = [*control_points.first()?, *control_points.last()?];
     match surface {
+        B5Surface::Unknown { .. } => None,
         B5Surface::Plane {
             origin,
             direction_u,
@@ -1230,7 +1253,9 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
                     records.push(child);
                 }
             }
-            if !is_topology_class(class) || !matches!((family, class), (0xb5, _) | (0xa8, 0x62)) {
+            if !((family == 0xb5 && is_topology_class(class))
+                || (family == 0xa8 && matches!(class, 0x34 | 0x62)))
+            {
                 continue;
             }
             let header = if family == 0xa8 { 11 } else { 8 };
@@ -1246,6 +1271,7 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             seen.insert(object_id, (class, payload.clone()));
             records.push(B5Record {
                 offset: record_start,
+                family,
                 class,
                 object_id,
                 payload,
@@ -1479,6 +1505,7 @@ mod tests {
         payload[134..142].copy_from_slice(&2.0f64.to_le_bytes());
         let record = B5Record {
             offset: 0,
+            family: 0xb5,
             class: 0x2d,
             object_id: 0x16_8601,
             payload,
@@ -1507,17 +1534,43 @@ mod tests {
             vec![
                 B5Record {
                     offset: 0,
+                    family: 0xa8,
                     class: 0x62,
                     object_id: 7,
                     payload: vec![0x83, 0x81, 0x82],
                 },
                 B5Record {
                     offset: 14,
+                    family: 0xb5,
                     class: 0x5e,
                     object_id: 8,
                     payload: Vec::new(),
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn record_walk_retains_opaque_a8_surface_nodes() {
+        let mut bytes = vec![0xa8, 0x03, 0x34];
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        bytes.extend_from_slice(&[1, 2, 3]);
+        bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0x00]);
+        bytes.extend_from_slice(&8u32.to_le_bytes());
+        let records = records(&bytes);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].family, 0xa8);
+        assert_eq!(records[0].class, 0x34);
+        assert_eq!(records[0].object_id, 7);
+        assert_eq!(records[0].payload, [1, 2, 3]);
+        assert_eq!(
+            surface_node(&records[0]),
+            Some(B5Surface::Unknown {
+                family: 0xa8,
+                class: 0x34,
+                payload: vec![1, 2, 3],
+            })
         );
     }
 
@@ -1540,7 +1593,7 @@ mod tests {
                 .iter()
                 .map(|record| (record.offset, record.object_id, record.class))
                 .collect::<Vec<_>>(),
-            vec![(11, 1, 0x27), (19, 2, 0x5e), (27, 3, 0x5e)]
+            vec![(11, 1, 0x27), (19, 2, 0x5e), (0, 7, 0x34), (27, 3, 0x5e)]
         );
     }
 
@@ -1582,6 +1635,7 @@ mod tests {
     fn edge_record_exposes_native_start_and_end_vertex_refs() {
         let record = B5Record {
             offset: 0,
+            family: 0xb5,
             class: 0x5e,
             object_id: 17,
             payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
