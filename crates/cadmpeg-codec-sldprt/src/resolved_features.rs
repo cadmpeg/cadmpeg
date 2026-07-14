@@ -3123,6 +3123,8 @@ pub(crate) fn is_compact_body_selection_value(value: &str) -> bool {
 /// Materialize dimensioned circular sketch geometry omitted by a selected-profile stream.
 pub(crate) fn project_dimensioned_sketch_geometry(
     entities: &mut Vec<SketchEntity>,
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
     features: &[cadmpeg_ir::features::Feature],
     parameters: &[cadmpeg_ir::features::DesignParameter],
     lanes: &[FeatureInputLane],
@@ -3152,14 +3154,15 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
-    let transforms = marker_transform_candidates_by_feature(features, entities, lanes)
-        .into_iter()
-        .filter_map(|(feature, candidates)| {
+    let marker_transforms = marker_transform_candidates_by_feature(features, entities, lanes);
+    let transforms = sketches_by_feature
+        .iter()
+        .filter_map(|(feature, sketch_id)| {
             let circles = lanes
                 .iter()
                 .flat_map(|lane| &lane.relation_instances)
                 .filter(|relation| {
-                    relation.feature_ref == feature
+                    relation.feature_ref == *feature
                         && relation.family == FeatureInputRelationFamily::CircleDiameter
                 })
                 .filter_map(|relation| {
@@ -3219,8 +3222,16 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     ))
                 })
                 .collect::<Vec<_>>();
+            let candidates = marker_transforms.get(*feature).cloned().unwrap_or_else(|| {
+                sketches
+                    .iter()
+                    .find(|sketch| sketch.id == *sketch_id)
+                    .map_or_else(Vec::new, |sketch| {
+                        dimensioned_circle_surface_transforms(sketch, surfaces, &circles, QUANTUM)
+                    })
+            });
             dimensioned_circle_transform(&candidates, &circles)
-                .map(|transform| (feature, transform))
+                .map(|transform| ((*feature).to_string(), transform))
         })
         .collect::<HashMap<_, _>>();
     for lane in lanes {
@@ -4206,6 +4217,83 @@ impl MarkerTransform {
     }
 }
 
+fn dimensioned_circle_surface_transforms(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+    circles: &[((i64, i64), i64)],
+    quantum: f64,
+) -> Vec<MarkerTransform> {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    if circles.is_empty() {
+        return Vec::new();
+    }
+    let v_axis = cadmpeg_ir::math::Vector3::new(
+        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
+        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
+        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+    );
+    let mut targets_by_radius = HashMap::<i64, HashSet<(i64, i64)>>::new();
+    for surface in surfaces {
+        let SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        } = &surface.geometry
+        else {
+            continue;
+        };
+        let alignment =
+            axis.x * sketch.normal.x + axis.y * sketch.normal.y + axis.z * sketch.normal.z;
+        if !alignment.is_finite() || (alignment.abs() - 1.0).abs() > 1.0e-8 {
+            continue;
+        }
+        let radius_key = (radius / quantum).round() as i64;
+        if !circles
+            .iter()
+            .any(|(_, candidate)| *candidate == radius_key)
+        {
+            continue;
+        }
+        let delta = cadmpeg_ir::math::Vector3::new(
+            origin.x - sketch.origin.x,
+            origin.y - sketch.origin.y,
+            origin.z - sketch.origin.z,
+        );
+        let center = Point2::new(
+            delta.x * sketch.u_axis.x + delta.y * sketch.u_axis.y + delta.z * sketch.u_axis.z,
+            delta.x * v_axis.x + delta.y * v_axis.y + delta.z * v_axis.z,
+        );
+        targets_by_radius
+            .entry(radius_key)
+            .or_default()
+            .insert(quantize(center, quantum));
+    }
+    let compatible = circles
+        .iter()
+        .filter_map(|(center, radius)| Some((*center, targets_by_radius.get(radius)?.clone())))
+        .collect::<HashMap<_, _>>();
+    if compatible.len() != circles.len() {
+        return Vec::new();
+    }
+    let candidates = compatible_marker_transform_candidates(&compatible);
+    candidates
+        .into_iter()
+        .filter(|transform| {
+            let mut used = HashSet::new();
+            circles.iter().all(|(center, radius)| {
+                transform.apply(*center).is_some_and(|center| {
+                    targets_by_radius
+                        .get(radius)
+                        .is_some_and(|targets| targets.contains(&center))
+                        && used.insert((*radius, center))
+                })
+            })
+        })
+        .collect()
+}
+
 fn dimensioned_circle_transform(
     candidates: &[MarkerTransform],
     circles: &[((i64, i64), i64)],
@@ -4565,10 +4653,11 @@ fn marker_entities(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        dimensioned_circle_transform, implicit_circle_marker, marker_entities,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        typed_marker_relation_definition, typed_relation_definition,
-        unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
+        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+        implicit_circle_marker, marker_entities, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, typed_marker_relation_definition,
+        typed_relation_definition, unique_compatible_marker_transform, unique_marker_transform,
+        MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -4579,9 +4668,11 @@ mod profile_join_tests {
         DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
         ParameterId, ParameterValue, SketchSpace,
     };
-    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
     };
     use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -4711,6 +4802,8 @@ mod profile_join_tests {
 
         project_dimensioned_sketch_geometry(
             &mut entities,
+            &[],
+            &[],
             &[feature],
             &[parameter],
             std::slice::from_ref(&lane),
@@ -5232,6 +5325,45 @@ mod profile_join_tests {
         assert_eq!(
             dimensioned_circle_transform(&[identity, swap], &[((10, 20), 5), ((20, 10), 7)]),
             None
+        );
+    }
+
+    #[test]
+    fn cylinder_centers_resolve_dimensioned_circle_frame() {
+        let sketch = Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(20.0, 20.0, 0.0),
+            normal: Vector3::new(-1.0, 0.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, 1.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let circles = [((6, 14), 3), ((14, 14), 3), ((14, 7), 3), ((6, 7), 3)];
+        let surfaces = [(14.0, -6.0), (14.0, -14.0), (7.0, -14.0), (7.0, -6.0)]
+            .into_iter()
+            .enumerate()
+            .map(|(index, (y, z))| Surface {
+                id: SurfaceId(format!("cylinder-{index}")),
+                geometry: SurfaceGeometry::Cylinder {
+                    origin: Point3::new(19.5, y, z),
+                    axis: Vector3::new(1.0, 0.0, 0.0),
+                    ref_direction: Vector3::new(0.0, 1.0, 0.0),
+                    radius: 3.0,
+                },
+                source_object: None,
+            })
+            .collect::<Vec<_>>();
+        let candidates = dimensioned_circle_surface_transforms(&sketch, &surfaces, &circles, 1.0);
+        let transform = dimensioned_circle_transform(&candidates, &circles).unwrap();
+        let transformed = circles
+            .iter()
+            .map(|(center, _)| transform.apply(*center).unwrap())
+            .collect::<HashSet<_>>();
+        assert_eq!(
+            transformed,
+            HashSet::from([(-6, -6), (-14, -6), (-14, -13), (-6, -13)])
         );
     }
 }

@@ -312,6 +312,8 @@ fn build_geometry_ir(
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches);
     crate::resolved_features::project_dimensioned_sketch_geometry(
         &mut sketch_entities,
+        &sketches,
+        &brep.surfaces,
         &ir.model.features,
         &ir.model.parameters,
         &lanes,
@@ -865,6 +867,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &ir.model.sketches);
     crate::resolved_features::project_dimensioned_sketch_geometry(
         &mut ir.model.sketch_entities,
+        &ir.model.sketches,
+        &ir.model.surfaces,
         &ir.model.features,
         &ir.model.parameters,
         &lanes,

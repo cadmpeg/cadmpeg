@@ -135,6 +135,8 @@ A circular dimension with one point, constrained-point, or line-or-circle handle
 
 When a circular-dimension operand with tag `83fe` has no explicit line-or-circle marker, the feature's non-origin coordinate point markers form ordered center/radial-point pairs. The operand index addresses the pair ordinal. The pair is accepted only when its Euclidean radius equals the driving radius or half the driving diameter.
 
+When profile loci do not determine the feature-input coordinate transform, cylindrical surface carriers normal to the sketch plane provide circle-center anchors. The cylinder axis origin projects into sketch coordinates along the sketch `u` axis and `normal × u` axis. A cylinder is compatible with a circular dimension when its radius equals the driving radius or half the driving diameter. A signed-axis transform qualifies only when it maps every dimensioned center to a distinct compatible projected cylinder center. Multiple qualifying transforms are equivalent only when they produce the same complete multiset of centers and radii.
+
 A non-coordinate marker with type code `12` is a midpoint relation. It has exactly two linked markers: one point or constrained-point marker and one line, circle, or arc marker. Link order is not significant. Each linked marker must identify exactly one profile locus; the point locus is constrained to the midpoint of the entity owning the other locus.
 
 Non-coordinate marker codes `18`, `19`, and `20` constrain one resolved circular-arc entity to positive angles π/2, π, and 3π/2 radians respectively. The relation remains native unless all linked loci identify the same single profile entity.
