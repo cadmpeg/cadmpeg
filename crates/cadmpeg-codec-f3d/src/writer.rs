@@ -1825,13 +1825,14 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         return encode_wire_body_smbh(target);
     }
     validate_source_less_body_kinds(model)?;
+    validate_source_less_wire_vertices(model)?;
     if model.faces.len() > 1
         || model.loops.len() > 1
         || model.surfaces.len() > 1
         || model
             .shells
             .iter()
-            .any(|shell| !shell.wire_edges.is_empty())
+            .any(|shell| !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty())
         || model
             .bodies
             .iter()
@@ -2411,11 +2412,7 @@ impl NativeRecordPlan {
         let body_start = 1;
         let region_start = native_record_index(body_start, model.bodies.len())?;
         let shell_start = native_record_index(region_start, model.regions.len())?;
-        let wire_count = model
-            .shells
-            .iter()
-            .filter(|shell| !shell.wire_edges.is_empty())
-            .count();
+        let wire_count = model.shells.iter().map(source_less_wire_count).sum();
         let wire_start = native_record_index(shell_start, model.shells.len())?;
         let face_start = native_record_index(wire_start, wire_count)?;
         let loop_start = native_record_index(face_start, model.faces.len())?;
@@ -2473,18 +2470,6 @@ impl NativeRecordPlan {
     }
 }
 
-fn wire_record_for_shell(
-    model: &cadmpeg_ir::document::Model,
-    wire_start: i64,
-    shell_ordinal: usize,
-) -> Result<i64, CodecError> {
-    let wire_ordinal = model.shells[..shell_ordinal]
-        .iter()
-        .filter(|shell| !shell.wire_edges.is_empty())
-        .count();
-    native_record_index(wire_start, wire_ordinal)
-}
-
 fn source_less_wire_count(shell: &cadmpeg_ir::topology::Shell) -> usize {
     usize::from(!shell.wire_edges.is_empty()) + shell.free_vertices.len()
 }
@@ -2499,6 +2484,122 @@ fn source_less_wire_record_for_shell(
         .map(source_less_wire_count)
         .sum();
     native_record_index(wire_start, wire_ordinal)
+}
+
+fn validate_source_less_wire_vertices(
+    model: &cadmpeg_ir::document::Model,
+) -> Result<(), CodecError> {
+    let vertex_ids = model
+        .vertices
+        .iter()
+        .map(|vertex| vertex.id.clone())
+        .collect::<BTreeSet<_>>();
+    let edge_vertex_ids = model
+        .edges
+        .iter()
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    let mut free_vertex_ids = BTreeSet::new();
+    for vertex in model.shells.iter().flat_map(|shell| &shell.free_vertices) {
+        if !vertex_ids.contains(vertex) {
+            return Err(CodecError::Malformed(format!(
+                "wire references missing free vertex {vertex}"
+            )));
+        }
+        if edge_vertex_ids.contains(vertex) {
+            return Err(CodecError::Malformed(format!(
+                "wire vertex {vertex} is both free and an edge endpoint"
+            )));
+        }
+        if !free_vertex_ids.insert(vertex.clone()) {
+            return Err(CodecError::Malformed(format!(
+                "free vertex {vertex} belongs to more than one wire"
+            )));
+        }
+    }
+    if vertex_ids != edge_vertex_ids.union(&free_vertex_ids).cloned().collect() {
+        return Err(CodecError::Malformed(
+            "source-less F3D vertices must be edge endpoints or free wire vertices".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn encode_source_less_wires(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    wire_start: i64,
+    wire_coedge_start: i64,
+    shell_start: i64,
+    vertex_start: i64,
+) -> Result<BTreeMap<VertexId, i64>, CodecError> {
+    let model = &target.model;
+    let vertex_ordinals = model
+        .vertices
+        .iter()
+        .enumerate()
+        .map(|(ordinal, vertex)| (&vertex.id, ordinal))
+        .collect::<HashMap<_, _>>();
+    let mut free_vertex_owners = BTreeMap::new();
+    let mut edge_base = 0usize;
+    let mut wire_ordinal = 0usize;
+    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
+        let shell_wire_count = source_less_wire_count(shell);
+        if !shell.wire_edges.is_empty() {
+            native_ident(records, "wire")?;
+            native_ref(records, -1);
+            native_i64(records, -1);
+            native_ref(records, -1);
+            native_ref(
+                records,
+                if shell_wire_count > 1 {
+                    native_record_index(wire_start, wire_ordinal + 1)?
+                } else {
+                    -1
+                },
+            );
+            native_ref(records, native_record_index(wire_coedge_start, edge_base)?);
+            native_ref(records, native_record_index(shell_start, shell_ordinal)?);
+            native_ref(records, -1);
+            records.push(native_wire_side(
+                target,
+                &shell.id,
+                &shell.wire_edges,
+                None,
+            )?);
+            records.push(0x11);
+            wire_ordinal += 1;
+            edge_base += shell.wire_edges.len();
+        }
+        for (free_ordinal, vertex_id) in shell.free_vertices.iter().enumerate() {
+            let vertex_ordinal = vertex_ordinals
+                .get(vertex_id)
+                .copied()
+                .expect("free vertex existence was validated");
+            let owner = native_record_index(wire_start, wire_ordinal)?;
+            free_vertex_owners.insert(vertex_id.clone(), owner);
+            native_ident(records, "wire")?;
+            native_ref(records, -1);
+            native_i64(records, -1);
+            native_ref(records, -1);
+            native_ref(
+                records,
+                if free_ordinal + 1 < shell.free_vertices.len() {
+                    native_record_index(wire_start, wire_ordinal + 1)?
+                } else {
+                    -1
+                },
+            );
+            native_ref(records, -1);
+            native_ref(records, native_record_index(shell_start, shell_ordinal)?);
+            native_ref(records, native_record_index(vertex_start, vertex_ordinal)?);
+            records.push(native_wire_side(target, &shell.id, &[], Some(vertex_id))?);
+            records.push(0x11);
+            wire_ordinal += 1;
+        }
+    }
+    Ok(free_vertex_owners)
 }
 
 fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
@@ -2579,40 +2680,7 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             "source-less F3D wire ownership is inconsistent".into(),
         ));
     }
-    let vertex_ids = model
-        .vertices
-        .iter()
-        .map(|vertex| vertex.id.clone())
-        .collect::<BTreeSet<_>>();
-    let edge_vertex_ids = model
-        .edges
-        .iter()
-        .flat_map(|edge| [&edge.start, &edge.end])
-        .cloned()
-        .collect::<BTreeSet<_>>();
-    let mut free_vertex_ids = BTreeSet::new();
-    for vertex in model.shells.iter().flat_map(|shell| &shell.free_vertices) {
-        if !vertex_ids.contains(vertex) {
-            return Err(CodecError::Malformed(format!(
-                "wire references missing free vertex {vertex}"
-            )));
-        }
-        if edge_vertex_ids.contains(vertex) {
-            return Err(CodecError::Malformed(format!(
-                "wire vertex {vertex} is both free and an edge endpoint"
-            )));
-        }
-        if !free_vertex_ids.insert(vertex.clone()) {
-            return Err(CodecError::Malformed(format!(
-                "free vertex {vertex} belongs to more than one wire"
-            )));
-        }
-    }
-    if vertex_ids != edge_vertex_ids.union(&free_vertex_ids).cloned().collect() {
-        return Err(CodecError::Malformed(
-            "source-less F3D wire vertices must be edge endpoints or free wire vertices".into(),
-        ));
-    }
+    validate_source_less_wire_vertices(model)?;
     let body_start = 1i64;
     let region_start = native_record_index(body_start, model.bodies.len())?;
     let shell_start = native_record_index(region_start, model.regions.len())?;
@@ -2763,83 +2831,15 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         }
         records.push(0x11);
     }
-    let vertex_ordinals = model
-        .vertices
-        .iter()
-        .enumerate()
-        .map(|(ordinal, vertex)| (&vertex.id, ordinal))
-        .collect::<HashMap<_, _>>();
-    let mut free_vertex_owners = BTreeMap::new();
+    let free_vertex_owners = encode_source_less_wires(
+        &mut records,
+        target,
+        wire_start,
+        wire_coedge_start,
+        shell_start,
+        vertex_start,
+    )?;
     let mut edge_base = 0usize;
-    let mut wire_ordinal = 0usize;
-    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
-        let shell_wire_count = source_less_wire_count(shell);
-        if !shell.wire_edges.is_empty() {
-            native_ident(&mut records, "wire")?;
-            native_ref(&mut records, -1);
-            native_i64(&mut records, -1);
-            native_ref(&mut records, -1);
-            native_ref(
-                &mut records,
-                if shell_wire_count > 1 {
-                    native_record_index(wire_start, wire_ordinal + 1)?
-                } else {
-                    -1
-                },
-            );
-            native_ref(
-                &mut records,
-                native_record_index(wire_coedge_start, edge_base)?,
-            );
-            native_ref(
-                &mut records,
-                native_record_index(shell_start, shell_ordinal)?,
-            );
-            native_ref(&mut records, -1);
-            records.push(native_wire_side(
-                target,
-                &shell.id,
-                &shell.wire_edges,
-                None,
-            )?);
-            records.push(0x11);
-            wire_ordinal += 1;
-            edge_base += shell.wire_edges.len();
-        }
-        for (free_ordinal, vertex_id) in shell.free_vertices.iter().enumerate() {
-            let vertex_ordinal = vertex_ordinals
-                .get(vertex_id)
-                .copied()
-                .expect("free vertex existence was validated");
-            let owner = native_record_index(wire_start, wire_ordinal)?;
-            free_vertex_owners.insert(vertex_id.clone(), owner);
-            native_ident(&mut records, "wire")?;
-            native_ref(&mut records, -1);
-            native_i64(&mut records, -1);
-            native_ref(&mut records, -1);
-            native_ref(
-                &mut records,
-                if free_ordinal + 1 < shell.free_vertices.len() {
-                    native_record_index(wire_start, wire_ordinal + 1)?
-                } else {
-                    -1
-                },
-            );
-            native_ref(&mut records, -1);
-            native_ref(
-                &mut records,
-                native_record_index(shell_start, shell_ordinal)?,
-            );
-            native_ref(
-                &mut records,
-                native_record_index(vertex_start, vertex_ordinal)?,
-            );
-            records.push(native_wire_side(target, &shell.id, &[], Some(vertex_id))?);
-            records.push(0x11);
-            wire_ordinal += 1;
-        }
-    }
-    edge_base = 0;
     for (shell_ordinal, shell) in model.shells.iter().enumerate() {
         for ordinal in 0..shell.wire_edges.len() {
             let edge_ordinal = edge_base + ordinal;
@@ -3073,9 +3073,11 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 shell_ordinals
                     .get(shell_id)
                     .copied()
-                    .filter(|ordinal| !model.shells[*ordinal].wire_edges.is_empty())
+                    .filter(|ordinal| source_less_wire_count(&model.shells[*ordinal]) != 0)
             })
-            .map(|shell_ordinal| wire_record_for_shell(model, wire_start, shell_ordinal))
+            .map(|shell_ordinal| {
+                source_less_wire_record_for_shell(model, wire_start, shell_ordinal)
+            })
             .transpose()?
             .unwrap_or(-1);
         native_ident(&mut records, "body")?;
@@ -3204,10 +3206,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         native_ref(&mut records, first_face);
         native_ref(
             &mut records,
-            if shell.wire_edges.is_empty() {
+            if source_less_wire_count(shell) == 0 {
                 -1
             } else {
-                wire_record_for_shell(
+                source_less_wire_record_for_shell(
                     model,
                     wire_start,
                     model
@@ -3225,34 +3227,14 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         records.push(0x11);
     }
 
-    let mut wire_edge_base = 0usize;
-    for (shell_ordinal, shell) in model.shells.iter().enumerate() {
-        if shell.wire_edges.is_empty() {
-            continue;
-        }
-        native_ident(&mut records, "wire")?;
-        native_ref(&mut records, -1);
-        native_i64(&mut records, -1);
-        native_ref(&mut records, -1);
-        native_ref(&mut records, -1);
-        native_ref(
-            &mut records,
-            native_record_index(wire_coedge_start, wire_edge_base)?,
-        );
-        native_ref(
-            &mut records,
-            native_record_index(shell_start, shell_ordinal)?,
-        );
-        native_ref(&mut records, -1);
-        records.push(native_wire_side(
-            target,
-            &shell.id,
-            &shell.wire_edges,
-            None,
-        )?);
-        records.push(0x11);
-        wire_edge_base += shell.wire_edges.len();
-    }
+    let free_vertex_owners = encode_source_less_wires(
+        &mut records,
+        target,
+        wire_start,
+        wire_coedge_start,
+        shell_start,
+        vertex_start,
+    )?;
 
     for (face_ordinal_global, face) in model.faces.iter().enumerate() {
         let shell_ordinal = model
@@ -3691,7 +3673,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         if shell.wire_edges.is_empty() {
             continue;
         }
-        let wire_ref = wire_record_for_shell(model, wire_start, shell_ordinal)?;
+        let wire_ref = source_less_wire_record_for_shell(model, wire_start, shell_ordinal)?;
         for (ordinal, edge_id) in shell.wire_edges.iter().enumerate() {
             let edge_ordinal = edge_ordinals.get(edge_id).copied().ok_or_else(|| {
                 CodecError::Malformed(format!("wire references missing edge {edge_id}"))
@@ -3736,7 +3718,7 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
         point_start,
         attribute_start,
         Some(&wire_edge_owners),
-        None,
+        Some(&free_vertex_owners),
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
@@ -3765,11 +3747,11 @@ fn validate_source_less_body_kinds(model: &cadmpeg_ir::document::Model) -> Resul
             .filter(|shell| shell_ids.contains(&shell.id))
             .flat_map(|shell| &shell.faces)
             .collect::<BTreeSet<_>>();
-        let has_wire_edges = model
+        let has_wires = model
             .shells
             .iter()
             .filter(|shell| shell_ids.contains(&shell.id))
-            .any(|shell| !shell.wire_edges.is_empty());
+            .any(|shell| !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty());
         let loop_ids = model
             .faces
             .iter()
@@ -3792,7 +3774,7 @@ fn validate_source_less_body_kinds(model: &cadmpeg_ir::document::Model) -> Resul
         }
         let derived = if face_ids.is_empty() {
             cadmpeg_ir::topology::BodyKind::Wire
-        } else if has_wire_edges {
+        } else if has_wires {
             cadmpeg_ir::topology::BodyKind::General
         } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
             cadmpeg_ir::topology::BodyKind::Solid

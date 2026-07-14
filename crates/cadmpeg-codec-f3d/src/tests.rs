@@ -9970,6 +9970,64 @@ fn generated_source_less_writes_general_face_wire_body() {
 }
 
 #[test]
+fn generated_source_less_writes_general_face_and_point_wire_body() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_mixed_face_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated mixed body decode");
+    let free = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_free_vertex_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated free-vertex body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let renamed = free
+        .ir
+        .to_canonical_json()
+        .expect("canonical free-vertex JSON")
+        .replace("f3d:brep:", "generated:general_point_wire:");
+    let mut free =
+        cadmpeg_ir::document::CadIr::from_json(&renamed).expect("renamed free-vertex IR");
+    source_less.model.shells[0]
+        .free_vertices
+        .push(free.model.vertices[0].id.clone());
+    source_less.model.vertices.append(&mut free.model.vertices);
+    source_less.model.points.append(&mut free.model.points);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less face-and-point-wire body encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less face-and-point-wire body round trip");
+    assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(
+        round_trip.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::General
+    );
+    assert_eq!(round_trip.ir.model.faces.len(), 1);
+    assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 1);
+    assert_eq!(round_trip.ir.model.shells[0].free_vertices.len(), 1);
+    assert_eq!(f3d_native(&round_trip.ir).wire_topologies.len(), 2);
+    assert!(f3d_native(&round_trip.ir)
+        .wire_topologies
+        .iter()
+        .any(|wire| wire.edges.is_empty() && wire.free_vertex.is_some()));
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "face-and-point-wire findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
 fn generated_source_less_writes_solid_and_wire_bodies_together() {
     let mut source_less = cadmpeg_ir::examples::unit_cube();
     let decoded_wire = F3dCodec

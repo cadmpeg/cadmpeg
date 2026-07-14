@@ -4608,14 +4608,14 @@ fn classify_body_kinds(out: &mut Brep) {
         }
     }
     let mut body_has_faces = HashSet::new();
-    let mut body_has_wire_edges = HashSet::new();
+    let mut body_has_wires = HashSet::new();
     let mut face_bodies = HashMap::new();
     for shell in &out.shells {
         let Some(body) = shell_bodies.get(&shell.id) else {
             continue;
         };
-        if !shell.wire_edges.is_empty() {
-            body_has_wire_edges.insert(body.clone());
+        if !shell.wire_edges.is_empty() || !shell.free_vertices.is_empty() {
+            body_has_wires.insert(body.clone());
         }
         if !shell.faces.is_empty() {
             body_has_faces.insert(body.clone());
@@ -4657,7 +4657,7 @@ fn classify_body_kinds(out: &mut Brep) {
             body.kind = cadmpeg_ir::topology::BodyKind::Wire;
             continue;
         }
-        if body_has_wire_edges.contains(&body.id) {
+        if body_has_wires.contains(&body.id) {
             body.kind = cadmpeg_ir::topology::BodyKind::General;
             continue;
         }
