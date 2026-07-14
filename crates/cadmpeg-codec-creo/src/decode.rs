@@ -19,11 +19,14 @@ use cadmpeg_ir::features::{
     FeatureId as IrFeatureId, Length, ParameterId, ParameterValue, ProfileRef, RevolutionAxis,
     RevolutionConstruction,
 };
-use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
+    Surface, SurfaceGeometry,
+};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
-    UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, ProceduralSurfaceId, RegionId,
+    ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -1376,6 +1379,92 @@ fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<Nur
     })
 }
 
+fn revolved_nurbs_surface(directrix: &NurbsCurve, axis: RevolutionAxis) -> Option<NurbsSurface> {
+    let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
+    let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
+    let angular_poles = [
+        [1.0, 0.0],
+        [1.0, 1.0],
+        [0.0, 1.0],
+        [-1.0, 1.0],
+        [-1.0, 0.0],
+        [-1.0, -1.0],
+        [0.0, -1.0],
+        [1.0, -1.0],
+        [1.0, 0.0],
+    ];
+    let diagonal_weight = std::f64::consts::FRAC_1_SQRT_2;
+    let angular_weights = [
+        1.0,
+        diagonal_weight,
+        1.0,
+        diagonal_weight,
+        1.0,
+        diagonal_weight,
+        1.0,
+        diagonal_weight,
+        1.0,
+    ];
+    let mut control_points = Vec::with_capacity(directrix.control_points.len() * 9);
+    let mut weights = Vec::with_capacity(directrix.control_points.len() * 9);
+    for (index, point) in directrix.control_points.iter().enumerate() {
+        let relative = [
+            point.x - axis_origin[0],
+            point.y - axis_origin[1],
+            point.z - axis_origin[2],
+        ];
+        let axial_distance = dot(relative, axis_direction);
+        let center: [f64; 3] = std::array::from_fn(|component| {
+            axis_origin[component] + axial_distance * axis_direction[component]
+        });
+        let radial = [
+            point.x - center[0],
+            point.y - center[1],
+            point.z - center[2],
+        ];
+        let tangent = cross(axis_direction, radial);
+        let directrix_weight = directrix
+            .weights
+            .as_ref()
+            .map_or(1.0, |curve_weights| curve_weights[index]);
+        for ([radial_scale, tangent_scale], angular_weight) in
+            angular_poles.into_iter().zip(angular_weights)
+        {
+            control_points.push(Point3::new(
+                center[0] + radial_scale * radial[0] + tangent_scale * tangent[0],
+                center[1] + radial_scale * radial[1] + tangent_scale * tangent[1],
+                center[2] + radial_scale * radial[2] + tangent_scale * tangent[2],
+            ));
+            weights.push(directrix_weight * angular_weight);
+        }
+    }
+    Some(NurbsSurface {
+        u_degree: directrix.degree,
+        v_degree: 2,
+        u_knots: directrix.knots.clone(),
+        v_knots: vec![
+            0.0,
+            0.0,
+            0.0,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::FRAC_PI_2,
+            std::f64::consts::PI,
+            std::f64::consts::PI,
+            3.0 * std::f64::consts::FRAC_PI_2,
+            3.0 * std::f64::consts::FRAC_PI_2,
+            std::f64::consts::TAU,
+            std::f64::consts::TAU,
+            std::f64::consts::TAU,
+        ],
+        u_count: u32::try_from(directrix.control_points.len()).ok()?,
+        v_count: 9,
+        control_points,
+        weights: Some(weights),
+        u_periodic: false,
+        v_periodic: false,
+    })
+}
+
 fn transfer_feature_extrusion_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -2490,6 +2579,115 @@ fn transfer_resolved_sketches(
             native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
         });
     }
+}
+
+fn transfer_resolved_revolution_surfaces(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for transform in &scan.feature_section_transforms {
+        let Some(feature_id) = transform.feature_id else {
+            continue;
+        };
+        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve) {
+            continue;
+        }
+        let Some(definition) = scan
+            .feature_definitions
+            .iter()
+            .find(|definition| definition.id == transform.definition_id)
+        else {
+            continue;
+        };
+        let Some(axis) = resolved_revolution_axis(definition, transform) else {
+            continue;
+        };
+        for spline in definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(|entity| match entity {
+                crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+                _ => None,
+            })
+        {
+            let suffix = spline.entity_id.map_or_else(
+                || format!("offset{}", spline.offset),
+                |entity_id| entity_id.to_string(),
+            );
+            let curve_id = CurveId(format!(
+                "creo:featdefs:saved_spline_curve#{}:{suffix}",
+                definition.id
+            ));
+            let Some(CurveGeometry::Nurbs(directrix)) = ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == curve_id)
+                .map(|curve| &curve.geometry)
+            else {
+                continue;
+            };
+            let Some(surface) = revolved_nurbs_surface(directrix, axis) else {
+                continue;
+            };
+            let surface_id = SurfaceId(format!(
+                "creo:feature:revolution_surface#{feature_id}:{suffix}"
+            ));
+            let procedural_id = ProceduralSurfaceId(format!(
+                "creo:feature:revolution_construction#{feature_id}:{suffix}"
+            ));
+            annotate(
+                annotations,
+                &surface_id,
+                "FeatDefs",
+                spline.offset as u64,
+                "evaluated_revolution_surface",
+                Exactness::Derived,
+            );
+            annotate(
+                annotations,
+                &procedural_id,
+                "FeatDefs",
+                spline.offset as u64,
+                "revolution_surface_construction",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Nurbs(surface),
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("FeatDefs:revolution#{feature_id}:{suffix}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: procedural_id,
+                surface: surface_id,
+                definition: ProceduralSurfaceDefinition::Revolution {
+                    directrix: curve_id,
+                    axis_origin: axis.origin,
+                    axis_direction: axis.direction,
+                    angular_interval: [0.0, std::f64::consts::TAU],
+                    parameter_interval: [
+                        *directrix.knots.first().expect("validated spline knots"),
+                        *directrix.knots.last().expect("validated spline knots"),
+                    ],
+                    transposed: false,
+                },
+                cache_fit_tolerance: None,
+            });
+            transferred += 1;
+        }
+    }
+    transferred
 }
 
 fn transfer_feature_dimensions(
@@ -4058,6 +4256,35 @@ mod resolved_sketch_tests {
             assert!(derivative[1].abs() < 1e-12 && derivative[2].abs() < 1e-12);
         }
     }
+
+    #[test]
+    fn full_revolution_uses_exact_quadratic_circle_poles() {
+        let directrix = NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(2.0, 0.0, 0.0), Point3::new(2.0, 0.0, 1.0)],
+            weights: None,
+            periodic: false,
+        };
+        let surface = revolved_nurbs_surface(
+            &directrix,
+            RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            },
+        )
+        .expect("revolution surface");
+
+        assert_eq!((surface.u_count, surface.v_count), (2, 9));
+        assert_eq!(surface.control_points[0], Point3::new(2.0, 0.0, 0.0));
+        assert_eq!(surface.control_points[1], Point3::new(2.0, 2.0, 0.0));
+        assert_eq!(surface.control_points[2], Point3::new(0.0, 2.0, 0.0));
+        assert_eq!(surface.control_points[8], surface.control_points[0]);
+        assert_eq!(
+            surface.weights.as_ref().expect("rational weights")[1],
+            std::f64::consts::FRAC_1_SQRT_2
+        );
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -4960,11 +5187,17 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_plane_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
+    let feature_revolution_surface_count =
+        transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
     let feature_extrusion_surface_count =
         transfer_feature_extrusion_surfaces(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "transferred_feature_revolution_surface_count".to_string(),
+            feature_revolution_surface_count.to_string(),
+        );
         source.attributes.insert(
             "transferred_feature_extrusion_surface_count".to_string(),
             feature_extrusion_surface_count.to_string(),

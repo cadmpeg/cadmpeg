@@ -410,6 +410,11 @@ For a linear section sweep, generated plane carriers parallel to the section nor
 For a rotational section sweep, the unique nondegenerate section line whose
 two solved endpoints have `u = 0` is the revolution axis. Applying the section
 frame to its endpoints establishes the model-space axis origin and direction.
+A full rotation of a NURBS directrix is an exact tensor-product NURBS surface.
+Its angular direction has degree two, nine poles at successive 45-degree
+positions, weights alternating `1` and `sqrt(2)/2`, four quarter-turn spans,
+and doubled internal quarter-turn knots. Its directrix direction retains the
+directrix degree, knots, poles, and weights.
 
 Evaluating a closed linear section sweep produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses.
 
