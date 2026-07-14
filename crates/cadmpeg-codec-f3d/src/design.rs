@@ -1927,26 +1927,15 @@ fn exact_counted_dimension_relation(
     let [first, second] = entities else {
         return None;
     };
-    let point_on_line = |point: &cadmpeg_ir::sketches::SketchEntity,
-                         line: &cadmpeg_ir::sketches::SketchEntity| {
-        let SketchGeometry::Point { position } = point.geometry else {
-            return false;
+    let point_on_geometry =
+        |point: &cadmpeg_ir::sketches::SketchEntity,
+         geometry: &cadmpeg_ir::sketches::SketchEntity| {
+            let SketchGeometry::Point { position } = point.geometry else {
+                return false;
+            };
+            point_lies_on_sketch_geometry(position, &geometry.geometry)
         };
-        let SketchGeometry::Line { start, end } = line.geometry else {
-            return false;
-        };
-        let direction = Point2::new(end.u - start.u, end.v - start.v);
-        let length_squared = direction.u.mul_add(direction.u, direction.v * direction.v);
-        if length_squared <= 1.0e-18 {
-            return false;
-        }
-        let relative = Point2::new(position.u - start.u, position.v - start.v);
-        let parameter = relative.u.mul_add(direction.u, relative.v * direction.v) / length_squared;
-        let cross = relative.u.mul_add(direction.v, -relative.v * direction.u);
-        (-1.0e-9..=1.0 + 1.0e-9).contains(&parameter)
-            && cross.abs() <= 1.0e-9 * (1.0 + length_squared.sqrt())
-    };
-    if point_on_line(first, second) || point_on_line(second, first) {
+    if point_on_geometry(first, second) || point_on_geometry(second, first) {
         return Some(Definition::Coincident {
             entities: vec![first.id.clone(), second.id.clone()],
         });
@@ -2003,6 +1992,109 @@ fn exact_counted_dimension_relation(
         first: first.id.clone(),
         second: second.id.clone(),
     })
+}
+
+fn point_lies_on_sketch_geometry(
+    point: Point2,
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= 1.0e-9 * (1.0 + left.abs().max(right.abs()))
+    };
+    let angle_in_span = |angle: f64, start: f64, end: f64| {
+        if !angle.is_finite() || !start.is_finite() || !end.is_finite() || end < start {
+            return false;
+        }
+        let tau = std::f64::consts::TAU;
+        if end - start >= tau - 1.0e-9 {
+            return true;
+        }
+        let turns = ((start - angle) / tau).ceil().max(0.0);
+        let lifted = angle + turns * tau;
+        lifted >= start - 1.0e-9 && lifted <= end + 1.0e-9
+    };
+    match geometry {
+        SketchGeometry::Point { position } => sketch_points_close(point, *position),
+        SketchGeometry::Line { start, end } => {
+            let direction = Point2::new(end.u - start.u, end.v - start.v);
+            let length_squared = direction.u.mul_add(direction.u, direction.v * direction.v);
+            if length_squared <= 1.0e-18 {
+                return false;
+            }
+            let relative = Point2::new(point.u - start.u, point.v - start.v);
+            let parameter =
+                relative.u.mul_add(direction.u, relative.v * direction.v) / length_squared;
+            let cross = relative.u.mul_add(direction.v, -relative.v * direction.u);
+            (-1.0e-9..=1.0 + 1.0e-9).contains(&parameter)
+                && cross.abs() <= 1.0e-9 * (1.0 + length_squared.sqrt())
+        }
+        SketchGeometry::Circle { center, radius } => {
+            close((point.u - center.u).hypot(point.v - center.v), radius.0)
+        }
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let relative = Point2::new(point.u - center.u, point.v - center.v);
+            close(relative.u.hypot(relative.v), radius.0)
+                && angle_in_span(relative.v.atan2(relative.u), start_angle.0, end_angle.0)
+        }
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_angle,
+            end_angle,
+        } => {
+            if major_radius.0 <= 0.0 || minor_radius.0 <= 0.0 {
+                return false;
+            }
+            let relative = Point2::new(point.u - center.u, point.v - center.v);
+            let (sin, cos) = major_angle.0.sin_cos();
+            let x = relative.u.mul_add(cos, relative.v * sin) / major_radius.0;
+            let y = (-relative.u).mul_add(sin, relative.v * cos) / minor_radius.0;
+            close(x.mul_add(x, y * y), 1.0)
+                && match (start_angle, end_angle) {
+                    (Some(start), Some(end)) => angle_in_span(y.atan2(x), start.0, end.0),
+                    (None, None) => true,
+                    _ => false,
+                }
+        }
+        SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            periodic: false,
+            ..
+        } => {
+            let multiplicity = usize::try_from(*degree)
+                .ok()
+                .and_then(|degree| degree.checked_add(1));
+            let Some(multiplicity) = multiplicity else {
+                return false;
+            };
+            let Some((&first_knot, &last_knot)) = knots.first().zip(knots.last()) else {
+                return false;
+            };
+            knots.len() >= multiplicity * 2
+                && knots[..multiplicity].iter().all(|knot| *knot == first_knot)
+                && knots[knots.len() - multiplicity..]
+                    .iter()
+                    .all(|knot| *knot == last_knot)
+                && control_points
+                    .first()
+                    .zip(control_points.last())
+                    .is_some_and(|(first, last)| {
+                        sketch_points_close(point, *first) || sketch_points_close(point, *last)
+                    })
+        }
+        SketchGeometry::Nurbs { periodic: true, .. } | SketchGeometry::Native { .. } => false,
+    }
 }
 
 fn exact_counted_offset(
@@ -8048,6 +8140,33 @@ mod relation_tests {
                 position: Point2::new(4.0, 0.0),
             },
         );
+        let duplicate_point = entity(
+            "generated:point#duplicate",
+            SketchGeometry::Point {
+                position: Point2::new(4.0, 0.0),
+            },
+        );
+        let arc = entity(
+            "generated:arc#bounded",
+            SketchGeometry::Arc {
+                center: Point2::new(3.0, 0.0),
+                radius: cadmpeg_ir::features::Length(1.0),
+                start_angle: cadmpeg_ir::features::Angle(0.0),
+                end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            },
+        );
+        let arc_start = entity(
+            "generated:point#arc-start",
+            SketchGeometry::Point {
+                position: Point2::new(4.0, 0.0),
+            },
+        );
+        let outside_arc = entity(
+            "generated:point#outside-arc",
+            SketchGeometry::Point {
+                position: Point2::new(2.0, 0.0),
+            },
+        );
 
         assert!(matches!(
             exact_counted_dimension_relation(&[&horizontal, &vertical]),
@@ -8061,6 +8180,15 @@ mod relation_tests {
             exact_counted_dimension_relation(&[&horizontal, &point]),
             Some(SketchConstraintDefinition::Coincident { .. })
         ));
+        assert!(matches!(
+            exact_counted_dimension_relation(&[&point, &duplicate_point]),
+            Some(SketchConstraintDefinition::Coincident { .. })
+        ));
+        assert!(matches!(
+            exact_counted_dimension_relation(&[&arc_start, &arc]),
+            Some(SketchConstraintDefinition::Coincident { .. })
+        ));
+        assert!(exact_counted_dimension_relation(&[&outside_arc, &arc]).is_none());
     }
 
     #[test]
