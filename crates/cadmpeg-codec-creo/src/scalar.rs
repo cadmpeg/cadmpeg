@@ -222,10 +222,13 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     if matches!(head, 0x28 | 0x41) {
         return ieee8(data, offset, 0x3f);
     }
+    if head == 0x45 {
+        return ieee7(data, offset, 0xbf);
+    }
     if matches!(head, 0x2c | 0x4c..=0x4d | 0x50 | 0x54) {
         return ieee7(data, offset, 0x3f);
     }
-    if matches!(head, 0x5e..=0xa3) {
+    if matches!(head, 0x5c | 0x5e..=0xa3) {
         return ieee7_dict(data, offset, 0x3f75 + u16::from(head));
     }
     if matches!(head, 0xa4..=0xa6) {
@@ -391,6 +394,8 @@ mod tests {
         let first_negative_low = [0xb2, 0x05, 0xe8, 0xa6, 0, 0, 0];
         let second = [0x7f, 0x24, 0x57, 0x89, 0x13, 0x66, 0x08];
         let second_positive_low = [0x69, 0x91, 0x22, 0x33, 0x44, 0x55, 0x66];
+        let second_positive_lower_dict = [0x5c, 0x47, 0x59, 0x45, 0x2d, 0x97, 0x90];
+        let second_negative_fixed = [0x45, 0xa7, 0x21, 0x45, 0x78, 0x5e, 0x04];
         let second_negative = [0xc7, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
         let second_negative_large = [0xdd, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77];
         assert_eq!(
@@ -478,6 +483,20 @@ mod tests {
             decode_tabulated_cylinder_second_coordinate(&second_positive_low, 0, &cache),
             Some((
                 f64::from_be_bytes([0x3f, 0xde, 0x91, 0x22, 0x33, 0x44, 0x55, 0x66]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&second_positive_lower_dict, 0, &cache),
+            Some((
+                f64::from_be_bytes([0x3f, 0xd1, 0x47, 0x59, 0x45, 0x2d, 0x97, 0x90]),
+                7
+            ))
+        );
+        assert_eq!(
+            decode_tabulated_cylinder_second_coordinate(&second_negative_fixed, 0, &cache),
+            Some((
+                f64::from_be_bytes([0xbf, 0xa7, 0x21, 0x45, 0x78, 0x5e, 0x04, 0]),
                 7
             ))
         );
