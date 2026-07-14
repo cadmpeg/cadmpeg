@@ -2419,47 +2419,49 @@ fn section_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
-    let (Some(owner), Some(segments), Some(dimensions), Some(relations)) = (
-        definition.owner_feature_id,
-        &definition.segments,
-        &definition.dimensions,
-        &definition.relations,
-    ) else {
+    let (Some(segments), Some(relations)) = (&definition.segments, &definition.relations) else {
         return Vec::new();
     };
     relations
         .rows
         .iter()
-        .filter_map(|relation| {
-            let vectors = relation.operand_vectors?;
-            let dimension = dimensions
-                .rows
-                .get(usize::try_from(relation.dimension_id).ok()?)?;
-            dimension.value?;
-            let parameter = ParameterId(format!(
-                "creo:featdefs:parameter#{owner}:{}",
-                dimension.external_id
-            ));
-            let constraint_definition = if relation.relation_type == 14
-                && relation.sign == 1
-                && vectors[1] == [Some(0); 4]
-                && vectors[2] == [Some(15), Some(0), Some(0), Some(0)]
-            {
-                let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
-                    return None;
-                };
-                let segment = segments.rows.iter().find(|segment| {
-                    segment.kind == crate::feature::FeatureSegmentKind::Arc
-                        && segment.radius_ref == Some(radius_id)
-                })?;
-                SketchConstraintDefinition::Radius {
-                    entity: SketchEntityId(format!(
-                        "creo:featdefs:sketch_entity#{}:{}",
-                        definition.id, segment.external_id
-                    )),
-                    parameter,
+        .map(|relation| {
+            let parameter = definition
+                .owner_feature_id
+                .zip(definition.dimensions.as_ref())
+                .and_then(|(owner, dimensions)| {
+                    let dimension = dimensions
+                        .rows
+                        .get(usize::try_from(relation.dimension_id).ok()?)?;
+                    dimension.value?;
+                    Some(ParameterId(format!(
+                        "creo:featdefs:parameter#{owner}:{}",
+                        dimension.external_id
+                    )))
+                });
+            let typed = (|| {
+                let vectors = relation.operand_vectors?;
+                let parameter = parameter.clone()?;
+                if relation.relation_type == 14
+                    && relation.sign == 1
+                    && vectors[1] == [Some(0); 4]
+                    && vectors[2] == [Some(15), Some(0), Some(0), Some(0)]
+                {
+                    let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
+                        return None;
+                    };
+                    let segment = segments.rows.iter().find(|segment| {
+                        segment.kind == crate::feature::FeatureSegmentKind::Arc
+                            && segment.radius_ref == Some(radius_id)
+                    })?;
+                    return Some(SketchConstraintDefinition::Radius {
+                        entity: SketchEntityId(format!(
+                            "creo:featdefs:sketch_entity#{}:{}",
+                            definition.id, segment.external_id
+                        )),
+                        parameter,
+                    });
                 }
-            } else {
                 if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
                     return None;
                 }
@@ -2479,20 +2481,60 @@ fn section_dimension_constraints(
                 let first = section_point_locus(definition.id, &segments.rows, first_id)?;
                 let second = section_point_locus(definition.id, &segments.rows, second_id)?;
                 match measured.vertical_horizontal {
-                    Some(0) => SketchConstraintDefinition::VerticalDistance {
+                    Some(0) => Some(SketchConstraintDefinition::VerticalDistance {
                         first,
                         second,
                         parameter,
-                    },
-                    Some(1) => SketchConstraintDefinition::HorizontalDistance {
+                    }),
+                    Some(1) => Some(SketchConstraintDefinition::HorizontalDistance {
                         first,
                         second,
                         parameter,
-                    },
-                    _ => return None,
+                    }),
+                    _ => None,
                 }
-            };
-            Some((
+            })();
+            let constraint_definition = typed.unwrap_or_else(|| {
+                let operands = relation.operand_vectors.map_or_else(
+                    || {
+                        relation
+                            .operands
+                            .iter()
+                            .copied()
+                            .map(|value| SketchNativeOperand {
+                                native_kind: "operand".to_string(),
+                                object_index: u32::from(value),
+                                native_ref: None,
+                            })
+                            .collect()
+                    },
+                    |vectors| {
+                        vectors
+                            .into_iter()
+                            .enumerate()
+                            .flat_map(|(vector, slots)| {
+                                slots
+                                    .into_iter()
+                                    .enumerate()
+                                    .filter_map(move |(slot, value)| {
+                                        value.map(|value| SketchNativeOperand {
+                                            native_kind: format!("vector_{vector}_slot_{slot}"),
+                                            object_index: value,
+                                            native_ref: None,
+                                        })
+                                    })
+                            })
+                            .collect()
+                    },
+                );
+                SketchConstraintDefinition::Native {
+                    native_kind: format!("creo:relation:{}", relation.relation_type),
+                    entities: Vec::new(),
+                    parameter,
+                    operands,
+                }
+            });
+            (
                 SketchConstraint {
                     id: SketchConstraintId(format!(
                         "creo:featdefs:sketch_constraint#{}:relation:{}",
@@ -2503,7 +2545,7 @@ fn section_dimension_constraints(
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                 },
                 relation.offset,
-            ))
+            )
         })
         .collect()
 }
@@ -4740,9 +4782,19 @@ mod resolved_sketch_tests {
             offset: 40,
         };
         let relations = crate::feature::FeatureRelationTable {
-            declared_count: 0,
+            declared_count: 1,
             entity_ref: None,
-            rows: Vec::new(),
+            rows: vec![crate::feature::FeatureRelation {
+                relation_id: 8,
+                used: 1,
+                operands: vec![12, 4],
+                operand_vectors: None,
+                sign: 1,
+                dimension_id: 0,
+                relation_type: 99,
+                body: Vec::new(),
+                offset: 80,
+            }],
             skamps: vec![
                 crate::feature::FeatureSkamp {
                     id: 3,
@@ -4783,7 +4835,7 @@ mod resolved_sketch_tests {
         };
         let definition = crate::feature::FeatureDefinition {
             id: 917,
-            owner_feature_id: None,
+            owner_feature_id: Some(40),
             body: Vec::new(),
             parameter_frames: Vec::new(),
             outlines: Vec::new(),
@@ -4798,7 +4850,20 @@ mod resolved_sketch_tests {
             trim_vertices: None,
             order_table: None,
             section_3d: None,
-            dimensions: None,
+            dimensions: Some(crate::feature::FeatureDimensionTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureDimension {
+                    dimension_type: 2,
+                    value: Some(3.0),
+                    value_unit: crate::feature::DimensionUnit::Millimeters,
+                    direction_byte: 0,
+                    auxiliary_value: None,
+                    external_id: 42,
+                    offset: 75,
+                }],
+                offset: 74,
+            }),
             relations: Some(relations),
             saved_section: None,
             offset: 0,
@@ -4826,6 +4891,27 @@ mod resolved_sketch_tests {
                     object_index: 4,
                     native_ref: None,
                 }],
+            }
+        );
+        let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));
+        assert_eq!(
+            relations[0].0.definition,
+            SketchConstraintDefinition::Native {
+                native_kind: "creo:relation:99".to_string(),
+                entities: Vec::new(),
+                parameter: Some(ParameterId("creo:featdefs:parameter#40:42".to_string())),
+                operands: vec![
+                    SketchNativeOperand {
+                        native_kind: "operand".to_string(),
+                        object_index: 12,
+                        native_ref: None,
+                    },
+                    SketchNativeOperand {
+                        native_kind: "operand".to_string(),
+                        object_index: 4,
+                        native_ref: None,
+                    },
+                ],
             }
         );
     }
