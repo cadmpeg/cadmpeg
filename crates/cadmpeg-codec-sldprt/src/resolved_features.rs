@@ -256,16 +256,16 @@ mod marker_tests {
         compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_single_face_reference_path_at,
-        compact_surface_selection_at, component_profile_source_at, coordinate_marker_local_links,
-        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
-        marker_object_index, named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
-        SCALAR_HEADER,
+        compact_surface_selection_at, component_path_features, component_profile_source_at,
+        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, marker_object_index, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
+        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
-        FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity, SketchInputKind,
-        SketchInputLink, SketchRelationKind,
+        Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
+        SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
     use std::collections::HashSet;
@@ -1219,6 +1219,59 @@ mod marker_tests {
                 .map(|component| component.local_id)
                 .collect::<Vec<_>>(),
             vec![2]
+        );
+    }
+
+    #[test]
+    fn component_path_type_identities_name_ordered_features() {
+        let feature = |id: &str, source_id: &str| Feature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source_id.into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: String::new(),
+            kind: String::new(),
+            input_class: None,
+            suppressed: false,
+            parameters: Default::default(),
+            dimension_properties: Default::default(),
+            properties: Default::default(),
+            text: None,
+            content: Vec::new(),
+        };
+        let mut signature = [0u8; 12];
+        signature[4..8].copy_from_slice(&42u32.to_le_bytes());
+        let components = vec![
+            FeatureInputComponentPathEntry {
+                instance: 0x8032,
+                type_signature: signature,
+                local_id: 7,
+            },
+            FeatureInputComponentPathEntry {
+                instance: 0x803b,
+                type_signature: signature,
+                local_id: 1,
+            },
+        ];
+        assert_eq!(
+            component_path_features(&components, &[feature("producer", "42")]),
+            vec!["producer"]
+        );
+        assert_eq!(
+            component_path_features(
+                &components,
+                &[feature("first", "42"), feature("second", "42")]
+            ),
+            Vec::<String>::new()
+        );
+        let mut mixed = components;
+        mixed[1].type_signature[4..8].copy_from_slice(&43u32.to_le_bytes());
+        assert_eq!(
+            component_path_features(&mixed, &[feature("producer", "42"), feature("other", "43")]),
+            vec!["producer", "other"]
         );
     }
 }
@@ -2376,6 +2429,11 @@ fn compact_surface_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Vec<FeatureInputSurfaceSelection> {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .cloned()
+        .collect::<Vec<_>>();
     let mut classes = lane
         .classes
         .iter()
@@ -2446,6 +2504,7 @@ fn compact_surface_selections(
             offset: *offset as u64,
             object_name_ref: name.id.clone(),
             feature_ref: feature.id.clone(),
+            producer_feature_refs: component_path_features(&components, &history_features),
             components: components.clone(),
         });
     }
@@ -4824,6 +4883,10 @@ pub(crate) fn project_compact_surface_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) {
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
     let selections = lanes.iter().flat_map(|lane| &lane.surface_selections).fold(
         HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new(),
         |mut map, selection| {
@@ -4856,6 +4919,16 @@ pub(crate) fn project_compact_surface_selections(
             *faces = cadmpeg_ir::features::FaceSelection::Native(compact_surface_selection_value(
                 &selection.components,
             ));
+        }
+        for producer in selection
+            .producer_feature_refs
+            .iter()
+            .filter_map(|producer| feature_ids_by_native.get(producer))
+            .filter(|producer| *producer != &feature.id)
+        {
+            if !feature.dependencies.contains(producer) {
+                feature.dependencies.push(producer.clone());
+            }
         }
     }
 }
@@ -5251,6 +5324,38 @@ pub(crate) fn compact_surface_selection_value(
         write!(&mut value, "{}", component.local_id).expect("writing to String cannot fail");
     }
     value
+}
+
+pub(crate) fn component_path_features(
+    components: &[FeatureInputComponentPathEntry],
+    features: &[crate::records::Feature],
+) -> Vec<String> {
+    let mut by_source = HashMap::<u32, Option<&str>>::new();
+    for feature in features {
+        let Some(source_id) = feature
+            .source_id
+            .as_deref()
+            .and_then(|id| id.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        by_source
+            .entry(source_id)
+            .and_modify(|candidate| *candidate = None)
+            .or_insert(Some(feature.id.as_str()));
+    }
+    let mut result = Vec::new();
+    for component in components {
+        let mut source_id = [0; 4];
+        source_id.copy_from_slice(&component.type_signature[4..8]);
+        let source_id = u32::from_le_bytes(source_id);
+        if let Some(Some(feature)) = by_source.get(&source_id) {
+            if !result.iter().any(|existing| existing == feature) {
+                result.push((*feature).to_string());
+            }
+        }
+    }
+    result
 }
 
 pub(crate) fn project_adjacent_extrusion_profiles(

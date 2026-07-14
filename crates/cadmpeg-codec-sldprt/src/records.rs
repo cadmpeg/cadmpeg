@@ -278,6 +278,9 @@ pub struct FeatureInputSurfaceSelection {
     pub object_name_ref: String,
     /// Native history feature owning this selection.
     pub feature_ref: String,
+    /// Ordered native history features traversed by the persistent surface path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub producer_feature_refs: Vec<String>,
     /// Ordered typed entries in the persistent surface-component path.
     #[serde(default)]
     pub components: Vec<FeatureInputComponentPathEntry>,

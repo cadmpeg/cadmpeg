@@ -11,7 +11,7 @@ use crate::records::{
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 8;
+pub const SLDPRT_NATIVE_VERSION: u32 = 9;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -282,6 +282,11 @@ impl SldprtNative {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
                 || (namespace.version >= 8 && record.components.is_empty())
+                || (namespace.version >= 9
+                    && record
+                        .producer_feature_refs
+                        .iter()
+                        .any(|producer| !feature_ids.contains(producer.as_str())))
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input surface selection {} has unresolved ownership",
@@ -522,17 +527,24 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 7 {
+            if namespace.version <= 8 {
                 for record in &mut lane.surface_selections {
-                    record.components = usize::try_from(record.offset)
-                        .ok()
-                        .and_then(|offset| {
-                            crate::resolved_features::compact_surface_reference_at(
-                                &lane.native_payload,
-                                offset,
-                            )
-                        })
-                        .unwrap_or_default();
+                    if namespace.version <= 7 {
+                        record.components = usize::try_from(record.offset)
+                            .ok()
+                            .and_then(|offset| {
+                                crate::resolved_features::compact_surface_reference_at(
+                                    &lane.native_payload,
+                                    offset,
+                                )
+                            })
+                            .unwrap_or_default();
+                    }
+                    record.producer_feature_refs =
+                        crate::resolved_features::component_path_features(
+                            &record.components,
+                            &features,
+                        );
                 }
             }
             if let Some(record) = lane.surface_selections.iter().find(|record| {
@@ -584,10 +596,14 @@ impl SldprtNative {
                 )));
             }
         }
-        let feature_ids = self
+        let features = self
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
+            .cloned()
+            .collect::<Vec<_>>();
+        let feature_ids = features
+            .iter()
             .map(|feature| feature.id.as_str())
             .collect::<std::collections::HashSet<_>>();
         for lane in &self.feature_input_lanes {
@@ -673,6 +689,10 @@ impl SldprtNative {
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
                     || record.components.is_empty()
+                    || crate::resolved_features::component_path_features(
+                        &record.components,
+                        &features,
+                    ) != record.producer_feature_refs
                     || usize::try_from(record.offset).ok().and_then(|offset| {
                         crate::resolved_features::compact_surface_reference_at(
                             &lane.native_payload,
