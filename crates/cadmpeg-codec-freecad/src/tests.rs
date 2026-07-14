@@ -6,6 +6,98 @@ use zip::write::SimpleFileOptions;
 use crate::FcstdCodec;
 
 #[test]
+fn transfers_sketch_pad_and_pocket_design_history() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
+  <Object type="PartDesign::Pad" name="Pad" id="2"/>
+  <Object type="PartDesign::Pocket" name="Pocket" id="3"/>
+  <ObjectDeps Name="Pad"><Dep Name="Sketch"/></ObjectDeps>
+  <ObjectDeps Name="Pocket"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
+</Objects>
+<ObjectData Count="3">
+  <Object name="Sketch"><Properties Count="1">
+    <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="10" EndY="0"/><Construction value="0"/></Geometry>
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="0" EndX="10" EndY="5"/><Construction value="0"/></Geometry>
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="5" EndX="0" EndY="5"/><Construction value="0"/></Geometry>
+      <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="5" EndX="0" EndY="0"/><Construction value="0"/></Geometry>
+    </GeometryList></Property>
+  </Properties></Object>
+  <Object name="Pad"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+  </Properties></Object>
+  <Object name="Pocket"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Length" type="App::PropertyLength"><Float value="2.5"/></Property>
+  </Properties></Object>
+</ObjectData>
+</Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("design history");
+    assert_eq!(result.ir.model.sketches.len(), 1);
+    assert_eq!(result.ir.model.sketch_entities.len(), 4);
+    assert_eq!(result.ir.model.sketches[0].profiles.len(), 1);
+    assert_eq!(result.ir.model.sketches[0].profiles[0].len(), 4);
+    assert_eq!(result.ir.model.features.len(), 3);
+    assert_eq!(result.ir.model.parameters.len(), 2);
+    let pad = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pad"))
+        .expect("pad");
+    let pocket = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Pocket"))
+        .expect("pocket");
+    assert!(matches!(
+        pad.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Sketch(_),
+            extent: cadmpeg_ir::features::Extent::Blind {
+                length: cadmpeg_ir::features::Length(10.0)
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join,
+            ..
+        }
+    ));
+    assert!(matches!(
+        pocket.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            extent: cadmpeg_ir::features::Extent::Blind {
+                length: cadmpeg_ir::features::Length(2.5)
+            },
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }
+    ));
+    let native_findings = crate::validate_native(&result.ir);
+    assert!(native_findings.is_empty(), "{native_findings:#?}");
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    let design_findings = validation
+        .findings
+        .iter()
+        .filter(|finding| {
+            finding
+                .entity
+                .as_deref()
+                .is_some_and(|entity| entity.starts_with("fcstd:design:"))
+        })
+        .collect::<Vec<_>>();
+    assert!(design_findings.is_empty(), "{design_findings:#?}");
+}
+
+#[test]
 fn transfers_recursive_exact_parameter_curve_geometry() {
     let source = crate::brep::TextCurve2d::Offset {
         distance: 0.25,

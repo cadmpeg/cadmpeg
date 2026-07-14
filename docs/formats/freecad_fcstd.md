@@ -102,6 +102,23 @@ property ownership, and neutral topology links are validated without synthesizin
 The native location chain is applied exactly once at the owning topology level. Display
 tessellation is presentation data and does not replace an available exact shape.
 
+## Design-history transfer
+
+Construction objects retain source order and native identity independently of their cached shape.
+Planar sketch geometry is transferred in persisted entity order. Non-construction line segments
+are connected into deterministic oriented profile chains; circles and arcs retain canonical
+millimetre/radian values, while unsupported geometry families remain explicit native sketch
+entities.
+
+Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
+targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
+owning native property, and the operation records distinguish additive, subtractive, and
+independent-body semantics. Object dependency links establish construction dependencies, and a
+feature's cached shape property links its neutral operation to every transferred result body from
+that payload. This is a typed tracer subset; attachments, expressions, complete sketch constraints,
+feature state, and the remaining Part and PartDesign operation families are still required by the
+L4 gate.
+
 ## Presentation and application records
 
 GUI records retain view-provider identity separately from application-object identity. Visibility,

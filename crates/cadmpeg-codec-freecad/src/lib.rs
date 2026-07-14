@@ -3,6 +3,7 @@
 
 mod brep;
 mod container;
+mod design;
 mod element_map;
 mod native;
 mod persistence;
@@ -524,6 +525,7 @@ impl Codec for FcstdCodec {
                 &graph.properties,
             ));
             topology_transfer::transfer(&mut ir, &shape_payloads)?;
+            design::transfer(&mut ir, &graph.objects, &graph.properties, &shape_payloads)?;
             let payload_ids = shape_payloads
                 .iter()
                 .map(|payload| (payload.property.as_str(), payload.id.as_str()))
