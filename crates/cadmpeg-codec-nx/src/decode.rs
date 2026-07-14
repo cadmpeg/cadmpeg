@@ -715,11 +715,14 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         return None;
     }
 
-    let active_body_selection = select_active_body(
+    let mut active_body_selection = select_active_body(
         &mut ir,
         &body_node_ids,
         &scan.container.rmfastload_object_ids(),
     );
+    if !active_body_selection {
+        active_body_selection = select_terminal_feature_bodies(&mut ir, scan);
+    }
     attach_native_object_model(&mut ir, scan, &mut annotations).ok()?;
     prune_unreferenced_unknown_carriers(&mut ir);
     classify_body_kinds(&mut ir);
@@ -1059,6 +1062,76 @@ fn select_active_body(
             .insert("rmfastload_hits".to_string(), top_hits.to_string());
         source.attributes.insert(
             "rmfastload_active_body_count".to_string(),
+            selected.len().to_string(),
+        );
+    }
+    true
+}
+
+fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
+    if ir.model.bodies.len() <= 1 {
+        return false;
+    }
+    let labels = crate::native::feature_operation_labels(&scan.container);
+    let body_references = crate::native::feature_body_references(&scan.container);
+    let booleans = crate::native::feature_boolean_operations(&scan.container);
+    let bindings = crate::native::segment_body_bindings(&scan.container, &scan.streams);
+    if booleans.is_empty() {
+        return false;
+    }
+    let Some(terminal) =
+        crate::native::terminal_feature_body_indices(&labels, &body_references, &booleans)
+    else {
+        return false;
+    };
+    let written = body_references
+        .iter()
+        .map(|reference| reference.body_object_index)
+        .collect::<BTreeSet<_>>();
+
+    let mut mapped = BTreeSet::new();
+    let mut selected = BTreeSet::new();
+    for binding in bindings
+        .iter()
+        .filter(|binding| binding.stream_kind == "partition")
+    {
+        if !written.contains(&binding.body_object_index) {
+            return false;
+        }
+        let prefix = format!("nx:s{}:", binding.stream_ordinal);
+        let stream_bodies = ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body.id.0.starts_with(&prefix))
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>();
+        if stream_bodies.is_empty() {
+            continue;
+        }
+        mapped.extend(stream_bodies.iter().cloned());
+        if terminal.contains(&binding.body_object_index) {
+            selected.extend(stream_bodies);
+        }
+    }
+    let emitted = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.clone())
+        .collect::<BTreeSet<_>>();
+    if mapped != emitted || selected.is_empty() || selected.len() == emitted.len() {
+        return false;
+    }
+
+    prune_inactive_topology(ir, &selected);
+    if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "active_body_selector".to_string(),
+            "terminal_feature_body_lineage".to_string(),
+        );
+        source.attributes.insert(
+            "feature_terminal_body_count".to_string(),
             selected.len().to_string(),
         );
     }

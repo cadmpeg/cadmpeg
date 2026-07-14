@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed Siemens NX object-model records retained in the native namespace.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -434,6 +434,50 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
         }
     }
     references
+}
+
+/// Return body objects whose latest decoded writer is not consumed as a later
+/// Boolean tool. The operation order must belong to one feature-history area.
+pub fn terminal_feature_body_indices(
+    labels: &[FeatureOperationLabel],
+    references: &[FeatureBodyReference],
+    booleans: &[FeatureBooleanOperation],
+) -> Option<BTreeSet<u32>> {
+    let sections = labels
+        .iter()
+        .map(|label| label.section_link.as_str())
+        .collect::<BTreeSet<_>>();
+    if sections.len() != 1 || references.is_empty() {
+        return None;
+    }
+    let positions = labels
+        .iter()
+        .enumerate()
+        .map(|(position, label)| (label.id.as_str(), position))
+        .collect::<BTreeMap<_, _>>();
+    let mut last_writers = BTreeMap::<u32, usize>::new();
+    for reference in references {
+        let position = *positions.get(reference.operation_label.as_str())?;
+        last_writers.insert(reference.body_object_index, position);
+    }
+    let mut consumed = BTreeSet::new();
+    for operation in booleans {
+        let position = *positions.get(operation.operation_label.as_str())?;
+        for tool in &operation.tool_object_indices {
+            if last_writers
+                .get(tool)
+                .is_some_and(|writer| *writer < position)
+            {
+                consumed.insert(*tool);
+            }
+        }
+    }
+    Some(
+        last_writers
+            .into_keys()
+            .filter(|body| !consumed.contains(body))
+            .collect(),
+    )
 }
 
 /// Resolve operation-header object indices to unique offset-only data blocks.

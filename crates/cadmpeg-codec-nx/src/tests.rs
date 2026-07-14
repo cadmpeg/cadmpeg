@@ -721,6 +721,43 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
+    use crate::native::{
+        FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
+    };
+
+    let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+        id: format!("operation#{ordinal}"),
+        section_link: "history#0".to_string(),
+        ordinal,
+        value: value.to_string(),
+        object_indices: [None; 4],
+        source_offset: ordinal as u64,
+    };
+    let labels = [label(0, "EXTRUDE"), label(1, "EXTRUDE"), label(2, "UNITE")];
+    let reference = |operation: &str, body_object_index| FeatureBodyReference {
+        id: format!("reference#{body_object_index}"),
+        operation_label: operation.to_string(),
+        body_object_index,
+        source_offset: 0,
+    };
+    let references = [reference("operation#0", 10), reference("operation#1", 20)];
+    let booleans = [FeatureBooleanOperation {
+        id: "boolean#0".to_string(),
+        operation_label: "operation#2".to_string(),
+        kind: FeatureBooleanKind::Unite,
+        target_object_index: 10,
+        tool_object_indices: vec![20],
+        source_offset: 0,
+    }];
+
+    assert_eq!(
+        crate::native::terminal_feature_body_indices(&labels, &references, &booleans),
+        Some([10].into_iter().collect())
+    );
+}
+
+#[test]
 fn om_size_frame_bounds_its_type_declarations() {
     let bytes = size_framed_om_section();
     let sections = crate::om::sections(&bytes);
