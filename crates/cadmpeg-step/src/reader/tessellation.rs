@@ -129,6 +129,20 @@ pub(super) fn decode(
             ));
             continue;
         }
+        let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
+        let local_index = coordinate_indices
+            .iter()
+            .enumerate()
+            .map(|(local, global)| (*global, local as u32))
+            .collect::<BTreeMap<_, _>>();
+        let local_vertices = coordinate_indices
+            .iter()
+            .map(|index| vertices[*index as usize - 1])
+            .collect::<Vec<_>>();
+        let local_triangles = triangles
+            .iter()
+            .map(|triangle| triangle.map(|index| local_index[&index]))
+            .collect::<Vec<_>>();
         let source_normals = normal_rows(record.parameter(3)).unwrap_or_default();
         let pnindex_parameter = match record.simple_name() {
             Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") => 5,
@@ -137,24 +151,41 @@ pub(super) fn decode(
         let pnindex = index_list(record.parameter(pnindex_parameter)).unwrap_or_default();
         let normals = match source_normals.len() {
             0 => Vec::new(),
-            1 => vec![source_normals[0]; vertices.len()],
-            count if pnindex.is_empty() && count == vertices.len() => source_normals,
-            _ if pnindex.len() == vertices.len()
-                && pnindex.iter().all(|index| {
-                    *index > 0
-                        && usize::try_from(*index).is_ok_and(|index| index <= source_normals.len())
-                }) =>
+            1 => vec![source_normals[0]; local_vertices.len()],
+            count if pnindex.is_empty() && count == vertices.len() => coordinate_indices
+                .iter()
+                .map(|index| source_normals[*index as usize - 1])
+                .collect(),
+            count
+                if pnindex.len() == count
+                    && pnindex
+                        .iter()
+                        .all(|index| *index > 0 && *index as usize <= vertices.len()) =>
             {
-                pnindex
+                let by_coordinate = pnindex
                     .iter()
-                    .map(|index| source_normals[*index as usize - 1])
-                    .collect()
+                    .copied()
+                    .zip(source_normals.iter().copied())
+                    .collect::<BTreeMap<_, _>>();
+                let local = coordinate_indices
+                    .iter()
+                    .filter_map(|index| by_coordinate.get(index).copied())
+                    .collect::<Vec<_>>();
+                if local.len() == local_vertices.len() {
+                    local
+                } else {
+                    warnings.push(format!(
+                        "{} #{id} has no normal for every referenced coordinate",
+                        record.simple_name().expect("matched simple name")
+                    ));
+                    Vec::new()
+                }
             }
             count => {
                 warnings.push(format!(
                     "{} #{id} carries {count} normals for {} coordinates",
                     record.simple_name().expect("matched simple name"),
-                    vertices.len()
+                    local_vertices.len()
                 ));
                 Vec::new()
             }
@@ -163,11 +194,8 @@ pub(super) fn decode(
             id: format!("step:tessellation:mesh#{id}"),
             body: item_bodies.get(&id).cloned(),
             source_object: None,
-            vertices: vertices.clone(),
-            triangles: triangles
-                .into_iter()
-                .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
-                .collect(),
+            vertices: local_vertices,
+            triangles: local_triangles,
             strip_lengths,
             normals,
             channels: Vec::new(),
