@@ -427,6 +427,9 @@ feature namespaces and need not be equal.
 datum namespace used by `gsec3d.plane_id`; they are distinct from
 `ActDatums.srf_array.geom_id` values.
 
+In `DEPDB_DATA`, section-level `dtm_id_tab` and `parent_table` records belong
+to the unique procedural recipe feature stored in the same section.
+
 An outer datum identifier resolves through the generated-entity table that
 contains it. When that table's owning datum feature has one `parent_table` row,
 the nested reference-plane geometry identifies one datum parent by

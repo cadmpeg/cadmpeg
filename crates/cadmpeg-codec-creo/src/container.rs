@@ -979,6 +979,32 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
     current
 }
 
+fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
+    sections
+        .iter()
+        .filter(|section| section.name == "DEPDB_DATA")
+        .filter_map(|section| {
+            let end = (section.offset + section.length).min(data.len());
+            let payload = &data[section.offset..end];
+            let recipe_operations = feature::operations(payload)
+                .into_iter()
+                .filter(|operation| operation.recipe.is_some())
+                .collect::<Vec<_>>();
+            let [operation] = recipe_operations.as_slice() else {
+                return None;
+            };
+            Some(FeatureRow {
+                feature_id: operation.feature_id,
+                header: [0; 2],
+                root_schema_class: operation.root_schema_class,
+                body: payload.to_vec(),
+                body_offset: section.offset,
+                offset: section.offset + operation.offset,
+            })
+        })
+        .collect()
+}
+
 fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u32> {
     let section = sections
         .iter()
@@ -1049,8 +1075,13 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let feature_rows = feature_rows(&data, &sections, &feature_ids);
     let feature_choices = feature::choices(&feature_rows);
     let feature_choice_fields = feature::choice_fields(&feature_choices);
-    let feature_geometry_tables = feature::geometry_tables(&feature_rows);
-    let feature_affected_ids = feature::affected_ids(&feature_rows);
+    let depdb_recipe_rows = depdb_recipe_rows(&data, &sections);
+    let mut feature_geometry_tables = feature::geometry_tables(&feature_rows);
+    feature_geometry_tables.extend(feature::geometry_tables(&depdb_recipe_rows));
+    feature_geometry_tables.sort_by_key(|table| table.offset);
+    let mut feature_affected_ids = feature::affected_ids(&feature_rows);
+    feature_affected_ids.extend(feature::affected_ids(&depdb_recipe_rows));
+    feature_affected_ids.sort_by_key(|record| record.offset);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
     let mut feature_definitions = feature_definitions(&data, &sections);

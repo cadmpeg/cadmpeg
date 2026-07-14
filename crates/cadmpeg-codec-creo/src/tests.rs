@@ -2164,6 +2164,31 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
 }
 
 #[test]
+fn scan_binds_standalone_depdb_datum_and_parent_tables_to_recipe_owner() {
+    let depdb = b"\xe0\x01dtm_id_tab\0\xf8\x01\xf7\x24\xe2\xe0\x01dtm_id\0\x29\
+        \xe0\x01parent_table\0\xf8\x02\x03\x05\xf7\x24\xe3\
+        Body ID 17\0\xe3\xf7\x3b\x11\x83\x95\xf6\x04Profile 1\0\xf6\0protextrude\0"
+        .to_vec();
+    let scan = container::scan_bytes(build_prt("c", &[("DEPDB_DATA", depdb)]));
+
+    let datum_table = scan
+        .feature_geometry_tables
+        .iter()
+        .find(|table| table.kind == crate::feature::FeatureGeometryTableKind::DatumIds)
+        .expect("datum table");
+    assert_eq!(datum_table.feature_id, 17);
+    assert_eq!(datum_table.entry_ids.as_deref(), Some(&[41][..]));
+
+    let parents = scan
+        .feature_affected_ids
+        .iter()
+        .find(|record| record.kind == crate::feature::AffectedIdKind::Parents)
+        .expect("parent table");
+    assert_eq!(parents.feature_id, 17);
+    assert_eq!(parents.ids, [3, 5]);
+}
+
+#[test]
 fn scan_distinguishes_null_and_referenced_family_tables() {
     let null = container::scan_bytes(build_prt(
         "c",
