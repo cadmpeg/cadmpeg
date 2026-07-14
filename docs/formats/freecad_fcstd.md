@@ -354,6 +354,14 @@ mode carries one factor; anisotropic mode carries independent x, y, and z factor
 negative factors remain valid reflections. Missing sources, zero factors, and non-finite factors
 remain attributable native operations.
 
+Part and PartDesign thickness operations retain removed-face selection, absolute wall thickness,
+offset side, skin, pipe, or both-sides mode, arc, tangent, or intersection corner continuation,
+intersection resolution, and self-intersection policy. A signed Part thickness selects its offset
+side; the PartDesign reversal flag selects the same neutral meaning. Whole-shape Part offsets
+retain their source, signed distance, the same mode and join laws, intersection policies, boundary
+fill, and the distinction between three-dimensional and planar offset construction. Planar
+both-sides mode and incomplete or zero-distance operations remain attributable and native.
+
 Part extrusions retain their normalized direction, independent forward and reverse lengths, and
 equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected

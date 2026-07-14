@@ -2125,6 +2125,7 @@ fn project_shell(feature: &Feature) -> FeatureDefinition {
         mode: None,
         join: None,
         resolve_intersections: None,
+        allow_self_intersections: None,
     }
 }
 
@@ -4977,6 +4978,12 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::OffsetShape { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported whole-shape offset semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Shell {
                 removed_faces,
                 thickness,
@@ -4984,8 +4991,13 @@ pub fn sync_neutral_features(
                 mode,
                 join,
                 resolve_intersections,
+                allow_self_intersections,
             } => {
-                if mode.is_some() || join.is_some() || resolve_intersections.is_some() {
+                if mode.is_some()
+                    || join.is_some()
+                    || resolve_intersections.is_some()
+                    || allow_self_intersections.is_some()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported shell construction semantics",
                         feature.id
@@ -7126,6 +7138,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Dome { .. } => "Dome",
         FeatureDefinition::Flex { .. } => "Flex",
         FeatureDefinition::Scale { .. } => "Scale",
+        FeatureDefinition::OffsetShape { .. } => "Offset",
         FeatureDefinition::Hole { .. } => "Hole",
         FeatureDefinition::Pattern {
             pattern: PatternKind::Mirror { .. },

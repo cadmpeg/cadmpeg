@@ -519,6 +519,28 @@ pub enum FeatureDefinition {
         /// Whether intersecting offset regions are resolved during construction.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         resolve_intersections: Option<bool>,
+        /// Whether self-intersecting offset regions may be retained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_self_intersections: Option<bool>,
+    },
+    /// Offsets an entire source shape without removing opening faces.
+    OffsetShape {
+        /// Source shape or body to offset.
+        source: BodySelection,
+        /// Signed normal offset in canonical millimeters.
+        distance: Length,
+        /// Offset construction mode.
+        mode: ShellMode,
+        /// Corner continuation law.
+        join: ShellJoin,
+        /// Whether intersecting regions are resolved.
+        resolve_intersections: bool,
+        /// Whether self-intersecting regions may be retained.
+        allow_self_intersections: bool,
+        /// Whether open offset boundaries are filled.
+        fill: bool,
+        /// Whether planar two-dimensional offset rules are used.
+        planar: bool,
     },
     /// Adds material normal to selected faces.
     Thicken {
@@ -769,6 +791,8 @@ pub enum ShellMode {
 pub enum ShellJoin {
     /// Continues corners with rounded arcs.
     Arc,
+    /// Extends adjacent faces tangentially to meet.
+    Tangent,
     /// Intersects adjacent offset faces to form sharp corners.
     Intersection,
 }

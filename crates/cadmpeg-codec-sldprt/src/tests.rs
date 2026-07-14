@@ -2277,6 +2277,7 @@ fn encoder_writes_source_less_native_features() {
             mode: None,
             join: None,
             resolve_intersections: None,
+            allow_self_intersections: None,
         },
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),

@@ -206,11 +206,24 @@ pub(crate) fn transfer(
                     properties: BTreeMap::new(),
                 }
             })
-        } else if object.type_name == "PartDesign::Thickness" {
-            thickness_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
-                parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
+        } else if matches!(
+            object.type_name.as_str(),
+            "PartDesign::Thickness" | "Part::Thickness"
+        ) {
+            thickness_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if matches!(object.type_name.as_str(), "Part::Offset" | "Part::Offset2D") {
+            offset_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
             })
         } else if object.type_name == "PartDesign::Draft" {
             draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
@@ -1813,32 +1826,78 @@ fn chamfer_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinitio
     })
 }
 
-fn thickness_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+fn shell_mode(properties: &[&PropertyRecord]) -> Option<ShellMode> {
+    match integer_property(properties, "Mode").unwrap_or(0) {
+        0 => Some(ShellMode::Skin),
+        1 => Some(ShellMode::Pipe),
+        2 => Some(ShellMode::BothSides),
+        _ => None,
+    }
+}
+
+fn shell_join(properties: &[&PropertyRecord]) -> Option<ShellJoin> {
+    match integer_property(properties, "Join").unwrap_or(0) {
+        0 => Some(ShellJoin::Arc),
+        1 => Some(ShellJoin::Tangent),
+        2 => Some(ShellJoin::Intersection),
+        _ => None,
+    }
+}
+
+fn thickness_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let thickness = scalar_named(properties, "Value")?;
-    if !thickness.is_finite() || thickness <= 0.0 {
+    if !thickness.is_finite() || thickness == 0.0 {
         return None;
     }
-    let mode = match integer_property(properties, "Mode").unwrap_or(0) {
-        0 => ShellMode::Skin,
-        1 => ShellMode::Pipe,
-        2 => ShellMode::BothSides,
-        _ => return None,
+    let source_name = if kind == "Part::Thickness" {
+        "Faces"
+    } else {
+        "Base"
     };
-    let join = match integer_property(properties, "Join").unwrap_or(0) {
-        0 => ShellJoin::Arc,
-        1 => ShellJoin::Intersection,
-        _ => return None,
-    };
+    let selection = property(properties, source_name)?;
+    if selection.links.is_empty() {
+        return None;
+    }
     Some(FeatureDefinition::Shell {
-        removed_faces: property(properties, "Base").map_or(
-            cadmpeg_ir::features::FaceSelection::Unresolved,
-            |property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()),
-        ),
-        thickness: Some(Length(thickness)),
-        outward: Some(!bool_property(properties, "Reversed").unwrap_or(false)),
-        mode: Some(mode),
-        join: Some(join),
+        removed_faces: cadmpeg_ir::features::FaceSelection::Native(selection.id.clone()),
+        thickness: Some(Length(thickness.abs())),
+        outward: Some(if kind == "Part::Thickness" {
+            thickness > 0.0
+        } else {
+            !bool_property(properties, "Reversed").unwrap_or(false)
+        }),
+        mode: Some(shell_mode(properties)?),
+        join: Some(shell_join(properties)?),
         resolve_intersections: Some(bool_property(properties, "Intersection").unwrap_or(false)),
+        allow_self_intersections: Some(
+            bool_property(properties, "SelfIntersection").unwrap_or(false),
+        ),
+    })
+}
+
+fn offset_shape_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Option<FeatureDefinition> {
+    let source = property(properties, "Source")?;
+    if source.links.is_empty() {
+        return None;
+    }
+    let distance = scalar_named(properties, "Value")
+        .filter(|distance| distance.is_finite() && *distance != 0.0)?;
+    let mode = shell_mode(properties)?;
+    if kind == "Part::Offset2D" && mode == ShellMode::BothSides {
+        return None;
+    }
+    Some(FeatureDefinition::OffsetShape {
+        source: BodySelection::Native(source.id.clone()),
+        distance: Length(distance),
+        mode,
+        join: shell_join(properties)?,
+        resolve_intersections: bool_property(properties, "Intersection").unwrap_or(false),
+        allow_self_intersections: bool_property(properties, "SelfIntersection").unwrap_or(false),
+        fill: bool_property(properties, "Fill").unwrap_or(false),
+        planar: kind == "Part::Offset2D",
     })
 }
 
@@ -2911,7 +2970,10 @@ fn is_pattern(kind: &str) -> bool {
 fn is_dress_up(kind: &str) -> bool {
     kind.contains("Fillet")
         || kind.contains("Chamfer")
-        || matches!(kind, "PartDesign::Thickness" | "PartDesign::Draft")
+        || matches!(
+            kind,
+            "PartDesign::Thickness" | "PartDesign::Draft" | "Part::Thickness"
+        )
 }
 fn is_body(kind: &str) -> bool {
     kind.contains("PartDesign::Body")
@@ -2936,5 +2998,6 @@ fn is_design_object(kind: &str) -> bool {
         || is_extrusion(kind)
         || is_revolution(kind)
         || is_dress_up(kind)
+        || matches!(kind, "Part::Offset" | "Part::Offset2D")
         || kind.contains("PartDesign::Feature")
 }

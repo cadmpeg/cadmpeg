@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "21");
+    assert_eq!(result.ir.ir_version, "22");
     let feature = |name: &str| {
         &result
             .ir
@@ -1421,13 +1421,14 @@ fn transfers_complete_thickness_construction_controls() {
   <Property name="Width" type="App::PropertyLength"><Float value="10"/></Property>
   <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
  </Properties></Object>
- <Object name="Wall"><Properties Count="6">
+ <Object name="Wall"><Properties Count="7">
   <Property name="Base" type="App::PropertyLinkSub"><Link object="Base" sub="Face2 Face4"/></Property>
   <Property name="Value" type="App::PropertyLength"><Float value="2.5"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Join" type="App::PropertyEnumeration"><Integer value="1"/></Property>
   <Property name="Intersection" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="SelfIntersection" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -1450,12 +1451,110 @@ fn transfers_complete_thickness_construction_controls() {
             thickness: Some(cadmpeg_ir::features::Length(2.5)),
             outward: Some(false),
             mode: Some(cadmpeg_ir::features::ShellMode::BothSides),
-            join: Some(cadmpeg_ir::features::ShellJoin::Intersection),
+            join: Some(cadmpeg_ir::features::ShellJoin::Tangent),
             resolve_intersections: Some(true),
+            allow_self_intersections: Some(true),
+            ..
         } if selection.ends_with(":property:Base")
     ));
     assert_eq!(wall.dependencies.len(), 1);
     assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_part_thickness_and_shape_offset_construction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="Base" id="1"/>
+ <Object type="Part::Thickness" name="Thickness" id="2"/>
+ <Object type="Part::Offset" name="Offset" id="3"/>
+ <Object type="Part::Offset2D" name="Offset2D" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Base"><Properties Count="3">
+  <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Width" type="App::PropertyLength"><Float value="10"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="10"/></Property>
+ </Properties></Object>
+ <Object name="Thickness"><Properties Count="6">
+  <Property name="Faces" type="App::PropertyLinkSub"><Link object="Base" sub="Face1 Face3"/></Property>
+  <Property name="Value" type="App::PropertyLength"><Float value="-2"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Join" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Intersection" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="SelfIntersection" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Offset"><Properties Count="7">
+  <Property name="Source" type="App::PropertyLink"><Link value="Base"/></Property>
+  <Property name="Value" type="App::PropertyLength"><Float value="-1.5"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Join" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Intersection" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="SelfIntersection" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Fill" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Offset2D"><Properties Count="6">
+  <Property name="Source" type="App::PropertyLink"><Link value="Base"/></Property>
+  <Property name="Value" type="App::PropertyLength"><Float value="3"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Join" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Intersection" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Fill" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("Part offsets");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    use cadmpeg_ir::features::{FeatureDefinition, Length, ShellJoin, ShellMode};
+    assert!(matches!(
+        definition("Thickness"),
+        FeatureDefinition::Shell {
+            thickness: Some(Length(2.0)),
+            outward: Some(false),
+            mode: Some(ShellMode::Pipe),
+            join: Some(ShellJoin::Intersection),
+            resolve_intersections: Some(true),
+            allow_self_intersections: Some(true),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Offset"),
+        FeatureDefinition::OffsetShape {
+            distance: Length(-1.5),
+            mode: ShellMode::BothSides,
+            join: ShellJoin::Tangent,
+            resolve_intersections: true,
+            allow_self_intersections: true,
+            fill: true,
+            planar: false,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Offset2D"),
+        FeatureDefinition::OffsetShape {
+            distance: Length(3.0),
+            mode: ShellMode::Pipe,
+            join: ShellJoin::Arc,
+            fill: true,
+            planar: true,
+            ..
+        }
+    ));
 }
 
 #[test]
