@@ -5,8 +5,128 @@
 use super::*;
 use crate::features::{
     ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, PatternKind,
-    PrimitiveSolid, RadiusSpec,
+    PatternStageCombination, PrimitiveSolid, RadiusSpec,
 };
+
+fn pattern_is_valid(pattern: &PatternKind, nested: bool) -> bool {
+    match pattern {
+        PatternKind::Unresolved { .. } => true,
+        PatternKind::Linear {
+            direction,
+            spacing,
+            count,
+        } => {
+            direction.is_none_or(valid_feature_direction)
+                && positive_feature_length(*spacing)
+                && *count > 0
+        }
+        PatternKind::Circular {
+            axis_origin,
+            axis_dir,
+            angle,
+            count,
+        } => {
+            axis_origin.x.is_finite()
+                && axis_origin.y.is_finite()
+                && axis_origin.z.is_finite()
+                && valid_feature_direction(*axis_dir)
+                && angle.0.is_finite()
+                && angle.0 > 0.0
+                && *count > 0
+        }
+        PatternKind::CurveDriven { spacing, count, .. } => {
+            positive_feature_length(*spacing) && *count > 0
+        }
+        PatternKind::Mirror {
+            plane_origin,
+            plane_normal,
+        } => {
+            plane_origin.x.is_finite()
+                && plane_origin.y.is_finite()
+                && plane_origin.z.is_finite()
+                && valid_feature_direction(*plane_normal)
+        }
+        PatternKind::Scale {
+            center,
+            final_factor,
+            count,
+        } => {
+            let center_valid = match center {
+                crate::features::PatternScaleCenter::Point(point) => {
+                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                }
+                crate::features::PatternScaleCenter::FirstSeedCentroid
+                | crate::features::PatternScaleCenter::Native(_) => true,
+            };
+            center_valid && final_factor.is_finite() && *final_factor > 0.0 && *count >= 2
+        }
+        PatternKind::Composite { stages } => {
+            let structure_valid = !nested
+                && !stages.is_empty()
+                && stages.iter().enumerate().all(|(index, stage)| {
+                    stage.combination
+                        == if index == 0 {
+                            PatternStageCombination::Initialize
+                        } else if matches!(*stage.pattern, PatternKind::Scale { .. }) {
+                            PatternStageCombination::AlignedSlices
+                        } else {
+                            PatternStageCombination::CartesianProduct
+                        }
+                        && pattern_is_valid(&stage.pattern, true)
+                        && !matches!(*stage.pattern, PatternKind::Composite { .. })
+                });
+            let mut occurrences = None;
+            let composition_valid = stages.iter().enumerate().all(|(index, stage)| {
+                let Some(stage_count) = pattern_occurrence_count(&stage.pattern) else {
+                    return true;
+                };
+                if index == 0 {
+                    occurrences = Some(stage_count);
+                    return true;
+                }
+                match stage.combination {
+                    PatternStageCombination::CartesianProduct => {
+                        occurrences = occurrences.and_then(|count| count.checked_mul(stage_count));
+                        occurrences.is_some()
+                    }
+                    PatternStageCombination::AlignedSlices => {
+                        occurrences.is_none_or(|count| count % stage_count == 0)
+                    }
+                    PatternStageCombination::Initialize => false,
+                }
+            });
+            structure_valid && composition_valid
+        }
+    }
+}
+
+fn pattern_occurrence_count(pattern: &PatternKind) -> Option<usize> {
+    match pattern {
+        PatternKind::Linear { count, .. }
+        | PatternKind::Circular { count, .. }
+        | PatternKind::CurveDriven { count, .. }
+        | PatternKind::Scale { count, .. } => usize::try_from(*count).ok(),
+        PatternKind::Mirror { .. } => Some(2),
+        PatternKind::Unresolved { .. } | PatternKind::Composite { .. } => None,
+    }
+}
+
+fn collect_pattern_paths<'a>(
+    pattern: &'a PatternKind,
+    paths: &mut Vec<&'a crate::features::PathRef>,
+) {
+    match pattern {
+        PatternKind::CurveDriven {
+            path: Some(path), ..
+        } => paths.push(path),
+        PatternKind::Composite { stages } => {
+            for stage in stages {
+                collect_pattern_paths(&stage.pattern, paths);
+            }
+        }
+        _ => {}
+    }
+}
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
 /// Presence sets for every arena, keyed by the string id.
@@ -1860,12 +1980,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
-                if let PatternKind::CurveDriven {
-                    path: Some(path), ..
-                } = pattern
-                {
-                    paths.push(path);
-                }
+                collect_pattern_paths(pattern, &mut paths);
                 for seed in seeds {
                     match features.get(seed.0.as_str()) {
                         None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
@@ -1881,44 +1996,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         Some(_) => {}
                     }
                 }
-                let valid = match pattern {
-                    PatternKind::Unresolved { .. } => true,
-                    PatternKind::Linear {
-                        direction,
-                        spacing,
-                        count,
-                    } => {
-                        direction.is_none_or(valid_feature_direction)
-                            && positive_feature_length(*spacing)
-                            && *count > 0
-                    }
-                    PatternKind::Circular {
-                        axis_origin,
-                        axis_dir,
-                        angle,
-                        count,
-                    } => {
-                        axis_origin.x.is_finite()
-                            && axis_origin.y.is_finite()
-                            && axis_origin.z.is_finite()
-                            && valid_feature_direction(*axis_dir)
-                            && angle.0.is_finite()
-                            && angle.0 > 0.0
-                            && *count > 0
-                    }
-                    PatternKind::CurveDriven { spacing, count, .. } => {
-                        positive_feature_length(*spacing) && *count > 0
-                    }
-                    PatternKind::Mirror {
-                        plane_origin,
-                        plane_normal,
-                    } => {
-                        plane_origin.x.is_finite()
-                            && plane_origin.y.is_finite()
-                            && plane_origin.z.is_finite()
-                            && valid_feature_direction(*plane_normal)
-                    }
-                };
+                let valid = pattern_is_valid(pattern, false);
                 if !valid {
                     feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
@@ -2278,13 +2356,9 @@ fn check_feature_sketch_references(
                 profiles.extend(sections);
                 paths.extend(guides);
             }
-            FeatureDefinition::Pattern {
-                pattern:
-                    PatternKind::CurveDriven {
-                        path: Some(path), ..
-                    },
-                ..
-            } => paths.push(path),
+            FeatureDefinition::Pattern { pattern, .. } => {
+                collect_pattern_paths(pattern, &mut paths);
+            }
             _ => {}
         }
         for profile in profiles {

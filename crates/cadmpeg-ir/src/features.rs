@@ -1582,6 +1582,53 @@ pub enum PatternKind {
         /// Unit normal of the mirror plane.
         plane_normal: Vector3,
     },
+    /// Repeats seeds using progressive uniform scales.
+    Scale {
+        /// Fixed locus used by every scale transform.
+        center: PatternScaleCenter,
+        /// Scale factor of the final instance relative to the original.
+        final_factor: f64,
+        /// Total number of instances, including the original.
+        count: u32,
+    },
+    /// Applies an ordered sequence of pattern stages.
+    Composite {
+        /// Stages in application order.
+        stages: Vec<PatternStage>,
+    },
+}
+
+/// Fixed locus for a progressive pattern scale.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PatternScaleCenter {
+    /// Volume centroid of the first seed feature.
+    FirstSeedCentroid,
+    /// Explicit model-space point.
+    Point(Point3),
+    /// Format-native center reference.
+    Native(String),
+}
+
+/// One stage of an ordered composite pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PatternStage {
+    /// Pattern transform sequence contributed by this stage.
+    pub pattern: Box<PatternKind>,
+    /// Rule used to combine this stage with preceding stages.
+    pub combination: PatternStageCombination,
+}
+
+/// Combination rule for a composite-pattern stage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PatternStageCombination {
+    /// Establishes the initial transform sequence.
+    Initialize,
+    /// Applies each new transform to every preceding transform.
+    CartesianProduct,
+    /// Aligns transforms with equally sized slices of preceding occurrences.
+    AlignedSlices,
 }
 
 /// Structural form of a repeated or reflected feature operation.
@@ -1596,4 +1643,8 @@ pub enum PatternForm {
     CurveDriven,
     /// Reflection across a plane.
     Mirror,
+    /// Progressive uniform scaling.
+    Scale,
+    /// Ordered composition of multiple pattern forms.
+    Composite,
 }

@@ -1931,6 +1931,7 @@ fn project_pattern(
                 plane_origin: parse_point3_mm(feature.properties.get("PlaneOrigin")?)?,
                 plane_normal: parse_valid_direction(feature.properties.get("PlaneNormal")?)?,
             },
+            PatternForm::Scale | PatternForm::Composite => return None,
         })
     });
     let seeds_required = !matches!(form, Some(PatternForm::Linear | PatternForm::CurveDriven));
@@ -6392,6 +6393,8 @@ pub fn sync_neutral_features(
                     PatternKind::Circular { .. } => Some(PatternForm::Circular),
                     PatternKind::CurveDriven { .. } => Some(PatternForm::CurveDriven),
                     PatternKind::Mirror { .. } => Some(PatternForm::Mirror),
+                    PatternKind::Scale { .. } => Some(PatternForm::Scale),
+                    PatternKind::Composite { .. } => Some(PatternForm::Composite),
                 };
                 if existing.as_deref().is_some_and(|record| {
                     expected_form.is_some_and(|form| pattern_form(record) != Some(form))
@@ -6567,6 +6570,12 @@ pub fn sync_neutral_features(
                         properties.insert("PlaneOrigin".into(), format_point3_mm(*plane_origin));
                         properties.insert("PlaneNormal".into(), format_vector3(*plane_normal));
                     }
+                    PatternKind::Scale { .. } | PatternKind::Composite { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a pattern form that cannot be written",
+                            feature.id
+                        )));
+                    }
                 }
                 let kind = existing.as_deref().map_or_else(
                     || match expected_form {
@@ -6574,6 +6583,7 @@ pub fn sync_neutral_features(
                         Some(PatternForm::Circular) => "CircularPattern".into(),
                         Some(PatternForm::CurveDriven) => "CrvPattern".into(),
                         Some(PatternForm::Mirror) => "Mirror".into(),
+                        Some(PatternForm::Scale | PatternForm::Composite) => "Pattern".into(),
                         None => "Pattern".into(),
                     },
                     |record| record.kind.clone(),

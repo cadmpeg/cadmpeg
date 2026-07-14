@@ -9,8 +9,9 @@ use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, HoleBottom, HoleKind, HoleProfileFilter,
     HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue, PathRef, PatternKind,
-    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, ShellJoin,
-    ShellMode, SketchSpace, SweepMode, ThreadHand,
+    PatternScaleCenter, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef,
+    RadiusSpec, RevolutionAxis, RevolutionConstruction, ShellJoin, ShellMode, SketchSpace,
+    SweepMode, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1842,15 +1843,52 @@ fn pattern_definition(
         return None;
     }
 
+    let pattern = if kind.ends_with("MultiTransform") {
+        let transformations = property(properties, "Transformations")?;
+        if transformations.links.is_empty() {
+            return None;
+        }
+        let stages = transformations
+            .links
+            .iter()
+            .enumerate()
+            .map(|(index, link)| {
+                let target = link.object.as_deref()?;
+                let object = objects.iter().find(|object| object.id == target)?;
+                let owned = properties_by_owner.get(target).map(Vec::as_slice)?;
+                let pattern = pattern_kind(&object.type_name, owned, objects, properties_by_owner)?;
+                let combination = if index == 0 {
+                    PatternStageCombination::Initialize
+                } else if matches!(pattern, PatternKind::Scale { .. }) {
+                    PatternStageCombination::AlignedSlices
+                } else {
+                    PatternStageCombination::CartesianProduct
+                };
+                Some(PatternStage {
+                    pattern: Box::new(pattern),
+                    combination,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?;
+        PatternKind::Composite { stages }
+    } else {
+        pattern_kind(kind, properties, objects, properties_by_owner)?
+    };
+    Some(FeatureDefinition::Pattern { seeds, pattern })
+}
+
+fn pattern_kind(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    objects: &[ObjectRecord],
+    properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
+) -> Option<PatternKind> {
     if kind.ends_with("Mirrored") {
         let (plane_origin, plane_normal) =
             plane_reference(properties, "MirrorPlane", objects, properties_by_owner)?;
-        return Some(FeatureDefinition::Pattern {
-            seeds,
-            pattern: PatternKind::Mirror {
-                plane_origin,
-                plane_normal,
-            },
+        return Some(PatternKind::Mirror {
+            plane_origin,
+            plane_normal,
         });
     }
 
@@ -1860,6 +1898,17 @@ fn pattern_definition(
     }
     let count = count as u32;
     let mode = integer_property(properties, "Mode").unwrap_or(0);
+
+    if kind.ends_with("Scaled") {
+        let final_factor = scalar_named(properties, "Factor")?;
+        return (final_factor.is_finite() && final_factor > 0.0 && count >= 2).then_some(
+            PatternKind::Scale {
+                center: PatternScaleCenter::FirstSeedCentroid,
+                final_factor,
+                count,
+            },
+        );
+    }
 
     let pattern = if kind.ends_with("LinearPattern") {
         // The neutral linear form is one-dimensional and evenly spaced. Preserve
@@ -1911,7 +1960,7 @@ fn pattern_definition(
     } else {
         return None;
     };
-    Some(FeatureDefinition::Pattern { seeds, pattern })
+    Some(pattern)
 }
 
 fn axis_reference(
@@ -2098,7 +2147,11 @@ fn is_sweep(kind: &str) -> bool {
 fn is_pattern(kind: &str) -> bool {
     matches!(
         kind,
-        "PartDesign::LinearPattern" | "PartDesign::PolarPattern" | "PartDesign::Mirrored"
+        "PartDesign::LinearPattern"
+            | "PartDesign::PolarPattern"
+            | "PartDesign::Mirrored"
+            | "PartDesign::Scaled"
+            | "PartDesign::MultiTransform"
     )
 }
 fn is_dress_up(kind: &str) -> bool {

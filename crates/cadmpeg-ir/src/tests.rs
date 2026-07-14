@@ -2280,6 +2280,29 @@ fn feature_operation_geometry_is_validated() {
                 count: 0,
             },
         },
+        FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Composite {
+                stages: vec![
+                    crate::features::PatternStage {
+                        pattern: Box::new(PatternKind::Linear {
+                            direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                            spacing: Length(1.0),
+                            count: 3,
+                        }),
+                        combination: crate::features::PatternStageCombination::Initialize,
+                    },
+                    crate::features::PatternStage {
+                        pattern: Box::new(PatternKind::Scale {
+                            center: crate::features::PatternScaleCenter::FirstSeedCentroid,
+                            final_factor: 2.0,
+                            count: 2,
+                        }),
+                        combination: crate::features::PatternStageCombination::AlignedSlices,
+                    },
+                ],
+            },
+        },
         FeatureDefinition::Sweep {
             profile: None,
             path: None,
@@ -2309,6 +2332,7 @@ fn feature_operation_geometry_is_validated() {
         "helix geometry is invalid",
         "wrap depth is invalid",
         "body motion is invalid",
+        "pattern geometry is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",
         "sweep magnitude is invalid",

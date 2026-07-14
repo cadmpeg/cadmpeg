@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "9");
+    assert_eq!(result.ir.ir_version, "10");
     let feature = |name: &str| {
         &result
             .ir
@@ -619,6 +619,88 @@ fn resolves_datum_references_for_polar_and_mirror_patterns() {
             ..
         } if *plane_origin == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
             && *plane_normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_progressive_scale_and_ordered_multi_transform_stages() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="Seed" id="1"/>
+ <Object type="PartDesign::LinearPattern" name="Linear" id="2"/>
+ <Object type="PartDesign::Scaled" name="Scaled" id="3"/>
+ <Object type="PartDesign::MultiTransform" name="Multi" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Seed"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Linear"><Properties Count="5">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="8"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
+ </Properties></Object>
+ <Object name="Scaled"><Properties Count="3">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Factor" type="App::PropertyFloat"><Float value="2.5"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
+ </Properties></Object>
+ <Object name="Multi"><Properties Count="2">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Transformations" type="App::PropertyLinkList"><LinkList count="2"><Link value="Linear"/><Link value="Scaled"/></LinkList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("scaled multi-transform");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+            .definition
+    };
+    assert!(matches!(
+        definition("Scaled"),
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern: cadmpeg_ir::features::PatternKind::Scale {
+                center: cadmpeg_ir::features::PatternScaleCenter::FirstSeedCentroid,
+                final_factor: 2.5,
+                count: 3,
+            },
+            ..
+        }
+    ));
+    let cadmpeg_ir::features::FeatureDefinition::Pattern {
+        pattern: cadmpeg_ir::features::PatternKind::Composite { stages },
+        ..
+    } = definition("Multi")
+    else {
+        panic!("expected composite pattern");
+    };
+    assert_eq!(stages.len(), 2);
+    assert_eq!(
+        stages[0].combination,
+        cadmpeg_ir::features::PatternStageCombination::Initialize
+    );
+    assert!(matches!(
+        *stages[0].pattern,
+        cadmpeg_ir::features::PatternKind::Linear { count: 3, .. }
+    ));
+    assert_eq!(
+        stages[1].combination,
+        cadmpeg_ir::features::PatternStageCombination::AlignedSlices
+    );
+    assert!(matches!(
+        *stages[1].pattern,
+        cadmpeg_ir::features::PatternKind::Scale { count: 3, .. }
     ));
     assert!(result.report.losses.is_empty());
 }
