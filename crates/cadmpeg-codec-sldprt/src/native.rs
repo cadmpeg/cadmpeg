@@ -734,7 +734,13 @@ impl SldprtNative {
                 .map(|record| (record.id.as_str(), record))
                 .collect::<std::collections::HashMap<_, _>>();
             for scalar in &lane.scalars {
-                for operand in &scalar.operands {
+                let resolved_operands = crate::resolved_features::resolve_scalar_operand_markers(
+                    lane.sketch_entities
+                        .iter()
+                        .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
+                    &scalar.operands,
+                );
+                for (operand, resolved) in scalar.operands.iter().zip(resolved_operands) {
                     let Some(reference) = references_by_id.get(operand.reference_ref.as_str())
                     else {
                         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -758,13 +764,6 @@ impl SldprtNative {
                                 scalar.id, entity_ref
                             )));
                         };
-                        let resolved = crate::resolved_features::resolve_operand_marker(
-                            lane.sketch_entities
-                                .iter()
-                                .filter(|candidate| candidate.feature_ref == scalar.feature_ref),
-                            operand.kind,
-                            operand.entity_index,
-                        );
                         if resolved != Some(*target) {
                             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                                 "feature-input scalar {} has inconsistent sketch marker {}",

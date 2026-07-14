@@ -250,13 +250,14 @@ mod marker_tests {
         compact_general_curve_ref_at, compact_surface_selection_at, coordinate_marker_local_links,
         marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        resolve_operand_marker, unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
-        NAME_MARKER, SCALAR_HEADER,
+        resolve_operand_marker, resolve_operand_marker_excluding, unique_locus,
+        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchRelationKind,
     };
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
+    use std::collections::HashSet;
 
     #[test]
     fn marker_local_id_is_the_trailing_u32() {
@@ -428,6 +429,62 @@ mod marker_tests {
             resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8dda), 3,)
                 .map(|marker| marker.id.as_str()),
             Some("arc-8")
+        );
+    }
+
+    #[test]
+    fn curve_operand_excludes_an_already_resolved_sibling_from_a_reference_handle() {
+        let curve = |id: &str, local_id, offset| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: offset as u32,
+            offset,
+            local_id: Some(local_id),
+            kind: SketchInputKind::LineOrCircle,
+            state_value: None,
+            coordinates_m: Some([offset as f64, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [
+            curve("curve-7", 7, 0),
+            curve("curve-5", 5, 1),
+            SketchInputEntity {
+                id: "reference-10".into(),
+                parent: "lane".into(),
+                feature_ref: Some("feature".into()),
+                ordinal: 2,
+                offset: 2,
+                local_id: Some(10),
+                kind: SketchInputKind::Relation(SketchRelationKind::Distance),
+                state_value: None,
+                coordinates_m: None,
+                links: vec![
+                    crate::records::SketchInputLink {
+                        local_id: 7,
+                        entity_ref: "curve-7".into(),
+                    },
+                    crate::records::SketchInputLink {
+                        local_id: 5,
+                        entity_ref: "curve-5".into(),
+                    },
+                ],
+                link_selector: Some(0),
+            },
+        ];
+        assert!(
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8386), 10).is_none()
+        );
+        assert_eq!(
+            resolve_operand_marker_excluding(
+                &markers,
+                FeatureInputOperandKind::Native(0x8386),
+                10,
+                &HashSet::from(["curve-7".into()]),
+            )
+            .map(|marker| marker.id.as_str()),
+            Some("curve-5")
         );
     }
 
@@ -1112,13 +1169,10 @@ pub(crate) fn bind_scalar_operands(
             else {
                 continue;
             };
-            for operand in &mut scalar.operands {
-                operand.entity_ref = resolve_operand_marker(
-                    entities.iter().copied(),
-                    operand.kind,
-                    operand.entity_index,
-                )
-                .map(|entity| entity.id.clone());
+            let resolved =
+                resolve_scalar_operand_markers(entities.iter().copied(), &scalar.operands);
+            for (operand, resolved) in scalar.operands.iter_mut().zip(resolved) {
+                operand.entity_ref = resolved.map(|entity| entity.id.clone());
             }
         }
         let scalar_owners = lane
@@ -1139,10 +1193,48 @@ pub(crate) fn bind_scalar_operands(
     }
 }
 
+pub(crate) fn resolve_scalar_operand_markers<'a>(
+    entities: impl IntoIterator<Item = &'a SketchInputEntity>,
+    operands: &[FeatureInputOperand],
+) -> Vec<Option<&'a SketchInputEntity>> {
+    let entities = entities.into_iter().collect::<Vec<_>>();
+    let mut resolved = operands
+        .iter()
+        .map(|operand| {
+            resolve_operand_marker(entities.iter().copied(), operand.kind, operand.entity_index)
+        })
+        .collect::<Vec<_>>();
+    let resolved_siblings = resolved
+        .iter()
+        .flatten()
+        .map(|entity| entity.id.clone())
+        .collect::<HashSet<_>>();
+    for (operand, target) in operands.iter().zip(&mut resolved) {
+        if target.is_none() {
+            *target = resolve_operand_marker_excluding(
+                entities.iter().copied(),
+                operand.kind,
+                operand.entity_index,
+                &resolved_siblings,
+            );
+        }
+    }
+    resolved
+}
+
 pub(crate) fn resolve_operand_marker<'a>(
     entities: impl IntoIterator<Item = &'a SketchInputEntity>,
     kind: FeatureInputOperandKind,
     address: u16,
+) -> Option<&'a SketchInputEntity> {
+    resolve_operand_marker_excluding(entities, kind, address, &HashSet::new())
+}
+
+fn resolve_operand_marker_excluding<'a>(
+    entities: impl IntoIterator<Item = &'a SketchInputEntity>,
+    kind: FeatureInputOperandKind,
+    address: u16,
+    excluded: &HashSet<String>,
 ) -> Option<&'a SketchInputEntity> {
     let entities = entities.into_iter().collect::<Vec<_>>();
     let mut compatible = entities
@@ -1175,6 +1267,7 @@ pub(crate) fn resolve_operand_marker<'a>(
                             .find(|entity| entity.id == link.entity_ref)
                     })
                     .filter(|entity| operand_accepts_marker(kind, entity.kind))
+                    .filter(|entity| !excluded.contains(&entity.id))
                     .collect::<Vec<_>>()
             } else {
                 Vec::new()
