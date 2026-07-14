@@ -542,6 +542,21 @@ pub enum FeatureDefinition {
         /// Whether planar two-dimensional offset rules are used.
         planar: bool,
     },
+    /// Builds one compound topology node from ordered source shapes.
+    Compound {
+        /// Ordered source members retained as a native or resolved selection.
+        members: BodySelection,
+    },
+    /// Removes redundant splitter topology from a source shape.
+    RefineShape {
+        /// Source shape whose coincident boundaries are simplified.
+        source: BodySelection,
+    },
+    /// Reverses the topological orientation of a source shape.
+    ReverseShape {
+        /// Source shape whose complete orientation is reversed.
+        source: BodySelection,
+    },
     /// Adds material normal to selected faces.
     Thicken {
         /// Faces offset by the operation.

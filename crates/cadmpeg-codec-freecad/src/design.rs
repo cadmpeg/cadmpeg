@@ -225,6 +225,17 @@ pub(crate) fn transfer(
                     properties: BTreeMap::new(),
                 }
             })
+        } else if matches!(
+            object.type_name.as_str(),
+            "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
+        ) {
+            derived_shape_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
         } else if object.type_name == "PartDesign::Draft" {
             draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
                 FeatureDefinition::Native {
@@ -1901,6 +1912,36 @@ fn offset_shape_definition(
     })
 }
 
+fn derived_shape_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Option<FeatureDefinition> {
+    match kind {
+        "Part::Compound" | "Part::Compound2" => {
+            let links = property(properties, "Links")?;
+            if links.links.is_empty() {
+                return None;
+            }
+            Some(FeatureDefinition::Compound {
+                members: BodySelection::Native(links.id.clone()),
+            })
+        }
+        "Part::Refine" | "Part::Reverse" => {
+            let source = property(properties, "Source")?;
+            if source.links.len() != 1 {
+                return None;
+            }
+            let source = BodySelection::Native(source.id.clone());
+            Some(if kind == "Part::Refine" {
+                FeatureDefinition::RefineShape { source }
+            } else {
+                FeatureDefinition::ReverseShape { source }
+            })
+        }
+        _ => None,
+    }
+}
+
 fn draft_definition(
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
@@ -2999,5 +3040,9 @@ fn is_design_object(kind: &str) -> bool {
         || is_revolution(kind)
         || is_dress_up(kind)
         || matches!(kind, "Part::Offset" | "Part::Offset2D")
+        || matches!(
+            kind,
+            "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
+        )
         || kind.contains("PartDesign::Feature")
 }

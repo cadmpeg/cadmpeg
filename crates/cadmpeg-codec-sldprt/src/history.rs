@@ -4984,6 +4984,14 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::Compound { .. }
+            | FeatureDefinition::RefineShape { .. }
+            | FeatureDefinition::ReverseShape { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported derived-shape semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Shell {
                 removed_faces,
                 thickness,
@@ -7139,6 +7147,9 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Flex { .. } => "Flex",
         FeatureDefinition::Scale { .. } => "Scale",
         FeatureDefinition::OffsetShape { .. } => "Offset",
+        FeatureDefinition::Compound { .. } => "Compound",
+        FeatureDefinition::RefineShape { .. } => "Refine",
+        FeatureDefinition::ReverseShape { .. } => "Reverse",
         FeatureDefinition::Hole { .. } => "Hole",
         FeatureDefinition::Pattern {
             pattern: PatternKind::Mirror { .. },

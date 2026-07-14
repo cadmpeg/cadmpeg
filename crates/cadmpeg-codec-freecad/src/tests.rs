@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "22");
+    assert_eq!(result.ir.ir_version, "23");
     let feature = |name: &str| {
         &result
             .ir
@@ -637,6 +637,61 @@ fn transfers_uniform_and_anisotropic_part_scale() {
             ..
         }
     ));
+}
+
+#[test]
+fn transfers_part_compound_refine_and_reverse_operations() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="6">
+ <Object type="Part::Box" name="A" id="1"/>
+ <Object type="Part::Box" name="B" id="2"/>
+ <Object type="Part::Compound" name="Compound" id="3"/>
+ <Object type="Part::Compound2" name="Compound2" id="4"/>
+ <Object type="Part::Refine" name="Refine" id="5"/>
+ <Object type="Part::Reverse" name="Reverse" id="6"/>
+</Objects>
+<ObjectData Count="6">
+ <Object name="A"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="B"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
+ <Object name="Compound"><Properties Count="1"><Property name="Links" type="App::PropertyLinkList"><LinkList count="2"><Link value="A"/><Link value="B"/></LinkList></Property></Properties></Object>
+ <Object name="Compound2"><Properties Count="1"><Property name="Links" type="App::PropertyLinkList"><LinkList count="2"><Link value="B"/><Link value="A"/></LinkList></Property></Properties></Object>
+ <Object name="Refine"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Compound"/></Property></Properties></Object>
+ <Object name="Reverse"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Refine"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("derived Part shapes");
+    let feature = |name: &str| {
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+    };
+    assert!(matches!(
+        &feature("Compound").definition,
+        cadmpeg_ir::features::FeatureDefinition::Compound {
+            members: cadmpeg_ir::features::BodySelection::Native(reference)
+        } if reference.ends_with(":property:Links")
+    ));
+    assert!(matches!(
+        feature("Refine").definition,
+        cadmpeg_ir::features::FeatureDefinition::RefineShape { .. }
+    ));
+    assert!(matches!(
+        feature("Reverse").definition,
+        cadmpeg_ir::features::FeatureDefinition::ReverseShape { .. }
+    ));
+    assert_eq!(feature("Compound").dependencies.len(), 2);
+    assert_eq!(feature("Compound2").dependencies.len(), 2);
+    assert_eq!(feature("Refine").dependencies.len(), 1);
+    assert_eq!(feature("Reverse").dependencies.len(), 1);
+    assert!(result.report.losses.is_empty());
 }
 
 #[test]

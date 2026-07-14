@@ -362,6 +362,12 @@ retain their source, signed distance, the same mode and join laws, intersection 
 fill, and the distinction between three-dimensional and planar offset construction. Planar
 both-sides mode and incomplete or zero-distance operations remain attributable and native.
 
+Part compound operations retain the complete ordered source list as one non-Boolean topology
+construction; the alternate compound persistence class has the same construction semantics.
+Refine operations retain the single source whose redundant splitter boundaries are removed.
+Reverse operations retain the single source whose complete topological orientation is inverted.
+Missing, empty, or multiply valued single-source links remain attributable native operations.
+
 Part extrusions retain their normalized direction, independent forward and reverse lengths, and
 equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected
