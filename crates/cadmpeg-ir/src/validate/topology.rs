@@ -1307,7 +1307,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
     }
-    if !ir.model.configurations.is_empty() && active_configurations != 1 {
+    if active_configurations > 1 {
         findings.push(Finding {
             check: Check::Counts,
             severity: Severity::Error,

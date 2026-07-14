@@ -3450,6 +3450,11 @@ fn project_features_with_native_inputs(
         &mut features,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::project_compact_combine_paths(
+        &mut features,
+        &histories,
+        &native.feature_input_lanes,
+    );
     crate::resolved_features::project_compact_edge_selections(
         &mut features,
         &native.feature_input_lanes,

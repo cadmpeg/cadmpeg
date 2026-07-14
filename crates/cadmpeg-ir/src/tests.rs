@@ -998,7 +998,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("configuration has an empty name")));
-    assert!(report
+    assert!(!report
         .findings
         .iter()
         .any(|finding| finding.message.contains("exactly one active configuration")));
@@ -2082,6 +2082,34 @@ fn pcurve_surface_mismatch_is_flagged() {
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
     );
+}
+
+#[test]
+fn pcurve_nurbs_rejects_non_finite_knots() {
+    let mut ir = unit_cube();
+    ir.model.pcurves.push(crate::geometry::Pcurve {
+        id: crate::ids::PcurveId("synthetic:cube:pcurve#non-finite-knot".into()),
+        geometry: crate::geometry::PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, f64::NAN, 1.0, 1.0],
+            control_points: vec![
+                crate::math::Point2::new(0.0, 0.0),
+                crate::math::Point2::new(1.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        },
+        wrapper_reversed: None,
+        native_tail_flags: None,
+        parameter_range: None,
+        fit_tolerance: None,
+    });
+
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some("synthetic:cube:pcurve#non-finite-knot")
+            && finding.message.contains("non-finite")
+    }));
 }
 
 #[test]

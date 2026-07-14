@@ -1257,6 +1257,19 @@ mod marker_tests {
             Some((109, vec![287, 115]))
         );
         assert_eq!(compact_body_selection_at(&payload, 9), Some(vec![287, 115]));
+        let mut embedded_false_header = vec![0xaa; 9];
+        embedded_false_header.extend(11000u32.to_le_bytes());
+        embedded_false_header.extend([0; 8]);
+        embedded_false_header.extend(5u32.to_le_bytes());
+        for id in [287, 11000, 0, 0, u32::MAX] {
+            embedded_false_header.extend(id.to_le_bytes());
+        }
+        embedded_false_header.extend(u32::MAX.to_le_bytes());
+        embedded_false_header.extend([0; 12]);
+        assert_eq!(
+            compact_body_selection_vector(&embedded_false_header, 100, None),
+            Some((109, vec![287, 11000, 0, 0, u32::MAX]))
+        );
         let zero_trailer = payload.len() - 3;
         payload[zero_trailer] = 1;
         assert_eq!(
@@ -3455,24 +3468,41 @@ fn compact_body_selection_vector(
         {
             continue;
         }
-        let count = usize::try_from(u32::from_le_bytes(
-            payload.get(relative + 12..relative + 16)?.try_into().ok()?,
-        ))
-        .ok()?;
-        let ids_end = relative.checked_add(16 + count.checked_mul(4)?)?;
-        let sentinel_end = ids_end.checked_add(4)?;
-        let zeros_end = sentinel_end.checked_add(12)?;
-        let suffix = payload.get(zeros_end..)?;
+        let Some(count_bytes) = payload.get(relative + 12..relative + 16) else {
+            continue;
+        };
+        let Ok(count) = usize::try_from(u32::from_le_bytes(
+            count_bytes.try_into().expect("four-byte count"),
+        )) else {
+            continue;
+        };
+        let Some(ids_end) = count
+            .checked_mul(4)
+            .and_then(|byte_len| relative.checked_add(16)?.checked_add(byte_len))
+        else {
+            continue;
+        };
+        let Some(sentinel_end) = ids_end.checked_add(4) else {
+            continue;
+        };
+        let Some(zeros_end) = sentinel_end.checked_add(12) else {
+            continue;
+        };
+        let Some(suffix) = payload.get(zeros_end..) else {
+            continue;
+        };
         let valid_suffix = matches!(suffix, [] | [0, 0, 0, 0])
             || next_object_token.is_some_and(|token| suffix == token.to_le_bytes());
-        if payload.get(ids_end..sentinel_end)? != u32::MAX.to_le_bytes()
-            || payload.get(sentinel_end..zeros_end)? != [0; 12]
+        if payload.get(ids_end..sentinel_end) != Some(u32::MAX.to_le_bytes().as_slice())
+            || payload.get(sentinel_end..zeros_end) != Some([0; 12].as_slice())
             || !valid_suffix
         {
             continue;
         }
-        let local_body_ids = payload
-            .get(relative + 16..ids_end)?
+        let Some(ids) = payload.get(relative + 16..ids_end) else {
+            continue;
+        };
+        let local_body_ids = ids
             .chunks_exact(4)
             .map(|bytes| u32::from_le_bytes(bytes.try_into().expect("four-byte chunk")))
             .collect();

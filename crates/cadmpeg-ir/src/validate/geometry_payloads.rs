@@ -1496,7 +1496,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 weights,
                 ..
             } => {
-                radial_control_points.len() >= *degree as usize + 1
+                radial_control_points.len() > *degree as usize
                     && axial_control_points.len() == radial_control_points.len()
                     && knots.len() == radial_control_points.len() + *degree as usize + 1
                     && radial_control_points.iter().all(point_finite)
@@ -1515,7 +1515,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 weights,
                 ..
             } => {
-                control_points.len() >= *degree as usize + 1
+                control_points.len() > *degree as usize
                     && knots.len() == control_points.len() + *degree as usize + 1
                     && control_points.iter().all(point_finite)
                     && weights.as_ref().is_none_or(|weights| {
@@ -1833,11 +1833,18 @@ fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) 
 }
 
 pub(super) fn check_knots(findings: &mut Vec<Finding>, id: &str, knots: &[f64], dir: &str) {
-    if knots.windows(2).any(|w| w[1] < w[0]) {
+    let issue = if knots.iter().any(|knot| !knot.is_finite()) {
+        Some("knot vector contains a non-finite value")
+    } else if knots.windows(2).any(|w| w[1] < w[0]) {
+        Some("knot vector is not non-decreasing")
+    } else {
+        None
+    };
+    if let Some(issue) = issue {
         let label = if dir.is_empty() {
-            "knot vector is not non-decreasing".to_string()
+            issue.to_string()
         } else {
-            format!("{dir}-knot vector is not non-decreasing")
+            format!("{dir}-{issue}")
         };
         bounds_err(findings, id, &label);
     }

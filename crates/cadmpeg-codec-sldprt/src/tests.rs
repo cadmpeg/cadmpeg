@@ -1932,6 +1932,47 @@ fn decode_without_geometry_falls_back_to_metadata() {
 }
 
 #[test]
+fn metadata_fallback_binds_resolved_feature_scalars() {
+    let mut source = synthetic_sldprt();
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Fillet Name="Round1" Type="Fillet"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names(&[0], &["Round1", "D1"]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(!decoded.report.geometry_transferred);
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Round1"))
+        .expect("metadata fillet feature");
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .expect("metadata D1 parameter");
+    assert_eq!(
+        parameter.value,
+        Some(cadmpeg_ir::features::ParameterValue::Length(
+            cadmpeg_ir::features::Length(25.0)
+        ))
+    );
+    assert!(parameter.native_ref.is_some());
+}
+
+#[test]
 fn retained_source_image_round_trips_byte_exactly() {
     let source = sldprt_with_body(&triangle_body());
     let mut cur = Cursor::new(source.clone());
@@ -16055,6 +16096,37 @@ fn native_store_rejects_nonlocal_relation_scalar_groups() {
         error.to_string().contains("relation instance")
             && error.to_string().contains("inconsistent ownership")
     );
+}
+
+#[test]
+fn native_load_rejects_nonadjacent_duplicate_relation_scalars() {
+    let mut source = sldprt_with_compact_relation_pair(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut namespace = decoded
+        .ir
+        .native
+        .namespace("sldprt")
+        .expect("SLDPRT namespace")
+        .clone();
+    let mut relations: Vec<crate::records::FeatureInputRelationInstance> = namespace
+        .arena_as("feature_input_relation_instances")
+        .unwrap();
+    let relation = relations.first_mut().expect("relation instance");
+    assert_eq!(relation.scalar_refs.len(), 2);
+    relation.scalar_refs.push(relation.scalar_refs[0].clone());
+    namespace
+        .set_arena("feature_input_relation_instances", &relations)
+        .unwrap();
+
+    let error = crate::native::SldprtNative::load(&namespace).unwrap_err();
+    assert!(error.to_string().contains("relation instance"));
 }
 
 #[test]

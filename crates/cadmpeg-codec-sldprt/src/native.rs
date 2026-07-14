@@ -337,7 +337,11 @@ impl SldprtNative {
                 || !feature_ids.contains(record.feature_ref.as_str())
                 || record.scalar_refs.is_empty()
                 || record.scalar_refs.len() > 3
-                || record.scalar_refs.windows(2).any(|pair| pair[0] == pair[1])
+                || record
+                    .scalar_refs
+                    .iter()
+                    .enumerate()
+                    .any(|(index, scalar)| record.scalar_refs[..index].contains(scalar))
                 || classes
                     .iter()
                     .find(|class| class.id == record.class_ref)

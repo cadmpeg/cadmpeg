@@ -1061,6 +1061,17 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &ir.model.features,
         &pmi_dimensions,
     );
+    crate::resolved_features::bind_parameter_scalars(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        &histories,
+        &lanes,
+    );
+    crate::resolved_features::type_display_relation_parameters(
+        &mut ir.model.parameters,
+        &ir.model.features,
+        &lanes,
+    );
     stamp_parameter_baseline(&mut ir);
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
