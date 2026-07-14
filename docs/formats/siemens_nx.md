@@ -865,6 +865,14 @@ has no terminator. A type-81 reference slot resolves a numeric value record only
 when exactly one type-82 or type-83 record in the same stream has the referenced
 xmt; reference order and the value lane order are retained.
 
+A face, edge, FIN, or vertex topology record with one uniquely resolved
+attribute-list identity owns every uniquely resolved type-82, type-83, and
+type-84 value referenced by that type-81 record. Each value record transfers as
+one topology-targeted source attribute. Its name contains the value-record
+family and zero-based type-81 reference ordinal; its values retain serialized
+lane order. Attribute class names do not transfer through this relation until
+the type-81 instance-to-definition field is defined.
+
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 
 ```text

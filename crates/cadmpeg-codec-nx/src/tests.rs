@@ -4057,7 +4057,23 @@ fn topology_retains_entity_attribute_list_references() {
     assert_eq!(references[0].topology_xmt, 4);
     assert_eq!(references[0].attribute_list_xmt, 41);
     assert!(references[0].attribute_list_record.is_some());
-    assert!(result.ir.model.attributes.is_empty());
+    assert_eq!(result.ir.model.attributes.len(), 1);
+    assert_eq!(
+        result.ir.model.attributes[0].target,
+        cadmpeg_ir::attributes::AttributeTarget::Face(cadmpeg_ir::ids::FaceId(
+            "nx:s0:face#4".into()
+        ))
+    );
+    assert_eq!(
+        result.ir.model.attributes[0].name,
+        "parasolid_type_84_reference_5"
+    );
+    assert_eq!(
+        result.ir.model.attributes[0].values,
+        [cadmpeg_ir::attributes::AttributeValue::String(
+            "deadbeef".into()
+        )]
+    );
 }
 
 #[test]
@@ -4202,9 +4218,8 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
     use cadmpeg_ir::AnnotationBuilder;
 
     use crate::native::{
-        ParasolidAttributeDefinition, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
-        ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
-        ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
+        ParasolidEntity51NumericKind, ParasolidEntity51NumericUse, ParasolidEntity52IntegerRecord,
+        ParasolidEntity53DoubleRecord, ParasolidTopologyAttributeListReference,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
@@ -4217,26 +4232,6 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         attribute_list_xmt: 50,
         attribute_list_record: Some("entity".into()),
         inflated_offset: 300,
-    };
-    let definition = ParasolidAttributeDefinition {
-        id: "definition".into(),
-        stream_ordinal: 3,
-        xmt: 18,
-        name: "SDL/TYSA_DENSITY".into(),
-        field_count: 2,
-        field_record_xmt: 19,
-        field_record_references: [21, 22],
-        field_record_header_words: [0, 9000],
-        field_descriptor_prefix: [0; 26],
-        field_codes: vec![1, 2],
-        inflated_offset: 100,
-    };
-    let class_use = ParasolidTopologyAttributeClassUse {
-        id: "class-use".into(),
-        topology_attribute_reference: reference.id.clone(),
-        entity_51_record: "entity".into(),
-        definition_ordinal: 1,
-        attribute_definition: definition.id.clone(),
     };
     let integer = ParasolidEntity52IntegerRecord {
         id: "integers".into(),
@@ -4282,8 +4277,6 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         &mut ir,
         &crate::decode::ParasolidNumericAttributeSources {
             topology_references: &[reference],
-            class_uses: &[class_use],
-            definitions: &[definition],
             numeric_uses: &uses,
             integers: &[integer],
             doubles: &[double],
@@ -4302,7 +4295,7 @@ fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
         attributes[0].target,
         AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
     );
-    assert_eq!(attributes[0].name, "SDL/TYSA_DENSITY.integer_reference_3");
+    assert_eq!(attributes[0].name, "parasolid_type_integer_reference_3");
     assert_eq!(
         attributes[0].values,
         [
