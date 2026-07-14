@@ -5178,6 +5178,12 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::SewBodies { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a body-level sew operation",
+                    feature.id
+                )));
+            }
             FeatureDefinition::FilledSurface {
                 boundary,
                 support_faces,
@@ -6993,6 +6999,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Thicken { .. } => "Thicken",
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
+        FeatureDefinition::SewBodies { .. } => "Feature",
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
         FeatureDefinition::TrimSurface { .. } => "TrimSurface",
         FeatureDefinition::ExtendSurface { .. } => "ExtendSurface",

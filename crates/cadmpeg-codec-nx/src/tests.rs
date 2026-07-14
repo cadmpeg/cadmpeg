@@ -707,6 +707,44 @@ fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
 }
 
 #[test]
+fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let operand = |ordinal, object_index| crate::native::FeatureOperationBodyOperand {
+        id: format!("operand#{ordinal}"),
+        operation_label: "operation#0".to_string(),
+        body_object_index: 10,
+        body_reference_ordinal: 0,
+        ordinal,
+        operand_object_index: object_index,
+        segment_body_bindings: vec![format!("binding#{ordinal}")],
+        source_offset: u64::from(ordinal),
+    };
+    let operands = [operand(0, 20), operand(1, 30)];
+    let references = operands.iter().collect::<Vec<_>>();
+    let first = BodyId("body#20".to_string());
+    let second = BodyId("body#30".to_string());
+    let bodies = BTreeMap::from([(20, vec![first.clone()]), (30, vec![second.clone()])]);
+
+    assert_eq!(
+        crate::decode::sew_body_feature_definition(&references, &bodies),
+        Some(FeatureDefinition::SewBodies {
+            bodies: BodySelection::Resolved {
+                bodies: vec![first, second],
+                native: "nx:om-object-indices#20,30".to_string(),
+            },
+            gap_tolerance: None,
+        })
+    );
+    assert_eq!(
+        crate::decode::sew_body_feature_definition(&[], &bodies),
+        None
+    );
+}
+
+#[test]
 fn nx_sketch_operation_projects_as_an_ordered_planar_sketch_node() {
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("SKETCH", &[], None),

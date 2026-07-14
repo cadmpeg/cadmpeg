@@ -1537,6 +1537,15 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "knit tolerance is invalid");
                 }
             }
+            FeatureDefinition::SewBodies {
+                bodies,
+                gap_tolerance,
+            } => {
+                body_selections.push(bodies);
+                if gap_tolerance.is_some_and(|value| !value.0.is_finite() || value.0 < 0.0) {
+                    feature_geometry_error(findings, feature, "sew tolerance is invalid");
+                }
+            }
             FeatureDefinition::FilledSurface {
                 boundary,
                 support_faces,

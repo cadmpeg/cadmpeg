@@ -6440,6 +6440,16 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
+        let sew_projection = (label.value == "SEW")
+            .then(|| {
+                sew_body_feature_definition(
+                    operation_body_operands_by_operation
+                        .get(label.id.as_str())?
+                        .as_slice(),
+                    &bodies_by_object_index,
+                )
+            })
+            .flatten();
         let offset_projection = (label.value == "OFFSET")
             .then(|| offset_surface_feature_definition(ir, &outputs))
             .flatten();
@@ -6453,16 +6463,15 @@ fn attach_feature_operations(
         }
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
-                offset_projection.map_or_else(
-                    || {
+                sew_projection
+                    .or_else(|| offset_projection.map(|(definition, _)| definition))
+                    .unwrap_or_else(|| {
                         non_boolean_feature_definition(
                             &label.value,
                             &operation_payload_strings,
                             block_dimension_values,
                         )
-                    },
-                    |(definition, _)| definition,
-                )
+                    })
             },
             |operation| FeatureDefinition::Combine {
                 target: feature_body_selection(
@@ -6746,6 +6755,31 @@ pub(crate) fn feature_body_selection(
         }
     }
     BodySelection::Resolved { bodies, native }
+}
+
+pub(crate) fn sew_body_feature_definition(
+    operands: &[&crate::native::FeatureOperationBodyOperand],
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+) -> Option<FeatureDefinition> {
+    let object_indices = operands
+        .iter()
+        .map(|operand| operand.operand_object_index)
+        .collect::<Vec<_>>();
+    (!object_indices.is_empty()).then(|| FeatureDefinition::SewBodies {
+        bodies: feature_body_selection(
+            &object_indices,
+            bodies_by_object_index,
+            format!(
+                "nx:om-object-indices#{}",
+                object_indices
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+        ),
+        gap_tolerance: None,
+    })
 }
 
 pub(crate) fn feature_body_outputs(

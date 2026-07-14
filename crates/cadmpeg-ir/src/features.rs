@@ -502,6 +502,14 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gap_tolerance: Option<Length>,
     },
+    /// Joins ordered sheet or solid bodies along coincident boundaries.
+    SewBodies {
+        /// Bodies participating in the sew operation.
+        bodies: BodySelection,
+        /// Maximum boundary gap accepted by the operation, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        gap_tolerance: Option<Length>,
+    },
     /// Surface patch spanning a selected edge boundary.
     FilledSurface {
         /// Closed edge boundary of the generated patch.

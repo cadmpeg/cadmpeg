@@ -665,6 +665,13 @@ An `EXTRUDE` construction profile is complete when its witnessed profile-referen
 
 A wrapped operation-body member is a body operand when its compact index differs from the anchoring body index and equals an object index present in an operation body-reference field or validated segment body-binding tuple. The operand retains its body clause, member order, serialized identity, matching segment bindings, and source offset. Other wrapped members retain only their native member representation.
 
+A `SEW` operation with one or more body operands projects as a neutral body-sew
+feature. Operand order is the wrapped-member order. Every operand resolves to
+neutral bodies only when all object identities have surviving segment body
+bindings; otherwise the ordered native object-index selection is retained
+atomically. The operation record does not assign a gap tolerance, so the
+neutral tolerance remains absent.
+
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
 An `OFFSET` operation with exactly one segment-bound output image resolves as a
