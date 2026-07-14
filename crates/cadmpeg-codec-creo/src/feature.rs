@@ -2232,7 +2232,7 @@ fn saved_arc_scalar(
         && payload.get(offset + 1).is_some_and(|next| {
             matches!(
                 next,
-                0x28 | 0x5e | 0x64 | 0xad | 0xcc | 0xd0 | 0xd2 | 0xd5 | 0xde | 0xdf
+                0x28 | 0x5e | 0x64 | 0x9d..=0xa0 | 0xad | 0xcc | 0xd0 | 0xd2 | 0xd5 | 0xde | 0xdf
             )
         })
     {
@@ -2245,6 +2245,10 @@ fn saved_arc_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 8);
     }
     let arc_dict = match payload.get(offset).copied() {
+        Some(0x9d) => Some([0x40, 0x12]),
+        Some(0x9e) => Some([0x40, 0x13]),
+        Some(0x9f) => Some([0x40, 0x14]),
+        Some(0xa0) => Some([0x40, 0x15]),
         Some(0x5e) => Some([0x3f, 0xd3]),
         Some(0x64) => Some([0x3f, 0xd9]),
         Some(0xad) => Some([0x3f, 0xd9]),
@@ -3461,6 +3465,10 @@ mod tests {
     #[test]
     fn saved_arc_negative_dict_forms_supply_ieee_high_bytes() {
         for (bytes, head) in [
+            ([0x9d, 1, 2, 3, 4, 5, 6], [0x40, 0x12]),
+            ([0x9e, 1, 2, 3, 4, 5, 6], [0x40, 0x13]),
+            ([0x9f, 1, 2, 3, 4, 5, 6], [0x40, 0x14]),
+            ([0xa0, 1, 2, 3, 4, 5, 6], [0x40, 0x15]),
             ([0x5e, 1, 2, 3, 4, 5, 6], [0x3f, 0xd3]),
             ([0x64, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
