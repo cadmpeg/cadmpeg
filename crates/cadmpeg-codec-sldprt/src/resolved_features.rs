@@ -247,10 +247,11 @@ mod marker_tests {
         arc_angle_relation_kind, compact_body_path_at, compact_body_selection_at,
         compact_body_selection_vector, compact_edge_selection_at, compact_extrusion_through_all_at,
         compact_extrusion_to_face_at, compact_general_curve_ref_at, compact_surface_selection_at,
-        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        resolve_operand_marker, unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
-        NAME_MARKER, SCALAR_HEADER,
+        coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
+        unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::{
         FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchRelationKind,
@@ -576,6 +577,30 @@ mod marker_tests {
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
         assert_eq!(marker_local_links(&payload, 0), None);
+    }
+
+    #[test]
+    fn coordinate_marker_links_are_counted_reference_cells() {
+        let mut payload = vec![0; 118];
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[66..74].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[74..82].copy_from_slice(&(-2.5f64).to_le_bytes());
+        payload[84..86].copy_from_slice(&2u16.to_le_bytes());
+        for (index, local_id) in [7u16, 11].into_iter().enumerate() {
+            let start = 86 + index * 12;
+            payload[start..start + 2].copy_from_slice(&0x8386u16.to_le_bytes());
+            payload[start + 2..start + 4].copy_from_slice(&local_id.to_le_bytes());
+            payload[start + 4..start + 8].fill(0xff);
+        }
+        payload[112..116].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+        assert_eq!(
+            coordinate_marker_local_links(&payload, 0),
+            Some((vec![7, 11], 0x8386))
+        );
+        payload[98] ^= 1;
+        assert_eq!(coordinate_marker_local_links(&payload, 0), None);
     }
 
     #[test]
@@ -995,6 +1020,8 @@ pub(crate) fn bind_scalar_operands(
                 continue;
             };
             let Some((local_ids, selector)) = marker_local_links(&lane.native_payload, offset)
+                .map(|(links, selector)| (links.to_vec(), selector))
+                .or_else(|| coordinate_marker_local_links(&lane.native_payload, offset))
             else {
                 continue;
             };
@@ -1674,6 +1701,28 @@ fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> 
         ],
         u16::from_le_bytes(payload.get(offset + 68..offset + 70)?.try_into().ok()?),
     ))
+}
+
+fn coordinate_marker_local_links(payload: &[u8], offset: usize) -> Option<(Vec<u16>, u16)> {
+    marker_coordinates(payload, offset)?;
+    let count = usize::from(u16::from_le_bytes(
+        payload.get(offset + 84..offset + 86)?.try_into().ok()?,
+    ));
+    if !(1..=2).contains(&count) {
+        return None;
+    }
+    let mut links = Vec::with_capacity(count);
+    for index in 0..count {
+        let start = offset.checked_add(86 + index * 12)?;
+        let cell = payload.get(start..start + 12)?;
+        if cell[0..2] != [0x86, 0x83] || cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
+            return None;
+        }
+        links.push(u16::from_le_bytes([cell[2], cell[3]]));
+    }
+    let sentinel = offset.checked_add(86 + count * 12)?;
+    (payload.get(sentinel..sentinel + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff])
+        .then_some((links, 0x8386))
 }
 
 fn relation_instances(
