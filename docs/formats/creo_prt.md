@@ -245,8 +245,9 @@ the row.
 Each bounded positional body transfers to the Creo native
 `surface_parameters` arena with its surface identifier, family, boundary kind,
 exact body bytes, ordered decoded or opaque scalar slots, and maximal opaque
-spans covering every byte outside those slots. Its terminal scalar frame is
-the maximal contiguous scalar-token sequence ending at the body boundary.
+spans covering every byte outside those slots. Scalar frames are the maximal
+contiguous scalar-token sequences in byte order. The terminal scalar frame is
+the final frame only when it ends at the body boundary.
 
 ### 3.4 Planes
 

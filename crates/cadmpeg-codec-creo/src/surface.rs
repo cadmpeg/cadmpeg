@@ -211,6 +211,8 @@ pub struct SurfaceParameterRecord {
     pub scalar_tokens: Vec<SurfaceParameterScalar>,
     /// Exact byte spans not owned by a recognized scalar token.
     pub opaque_spans: Vec<SurfaceParameterOpaqueSpan>,
+    /// Maximal contiguous scalar-token frames in byte order.
+    pub scalar_frames: Vec<SurfaceParameterScalarFrame>,
     /// Maximal scalar-token frame ending at the body boundary.
     pub terminal_scalar_frame: Option<SurfaceParameterScalarFrame>,
     /// Structural form that bounded the body.
@@ -804,24 +806,32 @@ fn opaque_spans(body: &[u8], tokens: &[SurfaceParameterScalar]) -> Vec<SurfacePa
     spans
 }
 
+fn scalar_frames(tokens: &[SurfaceParameterScalar]) -> Vec<SurfaceParameterScalarFrame> {
+    let mut frames = Vec::new();
+    let mut start = 0;
+    while start < tokens.len() {
+        let mut end = start + 1;
+        while end < tokens.len()
+            && tokens[end - 1].offset + tokens[end - 1].length == tokens[end].offset
+        {
+            end += 1;
+        }
+        frames.push(SurfaceParameterScalarFrame {
+            offset: tokens[start].offset,
+            slots: tokens[start..end].to_vec(),
+        });
+        start = end;
+    }
+    frames
+}
+
 fn terminal_scalar_frame(
     body: &[u8],
-    tokens: &[SurfaceParameterScalar],
+    frames: &[SurfaceParameterScalarFrame],
 ) -> Option<SurfaceParameterScalarFrame> {
-    let mut start = tokens.len().checked_sub(1)?;
-    let last = &tokens[start];
-    (last.offset + last.length == body.len()).then_some(())?;
-    while start > 0 {
-        let previous = &tokens[start - 1];
-        if previous.offset + previous.length != tokens[start].offset {
-            break;
-        }
-        start -= 1;
-    }
-    Some(SurfaceParameterScalarFrame {
-        offset: tokens[start].offset,
-        slots: tokens[start..].to_vec(),
-    })
+    let frame = frames.last()?;
+    let last = frame.slots.last()?;
+    (last.offset + last.length == body.len()).then(|| frame.clone())
 }
 
 fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
@@ -902,7 +912,8 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         let body = payload[*body_start..body_end].to_vec();
         let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
         let opaque_spans = opaque_spans(&body, &scalar_tokens);
-        let terminal_scalar_frame = terminal_scalar_frame(&body, &scalar_tokens);
+        let scalar_frames = scalar_frames(&scalar_tokens);
+        let terminal_scalar_frame = terminal_scalar_frame(&body, &scalar_frames);
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
@@ -911,6 +922,7 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
                 .collect(),
             scalar_tokens,
             opaque_spans,
+            scalar_frames,
             terminal_scalar_frame,
             body,
             boundary,
