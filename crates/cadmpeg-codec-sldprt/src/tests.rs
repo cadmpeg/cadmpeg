@@ -1815,6 +1815,10 @@ fn encoder_writes_source_less_line_sketches() {
             solid: Some(true),
             face_maker: None,
             inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         native_ref: None,
     });

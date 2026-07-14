@@ -603,6 +603,10 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::Sweep {
             profile: Some(ProfileRef::Sketch(sketch.clone())),
@@ -695,6 +699,10 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         native_ref: None,
     });
@@ -2116,6 +2124,10 @@ fn feature_extent_magnitudes_are_validated() {
                 solid: None,
                 face_maker: None,
                 inner_wire_taper: None,
+                first_offset: None,
+                second_offset: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
             native_ref: None,
         });
@@ -2170,6 +2182,10 @@ fn sketch_feature_ownership_and_order_are_validated() {
             solid: None,
             face_maker: None,
             inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         native_ref: None,
     });

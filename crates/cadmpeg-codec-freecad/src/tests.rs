@@ -525,7 +525,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "32");
+    assert_eq!(result.ir.ir_version, "33");
     let feature = |name: &str| {
         &result
             .ir
@@ -1795,6 +1795,14 @@ fn transfers_shape_and_subshape_binder_construction() {
     assert!(
         matches!(definition("ShapeBind"), cadmpeg_ir::features::FeatureDefinition::Binder { sources, construction: cadmpeg_ir::features::BinderConstruction::Shape { trace_support: true } } if sources.len() == 1 && sources[0].subelements == ["Face1", "Face2"])
     );
+    let cadmpeg_ir::features::FeatureDefinition::PostProcess {
+        operation,
+        refine: false,
+        ..
+    } = definition("SubBind")
+    else {
+        panic!("subshape binder post-processing");
+    };
     let cadmpeg_ir::features::FeatureDefinition::Binder {
         sources,
         construction:
@@ -1810,7 +1818,7 @@ fn transfers_shape_and_subshape_binder_construction() {
                 offset: Some(offset),
                 context: Some(context),
             },
-    } = definition("SubBind")
+    } = operation.as_ref()
     else {
         panic!("subshape binder");
     };
@@ -2833,6 +2841,7 @@ fn transfers_non_default_extrusion_termination_branches() {
             face_maker: Some(face_maker),
             inner_wire_taper: Some(InnerWireTaper::SameAsOuter),
             op: BooleanOp::NewBody,
+            ..
         } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
             && (*draft - 2_f64.to_radians()).abs() < 1e-12
             && (*reverse_draft - 4_f64.to_radians()).abs() < 1e-12
@@ -2887,6 +2896,92 @@ fn transfers_part_extrusion_symmetric_direction_magnitude() {
         } if length.0 == 12.0
             && (*draft - 3_f64.to_radians()).abs() < 1e-12
             && (*reverse_draft - 3_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_partdesign_mixed_extrusion_side_controls() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Sketcher::SketchObject" name="Profile" id="1"/>
+ <Object type="Part::Box" name="Target" id="2"/>
+ <Object type="PartDesign::Pad" name="Mixed" id="3"/>
+ <Object type="PartDesign::Pocket" name="Symmetric" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Profile"><Properties Count="0"/></Object>
+ <Object name="Target"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Mixed"><Properties Count="15">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="SideType" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="-5"/></Property>
+  <Property name="Type2" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+  <Property name="UpToShape2" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Target" sub="Face2"/></LinkList></Property>
+  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
+  <Property name="UseCustomVector" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><Link object="Profile" sub="Edge1"/></Property>
+  <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
+  <Property name="TaperAngle2" type="App::PropertyAngle"><Float value="-3"/></Property>
+  <Property name="Offset" type="App::PropertyDistance"><Float value="1"/></Property>
+  <Property name="Offset2" type="App::PropertyDistance"><Float value="-2"/></Property>
+  <Property name="AlongSketchNormal" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="AllowMultiFace" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="Symmetric"><Properties Count="4">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Profile"/></Property>
+  <Property name="SideType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Offset" type="App::PropertyDistance"><Float value="0.5"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("mixed extrusion controls");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    use cadmpeg_ir::features::{
+        Angle, Extent, ExtrusionDirectionSource, FeatureDefinition, Length, PathRef,
+    };
+    assert!(matches!(
+        definition("Mixed"),
+        FeatureDefinition::Extrude {
+            extent: Extent::TwoSidedExtents { first, second },
+            direction: Some(direction),
+            direction_source: Some(ExtrusionDirectionSource::Edge { reference: PathRef::Native(reference) }),
+            draft: Some(Angle(first_draft)),
+            reverse_draft: Some(Angle(second_draft)),
+            first_offset: Some(Length(1.0)),
+            second_offset: Some(Length(-2.0)),
+            length_along_profile_normal: Some(false),
+            allow_multi_profile_faces: Some(true),
+            ..
+        } if matches!(first.as_ref(), Extent::Blind { length: Length(-5.0) })
+            && matches!(second.as_ref(), Extent::ToShape { .. })
+            && direction.y == 1.0
+            && reference.ends_with(":property:ReferenceAxis")
+            && (*first_draft - 2_f64.to_radians()).abs() < 1e-12
+            && (*second_draft + 3_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("Symmetric"),
+        FeatureDefinition::Extrude {
+            extent: Extent::SymmetricExtent { extent },
+            first_offset: Some(Length(0.5)),
+            ..
+        } if matches!(extent.as_ref(), Extent::ThroughAll)
     ));
     assert!(result.report.losses.is_empty());
 }

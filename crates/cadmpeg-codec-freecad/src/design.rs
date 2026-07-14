@@ -2034,9 +2034,12 @@ fn extrusion_definition(
             solid: Some(bool_property(properties, "Solid").unwrap_or(false)),
             face_maker,
             inner_wire_taper,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         });
     }
-    let positive = |name| scalar_named(properties, name).filter(|value| *value > 0.0);
     let termination = |side: u8| {
         let suffix = if side == 1 { "" } else { "2" };
         let type_name = format!("Type{suffix}");
@@ -2046,7 +2049,7 @@ fn extrusion_definition(
         match integer_property(properties, &type_name).unwrap_or(0) {
             0 => Some(Extent::Blind {
                 length: Length(
-                    scalar_named(properties, &length_name).filter(|value| *value > 0.0)?,
+                    scalar_named(properties, &length_name).filter(|value| *value != 0.0)?,
                 ),
             }),
             1 if kind.contains("Pocket") => Some(Extent::ThroughAll),
@@ -2074,26 +2077,47 @@ fn extrusion_definition(
     });
     let extent = match side_type {
         0 => termination(1)?,
-        1 => Extent::TwoSided {
-            first: Length(positive("Length")?),
-            second: Length(positive("Length2")?),
+        1 => Extent::TwoSidedExtents {
+            first: Box::new(termination(1)?),
+            second: Box::new(termination(2)?),
         },
         2 => match termination(1)? {
             Extent::Blind { length } => Extent::Symmetric { length },
-            _ => return None,
+            extent => Extent::SymmetricExtent {
+                extent: Box::new(extent),
+            },
         },
         _ => return None,
     };
-    let mut direction = if bool_property(properties, "UseCustomVector").unwrap_or(false) {
-        unit_vector(vector_property(properties, "Direction")?)?
+    let use_custom = bool_property(properties, "UseCustomVector").unwrap_or(false);
+    let reference_axis =
+        property(properties, "ReferenceAxis").filter(|property| !property.links.is_empty());
+    if reference_axis.is_some_and(|property| property.links.len() != 1) {
+        return None;
+    }
+    let (mut direction, direction_source) = if use_custom {
+        (
+            unit_vector(vector_property(properties, "Direction")?)?,
+            ExtrusionDirectionSource::Custom,
+        )
+    } else if let Some(reference_axis) = reference_axis {
+        (
+            unit_vector(vector_property(properties, "Direction")?)?,
+            ExtrusionDirectionSource::Edge {
+                reference: PathRef::Native(reference_axis.id.clone()),
+            },
+        )
     } else {
         let ProfileRef::Sketch(sketch_id) = &profile else {
             return None;
         };
-        sketches
-            .iter()
-            .find(|sketch| sketch.id == *sketch_id)?
-            .normal
+        (
+            sketches
+                .iter()
+                .find(|sketch| sketch.id == *sketch_id)?
+                .normal,
+            ExtrusionDirectionSource::ProfileNormal,
+        )
     };
     if bool_property(properties, "Reversed").unwrap_or(false) {
         direction = Vector3::new(-direction.x, -direction.y, -direction.z);
@@ -2101,6 +2125,29 @@ fn extrusion_definition(
     let draft = scalar_named(properties, "TaperAngle")
         .filter(|angle| *angle != 0.0)
         .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
+    let reverse_draft = scalar_named(properties, "TaperAngle2")
+        .filter(|angle| *angle != 0.0)
+        .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
+    let first_offset = if property(properties, "Offset").is_some() {
+        Some(Length(scalar_named(properties, "Offset")?))
+    } else {
+        None
+    };
+    let second_offset = if property(properties, "Offset2").is_some() {
+        Some(Length(scalar_named(properties, "Offset2")?))
+    } else {
+        None
+    };
+    let length_along_profile_normal = if property(properties, "AlongSketchNormal").is_some() {
+        Some(bool_property(properties, "AlongSketchNormal")?)
+    } else {
+        None
+    };
+    let allow_multi_profile_faces = if property(properties, "AllowMultiFace").is_some() {
+        Some(bool_property(properties, "AllowMultiFace")?)
+    } else {
+        None
+    };
     Some(FeatureDefinition::Extrude {
         profile,
         direction: Some(direction),
@@ -2111,11 +2158,15 @@ fn extrusion_definition(
             BooleanOp::Join
         },
         draft,
-        reverse_draft: None,
-        direction_source: None,
+        reverse_draft,
+        direction_source: Some(direction_source),
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,
+        first_offset,
+        second_offset,
+        length_along_profile_normal,
+        allow_multi_profile_faces,
     })
 }
 

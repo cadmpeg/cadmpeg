@@ -511,6 +511,18 @@ pub enum FeatureDefinition {
         /// Taper orientation used for inner wires, when selectable.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         inner_wire_taper: Option<InnerWireTaper>,
+        /// Signed offset from the first side's terminating geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        first_offset: Option<Length>,
+        /// Signed offset from the second side's terminating geometry.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        second_offset: Option<Length>,
+        /// Whether stored lengths are measured along the profile normal instead of the sweep axis.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        length_along_profile_normal: Option<bool>,
+        /// Whether a profile containing multiple faces is accepted as one operation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        allow_multi_profile_faces: Option<bool>,
     },
     /// Revolution of a profile around an axis.
     Revolve {
@@ -1500,6 +1512,18 @@ pub enum Extent {
         first: Length,
         /// Extent on the second side.
         second: Length,
+    },
+    /// Independent termination laws on the two oriented sides of the profile.
+    TwoSidedExtents {
+        /// Termination on the oriented first side.
+        first: Box<Extent>,
+        /// Termination on the opposite second side.
+        second: Box<Extent>,
+    },
+    /// One termination law mirrored across the profile plane.
+    SymmetricExtent {
+        /// First-side termination whose result is mirrored.
+        extent: Box<Extent>,
     },
     /// Extends through all material.
     ThroughAll,

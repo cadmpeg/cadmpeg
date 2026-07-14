@@ -1341,6 +1341,10 @@ fn project_extrude(
         solid: Some(true),
         face_maker: None,
         inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
     })
 }
 
@@ -4595,12 +4599,20 @@ pub fn sync_neutral_features(
                 solid,
                 face_maker,
                 inner_wire_taper,
+                first_offset,
+                second_offset,
+                length_along_profile_normal,
+                allow_multi_profile_faces,
             } => {
                 if reverse_draft.is_some()
                     || direction_source.is_some()
                     || *solid == Some(false)
                     || face_maker.is_some()
                     || inner_wire_taper.is_some()
+                    || first_offset.is_some()
+                    || second_offset.is_some()
+                    || length_along_profile_normal.is_some()
+                    || allow_multi_profile_faces.is_some()
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} uses unsupported extrusion construction controls",
@@ -4700,7 +4712,9 @@ pub fn sync_neutral_features(
                     }
                     Extent::Angle { .. }
                     | Extent::SymmetricAngle { .. }
-                    | Extent::TwoSidedAngles { .. } => {
+                    | Extent::TwoSidedAngles { .. }
+                    | Extent::TwoSidedExtents { .. }
+                    | Extent::SymmetricExtent { .. } => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion extent",
                             feature.id

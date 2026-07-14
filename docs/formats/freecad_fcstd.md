@@ -412,12 +412,16 @@ Part extrusions retain their normalized direction, custom-vector, selected-edge,
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class
 and mode and whether inner wires taper with or against outer wires. A zero pair of explicit lengths
-uses the persisted direction-vector magnitude. PartDesign pads and pockets distinguish
-blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected
-termination. Midplane blind features retain total symmetric travel; reversed features invert the
-resolved sketch-normal or explicit custom direction. A pad joins and a pocket cuts. Missing
-required lengths or selections, unsupported termination combinations, and unequal two-sided taper
-remain attributable native operations instead of being rewritten as zero-length or blind features.
+uses the persisted direction-vector magnitude. PartDesign pads and pockets distinguish blind,
+through-all, first-intersection, last-intersection, face-selected, and shape-selected termination
+independently on both sides. Midplane construction mirrors either a length or a non-length
+termination, while signed blind lengths preserve the persisted side orientation. Features retain
+both taper angles and offsets, whether length follows the profile normal, and whether multiple
+profile faces are allowed. Direction provenance distinguishes the profile normal, an explicit
+custom vector, and a selected reference axis while also retaining the normalized resolved
+direction; reversal inverts that direction. A pad joins and a pocket cuts. Missing required lengths
+or selections and invalid directions remain attributable native operations instead of being
+rewritten as zero-length or blind features.
 
 Part and PartDesign revolutions normalize the persisted axis direction and retain its model-space
 origin. Angular, symmetric-angular, two-angle, through-all or last-intersection,
