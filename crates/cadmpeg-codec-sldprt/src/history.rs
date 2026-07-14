@@ -4986,7 +4986,9 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::Compound { .. }
             | FeatureDefinition::RefineShape { .. }
-            | FeatureDefinition::ReverseShape { .. } => {
+            | FeatureDefinition::ReverseShape { .. }
+            | FeatureDefinition::RuledBetweenCurves { .. }
+            | FeatureDefinition::SectionShape { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported derived-shape semantics",
                     feature.id
@@ -7150,6 +7152,8 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Compound { .. } => "Compound",
         FeatureDefinition::RefineShape { .. } => "Refine",
         FeatureDefinition::ReverseShape { .. } => "Reverse",
+        FeatureDefinition::RuledBetweenCurves { .. } => "RuledSurface",
+        FeatureDefinition::SectionShape { .. } => "Section",
         FeatureDefinition::Hole { .. } => "Hole",
         FeatureDefinition::Pattern {
             pattern: PatternKind::Mirror { .. },

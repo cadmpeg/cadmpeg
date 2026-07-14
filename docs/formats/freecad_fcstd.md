@@ -368,6 +368,12 @@ Refine operations retain the single source whose redundant splitter boundaries a
 Reverse operations retain the single source whose complete topological orientation is inverted.
 Missing, empty, or multiply valued single-source links remain attributable native operations.
 
+Part ruled surfaces retain two independently selected curve or wire boundaries and automatic,
+forward, or second-boundary-reversed traversal. Part section operations retain their two shape
+operands and whether section edges use approximation. Each operand must resolve to exactly one
+persisted link; invalid orientation values and incomplete operands remain attributable native
+operations.
+
 Part extrusions retain their normalized direction, independent forward and reverse lengths, and
 equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected

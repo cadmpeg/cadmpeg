@@ -1761,6 +1761,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Compound { members } => body_selections.push(members),
             FeatureDefinition::RefineShape { source }
             | FeatureDefinition::ReverseShape { source } => body_selections.push(source),
+            FeatureDefinition::RuledBetweenCurves { first, second, .. } => {
+                paths.push(first);
+                paths.push(second);
+            }
+            FeatureDefinition::SectionShape { first, second, .. } => {
+                body_selections.push(first);
+                body_selections.push(second);
+            }
             FeatureDefinition::Thicken {
                 faces, thickness, ..
             } => {

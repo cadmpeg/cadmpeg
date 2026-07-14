@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "23");
+    assert_eq!(result.ir.ir_version, "24");
     let feature = |name: &str| {
         &result
             .ir
@@ -691,6 +691,64 @@ fn transfers_part_compound_refine_and_reverse_operations() {
     assert_eq!(feature("Compound2").dependencies.len(), 2);
     assert_eq!(feature("Refine").dependencies.len(), 1);
     assert_eq!(feature("Reverse").dependencies.len(), 1);
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_part_ruled_surface_and_section_intersection() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="First" id="1"/>
+ <Object type="Part::Box" name="Second" id="2"/>
+ <Object type="Part::RuledSurface" name="Ruled" id="3"/>
+ <Object type="Part::Section" name="Section" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="First"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Second"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
+ <Object name="Ruled"><Properties Count="3">
+  <Property name="Curve1" type="App::PropertyLinkSub"><Link object="First" sub="Edge1"/></Property>
+  <Property name="Curve2" type="App::PropertyLinkSub"><Link object="Second" sub="Wire1"/></Property>
+  <Property name="Orientation" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+ </Properties></Object>
+ <Object name="Section"><Properties Count="3">
+  <Property name="Base" type="App::PropertyLink"><Link value="First"/></Property>
+  <Property name="Tool" type="App::PropertyLink"><Link value="Second"/></Property>
+  <Property name="Approximation" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("Part surface constructions");
+    let feature = |name: &str| {
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+    };
+    assert!(matches!(
+        &feature("Ruled").definition,
+        cadmpeg_ir::features::FeatureDefinition::RuledBetweenCurves {
+            first: cadmpeg_ir::features::PathRef::Native(first),
+            second: cadmpeg_ir::features::PathRef::Native(second),
+            orientation: cadmpeg_ir::features::RuledCurveOrientation::Reversed,
+        } if first.ends_with(":property:Curve1") && second.ends_with(":property:Curve2")
+    ));
+    assert!(matches!(
+        feature("Section").definition,
+        cadmpeg_ir::features::FeatureDefinition::SectionShape {
+            approximate: true,
+            ..
+        }
+    ));
+    assert_eq!(feature("Ruled").dependencies.len(), 2);
+    assert_eq!(feature("Section").dependencies.len(), 2);
     assert!(result.report.losses.is_empty());
 }
 

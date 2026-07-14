@@ -557,6 +557,24 @@ pub enum FeatureDefinition {
         /// Source shape whose complete orientation is reversed.
         source: BodySelection,
     },
+    /// Ruled sheet connecting two ordered boundary curves.
+    RuledBetweenCurves {
+        /// First source boundary.
+        first: PathRef,
+        /// Second source boundary.
+        second: PathRef,
+        /// Traversal relationship between the two boundaries.
+        orientation: RuledCurveOrientation,
+    },
+    /// Intersection curves produced where two source shapes meet.
+    SectionShape {
+        /// First intersected source shape.
+        first: BodySelection,
+        /// Second intersected source shape.
+        second: BodySelection,
+        /// Whether the resulting section edges are approximated.
+        approximate: bool,
+    },
     /// Adds material normal to selected faces.
     Thicken {
         /// Faces offset by the operation.
@@ -810,6 +828,18 @@ pub enum ShellJoin {
     Tangent,
     /// Intersects adjacent offset faces to form sharp corners.
     Intersection,
+}
+
+/// Traversal relationship between ruled-surface boundary curves.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RuledCurveOrientation {
+    /// Select curve traversal automatically from endpoint proximity.
+    Automatic,
+    /// Retain both persisted curve traversal directions.
+    Forward,
+    /// Reverse the second curve relative to the first.
+    Reversed,
 }
 
 /// Canonical dimensions of an analytic solid primitive.

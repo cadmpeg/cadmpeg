@@ -12,9 +12,9 @@ use cadmpeg_ir::features::{
     FeatureTreeNodeRole, HelicalSweepConstruction, HelicalSweepLaw, HoleBottom, HoleKind,
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue,
     PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
-    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, ScaleCenter,
-    ScaleFactors, ShellJoin, ShellMode, SketchSpace, SweepMode, SweepOrientation,
-    SweepTransformation, SweepTransition, ThreadHand,
+    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SketchSpace, SweepMode,
+    SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -235,6 +235,18 @@ pub(crate) fn transfer(
                     parameters: native_parameters(&owned),
                     properties: BTreeMap::new(),
                 }
+            })
+        } else if object.type_name == "Part::RuledSurface" {
+            ruled_surface_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
+        } else if object.type_name == "Part::Section" {
+            section_shape_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
             })
         } else if object.type_name == "PartDesign::Draft" {
             draft_definition(&owned, objects, &properties_by_owner).unwrap_or_else(|| {
@@ -1942,6 +1954,36 @@ fn derived_shape_definition(
     }
 }
 
+fn ruled_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let curve = |name| {
+        let property = property(properties, name)?;
+        (property.links.len() == 1).then(|| PathRef::Native(property.id.clone()))
+    };
+    let orientation = match integer_property(properties, "Orientation").unwrap_or(0) {
+        0 => RuledCurveOrientation::Automatic,
+        1 => RuledCurveOrientation::Forward,
+        2 => RuledCurveOrientation::Reversed,
+        _ => return None,
+    };
+    Some(FeatureDefinition::RuledBetweenCurves {
+        first: curve("Curve1")?,
+        second: curve("Curve2")?,
+        orientation,
+    })
+}
+
+fn section_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let operand = |name| {
+        let property = property(properties, name)?;
+        (property.links.len() == 1).then(|| BodySelection::Native(property.id.clone()))
+    };
+    Some(FeatureDefinition::SectionShape {
+        first: operand("Base")?,
+        second: operand("Tool")?,
+        approximate: bool_property(properties, "Approximation").unwrap_or(false),
+    })
+}
+
 fn draft_definition(
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
@@ -3044,5 +3086,6 @@ fn is_design_object(kind: &str) -> bool {
             kind,
             "Part::Compound" | "Part::Compound2" | "Part::Refine" | "Part::Reverse"
         )
+        || matches!(kind, "Part::RuledSurface" | "Part::Section")
         || kind.contains("PartDesign::Feature")
 }
