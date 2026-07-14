@@ -1142,8 +1142,12 @@ fn planar_sheet_brep_payload(ir: &CadIr) -> Result<Option<BrepPayload>, CodecErr
             let point = ordered_points[index];
             let incident = ordered_edges
                 .iter()
-                .filter(|edge| edge.start == vertex.id || edge.end == vertex.id)
-                .map(|edge| edge_index[&edge.id.0])
+                .flat_map(|edge| {
+                    [(&edge.start, &vertex.id), (&edge.end, &vertex.id)]
+                        .into_iter()
+                        .filter(|(endpoint, vertex)| endpoint == vertex)
+                        .map(|_| edge_index[&edge.id.0])
+                })
                 .collect::<Vec<_>>();
             let mut record = (index as i32).to_le_bytes().to_vec();
             for value in [point.x, point.y, point.z] {
@@ -1797,8 +1801,12 @@ fn multi_face_brep_payload(
             let incident = model
                 .edges
                 .iter()
-                .filter(|edge| edge.start == vertex.id || edge.end == vertex.id)
-                .map(|edge| edge_index[&edge.id.0])
+                .flat_map(|edge| {
+                    [(&edge.start, &vertex.id), (&edge.end, &vertex.id)]
+                        .into_iter()
+                        .filter(|(endpoint, vertex)| endpoint == vertex)
+                        .map(|_| edge_index[&edge.id.0])
+                })
                 .collect::<Vec<_>>();
             let mut record = (index as i32).to_le_bytes().to_vec();
             for value in [point.x, point.y, point.z] {
