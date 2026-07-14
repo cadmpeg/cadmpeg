@@ -780,7 +780,7 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.design_entity_headers,
     )?;
-    native.design_extrude_operand_groups = crate::design::decode_extrude_operand_groups(
+    native.design_construction_operand_groups = crate::design::decode_construction_operand_groups(
         scan,
         &native.design_parameter_scopes,
         &native.design_record_headers,
@@ -805,7 +805,7 @@ fn extend_related_design_records(
         .collect::<Vec<_>>();
     indices.extend(
         native
-            .design_extrude_operand_groups
+            .design_construction_operand_groups
             .iter()
             .flat_map(|group| {
                 let stream = crate::design::native_stream(&group.id)
@@ -836,13 +836,14 @@ fn extend_related_design_records(
     native
         .design_record_headers
         .sort_by_key(|record| record.id.clone());
-    native.design_extrude_operand_identities = crate::design::decode_extrude_operand_identities(
-        scan,
-        &native.design_extrude_operand_groups,
-        &native.design_record_headers,
-    )?;
+    native.design_construction_operand_identities =
+        crate::design::decode_construction_operand_identities(
+            scan,
+            &native.design_construction_operand_groups,
+            &native.design_record_headers,
+        )?;
     let indices = native
-        .design_extrude_operand_identities
+        .design_construction_operand_identities
         .iter()
         .flat_map(|identity| {
             let stream = crate::design::native_stream(&identity.id)

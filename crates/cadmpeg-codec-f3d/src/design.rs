@@ -9,9 +9,9 @@ use std::collections::{HashMap, HashSet};
 
 use crate::records::{
     ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
-    DesignConfigurationKind, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeOperandGroup, DesignExtrudeOperandIdentity, DesignExtrudePersistentIdentity,
     DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
@@ -2649,18 +2649,21 @@ pub fn decode_extrude_selection_groups(
     Ok(out)
 }
 
-/// Decode counted construction-operand groups named by Extrude scopes.
-pub fn decode_extrude_operand_groups(
+/// Decode counted construction-operand groups named by feature scopes.
+pub fn decode_construction_operand_groups(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     headers: &[DesignRecordHeader],
-) -> Result<Vec<DesignExtrudeOperandGroup>, CodecError> {
+) -> Result<Vec<DesignConstructionOperandGroup>, CodecError> {
     let headers = headers
         .iter()
         .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "Extrude") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -2678,9 +2681,10 @@ pub fn decode_extrude_operand_groups(
             else {
                 continue;
             };
-            if let Some(mut group) = parse_extrude_operand_group(bytes, scope, ordinal, header) {
+            if let Some(mut group) = parse_construction_operand_group(bytes, scope, ordinal, header)
+            {
                 group.id = format!(
-                    "f3d:{}:design-extrude-operand-group#{}",
+                    "f3d:{}:design-construction-operand-group#{}",
                     entry.name, header.byte_offset
                 );
                 out.push(group);
@@ -2691,12 +2695,12 @@ pub fn decode_extrude_operand_groups(
     Ok(out)
 }
 
-fn parse_extrude_operand_group(
+fn parse_construction_operand_group(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
-) -> Option<DesignExtrudeOperandGroup> {
+) -> Option<DesignConstructionOperandGroup> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10] {
         return None;
@@ -2751,7 +2755,7 @@ fn parse_extrude_operand_group(
     if u32_at(bytes, after_tag)? != header.record_index {
         return None;
     }
-    Some(DesignExtrudeOperandGroup {
+    Some(DesignConstructionOperandGroup {
         id: String::new(),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
@@ -2775,12 +2779,12 @@ fn parse_extrude_operand_group(
     })
 }
 
-/// Decode the persistent identity frame named by each Extrude operand group.
-pub fn decode_extrude_operand_identities(
+/// Decode the persistent identity frame named by each construction-operand group.
+pub fn decode_construction_operand_identities(
     scan: &ContainerScan,
-    groups: &[DesignExtrudeOperandGroup],
+    groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
-) -> Result<Vec<DesignExtrudeOperandIdentity>, CodecError> {
+) -> Result<Vec<DesignConstructionOperandIdentity>, CodecError> {
     let headers = headers
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
@@ -2801,9 +2805,11 @@ pub fn decode_extrude_operand_identities(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        if let Some(mut identity) = parse_extrude_operand_identity(bytes, group, wrapper_header) {
+        if let Some(mut identity) =
+            parse_construction_operand_identity(bytes, group, wrapper_header)
+        {
             identity.id = format!(
-                "f3d:{}:design-extrude-operand-identity#{}",
+                "f3d:{}:design-construction-operand-identity#{}",
                 entry.name, wrapper_header.byte_offset
             );
             out.push(identity);
@@ -2813,11 +2819,11 @@ pub fn decode_extrude_operand_identities(
     Ok(out)
 }
 
-fn parse_extrude_operand_identity(
+fn parse_construction_operand_identity(
     bytes: &[u8],
-    group: &DesignExtrudeOperandGroup,
+    group: &DesignConstructionOperandGroup,
     wrapper_header: &DesignRecordHeader,
-) -> Option<DesignExtrudeOperandIdentity> {
+) -> Option<DesignConstructionOperandIdentity> {
     let mut current_at = usize::try_from(wrapper_header.byte_offset).ok()?;
     let mut current_record_index = wrapper_header.record_index;
     let mut current_class_tag = wrapper_header.class_tag.clone();
@@ -2843,7 +2849,7 @@ fn parse_extrude_operand_identity(
         return None;
     }
     let persistent_identity = parse_extrude_identity_member(bytes, current_at).map(|member| {
-        DesignExtrudePersistentIdentity {
+        DesignConstructionPersistentIdentity {
             local_id: member.local_id,
             local_id_offset: member.local_id_offset,
             asset_id: member.asset_id,
@@ -2854,7 +2860,7 @@ fn parse_extrude_operand_identity(
             next_byte_offset: member.next_byte_offset,
         }
     });
-    Some(DesignExtrudeOperandIdentity {
+    Some(DesignConstructionOperandIdentity {
         id: String::new(),
         group_record_index: group.record_index,
         wrapper_record_indices,
@@ -5108,20 +5114,20 @@ mod relation_tests {
     use super::{
         bind_dimension_loci, bind_extrude_selection_geometry, bind_sketch_graph,
         find_dimension_locus_pair, identity_matrix, next_indexed_record_offset,
+        parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_operand_group,
-        parse_extrude_operand_identity, parse_extrude_profile, parse_extrude_selection_group,
-        parse_extrude_selection_member, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_parameter_companion,
+        parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
+        parse_sketch_relation, project_extrude, project_parameter_design,
+        project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
-        DesignExtrudeOperandGroup, DesignExtrudeProfileOperand, DesignObjectKind,
-        DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-        DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand,
+        ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
+        DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeProfileOperand,
+        DesignObjectKind, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
@@ -5590,7 +5596,7 @@ mod relation_tests {
         let paired_at = bytes.len();
         header(&mut bytes, *b"259", 100);
 
-        let group = parse_extrude_operand_group(&bytes, &scope, 0, &record)
+        let group = parse_construction_operand_group(&bytes, &scope, 0, &record)
             .expect("counted Extrude operand group");
         assert_eq!(group.member_count_offset, 21);
         assert_eq!(group.members, [200, 201]);
@@ -5611,7 +5617,7 @@ mod relation_tests {
             bytes.extend_from_slice(&record_index.to_le_bytes());
         }
 
-        let group = DesignExtrudeOperandGroup {
+        let group = DesignConstructionOperandGroup {
             id: "f3d:Design/BulkStream.dat:operand-group#100".into(),
             scope_record_index: 12,
             scope_reference_ordinal: 0,
@@ -5655,7 +5661,7 @@ mod relation_tests {
         bytes.extend_from_slice(&[0; 5]);
         header(&mut bytes, *b"301", 900);
 
-        let identity = parse_extrude_operand_identity(&bytes, &group, &wrapper_header)
+        let identity = parse_construction_operand_identity(&bytes, &group, &wrapper_header)
             .expect("identity chain");
         assert_eq!(identity.wrapper_record_indices, [300, 305]);
         assert_eq!(identity.wrapper_byte_offsets, [0, 24]);

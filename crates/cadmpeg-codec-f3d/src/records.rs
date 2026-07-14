@@ -601,12 +601,12 @@ pub struct DesignExtrudeSelectionGroup {
     pub paired_byte_offset: u64,
 }
 
-/// Counted construction-operand group owned by an Extrude scope.
+/// Counted construction-operand group owned by a feature scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignExtrudeOperandGroup {
+pub struct DesignConstructionOperandGroup {
     /// Globally unique deterministic identifier.
     pub id: String,
-    /// Owning Extrude scope record.
+    /// Owning feature scope record.
     pub scope_record_index: u32,
     /// Position in the scope reference table.
     pub scope_reference_ordinal: u32,
@@ -646,9 +646,9 @@ pub struct DesignExtrudeOperandGroup {
     pub paired_byte_offset: u64,
 }
 
-/// Nested identity chain named by an Extrude operand group.
+/// Nested identity chain named by a construction-operand group.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignExtrudeOperandIdentity {
+pub struct DesignConstructionOperandIdentity {
     /// Globally unique deterministic identifier.
     pub id: String,
     /// Owning operand-group record.
@@ -667,12 +667,12 @@ pub struct DesignExtrudeOperandIdentity {
     pub following_class_tag: String,
     /// Fixed-width persistent identity, when the following record has that grammar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub persistent_identity: Option<DesignExtrudePersistentIdentity>,
+    pub persistent_identity: Option<DesignConstructionPersistentIdentity>,
 }
 
-/// Fixed-width persistent identity following an Extrude operand-identity chain.
+/// Fixed-width persistent identity following a construction-operand identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignExtrudePersistentIdentity {
+pub struct DesignConstructionPersistentIdentity {
     /// Local persistent identity preceding the two UUID fields.
     pub local_id: u64,
     /// Byte offset of `local_id`.

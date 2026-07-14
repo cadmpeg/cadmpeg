@@ -391,7 +391,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     let mut operand_group_slots = HashSet::new();
     let mut operand_group_scopes = HashSet::new();
-    for group in &native.design_extrude_operand_groups {
+    for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
         let header = records_by_index.get(&(native_stream, group.record_index));
@@ -410,7 +410,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                scope.kind == "Extrude"
+                matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -454,7 +454,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design Extrude operand group has an invalid counted frame".into(),
+                message: "Fusion Design construction operand group has an invalid counted frame"
+                    .into(),
                 entity: Some(group.id.clone()),
             });
         }
@@ -462,25 +463,25 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for scope in native
         .design_parameter_scopes
         .iter()
-        .filter(|scope| scope.kind == "Extrude")
+        .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
     {
         let native_stream = design_stream(&scope.id);
         if !operand_group_scopes.contains(&(native_stream, scope.record_index)) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design Extrude scope has no counted operand group".into(),
+                message: "Fusion Design feature scope has no counted operand group".into(),
                 entity: Some(scope.id.clone()),
             });
         }
     }
     let operand_groups_by_index = native
-        .design_extrude_operand_groups
+        .design_construction_operand_groups
         .iter()
         .map(|group| ((design_stream(&group.id), group.record_index), group))
         .collect::<std::collections::HashMap<_, _>>();
     let mut operand_identity_groups = HashSet::new();
-    for identity in &native.design_extrude_operand_identities {
+    for identity in &native.design_construction_operand_identities {
         let native_stream = design_stream(&identity.id);
         let group = operand_groups_by_index.get(&(native_stream, identity.group_record_index));
         let selected_profile = group
@@ -540,7 +541,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && valid_design_guid(&persistent.asset_id)
                     && valid_design_guid(&persistent.context_id)
                     && selected_profile
-                        .is_some_and(|profile| profile.asset_id == persistent.asset_id)
+                        .is_none_or(|profile| profile.asset_id == persistent.asset_id)
                     && persistent.next_byte_offset
                         == identity.following_byte_offset.saturating_add(190)
                     && persistent.next_record_index != 0
@@ -555,19 +556,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design Extrude operand identity has an invalid nested frame"
+                message: "Fusion Design construction operand identity has an invalid nested frame"
                     .into(),
                 entity: Some(identity.id.clone()),
             });
         }
     }
-    for group in &native.design_extrude_operand_groups {
+    for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
         if !operand_identity_groups.contains(&(native_stream, group.record_index)) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design Extrude operand group has no identity chain".into(),
+                message: "Fusion Design construction operand group has no identity chain".into(),
                 entity: Some(group.id.clone()),
             });
         }
