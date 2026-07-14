@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 140);
+    assert_eq!(namespace.version, 141);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3702,25 +3702,7 @@ fn topology_retains_entity_attribute_list_references() {
     assert_eq!(references[0].topology_xmt, 4);
     assert_eq!(references[0].attribute_list_xmt, 41);
     assert!(references[0].attribute_list_record.is_some());
-    let attribute = result
-        .ir
-        .model
-        .attributes
-        .iter()
-        .find(|attribute| {
-            matches!(
-                attribute.target,
-                cadmpeg_ir::attributes::AttributeTarget::Face(_)
-            )
-        })
-        .expect("face string attribute");
-    assert_eq!(attribute.name, "parasolid_type_84_reference_5");
-    assert_eq!(
-        attribute.values,
-        vec![cadmpeg_ir::attributes::AttributeValue::String(
-            "deadbeef".into()
-        )]
-    );
+    assert!(result.ir.model.attributes.is_empty());
 }
 
 #[test]
@@ -6452,7 +6434,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 140);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 141);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

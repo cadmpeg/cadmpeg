@@ -772,18 +772,19 @@ pub struct ParasolidEntity51StringUse {
     pub inflated_offset: u64,
 }
 
-/// Resolved attribute class of a topology-owned type-81 attribute instance.
+/// Candidate class relation retained for compatibility with schema 140.
+#[cfg(test)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidTopologyAttributeClassUse {
-    /// Globally unique use identity.
+    /// Globally unique candidate identity.
     pub id: String,
-    /// Owning topology-to-attribute reference.
+    /// Owning topology attribute-list reference.
     pub topology_attribute_reference: String,
-    /// Type-81 attribute-instance record.
+    /// Candidate type-81 record.
     pub entity_51_record: String,
-    /// One-based definition-catalog index serialized by the instance.
+    /// Candidate catalog ordinal.
     pub definition_ordinal: u32,
-    /// Uniquely resolved attribute definition.
+    /// Candidate attribute definition.
     pub attribute_definition: String,
 }
 
@@ -5713,7 +5714,8 @@ pub fn parasolid_entity_51_string_uses(
     uses
 }
 
-/// Join topology-owned type-81 attribute instances to their stream-local class catalog.
+/// Build the schema-140 candidate class relation.
+#[cfg(test)]
 pub fn parasolid_topology_attribute_class_uses(
     topology_references: &[ParasolidTopologyAttributeListReference],
     entities: &[ParasolidEntity51Record],
@@ -5733,7 +5735,6 @@ pub fn parasolid_topology_attribute_class_uses(
     for stream_definitions in definitions_by_stream.values_mut() {
         stream_definitions.sort_by_key(|definition| definition.inflated_offset);
     }
-
     let mut uses = Vec::new();
     for reference in topology_references {
         let Some(entity_id) = reference.attribute_list_record.as_deref() else {

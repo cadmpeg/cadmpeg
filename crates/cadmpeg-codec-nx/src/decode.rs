@@ -3155,12 +3155,6 @@ fn attach_native_object_model(
             &scan.streams,
             &parasolid_entity_51_records,
         );
-    let parasolid_topology_attribute_class_uses =
-        crate::native::parasolid_topology_attribute_class_uses(
-            &parasolid_topology_attribute_list_references,
-            &parasolid_entity_51_records,
-            &parasolid_attribute_definitions,
-        );
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
@@ -3825,27 +3819,6 @@ fn attach_native_object_model(
             values: vec![AttributeValue::String(attribute.value.clone())],
         });
     }
-    attach_parasolid_topology_string_attributes(
-        ir,
-        &parasolid_topology_attribute_list_references,
-        &parasolid_topology_attribute_class_uses,
-        &parasolid_attribute_definitions,
-        &parasolid_entity_51_string_uses,
-        &parasolid_entity_54_string_records,
-        annotations,
-    );
-    attach_parasolid_topology_numeric_attributes(
-        ir,
-        &ParasolidNumericAttributeSources {
-            topology_references: &parasolid_topology_attribute_list_references,
-            class_uses: &parasolid_topology_attribute_class_uses,
-            definitions: &parasolid_attribute_definitions,
-            numeric_uses: &parasolid_entity_51_numeric_uses,
-            integers: &parasolid_entity_52_integer_records,
-            doubles: &parasolid_entity_53_double_records,
-        },
-        annotations,
-    );
     for record in &external_reference_records {
         annotations
             .note(&record.id, annotation_stream, record.source_offset)
@@ -3972,7 +3945,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(140);
+    namespace.version = namespace.version.max(141);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -4079,12 +4052,6 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_topology_attribute_list_references",
             &parasolid_topology_attribute_list_references,
-        )?;
-    }
-    if !parasolid_topology_attribute_class_uses.is_empty() {
-        namespace.set_arena(
-            "parasolid_topology_attribute_class_uses",
-            &parasolid_topology_attribute_class_uses,
         )?;
     }
     if !segment_om_links.is_empty() {
@@ -4474,6 +4441,8 @@ fn attach_native_object_model(
     Ok(())
 }
 
+#[cfg(test)]
+#[allow(dead_code)]
 fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
     topology_references: &[crate::native::ParasolidTopologyAttributeListReference],
@@ -4612,6 +4581,7 @@ fn attach_parasolid_topology_string_attributes(
         .sort_by(|first, second| first.id.0.cmp(&second.id.0));
 }
 
+#[cfg(test)]
 pub(crate) struct ParasolidNumericAttributeSources<'a> {
     pub(crate) topology_references: &'a [crate::native::ParasolidTopologyAttributeListReference],
     pub(crate) class_uses: &'a [crate::native::ParasolidTopologyAttributeClassUse],
@@ -4621,6 +4591,7 @@ pub(crate) struct ParasolidNumericAttributeSources<'a> {
     pub(crate) doubles: &'a [crate::native::ParasolidEntity53DoubleRecord],
 }
 
+#[cfg(test)]
 pub(crate) fn attach_parasolid_topology_numeric_attributes(
     ir: &mut CadIr,
     sources: &ParasolidNumericAttributeSources<'_>,
