@@ -3213,6 +3213,8 @@ fn attach_native_object_model(
             sketch_construction_inputs: &feature_sketch_construction_inputs,
             block_constructions: &feature_block_constructions,
             extrude_32_constructions: &feature_extrude_32_constructions,
+            extrude_payload_headers: &feature_extrude_payload_headers,
+            operation_body_scalar_triples: &feature_operation_body_scalar_triples,
             parameter_bindings: &feature_parameter_bindings,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
@@ -3228,7 +3230,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(79);
+    namespace.version = namespace.version.max(80);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3517,6 +3519,8 @@ struct FeatureOperationSources<'a> {
     sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
+    extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
+    operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
@@ -3546,6 +3550,8 @@ fn attach_feature_operations(
         sketch_construction_inputs,
         block_constructions,
         extrude_32_constructions,
+        extrude_payload_headers,
+        operation_body_scalar_triples,
         parameter_bindings,
         operation_records,
         payload_strings,
@@ -3633,6 +3639,21 @@ fn attach_feature_operations(
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
+    let extrude_payload_headers_by_operation = extrude_payload_headers
+        .iter()
+        .map(|header| (header.operation_label.as_str(), header))
+        .collect::<BTreeMap<_, _>>();
+    let mut operation_body_scalar_triples_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyScalarTriple>>::new();
+    for triple in operation_body_scalar_triples {
+        operation_body_scalar_triples_by_operation
+            .entry(triple.operation_label.as_str())
+            .or_default()
+            .push(triple);
+    }
+    for triples in operation_body_scalar_triples_by_operation.values_mut() {
+        triples.sort_by_key(|triple| triple.body_reference_ordinal);
+    }
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -3739,6 +3760,22 @@ fn attach_feature_operations(
             source_properties.insert(
                 "extrude_32_construction".to_string(),
                 construction.id.clone(),
+            );
+        }
+        if let Some(header) = extrude_payload_headers_by_operation.get(label.id.as_str()) {
+            source_properties.insert("extrude_payload_header".to_string(), header.id.clone());
+        }
+        for triple in operation_body_scalar_triples_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!(
+                    "operation_body_scalar_triple.{}",
+                    triple.body_reference_ordinal
+                ),
+                triple.id.clone(),
             );
         }
         if let Some(construction) = datum_csys_constructions_by_operation.get(label.id.as_str()) {
