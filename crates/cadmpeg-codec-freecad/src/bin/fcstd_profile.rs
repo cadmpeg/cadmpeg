@@ -59,6 +59,7 @@ struct Observed {
     topology: BTreeSet<String>,
     feature_definitions: BTreeSet<String>,
     feature_operations: BTreeSet<String>,
+    sketch_constraint_definitions: BTreeSet<String>,
     application_types: BTreeSet<String>,
     native_arenas: BTreeSet<String>,
     neutral_arenas: BTreeSet<String>,
@@ -176,7 +177,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .last()
         .map(|gate| gate.level.clone());
     let profile = Profile {
-        profile_version: 1,
+        profile_version: 2,
         format: "fcstd",
         manifest_sha256: sha256_hex(&manifest),
         manifest_verified: true,
@@ -295,6 +296,15 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
             }
         }
     }
+    for constraint in &ir.model.sketch_constraints {
+        if let Ok(Value::Object(definition)) = serde_json::to_value(&constraint.definition) {
+            insert_string(
+                &definition,
+                "kind",
+                &mut observed.sketch_constraint_definitions,
+            );
+        }
+    }
 }
 
 fn insert_string(
@@ -355,6 +365,61 @@ fn gates(
     let topology = observed
         .topology
         .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_constraints = BTreeSet::from([
+        "disabled",
+        "coincident_loci",
+        "point_on_object",
+        "horizontal",
+        "vertical",
+        "parallel",
+        "perpendicular",
+        "tangent",
+        "equal",
+        "fixed",
+        "distance",
+        "distance_loci",
+        "horizontal_distance",
+        "vertical_distance",
+        "angle",
+        "radius",
+        "diameter",
+        "snells_law",
+        "weight",
+        "symmetric",
+        "internal_alignment",
+        "group",
+        "text",
+    ]);
+    let constraint_definitions = observed
+        .sketch_constraint_definitions
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_design_definitions = BTreeSet::from([
+        "sketch",
+        "datum_plane",
+        "datum_axis",
+        "datum_point",
+        "datum_coordinate_system",
+        "primitive",
+        "extrude",
+        "revolve",
+        "sweep",
+        "loft",
+        "fillet",
+        "chamfer",
+        "thicken",
+        "draft",
+        "combine",
+        "hole",
+        "pattern",
+        "mirror_shape",
+    ]);
+    let design_definitions = observed
+        .feature_definitions
+        .union(&observed.feature_operations)
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     let mut gates = vec![
@@ -477,12 +542,27 @@ fn gates(
         ),
         gate(
             "L6",
-            vec![assertion(
-                "complete_design_matrix",
-                false,
-                "public fixture matrix incomplete",
-                "all Sketcher constraints and core Part/PartDesign operation branches",
-            )],
+            vec![
+                assertion(
+                    "complete_constraint_matrix",
+                    required_constraints.is_subset(&constraint_definitions)
+                        && !constraint_definitions.contains("native"),
+                    format!("{constraint_definitions:?}"),
+                    format!("{required_constraints:?}; no native fallback"),
+                ),
+                assertion(
+                    "core_operation_families",
+                    required_design_definitions.is_subset(&design_definitions),
+                    format!("{design_definitions:?}"),
+                    format!("{required_design_definitions:?}"),
+                ),
+                assertion(
+                    "non_default_operation_branches",
+                    false,
+                    "public operation-branch matrix incomplete",
+                    "each supported core operation family's non-default semantic branches",
+                ),
+            ],
         ),
         gate(
             "L7",

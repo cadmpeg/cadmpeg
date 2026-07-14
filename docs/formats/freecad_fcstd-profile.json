@@ -1,5 +1,5 @@
 {
-  "profile_version": 1,
+  "profile_version": 2,
   "format": "fcstd",
   "manifest_sha256": "8283979808ad4e25bbe4f2370de954e432b6c6d803efb3ddcabfcd6612cccfaf",
   "manifest_verified": true,
@@ -483,6 +483,12 @@
       "extrude",
       "fillet"
     ],
+    "sketch_constraint_definitions": [
+      "diameter",
+      "distance",
+      "horizontal",
+      "vertical"
+    ],
     "application_types": [
       "App::FeaturePython",
       "App::Line",
@@ -680,10 +686,22 @@
       "passed": false,
       "assertions": [
         {
-          "id": "complete_design_matrix",
+          "id": "complete_constraint_matrix",
           "passed": false,
-          "observed": "public fixture matrix incomplete",
-          "required": "all Sketcher constraints and core Part/PartDesign operation branches"
+          "observed": "{\"diameter\", \"distance\", \"horizontal\", \"vertical\"}",
+          "required": "{\"angle\", \"coincident_loci\", \"diameter\", \"disabled\", \"distance\", \"distance_loci\", \"equal\", \"fixed\", \"group\", \"horizontal\", \"horizontal_distance\", \"internal_alignment\", \"parallel\", \"perpendicular\", \"point_on_object\", \"radius\", \"snells_law\", \"symmetric\", \"tangent\", \"text\", \"vertical\", \"vertical_distance\", \"weight\"}; no native fallback"
+        },
+        {
+          "id": "core_operation_families",
+          "passed": false,
+          "observed": "{\"combine\", \"extrude\", \"fillet\", \"post_process\", \"primitive\", \"sketch\", \"stored_geometry\", \"tree_node\"}",
+          "required": "{\"chamfer\", \"combine\", \"datum_axis\", \"datum_coordinate_system\", \"datum_plane\", \"datum_point\", \"draft\", \"extrude\", \"fillet\", \"hole\", \"loft\", \"mirror_shape\", \"pattern\", \"primitive\", \"revolve\", \"sketch\", \"sweep\", \"thicken\"}"
+        },
+        {
+          "id": "non_default_operation_branches",
+          "passed": false,
+          "observed": "public operation-branch matrix incomplete",
+          "required": "each supported core operation family's non-default semantic branches"
         }
       ]
     },
