@@ -2623,6 +2623,12 @@ pub(crate) fn bind_parameter_scalars(
             .filter(|relation| relation.family != FeatureInputRelationFamily::Angle)
             .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
             .collect::<HashSet<_>>();
+        let angle_scalars = lane
+            .relation_instances
+            .iter()
+            .filter(|relation| relation.family == FeatureInputRelationFamily::Angle)
+            .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
+            .collect::<HashSet<_>>();
         let names_by_id = lane
             .names
             .iter()
@@ -2674,6 +2680,8 @@ pub(crate) fn bind_parameter_scalars(
                         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
                             if length_scalars.contains(scalar.id.as_str()) {
                                 same_dimension_length(scalar.value * 1000.0, *expected as f64)
+                            } else if angle_scalars.contains(scalar.id.as_str()) {
+                                same_dimension_length(scalar.value * 1000.0, *expected as f64)
                             } else {
                                 scalar.value.is_finite() && scalar.value == *expected as f64
                             }
@@ -2705,6 +2713,13 @@ pub(crate) fn bind_parameter_scalars(
                         {
                             Some(cadmpeg_ir::features::ParameterValue::Length(
                                 cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                            ))
+                        }
+                        Some(cadmpeg_ir::features::ParameterValue::Integer(_))
+                            if angle_scalars.contains(scalar.id.as_str()) =>
+                        {
+                            Some(cadmpeg_ir::features::ParameterValue::Angle(
+                                cadmpeg_ir::features::Angle(scalar.value),
                             ))
                         }
                         _ => None,

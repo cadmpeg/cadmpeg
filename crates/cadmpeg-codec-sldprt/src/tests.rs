@@ -15362,6 +15362,32 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
 }
 
 #[test]
+fn decode_uses_relation_units_for_bare_integer_angles() {
+    use cadmpeg_ir::features::{Angle, ParameterValue};
+
+    let mut source =
+        sldprt_with_tagged_compact_relation(&triangle_body(), "sgAnglDim", [[0xda, 0x8d]; 2]);
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"><Dimension Name="D2">25</Dimension></Sketch></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D2")
+        .expect("driving angle parameter");
+    assert_eq!(parameter.expression, "25");
+    assert_eq!(parameter.value, Some(ParameterValue::Angle(Angle(0.025))));
+    assert!(parameter.native_ref.is_some());
+}
+
+#[test]
 fn decode_groups_unary_circle_diameter_relations() {
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
 
