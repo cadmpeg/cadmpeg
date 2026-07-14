@@ -2718,9 +2718,9 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Materials, appearances, complete entity-owned attributes, complete feature parameters, \
+        message: "Materials, appearances, non-string entity-owned attribute fields, complete feature parameters, \
                   sketch geometry, constraints, and assembly occurrence placements were not transferred: \
-                  they live in NX object-model per-class field serialization that is not decoded."
+                  their remaining NX object-model and Parasolid field serialization is not decoded."
             .to_string(),
         provenance: None,
     });
@@ -2778,6 +2778,12 @@ fn attach_native_object_model(
         crate::native::parasolid_topology_attribute_list_references(
             &scan.streams,
             &parasolid_entity_51_records,
+        );
+    let parasolid_topology_attribute_class_uses =
+        crate::native::parasolid_topology_attribute_class_uses(
+            &parasolid_topology_attribute_list_references,
+            &parasolid_entity_51_records,
+            &parasolid_attribute_definitions,
         );
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
@@ -3299,6 +3305,8 @@ fn attach_native_object_model(
     attach_parasolid_topology_string_attributes(
         ir,
         &parasolid_topology_attribute_list_references,
+        &parasolid_topology_attribute_class_uses,
+        &parasolid_attribute_definitions,
         &parasolid_entity_51_string_uses,
         &parasolid_entity_54_string_records,
         annotations,
@@ -3419,7 +3427,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(121);
+    namespace.version = namespace.version.max(122);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3460,6 +3468,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_topology_attribute_list_references",
             &parasolid_topology_attribute_list_references,
+        )?;
+    }
+    if !parasolid_topology_attribute_class_uses.is_empty() {
+        namespace.set_arena(
+            "parasolid_topology_attribute_class_uses",
+            &parasolid_topology_attribute_class_uses,
         )?;
     }
     if !segment_om_links.is_empty() {
@@ -3813,10 +3827,29 @@ fn attach_native_object_model(
 fn attach_parasolid_topology_string_attributes(
     ir: &mut CadIr,
     topology_references: &[crate::native::ParasolidTopologyAttributeListReference],
+    class_uses: &[crate::native::ParasolidTopologyAttributeClassUse],
+    definitions: &[crate::native::ParasolidAttributeDefinition],
     string_uses: &[crate::native::ParasolidEntity51StringUse],
     strings: &[crate::native::ParasolidEntity54StringRecord],
     annotations: &mut AnnotationBuilder,
 ) {
+    let definitions_by_id = definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+    let class_names_by_reference = class_uses
+        .iter()
+        .filter_map(|class_use| {
+            definitions_by_id
+                .get(class_use.attribute_definition.as_str())
+                .map(|definition| {
+                    (
+                        class_use.topology_attribute_reference.as_str(),
+                        definition.name.as_str(),
+                    )
+                })
+        })
+        .collect::<BTreeMap<_, _>>();
     let strings_by_id = strings
         .iter()
         .map(|record| (record.id.as_str(), record))
@@ -3885,6 +3918,7 @@ fn attach_parasolid_topology_string_attributes(
         let Some(entity) = reference.attribute_list_record.as_deref() else {
             continue;
         };
+        let class_name = class_names_by_reference.get(reference.id.as_str()).copied();
         for string_use in uses_by_entity.get(entity).into_iter().flatten() {
             let Some(string) = strings_by_id.get(string_use.string_record.as_str()) else {
                 continue;
@@ -3905,9 +3939,19 @@ fn attach_parasolid_topology_string_attributes(
             ir.model.attributes.push(SourceAttribute {
                 id,
                 target: target.clone(),
-                name: format!(
-                    "parasolid_type_84_reference_{}",
-                    string_use.reference_ordinal
+                name: class_name.map_or_else(
+                    || {
+                        format!(
+                            "parasolid_type_84_reference_{}",
+                            string_use.reference_ordinal
+                        )
+                    },
+                    |class_name| {
+                        format!(
+                            "{class_name}.string_reference_{}",
+                            string_use.reference_ordinal
+                        )
+                    },
                 ),
                 values: vec![AttributeValue::String(string.value.clone())],
             });

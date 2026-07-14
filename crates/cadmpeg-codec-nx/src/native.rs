@@ -220,6 +220,21 @@ pub struct ParasolidEntity51StringUse {
     pub inflated_offset: u64,
 }
 
+/// Resolved attribute class of a topology-owned type-81 attribute instance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidTopologyAttributeClassUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Owning topology-to-attribute reference.
+    pub topology_attribute_reference: String,
+    /// Type-81 attribute-instance record.
+    pub entity_51_record: String,
+    /// One-based definition-catalog index serialized by the instance.
+    pub definition_ordinal: u32,
+    /// Uniquely resolved attribute definition.
+    pub attribute_definition: String,
+}
+
 /// Validated link from a segment-index word to a framed OM section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentOmLink {
@@ -4554,6 +4569,63 @@ pub fn parasolid_entity_51_string_uses(
                 inflated_offset: entity.inflated_offset,
             });
         }
+    }
+    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    uses
+}
+
+/// Join topology-owned type-81 attribute instances to their stream-local class catalog.
+pub fn parasolid_topology_attribute_class_uses(
+    topology_references: &[ParasolidTopologyAttributeListReference],
+    entities: &[ParasolidEntity51Record],
+    definitions: &[ParasolidAttributeDefinition],
+) -> Vec<ParasolidTopologyAttributeClassUse> {
+    let entities = entities
+        .iter()
+        .map(|entity| (entity.id.as_str(), entity))
+        .collect::<BTreeMap<_, _>>();
+    let mut definitions_by_stream = BTreeMap::<u32, Vec<&ParasolidAttributeDefinition>>::new();
+    for definition in definitions {
+        definitions_by_stream
+            .entry(definition.stream_ordinal)
+            .or_default()
+            .push(definition);
+    }
+    for stream_definitions in definitions_by_stream.values_mut() {
+        stream_definitions.sort_by_key(|definition| definition.inflated_offset);
+    }
+
+    let mut uses = Vec::new();
+    for reference in topology_references {
+        let Some(entity_id) = reference.attribute_list_record.as_deref() else {
+            continue;
+        };
+        let Some(entity) = entities.get(entity_id) else {
+            continue;
+        };
+        if entity.discriminator != 0x21 || entity.references.len() < 3 {
+            continue;
+        }
+        let definition_ordinal = entity.references[2];
+        let Some(definition_index) = definition_ordinal.checked_sub(1) else {
+            continue;
+        };
+        let Some(definition) = definitions_by_stream
+            .get(&entity.stream_ordinal)
+            .and_then(|definitions| definitions.get(definition_index as usize))
+        else {
+            continue;
+        };
+        uses.push(ParasolidTopologyAttributeClassUse {
+            id: format!(
+                "nx:s{}:topology-attribute-class-use#{}-{}",
+                reference.stream_ordinal, reference.topology_type, reference.topology_xmt
+            ),
+            topology_attribute_reference: reference.id.clone(),
+            entity_51_record: entity.id.clone(),
+            definition_ordinal,
+            attribute_definition: definition.id.clone(),
+        });
     }
     uses.sort_by(|first, second| first.id.cmp(&second.id));
     uses

@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 121);
+    assert_eq!(namespace.version, 122);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3570,6 +3570,64 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
 }
 
 #[test]
+fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
+    use crate::native::{
+        ParasolidAttributeDefinition, ParasolidEntity51Record,
+        ParasolidTopologyAttributeListReference,
+    };
+
+    let definition = ParasolidAttributeDefinition {
+        id: "definition".into(),
+        stream_ordinal: 3,
+        xmt: 18,
+        name: "UG2/PMARK_ATTRIBUTE".into(),
+        field_count: 1,
+        field_record_xmt: 19,
+        field_record_references: [21, 22],
+        field_record_header_words: [0, 9000],
+        inflated_offset: 100,
+    };
+    let entity = ParasolidEntity51Record {
+        id: "entity".into(),
+        stream_ordinal: 3,
+        xmt: 50,
+        flags: 1,
+        sequence: 7,
+        discriminator: 0x21,
+        references: vec![60, 61, 1, 62, 63, 64],
+        byte_len: 26,
+        inflated_offset: 200,
+    };
+    let reference = ParasolidTopologyAttributeListReference {
+        id: "topology-reference".into(),
+        stream_ordinal: 3,
+        topology_type: 14,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some(entity.id.clone()),
+        inflated_offset: 300,
+    };
+
+    let uses = crate::native::parasolid_topology_attribute_class_uses(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&entity),
+        std::slice::from_ref(&definition),
+    );
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].definition_ordinal, 1);
+    assert_eq!(uses[0].attribute_definition, definition.id);
+
+    let mut invalid = entity;
+    invalid.references[2] = 0;
+    assert!(crate::native::parasolid_topology_attribute_class_uses(
+        &[reference],
+        &[invalid],
+        &[definition],
+    )
+    .is_empty());
+}
+
+#[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
     let graph = crate::topology::Graph::parse(&valid);
@@ -5863,7 +5921,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 121);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 122);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

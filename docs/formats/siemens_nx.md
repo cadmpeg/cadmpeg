@@ -764,6 +764,12 @@ individually `01`-prefixed XMT values followed by `00`; the two forms are
 atomic. A topology attribute-list identity resolves only when exactly one
 type-81 record in the same stream has that xmt.
 
+For a topology-owned type-81 record with discriminator `0021`, reference slot
+two is a one-based index into the ordered type-79/type-80 attribute-definition
+catalog in the same stream. Zero and out-of-range indices do not resolve. The
+resolved definition supplies the attribute class identity; field values retain
+their independent type-81 reference order.
+
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
 text[length], 00`. The length is nonzero, xmt is non-null, and every text byte
 is printable ASCII. The terminator is outside the declared text length. A
