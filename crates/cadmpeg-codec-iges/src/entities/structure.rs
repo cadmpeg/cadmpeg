@@ -40,6 +40,28 @@ struct NetworkInstance {
     valid_fields: bool,
 }
 
+fn solid_instance_cycle(
+    sequence: u32,
+    targets: &BTreeMap<u32, u32>,
+    visiting: &mut BTreeSet<u32>,
+    visited: &mut BTreeSet<u32>,
+) -> bool {
+    if visited.contains(&sequence) {
+        return false;
+    }
+    if !visiting.insert(sequence) {
+        return true;
+    }
+    if targets.get(&sequence).is_some_and(|target| {
+        targets.contains_key(target) && solid_instance_cycle(*target, targets, visiting, visited)
+    }) {
+        return true;
+    }
+    visiting.remove(&sequence);
+    visited.insert(sequence);
+    false
+}
+
 fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
     match record.tokens.get(index).map(|token| &token.value) {
         None | Some(TokenValue::Omitted) => Some(default),
@@ -90,6 +112,69 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
+
+    let mut solid_instances = BTreeMap::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let target = record.integer(1).and_then(|value| {
+            let sequence = u32::try_from(value).ok()?;
+            (sequence % 2 == 1).then_some(sequence)
+        });
+        if let Some(target) = target {
+            solid_instances.insert(entry.sequence, target);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "solid-instance target pointer is invalid",
+            ));
+        }
+    }
+
+    let mut visited_instances = BTreeSet::new();
+    for (sequence, target) in &solid_instances {
+        let entry = entries[sequence];
+        let target_valid = entries.get(target).is_some_and(|target_entry| {
+            if entry.form == 1 {
+                target_entry.entity_type == 186
+            } else {
+                matches!(
+                    target_entry.entity_type,
+                    150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 180 | 184 | 430
+                )
+            }
+        });
+        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                &mut BTreeSet::new(),
+            )
+            .is_ok()
+        });
+        let cyclic = solid_instance_cycle(
+            *sequence,
+            &solid_instances,
+            &mut BTreeSet::new(),
+            &mut visited_instances,
+        );
+        if target_valid && transform_valid && !cyclic {
+            decoded.insert(*sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "solid-instance form, target, transform, or acyclicity is invalid",
+            ));
+        }
+    }
 
     for entry in directory
         .iter()

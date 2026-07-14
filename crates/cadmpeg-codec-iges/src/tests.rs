@@ -2188,6 +2188,25 @@ fn solid_assembly_file() -> Vec<u8> {
     ])
 }
 
+fn solid_instance_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "158,2,1,2,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 430,
+            form: 0,
+            label: "INSTANCE".into(),
+            status: "00000000",
+            parameters: "430,1;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3239,6 +3258,25 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
         assembly.fields["items"][0]["item"],
         "iges:entity:directory#55"
     );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_solid_definition_and_instance_identities() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(solid_instance_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let instances = &result.ir.native.namespace("iges").unwrap().arenas["solid_instances"];
+    assert_eq!(instances.len(), 1);
+    assert_eq!(instances[0].id, "iges:product:solid-instance#D3");
+    assert_eq!(instances[0].fields["solid"], "iges:entity:directory#1");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

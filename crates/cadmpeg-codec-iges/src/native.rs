@@ -191,6 +191,15 @@ struct NativeSolidAssembly {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSolidInstance {
+    id: String,
+    source_entity: String,
+    form: i64,
+    solid: Option<String>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeSubfigureDefinition {
     id: String,
     source_entity: String,
@@ -732,6 +741,23 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let solid_instances = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 430 && matches!(entry.form, 0 | 1))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            NativeSolidInstance {
+                id: format!("iges:product:solid-instance#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                solid: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let subfigure_definitions = directory
         .iter()
         .filter(|entry| entry.entity_type == 308 && entry.form == 0)
@@ -894,6 +920,7 @@ pub(crate) fn store(
     namespace.set_arena("boolean_trees", &boolean_trees)?;
     namespace.set_arena("selected_components", &selected_components)?;
     namespace.set_arena("solid_assemblies", &solid_assemblies)?;
+    namespace.set_arena("solid_instances", &solid_instances)?;
     namespace.set_arena("subfigure_definitions", &subfigure_definitions)?;
     namespace.set_arena("subfigure_instances", &subfigure_instances)?;
     namespace.set_arena("network_definitions", &network_definitions)?;
