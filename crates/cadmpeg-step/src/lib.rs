@@ -1033,6 +1033,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Offset { .. }
                 | ProceduralSurfaceDefinition::Ruled { .. }
                 | ProceduralSurfaceDefinition::Blend { .. }
+                | ProceduralSurfaceDefinition::RollingBallJet { .. }
                 | ProceduralSurfaceDefinition::Unknown { .. } => true,
             })
             .count();

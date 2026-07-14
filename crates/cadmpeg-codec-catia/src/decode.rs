@@ -15,7 +15,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
-    Surface, SurfaceGeometry,
+    RollingBallJetDerivative, RollingBallJetSite, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
@@ -2024,6 +2024,73 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
             },
             cache_fit_tolerance: None,
         });
+    }
+
+    for jet in geometry::a5_freeform_curves(data) {
+        let sites = jet
+            .sites
+            .iter()
+            .zip(&jet.first_derivatives)
+            .zip(&jet.second_derivatives)
+            .map(|((site, first), second)| RollingBallJetSite {
+                first_limit: Point3::new(site.limit1[0], site.limit1[1], site.limit1[2]),
+                second_limit: Point3::new(site.limit2[0], site.limit2[1], site.limit2[2]),
+                center: Point3::new(site.center[0], site.center[1], site.center[2]),
+                angle: site.theta,
+                first_derivative: rolling_ball_derivative(*first),
+                second_derivative: rolling_ball_derivative(*second),
+            })
+            .collect::<Vec<_>>();
+        if sites.len() != jet.knots.len() {
+            continue;
+        }
+        let surface_index = ir.model.surfaces.len();
+        let surface_id = SurfaceId(format!("catia:rolling-ball:surf#{surface_index}"));
+        annotate(
+            annotations,
+            &surface_id,
+            "consolidated_a5_03_32_cache",
+            jet.pos as u64,
+            format!("header_token:{:08x}", jet.header_token),
+            Exactness::Unknown,
+        );
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+
+        let procedural_id = ProceduralSurfaceId(format!(
+            "catia:rolling-ball:construction#{}",
+            ir.model.procedural_surfaces.len()
+        ));
+        annotate(
+            annotations,
+            &procedural_id,
+            "consolidated_a5_03_32",
+            jet.pos as u64,
+            format!("header_token:{:08x}", jet.header_token),
+            Exactness::ByteExact,
+        );
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::RollingBallJet {
+                degree: jet.degree,
+                knots: jet.knots,
+                sites,
+            },
+            cache_fit_tolerance: None,
+        });
+    }
+}
+
+fn rolling_ball_derivative(values: [f64; 10]) -> RollingBallJetDerivative {
+    RollingBallJetDerivative {
+        first_limit: Vector3::new(values[0], values[1], values[2]),
+        second_limit: Vector3::new(values[3], values[4], values[5]),
+        center: Vector3::new(values[6], values[7], values[8]),
+        angle: values[9],
     }
 }
 

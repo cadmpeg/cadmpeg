@@ -11,6 +11,7 @@ use std::io::Cursor;
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 use crate::variant::Variant;
 use crate::CatiaCodec;
@@ -2853,6 +2854,39 @@ fn decode_standard_transfers_exact_offset_construction() {
     assert_eq!(*distance, 2.5);
     assert_eq!([*u_sense, *v_sense], [1, 1]);
     assert!(extension_flags.is_empty());
+}
+
+#[test]
+fn decode_standard_transfers_exact_rolling_ball_jet() {
+    let mut file = standard_catpart();
+    file.splice(16..16, a5_freeform_curve_stream());
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("standard decode");
+    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+        panic!("one rolling-ball construction");
+    };
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::RollingBallJet {
+        degree,
+        knots,
+        sites,
+    } = &procedural.definition
+    else {
+        panic!("rolling-ball jet");
+    };
+    assert_eq!(*degree, 5);
+    assert_eq!(knots, &[0.0, 1.0]);
+    assert_eq!(sites.len(), 2);
+    assert_eq!(sites[0].first_limit, Point3::new(1.0, 0.0, 0.0));
+    assert_eq!(sites[1].second_limit, Point3::new(0.0, 2.0, 0.0));
+    assert_eq!(sites[0].angle, std::f64::consts::FRAC_PI_2);
+    assert_eq!(
+        sites[0].first_derivative.center,
+        Vector3::new(0.0, 0.0, 0.0)
+    );
 }
 
 #[test]

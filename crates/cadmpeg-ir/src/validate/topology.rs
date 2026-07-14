@@ -741,7 +741,8 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "unknown record", &record.0);
                 }
             }
-            ProceduralSurfaceDefinition::Helix { .. }
+            ProceduralSurfaceDefinition::RollingBallJet { .. }
+            | ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
             ProceduralSurfaceDefinition::Deformable { construction } => {

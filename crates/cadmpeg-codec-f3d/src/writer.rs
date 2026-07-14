@@ -5621,6 +5621,12 @@ fn native_procedural_surface(
                 procedural.id
             )))
         }
+        ProceduralSurfaceDefinition::RollingBallJet { .. } => {
+            return Err(CodecError::NotImplemented(format!(
+                "source-less rolling-ball jet surface {} cannot be encoded as an F3D native construction",
+                procedural.id
+            )))
+        }
         ProceduralSurfaceDefinition::Unknown { .. } => {
             return Err(CodecError::NotImplemented(format!(
                 "source-less F3D unknown procedural surface {} cannot be regenerated losslessly",

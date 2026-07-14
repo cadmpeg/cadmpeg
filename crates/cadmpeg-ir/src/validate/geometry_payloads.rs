@@ -1356,6 +1356,63 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::RollingBallJet {
+            degree,
+            knots,
+            sites,
+        } = &procedural.definition
+        {
+            let point_finite = |point: &crate::math::Point3| {
+                point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+            };
+            let vector_finite = |vector: &Vector3| {
+                vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+            };
+            let derivative_finite = |derivative: &crate::geometry::RollingBallJetDerivative| {
+                [
+                    &derivative.first_limit,
+                    &derivative.second_limit,
+                    &derivative.center,
+                ]
+                .iter()
+                .all(|vector| vector_finite(vector))
+                    && derivative.angle.is_finite()
+            };
+            let sites_valid = sites.iter().all(|site| {
+                let radius = |point: &crate::math::Point3| {
+                    ((point.x - site.center.x).powi(2)
+                        + (point.y - site.center.y).powi(2)
+                        + (point.z - site.center.z).powi(2))
+                    .sqrt()
+                };
+                let first_radius = radius(&site.first_limit);
+                let second_radius = radius(&site.second_limit);
+                point_finite(&site.first_limit)
+                    && point_finite(&site.second_limit)
+                    && point_finite(&site.center)
+                    && site.angle.is_finite()
+                    && derivative_finite(&site.first_derivative)
+                    && derivative_finite(&site.second_derivative)
+                    && first_radius.is_finite()
+                    && first_radius > 0.0
+                    && second_radius.is_finite()
+                    && (first_radius - second_radius).abs()
+                        <= 1e-9 * first_radius.max(second_radius).max(1.0)
+            });
+            if *degree == 0
+                || knots.len() != sites.len()
+                || knots.len() < 2
+                || knots.iter().any(|knot| !knot.is_finite())
+                || knots.windows(2).any(|pair| pair[0] >= pair[1])
+                || !sites_valid
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "rolling-ball jet payload is invalid",
+                );
+            }
+        }
         if let ProceduralSurfaceDefinition::Offset {
             distance,
             extension_flags,
