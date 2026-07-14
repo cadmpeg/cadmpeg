@@ -1955,6 +1955,57 @@ fn placed_section_nurbs(
     }
 }
 
+fn translated_nurbs_curve(curve: &NurbsCurve, translation: [f64; 3]) -> NurbsCurve {
+    NurbsCurve {
+        degree: curve.degree,
+        knots: curve.knots.clone(),
+        control_points: curve
+            .control_points
+            .iter()
+            .map(|point| {
+                Point3::new(
+                    point.x + translation[0],
+                    point.y + translation[1],
+                    point.z + translation[2],
+                )
+            })
+            .collect(),
+        weights: curve.weights.clone(),
+        periodic: curve.periodic,
+    }
+}
+
+fn extruded_nurbs_surface(directrix: &NurbsCurve, sweep: [f64; 3]) -> Option<NurbsSurface> {
+    let mut control_points = Vec::with_capacity(directrix.control_points.len() * 2);
+    let mut weights = directrix
+        .weights
+        .as_ref()
+        .map(|_| Vec::with_capacity(control_points.capacity()));
+    for (index, point) in directrix.control_points.iter().enumerate() {
+        control_points.push(*point);
+        control_points.push(Point3::new(
+            point.x + sweep[0],
+            point.y + sweep[1],
+            point.z + sweep[2],
+        ));
+        if let (Some(source), Some(target)) = (&directrix.weights, &mut weights) {
+            target.extend([source[index], source[index]]);
+        }
+    }
+    Some(NurbsSurface {
+        u_degree: directrix.degree,
+        v_degree: 1,
+        u_knots: directrix.knots.clone(),
+        v_knots: vec![0.0, 0.0, 1.0, 1.0],
+        u_count: u32::try_from(directrix.control_points.len()).ok()?,
+        v_count: 2,
+        control_points,
+        weights,
+        u_periodic: directrix.periodic,
+        v_periodic: false,
+    })
+}
+
 fn transfer_saved_spline_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -2229,6 +2280,136 @@ fn transfer_feature_extrusion_surfaces(
                     layer: None,
                     instance_path: Vec::new(),
                 }),
+            });
+            transferred += 1;
+        }
+
+        let mut splines = definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(|entity| match entity {
+                crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+                _ => None,
+            })
+            .filter_map(|spline| {
+                let entity_id = spline.entity_id?;
+                Some((order_table.internal_id(entity_id)?, spline))
+            })
+            .collect::<Vec<_>>();
+        splines.sort_by_key(|(internal_id, _)| *internal_id);
+        let extrusion_entries = table
+            .entry_ids
+            .iter()
+            .filter(|id| {
+                scan.surface_rows
+                    .iter()
+                    .any(|row| row.id == **id && row.kind == crate::surface::SurfaceKind::Extrusion)
+            })
+            .copied()
+            .collect::<Vec<_>>();
+        if splines.len() != extrusion_entries.len() {
+            continue;
+        }
+        let Some(span) = extrusion_span(
+            transform.origin,
+            transform.normal,
+            feature_plane_equations(scan, feature_id),
+        ) else {
+            continue;
+        };
+        let lower_translation = transform.normal.map(|value| value * span.lower);
+        let sweep = transform
+            .normal
+            .map(|value| value * (span.upper - span.lower));
+        for ((_, spline), native_surface_id) in splines.into_iter().zip(extrusion_entries) {
+            let Some(section_curve) = saved_spline_nurbs(spline) else {
+                continue;
+            };
+            let placed = placed_section_nurbs(transform, &section_curve);
+            let directrix = translated_nurbs_curve(&placed, lower_translation);
+            let Some(surface) = extruded_nurbs_surface(&directrix, sweep) else {
+                continue;
+            };
+            let suffix = spline
+                .entity_id
+                .expect("ordered saved spline has an entity id")
+                .to_string();
+            let curve_id = CurveId(format!(
+                "creo:feature:extrusion_directrix#{feature_id}:{suffix}"
+            ));
+            if !ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+                annotate(
+                    annotations,
+                    &curve_id,
+                    "FeatDefs",
+                    spline.offset as u64,
+                    "protextrude_spline_directrix",
+                    Exactness::Derived,
+                );
+                ir.model.curves.push(Curve {
+                    id: curve_id.clone(),
+                    geometry: CurveGeometry::Nurbs(directrix.clone()),
+                    source_object: Some(SourceObjectAssociation {
+                        format: "creo".to_string(),
+                        object_id: format!("FeatDefs:saved_spline#{suffix}"),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                });
+            }
+            let surface_id = SurfaceId(format!("creo:visibgeom:surface#{native_surface_id}"));
+            if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
+                continue;
+            }
+            let procedural_id = ProceduralSurfaceId(format!(
+                "creo:feature:extrusion_construction#{feature_id}:{suffix}"
+            ));
+            annotate(
+                annotations,
+                &surface_id,
+                "FeatDefs",
+                spline.offset as u64,
+                "protextrude_spline_surface",
+                Exactness::Derived,
+            );
+            annotate(
+                annotations,
+                &procedural_id,
+                "FeatDefs",
+                spline.offset as u64,
+                "protextrude_spline_surface_construction",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: SurfaceGeometry::Nurbs(surface),
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("VisibGeom:{native_surface_id}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            ir.model.procedural_surfaces.push(ProceduralSurface {
+                id: procedural_id,
+                surface: surface_id,
+                definition: ProceduralSurfaceDefinition::Extrusion {
+                    directrix: curve_id,
+                    parameter_interval: Some([
+                        *directrix.knots.first().expect("validated spline knots"),
+                        *directrix.knots.last().expect("validated spline knots"),
+                    ]),
+                    direction: Vector3::new(sweep[0], sweep[1], sweep[2]),
+                    native_position: None,
+                },
+                cache_fit_tolerance: None,
             });
             transferred += 1;
         }
@@ -4589,6 +4770,40 @@ mod resolved_sketch_tests {
             Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
                 if major_radius == 5.0 && minor_radius == 2.0
         ));
+    }
+
+    #[test]
+    fn spline_extrusion_preserves_directrix_basis_and_weights() {
+        let directrix = NurbsCurve {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(4.0, 5.0, 6.0),
+                Point3::new(7.0, 8.0, 9.0),
+            ],
+            weights: Some(vec![1.0, 0.5, 1.0]),
+            periodic: false,
+        };
+        let surface =
+            extruded_nurbs_surface(&directrix, [0.0, 0.0, 4.0]).expect("valid extrusion surface");
+
+        assert_eq!((surface.u_degree, surface.v_degree), (2, 1));
+        assert_eq!((surface.u_count, surface.v_count), (3, 2));
+        assert_eq!(surface.u_knots, directrix.knots);
+        assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(
+            surface.control_points,
+            [
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(1.0, 2.0, 7.0),
+                Point3::new(4.0, 5.0, 6.0),
+                Point3::new(4.0, 5.0, 10.0),
+                Point3::new(7.0, 8.0, 9.0),
+                Point3::new(7.0, 8.0, 13.0),
+            ]
+        );
+        assert_eq!(surface.weights, Some(vec![1.0, 1.0, 0.5, 0.5, 1.0, 1.0]));
     }
 
     #[test]
