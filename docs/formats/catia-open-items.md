@@ -25,7 +25,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - Standard spline edge carrier geometry. Native `b5 03 5e` endpoint identities bind the edge topology, but the solved 3D spline carrier referenced by the standard row remains unresolved.
 - `op1` and persistent-tag resolution. The mapping from absolute persistent CGM tags to serialized records remains unresolved for the consolidated `a5` family.
 - Standard-path line equations, multi-body shell membership, annular-cap orientation, and plane-normal sign.
-- The standard-path arc branch is unspecified for torus-witnessed arcs and arcs with no witnessed adjacent face.
+- The standard-path arc branch is unspecified for arcs with no witnessed adjacent face.
 - The `a5 03 20` `op1` or persistent-tag reference to serialized-record mapping is unspecified.
 - The field split within the 62-byte numeric tail of `b2/b3/b4 03 62` owner packets and the owner packet's binding to a face record are unspecified.
 - The semantic roles of counted `b2/b3/b4 03 61` references and tails, and of the long-form `61` prefix, members, references, and scalar, are unspecified.

@@ -1157,9 +1157,9 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve,
-        combine_propagated_endpoint_pairs, fit_rank_one_e5_plane_axes,
-        include_native_endpoint_pairs, intersection_line_direction, ordered_range,
-        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
+        circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
+        fit_rank_one_e5_plane_axes, include_native_endpoint_pairs, intersection_line_direction,
+        ordered_range, point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
     };
@@ -1585,6 +1585,55 @@ mod chart_tests {
                 direction: cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0,),
             }
         );
+    }
+
+    #[test]
+    fn standard_torus_witness_selects_complementary_latitude_arc() {
+        let surface = SurfaceGeometry::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 5.0,
+            minor_radius: 2.0,
+        };
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 7.0,
+            },
+        };
+        let (geometry, _) = standard_pcurve_geometry(
+            &surface,
+            &support,
+            Point3::new(7.0, 0.0, 0.0),
+            Point3::new(0.0, 7.0, 0.0),
+            Some(Point3::new(-7.0, 0.0, 0.0)),
+        )
+        .expect("witnessed torus latitude");
+        let PcurveGeometry::Line { origin, direction } = geometry else {
+            panic!("expected torus chart line");
+        };
+        assert_eq!(origin, cadmpeg_ir::math::Point2::new(0.0, 0.0));
+        assert_eq!(
+            direction,
+            cadmpeg_ir::math::Point2::new(-3.0 * std::f64::consts::FRAC_PI_2, 0.0)
+        );
+        let range = circle_parameter_range_from_surface_branch(
+            &surface,
+            Point3::new(0.0, 0.0, 0.0),
+            7.0,
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Point3::new(7.0, 0.0, 0.0),
+            Point3::new(0.0, 7.0, 0.0),
+            origin,
+            direction,
+        )
+        .expect("torus circle range");
+        assert!(((range[1] - range[0]).abs() - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12);
     }
 
     #[test]
@@ -3874,36 +3923,10 @@ fn standard_pcurve_geometry(
     let reference_uv = uv[0];
     unwrap_standard_uv(surface, &mut uv[1], reference_uv);
 
-    if let (
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            radius: surface_radius,
-            ..
-        },
-        geometry::StandardCurveGeometry::Circle { center, radius },
-        Some(witness),
-    ) = (surface, &support.geometry, witness)
+    if let (geometry::StandardCurveGeometry::Circle { center, radius }, Some(witness)) =
+        (&support.geometry, witness)
     {
-        let center_offset = point_delta(*center, *origin);
-        let axis_distance = vector_norm(cross_vector(center_offset, *axis));
-        let witness_offset = point_delta(witness, *origin);
-        let witness_axial = axis_dot(witness_offset, *axis);
-        let witness_radial = Vector3::new(
-            witness_offset.x - witness_axial * axis.x,
-            witness_offset.y - witness_axial * axis.y,
-            witness_offset.z - witness_axial * axis.z,
-        );
-        if axis_distance <= 2e-3
-            && (radius - surface_radius).abs() <= 2e-3
-            && (vector_norm(witness_radial) - surface_radius).abs() <= 2e-3
-        {
-            if let Some(end) = analytic_surface_uv(surface, witness)
-                .and_then(|witness| witness_arc_end(uv[0].u, uv[1].u, witness.u))
-            {
-                uv[1].u = end;
-            }
-        }
+        uv[1] = witnessed_surface_circle_end(surface, *center, *radius, uv, witness)?;
     }
 
     if let (
@@ -3958,6 +3981,48 @@ fn witness_arc_end(start: f64, short_end: f64, witness: f64) -> Option<f64> {
         (false, true) => Some(long_end),
         _ => None,
     }
+}
+
+fn witnessed_surface_circle_end(
+    surface: &SurfaceGeometry,
+    center: Point3,
+    radius: f64,
+    uv: [Point2; 2],
+    witness: Point3,
+) -> Option<Point2> {
+    let witness_uv = analytic_surface_uv(surface, witness)?;
+    let lanes: &[usize] = match surface {
+        SurfaceGeometry::Cylinder { .. }
+        | SurfaceGeometry::Cone { .. }
+        | SurfaceGeometry::Sphere { .. } => &[0],
+        SurfaceGeometry::Torus { .. } => &[0, 1],
+        _ => return None,
+    };
+    let candidates = lanes
+        .iter()
+        .filter_map(|lane| {
+            let mut candidate = uv[1];
+            let (start, short_end, witness) = if *lane == 0 {
+                (uv[0].u, uv[1].u, witness_uv.u)
+            } else {
+                (uv[0].v, uv[1].v, witness_uv.v)
+            };
+            let selected = witness_arc_end(start, short_end, witness)?;
+            if *lane == 0 {
+                candidate.u = selected;
+            } else {
+                candidate.v = selected;
+            }
+            let midpoint = cadmpeg_ir::eval::surface_point(
+                surface,
+                0.5 * (uv[0].u + candidate.u),
+                0.5 * (uv[0].v + candidate.v),
+            )?;
+            ((point_distance_squared(midpoint, center).sqrt() - radius).abs() <= 2e-3)
+                .then_some(candidate)
+        })
+        .collect::<Vec<_>>();
+    <[Point2; 1]>::try_from(candidates).ok().map(|[end]| end)
 }
 
 fn ordered_range(range: [f64; 2]) -> [f64; 2] {
@@ -4251,38 +4316,81 @@ fn standard_circle_param_range(
     start: Point3,
     end: Point3,
 ) -> Option<[f64; 2]> {
-    let tangent = cross_vector(axis, ref_direction);
-    let start_offset = point_delta(start, center);
-    let start_parameter =
-        axis_dot(start_offset, tangent).atan2(axis_dot(start_offset, ref_direction));
-    let mut deltas = support.faces.iter().filter_map(|face| {
+    let mut ranges = support.faces.iter().filter_map(|face| {
         let surface = face_surface(ir, bindings, surface_indices, *face)?;
-        let SurfaceGeometry::Cylinder {
-            axis: surface_axis, ..
-        } = &surface.geometry
-        else {
-            return None;
-        };
         let witness = geometry::standard_face_witness(brep, bindings.get(*face)?.2)?;
-        let (PcurveGeometry::Line { direction, .. }, _) =
+        let (PcurveGeometry::Line { origin, direction }, _) =
             standard_pcurve_geometry(&surface.geometry, support, start, end, Some(witness))?
         else {
             return None;
         };
-        Some(direction.u * axis_dot(*surface_axis, axis).signum())
+        circle_parameter_range_from_surface_branch(
+            &surface.geometry,
+            center,
+            radius,
+            axis,
+            ref_direction,
+            start,
+            end,
+            origin,
+            direction,
+        )
     });
-    let delta = deltas.next()?;
-    if !delta.is_finite() || deltas.any(|other| !other.is_finite() || (other - delta).abs() > 1e-9)
+    let range = ranges.next()?;
+    if ranges.any(|other| (other[0] - range[0]).abs() > 1e-9 || (other[1] - range[1]).abs() > 1e-9)
     {
         return None;
     }
-    let range = [start_parameter, start_parameter + delta];
-    let evaluated_end = Point3::new(
-        center.x + radius * (range[1].cos() * ref_direction.x + range[1].sin() * tangent.x),
-        center.y + radius * (range[1].cos() * ref_direction.y + range[1].sin() * tangent.y),
-        center.z + radius * (range[1].cos() * ref_direction.z + range[1].sin() * tangent.z),
-    );
-    (point_distance_squared(evaluated_end, end).sqrt() <= 2e-3).then_some(range)
+    Some(range)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn circle_parameter_range_from_surface_branch(
+    surface: &SurfaceGeometry,
+    center: Point3,
+    radius: f64,
+    axis: Vector3,
+    ref_direction: Vector3,
+    start: Point3,
+    end: Point3,
+    pcurve_origin: Point2,
+    pcurve_direction: Point2,
+) -> Option<[f64; 2]> {
+    let tangent = cross_vector(axis, ref_direction);
+    let angle = |point: Point3| {
+        let offset = point_delta(point, center);
+        axis_dot(offset, tangent).atan2(axis_dot(offset, ref_direction))
+    };
+    let start = angle(start);
+    let short_end = unwrap_angle(angle(end), start);
+    let delta = short_end - start;
+    if delta.abs() <= 1e-9 || (delta.abs() - std::f64::consts::PI).abs() <= 1e-9 {
+        return None;
+    }
+    let long_end = short_end - delta.signum() * std::f64::consts::TAU;
+    let surface_midpoint = cadmpeg_ir::eval::surface_point(
+        surface,
+        pcurve_origin.u + 0.5 * pcurve_direction.u,
+        pcurve_origin.v + 0.5 * pcurve_direction.v,
+    )?;
+    let candidates = [short_end, long_end]
+        .into_iter()
+        .filter(|end| {
+            let parameter = 0.5 * (start + end);
+            let circle_midpoint = Point3::new(
+                center.x
+                    + radius * (parameter.cos() * ref_direction.x + parameter.sin() * tangent.x),
+                center.y
+                    + radius * (parameter.cos() * ref_direction.y + parameter.sin() * tangent.y),
+                center.z
+                    + radius * (parameter.cos() * ref_direction.z + parameter.sin() * tangent.z),
+            );
+            point_distance_squared(circle_midpoint, surface_midpoint).sqrt() <= 2e-3
+        })
+        .collect::<Vec<_>>();
+    <[f64; 1]>::try_from(candidates)
+        .ok()
+        .map(|[end]| [start, end])
 }
 
 fn attach_standard_circles(

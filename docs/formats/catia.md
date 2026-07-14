@@ -291,9 +291,9 @@ When a spline row has no decoded 3D carrier, or a line row has no locally decisi
 
 Interleaved in face order with the 47-byte freeform cores. Grammar: `tag:u24le 00 <prebyte> 00 33 <kind> <payload> <sign:i8>`, record start = `marker_pos − 5`.
 
-Cylinder and torus payloads store a face-side witness point as three little-endian f32 values immediately after their big-endian carrier parameters: cylinder at marker-relative `+27`, torus at `+31`. For a circle whose centre lies on a cylinder axis and whose radius equals the cylinder radius, exactly one complementary endpoint arc contains the witness direction; that interval is the face's angular branch.
+Cylinder and torus payloads store a face-side witness point as three little-endian f32 values immediately after their big-endian carrier parameters: cylinder at marker-relative `+27`, torus at `+31`. For a cylinder section circle, exactly one complementary endpoint interval contains the witness azimuth. For a torus isoparametric circle, exactly one complementary interval of its varying periodic chart coordinate contains the corresponding witness coordinate. That interval is the face's angular branch; the witness's constant chart coordinate need not equal the boundary circle's constant coordinate.
 
-A generated standard line carrier begins at its stored start vertex, has unit direction toward its end vertex, and uses the distance interval `[0, |end-start|]`. A standard circle carrier uses radians in its orthonormal reference frame. Its edge interval is emitted only when an incident cylinder witness selects the angular branch; every incident witnessed cylinder must select the same oriented interval after conversion into the circle frame.
+A generated standard line carrier begins at its stored start vertex, has unit direction toward its end vertex, and uses the distance interval `[0, |end-start|]`. A standard circle carrier uses radians in its orthonormal reference frame. Its edge interval is emitted only when an incident cylinder or torus witness selects the angular branch; every incident witnessed carrier must select the same oriented interval after conversion into the circle frame.
 
 | Surface  | kind   | prebyte | length | sign byte |
 | -------- | ------ | ------- | -----: | --------- |
