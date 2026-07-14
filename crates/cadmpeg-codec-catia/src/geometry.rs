@@ -2852,7 +2852,7 @@ fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve
     at = at.checked_add(2)?;
     if usize::try_from(compact_int(data, &mut at)?).ok()? != count
         || !(2..=8192).contains(&count)
-        || !(1..=9).contains(&degree)
+        || degree != 5
     {
         return None;
     }
@@ -2866,12 +2866,19 @@ fn parse_a8_curve(data: &[u8], pos: usize, end: usize) -> Option<A8FreeformCurve
     for _ in 0..count {
         multiplicities.push(compact_int(data, &mut at)?);
     }
-    if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] > v[1]) {
+    if knots.iter().any(|v| !v.is_finite()) || knots.windows(2).any(|v| v[0] >= v[1]) {
         return None;
     }
     let block_bytes = count.checked_mul(80)?;
     let blocks_end = at.checked_add(3 * block_bytes)?;
-    if blocks_end > end || end - blocks_end > 8192 {
+    if multiplicities.first() != Some(&6)
+        || multiplicities.last() != Some(&6)
+        || multiplicities[1..multiplicities.len() - 1]
+            .iter()
+            .any(|value| !matches!(value, 1 | 3))
+        || blocks_end > end
+        || end - blocks_end != 59
+    {
         return None;
     }
     let block = |start: usize| -> Option<Vec<[f64; 10]>> {

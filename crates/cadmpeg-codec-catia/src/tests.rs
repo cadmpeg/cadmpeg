@@ -1951,6 +1951,7 @@ fn a8_freeform_curve_stream() -> Vec<u8> {
             }
         }
     }
+    payload.extend_from_slice(&[0; 59]);
     let mut record = vec![0xa8, 0x03, 0x32];
     record.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     record.extend_from_slice(&0x1234_5678u32.to_le_bytes());
@@ -4530,6 +4531,15 @@ fn a8_curve_parser_reads_common_form_rolling_ball_jet() {
     assert_eq!(curves[0].degree, 5);
     assert_eq!(curves[0].multiplicities, vec![6, 6]);
     assert_eq!(curves[0].sites[1].radius, 2.0);
+    assert_eq!(curves[0].tail_len, 59);
+
+    let mut repeated_knot = a8_freeform_curve_stream();
+    repeated_knot[26..34].copy_from_slice(&le_f64(0.0));
+    assert!(crate::geometry::a8_freeform_curves(&repeated_knot).is_empty());
+
+    let mut invalid_endpoint_multiplicity = a8_freeform_curve_stream();
+    invalid_endpoint_multiplicity[34] = 21;
+    assert!(crate::geometry::a8_freeform_curves(&invalid_endpoint_multiplicity).is_empty());
 }
 
 #[test]
