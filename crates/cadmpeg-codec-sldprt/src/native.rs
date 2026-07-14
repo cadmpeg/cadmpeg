@@ -11,7 +11,7 @@ use crate::records::{
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 4;
+pub const SLDPRT_NATIVE_VERSION: u32 = 5;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -82,7 +82,7 @@ impl SldprtNative {
         let configurations: Vec<crate::records::Configuration> =
             namespace.arena_as("configurations")?;
         let features: Vec<crate::records::Feature> = namespace.arena_as("features")?;
-        let entities: Vec<crate::records::SketchInputEntity> =
+        let mut entities: Vec<crate::records::SketchInputEntity> =
             namespace.arena_as("sketch_input_entities")?;
         let classes: Vec<FeatureInputClass> = namespace.arena_as("feature_input_classes")?;
         let body_selections: Vec<FeatureInputBodySelection> = if namespace.version == 1
@@ -406,6 +406,16 @@ impl SldprtNative {
             history.features.sort_by_key(|record| record.ordinal);
         }
         for lane in &mut native.feature_input_lanes {
+            if namespace.version <= 4 {
+                for entity in entities
+                    .iter_mut()
+                    .filter(|record| record.parent == lane.id)
+                {
+                    entity.object_index = usize::try_from(entity.offset).ok().and_then(|offset| {
+                        crate::resolved_features::marker_object_index(&lane.native_payload, offset)
+                    });
+                }
+            }
             lane.classes = classes
                 .iter()
                 .filter(|record| record.parent == lane.id)

@@ -827,6 +827,11 @@ fn resolved_feature_payload(
             || entity.feature_ref != expected_entity.feature_ref
             || entity.links != expected_entity.links
             || entity.link_selector != expected_entity.link_selector
+            || entity.object_index
+                != crate::resolved_features::marker_object_index(
+                    &lane.native_payload,
+                    *expected_offset,
+                )
             || entity.local_id
                 != crate::resolved_features::marker_local_id(&lane.native_payload, *expected_offset)
         {

@@ -114,6 +114,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 feature_ref: None,
                 ordinal: ordinal as u32,
                 offset: offset as u64,
+                object_index: marker_object_index(payload, offset),
                 local_id: marker_local_id(payload, offset),
                 kind: SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some()),
                 state_value: marker_state_value(payload, offset),
@@ -237,6 +238,13 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     (first.is_finite() && second.is_finite()).then_some([first, second])
 }
 
+pub(crate) fn marker_object_index(payload: &[u8], offset: usize) -> Option<u32> {
+    let start = offset.checked_sub(4)?;
+    Some(u32::from_le_bytes(
+        payload.get(start..offset)?.try_into().ok()?,
+    ))
+}
+
 pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
     payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
 }
@@ -250,7 +258,7 @@ mod marker_tests {
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_surface_selection_at, component_profile_source_at,
         coordinate_marker_local_links, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, named_scalars,
+        marker_local_id, marker_local_links, marker_object_index, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, resolve_operand_marker,
         resolve_operand_marker_excluding, resolve_scalar_operand_markers, unique_locus,
         unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
@@ -270,6 +278,14 @@ mod marker_tests {
         assert_eq!(marker_local_id(&payload, 0), Some(37));
         payload[88..92].fill(0xff);
         assert_eq!(marker_local_id(&payload, 0), None);
+    }
+
+    #[test]
+    fn marker_object_index_precedes_the_marker() {
+        let mut payload = 37u32.to_le_bytes().to_vec();
+        payload.extend(super::SKETCH_MARKER);
+        assert_eq!(marker_object_index(&payload, 4), Some(37));
+        assert_eq!(marker_object_index(&payload, 3), None);
     }
 
     #[test]
@@ -363,6 +379,7 @@ mod marker_tests {
                 feature_ref: Some("feature".into()),
                 ordinal: ordinal as u32,
                 offset: ordinal as u64,
+                object_index: None,
                 local_id: Some(local_id),
                 kind: SketchInputKind::LineOrCircle,
                 state_value: None,
@@ -390,6 +407,7 @@ mod marker_tests {
             feature_ref: Some("feature".into()),
             ordinal: 0,
             offset: 0,
+            object_index: None,
             local_id: Some(7),
             kind: SketchInputKind::Point,
             state_value: None,
@@ -416,6 +434,7 @@ mod marker_tests {
             feature_ref: Some("feature".into()),
             ordinal: 0,
             offset: 0,
+            object_index: None,
             local_id,
             kind,
             state_value: None,
@@ -489,6 +508,7 @@ mod marker_tests {
                 feature_ref: Some("feature".into()),
                 ordinal: 0,
                 offset: 0,
+                object_index: None,
                 local_id: Some(11),
                 kind: SketchInputKind::LineOrCircle,
                 state_value: None,
@@ -502,6 +522,7 @@ mod marker_tests {
                 feature_ref: Some("feature".into()),
                 ordinal: 1,
                 offset: 1,
+                object_index: None,
                 local_id: Some(3),
                 kind: SketchInputKind::Arc,
                 state_value: None,
@@ -526,6 +547,7 @@ mod marker_tests {
                 feature_ref: Some("feature".into()),
                 ordinal: 0,
                 offset: 0,
+                object_index: None,
                 local_id: Some(11),
                 kind: SketchInputKind::LineOrCircle,
                 state_value: None,
@@ -539,6 +561,7 @@ mod marker_tests {
                 feature_ref: Some("feature".into()),
                 ordinal: 1,
                 offset: 1,
+                object_index: None,
                 local_id: Some(8),
                 kind: SketchInputKind::Arc,
                 state_value: None,
@@ -552,6 +575,7 @@ mod marker_tests {
                 feature_ref: Some("feature".into()),
                 ordinal: 2,
                 offset: 2,
+                object_index: None,
                 local_id: Some(3),
                 kind: SketchInputKind::Relation(SketchRelationKind::Angle),
                 state_value: None,
@@ -578,6 +602,7 @@ mod marker_tests {
             feature_ref: Some("feature".into()),
             ordinal: offset as u32,
             offset,
+            object_index: None,
             local_id: Some(local_id),
             kind: SketchInputKind::LineOrCircle,
             state_value: None,
@@ -594,6 +619,7 @@ mod marker_tests {
                 feature_ref: Some("feature".into()),
                 ordinal: 2,
                 offset: 2,
+                object_index: None,
                 local_id: Some(10),
                 kind: SketchInputKind::Relation(SketchRelationKind::Distance),
                 state_value: None,
@@ -6828,6 +6854,7 @@ mod profile_join_tests {
             feature_ref: Some("feature-native".into()),
             ordinal: 0,
             offset: 0,
+            object_index: None,
             local_id: None,
             kind: SketchInputKind::Point,
             state_value: None,

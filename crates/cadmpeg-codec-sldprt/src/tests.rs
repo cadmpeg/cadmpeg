@@ -143,6 +143,35 @@ fn native_version_three_migrates_the_surface_selection_arena() {
 }
 
 #[test]
+fn native_version_four_migrates_sketch_marker_object_indices() {
+    let decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_resolved_features(
+                &triangle_body(),
+                &[0, 1],
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut legacy = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    legacy.version = 4;
+    for record in legacy.arenas.get_mut("sketch_input_entities").unwrap() {
+        record.fields.remove("object_index");
+    }
+    let migrated = crate::native::SldprtNative::load(&legacy).unwrap();
+    assert!(migrated.feature_input_lanes.iter().all(|lane| {
+        lane.sketch_entities.iter().all(|entity| {
+            usize::try_from(entity.offset).ok().and_then(|offset| {
+                crate::resolved_features::marker_object_index(&lane.native_payload, offset)
+            }) == entity.object_index
+        })
+    }));
+    let mut current = cadmpeg_ir::NativeNamespace::default();
+    migrated.store(&mut current).unwrap();
+    assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
+}
+
+#[test]
 fn native_future_version_remains_rejected() {
     let decoded = SldprtCodec
         .decode(
@@ -14459,6 +14488,25 @@ fn semantic_writer_rejects_edited_sketch_marker_local_id() {
     assert!(crate::validate_native(&decoded.ir)
         .iter()
         .any(|finding| finding.message.contains("local object id does not match")));
+
+    let error = SldprtCodec
+        .write_preserved(&decoded.ir, &mut Vec::new())
+        .unwrap_err();
+    assert!(error.to_string().contains("inconsistent marker order"));
+}
+
+#[test]
+fn semantic_writer_rejects_edited_sketch_marker_object_index() {
+    let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0, 1]);
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_input_lanes[0].sketch_entities[0].object_index = Some(77);
+    });
+    assert!(crate::validate_native(&decoded.ir)
+        .iter()
+        .any(|finding| finding.message.contains("object index does not match")));
 
     let error = SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())

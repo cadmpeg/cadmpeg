@@ -458,6 +458,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 });
             }
             if usize::try_from(entity.offset).ok().is_some_and(|offset| {
+                entity.object_index
+                    != crate::resolved_features::marker_object_index(&lane.native_payload, offset)
+            }) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message:
+                        "SolidWorks feature-input object index does not match its native payload"
+                            .into(),
+                    entity: Some(entity.id.clone()),
+                });
+            }
+            if usize::try_from(entity.offset).ok().is_some_and(|offset| {
                 entity.local_id
                     != crate::resolved_features::marker_local_id(&lane.native_payload, offset)
             }) {
