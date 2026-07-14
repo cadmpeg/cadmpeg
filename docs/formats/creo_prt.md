@@ -369,6 +369,8 @@ A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 type-three `var_arr` radius with that key. An arc's `radius` field selects the
 same radius key. The solved center point and positive radius define its
 unbounded circular carrier before both arc endpoints are available.
+The selected dimension is the neutral radius constraint parameter of the arc
+whose `radius` field names that key.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
 Positional rows may insert the two-byte `c0 80` wrapper before `type`. The

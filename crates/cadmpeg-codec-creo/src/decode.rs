@@ -2417,45 +2417,66 @@ fn section_dimension_constraints(
         .rows
         .iter()
         .filter_map(|relation| {
-            if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
-                return None;
-            }
             let vectors = relation.operand_vectors?;
-            if vectors[0][2..] != [None, Some(1)]
-                || vectors[1] != [Some(1), Some(1), Some(0), Some(1)]
-                || vectors[2] != [Some(15), Some(16), Some(15), Some(1)]
-            {
-                return None;
-            }
-            let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
-                return None;
-            };
-            let measured = segments.rows.iter().find(|segment| {
-                segment.point_ids == [first_id, second_id]
-                    || segment.point_ids == [second_id, first_id]
-            })?;
             let dimension = dimensions
                 .rows
                 .get(usize::try_from(relation.dimension_id).ok()?)?;
             dimension.value?;
-            let first = section_point_locus(definition.id, &segments.rows, first_id)?;
-            let second = section_point_locus(definition.id, &segments.rows, second_id)?;
             let parameter = ParameterId(format!(
                 "creo:featdefs:parameter#{owner}:{}",
                 dimension.external_id
             ));
-            let constraint_definition = match measured.vertical_horizontal {
-                Some(0) => SketchConstraintDefinition::VerticalDistance {
-                    first,
-                    second,
+            let constraint_definition = if relation.relation_type == 14
+                && relation.sign == 1
+                && vectors[1] == [Some(0); 4]
+                && vectors[2] == [Some(15), Some(0), Some(0), Some(0)]
+            {
+                let [Some(radius_id), Some(0), Some(0), Some(0)] = vectors[0] else {
+                    return None;
+                };
+                let segment = segments.rows.iter().find(|segment| {
+                    segment.kind == crate::feature::FeatureSegmentKind::Arc
+                        && segment.radius_ref == Some(radius_id)
+                })?;
+                SketchConstraintDefinition::Radius {
+                    entity: SketchEntityId(format!(
+                        "creo:featdefs:sketch_entity#{}:{}",
+                        definition.id, segment.external_id
+                    )),
                     parameter,
-                },
-                Some(1) => SketchConstraintDefinition::HorizontalDistance {
-                    first,
-                    second,
-                    parameter,
-                },
-                _ => return None,
+                }
+            } else {
+                if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
+                    return None;
+                }
+                if vectors[0][2..] != [None, Some(1)]
+                    || vectors[1] != [Some(1), Some(1), Some(0), Some(1)]
+                    || vectors[2] != [Some(15), Some(16), Some(15), Some(1)]
+                {
+                    return None;
+                }
+                let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
+                    return None;
+                };
+                let measured = segments.rows.iter().find(|segment| {
+                    segment.point_ids == [first_id, second_id]
+                        || segment.point_ids == [second_id, first_id]
+                })?;
+                let first = section_point_locus(definition.id, &segments.rows, first_id)?;
+                let second = section_point_locus(definition.id, &segments.rows, second_id)?;
+                match measured.vertical_horizontal {
+                    Some(0) => SketchConstraintDefinition::VerticalDistance {
+                        first,
+                        second,
+                        parameter,
+                    },
+                    Some(1) => SketchConstraintDefinition::HorizontalDistance {
+                        first,
+                        second,
+                        parameter,
+                    },
+                    _ => return None,
+                }
             };
             Some((
                 SketchConstraint {
