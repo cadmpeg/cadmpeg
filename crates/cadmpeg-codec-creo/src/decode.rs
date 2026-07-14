@@ -13135,18 +13135,26 @@ fn prototype_local_frame(
     };
     let slots = values.iter().copied().collect::<Option<Vec<_>>>()?;
     let slots: [f64; 12] = slots.try_into().ok()?;
-    let reference = normalized(slots[0..3].try_into().ok()?)?;
+    let first: [f64; 3] = slots[0..3].try_into().ok()?;
     let middle: [f64; 3] = slots[3..6].try_into().ok()?;
     let third: [f64; 3] = slots[6..9].try_into().ok()?;
+    let first_norm = dot(first, first).sqrt();
     let middle_norm = dot(middle, middle).sqrt();
     let third_norm = dot(third, third).sqrt();
-    let second = if middle_norm <= 1e-10 && third_norm > 1e-10 {
+    let second = if middle_norm <= 1e-10
+        && third_norm > 1e-10
+        && (first_norm - third_norm).abs() <= 1e-10 * first_norm.max(third_norm)
+    {
         normalized(third)?
-    } else if (middle_norm - 1.0).abs() <= 1e-10 {
+    } else if matches!(record.family, crate::surface::SurfacePrototypeFamily::Torus)
+        && middle_norm > 1e-10
+        && (first_norm - middle_norm).abs() <= 1e-10 * first_norm.max(middle_norm)
+    {
         normalized(middle)?
     } else {
         return None;
     };
+    let reference = normalized(first)?;
     if dot(reference, second).abs() > 1e-10 {
         return None;
     }
