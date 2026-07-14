@@ -238,3 +238,10 @@ every document-level element outside `ViewProviderData` in source order. These n
 cover cameras, active views, clipping or section state, and future GUI state without treating it as
 an application-object property. Each retains its exact XML span, ordered descendant values, and
 display-asset references.
+
+Logical byte accounting consumes the records emitted by each bounded parser. Exact-shape,
+side-entry string-table, and side-entry element-map payloads are wholly typed after successful
+framing. `Document.xml` properties and `GuiDocument.xml` state/property spans are typed while the
+intervening XML syntax is structural. Uninterpreted embedded assets remain named opaque and retain
+their owning record. These claims are sorted and rejected on overlap before the ledger is emitted;
+validation then requires every logical entry to close without gaps.

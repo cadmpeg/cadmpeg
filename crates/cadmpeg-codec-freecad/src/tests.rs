@@ -1493,6 +1493,20 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
         assert_eq!(spans.last().map(|span| span.end), Some(entry.byte_len));
         assert!(spans.windows(2).all(|pair| pair[0].end == pair[1].start));
     }
+    assert!(ledger
+        .iter()
+        .filter(|span| span.entry == "Shape.brp")
+        .all(|span| span.classification == "typed"));
+    assert!(ledger
+        .iter()
+        .filter(|span| span.entry == "Payload.bin")
+        .all(|span| span.classification == "named_opaque"));
+    assert!(ledger
+        .iter()
+        .any(|span| span.entry == "Document.xml" && span.classification == "typed"));
+    assert!(ledger
+        .iter()
+        .any(|span| span.entry == "Document.xml" && span.classification == "structural"));
     let findings = crate::validate_native(&result.ir);
     assert!(findings.is_empty(), "{findings:#?}");
 }

@@ -897,7 +897,6 @@ impl Codec for FcstdCodec {
                     })
                 })
                 .collect::<Result<Vec<_>, CodecError>>()?;
-            let logical_ledger = logical_ledger(&entry_records, &graph.properties)?;
             let shape_payloads = brep::parse_payloads(&graph.properties, &entry_records)?;
             let (string_tables, mut element_maps) =
                 element_map::parse(document_bytes, &graph.properties, &entry_records)?;
@@ -905,7 +904,6 @@ impl Codec for FcstdCodec {
             namespace.set_arena("extensions", &graph.extensions)?;
             namespace.set_arena("properties", &graph.properties)?;
             namespace.set_arena("entries", &entry_records)?;
-            namespace.set_arena("logical_ledger", &logical_ledger)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
             namespace.set_arena("string_tables", &string_tables)?;
             namespace.set_arena(
@@ -1000,6 +998,17 @@ impl Codec for FcstdCodec {
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("gui_properties", &gui_graph.properties)?;
+            let logical_ledger = logical_ledger(
+                &entry_records,
+                &graph.properties,
+                &gui_graph,
+                &shape_payloads,
+                &string_tables,
+                &element_maps,
+            )?;
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("logical_ledger", &logical_ledger)?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("element_maps", &element_maps)?;
@@ -1483,32 +1492,83 @@ fn transfer_text_tessellations(
 fn logical_ledger(
     entries: &[native::EntryRecord],
     properties: &[native::PropertyRecord],
+    gui: &gui::Graph,
+    shape_payloads: &[brep::ShapePayloadRecord],
+    string_tables: &[native::StringTableRecord],
+    element_maps: &[native::ElementMapRecord],
 ) -> Result<Vec<native::LogicalSpan>, CodecError> {
+    let typed_entries = shape_payloads
+        .iter()
+        .map(|payload| (payload.entry.as_str(), payload.id.as_str()))
+        .chain(string_tables.iter().filter_map(|table| {
+            table
+                .source_entry
+                .as_deref()
+                .map(|entry| (entry, table.id.as_str()))
+        }))
+        .chain(element_maps.iter().filter_map(|map| {
+            map.source_entry
+                .as_deref()
+                .map(|entry| (entry, map.id.as_str()))
+        }))
+        .collect::<HashMap<_, _>>();
     let mut output = Vec::new();
     for entry in entries {
-        if entry.name == "Document.xml" {
-            let mut ranges = properties
-                .iter()
-                .map(|property| {
-                    (
-                        property.byte_start,
-                        property.byte_end,
-                        if property.family == native::PropertyFamily::Unknown {
-                            "named_opaque"
-                        } else {
-                            "typed"
-                        },
-                        property.id.clone(),
-                    )
-                })
-                .collect::<Vec<_>>();
+        let typed_owner = typed_entries
+            .get(entry.id.as_str())
+            .or_else(|| typed_entries.get(entry.name.as_str()));
+        if let Some(owner) = typed_owner {
+            push_logical_span(
+                &mut output,
+                entry,
+                0,
+                entry.byte_len,
+                "typed",
+                Some((*owner).to_owned()),
+            );
+        } else if entry.name == "Document.xml" || entry.name == "GuiDocument.xml" {
+            let mut ranges = if entry.name == "Document.xml" {
+                properties
+                    .iter()
+                    .map(|property| {
+                        (
+                            property.byte_start,
+                            property.byte_end,
+                            if property.family == native::PropertyFamily::Unknown {
+                                "named_opaque"
+                            } else {
+                                "typed"
+                            },
+                            property.id.clone(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            } else {
+                gui.properties
+                    .iter()
+                    .map(|property| {
+                        (
+                            property.byte_start,
+                            property.byte_end,
+                            "typed",
+                            property.id.clone(),
+                        )
+                    })
+                    .chain(gui.documents.iter().flat_map(|document| {
+                        document.states.iter().map(|state| {
+                            (state.byte_start, state.byte_end, "typed", state.id.clone())
+                        })
+                    }))
+                    .collect::<Vec<_>>()
+            };
             ranges.sort_by_key(|range| range.0);
             let mut cursor = 0_u64;
             for (start, end, classification, owner) in ranges {
                 if start < cursor || end < start || end > entry.byte_len {
-                    return Err(CodecError::Malformed(
-                        "overlapping or invalid Document.xml property spans".into(),
-                    ));
+                    return Err(CodecError::Malformed(format!(
+                        "overlapping or invalid {} record spans",
+                        entry.name
+                    )));
                 }
                 push_logical_span(&mut output, entry, cursor, start, "structural", None);
                 push_logical_span(&mut output, entry, start, end, classification, Some(owner));
