@@ -946,14 +946,14 @@ pub struct FeatureSavedSection {
     pub offset: usize,
 }
 
-/// One byte-bounded `feat_defs_<id>` feature-definition template.
+/// One byte-bounded feature-definition template or instantiated saved section.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureDefinition {
-    /// Numeric identifier embedded in the record name.
+    /// Numeric identifier embedded in `feat_defs_<id>`, or the canonical
+    /// feature owner identifier for an instantiated positional definition.
     pub id: u32,
-    /// Unique named `feat_id` in the bounded definition body, joining the
-    /// definition to its modeling feature. Definitions with zero or multiple
-    /// distinct values have no owner binding.
+    /// Canonical definition owner, joining the definition to its modeling
+    /// feature.
     pub owner_feature_id: Option<u32>,
     /// Exact record bytes through the next feature definition or section end.
     pub body: Vec<u8>,
@@ -3725,22 +3725,13 @@ fn definitions_in_ranges(
             order_table.as_ref(),
             segments.as_ref(),
         );
-        let owner_ids = psb::tokens(&payload[start..end])
-            .into_iter()
-            .filter(|token| token.kind == psb::TokenKind::NamedRecord)
-            .filter_map(|token| {
-                let name_start = start + token.offset + 2;
-                let name_end = start + token.offset + token.length - 1;
-                (payload.get(name_start..name_end) == Some(b"feat_id".as_slice())).then(|| {
-                    let value_start = start + token.offset + token.length;
-                    psb::reference_id(payload, value_start)
-                        .ok()
-                        .map(|(value, _)| value)
-                })?
-            })
-            .collect::<BTreeSet<_>>();
-        let owner_feature_id =
-            owner_override.or_else(|| owner_ids.first().copied().filter(|_| owner_ids.len() == 1));
+        let owner_feature_id = owner_override.or_else(|| {
+            let ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
+                .into_iter()
+                .map(|(_, id)| id)
+                .collect::<BTreeSet<_>>();
+            ids.first().copied().filter(|_| ids.len() == 1)
+        });
         result.push(FeatureDefinition {
             id,
             owner_feature_id,
@@ -3760,6 +3751,35 @@ fn definitions_in_ranges(
         });
     }
     result
+}
+
+fn contextual_references(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    field: &[u8],
+    following_record: &[u8],
+) -> Vec<(usize, u32)> {
+    let needle = [&[psb::token::NAMED_RECORD, 1][..], field, &[0]].concat();
+    payload[start..end]
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(relative, window)| {
+            if window != needle {
+                return None;
+            }
+            let record_start = start + relative;
+            let value_start = record_start + needle.len();
+            let (value, after_value) = psb::reference_id(payload, value_start).ok()?;
+            let following_end = after_value.checked_add(3 + following_record.len())?;
+            (following_end <= end
+                && payload.get(after_value..after_value + 2)
+                    == Some(&[psb::token::NAMED_RECORD, 0])
+                && payload.get(after_value + 2..following_end - 1) == Some(following_record)
+                && payload.get(following_end - 1) == Some(&0))
+            .then_some((record_start, value))
+        })
+        .collect()
 }
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
@@ -3784,6 +3804,20 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         };
         starts.push((offset, id, None));
     }
+    starts.sort_unstable_by_key(|&(offset, _, _)| offset);
+    let labeled_starts = starts.clone();
+    for (index, &(start, _, _)) in labeled_starts.iter().enumerate() {
+        let end = labeled_starts
+            .get(index + 1)
+            .map_or(payload.len(), |&(offset, _, _)| offset);
+        for (offset, owner) in
+            contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
+        {
+            starts.push((offset, owner, Some(owner)));
+        }
+    }
+    starts.sort_unstable_by_key(|&(offset, _, _)| offset);
+    starts.dedup_by_key(|entry| entry.0);
     definitions_in_ranges(payload, &starts)
 }
 
@@ -4056,6 +4090,24 @@ mod tests {
         );
 
         assert_eq!(definitions[0].owner_feature_id, Some(10));
+    }
+
+    #[test]
+    fn positional_saved_section_starts_an_owned_definition() {
+        let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
+            template\0\xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0\
+            \xe0\x00name\0S2D0004\0saved";
+
+        let decoded = definitions(payload);
+
+        assert_eq!(decoded.len(), 2);
+        assert_eq!(decoded[0].id, 917);
+        assert_eq!(decoded[0].owner_feature_id, Some(40));
+        assert_eq!(decoded[0].body.last(), Some(&0));
+        assert_eq!(decoded[1].id, 42);
+        assert_eq!(decoded[1].owner_feature_id, Some(42));
+        assert!(decoded[1].body.starts_with(b"\xe0\x01feat_id\0"));
+        assert!(decoded[1].body.ends_with(b"saved"));
     }
 
     #[test]

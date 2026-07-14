@@ -458,11 +458,18 @@ the recipe operation with that display name. The record reference, feature
 identifier, schema class, and parent identifier are compact integers.
 
 A `feat_defs_<id>` record-name identifier in `FeatDefs` or `DEPDB_DATA` belongs
-to the feature-definition record namespace. A unique canonical named `feat_id` inside the bounded record is the
-owning modeling feature identifier and joins `MdlStatus` and `AllFeatur`; `f6`
-in this slot is null. When `feat_id` is null, the unique `DatumIds` generated
-table containing the section's `sketch_plane_entity_id` identifies the owning
-modeling feature. The definition and feature identifiers are not interchangeable.
+to the feature-definition record namespace. In a labelled definition,
+`e0 01 feat_id 00 <canonical-reference> e0 00 gsec2d_ptr 00` identifies the
+owning modeling feature and joins `MdlStatus` and `AllFeatur`; `f6` in this slot
+is null. When `feat_id` is null, the unique `DatumIds` generated table
+containing the section's `sketch_plane_entity_id` identifies the owning
+modeling feature. The definition and feature identifiers are not
+interchangeable.
+
+An instantiated positional definition begins at
+`e0 01 feat_id 00 <canonical-reference> e0 00 ref_model_info 00`. The reference
+is its owning modeling feature identifier. This boundary ends the preceding
+labelled template or positional instance.
 
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
