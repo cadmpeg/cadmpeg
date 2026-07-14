@@ -133,7 +133,7 @@ pub enum B5Surface {
     Nurbs(NurbsSurface),
 }
 
-/// A resolved `b5 03 18` or `b5 03 21` pcurve node, represented as a 2D
+/// A resolved `b5 03 18`, `b5 03 19`, or `b5 03 21` pcurve node, represented as a 2D
 /// B-spline curve in a surface's
 /// parameter space ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
 #[derive(Debug, Clone, PartialEq)]
@@ -151,6 +151,8 @@ pub struct B5Pcurve {
     pub multiplicities: Vec<u32>,
     /// `(u, v)` control points in the surface's parameter space.
     pub control_points: Vec<[f64; 2]>,
+    /// Per-pole rational weights. `None` denotes a polynomial pcurve.
+    pub weights: Option<Vec<f64>>,
     /// The curve's two clamped-end poles lifted through `surface` into
     /// world-frame 3D points, or `None` before [`parse`] resolves them or
     /// when the lift fails (unresolved surface, degenerate revolution
@@ -247,6 +249,24 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             Some((record.object_id, pcurve))
         })
         .collect();
+    let mut circle_candidates = BTreeMap::<u32, Vec<B5Pcurve>>::new();
+    for pcurve in circle_pcurves(bytes) {
+        if surfaces.contains_key(&pcurve.surface) {
+            circle_candidates
+                .entry(pcurve.object_id)
+                .or_default()
+                .push(pcurve);
+        }
+    }
+    for (object_id, candidates) in circle_candidates {
+        let mut distinct = candidates.into_iter();
+        let Some(candidate) = distinct.next() else {
+            continue;
+        };
+        if distinct.all(|other| other == candidate) {
+            pcurves.entry(object_id).or_insert(candidate);
+        }
+    }
     for jet in crate::geometry::object_stream_pcurves(bytes) {
         if jet.rational
             || by_id
@@ -273,6 +293,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                 distinct_knots: jet.knots.clone(),
                 multiplicities: vec![jet.degree + 1; jet.knots.len()],
                 control_points,
+                weights: None,
                 lifted_endpoints: None,
             },
         );
@@ -284,14 +305,14 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
     }
     let source_face_count = records.iter().filter(|record| record.class == 0x5f).count();
     let source_loop_count = records.iter().filter(|record| record.class == 0x62).count();
-    let loops: BTreeMap<u32, B5Loop> = records
+    let mut loops: BTreeMap<u32, B5Loop> = records
         .iter()
         .filter(|record| record.class == 0x62)
         .filter_map(|record| {
             parse_loop(record, &by_id, &pcurves, &surfaces).map(|loop_| (record.object_id, loop_))
         })
         .collect();
-    let faces: Vec<B5Face> = records
+    let mut faces: Vec<B5Face> = records
         .iter()
         .filter(|record| record.class == 0x5f)
         .filter_map(|record| parse_face(record, &loops, &surfaces))
@@ -300,7 +321,26 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         return None;
     }
     let vertex_points = vertex_points(bytes);
-    let geometric_edge_vertices = bind_edge_vertices(&loops, &pcurves, &vertex_points)?;
+    let geometric_edge_vertices =
+        if let Some(vertices) = bind_edge_vertices(&loops, &pcurves, &vertex_points) {
+            vertices
+        } else {
+            pcurves.retain(|object_id, _| by_id.contains_key(object_id));
+            loops = records
+                .iter()
+                .filter(|record| record.class == 0x62)
+                .filter_map(|record| {
+                    parse_loop(record, &by_id, &pcurves, &surfaces)
+                        .map(|loop_| (record.object_id, loop_))
+                })
+                .collect();
+            faces = records
+                .iter()
+                .filter(|record| record.class == 0x5f)
+                .filter_map(|record| parse_face(record, &loops, &surfaces))
+                .collect();
+            bind_edge_vertices(&loops, &pcurves, &vertex_points)?
+        };
     let native_edge_vertices: BTreeMap<u32, [u32; 2]> = records
         .iter()
         .filter(|record| record.class == 0x5e)
@@ -1154,8 +1194,102 @@ fn parse_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         distinct_knots,
         multiplicities,
         control_points,
+        weights: None,
         lifted_endpoints: None,
     })
+}
+
+fn parse_circle_pcurve(record: &B5Record) -> Option<B5Pcurve> {
+    if record.payload.first() != Some(&0x81) {
+        return None;
+    }
+    let mut position = 1;
+    let surface = reference(&record.payload, &mut position, record.object_id)?;
+    if record.payload.len() != position.checked_add(58)? {
+        return None;
+    }
+    let center = line_values::<2>(&record.payload, position)?;
+    position += 16;
+    if record.payload.get(position..position + 2) != Some(&[0x05, 0x05]) {
+        return None;
+    }
+    position += 2;
+    let [radius, start, end, orientation, phase] = line_values::<5>(&record.payload, position)?;
+    if radius <= 0.0 || start >= end || !matches!(orientation, -1.0 | 1.0) {
+        return None;
+    }
+    let start_angle = phase + orientation * start / radius;
+    let end_angle = phase + orientation * end / radius;
+    let span_count = ((end_angle - start_angle).abs() / std::f64::consts::FRAC_PI_2)
+        .ceil()
+        .max(1.0) as usize;
+    let mut control_points = Vec::with_capacity(2 * span_count + 1);
+    let mut weights = Vec::with_capacity(2 * span_count + 1);
+    let mut distinct_knots = vec![start];
+    let mut multiplicities = vec![3];
+    for span in 0..span_count {
+        let fraction0 = span as f64 / span_count as f64;
+        let fraction1 = (span + 1) as f64 / span_count as f64;
+        let angle0 = start_angle + (end_angle - start_angle) * fraction0;
+        let angle1 = start_angle + (end_angle - start_angle) * fraction1;
+        let middle = (angle0 + angle1) * 0.5;
+        let middle_weight = ((angle1 - angle0) * 0.5).cos();
+        if middle_weight <= f64::EPSILON {
+            return None;
+        }
+        if span == 0 {
+            control_points.push([
+                center[0] + radius * angle0.cos(),
+                center[1] + radius * angle0.sin(),
+            ]);
+            weights.push(1.0);
+        }
+        control_points.push([
+            center[0] + radius / middle_weight * middle.cos(),
+            center[1] + radius / middle_weight * middle.sin(),
+        ]);
+        control_points.push([
+            center[0] + radius * angle1.cos(),
+            center[1] + radius * angle1.sin(),
+        ]);
+        weights.extend([middle_weight, 1.0]);
+        if span + 1 < span_count {
+            distinct_knots.push(start + (end - start) * fraction1);
+            multiplicities.push(2);
+        }
+    }
+    distinct_knots.push(end);
+    multiplicities.push(3);
+    Some(B5Pcurve {
+        object_id: record.object_id,
+        surface,
+        degree: 2,
+        distinct_knots,
+        multiplicities,
+        control_points,
+        weights: Some(weights),
+        lifted_endpoints: None,
+    })
+}
+
+fn circle_pcurves(bytes: &[u8]) -> Vec<B5Pcurve> {
+    let mut pcurves = Vec::new();
+    for offset in 0..bytes.len().saturating_sub(8) {
+        let Some((end, 0xb5, 0x19, object_id)) = object_frame(bytes, offset) else {
+            continue;
+        };
+        let record = B5Record {
+            offset,
+            family: 0xb5,
+            class: 0x19,
+            object_id,
+            payload: bytes[offset + 8..end].to_vec(),
+        };
+        if let Some(pcurve) = parse_circle_pcurve(&record) {
+            pcurves.push(pcurve);
+        }
+    }
+    pcurves
 }
 
 fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
@@ -1201,6 +1335,7 @@ fn parse_line_pcurve(record: &B5Record) -> Option<B5Pcurve> {
         distinct_knots: vec![start, end],
         multiplicities: vec![2, 2],
         control_points,
+        weights: None,
         lifted_endpoints: None,
     })
 }
@@ -1411,10 +1546,7 @@ fn parse_loop(
     let mut pcurves = Vec::with_capacity((count - 1) / 2);
     let mut edges = Vec::with_capacity((count - 1) / 2);
     for pair in references[..count - 1].chunks_exact(2) {
-        if !matches!(by_id.get(&pair[0])?.class, 0x18 | 0x20 | 0x21)
-            || by_id.get(&pair[1])?.class != 0x5e
-            || !parsed_pcurves.contains_key(&pair[0])
-        {
+        if !parsed_pcurves.contains_key(&pair[0]) || by_id.get(&pair[1])?.class != 0x5e {
             return None;
         }
         pcurves.push(pair[0]);
@@ -1546,6 +1678,38 @@ mod tests {
                 gauge_radius: 2.0,
             })
         );
+    }
+
+    #[test]
+    fn circle_pcurve_preserves_arc_length_parameterization() {
+        let mut payload = vec![0x81, 0x18, 0x34, 0x12];
+        for value in [0.0, 0.0, 2.0, 0.0, 2.0 * std::f64::consts::PI, 1.0, 0.0] {
+            if payload.len() == 20 {
+                payload.extend_from_slice(&[0x05, 0x05]);
+            }
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x19,
+            object_id: 0x1235,
+            payload,
+        };
+        let pcurve = parse_circle_pcurve(&record).expect("circle pcurve");
+        assert_eq!(pcurve.surface, 0x1234);
+        assert_eq!(pcurve.degree, 2);
+        assert_eq!(
+            pcurve.distinct_knots,
+            [0.0, std::f64::consts::PI, 2.0 * std::f64::consts::PI]
+        );
+        assert_eq!(pcurve.multiplicities, [3, 2, 3]);
+        assert_eq!(pcurve.control_points.len(), 5);
+        let weights = pcurve.weights.expect("rational weights");
+        assert_eq!(weights.len(), 5);
+        assert!((weights[1] - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-12);
+        assert!((pcurve.control_points[0][0] - 2.0).abs() < 1e-12);
+        assert!((pcurve.control_points[4][0] + 2.0).abs() < 1e-12);
     }
 
     #[test]

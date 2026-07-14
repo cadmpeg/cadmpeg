@@ -155,7 +155,7 @@ pub(crate) fn transfer(
                     .iter()
                     .map(|point| neutral_pcurve_point(*point, surface))
                     .collect(),
-                weights: None,
+                weights: pcurve.weights.clone(),
                 periodic: false,
             };
             if pcurve_plan
@@ -595,7 +595,7 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
                     ))
                 })
                 .collect(),
-            weights: None,
+            weights: pcurve.weights.clone(),
             periodic: false,
         })),
         B5Surface::Cylinder {
@@ -1335,6 +1335,7 @@ mod tests {
             distinct_knots: vec![0.0, 1.0],
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 2.0], [3.0, 2.0]],
+            weights: None,
             lifted_endpoints: None,
         };
         let plane = B5Surface::Plane {
@@ -1366,6 +1367,30 @@ mod tests {
             lifted_curve_geometry(&meridian, &cylinder),
             Some(CurveGeometry::Line { .. })
         ));
+    }
+
+    #[test]
+    fn affine_plane_lift_preserves_pcurve_weights() {
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 2,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![3, 3],
+            control_points: vec![[1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+            weights: Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            lifted_endpoints: None,
+        };
+        let plane = B5Surface::Plane {
+            origin: [0.0, 0.0, 2.0],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let Some(CurveGeometry::Nurbs(curve)) = lifted_curve_geometry(&pcurve, &plane) else {
+            panic!("expected lifted rational curve");
+        };
+        assert_eq!(curve.weights, pcurve.weights);
+        assert!(curve.control_points.iter().all(|point| point.z == 2.0));
     }
 
     #[test]
@@ -1403,6 +1428,7 @@ mod tests {
             distinct_knots: vec![0.0, 1.0],
             multiplicities: vec![2, 2],
             control_points: vec![[0.0, 3.0], [4.0, 7.0]],
+            weights: None,
             lifted_endpoints: None,
         };
         let cylinder = B5Surface::Cylinder {
