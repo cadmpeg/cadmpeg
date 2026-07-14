@@ -153,30 +153,6 @@ fn text_font_definition(
     (cursor == parameter_end).then_some(TextFontDefinition { supersedes })
 }
 
-fn text_font_cycle(
-    sequence: u32,
-    fonts: &BTreeMap<u32, TextFontDefinition>,
-    visiting: &mut BTreeSet<u32>,
-    visited: &mut BTreeSet<u32>,
-) -> bool {
-    if visited.contains(&sequence) {
-        return false;
-    }
-    if !visiting.insert(sequence) {
-        return true;
-    }
-    if fonts
-        .get(&sequence)
-        .and_then(|font| font.supersedes)
-        .is_some_and(|target| text_font_cycle(target, fonts, visiting, visited))
-    {
-        return true;
-    }
-    visiting.remove(&sequence);
-    visited.insert(sequence);
-    false
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -211,12 +187,13 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 310 && entry.form == 0)
     {
         handled.insert(entry.sequence);
-        let cyclic = text_font_cycle(
-            entry.sequence,
-            &text_fonts,
-            &mut BTreeSet::new(),
-            &mut visited_fonts,
-        );
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_fonts, |sequence| {
+            text_fonts
+                .get(&sequence)
+                .and_then(|font| font.supersedes)
+                .into_iter()
+                .collect()
+        });
         let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
             font.supersedes
                 .is_none_or(|target| text_fonts.contains_key(&target))

@@ -843,54 +843,6 @@ fn flow_associativity(
         })
 }
 
-fn flow_continuation_cycle(
-    sequence: u32,
-    flows: &BTreeMap<u32, FlowAssociativity>,
-    visiting: &mut BTreeSet<u32>,
-    visited: &mut BTreeSet<u32>,
-) -> bool {
-    if visited.contains(&sequence) {
-        return false;
-    }
-    if !visiting.insert(sequence) {
-        return true;
-    }
-    if flows.get(&sequence).is_some_and(|flow| {
-        flow.continuations.iter().flatten().any(|target| {
-            flows.contains_key(target) && flow_continuation_cycle(*target, flows, visiting, visited)
-        })
-    }) {
-        return true;
-    }
-    visiting.remove(&sequence);
-    visited.insert(sequence);
-    false
-}
-
-fn assembly_cycle(
-    sequence: u32,
-    definitions: &BTreeMap<u32, SolidAssembly>,
-    visiting: &mut BTreeSet<u32>,
-    visited: &mut BTreeSet<u32>,
-) -> bool {
-    if visited.contains(&sequence) {
-        return false;
-    }
-    if !visiting.insert(sequence) {
-        return true;
-    }
-    if definitions.get(&sequence).is_some_and(|definition| {
-        definition.items.iter().any(|(item, _)| {
-            definitions.contains_key(item) && assembly_cycle(*item, definitions, visiting, visited)
-        })
-    }) {
-        return true;
-    }
-    visiting.remove(&sequence);
-    visited.insert(sequence);
-    false
-}
-
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -1423,12 +1375,14 @@ pub(super) fn project(
                     })
                 })
         });
-        let cyclic = flow_continuation_cycle(
-            entry.sequence,
-            &flows,
-            &mut BTreeSet::new(),
-            &mut visited_flows,
-        );
+        let cyclic = super::directed_cycle(entry.sequence, &mut visited_flows, |sequence| {
+            flows
+                .get(&sequence)
+                .into_iter()
+                .flat_map(|flow| flow.continuations.iter().flatten().copied())
+                .filter(|target| flows.contains_key(target))
+                .collect()
+        });
         if entry.structure == 0 && flow_targets_valid && !cyclic {
             decoded.insert(entry.sequence);
         } else {
@@ -1744,7 +1698,14 @@ pub(super) fn project(
                 });
             item_valid && transform_valid
         });
-        let cyclic = assembly_cycle(*sequence, &assemblies, &mut BTreeSet::new(), &mut visited);
+        let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
+            assemblies
+                .get(&sequence)
+                .into_iter()
+                .flat_map(|definition| definition.items.iter().map(|(item, _)| *item))
+                .filter(|item| assemblies.contains_key(item))
+                .collect()
+        });
         let own_transform_valid = global.length_factor_mm().is_some_and(|factor| {
             resolve_transform(
                 entry.transform,

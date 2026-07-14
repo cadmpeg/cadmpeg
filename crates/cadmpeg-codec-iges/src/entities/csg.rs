@@ -72,33 +72,6 @@ enum BooleanTerm {
     Operation,
 }
 
-fn boolean_cycle(
-    sequence: u32,
-    definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
-    visiting: &mut BTreeSet<u32>,
-    visited: &mut BTreeSet<u32>,
-) -> bool {
-    if visited.contains(&sequence) {
-        return false;
-    }
-    if !visiting.insert(sequence) {
-        return true;
-    }
-    if definitions.get(&sequence).is_some_and(|terms| {
-        terms.iter().any(|term| match term {
-            BooleanTerm::Operand(target) if definitions.contains_key(target) => {
-                boolean_cycle(*target, definitions, visiting, visited)
-            }
-            BooleanTerm::Operand(_) | BooleanTerm::Operation => false,
-        })
-    }) {
-        return true;
-    }
-    visiting.remove(&sequence);
-    visited.insert(sequence);
-    false
-}
-
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -397,12 +370,19 @@ pub(super) fn project(
                 .is_some_and(|target_entry| target_entry.entity_type == 186),
             BooleanTerm::Operation => false,
         });
-        let cyclic = boolean_cycle(
-            *sequence,
-            &boolean_definitions,
-            &mut BTreeSet::new(),
-            &mut visited,
-        );
+        let cyclic = super::directed_cycle(*sequence, &mut visited, |sequence| {
+            boolean_definitions
+                .get(&sequence)
+                .into_iter()
+                .flatten()
+                .filter_map(|term| match term {
+                    BooleanTerm::Operand(target) if boolean_definitions.contains_key(target) => {
+                        Some(*target)
+                    }
+                    BooleanTerm::Operand(_) | BooleanTerm::Operation => None,
+                })
+                .collect()
+        });
         if !operands_valid || (entry.form == 1) != has_brep || cyclic {
             losses.push(entity_loss(
                 entry,
