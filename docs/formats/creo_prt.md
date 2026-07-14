@@ -563,7 +563,9 @@ slots; the first `18` does not consume the second as a dictionary index.
 `save_entity_ptr(spline)` carries `i_pnts f9 <count> 03` followed by exactly
 `count` section-space XYZ triples. Every coordinate is a scalar-lane value.
 The saved spline identifier is null when the spline is not assigned an
-`order_table.int_id`.
+`order_table.int_id`. `end_tangts f9 02 03` carries two endpoint tangent
+triples. `params f8 <count>` carries one scalar interpolation parameter per
+point.
 
 A saved-line family may contain a named `entity(point)` prototype between
 positional line rows. Positional line replay resumes after that prototype's
