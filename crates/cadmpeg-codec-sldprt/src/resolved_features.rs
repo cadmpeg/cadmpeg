@@ -335,6 +335,59 @@ mod marker_tests {
     }
 
     #[test]
+    fn curve_operand_follows_a_unique_local_reference_handle() {
+        let markers = [
+            SketchInputEntity {
+                id: "line-11".into(),
+                parent: "lane".into(),
+                feature_ref: Some("feature".into()),
+                ordinal: 0,
+                offset: 0,
+                local_id: Some(11),
+                kind: SketchInputKind::LineOrCircle,
+                state_value: None,
+                coordinates_m: Some([0.0, 0.0]),
+                links: Vec::new(),
+                link_selector: None,
+            },
+            SketchInputEntity {
+                id: "arc-8".into(),
+                parent: "lane".into(),
+                feature_ref: Some("feature".into()),
+                ordinal: 1,
+                offset: 1,
+                local_id: Some(8),
+                kind: SketchInputKind::Arc,
+                state_value: None,
+                coordinates_m: Some([1.0, 1.0]),
+                links: Vec::new(),
+                link_selector: None,
+            },
+            SketchInputEntity {
+                id: "reference-3".into(),
+                parent: "lane".into(),
+                feature_ref: Some("feature".into()),
+                ordinal: 2,
+                offset: 2,
+                local_id: Some(3),
+                kind: SketchInputKind::Relation(SketchRelationKind::Angle),
+                state_value: None,
+                coordinates_m: None,
+                links: vec![crate::records::SketchInputLink {
+                    local_id: 8,
+                    entity_ref: "arc-8".into(),
+                }],
+                link_selector: Some(0),
+            },
+        ];
+        assert_eq!(
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x8dda), 3,)
+                .map(|marker| marker.id.as_str()),
+            Some("arc-8")
+        );
+    }
+
+    #[test]
     fn generated_arc_angles_use_only_exact_native_quadrants() {
         assert_eq!(
             arc_angle_relation_kind(std::f64::consts::FRAC_PI_2),
@@ -920,45 +973,12 @@ pub(crate) fn bind_scalar_operands(
             {
                 reference.feature_ref = Some(feature_id.to_string());
             }
-            let entities = lane
-                .sketch_entities
-                .iter()
-                .filter(|entity| entity.offset > start && entity.offset < end)
-                .collect::<Vec<_>>();
             for scalar in lane
                 .scalars
                 .iter_mut()
                 .filter(|scalar| scalar.offset > start && scalar.offset < end)
             {
                 scalar.feature_ref = Some(feature_id.to_string());
-                for operand in &mut scalar.operands {
-                    if !matches!(
-                        operand.kind,
-                        FeatureInputOperandKind::D6
-                            | FeatureInputOperandKind::E1
-                            | FeatureInputOperandKind::Native(
-                                0x837b
-                                    | 0x8386
-                                    | 0x83fe
-                                    | 0x80cc
-                                    | 0x8ab6
-                                    | 0x8dcb
-                                    | 0x8dda
-                                    | 0x929d
-                                    | 0xbc7c
-                                    | 0xbc87
-                                    | 0xbd69
-                            )
-                    ) {
-                        continue;
-                    }
-                    operand.entity_ref = resolve_operand_marker(
-                        entities.iter().copied(),
-                        operand.kind,
-                        operand.entity_index,
-                    )
-                    .map(|entity| entity.id.clone());
-                }
             }
         }
         let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
@@ -998,6 +1018,32 @@ pub(crate) fn bind_scalar_operands(
                 entity.link_selector = Some(selector);
             }
         }
+        let entities_by_feature = lane.sketch_entities.iter().fold(
+            HashMap::<&str, Vec<&SketchInputEntity>>::new(),
+            |mut by_feature, entity| {
+                if let Some(feature) = entity.feature_ref.as_deref() {
+                    by_feature.entry(feature).or_default().push(entity);
+                }
+                by_feature
+            },
+        );
+        for scalar in &mut lane.scalars {
+            let Some(entities) = scalar
+                .feature_ref
+                .as_deref()
+                .and_then(|feature| entities_by_feature.get(feature))
+            else {
+                continue;
+            };
+            for operand in &mut scalar.operands {
+                operand.entity_ref = resolve_operand_marker(
+                    entities.iter().copied(),
+                    operand.kind,
+                    operand.entity_index,
+                )
+                .map(|entity| entity.id.clone());
+            }
+        }
         let scalar_owners = lane
             .scalars
             .iter()
@@ -1021,8 +1067,10 @@ pub(crate) fn resolve_operand_marker<'a>(
     kind: FeatureInputOperandKind,
     address: u16,
 ) -> Option<&'a SketchInputEntity> {
+    let entities = entities.into_iter().collect::<Vec<_>>();
     let mut compatible = entities
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|entity| operand_accepts_marker(kind, entity.kind))
         .collect::<Vec<_>>();
     compatible.sort_unstable_by_key(|entity| entity.offset);
@@ -1036,11 +1084,44 @@ pub(crate) fn resolve_operand_marker<'a>(
     let exact = matches.collect::<Vec<_>>();
     match exact.as_slice() {
         [entity] => Some(*entity),
-        [] if operand_allows_compatible_ordinal_fallback(kind) => {
-            compatible.get(usize::from(address)).copied()
+        [] => {
+            let mut indirect = if operand_accepts_link_indirection(kind) {
+                entities
+                    .iter()
+                    .copied()
+                    .filter(|entity| entity.local_id == Some(u32::from(address)))
+                    .flat_map(|entity| &entity.links)
+                    .filter_map(|link| {
+                        entities
+                            .iter()
+                            .copied()
+                            .find(|entity| entity.id == link.entity_ref)
+                    })
+                    .filter(|entity| operand_accepts_marker(kind, entity.kind))
+                    .collect::<Vec<_>>()
+            } else {
+                Vec::new()
+            };
+            indirect.sort_unstable_by_key(|entity| entity.id.as_str());
+            indirect.dedup_by_key(|entity| entity.id.as_str());
+            match indirect.as_slice() {
+                [entity] => Some(*entity),
+                [] if operand_allows_compatible_ordinal_fallback(kind) => {
+                    compatible.get(usize::from(address)).copied()
+                }
+                _ => None,
+            }
         }
         _ => None,
     }
+}
+
+fn operand_accepts_link_indirection(kind: FeatureInputOperandKind) -> bool {
+    matches!(
+        kind,
+        FeatureInputOperandKind::E1
+            | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87)
+    )
 }
 
 fn compact_body_selections(

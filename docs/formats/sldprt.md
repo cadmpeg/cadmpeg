@@ -127,6 +127,8 @@ A named scalar begins with `04 80 ff fe ff`, followed by a u8 UTF-16 code-unit c
 
 The instance operand list is the first scalar record's complete ordered operand-cell list. Tags `d6 80` and `e1 80` use a zero-based ordinal within the tag's marker family, ordered by marker byte offset in the owning feature object. Circular-dimension tag `fe 83` uses a zero-based curve-handle ordinal. Circular-dimension tags `b6 8a`, `9d 92`, and `69 bd` use a zero-based point or constrained-point ordinal. Tags `7b 83`, `86 83`, `cb 8d`, `da 8d`, `7c bc`, and `87 bc` first use a feature-local marker identifier qualified by the tag's marker family. When the identifier selects no marker in that family, the same value is a zero-based ordinal within the compatible marker family in byte order. Multiple identifier matches remain unresolved.
 
+When a qualified curve operand identifier selects no coordinate-bearing curve handle, a reference-bearing marker with that identifier selects the unique line, circle, or arc handle among its resolved local links. This indirection precedes compatible-family ordinal fallback. Zero linked curve handles continue to ordinal fallback; multiple linked curve handles remain unresolved.
+
 Operand-cell tags `d6 80`, `cc 80`, `7b 83`, `b6 8a`, `cb 8d`, `9d 92`, `7c bc`, and `69 bd` address point or constrained-point handles. Tags `e1 80`, `86 83`, `fe 83`, `da 8d`, and `87 bc` address line-or-circle handles. Tags `cc 80`, `fe 83`, `b6 8a`, `9d 92`, and `69 bd` are used by circular dimensions.
 
 A point operand projects to a typed sketch constraint only when its marker identifies exactly one profile locus. A coordinate shared by multiple profile loci does not select one by ordering.
