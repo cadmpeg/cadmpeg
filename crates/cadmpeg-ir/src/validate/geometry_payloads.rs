@@ -365,6 +365,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 check_knots(findings, &s.id.0, &n.u_knots, "u");
                 check_knots(findings, &s.id.0, &n.v_knots, "v");
             }
+            SurfaceGeometry::Polygonal {
+                vertices,
+                triangles,
+                chordal_deflection,
+            } => {
+                if !valid_polygonal_surface(vertices, triangles, *chordal_deflection) {
+                    bounds_err(findings, &s.id.0, "polygonal surface payload is invalid");
+                }
+            }
             SurfaceGeometry::Transformed { basis, transform } => {
                 if !valid_affine_transform(*transform) {
                     bounds_err(findings, &s.id.0, "surface transform is not finite affine");
@@ -1488,6 +1497,15 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 check_knots(findings, &c.id.0, &n.knots, "");
             }
+            CurveGeometry::Polyline {
+                points,
+                parameters,
+                chordal_deflection,
+            } => {
+                if !valid_polyline(points, parameters.as_deref(), *chordal_deflection) {
+                    bounds_err(findings, &c.id.0, "polyline payload is invalid");
+                }
+            }
             CurveGeometry::Transformed { basis, transform } => {
                 if !valid_affine_transform(*transform) {
                     bounds_err(findings, &c.id.0, "curve transform is not finite affine");
@@ -1854,6 +1872,11 @@ fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
                 && n.u_knots.windows(2).all(|w| w[0] <= w[1])
                 && n.v_knots.windows(2).all(|w| w[0] <= w[1])
         }
+        SurfaceGeometry::Polygonal {
+            vertices,
+            triangles,
+            chordal_deflection,
+        } => valid_polygonal_surface(vertices, triangles, *chordal_deflection),
         SurfaceGeometry::Transformed { basis, transform } => {
             valid_affine_transform(*transform) && valid_surface_basis(basis)
         }
@@ -1894,11 +1917,53 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
         CurveGeometry::Nurbs(n) => {
             n.control_points.len() > n.degree as usize && n.knots.windows(2).all(|w| w[0] <= w[1])
         }
+        CurveGeometry::Polyline {
+            points,
+            parameters,
+            chordal_deflection,
+        } => valid_polyline(points, parameters.as_deref(), *chordal_deflection),
         CurveGeometry::Transformed { basis, transform } => {
             valid_affine_transform(*transform) && valid_curve_basis(basis)
         }
         CurveGeometry::Unknown { .. } => true,
     }
+}
+
+fn valid_polyline(
+    points: &[crate::math::Point3],
+    parameters: Option<&[f64]>,
+    deflection: f64,
+) -> bool {
+    points.len() >= 2
+        && deflection.is_finite()
+        && deflection >= 0.0
+        && points
+            .iter()
+            .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        && parameters.is_none_or(|parameters| {
+            parameters.len() == points.len()
+                && parameters.iter().all(|value| value.is_finite())
+                && (parameters.windows(2).all(|window| window[0] < window[1])
+                    || parameters.windows(2).all(|window| window[0] > window[1]))
+        })
+}
+
+fn valid_polygonal_surface(
+    vertices: &[crate::math::Point3],
+    triangles: &[[u32; 3]],
+    deflection: f64,
+) -> bool {
+    vertices.len() >= 3
+        && !triangles.is_empty()
+        && deflection.is_finite()
+        && deflection >= 0.0
+        && vertices
+            .iter()
+            .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        && triangles
+            .iter()
+            .flatten()
+            .all(|index| usize::try_from(*index).is_ok_and(|index| index < vertices.len()))
 }
 
 fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) -> bool {

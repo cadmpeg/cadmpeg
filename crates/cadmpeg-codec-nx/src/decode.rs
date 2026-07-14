@@ -202,6 +202,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
                 SurfaceGeometry::Nurbs(_)
+                | SurfaceGeometry::Polygonal { .. }
                 | SurfaceGeometry::Transformed { .. }
                 | SurfaceGeometry::Unknown { .. } => {}
             }
@@ -343,6 +344,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                 | CurveGeometry::Hyperbola { .. }
                 | CurveGeometry::Degenerate { .. }
                 | CurveGeometry::Nurbs(_)
+                | CurveGeometry::Polyline { .. }
                 | CurveGeometry::Transformed { .. }
                 | CurveGeometry::Unknown { .. } => {}
             }
@@ -888,6 +890,7 @@ fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
         SurfaceGeometry::Transformed { basis, .. } => surface_parameters(basis, uv),
     }
@@ -1148,6 +1151,7 @@ fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
         SurfaceGeometry::Sphere { .. } => "SPHERE",
         SurfaceGeometry::Torus { .. } => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
+        SurfaceGeometry::Polygonal { .. } => "POLYGONAL_SURFACE",
         SurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
         SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
@@ -1162,6 +1166,7 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
         CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
+        CurveGeometry::Polyline { .. } => "POLYLINE",
         CurveGeometry::Transformed { basis, .. } => curve_tag(basis),
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }

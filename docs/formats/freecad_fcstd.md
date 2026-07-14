@@ -83,6 +83,13 @@ rejected before table parsing. Successfully parsed payloads emit a machine-deriv
 recursive 2D curve, 3D curve, surface, polygon, triangulation, and topology family. Native
 validation recomputes that census from the retained shape tables and rejects any mismatch.
 
+Polygon carriers are also transferred as bounded neutral geometry. An edge without an exact 3D
+curve uses its stored 3D polygon or polygon-on-triangulation nodes as a polyline, retaining explicit
+parameters when present and scaling the chordal deflection with the carrier location. A face
+without an analytic or spline surface uses its linked triangulation as a polygonal surface. The
+same transformed vertices and zero-based triangle indices remain available as occurrence-owned
+tessellation; no analytic carrier is inferred from sampled data.
+
 A shape value optionally carries an element-map version and a zero-based document string-table
 index. A newly encoded string table consists of a legacy marker followed by a second XML element,
 either containing the table stream or naming a side entry. Side-entry streams begin with

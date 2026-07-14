@@ -2577,3 +2577,26 @@ fn transformed_carriers_preserve_basis_parameters() {
         Some(Point3::new(0.0, 11.0, 6.0))
     );
 }
+
+#[test]
+fn polyline_carriers_evaluate_in_both_parameter_directions() {
+    let increasing = CurveGeometry::Polyline {
+        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        parameters: Some(vec![1.0, 3.0]),
+        chordal_deflection: 0.01,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&increasing, 2.0),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+
+    let decreasing = CurveGeometry::Polyline {
+        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        parameters: Some(vec![3.0, 1.0]),
+        chordal_deflection: 0.01,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&decreasing, 2.0),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+}

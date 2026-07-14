@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "15");
+    assert_eq!(result.ir.ir_version, "16");
     let feature = |name: &str| {
         &result
             .ir
@@ -2219,6 +2219,69 @@ Co 1001000 +2 0 *
                 || finding.check == cadmpeg_ir::Check::Identity),
         "{:#?}",
         report.findings
+    );
+}
+
+#[test]
+fn transfers_triangulation_only_face_and_indexed_edge_polygon() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="Part::Feature" name="MeshShape" id="1"/></Objects>
+<ObjectData Count="1"><Object name="MeshShape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade
+Locations 0
+Curve2ds 0
+Curves 0
+Polygon3D 0
+PolygonOnTriangulations 1
+2 1 2 p 0.01 1 0 1
+Surfaces 0
+Triangulations 1
+3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3
+TShapes 7
+Ve 0.001 0 0 0 0 0 1001000 *
+Ve 0.001 1 0 0 0 0 1001000 *
+Ed 0.001 1 1 0 6 1 1 0 0 1001000 +7 0 -6 0 *
+Wi 1001000 +5 0 *
+Fa 0 0.001 0 0 2 1 1001000 +4 0 *
+Sh 1001000 +3 0 *
+So 1001000 +2 0 *
++1 0 *";
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive_entries(&[
+                ("Document.xml", document.as_bytes()),
+                ("Shape.brp", brep),
+            ])),
+            &DecodeOptions::default(),
+        )
+        .expect("triangulation-only topology");
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.tessellations.len(), 1);
+    assert!(matches!(
+        result.ir.model.surfaces[0].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Polygonal {
+            chordal_deflection: 0.02,
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.curves[0].geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Polyline {
+            chordal_deflection: 0.01,
+            ..
+        }
+    ));
+    assert_eq!(result.ir.model.edges[0].param_range, Some([0.0, 1.0]));
+    assert!(result.report.losses.is_empty());
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(
+        validation.findings.iter().all(|finding| {
+            finding.severity < cadmpeg_ir::Severity::Error
+                || finding.check == cadmpeg_ir::Check::Identity
+        }),
+        "{:#?}",
+        validation.findings
     );
 }
 

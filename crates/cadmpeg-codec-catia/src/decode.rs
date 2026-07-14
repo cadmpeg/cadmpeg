@@ -1369,6 +1369,7 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
             (((radial - major_radius).powi(2) + axial * axial).sqrt() - *minor_radius).abs()
         }
         SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return false,
     };

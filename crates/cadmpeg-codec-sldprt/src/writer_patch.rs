@@ -300,6 +300,7 @@ fn surface_class(value: &SurfaceGeometry) -> u8 {
         SurfaceGeometry::Nurbs(_) => 5,
         SurfaceGeometry::Unknown { .. } => 6,
         SurfaceGeometry::Transformed { .. } => 7,
+        SurfaceGeometry::Polygonal { .. } => 8,
     }
 }
 
@@ -314,6 +315,7 @@ fn curve_class(value: &CurveGeometry) -> u8 {
         CurveGeometry::Degenerate { .. } => 6,
         CurveGeometry::Unknown { .. } => 7,
         CurveGeometry::Transformed { .. } => 8,
+        CurveGeometry::Polyline { .. } => 9,
     }
 }
 

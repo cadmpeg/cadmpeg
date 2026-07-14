@@ -967,7 +967,9 @@ fn fold_surface_frame(
         SurfaceGeometry::Transformed { basis, .. } => {
             fold_surface_frame(basis, u_reference, v_reference);
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 
@@ -993,7 +995,9 @@ fn annotate_surface_frame(
         SurfaceGeometry::Transformed { basis, .. } => {
             annotate_surface_frame(annotations, id, basis);
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 

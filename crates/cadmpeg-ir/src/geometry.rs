@@ -126,6 +126,15 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
+    /// Source-native polygonal surface with an explicit chordal error bound.
+    Polygonal {
+        /// Ordered model-space vertices.
+        vertices: Vec<Point3>,
+        /// Zero-based triangle indices into `vertices`.
+        triangles: Vec<[u32; 3]>,
+        /// Maximum chordal deviation recorded by the source.
+        chordal_deflection: f64,
+    },
     /// Exact affine placement of an inline basis surface.
     Transformed {
         /// Unplaced basis geometry with unchanged parameterization.
@@ -226,6 +235,16 @@ pub enum CurveGeometry {
     },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
+    /// Source-native polyline with an explicit chordal error bound.
+    Polyline {
+        /// Ordered model-space samples.
+        points: Vec<Point3>,
+        /// Optional source parameters parallel to `points`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameters: Option<Vec<f64>>,
+        /// Maximum chordal deviation recorded by the source.
+        chordal_deflection: f64,
+    },
     /// Exact affine placement of an inline basis curve.
     Transformed {
         /// Unplaced basis geometry with unchanged parameterization.

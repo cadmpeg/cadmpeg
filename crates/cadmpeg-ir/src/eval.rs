@@ -214,6 +214,9 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
             nurbs.weights.as_deref(),
             t,
         ),
+        CurveGeometry::Polyline {
+            points, parameters, ..
+        } => polyline_point(points, parameters.as_deref(), t),
         CurveGeometry::Transformed { basis, transform } => {
             curve_point(basis, t).map(|point| affine_point(*transform, point))
         }
@@ -298,11 +301,46 @@ pub fn surface_point(geometry: &SurfaceGeometry, u: f64, v: f64) -> Option<Point
             ))
         }
         SurfaceGeometry::Nurbs(nurbs) => nurbs_surface_point(nurbs, u, v),
+        SurfaceGeometry::Polygonal { .. } => None,
         SurfaceGeometry::Transformed { basis, transform } => {
             surface_point(basis, u, v).map(|point| affine_point(*transform, point))
         }
         SurfaceGeometry::Unknown { .. } => None,
     }
+}
+
+fn polyline_point(points: &[Point3], parameters: Option<&[f64]>, t: f64) -> Option<Point3> {
+    if points.len() < 2 || !t.is_finite() {
+        return None;
+    }
+    let implicit;
+    let parameters = if let Some(parameters) = parameters {
+        if parameters.len() != points.len() {
+            return None;
+        }
+        parameters
+    } else {
+        implicit = (0..points.len())
+            .map(|index| index as f64)
+            .collect::<Vec<_>>();
+        &implicit
+    };
+    let segment = parameters
+        .windows(2)
+        .position(|window| (t >= window[0] && t <= window[1]) || (t <= window[0] && t >= window[1]))
+        .or_else(|| (t == *parameters.last()?).then_some(parameters.len() - 2))?;
+    let width = parameters[segment + 1] - parameters[segment];
+    if width == 0.0 || !width.is_finite() {
+        return None;
+    }
+    let fraction = (t - parameters[segment]) / width;
+    let start = points[segment];
+    let end = points[segment + 1];
+    Some(Point3::new(
+        start.x + fraction * (end.x - start.x),
+        start.y + fraction * (end.y - start.y),
+        start.z + fraction * (end.z - start.z),
+    ))
 }
 
 fn affine_point(transform: Transform, point: Point3) -> Point3 {

@@ -2136,6 +2136,7 @@ pub(super) fn surface_values(
             ],
         ),
         SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
@@ -2382,6 +2383,11 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
+        CurveGeometry::Polyline { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support polyline curve carriers".into(),
+            ))
+        }
         CurveGeometry::Transformed { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support transformed curve carriers".into(),
@@ -2420,7 +2426,9 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
             ..
         } => *ref_direction,
         SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
             z: 0.0,

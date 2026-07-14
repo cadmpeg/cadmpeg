@@ -1937,6 +1937,11 @@ fn encode_planar_triangle_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                 ));
             }
         }
+        SurfaceGeometry::Polygonal { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D generation does not support polygonal surface carriers".into(),
+            ));
+        }
         SurfaceGeometry::Transformed { .. } => {
             return Err(CodecError::NotImplemented(
                 "source-less F3D generation does not support transformed surface carriers".into(),
@@ -3226,6 +3231,12 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
                         surface.id
                     )));
                 }
+            }
+            SurfaceGeometry::Polygonal { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "source-less multi-face F3D does not support polygonal surface carrier {}",
+                    surface.id
+                )));
             }
             SurfaceGeometry::Transformed { .. } => {
                 return Err(CodecError::NotImplemented(format!(
@@ -8716,6 +8727,11 @@ fn native_embedded_surface(
         SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "source-less F3D embedded unknown support surfaces are unsupported".into(),
+            ));
+        }
+        SurfaceGeometry::Polygonal { .. } => {
+            return Err(CodecError::NotImplemented(
+                "source-less F3D embedded polygonal support surfaces are unsupported".into(),
             ));
         }
         SurfaceGeometry::Transformed { .. } => {

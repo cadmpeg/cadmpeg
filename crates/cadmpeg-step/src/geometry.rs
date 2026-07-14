@@ -148,7 +148,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
         }
         // Unknown surfaces have no STEP representation; the writer filters faces
         // resting on them in `emit_face` before ever reaching here.
-        SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => {
             unreachable!("unknown surfaces are filtered before surface emission")
         }
     }
@@ -216,6 +216,14 @@ pub fn curve(e: &mut Emitter, g: &CurveGeometry) -> Ref {
             e.emit("POLYLINE", &format!("'',({point},{point})"))
         }
         CurveGeometry::Nurbs(n) => nurbs_curve(e, n),
+        CurveGeometry::Polyline { points, .. } => {
+            let points = points
+                .iter()
+                .map(|position| point(e, *position).to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            e.emit("POLYLINE", &format!("'',({points})"))
+        }
         CurveGeometry::Transformed { basis, transform } => {
             let parent = curve(e, basis);
             let operator = transformation_operator(e, *transform);

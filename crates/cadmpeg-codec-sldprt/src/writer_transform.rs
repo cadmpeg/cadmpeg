@@ -315,6 +315,9 @@ fn transform_surface(
             .control_points
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
+        SurfaceGeometry::Polygonal { vertices, .. } => vertices
+            .iter_mut()
+            .for_each(|point| *point = transform_point(transform, *point)),
         SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot transform an opaque surface".into(),
@@ -349,6 +352,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
         }
         CurveGeometry::Nurbs(nurbs) => nurbs
             .control_points
+            .iter_mut()
+            .for_each(|point| *point = transform_point(transform, *point)),
+        CurveGeometry::Polyline { points, .. } => points
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
         CurveGeometry::Parabola {

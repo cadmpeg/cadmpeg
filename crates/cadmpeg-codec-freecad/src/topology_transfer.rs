@@ -22,8 +22,9 @@ use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
-    ShapePayloadRecord, TextCurve2d, TextLocation, TextOrientation, TextShapeKind, TextShapeUse,
-    TextTShape, TextTShapeGeometry, TextTriangulation,
+    ShapePayloadRecord, TextCurve2d, TextEdgeRepresentation, TextLocation, TextOrientation,
+    TextPolygon3d, TextPolygonOnTriangulation, TextShapeKind, TextShapeUse, TextTShape,
+    TextTShapeGeometry, TextTriangulation,
 };
 use crate::native::PropertyRecord;
 
@@ -59,6 +60,8 @@ pub(crate) fn transfer(
 struct Tables<'a> {
     locations: &'a [TextLocation],
     curve2ds: &'a [TextCurve2d],
+    polygons3d: &'a [TextPolygon3d],
+    polygons_on_triangulations: &'a [TextPolygonOnTriangulation],
     tshapes: &'a [TextTShape],
     triangulations: &'a [TextTriangulation],
     roots: &'a [TextShapeUse],
@@ -72,6 +75,8 @@ impl<'a> Tables<'a> {
             .map(|text| Self {
                 locations: &text.locations,
                 curve2ds: &text.curve2ds,
+                polygons3d: &text.polygons3d,
+                polygons_on_triangulations: &text.polygons_on_triangulations,
                 tshapes: &text.tshapes,
                 triangulations: &text.triangulations,
                 roots: &text.roots,
@@ -80,6 +85,8 @@ impl<'a> Tables<'a> {
                 payload.binary.as_ref().map(|binary| Self {
                     locations: &binary.locations,
                     curve2ds: &binary.curve2ds,
+                    polygons3d: &binary.polygons3d,
+                    polygons_on_triangulations: &binary.polygons_on_triangulations,
                     tshapes: &binary.tshapes,
                     triangulations: &binary.triangulations,
                     roots: &binary.roots,
@@ -144,6 +151,18 @@ impl<'a> Builder<'a> {
             body_scope: Transform::identity(),
             current_body: None,
             source_object,
+        }
+    }
+
+    fn source_association(&self) -> SourceObjectAssociation {
+        SourceObjectAssociation {
+            format: "fcstd".into(),
+            object_id: self.source_object.clone(),
+            name: None,
+            color: None,
+            visible: None,
+            layer: None,
+            instance_path: Vec::new(),
         }
     }
 
@@ -457,16 +476,48 @@ impl<'a> Builder<'a> {
         else {
             return Ok(None);
         };
-        if surface == 0 {
-            return Ok(None);
-        }
         let surface_transform = multiply(face_transform, self.tables.location(location));
-        let surface_id = self.located_surface(ir, surface, surface_transform)?;
         let face_key = self.topology_label(face_use.shape, face_transform);
         let face_id = FaceId(format!("{}:face#{face_key}", self.payload.id));
-        if let Some(index) = triangulation {
-            self.emitted_triangulations.insert(index);
+        let located_triangulation = triangulation.map(|index| {
             let triangulation = &self.tables.triangulations[index - 1];
+            let vertices = triangulation
+                .nodes
+                .iter()
+                .map(|point| transform_point(surface_transform, *point))
+                .collect::<Vec<_>>();
+            let triangles = triangulation
+                .triangles
+                .iter()
+                .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
+                .collect::<Vec<_>>();
+            (index, triangulation, vertices, triangles)
+        });
+        let surface_id = if surface != 0 {
+            self.located_surface(ir, surface, surface_transform)?
+        } else if let Some((index, triangulation, vertices, triangles)) = &located_triangulation {
+            let id = SurfaceId(format!(
+                "{}:surface#triangulation:{}@{}",
+                self.payload.id, index, face_key
+            ));
+            let deflection_scale = similarity(surface_transform)?.scale;
+            if self.emitted_surfaces.insert(id.clone()) {
+                ir.model.surfaces.push(Surface {
+                    id: id.clone(),
+                    geometry: SurfaceGeometry::Polygonal {
+                        vertices: vertices.clone(),
+                        triangles: triangles.clone(),
+                        chordal_deflection: triangulation.deflection * deflection_scale,
+                    },
+                    source_object: Some(self.source_association()),
+                });
+            }
+            id
+        } else {
+            return Ok(None);
+        };
+        if let Some((index, triangulation, vertices, triangles)) = located_triangulation {
+            self.emitted_triangulations.insert(index);
             let deflection_scale = similarity(surface_transform)?.scale;
             let normals = triangulation
                 .normals
@@ -483,25 +534,9 @@ impl<'a> Builder<'a> {
                 body: self.current_body.clone(),
                 faces: vec![face_id.clone()],
                 chordal_deflection: Some(triangulation.deflection * deflection_scale),
-                source_object: Some(SourceObjectAssociation {
-                    format: "fcstd".into(),
-                    object_id: self.source_object.clone(),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-                vertices: triangulation
-                    .nodes
-                    .iter()
-                    .map(|point| transform_point(surface_transform, *point))
-                    .collect(),
-                triangles: triangulation
-                    .triangles
-                    .iter()
-                    .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
-                    .collect(),
+                source_object: Some(self.source_association()),
+                vertices,
+                triangles,
                 strip_lengths: Vec::new(),
                 normals,
                 channels: Vec::new(),
@@ -630,36 +665,147 @@ impl<'a> Builder<'a> {
         let end_use = endpoint_use(TextOrientation::Reversed).unwrap_or_else(|| start_use.clone());
         let start = self.ensure_vertex(ir, &start_use, transform)?;
         let end = self.ensure_vertex(ir, &end_use, transform)?;
-        let curve_representation = representations
-            .iter()
-            .find(|representation| representation.kind == 1);
-        let curve = if degenerated {
-            None
-        } else {
-            curve_representation
-                .map(|representation| {
-                    let carrier_transform =
-                        multiply(transform, self.tables.location(representation.location));
-                    self.located_curve(ir, representation.primary, carrier_transform)
-                })
-                .transpose()?
-        };
         let id = EdgeId(format!(
             "{}:edge#{}",
             self.payload.id,
             self.topology_label(edge_use.shape, transform)
         ));
+        let curve_representation = representations
+            .iter()
+            .find(|representation| representation.kind == 1);
+        let polygon_representation = representations
+            .iter()
+            .enumerate()
+            .find(|(_, representation)| matches!(representation.kind, 5..=7));
+        let curve = if degenerated {
+            None
+        } else if let Some(representation) = curve_representation {
+            let carrier_transform =
+                multiply(transform, self.tables.location(representation.location));
+            Some(self.located_curve(ir, representation.primary, carrier_transform)?)
+        } else if let Some((ordinal, representation)) = polygon_representation {
+            Some(self.polygon_curve(ir, &id, ordinal, representation, transform)?)
+        } else {
+            None
+        };
+        let param_range = curve_representation
+            .and_then(|representation| representation.parameter_range)
+            .or_else(|| {
+                polygon_representation.and_then(|(_, representation)| {
+                    self.polygon_parameters(representation)
+                        .and_then(|parameters| Some([*parameters.first()?, *parameters.last()?]))
+                })
+            });
         ir.model.edges.push(Edge {
             id: id.clone(),
             curve,
             start,
             end,
-            param_range: curve_representation
-                .and_then(|representation| representation.parameter_range),
+            param_range,
             tolerance: Some(tolerance),
         });
         self.edges.insert(key, id.clone());
         Ok(id)
+    }
+
+    fn polygon_curve(
+        &mut self,
+        ir: &mut CadIr,
+        edge: &EdgeId,
+        ordinal: usize,
+        representation: &TextEdgeRepresentation,
+        transform: Transform,
+    ) -> Result<CurveId, CodecError> {
+        let carrier_transform = multiply(transform, self.tables.location(representation.location));
+        let scale = similarity(carrier_transform)?.scale;
+        let (points, parameters, deflection) = match representation.kind {
+            5 => {
+                let polygon = &self.tables.polygons3d[representation.primary - 1];
+                (
+                    polygon.nodes.clone(),
+                    polygon.parameters.clone(),
+                    polygon.deflection,
+                )
+            }
+            6 | 7 => self.indexed_polygon(representation.primary, representation)?,
+            _ => {
+                return Err(CodecError::Malformed(
+                    "non-polygon edge representation reached polygon transfer".into(),
+                ))
+            }
+        };
+        let id = CurveId(format!("{}:polygon:{}", edge.0, ordinal + 1));
+        ir.model.curves.push(Curve {
+            id: id.clone(),
+            geometry: CurveGeometry::Polyline {
+                points: points
+                    .iter()
+                    .map(|point| transform_point(carrier_transform, *point))
+                    .collect(),
+                parameters,
+                chordal_deflection: deflection * scale,
+            },
+            source_object: Some(self.source_association()),
+        });
+        if representation.kind == 7 {
+            if let Some(secondary) = representation.secondary {
+                let (points, parameters, deflection) =
+                    self.indexed_polygon(secondary, representation)?;
+                ir.model.curves.push(Curve {
+                    id: CurveId(format!("{}:polygon:{}:secondary", edge.0, ordinal + 1)),
+                    geometry: CurveGeometry::Polyline {
+                        points: points
+                            .iter()
+                            .map(|point| transform_point(carrier_transform, *point))
+                            .collect(),
+                        parameters,
+                        chordal_deflection: deflection * scale,
+                    },
+                    source_object: Some(self.source_association()),
+                });
+            }
+        }
+        Ok(id)
+    }
+
+    fn indexed_polygon(
+        &self,
+        index: usize,
+        representation: &TextEdgeRepresentation,
+    ) -> Result<(Vec<Point3>, Option<Vec<f64>>, f64), CodecError> {
+        let polygon = &self.tables.polygons_on_triangulations[index - 1];
+        let triangulation_index = representation.surface.ok_or_else(|| {
+            CodecError::Malformed("indexed polygon has no triangulation reference".into())
+        })?;
+        let triangulation = &self.tables.triangulations[triangulation_index - 1];
+        let points = polygon
+            .nodes
+            .iter()
+            .map(|node| {
+                usize::try_from(*node)
+                    .ok()
+                    .and_then(|node| node.checked_sub(1))
+                    .and_then(|node| triangulation.nodes.get(node).copied())
+                    .ok_or_else(|| {
+                        CodecError::Malformed(
+                            "polygon-on-triangulation node is out of bounds".into(),
+                        )
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok((points, polygon.parameters.clone(), polygon.deflection))
+    }
+
+    fn polygon_parameters(&self, representation: &TextEdgeRepresentation) -> Option<&[f64]> {
+        match representation.kind {
+            5 => self.tables.polygons3d[representation.primary - 1]
+                .parameters
+                .as_deref(),
+            6 | 7 => self.tables.polygons_on_triangulations[representation.primary - 1]
+                .parameters
+                .as_deref(),
+            _ => None,
+        }
     }
 
     fn ensure_vertex(
