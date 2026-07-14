@@ -450,6 +450,19 @@ pub struct DatumPlanePayloadHeader {
     pub branch_tag: u8,
 }
 
+/// Count-two datum-plane branch shared by tags `1b` and `23`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DatumPlaneSingleReferenceBranch {
+    /// Non-null compact descriptor index.
+    pub descriptor_index: u32,
+    /// Absolute offset of the compact descriptor index.
+    pub descriptor_offset: usize,
+    /// Canonical payload object index.
+    pub object_index: u32,
+    /// Absolute offset of the canonical width marker.
+    pub object_offset: usize,
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1570,6 +1583,38 @@ pub fn datum_plane_payload_header(record: OperationRecord<'_>) -> Option<DatumPl
         control: record.payload[0],
         declared_count,
         branch_tag: record.payload[7],
+    })
+}
+
+/// Decode the count-two single-reference datum-plane construction branch.
+pub fn datum_plane_single_reference_branch(
+    record: OperationRecord<'_>,
+) -> Option<DatumPlaneSingleReferenceBranch> {
+    const SUFFIX: [u8; 12] = [
+        0x00, 0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
+    ];
+    let header = datum_plane_payload_header(record)?;
+    if header.declared_count != 2 || !matches!(header.branch_tag, 0x1b | 0x23) {
+        return None;
+    }
+    let mut at = 10;
+    let descriptor_offset = record.payload_offset + at;
+    let (CompactIndex::Value(descriptor_index), width) = compact_index(record.payload.get(at..)?)?
+    else {
+        return None;
+    };
+    at += width;
+    (record.payload.get(at) == Some(&0x01)).then_some(())?;
+    at += 1;
+    let object_offset = record.payload_offset + at;
+    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    at += width;
+    (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+    Some(DatumPlaneSingleReferenceBranch {
+        descriptor_index,
+        descriptor_offset,
+        object_index,
+        object_offset,
     })
 }
 

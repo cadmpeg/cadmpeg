@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 81);
+    assert_eq!(namespace.version, 82);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1356,6 +1356,21 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         })
         .is_none()
     );
+
+    let branch_payload = [
+        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x23, 0x01, 0x02, 0x80, 0x4c, 0x01, 0xf1, 0x02,
+        0xbb, 0x00, 0x14, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00,
+    ];
+    let branch = crate::om::datum_plane_single_reference_branch(crate::om::OperationRecord {
+        bytes: &branch_payload,
+        payload: &branch_payload,
+        ..record
+    })
+    .unwrap();
+    assert_eq!(branch.descriptor_index, 76);
+    assert_eq!(branch.descriptor_offset, 110);
+    assert_eq!(branch.object_index, 699);
+    assert_eq!(branch.object_offset, 113);
 }
 
 #[test]
@@ -5151,7 +5166,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 81);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 82);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

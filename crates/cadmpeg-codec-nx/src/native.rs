@@ -438,6 +438,18 @@ pub struct FeatureDatumPlaneHeader {
     pub declared_count: u8,
     /// Tag selecting the following construction branch.
     pub branch_tag: u8,
+    /// Compact descriptor index for the count-two `1b`/`23` branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor_index: Option<u32>,
+    /// Canonical object index for the count-two `1b`/`23` branch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_index: Option<u32>,
+    /// Absolute offset of the compact descriptor index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor_source_offset: Option<u64>,
+    /// Absolute offset of the canonical object-index marker.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_source_offset: Option<u64>,
     /// Absolute offset of the payload control byte.
     pub source_offset: u64,
 }
@@ -1658,6 +1670,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
             let Some(header) = crate::om::datum_plane_payload_header(record) else {
                 continue;
             };
+            let branch = crate::om::datum_plane_single_reference_branch(record);
             headers.push(FeatureDatumPlaneHeader {
                 id: format!(
                     "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal}"
@@ -1668,6 +1681,12 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                 control: header.control,
                 declared_count: header.declared_count,
                 branch_tag: header.branch_tag,
+                descriptor_index: branch.map(|branch| branch.descriptor_index),
+                object_index: branch.map(|branch| branch.object_index),
+                descriptor_source_offset: branch
+                    .map(|branch| entry_offset + branch.descriptor_offset as u64),
+                object_source_offset: branch
+                    .map(|branch| entry_offset + branch.object_offset as u64),
                 source_offset: entry_offset + record.payload_offset as u64,
             });
         }
