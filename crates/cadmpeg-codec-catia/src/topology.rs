@@ -3391,6 +3391,7 @@ impl MeshQuotient {
         )
     }
 
+    #[cfg(test)]
     fn assignment_options(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
@@ -4143,7 +4144,11 @@ impl MeshSelectionSearch<'_> {
                 }
                 let mut common = None::<HashSet<[usize; 2]>>;
                 for assignment in supported {
-                    let options = quotient.assignment_options(assignment, self.edge_candidates);
+                    let options = quotient.assignment_options_limited(
+                        assignment,
+                        self.edge_candidates,
+                        MAX_FACE_EQUATION_OPTIONS,
+                    );
                     if options.is_empty() {
                         return false;
                     }
