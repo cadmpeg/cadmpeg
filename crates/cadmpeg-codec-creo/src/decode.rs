@@ -233,6 +233,7 @@ struct CreoFeatureOperationState {
     family: String,
     display_name_stored: bool,
     stored_name: Option<String>,
+    stored_name_bytes: Option<Vec<u8>>,
     identifier_keyword: Option<String>,
     status_prefix: Option<String>,
     recipe: Option<&'static str>,
@@ -403,6 +404,7 @@ fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOpera
                 family: state.kind.clone(),
                 display_name_stored: state.display_name_stored,
                 stored_name: state.stored_name.clone(),
+                stored_name_bytes: state.stored_name_bytes.clone(),
                 identifier_keyword: state.identifier_keyword.clone(),
                 status_prefix: state
                     .status_prefix

@@ -3396,6 +3396,15 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(feature_40[0].fields["state_ordinal"], 0);
     assert_eq!(feature_40[0].fields["current"], false);
     assert_eq!(feature_40[0].fields["stored_name"], "xProtrusion id 40");
+    assert_eq!(
+        feature_40[0].fields["stored_name_bytes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|byte| byte.as_u64().unwrap() as u8)
+            .collect::<Vec<_>>(),
+        b"xProtrusion id 40"
+    );
     assert_eq!(feature_40[0].fields["identifier_keyword"], "id");
     assert_eq!(feature_40[1].fields["state_ordinal"], 1);
     assert_eq!(feature_40[1].fields["current"], true);

@@ -29,9 +29,11 @@ pub struct FeatureOperation {
     pub kind: String,
     /// Whether `kind` came from a stored `<Kind> id <N>` display name.
     pub display_name_stored: bool,
-    /// Exact stored operation name excluding its NUL terminator. Recipe-only
-    /// states have no stored name.
+    /// Display form of the stored operation name. Recipe-only states have no
+    /// stored name.
     pub stored_name: Option<String>,
+    /// Exact stored operation-name bytes excluding the NUL terminator.
+    pub stored_name_bytes: Option<Vec<u8>>,
     /// Stored identifier keyword, preserving `id` versus `ID`.
     pub identifier_keyword: Option<String>,
     /// Optional one-byte state prefix immediately preceding the family name.
@@ -188,6 +190,9 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
                 )
                 .into_owned(),
             ),
+            stored_name_bytes: Some(
+                payload[state_offset..separator + separator_bytes.len() + end].to_vec(),
+            ),
             identifier_keyword: Some(
                 String::from_utf8_lossy(&separator_bytes[1..separator_bytes.len() - 1])
                     .into_owned(),
@@ -216,6 +221,7 @@ pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
             .to_string(),
             display_name_stored: false,
             stored_name: None,
+            stored_name_bytes: None,
             identifier_keyword: None,
             status_prefix: None,
             recipe: Some(binding.kind),
