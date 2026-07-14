@@ -403,6 +403,10 @@ construction is fabricated when a stored feature is empty or frozen. A PartDesig
 instead a derived-geometry operation whose input is the earlier linked feature. Application-owned
 feature subclasses remain in the complete native object/property graph and are not misclassified
 as built-in modeling operations solely because their type derives from a core feature class.
+Legacy spline, extended-feature, geometry-set, and planar-feature containers likewise represent
+direct stored geometry when they carry no replay construction. STEP, IGES, B-rep, and curve-network
+import features instead retain their exact external path and source model format as replayable
+import intent; an absent or empty source path leaves the feature attributable and native.
 
 The native design census contains one record for every object admitted to the design projection.
 Each record binds the persisted object type and neutral feature identity to its CADIR semantic

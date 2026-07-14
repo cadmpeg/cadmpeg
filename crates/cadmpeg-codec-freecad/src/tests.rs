@@ -535,7 +535,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "38");
+    assert_eq!(result.ir.ir_version, "39");
     let feature = |name: &str| {
         &result
             .ir
@@ -1760,6 +1760,88 @@ fn transfers_ordered_body_membership_and_active_tip() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("active tree child")));
+}
+
+#[test]
+fn transfers_stored_and_external_part_feature_families() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="9">
+ <Object type="Part::FeatureExt" name="Extended" id="1"/>
+ <Object type="Part::FeatureGeometrySet" name="GeometrySet" id="2"/>
+ <Object type="Part::Spline" name="Spline" id="3"/>
+ <Object type="Part::Part2DObject" name="Planar" id="4"/>
+ <Object type="Part::ImportStep" name="Step" id="5"/>
+ <Object type="Part::ImportIges" name="Iges" id="6"/>
+ <Object type="Part::ImportBrep" name="Brep" id="7"/>
+ <Object type="Part::CurveNet" name="CurveNet" id="8"/>
+ <Object type="Part::Part2DObjectPython" name="PlanarExtension" id="9"/>
+</Objects>
+<ObjectData Count="9">
+ <Object name="Extended"><Properties Count="0"/></Object>
+ <Object name="GeometrySet"><Properties Count="0"/></Object>
+ <Object name="Spline"><Properties Count="0"/></Object>
+ <Object name="Planar"><Properties Count="0"/></Object>
+ <Object name="Step"><Properties Count="1"><Property name="FileName" type="App::PropertyString"><String value="models/source.step"/></Property></Properties></Object>
+ <Object name="Iges"><Properties Count="1"><Property name="FileName" type="App::PropertyString"><String value="models/source.igs"/></Property></Properties></Object>
+ <Object name="Brep"><Properties Count="1"><Property name="FileName" type="App::PropertyString"><String value="models/source.brep"/></Property></Properties></Object>
+ <Object name="CurveNet"><Properties Count="1"><Property name="FileName" type="App::PropertyString"><String value="models/network.brep"/></Property></Properties></Object>
+ <Object name="PlanarExtension"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("remaining Part feature families");
+    for name in ["Extended", "GeometrySet", "Spline", "Planar"] {
+        assert!(matches!(
+            result
+                .ir
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some(name))
+                .expect("stored feature")
+                .definition,
+            cadmpeg_ir::features::FeatureDefinition::StoredGeometry
+        ));
+    }
+    for (name, format) in [
+        ("Step", cadmpeg_ir::features::GeometryImportFormat::Step),
+        ("Iges", cadmpeg_ir::features::GeometryImportFormat::Iges),
+        ("Brep", cadmpeg_ir::features::GeometryImportFormat::Brep),
+        ("CurveNet", cadmpeg_ir::features::GeometryImportFormat::Brep),
+    ] {
+        assert!(matches!(
+            &result
+                .ir
+                .model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some(name))
+                .expect("import feature")
+                .definition,
+            cadmpeg_ir::features::FeatureDefinition::ImportedGeometry { path, format: actual }
+                if path.starts_with("models/") && *actual == format
+        ));
+    }
+    assert!(result
+        .ir
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.name.as_deref() != Some("PlanarExtension")));
+    let census = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("namespace")
+        .arena_as::<crate::native::DesignCensusRecord>("design_census")
+        .expect("design census");
+    assert_eq!(census.len(), 8);
+    assert!(census.iter().all(|record| record.neutral));
+    assert!(result.report.losses.is_empty());
+    assert_valid_document(&result.ir);
 }
 
 #[test]

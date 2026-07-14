@@ -488,6 +488,13 @@ pub enum FeatureDefinition {
         /// Feature supplying the copied geometry.
         source: FeatureId,
     },
+    /// Geometry imported from an external model file.
+    ImportedGeometry {
+        /// External source path exactly as persisted by the design.
+        path: String,
+        /// Model format read from the external file.
+        format: GeometryImportFormat,
+    },
     /// Parametric analytic solid primitive.
     Primitive {
         /// Primitive dimensions and angular bounds.
@@ -975,6 +982,18 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// External model format consumed by an imported-geometry feature.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GeometryImportFormat {
+    /// ISO 10303 STEP model data.
+    Step,
+    /// IGES model data.
+    Iges,
+    /// Native boundary-representation model data.
+    Brep,
 }
 
 /// Selection policy for Boolean-operation fuzzy tolerance.

@@ -3845,6 +3845,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::ImportedGeometry { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported external-import semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Primitive { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported analytic-primitive semantics",
@@ -7250,6 +7256,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::StoredGeometry => "Feature",
         FeatureDefinition::DerivedGeometry { .. } => "Feature",
+        FeatureDefinition::ImportedGeometry { .. } => "Feature",
         FeatureDefinition::Primitive { .. } => "Primitive",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",

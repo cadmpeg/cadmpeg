@@ -2616,6 +2616,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     Some(_) => {}
                 }
             }
+            FeatureDefinition::ImportedGeometry { path, .. } => {
+                if path.is_empty() || path.contains('\0') {
+                    feature_geometry_error(findings, feature, "geometry import path is invalid");
+                }
+            }
             FeatureDefinition::PostProcess { .. } => feature_geometry_error(
                 findings,
                 feature,

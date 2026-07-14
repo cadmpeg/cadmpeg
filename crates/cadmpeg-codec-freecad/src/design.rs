@@ -9,14 +9,14 @@ use cadmpeg_ir::features::{
     BinderConstruction, BinderCopyOnChange, BinderLifecycle, BinderOffset, BinderOffsetJoin,
     BinderPlacement, BinderSource, BinderTarget, BodySelection, BooleanOp, ChamferSpec,
     DesignParameter, EdgeSelection, Extent, ExtrusionDirectionSource, ExtrusionFaceMaker, Feature,
-    FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance, HelicalSweepConstruction,
-    HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind, HoleProfileFilter,
-    HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, ParameterId, ParameterValue,
-    PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
-    PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
-    SketchSpace, SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation,
-    SweepTransition, ThreadHand,
+    FeatureDefinition, FeatureId, FeatureTreeNodeRole, FuzzyTolerance, GeometryImportFormat,
+    HelicalSweepConstruction, HelicalSweepLaw, HelixConstructionStyle, HoleBottom, HoleKind,
+    HoleProfileFilter, HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, ParameterId,
+    ParameterValue, PathRef, PatternKind, PatternScaleCenter, PatternStage,
+    PatternStageCombination, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors,
+    ShellJoin, ShellMode, SketchSpace, SurfaceProjectionMode, SweepMode, SweepOrientation,
+    SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -123,13 +123,18 @@ pub(crate) fn transfer(
                 space: SketchSpace::Planar,
                 sketch: Some(sketch_id),
             }
-        } else if matches!(
-            object.type_name.as_str(),
-            "Part::Feature" | "PartDesign::Feature"
-        ) {
+        } else if is_stored_geometry_feature(&object.type_name) {
             FeatureDefinition::StoredGeometry
         } else if object.type_name == "PartDesign::FeatureBase" {
             feature_base_definition(&owned, &feature_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if is_imported_geometry(&object.type_name) {
+            imported_geometry_definition(&object.type_name, &owned).unwrap_or_else(|| {
                 FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -3593,6 +3598,26 @@ fn linked_feature_ids(
         .filter_map(|object| feature_ids.get(object).cloned())
         .collect()
 }
+
+fn imported_geometry_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+) -> Option<FeatureDefinition> {
+    let path = property(properties, "FileName")
+        .and_then(|property| string_property_value(property))?
+        .to_owned();
+    if path.is_empty() {
+        return None;
+    }
+    let format = match kind {
+        "Part::ImportStep" => GeometryImportFormat::Step,
+        "Part::ImportIges" => GeometryImportFormat::Iges,
+        "Part::ImportBrep" | "Part::CurveNet" => GeometryImportFormat::Brep,
+        _ => return None,
+    };
+    Some(FeatureDefinition::ImportedGeometry { path, format })
+}
+
 fn is_sketch(kind: &str) -> bool {
     kind.contains("Sketcher::SketchObject")
 }
@@ -3644,6 +3669,23 @@ fn is_part_construction_geometry(kind: &str) -> bool {
             | "Part::RegularPolygon"
             | "Part::Plane"
             | "Part::Face"
+    )
+}
+fn is_stored_geometry_feature(kind: &str) -> bool {
+    matches!(
+        kind,
+        "Part::Feature"
+            | "Part::FeatureExt"
+            | "Part::FeatureGeometrySet"
+            | "Part::Spline"
+            | "Part::Part2DObject"
+            | "PartDesign::Feature"
+    )
+}
+fn is_imported_geometry(kind: &str) -> bool {
+    matches!(
+        kind,
+        "Part::ImportStep" | "Part::ImportIges" | "Part::ImportBrep" | "Part::CurveNet"
     )
 }
 fn is_boolean(kind: &str) -> bool {
@@ -3714,6 +3756,8 @@ fn is_design_object(kind: &str) -> bool {
         || is_sketch(kind)
         || is_primitive(kind)
         || is_part_construction_geometry(kind)
+        || is_stored_geometry_feature(kind)
+        || is_imported_geometry(kind)
         || is_boolean(kind)
         || is_loft(kind)
         || is_sweep(kind)
@@ -3735,10 +3779,7 @@ fn is_design_object(kind: &str) -> bool {
             kind,
             "Part::RuledSurface" | "Part::Section" | "Part::Mirroring" | "Part::ProjectOnSurface"
         )
-        || matches!(
-            kind,
-            "Part::Feature" | "PartDesign::Feature" | "PartDesign::FeatureBase"
-        )
+        || kind == "PartDesign::FeatureBase"
 }
 
 pub(crate) fn census(
