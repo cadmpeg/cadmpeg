@@ -6090,6 +6090,7 @@ mod resolved_sketch_tests {
         let cylinder = CarrierEquation::Cylinder(CylinderEquation {
             origin: [0.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
             radius: 2.0,
         });
         let cap = CarrierEquation::Plane(PlaneEquation {
@@ -6110,6 +6111,28 @@ mod resolved_sketch_tests {
             normal: [1.0, 0.0, 0.0],
         });
         assert_eq!(solve_carriers(&[cylinder, cap, secant]), None);
+
+        assert!(matches!(
+            carrier_intersection_curve(cap, cylinder),
+            Some((CurveGeometry::Circle { center, radius, .. }, "plane_cylinder_circle"))
+                if center.z == 3.0 && radius == 2.0
+        ));
+        let oblique = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 1.0],
+        });
+        assert!(matches!(
+            carrier_intersection_curve(oblique, cylinder),
+            Some((CurveGeometry::Ellipse { major_radius, minor_radius, .. }, "plane_cylinder_ellipse"))
+                if (major_radius - 2.0 * 2.0_f64.sqrt()).abs() < 1e-12
+                    && minor_radius == 2.0
+        ));
+        assert!(matches!(
+            carrier_intersection_curve(tangent, cylinder),
+            Some((CurveGeometry::Line { origin, direction }, "plane_cylinder_tangent_line"))
+                if origin.x == 2.0 && direction.z == 1.0
+        ));
+        assert!(carrier_intersection_curve(secant, cylinder).is_none());
     }
 }
 
@@ -6123,6 +6146,7 @@ struct PlaneEquation {
 struct CylinderEquation {
     origin: [f64; 3],
     axis: [f64; 3],
+    ref_direction: [f64; 3],
     radius: f64,
 }
 
@@ -6346,8 +6370,8 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
         if let SurfaceGeometry::Cylinder {
             origin,
             axis,
+            ref_direction,
             radius,
-            ..
         } = &surface.geometry
         {
             carriers.insert(
@@ -6355,6 +6379,7 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
                 CarrierEquation::Cylinder(CylinderEquation {
                     origin: [origin.x, origin.y, origin.z],
                     axis: [axis.x, axis.y, axis.z],
+                    ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
                     radius: *radius,
                 }),
             );
@@ -7213,31 +7238,114 @@ fn transfer_fc05_cap_circles(
     }
 }
 
-fn transfer_plane_intersection_curves(
+fn carrier_intersection_curve(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Option<(CurveGeometry, &'static str)> {
+    match (first, second) {
+        (CarrierEquation::Plane(first), CarrierEquation::Plane(second)) => {
+            let direction = cross(first.normal, second.normal);
+            let denominator = dot(direction, direction);
+            if denominator <= 1e-18 {
+                return None;
+            }
+            let first_distance = dot(first.normal, first.origin);
+            let second_distance = dot(second.normal, second.origin);
+            let weighted = [0, 1, 2].map(|axis| {
+                first_distance * second.normal[axis] - second_distance * first.normal[axis]
+            });
+            let point_numerator = cross(weighted, direction);
+            let origin = point_numerator.map(|value| value / denominator);
+            let direction = normalized(direction)?;
+            Some((
+                CurveGeometry::Line {
+                    origin: Point3::new(origin[0], origin[1], origin[2]),
+                    direction: Vector3::new(direction[0], direction[1], direction[2]),
+                },
+                "plane_intersection_line",
+            ))
+        }
+        (CarrierEquation::Plane(plane), CarrierEquation::Cylinder(cylinder))
+        | (CarrierEquation::Cylinder(cylinder), CarrierEquation::Plane(plane)) => {
+            let normal = normalized(plane.normal)?;
+            let axis = normalized(cylinder.axis)?;
+            let cosine = dot(normal, axis);
+            if cosine.abs() <= 1e-10 {
+                let signed_distance = dot(
+                    normal,
+                    std::array::from_fn(|index| cylinder.origin[index] - plane.origin[index]),
+                );
+                let scale = cylinder.radius.max(1.0);
+                if (signed_distance.abs() - cylinder.radius).abs() > 1e-9 * scale {
+                    return None;
+                }
+                let origin: [f64; 3] = std::array::from_fn(|index| {
+                    cylinder.origin[index] - signed_distance * normal[index]
+                });
+                return Some((
+                    CurveGeometry::Line {
+                        origin: Point3::new(origin[0], origin[1], origin[2]),
+                        direction: Vector3::new(axis[0], axis[1], axis[2]),
+                    },
+                    "plane_cylinder_tangent_line",
+                ));
+            }
+            let axis_parameter = dot(
+                normal,
+                std::array::from_fn(|index| plane.origin[index] - cylinder.origin[index]),
+            ) / cosine;
+            let center: [f64; 3] =
+                std::array::from_fn(|index| cylinder.origin[index] + axis_parameter * axis[index]);
+            if (cosine.abs() - 1.0).abs() <= 1e-10 {
+                let reference = normalized(cylinder.ref_direction)?;
+                return Some((
+                    CurveGeometry::Circle {
+                        center: Point3::new(center[0], center[1], center[2]),
+                        axis: Vector3::new(normal[0], normal[1], normal[2]),
+                        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                        radius: cylinder.radius,
+                    },
+                    "plane_cylinder_circle",
+                ));
+            }
+            let projected_axis = normalized(std::array::from_fn(|index| {
+                axis[index] - cosine * normal[index]
+            }))?;
+            Some((
+                CurveGeometry::Ellipse {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(normal[0], normal[1], normal[2]),
+                    major_direction: Vector3::new(
+                        projected_axis[0],
+                        projected_axis[1],
+                        projected_axis[2],
+                    ),
+                    major_radius: cylinder.radius / cosine.abs(),
+                    minor_radius: cylinder.radius,
+                },
+                "plane_cylinder_ellipse",
+            ))
+        }
+        _ => None,
+    }
+}
+
+fn transfer_carrier_intersection_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) {
-    let planes = placed_planes(scan);
+    let carriers = placed_carriers(scan, ir);
     for row in &scan.curve_topology_rows {
-        let (Some(first), Some(second)) = (planes.get(&row.faces[0]), planes.get(&row.faces[1]))
-        else {
+        let (Some(first), Some(second)) = (
+            carriers.get(&row.faces[0]).copied(),
+            carriers.get(&row.faces[1]).copied(),
+        ) else {
             continue;
         };
-        let direction = cross(first.normal, second.normal);
-        let denominator = dot(direction, direction);
-        if denominator <= 1e-18 {
+        let Some((geometry, tag)) = carrier_intersection_curve(first, second) else {
             continue;
-        }
-        let first_distance = dot(first.normal, first.origin);
-        let second_distance = dot(second.normal, second.origin);
-        let weighted = [0, 1, 2].map(|axis| {
-            first_distance * second.normal[axis] - second_distance * first.normal[axis]
-        });
-        let point_numerator = cross(weighted, direction);
-        let origin = point_numerator.map(|value| value / denominator);
-        let direction_norm = denominator.sqrt();
-        let direction = direction.map(|value| value / direction_norm);
+        };
         let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
@@ -7247,15 +7355,12 @@ fn transfer_plane_intersection_curves(
             &id,
             "VisibGeom",
             row.offset as u64,
-            "plane_intersection_line",
+            tag,
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
             id,
-            geometry: CurveGeometry::Line {
-                origin: Point3::new(origin[0], origin[1], origin[2]),
-                direction: Vector3::new(direction[0], direction[1], direction[2]),
-            },
+            geometry,
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
                 object_id: format!("VisibGeom:{}", row.id),
@@ -7464,7 +7569,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     }
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
-    transfer_plane_intersection_curves(scan, &mut ir, &mut annotations);
+    transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
