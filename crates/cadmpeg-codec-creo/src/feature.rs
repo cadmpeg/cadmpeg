@@ -3816,6 +3816,21 @@ fn saved_section(
     })
 }
 
+fn positional_saved_section(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+    order_table: Option<&FeatureOrderTable>,
+    segments: Option<&FeatureSegmentTable>,
+) -> Option<FeatureSavedSection> {
+    let mut entities =
+        saved_positional_generated_entities(payload, start, end, cache, order_table, segments);
+    entities.sort_by_key(saved_entity_offset);
+    let offset = entities.first().map(saved_entity_offset)?;
+    Some(FeatureSavedSection { entities, offset })
+}
+
 fn field_value(payload: &[u8]) -> FeatureFieldValue {
     if payload.is_empty() {
         return FeatureFieldValue::Empty;
@@ -4370,7 +4385,19 @@ fn definitions_in_ranges(
             &cache,
             order_table.as_ref(),
             segments.as_ref(),
-        );
+        )
+        .or_else(|| {
+            owner_override.and_then(|_| {
+                positional_saved_section(
+                    payload,
+                    start,
+                    end,
+                    &cache,
+                    order_table.as_ref(),
+                    segments.as_ref(),
+                )
+            })
+        });
         let owner_feature_id = owner_override.or_else(|| {
             let ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
                 .into_iter()
@@ -5359,6 +5386,17 @@ mod tests {
         assert_eq!(arc.entity_id, 7);
         assert_eq!(arc.center, [Some(0.0); 3]);
         assert_eq!(arc.radius, Some(0.0));
+        let section = positional_saved_section(
+            &payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            Some(&order),
+            Some(&segments),
+        )
+        .expect("positional saved section");
+        assert_eq!(section.entities.len(), 1);
+        assert_eq!(section.offset, 1);
     }
 
     #[test]

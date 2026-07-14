@@ -756,6 +756,11 @@ vertex exactly when it lies on the saved center/radius carrier.
 The saved center/radius pair defines the circular carrier independently of the
 endpoint fields. Trim incidence may intersect that carrier before either arc
 endpoint is available; bounded arc geometry still requires both endpoints.
+In a positional feature definition, these generated-entity rows occur without
+the `p_saved_result` and entity-family labels. The enclosing feature-definition
+boundary limits the row region; a row is a saved entity only when its leading
+identifier joins `order_table.int_id` and that order row's `ext_id` joins a
+`segtab` row.
 When both saved endpoints and exactly one center ordinate are defined, equal
 endpoint distance uniquely determines the missing center ordinate and radius.
 The endpoint chord must vary along the missing center axis; a stored radius,
