@@ -852,7 +852,7 @@ fn extend_related_design_records(
                 .wrapper_record_indices
                 .iter()
                 .copied()
-                .chain(std::iter::once(identity.leaf_record_index))
+                .chain(std::iter::once(identity.following_record_index))
                 .map(move |record_index| (stream.clone(), record_index))
         })
         .collect::<Vec<_>>();

@@ -514,39 +514,41 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 header.byte_offset == byte_offset && header.class_tag == *class_tag
                             })
                 });
-        let leaf_shape = identity.leaf_class_tag.len() == 3
+        let following_shape = identity.following_class_tag.len() == 3
             && identity
-                .leaf_class_tag
+                .following_class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && identity
                 .wrapper_byte_offsets
                 .last()
-                .is_some_and(|offset| identity.leaf_byte_offset == offset.saturating_add(24))
+                .is_some_and(|offset| identity.following_byte_offset == offset.saturating_add(24))
             && records_by_index
-                .get(&(native_stream, identity.leaf_record_index))
+                .get(&(native_stream, identity.following_record_index))
                 .is_some_and(|header| {
-                    header.byte_offset == identity.leaf_byte_offset
-                        && header.class_tag == identity.leaf_class_tag
+                    header.byte_offset == identity.following_byte_offset
+                        && header.class_tag == identity.following_class_tag
                 });
         let persistent_shape = identity
             .persistent_identity
             .as_ref()
             .is_none_or(|persistent| {
-                persistent.local_id_offset == identity.leaf_byte_offset.saturating_add(21)
-                    && persistent.asset_id_offset == identity.leaf_byte_offset.saturating_add(33)
+                persistent.local_id_offset == identity.following_byte_offset.saturating_add(21)
+                    && persistent.asset_id_offset
+                        == identity.following_byte_offset.saturating_add(33)
                     && persistent.context_id_offset > persistent.asset_id_offset
                     && valid_design_guid(&persistent.asset_id)
                     && valid_design_guid(&persistent.context_id)
                     && selected_profile
                         .is_some_and(|profile| profile.asset_id == persistent.asset_id)
-                    && persistent.next_byte_offset == identity.leaf_byte_offset.saturating_add(190)
+                    && persistent.next_byte_offset
+                        == identity.following_byte_offset.saturating_add(190)
                     && persistent.next_record_index != 0
             });
         let valid = group.is_some_and(|group| {
             identity.wrapper_record_indices.first() == Some(&group.identity_record_index)
         }) && wrapper_shape
-            && leaf_shape
+            && following_shape
             && persistent_shape
             && operand_identity_groups.insert((native_stream, identity.group_record_index));
         if !valid {
@@ -832,13 +834,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             owner.local_ordinal,
         ));
         let parameter = parameters_by_index.get(&(native_stream, owner.parameter_record_index));
+        let owner_first = owner.parameter_record_index == owner.record_index.saturating_add(1)
+            && owner.companion_record_index == owner.record_index.saturating_add(2);
+        let parameter_first = owner.record_index == owner.parameter_record_index.saturating_add(1)
+            && owner.companion_record_index == owner.record_index.saturating_add(1);
         let valid = owner.class_tag.len() == 3
             && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && owner.variant <= 1
             && owner.evaluated_value.is_finite()
             && owner.evaluated_value_offset == owner.byte_offset + 40
-            && owner.parameter_record_index == owner.record_index.saturating_add(1)
-            && owner.companion_record_index == owner.record_index.saturating_add(2)
+            && (owner_first || parameter_first)
             && scopes_by_index.contains_key(&(native_stream, owner.scope_record_index))
             && record_indices.contains(&(native_stream, owner.parameter_record_index))
             && record_indices.contains(&(native_stream, owner.companion_record_index))
@@ -1118,6 +1123,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             }
         };
         let offsets_ordered = parameter.byte_offset < parameter.expression_offset
+            && parameter.prefix_value_offset == parameter.byte_offset.saturating_add(22)
+            && parameter.prefix_value_offset < parameter.expression_offset
             && parameter.expression_offset < parameter.source_kind_offset
             && parameter.source_kind_offset
                 < parameter.unit_offset.unwrap_or(parameter.name_offset)

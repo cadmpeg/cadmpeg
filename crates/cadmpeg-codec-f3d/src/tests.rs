@@ -7398,6 +7398,8 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
         byte_offset: 100,
         class_tag: "305".into(),
         record_index: 900,
+        prefix_value: 0,
+        prefix_value_offset: 122,
         source_ordinal: 0,
         owner_record_index: None,
         expression: "60 mm".into(),

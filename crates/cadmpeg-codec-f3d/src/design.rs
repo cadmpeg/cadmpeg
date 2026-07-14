@@ -1529,6 +1529,7 @@ pub fn decode_parameters(
             if let Some(mut parameter) = parse_design_parameter(&bytes[at..end]) {
                 parameter.id = format!("f3d:{}:design-parameter#{at}", entry.name);
                 parameter.byte_offset = at as u64;
+                parameter.prefix_value_offset += at as u64;
                 parameter.expression_offset += at as u64;
                 parameter.source_kind_offset += at as u64;
                 parameter.unit_offset = parameter.unit_offset.map(|offset| offset + at as u64);
@@ -1550,11 +1551,13 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
     if class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || after_tag != 7
-        || payload.get(11..31) != Some(&[0; 20])
+        || payload.get(11..22) != Some(&[0; 11])
+        || payload.get(30) != Some(&0)
     {
         return None;
     }
     let record_index = u32_at(payload, 7)?;
+    let prefix_value = read_u64(payload, 22)?;
     let source_ordinal = u32_at(payload, 31)?;
     let (owner_record_index, expression_at, expression_trailer) = match payload.get(35)? {
         0 => (None, 36, [0, 0, 0, 0, 0, 0, 0, 0, 1]),
@@ -1571,8 +1574,12 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
         return None;
     }
     let first_at = source_kind_end + 4;
-    let (first, first_end) = lp_utf16(payload, first_at)?;
-    let (unit, unit_offset, name, name_at, name_end) =
+    let (unit, unit_offset, name, name_at, name_end) = if u32_at(payload, first_at) == Some(0) {
+        let name_at = first_at + 4;
+        let (name, name_end) = lp_utf16(payload, name_at)?;
+        (None, None, name, name_at, name_end)
+    } else {
+        let (first, first_end) = lp_utf16(payload, first_at)?;
         if let Some((second, second_end)) = lp_utf16(payload, first_end) {
             (
                 Some(first),
@@ -1583,7 +1590,8 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
             )
         } else {
             (None, None, first, first_at, first_end)
-        };
+        }
+    };
     let evaluated_value = f64_at(payload, name_end)?;
     if payload.get(name_end + 8..) != Some(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0])
         || expression.is_empty()
@@ -1605,6 +1613,8 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
         byte_offset: 0,
         class_tag,
         record_index,
+        prefix_value,
+        prefix_value_offset: 22,
         source_ordinal,
         owner_record_index,
         expression,
@@ -1694,11 +1704,16 @@ fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
         return None;
     }
     let record_index = u32_at(frame, 7)?;
+    let parameter_record_index = u32_at(frame, 49)?;
+    let companion_record_index = u32_at(frame, 82)?;
+    let owner_first = parameter_record_index == record_index.checked_add(1)?
+        && companion_record_index == record_index.checked_add(2)?;
+    let parameter_first = record_index == parameter_record_index.checked_add(1)?
+        && companion_record_index == record_index.checked_add(1)?;
     let scope_record_index = u32_at(frame, 25)?;
     if u32_at(frame, 68)? != scope_record_index
         || u32_at(frame, 94)? != scope_record_index
-        || u32_at(frame, 49)? != record_index.checked_add(1)?
-        || u32_at(frame, 82)? != record_index.checked_add(2)?
+        || !(owner_first || parameter_first)
     {
         return None;
     }
@@ -1715,10 +1730,10 @@ fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
         local_ordinal: u32_at(frame, 35)?,
         evaluated_value,
         evaluated_value_offset: 40,
-        parameter_record_index: u32_at(frame, 49)?,
+        parameter_record_index,
         owned_ordinal: u32_at(frame, 59)?,
         variant: *frame.get(79)?,
-        companion_record_index: u32_at(frame, 82)?,
+        companion_record_index,
     })
 }
 
@@ -2845,9 +2860,9 @@ fn parse_extrude_operand_identity(
         wrapper_record_indices,
         wrapper_byte_offsets,
         wrapper_class_tags,
-        leaf_record_index: current_record_index,
-        leaf_byte_offset: u64::try_from(current_at).ok()?,
-        leaf_class_tag: current_class_tag,
+        following_record_index: current_record_index,
+        following_byte_offset: u64::try_from(current_at).ok()?,
+        following_class_tag: current_class_tag,
         persistent_identity,
     })
 }
@@ -5200,6 +5215,15 @@ mod relation_tests {
         .unwrap();
         assert_eq!(boolean.unit, None);
         assert_eq!(boolean.name, "OnOff");
+
+        let mut tangency =
+            parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
+        tangency[22..30].copy_from_slice(&6u64.to_le_bytes());
+        let tangency = parse_design_parameter(&tangency).expect("prefixed unitless parameter");
+        assert_eq!(tangency.prefix_value, 6);
+        assert_eq!(tangency.unit, None);
+        assert_eq!(tangency.name, "d81");
+        assert_eq!(tangency.evaluated_value, 1.0);
     }
 
     #[test]
@@ -5242,7 +5266,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn parameter_owner_frame_has_repeated_scope_and_consecutive_records() {
+    fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
         let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
         assert_eq!(parsed.record_index, 44);
         assert_eq!(parsed.scope_record_index, 12);
@@ -5252,6 +5276,14 @@ mod relation_tests {
         assert_eq!(parsed.owned_ordinal, 9);
         assert_eq!(parsed.variant, 1);
         assert_eq!(parsed.companion_record_index, 46);
+
+        let mut parameter_first = parameter_owner_frame();
+        parameter_first[49..53].copy_from_slice(&43u32.to_le_bytes());
+        parameter_first[82..86].copy_from_slice(&45u32.to_le_bytes());
+        let parsed = parse_parameter_owner(&parameter_first).expect("parameter-first owner frame");
+        assert_eq!(parsed.parameter_record_index, 43);
+        assert_eq!(parsed.record_index, 44);
+        assert_eq!(parsed.companion_record_index, 45);
 
         let mut malformed = parameter_owner_frame();
         malformed[94..98].copy_from_slice(&13u32.to_le_bytes());
@@ -5627,8 +5659,8 @@ mod relation_tests {
             .expect("identity chain");
         assert_eq!(identity.wrapper_record_indices, [300, 305]);
         assert_eq!(identity.wrapper_byte_offsets, [0, 24]);
-        assert_eq!(identity.leaf_record_index, 400);
-        assert_eq!(identity.leaf_byte_offset, 48);
+        assert_eq!(identity.following_record_index, 400);
+        assert_eq!(identity.following_byte_offset, 48);
         let persistent = identity
             .persistent_identity
             .expect("fixed persistent identity leaf");

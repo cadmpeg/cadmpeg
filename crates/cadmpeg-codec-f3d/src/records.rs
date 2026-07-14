@@ -278,6 +278,10 @@ pub struct DesignParameter {
     pub class_tag: String,
     /// Source indexed-record identity.
     pub record_index: u32,
+    /// Prefix u64 stored between the fixed zero regions.
+    pub prefix_value: u64,
+    /// Byte offset of `prefix_value`.
+    pub prefix_value_offset: u64,
     /// Source ordering value stored by the parameter record.
     pub source_ordinal: u32,
     /// Indexed owner record for feature and dimension parameters.
@@ -655,18 +659,18 @@ pub struct DesignExtrudeOperandIdentity {
     pub wrapper_byte_offsets: Vec<u64>,
     /// Per-file dynamic class tags parallel to `wrapper_record_indices`.
     pub wrapper_class_tags: Vec<String>,
-    /// Indexed identity of the first non-wrapper record.
-    pub leaf_record_index: u32,
-    /// Indexed-header byte offset of the first non-wrapper record.
-    pub leaf_byte_offset: u64,
-    /// Per-file dynamic class tag of the first non-wrapper record.
-    pub leaf_class_tag: String,
-    /// Fixed-width persistent identity leaf, when present.
+    /// Indexed identity of the record physically following the wrappers.
+    pub following_record_index: u32,
+    /// Indexed-header byte offset of the record following the wrappers.
+    pub following_byte_offset: u64,
+    /// Per-file dynamic class tag of the record following the wrappers.
+    pub following_class_tag: String,
+    /// Fixed-width persistent identity, when the following record has that grammar.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub persistent_identity: Option<DesignExtrudePersistentIdentity>,
 }
 
-/// Fixed-width persistent identity at an Extrude operand-identity leaf.
+/// Fixed-width persistent identity following an Extrude operand-identity chain.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignExtrudePersistentIdentity {
     /// Local persistent identity preceding the two UUID fields.
@@ -681,9 +685,9 @@ pub struct DesignExtrudePersistentIdentity {
     pub context_id: String,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
-    /// Identity of the indexed record immediately following the leaf.
+    /// Identity of the indexed record immediately following this identity.
     pub next_record_index: u32,
-    /// Byte offset of the indexed record immediately following the leaf.
+    /// Byte offset of the indexed record immediately following this identity.
     pub next_byte_offset: u64,
 }
 
