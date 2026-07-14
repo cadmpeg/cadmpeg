@@ -576,10 +576,10 @@ pub struct DatumCsysDescriptorBlock {
     pub identity_offset: usize,
 }
 
-/// Compact expression-object reference in a bounded offset-store block.
+/// Compact object frame in a bounded offset-store block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DataBlockExpressionReference {
-    /// Referenced persistent expression object ID.
+pub struct DataBlockObjectFrame {
+    /// Serialized persistent object ID.
     pub object_id: u32,
     /// Block-relative offset of the compact index.
     pub offset: usize,
@@ -1997,8 +1997,8 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBl
     })
 }
 
-/// Decode expression-object references followed by their complete discriminator.
-pub fn data_block_expression_references(bytes: &[u8]) -> Vec<DataBlockExpressionReference> {
+/// Decode compact object IDs followed by their complete frame discriminator.
+pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
     const DISCRIMINATOR: [u8; 18] = [
         0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
         0x02, 0x80, 0xa4,
@@ -2014,7 +2014,7 @@ pub fn data_block_expression_references(bytes: &[u8]) -> Vec<DataBlockExpression
             offset += 1;
             continue;
         }
-        references.push(DataBlockExpressionReference { object_id, offset });
+        references.push(DataBlockObjectFrame { object_id, offset });
         offset += width + DISCRIMINATOR.len();
     }
     references

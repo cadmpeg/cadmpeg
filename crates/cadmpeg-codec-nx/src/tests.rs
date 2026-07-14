@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 105);
+    assert_eq!(namespace.version, 106);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1091,7 +1091,7 @@ fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
 }
 
 #[test]
-fn om_data_block_expression_reference_requires_complete_discriminator() {
+fn om_data_block_object_frame_requires_complete_discriminator() {
     let discriminator = [
         0x00, 0x72, 0x01, 0xc0, 0x20, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x01,
         0x02, 0x80, 0xa4,
@@ -1100,25 +1100,25 @@ fn om_data_block_expression_reference_requires_complete_discriminator() {
     bytes.extend_from_slice(&discriminator);
     bytes.push(0xff);
 
-    let references = crate::om::data_block_expression_references(&bytes);
+    let references = crate::om::data_block_object_frames(&bytes);
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].object_id, 370);
     assert_eq!(references[0].offset, 1);
 
     bytes.extend_from_slice(&[0x73]);
     bytes.extend_from_slice(&discriminator);
-    let references = crate::om::data_block_expression_references(&bytes);
+    let references = crate::om::data_block_object_frames(&bytes);
     assert_eq!(references.len(), 2);
     assert_eq!(references[1].object_id, 0x73);
     assert_eq!(references[1].offset, 22);
 
     bytes[8] ^= 1;
-    let references = crate::om::data_block_expression_references(&bytes);
+    let references = crate::om::data_block_object_frames(&bytes);
     assert_eq!(references.len(), 1);
     assert_eq!(references[0].object_id, 0x73);
     let mut null = vec![0xff];
     null.extend_from_slice(&discriminator);
-    assert!(crate::om::data_block_expression_references(&null).is_empty());
+    assert!(crate::om::data_block_object_frames(&null).is_empty());
 }
 
 #[test]
@@ -5459,7 +5459,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 105);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 106);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

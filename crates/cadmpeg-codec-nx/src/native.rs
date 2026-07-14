@@ -1191,19 +1191,17 @@ pub struct FeatureBlockDimensions {
     pub values: [f64; 3],
 }
 
-/// Expression declaration addressed from one bounded offset-store block.
+/// Persistent object frame carried by one bounded offset-store block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockExpressionDeclaration {
+pub struct DataBlockObjectFrame {
     /// Globally unique relation identity.
     pub id: String,
-    /// Source block carrying the expression-object frame.
+    /// Source block carrying the object frame.
     pub data_block: String,
     /// Zero-based frame order within the block.
     pub ordinal: u32,
-    /// Persistent expression object ID.
+    /// Serialized persistent object ID.
     pub object_id: u32,
-    /// Uniquely resolved expression declaration.
-    pub expression_declaration: String,
     /// Absolute source offset of the compact object index.
     pub source_offset: u64,
 }
@@ -3717,40 +3715,27 @@ pub fn feature_block_dimensions(
         .collect()
 }
 
-/// Resolve expression-object frames in bounded offset-store blocks.
-pub fn data_block_expression_declarations(
-    container: &Container,
-    declarations: &[ExpressionDeclaration],
-) -> Vec<DataBlockExpressionDeclaration> {
+/// Decode persistent object frames from bounded offset-store blocks.
+pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFrame> {
     let blocks = offset_data_block_bytes(container);
     blocks
         .into_iter()
         .flat_map(|(data_block, (bytes, source_offset))| {
-            crate::om::data_block_expression_references(bytes)
+            crate::om::data_block_object_frames(bytes)
                 .into_iter()
                 .enumerate()
-                .filter_map(|(ordinal, reference)| {
-                    let mut matches = declarations
-                        .iter()
-                        .filter(|declaration| declaration.object_id == reference.object_id);
-                    let declaration = matches.next()?;
-                    if matches.next().is_some() {
-                        return None;
-                    }
-                    Some(DataBlockExpressionDeclaration {
-                        id: format!(
-                            "nx:om-data-block-expression-declarations-{}:declaration#{}",
-                            data_block
-                                .rsplit_once('#')
-                                .map_or("unknown", |(_, key)| key),
-                            ordinal
-                        ),
-                        data_block: data_block.clone(),
-                        ordinal: ordinal as u32,
-                        object_id: reference.object_id,
-                        expression_declaration: declaration.id.clone(),
-                        source_offset: source_offset + reference.offset as u64,
-                    })
+                .map(|(ordinal, frame)| DataBlockObjectFrame {
+                    id: format!(
+                        "nx:om-data-block-object-frames-{}:frame#{}",
+                        data_block
+                            .rsplit_once('#')
+                            .map_or("unknown", |(_, key)| key),
+                        ordinal
+                    ),
+                    data_block: data_block.clone(),
+                    ordinal: ordinal as u32,
+                    object_id: frame.object_id,
+                    source_offset: source_offset + frame.offset as u64,
                 })
                 .collect::<Vec<_>>()
         })

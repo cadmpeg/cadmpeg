@@ -2905,10 +2905,7 @@ fn attach_native_object_model(
     );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expression_declarations = crate::native::expression_declarations(&scan.container);
-    let data_block_expression_declarations = crate::native::data_block_expression_declarations(
-        &scan.container,
-        &expression_declarations,
-    );
+    let data_block_object_frames = crate::native::data_block_object_frames(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
@@ -2994,7 +2991,7 @@ fn attach_native_object_model(
         && feature_sketch_points.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
-        && data_block_expression_declarations.is_empty()
+        && data_block_object_frames.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
         && fields.is_empty()
@@ -3047,15 +3044,11 @@ fn attach_native_object_model(
             .tag("ATTRIBUTE_DEFINITION");
         annotations.exactness(&definition.id, Exactness::ByteExact);
     }
-    for declaration in &data_block_expression_declarations {
+    for frame in &data_block_object_frames {
         annotations
-            .note(
-                &declaration.id,
-                annotation_stream,
-                declaration.source_offset,
-            )
-            .tag("OFFSET_STORE_EXPRESSION_OBJECT");
-        annotations.exactness(&declaration.id, Exactness::ByteExact);
+            .note(&frame.id, annotation_stream, frame.source_offset)
+            .tag("OFFSET_STORE_OBJECT_FRAME");
+        annotations.exactness(&frame.id, Exactness::ByteExact);
     }
     for lane in &data_block_abr_reference_lanes {
         annotations
@@ -3312,7 +3305,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(105);
+    namespace.version = namespace.version.max(106);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3568,11 +3561,8 @@ fn attach_native_object_model(
     if !expression_declarations.is_empty() {
         namespace.set_arena("expression_declarations", &expression_declarations)?;
     }
-    if !data_block_expression_declarations.is_empty() {
-        namespace.set_arena(
-            "data_block_expression_declarations",
-            &data_block_expression_declarations,
-        )?;
+    if !data_block_object_frames.is_empty() {
+        namespace.set_arena("data_block_object_frames", &data_block_object_frames)?;
     }
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
