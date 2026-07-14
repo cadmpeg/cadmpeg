@@ -53,10 +53,69 @@ struct CreoSketchRecord {
     owner_feature_id: Option<u32>,
     variables: Vec<CreoSketchVariable>,
     segments: Vec<CreoSketchSegment>,
+    trim_entities: Vec<CreoSketchTrimEntity>,
+    trim_vertices: Vec<CreoSketchTrimVertex>,
+    order_rows: Vec<CreoSketchOrderRow>,
+    saved_entities: Vec<CreoSketchSavedEntity>,
     dimensions: Vec<CreoSketchDimension>,
     relations: Vec<CreoSketchRelation>,
     skamps: Vec<CreoSketchSkamp>,
     relation_triples: Vec<CreoSketchRelationTriple>,
+}
+
+#[derive(Serialize)]
+struct CreoSketchTrimEntity {
+    external_id: u32,
+    mode: Option<u32>,
+    vertices: [u32; 2],
+    center_vertex: Option<u32>,
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+struct CreoSketchTrimVertex {
+    vertex_id: u32,
+    entities: [u32; 2],
+    section_coordinates: Option<[f64; 2]>,
+}
+
+#[derive(Serialize)]
+struct CreoSketchOrderRow {
+    external_id: u32,
+    internal_id: u32,
+    bitmask: u32,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum CreoSketchSavedEntity {
+    Line {
+        entity_id: u32,
+        references: Vec<u32>,
+        attributes: Vec<[u8; 5]>,
+        endpoints: [[Option<f64>; 3]; 2],
+    },
+    Arc {
+        entity_id: u32,
+        center: [Option<f64>; 3],
+        radius: Option<f64>,
+        endpoints: [[Option<f64>; 3]; 2],
+        parameters: [Option<f64>; 2],
+    },
+    Circle {
+        entity_id: u32,
+        center: [Option<f64>; 3],
+        radius: Option<f64>,
+    },
+    Spline {
+        entity_id: Option<u32>,
+        interpolation_points: Vec<[f64; 3]>,
+        endpoint_tangents: Option<[[f64; 3]; 2]>,
+        parameters: Option<Vec<f64>>,
+    },
+    Dummy {
+        entity_id: Option<u32>,
+    },
 }
 
 #[derive(Serialize)]
@@ -353,6 +412,10 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
         .filter(|definition| {
             definition.variables.is_some()
                 || definition.segments.is_some()
+                || definition.trim_entities.is_some()
+                || definition.trim_vertices.is_some()
+                || definition.order_table.is_some()
+                || definition.saved_section.is_some()
                 || definition.dimensions.is_some()
                 || definition.relations.is_some()
         })
@@ -391,6 +454,81 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     vertical_horizontal_constraint: segment.vertical_horizontal,
                     radius_dimension_id: segment.radius_ref,
                     secondary_radius_dimension_id: segment.radius2_ref,
+                })
+                .collect(),
+            trim_entities: definition
+                .trim_entities
+                .iter()
+                .flat_map(|table| &table.rows)
+                .map(|entity| CreoSketchTrimEntity {
+                    external_id: entity.external_id,
+                    mode: entity.mode,
+                    vertices: entity.vertices,
+                    center_vertex: entity.center_vertex,
+                    kind: match entity.kind {
+                        crate::feature::TrimEntityKind::Line => "line",
+                        crate::feature::TrimEntityKind::Arc => "arc",
+                    },
+                })
+                .collect(),
+            trim_vertices: definition
+                .trim_vertices
+                .iter()
+                .flat_map(|table| &table.rows)
+                .map(|vertex| CreoSketchTrimVertex {
+                    vertex_id: vertex.vertex_id,
+                    entities: vertex.entities,
+                    section_coordinates: vertex.section_coordinates,
+                })
+                .collect(),
+            order_rows: definition
+                .order_table
+                .iter()
+                .flat_map(|table| &table.rows)
+                .map(|row| CreoSketchOrderRow {
+                    external_id: row.external_id,
+                    internal_id: row.internal_id,
+                    bitmask: row.bitmask,
+                })
+                .collect(),
+            saved_entities: definition
+                .saved_section
+                .iter()
+                .flat_map(|section| &section.entities)
+                .map(|entity| match entity {
+                    crate::feature::FeatureSavedEntity::Line(line) => CreoSketchSavedEntity::Line {
+                        entity_id: line.entity_id,
+                        references: line.references.clone(),
+                        attributes: line.attributes.clone(),
+                        endpoints: line.endpoints,
+                    },
+                    crate::feature::FeatureSavedEntity::Arc(arc) => CreoSketchSavedEntity::Arc {
+                        entity_id: arc.entity_id,
+                        center: arc.center,
+                        radius: arc.radius,
+                        endpoints: arc.endpoints,
+                        parameters: arc.parameters,
+                    },
+                    crate::feature::FeatureSavedEntity::Circle(circle) => {
+                        CreoSketchSavedEntity::Circle {
+                            entity_id: circle.entity_id,
+                            center: circle.center,
+                            radius: circle.radius,
+                        }
+                    }
+                    crate::feature::FeatureSavedEntity::Spline(spline) => {
+                        CreoSketchSavedEntity::Spline {
+                            entity_id: spline.entity_id,
+                            interpolation_points: spline.interpolation_points.clone(),
+                            endpoint_tangents: spline.endpoint_tangents,
+                            parameters: spline.parameters.clone(),
+                        }
+                    }
+                    crate::feature::FeatureSavedEntity::Dummy(dummy) => {
+                        CreoSketchSavedEntity::Dummy {
+                            entity_id: dummy.entity_id,
+                        }
+                    }
                 })
                 .collect(),
             dimensions: definition

@@ -1217,7 +1217,8 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     payload.extend_from_slice(&[43, 0, 101, 102, 103, 0, 0xe3]);
     payload.extend_from_slice(&[0x80, 0xe3, 0, 102, 104, 0xf6, 0, 0xe3]);
     payload.extend_from_slice(b"vert_tab\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let entities = scan.feature_definitions[0]
         .trim_entities
@@ -1231,6 +1232,16 @@ fn scan_decodes_featdefs_ent_tab_trimmed_entities() {
     assert_eq!(entities.rows[1].kind, crate::feature::TrimEntityKind::Arc);
     assert_eq!(entities.rows[2].external_id, 227);
     assert_eq!(entities.solved_external_ids, vec![42, 43, 227]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let trim_entities =
+        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_entities"];
+    assert_eq!(
+        trim_entities.as_array().expect("trim entity array").len(),
+        3
+    );
+    assert_eq!(trim_entities[0]["kind"], "line");
+    assert_eq!(trim_entities[1]["kind"], "arc");
 }
 
 #[test]
@@ -1242,7 +1253,8 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     payload.extend_from_slice(b"vert_tab\0chains\0\xf8\x01\xf7\x80\xa2\xfb\xe2");
     payload.extend_from_slice(b"\xf3\xf7\x80\xa2\xe2\x01\xf8\x01\xf7\x80\xa3\xfb\xe3\xf7\x80\xa4");
     payload.extend_from_slice(&[42, 43, 100, 0]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let vertices = scan.feature_definitions[0]
         .trim_vertices
@@ -1251,6 +1263,17 @@ fn scan_decodes_featdefs_vert_tab_entity_pairs() {
     assert_eq!(vertices.rows.len(), 1);
     assert_eq!(vertices.rows[0].vertex_id, 100);
     assert_eq!(vertices.rows[0].entities, [42, 43]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let trim_vertices =
+        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["trim_vertices"];
+    assert_eq!(
+        trim_vertices.as_array().expect("trim vertex array").len(),
+        1
+    );
+    assert_eq!(trim_vertices[0]["vertex_id"], 100);
+    assert_eq!(trim_vertices[0]["entities"][0], 42);
+    assert_eq!(trim_vertices[0]["entities"][1], 43);
 }
 
 #[test]
@@ -1297,7 +1320,8 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
         \xe0\x01ext_id\0\xe0\x01int_id\0\xe0\x01bitmask\0\
         \xf1\xf7\x81\x02\xe2\x81\x1b\x08\x00\xe2\x81\x36\x0c\x01\xe0\x01next_field\0"
         .to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let order = scan.feature_definitions[0]
         .order_table
@@ -1311,6 +1335,13 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
     assert_eq!(order.rows[0].bitmask, 0);
     assert_eq!(order.external_id(12), Some(310));
     assert_eq!(order.internal_id(283), Some(8));
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let order_rows =
+        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["order_rows"];
+    assert_eq!(order_rows.as_array().expect("order row array").len(), 2);
+    assert_eq!(order_rows[0]["external_id"], 283);
+    assert_eq!(order_rows[1]["internal_id"], 12);
 }
 
 #[test]
@@ -1595,7 +1626,8 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
     );
     payload.extend_from_slice(b"\xe0\x00entity(dummy_ent)\0\xe0\x01id\0\x2e");
     payload.extend_from_slice(b"\xe0\x02local_sys\0");
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let entities = &scan.feature_definitions[0]
         .saved_section
@@ -1619,6 +1651,14 @@ fn scan_decodes_featdefs_saved_circular_and_dummy_entities() {
         panic!("saved dummy");
     };
     assert_eq!(dummy.entity_id, Some(46));
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let saved =
+        &result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields["saved_entities"];
+    assert_eq!(saved.as_array().expect("saved entity array").len(), 3);
+    assert_eq!(saved[0]["kind"], "arc");
+    assert_eq!(saved[1]["kind"], "circle");
+    assert_eq!(saved[2]["kind"], "dummy");
 }
 
 #[test]
