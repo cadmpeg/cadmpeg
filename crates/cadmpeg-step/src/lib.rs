@@ -156,6 +156,13 @@ impl StepSchema {
             Self::Ap242Edition3 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }",
         }
     }
+
+    const fn supports_tessellation(self) -> bool {
+        matches!(
+            self,
+            Self::Ap242Edition1 | Self::Ap242Edition2 | Self::Ap242Edition3
+        )
+    }
 }
 
 /// Failure returned while streaming STEP output.
@@ -189,7 +196,7 @@ pub fn write_step(
     w: &mut (impl Write + ?Sized),
     opts: &StepWriteOptions,
 ) -> Result<ExportReport, StepError> {
-    let mut b = Builder::new(ir);
+    let mut b = Builder::new(ir, opts.schema);
     b.build();
     let report = b.finish_report();
     let lines = b.emitter.into_lines();
@@ -247,6 +254,7 @@ fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::
 /// Builds the DATA instance graph and accumulates export losses.
 struct Builder<'a> {
     ir: &'a CadIr,
+    schema: StepSchema,
     emitter: Emitter,
     losses: Vec<LossNote>,
 
@@ -277,14 +285,17 @@ struct Builder<'a> {
     /// Emitted `ADVANCED_FACE` instances keyed by IR face id, for presentation
     /// styling.
     face_step_refs: HashMap<String, Ref>,
+    /// First emitted exact solid for each body, used by AP242 tessellation links.
+    body_step_refs: HashMap<String, Ref>,
     /// Display colors that could not be attached to an emitted STEP item.
     unstyled_colors: usize,
 }
 
 impl<'a> Builder<'a> {
-    fn new(ir: &'a CadIr) -> Self {
+    fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
         Builder {
             ir,
+            schema,
             emitter: Emitter::new(),
             losses: Vec::new(),
             points: ir.model.points.iter().map(|p| (p.id.as_str(), p)).collect(),
@@ -315,6 +326,7 @@ impl<'a> Builder<'a> {
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
             face_step_refs: HashMap::new(),
+            body_step_refs: HashMap::new(),
             unstyled_colors: 0,
         }
     }
@@ -365,6 +377,7 @@ impl<'a> Builder<'a> {
         );
 
         self.emit_presentation(context);
+        self.emit_tessellations(context);
         self.note_unrepresented();
     }
 
@@ -706,8 +719,122 @@ impl<'a> Builder<'a> {
                 )
             };
             solids.push(solid);
+            self.body_step_refs
+                .entry(region.body.0.clone())
+                .or_insert(solid);
         }
         solids
+    }
+
+    fn emit_tessellations(&mut self, context: Ref) {
+        if self.ir.model.tessellations.is_empty() {
+            return;
+        }
+        if !self.schema.supports_tessellation() {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!(
+                    "{} tessellation(s) require an AP242 target",
+                    self.ir.model.tessellations.len()
+                ),
+            );
+            return;
+        }
+
+        let meshes = self.ir.model.tessellations.clone();
+        let mut representation_items = Vec::new();
+        for mesh in meshes {
+            if mesh.vertices.is_empty()
+                || mesh.triangles.is_empty()
+                || mesh
+                    .triangles
+                    .iter()
+                    .flatten()
+                    .any(|index| *index as usize >= mesh.vertices.len())
+                || (!mesh.normals.is_empty() && mesh.normals.len() != mesh.vertices.len())
+            {
+                self.loss(
+                    LossCategory::Geometry,
+                    Severity::Warning,
+                    format!(
+                        "tessellation '{}' has invalid vertex/index/normal cardinality",
+                        mesh.id
+                    ),
+                );
+                continue;
+            }
+            let coordinates = mesh
+                .vertices
+                .iter()
+                .map(|point| format!("({},{},{})", real(point.x), real(point.y), real(point.z)))
+                .collect::<Vec<_>>()
+                .join(",");
+            let coordinates = self.emitter.emit(
+                "COORDINATES_LIST",
+                &format!(
+                    "{}, {},({coordinates})",
+                    string(&mesh.id),
+                    mesh.vertices.len()
+                ),
+            );
+            let normals = if mesh.normals.is_empty() {
+                "$".to_string()
+            } else {
+                format!(
+                    "({})",
+                    mesh.normals
+                        .iter()
+                        .map(|normal| format!(
+                            "({},{},{})",
+                            real(normal.x),
+                            real(normal.y),
+                            real(normal.z)
+                        ))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            };
+            let triangles = mesh
+                .triangles
+                .iter()
+                .map(|triangle| {
+                    format!(
+                        "({},{},{})",
+                        triangle[0] + 1,
+                        triangle[1] + 1,
+                        triangle[2] + 1
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            let item = self.emitter.emit(
+                "TRIANGULATED_SURFACE_SET",
+                &format!(
+                    "{},{coordinates},{},{normals},(),({triangles})",
+                    string(&mesh.id),
+                    mesh.vertices.len()
+                ),
+            );
+            let item = mesh
+                .body
+                .as_ref()
+                .and_then(|body| self.body_step_refs.get(body.as_str()).copied())
+                .map(|solid| {
+                    self.emitter.emit(
+                        "TESSELLATED_SOLID",
+                        &format!("{},({item}),{solid}", string(&mesh.id)),
+                    )
+                })
+                .unwrap_or(item);
+            representation_items.push(item);
+        }
+        if !representation_items.is_empty() {
+            self.emitter.emit(
+                "TESSELLATED_SHAPE_REPRESENTATION",
+                &format!("'',{},{context}", refs(&representation_items)),
+            );
+        }
     }
 
     fn emit_shell(&mut self, shell_id: &str) -> Option<Ref> {
@@ -1029,17 +1156,6 @@ impl<'a> Builder<'a> {
                     "{} subdivision surface(s) were omitted because this STEP writer \
                      does not encode SubD control cages",
                     self.ir.model.subds.len()
-                ),
-            );
-        }
-        if !self.ir.model.tessellations.is_empty() {
-            self.loss(
-                LossCategory::Geometry,
-                Severity::Warning,
-                format!(
-                    "{} tessellation(s) were omitted because this STEP writer emits \
-                     exact B-rep geometry only",
-                    self.ir.model.tessellations.len()
                 ),
             );
         }

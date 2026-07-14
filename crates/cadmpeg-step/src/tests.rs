@@ -841,6 +841,47 @@ fn writer_declares_each_supported_target_schema_exactly() {
 }
 
 #[test]
+fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
+    let mut ir = unit_cube();
+    ir.model
+        .tessellations
+        .push(cadmpeg_ir::tessellation::Tessellation {
+            id: "mesh-0".into(),
+            body: Some(ir.model.bodies[0].id.clone()),
+            source_object: None,
+            vertices: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            triangles: vec![[0, 1, 2]],
+            strip_lengths: Vec::new(),
+            normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
+            channels: Vec::new(),
+        });
+    let options = StepWriteOptions {
+        schema: StepSchema::Ap242Edition3,
+        ..StepWriteOptions::default()
+    };
+    let mut bytes = Vec::new();
+    let report = write_step(&ir, &mut bytes, &options).expect("write AP242 tessellation");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("tessellation")));
+
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode AP242 tessellation");
+    assert_eq!(decoded.ir.model.tessellations.len(), 1);
+    let mesh = &decoded.ir.model.tessellations[0];
+    assert_eq!(mesh.vertices.len(), 3);
+    assert_eq!(mesh.triangles, [[0, 1, 2]]);
+    assert_eq!(mesh.normals.len(), 3);
+    assert!(mesh.body.is_some());
+}
+
+#[test]
 fn decode_builds_product_occurrences_with_relative_placement() {
     use cadmpeg_ir::product::OccurrenceParent;
 
@@ -1528,7 +1569,9 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
     assert!(report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::LossCategory::Geometry
             && loss.severity == cadmpeg_ir::Severity::Warning
-            && loss.message.contains("1 tessellation(s) were omitted")
+            && loss
+                .message
+                .contains("1 tessellation(s) require an AP242 target")
     }));
     assert!(report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::LossCategory::Metadata
