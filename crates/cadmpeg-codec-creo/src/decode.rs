@@ -5420,6 +5420,75 @@ mod resolved_sketch_tests {
             std::f64::consts::FRAC_1_SQRT_2
         );
     }
+
+    #[test]
+    fn planar_loop_containment_selects_one_outer_boundary() {
+        let make_loop = |face_id: u32, first_curve: u32| crate::topology::Loop {
+            face_id,
+            half_edges: (0_u32..4)
+                .map(|index| HalfEdgeId {
+                    curve_id: first_curve + index,
+                    side: 0,
+                })
+                .collect(),
+        };
+        let outer = make_loop(9, 1);
+        let inner = make_loop(9, 5);
+        let incidences = (1..=8)
+            .map(|vertex| crate::topology::HalfEdgeVertexIncidence {
+                half_edge: HalfEdgeId {
+                    curve_id: vertex,
+                    side: 0,
+                },
+                start_vertex_id: vertex,
+                end_vertex_id: Some(if vertex % 4 == 0 {
+                    vertex - 3
+                } else {
+                    vertex + 1
+                }),
+            })
+            .collect::<Vec<_>>();
+        let incidence = incidences
+            .iter()
+            .map(|binding| (binding.half_edge, binding))
+            .collect::<BTreeMap<_, _>>();
+        let points = BTreeMap::from([
+            (1, [-2.0, -2.0, 0.0]),
+            (2, [2.0, -2.0, 0.0]),
+            (3, [2.0, 2.0, 0.0]),
+            (4, [-2.0, 2.0, 0.0]),
+            (5, [-1.0, -1.0, 0.0]),
+            (6, [1.0, -1.0, 0.0]),
+            (7, [1.0, 1.0, 0.0]),
+            (8, [-1.0, 1.0, 0.0]),
+        ]);
+        let plane = PlaneEquation {
+            origin: [0.0; 3],
+            normal: [0.0, 0.0, 1.0],
+        };
+
+        let ordered = ordered_planar_face_loops(vec![&inner, &outer], plane, &incidence, &points)
+            .expect("unique outer loop");
+        assert_eq!(ordered[0].half_edges[0].curve_id, 1);
+        assert_eq!(ordered[1].half_edges[0].curve_id, 5);
+
+        let disjoint_points = points
+            .into_iter()
+            .map(|(id, mut point)| {
+                if id >= 5 {
+                    point[0] += 10.0;
+                }
+                (id, point)
+            })
+            .collect::<BTreeMap<_, _>>();
+        assert!(ordered_planar_face_loops(
+            vec![&outer, &inner],
+            plane,
+            &incidence,
+            &disjoint_points,
+        )
+        .is_none());
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -5505,6 +5574,115 @@ fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
     planes
 }
 
+fn projected_loop_polygon(
+    lp: &crate::topology::Loop,
+    plane: PlaneEquation,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<[f64; 2]>> {
+    let dropped_axis = (0..3).max_by(|left, right| {
+        plane.normal[*left]
+            .abs()
+            .total_cmp(&plane.normal[*right].abs())
+    })?;
+    let polygon = lp
+        .half_edges
+        .iter()
+        .map(|half_edge| {
+            let vertex = incidence.get(half_edge)?.start_vertex_id;
+            let point = solved_vertices.get(&vertex)?;
+            Some(match dropped_axis {
+                0 => [point[1], point[2]],
+                1 => [point[0], point[2]],
+                _ => [point[0], point[1]],
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let area_twice = (0..polygon.len())
+        .map(|index| {
+            let first = polygon[index];
+            let second = polygon[(index + 1) % polygon.len()];
+            first[0].mul_add(second[1], -(first[1] * second[0]))
+        })
+        .sum::<f64>();
+    let scale = polygon
+        .iter()
+        .flat_map(|point| point.iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    (polygon.len() >= 3 && area_twice.abs() > 1e-12 * scale * scale).then_some(polygon)
+}
+
+fn polygon_strictly_contains(polygon: &[[f64; 2]], point: [f64; 2]) -> bool {
+    if polygon.len() < 3 {
+        return false;
+    }
+    let mut inside = false;
+    for index in 0..polygon.len() {
+        let first = polygon[index];
+        let second = polygon[(index + 1) % polygon.len()];
+        let edge = [second[0] - first[0], second[1] - first[1]];
+        let relative = [point[0] - first[0], point[1] - first[1]];
+        let cross = edge[0].mul_add(relative[1], -(edge[1] * relative[0]));
+        let scale = edge[0].abs().max(edge[1].abs()).max(1.0);
+        if cross.abs() <= 1e-9 * scale
+            && point[0] >= first[0].min(second[0]) - 1e-9 * scale
+            && point[0] <= first[0].max(second[0]) + 1e-9 * scale
+            && point[1] >= first[1].min(second[1]) - 1e-9 * scale
+            && point[1] <= first[1].max(second[1]) + 1e-9 * scale
+        {
+            return false;
+        }
+        if (first[1] > point[1]) != (second[1] > point[1]) {
+            let intersection = edge[0].mul_add((point[1] - first[1]) / edge[1], first[0]);
+            if point[0] < intersection {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
+fn ordered_planar_face_loops<'a>(
+    loops: Vec<&'a crate::topology::Loop>,
+    plane: PlaneEquation,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    solved_vertices: &BTreeMap<u32, [f64; 3]>,
+) -> Option<Vec<&'a crate::topology::Loop>> {
+    if loops.len() == 1 {
+        return Some(loops);
+    }
+    let polygons = loops
+        .iter()
+        .map(|lp| projected_loop_polygon(lp, plane, incidence, solved_vertices))
+        .collect::<Option<Vec<_>>>()?;
+    let outer = polygons
+        .iter()
+        .enumerate()
+        .filter(|(candidate, polygon)| {
+            polygons.iter().enumerate().all(|(index, inner)| {
+                index == *candidate
+                    || inner
+                        .iter()
+                        .all(|point| polygon_strictly_contains(polygon, *point))
+            })
+        })
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    let [outer] = outer.as_slice() else {
+        return None;
+    };
+    let mut ordered = Vec::with_capacity(loops.len());
+    ordered.push(loops[*outer]);
+    ordered.extend(
+        loops
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, lp)| (index != *outer).then_some(lp)),
+    );
+    Some(ordered)
+}
+
 fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let planes = placed_planes(scan);
     let half_edges = scan
@@ -5551,27 +5729,36 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
             .then_some((row.id, [forward.start_vertex_id, end]))
         })
         .collect::<BTreeMap<_, _>>();
-    let loops_per_face = scan
-        .loops
-        .iter()
-        .fold(BTreeMap::<u32, usize>::new(), |mut map, lp| {
-            *map.entry(lp.face_id).or_default() += 1;
-            map
-        });
-    let eligible_loops = scan
-        .loops
-        .iter()
-        .filter(|lp| planes.contains_key(&lp.face_id))
-        .filter(|lp| loops_per_face.get(&lp.face_id) == Some(&1))
-        .filter(|lp| {
-            lp.half_edges
+    let mut loops_by_face = BTreeMap::<u32, Vec<&crate::topology::Loop>>::new();
+    for lp in &scan.loops {
+        loops_by_face.entry(lp.face_id).or_default().push(lp);
+    }
+    let eligible_faces = loops_by_face
+        .into_iter()
+        .filter_map(|(face_id, loops)| {
+            let plane = planes.get(&face_id).copied()?;
+            loops
                 .iter()
-                .all(|half_edge| edge_vertices.contains_key(&half_edge.curve_id))
+                .all(|lp| {
+                    lp.half_edges
+                        .iter()
+                        .all(|half_edge| edge_vertices.contains_key(&half_edge.curve_id))
+                })
+                .then_some(())?;
+            Some((
+                face_id,
+                ordered_planar_face_loops(loops, plane, &incidence, &solved_vertices)?,
+            ))
         })
-        .collect::<Vec<_>>();
-    if eligible_loops.is_empty() {
+        .collect::<BTreeMap<_, _>>();
+    if eligible_faces.is_empty() {
         return;
     }
+    let eligible_loops = eligible_faces
+        .values()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
 
     let emitted_half_edges = eligible_loops
         .iter()
@@ -5648,8 +5835,8 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
     }
 
     let mut face_adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for lp in &eligible_loops {
-        face_adjacency.entry(lp.face_id).or_default();
+    for face_id in eligible_faces.keys() {
+        face_adjacency.entry(*face_id).or_default();
     }
     for curve_id in &emitted_curves {
         let faces = emitted_half_edges
@@ -5659,8 +5846,10 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
             .map(|half_edge| half_edge.face_id)
             .collect::<Vec<_>>();
         if let [first, second] = faces.as_slice() {
-            face_adjacency.entry(*first).or_default().insert(*second);
-            face_adjacency.entry(*second).or_default().insert(*first);
+            if eligible_faces.contains_key(first) && eligible_faces.contains_key(second) {
+                face_adjacency.entry(*first).or_default().insert(*second);
+                face_adjacency.entry(*second).or_default().insert(*first);
+            }
         }
     }
     let mut remaining = face_adjacency.keys().copied().collect::<BTreeSet<_>>();
@@ -5733,12 +5922,17 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
             free_vertices: Vec::new(),
         });
         for face_id in faces {
-            let native_loop = eligible_loops
-                .iter()
-                .find(|lp| lp.face_id == *face_id)
-                .expect("eligible face has one loop");
+            let native_loops = &eligible_faces[face_id];
             let face = FaceId(format!("creo:visibgeom:face#{face_id}"));
-            let loop_id = LoopId(format!("creo:visibgeom:loop#{face_id}"));
+            let loop_ids = (0..native_loops.len())
+                .map(|index| {
+                    if index == 0 {
+                        LoopId(format!("creo:visibgeom:loop#{face_id}"))
+                    } else {
+                        LoopId(format!("creo:visibgeom:loop#{face_id}:{index}"))
+                    }
+                })
+                .collect::<Vec<_>>();
             let face_offset = scan
                 .surface_rows
                 .iter()
@@ -5752,75 +5946,80 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                 "plane_face",
                 Exactness::Derived,
             );
-            annotate(
-                annotations,
-                &loop_id,
-                "VisibGeom",
-                face_offset as u64,
-                "native_face_loop",
-                Exactness::Derived,
-            );
+            for loop_id in &loop_ids {
+                annotate(
+                    annotations,
+                    loop_id,
+                    "VisibGeom",
+                    face_offset as u64,
+                    "native_face_loop",
+                    Exactness::Derived,
+                );
+            }
             ir.model.faces.push(Face {
                 id: face.clone(),
                 shell: shell_id.clone(),
                 surface: SurfaceId(format!("creo:visibgeom:surface#{face_id}")),
                 sense: Sense::Forward,
-                loops: vec![loop_id.clone()],
+                loops: loop_ids.clone(),
                 name: None,
                 color: None,
                 tolerance: None,
             });
-            let coedge_ids = native_loop
-                .half_edges
-                .iter()
-                .map(|half_edge| {
-                    CoedgeId(format!(
-                        "creo:visibgeom:coedge#{}:{}",
-                        half_edge.curve_id, half_edge.side
-                    ))
-                })
-                .collect::<Vec<_>>();
-            ir.model.loops.push(IrLoop {
-                id: loop_id.clone(),
-                face,
-                coedges: coedge_ids.clone(),
-            });
-            for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
-                let id = coedge_ids[index].clone();
-                let twin = HalfEdgeId {
-                    curve_id: half_edge.curve_id,
-                    side: 1 - half_edge.side,
-                };
-                let radial_next = if emitted_half_edges.contains(&twin) {
-                    CoedgeId(format!(
-                        "creo:visibgeom:coedge#{}:{}",
-                        twin.curve_id, twin.side
-                    ))
-                } else {
-                    id.clone()
-                };
-                annotate(
-                    annotations,
-                    &id,
-                    "VisibGeom",
-                    row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0) as u64,
-                    "native_half_edge",
-                    Exactness::Derived,
-                );
-                ir.model.coedges.push(Coedge {
-                    id,
-                    owner_loop: loop_id.clone(),
-                    edge: EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id)),
-                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
-                    radial_next,
-                    sense: if half_edge.side == 0 {
-                        Sense::Forward
-                    } else {
-                        Sense::Reversed
-                    },
-                    pcurve: None,
+            for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
+                let coedge_ids = native_loop
+                    .half_edges
+                    .iter()
+                    .map(|half_edge| {
+                        CoedgeId(format!(
+                            "creo:visibgeom:coedge#{}:{}",
+                            half_edge.curve_id, half_edge.side
+                        ))
+                    })
+                    .collect::<Vec<_>>();
+                ir.model.loops.push(IrLoop {
+                    id: loop_id.clone(),
+                    face: face.clone(),
+                    coedges: coedge_ids.clone(),
                 });
+                for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
+                    let id = coedge_ids[index].clone();
+                    let twin = HalfEdgeId {
+                        curve_id: half_edge.curve_id,
+                        side: 1 - half_edge.side,
+                    };
+                    let radial_next = if emitted_half_edges.contains(&twin) {
+                        CoedgeId(format!(
+                            "creo:visibgeom:coedge#{}:{}",
+                            twin.curve_id, twin.side
+                        ))
+                    } else {
+                        id.clone()
+                    };
+                    annotate(
+                        annotations,
+                        &id,
+                        "VisibGeom",
+                        row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0) as u64,
+                        "native_half_edge",
+                        Exactness::Derived,
+                    );
+                    ir.model.coedges.push(Coedge {
+                        id,
+                        owner_loop: loop_id.clone(),
+                        edge: EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id)),
+                        next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
+                        previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()]
+                            .clone(),
+                        radial_next,
+                        sense: if half_edge.side == 0 {
+                            Sense::Forward
+                        } else {
+                            Sense::Reversed
+                        },
+                        pcurve: None,
+                    });
+                }
             }
         }
     }
