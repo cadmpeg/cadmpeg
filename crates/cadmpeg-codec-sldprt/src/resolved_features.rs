@@ -2961,7 +2961,99 @@ fn relation_instances(
         )
         .collect::<Vec<_>>();
     bind_detached_relation_drivers(&mut instances, lane);
+    bind_circle_dimension_centers(&mut instances, lane);
     instances
+}
+
+fn bind_circle_dimension_centers(
+    relations: &mut [FeatureInputRelationInstance],
+    lane: &FeatureInputLane,
+) {
+    let scalars = lane
+        .scalars
+        .iter()
+        .map(|scalar| (scalar.id.as_str(), scalar))
+        .collect::<HashMap<_, _>>();
+    let names = lane
+        .names
+        .iter()
+        .map(|name| (name.id.as_str(), name.value.as_str()))
+        .collect::<HashMap<_, _>>();
+    for relation in relations.iter_mut().filter(|relation| {
+        relation.family == FeatureInputRelationFamily::CircleDiameter
+            && relation.operands.len() == 1
+    }) {
+        let Some(display) = relation
+            .display_scalar_ref
+            .as_deref()
+            .and_then(|id| scalars.get(id).copied())
+        else {
+            continue;
+        };
+        let Some(display_name) = names.get(display.name.as_str()) else {
+            continue;
+        };
+        let Some(display_index) = lane
+            .scalars
+            .iter()
+            .position(|scalar| scalar.id == display.id)
+        else {
+            continue;
+        };
+        let first = &relation.operands[0];
+        let candidates = lane
+            .scalars
+            .iter()
+            .enumerate()
+            .filter(|scalar| {
+                let scalar = scalar.1;
+                scalar.feature_ref == display.feature_ref
+                    && names.get(scalar.name.as_str()) == Some(display_name)
+                    && matches!(scalar.operands.as_slice(), [candidate, _]
+                        if candidate.kind == first.kind
+                            && candidate.entity_index == first.entity_index)
+            })
+            .collect::<Vec<_>>();
+        if candidates.first().map(|candidate| candidate.0) != Some(display_index + 1)
+            || candidates.windows(2).any(|pair| pair[1].0 != pair[0].0 + 1)
+        {
+            continue;
+        }
+        let centers = candidates
+            .iter()
+            .filter_map(|(_, scalar)| scalar.operands.get(1))
+            .map(|operand| {
+                (
+                    operand.kind,
+                    operand.entity_index,
+                    operand.entity_ref.clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let Some(center) = centers.first() else {
+            continue;
+        };
+        if centers.iter().any(|candidate| candidate != center) {
+            continue;
+        }
+        let Some((_, source)) = candidates.iter().find(|(_, scalar)| {
+            scalar.operands.get(1).is_some_and(|operand| {
+                (
+                    operand.kind,
+                    operand.entity_index,
+                    operand.entity_ref.clone(),
+                ) == *center
+            })
+        }) else {
+            continue;
+        };
+        relation.operands = source.operands.clone();
+        for (_, scalar) in candidates {
+            if !relation.scalar_refs.contains(&scalar.id) {
+                relation.scalar_refs.push(scalar.id.clone());
+            }
+        }
+    }
 }
 
 fn bind_detached_relation_drivers(
@@ -5228,8 +5320,9 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         && relation.family == FeatureInputRelationFamily::CircleDiameter
                 })
                 .filter_map(|relation| {
-                    let [operand] = relation.operands.as_slice() else {
-                        return None;
+                    let operand = match relation.operands.as_slice() {
+                        [operand] | [_, operand] => operand,
+                        _ => return None,
                     };
                     let explicit = operand
                         .entity_ref
@@ -5319,12 +5412,15 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             if relation.family != FeatureInputRelationFamily::CircleDiameter {
                 continue;
             }
-            let (Some(sketch), Some(transform), [operand]) = (
+            let (Some(sketch), Some(transform)) = (
                 sketches_by_feature.get(relation.feature_ref.as_str()),
                 transforms.get(relation.feature_ref.as_str()),
-                relation.operands.as_slice(),
             ) else {
                 continue;
+            };
+            let operand = match relation.operands.as_slice() {
+                [operand] | [_, operand] => operand,
+                _ => continue,
             };
             let explicit_marker = operand
                 .entity_ref
@@ -7922,9 +8018,24 @@ fn select_marker_transforms_by_frame(
     if candidates.is_empty() {
         return frame.into_iter().collect();
     }
-    frame
-        .filter(|frame| candidates.contains(frame))
-        .map_or_else(|| candidates.to_vec(), |frame| vec![frame])
+    let Some(frame) = frame else {
+        return candidates.to_vec();
+    };
+    if candidates.contains(&frame) {
+        return vec![frame];
+    }
+    let oriented = candidates
+        .iter()
+        .copied()
+        .filter(|candidate| {
+            candidate.swap == frame.swap
+                && candidate.u_sign == frame.u_sign
+                && candidate.v_sign == frame.v_sign
+        })
+        .collect::<Vec<_>>();
+    (!oriented.is_empty())
+        .then_some(oriented)
+        .unwrap_or_else(|| candidates.to_vec())
 }
 
 fn dimensioned_circle_surface_transforms(
@@ -8400,13 +8511,13 @@ fn marker_entities_inner(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
-        bind_sweep_adjacent_profiles, dimensioned_circle_surface_transforms,
-        dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
-        line_reference_direction, marker_entities, marker_point_locus, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, project_relation_point_geometry,
-        project_relation_solved_point_geometry, relation_owner_markers,
-        relation_parameter_by_display_name, resolved_marker_locus,
+        bind_circle_dimension_centers, bind_circular_profile_by_dimension,
+        bind_detached_relation_drivers, bind_pattern_inputs, bind_sweep_adjacent_profiles,
+        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+        implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
+        marker_point_locus, profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        project_relation_point_geometry, project_relation_solved_point_geometry,
+        relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_axis_aligned_linked_loci,
@@ -9593,6 +9704,84 @@ mod profile_join_tests {
     }
 
     #[test]
+    fn circle_dimension_driver_supplies_the_center_operand() {
+        let operand = |index, marker: &str| FeatureInputOperand {
+            offset: u64::from(index),
+            reference_ref: format!("reference-{index}"),
+            kind: FeatureInputOperandKind::Native(0x929d),
+            entity_index: index,
+            entity_ref: Some(marker.into()),
+        };
+        let scalar = |id: &str, offset, operands| FeatureInputScalar {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset,
+            object_id: 1,
+            name: "dimension-name".into(),
+            value: 1.0,
+            role: FeatureInputScalarRole::Native,
+            entity_indices: Vec::new(),
+            operands,
+        };
+        let display_operand = operand(2, "display-handle");
+        let display = FeatureInputScalar {
+            role: FeatureInputScalarRole::Display,
+            ..scalar("display", 10, vec![display_operand.clone()])
+        };
+        let driver = scalar(
+            "driver",
+            20,
+            vec![display_operand.clone(), operand(1, "center")],
+        );
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: vec![FeatureInputName {
+                id: "dimension-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                value: "D1".into(),
+                object_id: None,
+            }],
+            scalars: vec![display, driver],
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let mut relations = vec![FeatureInputRelationInstance {
+            id: "relation".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 10,
+            family: FeatureInputRelationFamily::CircleDiameter,
+            class_ref: "class".into(),
+            feature_ref: "feature".into(),
+            scalar_refs: vec!["display".into()],
+            parameter_scalar_ref: None,
+            display_scalar_ref: Some("display".into()),
+            operands: vec![display_operand],
+        }];
+
+        bind_circle_dimension_centers(&mut relations, &lane);
+
+        assert_eq!(relations[0].scalar_refs, ["display", "driver"]);
+        assert_eq!(relations[0].operands.len(), 2);
+        assert_eq!(
+            relations[0].operands[1].entity_ref.as_deref(),
+            Some("center")
+        );
+    }
+
+    #[test]
     fn display_scalar_name_resolves_one_unclaimed_owner_parameter() {
         let feature = Feature {
             id: FeatureId("feature".into()),
@@ -9759,6 +9948,14 @@ mod profile_join_tests {
         assert_eq!(
             select_marker_transforms_by_frame(&[other, transform], &sketch, 1.0e-8),
             vec![transform]
+        );
+        let translated = MarkerTransform {
+            translation: (17, 23),
+            ..transform
+        };
+        assert_eq!(
+            select_marker_transforms_by_frame(&[other, translated], &sketch, 1.0e-8),
+            vec![translated]
         );
         assert_eq!(
             select_marker_transforms_by_frame(&[other], &sketch, 1.0e-8),

@@ -1086,7 +1086,22 @@ fn relation_instance_shape_valid(
         }
         positions.push((position, scalar));
     }
-    if positions[0].1.offset != record.offset || record.operands != positions[0].1.operands {
+    let scalar_operands_match = |scalar: &crate::records::FeatureInputScalar| {
+        scalar
+            .operands
+            .iter()
+            .map(|operand| (operand.kind, operand.entity_index))
+            .eq(record
+                .operands
+                .iter()
+                .map(|operand| (operand.kind, operand.entity_index)))
+            || (record.family == crate::records::FeatureInputRelationFamily::CircleDiameter
+                && matches!(record.operands.as_slice(), [first, _]
+                    if matches!(scalar.operands.as_slice(), [candidate]
+                        if candidate.kind == first.kind
+                            && candidate.entity_index == first.entity_index)))
+    };
+    if positions[0].1.offset != record.offset || !scalar_operands_match(positions[0].1) {
         return false;
     }
     let operand_scalars = positions
@@ -1097,17 +1112,9 @@ fn relation_instance_shape_valid(
         || operand_scalars
             .windows(2)
             .any(|pair| pair[1].0 != pair[0].0 + 1)
-        || operand_scalars.iter().any(|(_, scalar)| {
-            !scalar
-                .operands
-                .iter()
-                .map(|operand| (operand.kind, operand.entity_index))
-                .eq(positions[0]
-                    .1
-                    .operands
-                    .iter()
-                    .map(|operand| (operand.kind, operand.entity_index)))
-        })
+        || operand_scalars
+            .iter()
+            .any(|(_, scalar)| !scalar_operands_match(scalar))
     {
         return false;
     }
