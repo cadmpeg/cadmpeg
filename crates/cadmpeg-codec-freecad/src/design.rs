@@ -13,7 +13,8 @@ use cadmpeg_ir::features::{
     HoleProfileFilter, HoleSpecification, HoleThreadDepth, Length, ParameterId, ParameterValue,
     PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
     PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction, ShellJoin,
-    ShellMode, SketchSpace, SweepMode, ThreadHand,
+    ShellMode, SketchSpace, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
+    ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -2125,23 +2126,81 @@ fn sweep_definition(
     properties: &[&PropertyRecord],
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
-    let profile = property(properties, "Profile")
-        .or_else(|| property(properties, "Sections"))?
-        .links
-        .first()
-        .and_then(|link| link.object.as_deref())?;
-    let profile = sketches.get(profile).cloned().map_or_else(
-        || ProfileRef::Native(profile.to_owned()),
-        ProfileRef::Sketch,
-    );
+    let profile_ref = |object: &str| {
+        sketches
+            .get(object)
+            .cloned()
+            .map_or_else(|| ProfileRef::Native(object.to_owned()), ProfileRef::Sketch)
+    };
+    let mut profiles = property(properties, "Profile")
+        .into_iter()
+        .chain(property(properties, "Sections"))
+        .flat_map(|property| &property.links)
+        .filter_map(|link| link.object.as_deref())
+        .map(profile_ref)
+        .collect::<Vec<_>>();
+    profiles.dedup();
+    if profiles.is_empty() {
+        return None;
+    }
+    let profile = profiles.remove(0);
     let path_property = property(properties, "Spine").or_else(|| property(properties, "Path"))?;
     if path_property.links.is_empty() {
         return None;
     }
     let solid =
         kind.starts_with("PartDesign::") || bool_property(properties, "Solid").unwrap_or(false);
+    let transition = match integer_property(properties, "Transition")
+        .unwrap_or(u64::from(kind == "Part::Sweep"))
+    {
+        0 => SweepTransition::Transformed,
+        1 => SweepTransition::RightCorner,
+        2 => SweepTransition::RoundCorner,
+        _ => return None,
+    };
+    let orientation = if kind == "Part::Sweep" {
+        if bool_property(properties, "Frenet").unwrap_or(true) {
+            SweepOrientation::Frenet
+        } else {
+            SweepOrientation::CorrectedFrenet
+        }
+    } else {
+        match integer_property(properties, "Mode").unwrap_or(0) {
+            0 => SweepOrientation::CorrectedFrenet,
+            1 => SweepOrientation::Fixed,
+            2 => SweepOrientation::Frenet,
+            3 => {
+                let auxiliary = property(properties, "AuxiliarySpine")?;
+                if auxiliary.links.is_empty() {
+                    return None;
+                }
+                SweepOrientation::Auxiliary {
+                    path: PathRef::Native(auxiliary.id.clone()),
+                    tangent: bool_property(properties, "AuxiliarySpineTangent").unwrap_or(false),
+                    curvilinear: bool_property(properties, "AuxiliaryCurvilinear").unwrap_or(true),
+                }
+            }
+            4 => SweepOrientation::Binormal {
+                direction: unit_vector(vector_property(properties, "Binormal")?)?,
+            },
+            _ => return None,
+        }
+    };
+    let transformation = if kind == "Part::Sweep" {
+        SweepTransformation::Constant
+    } else {
+        match integer_property(properties, "Transformation").unwrap_or(0) {
+            0 => SweepTransformation::Constant,
+            1 => SweepTransformation::MultiSection,
+            2 => SweepTransformation::Linear,
+            3 => SweepTransformation::SShape,
+            4 => SweepTransformation::Interpolation,
+            _ => return None,
+        }
+    };
     Some(FeatureDefinition::Sweep {
         profile: Some(profile),
+        sections: profiles,
         path: Some(PathRef::Native(path_property.id.clone())),
         mode: if solid {
             SweepMode::Solid {
@@ -2150,6 +2209,11 @@ fn sweep_definition(
         } else {
             SweepMode::Surface
         },
+        orientation: Some(orientation),
+        transition: Some(transition),
+        transformation: Some(transformation),
+        path_tangent: bool_property(properties, "SpineTangent").unwrap_or(false),
+        linearize: bool_property(properties, "Linearize").unwrap_or(false),
         twist: None,
         scale: None,
     })

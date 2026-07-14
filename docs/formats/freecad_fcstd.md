@@ -341,6 +341,14 @@ Lofts additionally retain whether adjacent sections use ruled spans and whether 
 loft produces a solid or sheet result. PartDesign lofts are solid and explicitly join or cut;
 standalone lofts create a new result body without fabricating a Boolean relationship.
 
+Sweeps retain the primary and additional ordered sections, primary path and tangent-edge
+extension, corrected-Frenet, fixed, Frenet, auxiliary-path, or fixed-binormal orientation,
+transformed, sharp, or rounded corner transition, and constant, multisection, linear, S-shaped, or
+smooth-interpolation section transformation. Auxiliary orientation additionally retains its path,
+tangent-edge extension, and curvilinear correspondence flag. Standalone sweep linearization and
+solid-versus-sheet result remain explicit. Invalid enumeration values, a zero binormal, or a
+missing auxiliary path leave the operation attributable and native.
+
 Part extrusions retain their normalized direction, independent forward and reverse lengths, and
 equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
 blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected

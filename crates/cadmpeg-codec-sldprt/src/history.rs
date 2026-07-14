@@ -1827,8 +1827,14 @@ fn project_sweep(
     };
     Some(FeatureDefinition::Sweep {
         profile,
+        sections: Vec::new(),
         path,
         mode,
+        orientation: None,
+        transition: None,
+        transformation: None,
+        path_tangent: false,
+        linearize: false,
         twist,
         scale,
     })
@@ -6160,11 +6166,29 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::Sweep {
                 profile,
+                sections,
                 path,
                 mode,
+                orientation,
+                transition,
+                transformation,
+                path_tangent,
+                linearize,
                 twist,
                 scale,
             } => {
+                if !sections.is_empty()
+                    || orientation.is_some()
+                    || transition.is_some()
+                    || transformation.is_some()
+                    || *path_tangent
+                    || *linearize
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes unsupported sweep construction semantics",
+                        feature.id
+                    )));
+                }
                 if existing.as_deref().is_some_and(|record| !is_sweep(record)) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",

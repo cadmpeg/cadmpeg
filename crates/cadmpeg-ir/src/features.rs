@@ -412,11 +412,29 @@ pub enum FeatureDefinition {
         /// Cross-section swept along the path, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         profile: Option<ProfileRef>,
+        /// Additional cross-sections after the primary profile, in path order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        sections: Vec<ProfileRef>,
         /// Trajectory followed by the profile, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         path: Option<PathRef>,
         /// Result family and solid Boolean operation.
         mode: SweepMode,
+        /// Rule used to orient cross-sections along the path.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        orientation: Option<SweepOrientation>,
+        /// Corner continuation used where path segments meet.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transition: Option<SweepTransition>,
+        /// Interpolation law used between multiple cross-sections.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        transformation: Option<SweepTransformation>,
+        /// Whether tangent-connected edges are included in the primary path.
+        #[serde(default)]
+        path_tangent: bool,
+        /// Whether linear edges and planar faces are simplified after construction.
+        #[serde(default)]
+        linearize: bool,
         /// Total profile twist along the path, when specified.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         twist: Option<Angle>,
@@ -1305,6 +1323,60 @@ pub enum SweepMode {
     },
     /// Sweep creates a sheet body.
     Surface,
+}
+
+/// Cross-section orientation law along a sweep path.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SweepOrientation {
+    /// Rotation-minimizing corrected-Frenet frame.
+    CorrectedFrenet,
+    /// Fixed section frame.
+    Fixed,
+    /// Exact Frenet frame from path derivatives.
+    Frenet,
+    /// Frame constrained by a secondary path.
+    Auxiliary {
+        /// Secondary orientation path.
+        path: PathRef,
+        /// Whether tangent-connected edges extend the secondary path.
+        tangent: bool,
+        /// Whether corresponding points use curvilinear rather than parameter distance.
+        curvilinear: bool,
+    },
+    /// Frame constrained by a fixed binormal direction.
+    Binormal {
+        /// Unit binormal direction.
+        direction: Vector3,
+    },
+}
+
+/// Corner continuation used by a sweep path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SweepTransition {
+    /// Transform the section continuously across the corner.
+    Transformed,
+    /// Form a sharp right-corner intersection.
+    RightCorner,
+    /// Insert a rounded corner transition.
+    RoundCorner,
+}
+
+/// Cross-section interpolation law for a multi-section sweep.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SweepTransformation {
+    /// Keep one constant section along the path.
+    Constant,
+    /// Interpolate through explicit ordered sections.
+    MultiSection,
+    /// Apply linear section interpolation.
+    Linear,
+    /// Apply an S-shaped interpolation law.
+    SShape,
+    /// Apply the native smooth interpolation law.
+    Interpolation,
 }
 
 /// Complete construction of a solid helical sweep.

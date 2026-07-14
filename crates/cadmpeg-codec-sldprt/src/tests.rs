@@ -1735,10 +1735,16 @@ fn encoder_writes_source_less_line_sketches() {
         },
         FeatureDefinition::Sweep {
             profile: Some(profile.clone()),
+            sections: Vec::new(),
             path: Some(path.clone()),
             mode: cadmpeg_ir::features::SweepMode::Solid {
                 op: BooleanOp::Join,
             },
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
             twist: Some(Angle(0.3)),
             scale: Some(1.5),
         },
@@ -11519,6 +11525,7 @@ fn semantic_writer_round_trips_typed_sweep() {
             },
             twist: Some(Angle(twist)),
             scale: Some(1.5),
+            ..
         } if profile == &profile_a
             && path_ref == &path
             && (*twist - std::f64::consts::FRAC_PI_2).abs() < 1e-12
@@ -11585,6 +11592,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: None,
             scale: None,
+            ..
         }
     ));
 
@@ -11615,6 +11623,7 @@ fn semantic_writer_round_trips_sparse_surface_sweep() {
             mode: cadmpeg_ir::features::SweepMode::Surface,
             twist: Some(Angle(0.5)),
             scale: None,
+            ..
         }
     ));
 }
@@ -11646,6 +11655,7 @@ fn semantic_writer_retains_unresolved_native_sweep_mode() {
             mode: SweepMode::Unresolved,
             twist: None,
             scale: None,
+            ..
         }
     ));
     decoded.ir.model.features[0].name = Some("Renamed sweep".into());

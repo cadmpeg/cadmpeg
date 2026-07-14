@@ -79,10 +79,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "20";
+pub const IR_VERSION: &str = "21";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "19";
+pub const PREVIOUS_IR_VERSION: &str = "20";
 
 arena_registry!(declare_model);
 

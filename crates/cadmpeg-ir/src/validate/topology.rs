@@ -1658,15 +1658,23 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::Sweep {
                 profile,
+                sections,
                 path,
+                orientation,
                 twist,
                 scale,
                 ..
             } => {
                 profiles.extend(profile);
+                profiles.extend(sections);
                 paths.extend(path);
+                if let Some(crate::features::SweepOrientation::Auxiliary { path, .. }) = orientation
+                {
+                    paths.push(path);
+                }
                 if twist.is_some_and(|value| !value.0.is_finite())
                     || scale.is_some_and(|value| !value.is_finite() || value <= 0.0)
+                    || matches!(orientation, Some(crate::features::SweepOrientation::Binormal { direction }) if !valid_feature_direction(*direction))
                 {
                     feature_geometry_error(findings, feature, "sweep magnitude is invalid");
                 }

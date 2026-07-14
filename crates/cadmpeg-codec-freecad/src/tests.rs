@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "20");
+    assert_eq!(result.ir.ir_version, "21");
     let feature = |name: &str| {
         &result
             .ir
@@ -686,15 +686,16 @@ fn transfers_partdesign_boolean_base_and_group_rules() {
 #[test]
 fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="6">
+<Objects Count="7">
  <Object type="Sketcher::SketchObject" name="Section1" id="1"/>
  <Object type="Sketcher::SketchObject" name="Section2" id="2"/>
  <Object type="Sketcher::SketchObject" name="Path" id="3"/>
  <Object type="PartDesign::AdditiveLoft" name="Loft" id="4"/>
  <Object type="PartDesign::SubtractivePipe" name="Pipe" id="5"/>
  <Object type="Part::Loft" name="SurfaceLoft" id="6"/>
+ <Object type="Part::Sweep" name="SurfaceSweep" id="7"/>
 </Objects>
-<ObjectData Count="6">
+<ObjectData Count="7">
  <Object name="Section1"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Section2"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
  <Object name="Path"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
@@ -703,13 +704,29 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
   <Property name="Closed" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Ruled" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
- <Object name="Pipe"><Properties Count="2">
+ <Object name="Pipe"><Properties Count="10">
   <Property name="Profile" type="App::PropertyLink"><Link value="Section1"/></Property>
+  <Property name="Sections" type="App::PropertyLinkSubList"><LinkList count="2"><Link object="Section1"/><Link object="Section2"/></LinkList></Property>
   <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="SpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AuxiliarySpine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge2"/></Property>
+  <Property name="AuxiliarySpineTangent" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AuxiliaryCurvilinear" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="1"/></Property>
  </Properties></Object>
  <Object name="SurfaceLoft"><Properties Count="2">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+ </Properties></Object>
+ <Object name="SurfaceSweep"><Properties Count="6">
+  <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Frenet" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Linearize" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -754,16 +771,149 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         &feature("Pipe").definition,
         cadmpeg_ir::features::FeatureDefinition::Sweep {
             profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
+            sections,
             path: Some(cadmpeg_ir::features::PathRef::Native(path)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
                 op: cadmpeg_ir::features::BooleanOp::Cut,
             },
+            orientation: Some(cadmpeg_ir::features::SweepOrientation::Auxiliary {
+                tangent: true,
+                curvilinear: false,
+                ..
+            }),
+            transition: Some(cadmpeg_ir::features::SweepTransition::RoundCorner),
+            transformation: Some(cadmpeg_ir::features::SweepTransformation::MultiSection),
+            path_tangent: true,
             ..
-        } if path.ends_with(":property:Spine")
+        } if path.ends_with(":property:Spine") && sections.len() == 1
+    ));
+    assert!(matches!(
+        &feature("SurfaceSweep").definition,
+        cadmpeg_ir::features::FeatureDefinition::Sweep {
+            sections,
+            mode: cadmpeg_ir::features::SweepMode::Surface,
+            orientation: Some(cadmpeg_ir::features::SweepOrientation::CorrectedFrenet),
+            transition: Some(cadmpeg_ir::features::SweepTransition::RoundCorner),
+            transformation: Some(cadmpeg_ir::features::SweepTransformation::Constant),
+            linearize: true,
+            ..
+        } if sections.len() == 1
     ));
     assert_eq!(feature("Loft").dependencies.len(), 2);
-    assert_eq!(feature("Pipe").dependencies.len(), 2);
+    assert_eq!(feature("Pipe").dependencies.len(), 3);
     assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_remaining_pipe_orientation_and_transformation_modes() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+ <Object type="Sketcher::SketchObject" name="Section" id="1"/>
+ <Object type="Sketcher::SketchObject" name="Path" id="2"/>
+ <Object type="PartDesign::AdditivePipe" name="Fixed" id="3"/>
+ <Object type="PartDesign::AdditivePipe" name="Frenet" id="4"/>
+ <Object type="PartDesign::AdditivePipe" name="Binormal" id="5"/>
+ <Object type="PartDesign::AdditivePipe" name="Linear" id="6"/>
+ <Object type="PartDesign::AdditivePipe" name="SShape" id="7"/>
+ <Object type="PartDesign::AdditivePipe" name="Interpolation" id="8"/>
+</Objects>
+<ObjectData Count="8">
+ <Object name="Section"><Properties Count="0"/></Object>
+ <Object name="Path"><Properties Count="0"/></Object>
+ <Object name="Fixed"><Properties Count="5">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+ <Object name="Frenet"><Properties Count="5">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+ <Object name="Binormal"><Properties Count="6">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+  <Property name="Binormal" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+  <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+ </Properties></Object>
+ <Object name="Linear"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+ </Properties></Object>
+ <Object name="SShape"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+ </Properties></Object>
+ <Object name="Interpolation"><Properties Count="3">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Section"/></Property>
+  <Property name="Spine" type="App::PropertyLinkSub"><Link object="Path" sub="Edge1"/></Property>
+  <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("pipe modes");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    use cadmpeg_ir::features::{
+        FeatureDefinition, SweepOrientation, SweepTransformation, SweepTransition,
+    };
+    assert!(matches!(
+        definition("Fixed"),
+        FeatureDefinition::Sweep {
+            orientation: Some(SweepOrientation::Fixed),
+            transition: Some(SweepTransition::Transformed),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Frenet"),
+        FeatureDefinition::Sweep {
+            orientation: Some(SweepOrientation::Frenet),
+            transition: Some(SweepTransition::RightCorner),
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Binormal"),
+        FeatureDefinition::Sweep {
+            orientation: Some(SweepOrientation::Binormal { direction }),
+            transition: Some(SweepTransition::RoundCorner),
+            ..
+        } if direction.z == 1.0
+    ));
+    for (name, expected) in [
+        ("Linear", SweepTransformation::Linear),
+        ("SShape", SweepTransformation::SShape),
+        ("Interpolation", SweepTransformation::Interpolation),
+    ] {
+        assert!(matches!(
+            definition(name),
+            FeatureDefinition::Sweep {
+                transformation: Some(actual),
+                ..
+            } if *actual == expected
+        ));
+    }
 }
 
 #[test]
