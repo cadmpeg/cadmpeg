@@ -200,15 +200,8 @@ pub(crate) fn write(ir: &CadIr, version: u64, output: &mut dyn Write) -> Result<
         )?);
     }
     for mesh in &ir.model.tessellations {
-        objects.push(attributed_object_record(
-            0x20,
-            MESH_CLASS,
-            &mesh_payload(mesh, version),
-            &mesh.id,
-            None,
-            None,
-            None,
-        )?);
+        let payload = mesh_payload(mesh, version);
+        objects.push(mesh_object_record(&payload, &mesh.id)?);
     }
 
     write_archive(ir, version, &objects, output)
@@ -3047,7 +3040,15 @@ fn cross(a: cadmpeg_ir::math::Vector3, b: cadmpeg_ir::math::Vector3) -> cadmpeg_
     )
 }
 
-fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: u64) -> Vec<u8> {
+struct MeshPayload {
+    body: Vec<u8>,
+    direct: Vec<u8>,
+}
+
+fn mesh_payload(
+    mesh: &cadmpeg_ir::tessellation::Tessellation,
+    archive_version: u64,
+) -> MeshPayload {
     let minor = if archive_version == 50 { 5_u8 } else { 8_u8 };
     let mut payload = vec![0x30 | minor];
     payload.extend((mesh.vertices.len() as i32).to_le_bytes());
@@ -3110,13 +3111,17 @@ fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: 
     payload.extend(0_i32.to_le_bytes());
     payload.extend([0_u8; 16]);
     payload.extend(mesh_buffer(mesh_channel(mesh, CHANNEL_SURFACE_PARAMETERS)));
+    let mut direct = payload.clone();
     payload.extend(mesh_mapping_tag());
     payload.extend([0_u8; 3]);
+    direct.extend([0_u8; 3]);
     if minor >= 6 {
         payload.push(0);
+        direct.push(0);
     }
     if minor >= 7 {
         payload.push(1);
+        direct.push(1);
         let doubles = mesh
             .vertices
             .iter()
@@ -3142,9 +3147,18 @@ fn mesh_payload(mesh: &cadmpeg_ir::tessellation::Tessellation, archive_version: 
             .fold([f64::NEG_INFINITY; 3], |a, point| {
                 [a[0].max(point.x), a[1].max(point.y), a[2].max(point.z)]
             });
-        payload.extend(min.into_iter().chain(max).flat_map(f64::to_le_bytes));
+        let bounding_box = min
+            .into_iter()
+            .chain(max)
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        payload.extend(&bounding_box);
+        direct.extend(bounding_box);
     }
-    payload
+    MeshPayload {
+        body: payload,
+        direct,
+    }
 }
 
 fn mesh_mapping_tag() -> Vec<u8> {
@@ -3191,7 +3205,19 @@ fn attributed_object_record(
         object_type,
         class_uuid,
         payload,
+        None,
         Some(object_attributes_payload(identity, name, color, visible)),
+    ))
+}
+
+fn mesh_object_record(payload: &MeshPayload, identity: &str) -> Result<Vec<u8>, CodecError> {
+    check_object_attributes(identity, None, None)?;
+    Ok(framed_object_record(
+        0x20,
+        MESH_CLASS,
+        &payload.body,
+        Some(&payload.direct),
+        Some(object_attributes_payload(identity, None, None, None)),
     ))
 }
 
@@ -3199,16 +3225,17 @@ fn framed_object_record(
     object_type: i64,
     class_uuid: [u8; 16],
     payload: &[u8],
+    direct_class_data: Option<&[u8]>,
     attributes: Option<Vec<u8>>,
 ) -> Vec<u8> {
     let object_type = short_chunk(TCODE_OBJECT_RECORD_TYPE, object_type);
     let mut uuid_body = class_uuid.to_vec();
     uuid_body.extend(crc32fast::hash(&class_uuid).to_le_bytes());
     let uuid = long_chunk(TCODE_CLASS_UUID, &uuid_body);
-    let class_data = if class_uuid == BREP_CLASS {
+    let class_data = if let Some(direct) = direct_class_data {
+        crc_chunk_with_direct(TCODE_CLASS_DATA, payload, direct)
+    } else if class_uuid == BREP_CLASS {
         brep_class_data_chunk(payload)
-    } else if class_uuid == MESH_CLASS {
-        mesh_class_data_chunk(payload)
     } else {
         crc_chunk(TCODE_CLASS_DATA, payload)
     };
@@ -3221,30 +3248,6 @@ fn framed_object_record(
     }
     body.extend(object_end);
     zero_crc_chunk(TCODE_OBJECT_RECORD, &body)
-}
-
-fn mesh_class_data_chunk(payload: &[u8]) -> Vec<u8> {
-    let mapping = payload
-        .windows(12)
-        .position(|window| {
-            window[..4] == 0x4000_8000_u32.to_le_bytes()
-                && i64::from_le_bytes(
-                    window[4..12]
-                        .try_into()
-                        .expect("fixed nested chunk header width"),
-                ) == 160
-        })
-        .expect("generated mesh mapping tag");
-    let mut direct = payload[..mapping].to_vec();
-    let mut cursor = nested_chunk_end(payload, mapping);
-    let minor = payload[0] & 0x0f;
-    if minor >= 7 {
-        direct.extend(&payload[cursor..cursor + 5]);
-        cursor += 5;
-        cursor = nested_chunk_end(payload, cursor);
-    }
-    direct.extend(&payload[cursor..]);
-    crc_chunk_with_direct(TCODE_CLASS_DATA, payload, &direct)
 }
 
 fn brep_class_data_chunk(payload: &[u8]) -> Vec<u8> {
@@ -3714,6 +3717,45 @@ mod tests {
                 Some(&expected)
             );
         }
+    }
+
+    #[test]
+    fn mesh_channel_bytes_cannot_impersonate_nested_chunk_framing() {
+        let mut ir = CadIr::empty(Units::default());
+        let mut uv_data = vec![0_u8; 24];
+        uv_data[..4].copy_from_slice(&0x4000_8000_u32.to_le_bytes());
+        uv_data[4..12].copy_from_slice(&160_i64.to_le_bytes());
+        ir.model
+            .tessellations
+            .push(cadmpeg_ir::tessellation::Tessellation {
+                id: "cadir:model:tessellation#chunk-like-channel".into(),
+                body: None,
+                source_object: None,
+                vertices: vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 0.0, 0.0),
+                    Point3::new(0.0, 1.0, 0.0),
+                ],
+                triangles: vec![[0, 1, 2]],
+                strip_lengths: Vec::new(),
+                normals: Vec::new(),
+                channels: vec![cadmpeg_ir::tessellation::TessellationChannel {
+                    kind: CHANNEL_UV,
+                    item_size: 8,
+                    flags: 0,
+                    count: 3,
+                    data: uv_data.clone(),
+                }],
+            });
+
+        let mut bytes = Vec::new();
+        RhinoEncoder::new(RhinoArchiveVersion::V8)
+            .encode(&ir, &mut bytes)
+            .expect("channel bytes are opaque to chunk framing");
+        let decoded = RhinoCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("generated mesh remains decodable");
+        assert_eq!(decoded.ir.model.tessellations[0].channels[0].data, uv_data);
     }
 
     #[test]
