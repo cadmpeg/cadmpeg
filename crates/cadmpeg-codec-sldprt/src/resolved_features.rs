@@ -3165,10 +3165,23 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                     let [operand] = relation.operands.as_slice() else {
                         return None;
                     };
-                    let marker = operand
+                    let explicit = operand
                         .entity_ref
                         .as_deref()
-                        .and_then(|id| markers_by_id.get(id).copied())?;
+                        .and_then(|id| markers_by_id.get(id).copied());
+                    let implicit = explicit.is_none().then(|| {
+                        implicit_circle_marker(
+                            lanes,
+                            relation.feature_ref.as_str(),
+                            operand.kind,
+                            operand.entity_index,
+                        )
+                    });
+                    let (marker, encoded_radius) = match (explicit, implicit.flatten()) {
+                        (Some(marker), _) => (marker, None),
+                        (None, Some((marker, radius))) => (marker, Some(radius)),
+                        (None, None) => return None,
+                    };
                     if !matches!(
                         marker.kind,
                         SketchInputKind::Point
@@ -3193,6 +3206,10 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         None => return None,
                     };
                     if !(radius.is_finite() && radius > 0.0) {
+                        return None;
+                    }
+                    if encoded_radius.is_some_and(|encoded| !same_dimension_length(encoded, radius))
+                    {
                         return None;
                     }
                     Some((
@@ -3221,12 +3238,22 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             ) else {
                 continue;
             };
-            let Some(marker) = operand
+            let explicit_marker = operand
                 .entity_ref
                 .as_deref()
-                .and_then(|id| markers_by_id.get(id).copied())
-            else {
-                continue;
+                .and_then(|id| markers_by_id.get(id).copied());
+            let implicit_marker = explicit_marker.is_none().then(|| {
+                implicit_circle_marker(
+                    lanes,
+                    relation.feature_ref.as_str(),
+                    operand.kind,
+                    operand.entity_index,
+                )
+            });
+            let (marker, encoded_radius) = match (explicit_marker, implicit_marker.flatten()) {
+                (Some(marker), _) => (marker, None),
+                (None, Some((marker, radius))) => (marker, Some(radius)),
+                (None, None) => continue,
             };
             if !matches!(
                 marker.kind,
@@ -3256,6 +3283,9 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                 None => continue,
             };
             if !(radius.is_finite() && radius > 0.0) {
+                continue;
+            }
+            if encoded_radius.is_some_and(|encoded| !same_dimension_length(encoded, radius)) {
                 continue;
             }
             let native = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
@@ -3295,6 +3325,42 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             });
         }
     }
+}
+
+fn implicit_circle_marker<'a>(
+    lanes: &'a [FeatureInputLane],
+    feature: &str,
+    operand_kind: FeatureInputOperandKind,
+    index: u16,
+) -> Option<(&'a SketchInputEntity, f64)> {
+    if operand_kind != FeatureInputOperandKind::Native(0x83fe) {
+        return None;
+    }
+    let mut markers = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .filter(|marker| marker.feature_ref.as_deref() == Some(feature))
+        .filter(|marker| marker.local_id != Some(0))
+        .filter(|marker| {
+            marker.coordinates_m.is_some()
+                && matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+        })
+        .collect::<Vec<_>>();
+    markers.sort_unstable_by_key(|marker| marker.offset);
+    if markers.is_empty() || markers.len() % 2 != 0 {
+        return None;
+    }
+    let pair = markers.chunks_exact(2).nth(usize::from(index))?;
+    let [center, radial] = pair else {
+        return None;
+    };
+    let [cu, cv] = center.coordinates_m?;
+    let [ru, rv] = radial.coordinates_m?;
+    let radius = (ru - cu).hypot(rv - cv) * 1000.0;
+    (radius.is_finite() && radius > 0.0).then_some((*center, radius))
 }
 
 /// Project owned native relation bindings into their neutral sketches.
@@ -4087,10 +4153,11 @@ fn marker_geometry_anchors(kind: SketchInputKind, geometry: &SketchGeometry) -> 
             | SketchGeometry::Ellipse { center, .. },
         ) => vec![*center],
         (SketchInputKind::LineOrCircle, SketchGeometry::Line { start, end }) => {
-            vec![Point2::new(
-                (start.u + end.u) * 0.5,
-                (start.v + end.v) * 0.5,
-            )]
+            vec![
+                *start,
+                *end,
+                Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
+            ]
         }
         (
             SketchInputKind::LineOrCircle,
@@ -4329,13 +4396,13 @@ fn compatible_marker_transform_candidates(
     if let [transform] = candidates.as_slice() {
         return vec![*transform];
     }
-    let mut zero_translation = candidates
+    let zero_translation = candidates
         .iter()
         .copied()
-        .filter(|transform| transform.translation == (0, 0));
-    let first = zero_translation.next();
-    if first.is_some() && zero_translation.next().is_none() {
-        return first.into_iter().collect();
+        .filter(|transform| transform.translation == (0, 0))
+        .collect::<Vec<_>>();
+    if !zero_translation.is_empty() {
+        return zero_translation;
     }
     candidates
 }
@@ -4497,10 +4564,10 @@ fn marker_entities(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        dimensioned_circle_transform, marker_entities, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, typed_marker_relation_definition,
-        typed_relation_definition, unique_compatible_marker_transform, unique_marker_transform,
-        MarkerTransform,
+        dimensioned_circle_transform, implicit_circle_marker, marker_entities,
+        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        typed_marker_relation_definition, typed_relation_definition,
+        unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -4641,13 +4708,36 @@ mod profile_join_tests {
             dependencies: Vec::new(),
         };
 
-        project_dimensioned_sketch_geometry(&mut entities, &[feature], &[parameter], &[lane]);
+        project_dimensioned_sketch_geometry(
+            &mut entities,
+            &[feature],
+            &[parameter],
+            std::slice::from_ref(&lane),
+        );
         assert!(matches!(
             &entities[2].geometry,
             SketchGeometry::Circle { center, radius }
                 if *center == Point2::new(15.0, 40.0) && *radius == Length(4.0)
         ));
         assert!(!entities[2].construction);
+
+        let mut implicit_lane = lane;
+        let mut implicit_center = marker("implicit-center", Some([0.010, 0.020]));
+        implicit_center.local_id = Some(1);
+        implicit_center.offset = 100;
+        let mut implicit_radial = marker("implicit-radial", Some([0.013, 0.024]));
+        implicit_radial.local_id = Some(2);
+        implicit_radial.offset = 200;
+        implicit_lane.sketch_entities = vec![implicit_center, implicit_radial];
+        let (resolved, radius) = implicit_circle_marker(
+            std::slice::from_ref(&implicit_lane),
+            "feature-native",
+            FeatureInputOperandKind::Native(0x83fe),
+            0,
+        )
+        .expect("implicit circle pair");
+        assert_eq!(resolved.id, "implicit-center");
+        assert!((radius - 5.0).abs() < 1.0e-12);
     }
 
     #[test]
