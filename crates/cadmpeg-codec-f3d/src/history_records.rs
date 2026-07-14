@@ -42,6 +42,12 @@ pub(crate) struct AsmDeltaState {
 pub(crate) struct AsmHistoryRecord {
     pub id: String,
     pub parent: String,
+    /// Construction-history revision identity paired from the ordered
+    /// old-reference run; absent only for the stream terminator or an opaque
+    /// snapshot whose pairing cannot be established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_id: Option<i64>,
+    /// Snapshot-local record ordinal. This is not the revision identity.
     pub index: u64,
     /// Byte offset of the record in the decompressed ASM stream.
     #[serde(default)]

@@ -18,8 +18,6 @@ This document records F3D semantics that the format specification does not yet d
 - The manifest relation that selects one asset folder when several asset folders are present is unresolved.
 - The authoritative B-rep entry relation among multiple `.smb` or `.smbh` entries is unresolved. Filename extension, archive order, face count, and the relative size of the history partition do not define that relation.
 - The relation between `.smb` and `.smbh` stream forms, including the presence of a history partition, is unresolved.
-- History snapshot records reset their local record numbering after `End-of-ASM-History-Section`, while BulletinBoard `old` and `new` references use the construction-history revision namespace. The byte relation assigning each locally ordered snapshot record to its revision reference is unresolved; local ordinal order is not that relation. Historical model replay requires this assignment before changes can be reversed without dangling topology.
-
 - The header flags word (both widths): bits above bit 0 have no assigned semantic meaning.
 - The release word (both widths) encodes the ASM major release ×100 (`22700` on ASM 227.5, `23000` on ASM 230.5 streams); whether the minor release is ever encoded is unresolved.
 - The entity-count word's counting rule (which records it counts) is unresolved in both widths.

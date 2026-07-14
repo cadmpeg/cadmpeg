@@ -158,6 +158,7 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
             records,
         });
     }
+    bind_snapshot_revision_ids(&mut states);
     if states.is_empty() {
         return None;
     }
@@ -173,6 +174,29 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
         history_entry_count,
         states,
     })
+}
+
+fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
+    let old_references = states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .flat_map(|board| &board.changes)
+        .filter_map(|change| change.old_ref)
+        .collect::<Vec<_>>();
+    if old_references.iter().copied().collect::<HashSet<_>>().len() != old_references.len() {
+        return;
+    }
+    let snapshot_records = states
+        .iter_mut()
+        .flat_map(|state| &mut state.records)
+        .filter(|record| record.name != "End-of-ASM-data")
+        .collect::<Vec<_>>();
+    if snapshot_records.len() != old_references.len() {
+        return;
+    }
+    for (record, revision_id) in snapshot_records.into_iter().zip(old_references) {
+        record.revision_id = Some(revision_id);
+    }
 }
 
 fn decode_bulletin_boards(
@@ -273,6 +297,7 @@ fn decode_history_records(
                 AsmHistoryRecord {
                     id: format!("f3d:{stream}:asm-history-record#{:010}", record.offset),
                     parent: state_id.to_string(),
+                    revision_id: None,
                     index: record.index as u64,
                     byte_offset: record.offset as u64,
                     name: record.name,
@@ -285,6 +310,7 @@ fn decode_history_records(
             vec![AsmHistoryRecord {
                 id: format!("f3d:{stream}:asm-history-record#{start:010}"),
                 parent: state_id.to_string(),
+                revision_id: None,
                 index: 0,
                 byte_offset: start as u64,
                 name: "opaque_history_payload".into(),
