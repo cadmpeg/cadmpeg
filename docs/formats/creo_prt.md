@@ -532,6 +532,9 @@ When the saved arc also stores both endpoints, `end1` binds
 the solved trim-vertex graph.
 Each endpoint binding is independent: a stored endpoint seeds its bound trim
 vertex exactly when it lies on the saved center/radius carrier.
+The saved center/radius pair defines the circular carrier independently of the
+endpoint fields. Trim incidence may intersect that carrier before either arc
+endpoint is available; bounded arc geometry still requires both endpoints.
 
 When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.
 

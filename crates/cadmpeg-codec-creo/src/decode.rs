@@ -610,6 +610,22 @@ fn resolved_section_segment_geometry(
         .or_else(|| saved_section_arc_geometry(definition, segment))
 }
 
+fn section_segment_intersection_carrier(
+    definition: &crate::feature::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    resolved_section_segment_geometry(definition, points, segment).or_else(|| {
+        let ([center_u, center_v], radius) = saved_section_arc_carrier(definition, segment)?;
+        Some(SketchGeometry::Arc {
+            center: cadmpeg_ir::math::Point2::new(center_u, center_v),
+            radius: Length(radius),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::TAU),
+        })
+    })
+}
+
 fn trim_segment_id(
     definition: &crate::feature::FeatureDefinition,
     row: &crate::feature::FeatureTrimEntity,
@@ -839,7 +855,7 @@ fn resolved_trim_vertex_coordinates(
                 .rows
                 .iter()
                 .find(|segment| segment.external_id == external_id)?;
-            resolved_section_segment_geometry(definition, points, segment)
+            section_segment_intersection_carrier(definition, points, segment)
         };
         let (Some(first), Some(second)) = (geometry(*first_id), geometry(*second_id)) else {
             continue;
@@ -2983,18 +2999,42 @@ mod resolved_sketch_tests {
             resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
             BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
         );
-        let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+        if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
             .saved_section
             .as_mut()
             .expect("test definition has a saved section")
             .entities[0]
-        else {
+        {
+            arc.endpoints[0] = [None; 3];
+        } else {
             panic!("test entity is an arc");
-        };
-        arc.endpoints[0] = [None; 3];
+        }
         assert_eq!(
             resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
             BTreeMap::from([(2, [-2.0, 0.0])])
+        );
+        if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
+            .saved_section
+            .as_mut()
+            .expect("test definition has a saved section")
+            .entities[0]
+        {
+            arc.endpoints[1] = [None; 3];
+        }
+        let segment = &trimmed
+            .segments
+            .as_ref()
+            .expect("test definition has a segment table")
+            .rows[0];
+        assert!(saved_section_arc_geometry(&trimmed, segment).is_none());
+        assert_eq!(
+            section_segment_intersection_carrier(&trimmed, &BTreeMap::new(), segment),
+            Some(SketchGeometry::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+                start_angle: Angle(0.0),
+                end_angle: Angle(std::f64::consts::TAU),
+            })
         );
     }
 
