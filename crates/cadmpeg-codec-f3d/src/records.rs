@@ -308,7 +308,7 @@ pub struct DesignParameter {
     pub class_tag: String,
     /// Source indexed-record identity.
     pub record_index: u32,
-    /// Prefix u64 stored between the fixed zero regions.
+    /// Parameter-family discriminator: `6` for `TangencyWeight`, otherwise `0`.
     pub prefix_value: u64,
     /// Byte offset of `prefix_value`.
     pub prefix_value_offset: u64,

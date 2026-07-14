@@ -3203,7 +3203,9 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
     }
     let source_kind_at = expression_end + 9;
     let (source_kind, source_kind_end) = lp_utf16(payload, source_kind_at)?;
-    if u32_at(payload, source_kind_end) != Some(0) {
+    if u32_at(payload, source_kind_end) != Some(0)
+        || prefix_value != design_parameter_prefix(&source_kind)
+    {
         return None;
     }
     let first_at = source_kind_end + 4;
@@ -3262,6 +3264,14 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
         evaluated_value,
         evaluated_value_offset: name_end as u64,
     })
+}
+
+pub(crate) fn design_parameter_prefix(source_kind: &str) -> u64 {
+    if source_kind == "TangencyWeight" {
+        6
+    } else {
+        0
+    }
 }
 
 /// Decode the fixed-width owner frame for every owned Design parameter.
@@ -7868,20 +7878,21 @@ mod relation_tests {
         bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
         bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
         closed_sketch_profiles, companion_owned_interval, contiguous_i32_program,
-        decode_fillet_radius_groups, dimension_recipe_prefix, directional_point_dimension,
-        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
-        exact_offset_constraint, find_dimension_locus_groups, find_dimension_locus_pair,
-        identity_matrix, indexed_record_containing, indirect_angular_lines,
-        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
-        null_locus_dimension_definition, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, remove_dimension_frame_relations,
-        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
+        decode_fillet_radius_groups, design_parameter_prefix, dimension_recipe_prefix,
+        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
+        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
+        next_indexed_record_offset, null_locus_dimension_definition,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
+        two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7923,7 +7934,9 @@ mod relation_tests {
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(b"305");
         out.extend_from_slice(&71u32.to_le_bytes());
-        out.extend_from_slice(&[0; 20]);
+        out.extend_from_slice(&[0; 11]);
+        out.extend_from_slice(&design_parameter_prefix(source_kind).to_le_bytes());
+        out.push(0);
         out.extend_from_slice(&9u32.to_le_bytes());
         match owner {
             Some(owner) => {
@@ -8015,6 +8028,22 @@ mod relation_tests {
         assert_eq!(tangency.unit, None);
         assert_eq!(tangency.name, "d81");
         assert_eq!(tangency.evaluated_value, 1.0);
+
+        let mut invalid_tangency =
+            parameter_record(Some(24409), "1", "TangencyWeight", Some(""), "d81", 1.0);
+        invalid_tangency[22..30].copy_from_slice(&0u64.to_le_bytes());
+        assert!(parse_design_parameter(&invalid_tangency).is_none());
+
+        let mut invalid_distance = parameter_record(
+            Some(44),
+            "Width / 2",
+            "AlongDistance",
+            Some("mm"),
+            "d12",
+            3.0,
+        );
+        invalid_distance[22..30].copy_from_slice(&6u64.to_le_bytes());
+        assert!(parse_design_parameter(&invalid_distance).is_none());
     }
 
     #[test]

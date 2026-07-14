@@ -440,6 +440,15 @@ fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecErro
 }
 
 fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), CodecError> {
+    for parameter in &native.design_parameters {
+        let expected_prefix = crate::design::design_parameter_prefix(&parameter.source_kind);
+        if parameter.prefix_value != expected_prefix {
+            return Err(CodecError::Malformed(format!(
+                "F3D Design parameter {} has discriminator {}, expected {expected_prefix} for {}",
+                parameter.id, parameter.prefix_value, parameter.source_kind
+            )));
+        }
+    }
     let mut objects_by_guid = BTreeMap::new();
     let mut entity_kinds = BTreeMap::new();
     for object in &native.design_objects {
