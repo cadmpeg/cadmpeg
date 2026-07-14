@@ -7727,8 +7727,24 @@ fn typed_marker_relation_definition_in_sketch(
                 _ => direct_entities,
             };
             if let [entity] = entities.as_slice() {
+                let invalid_axis_entity = !sketch_entities.is_empty()
+                    && sketch_entities
+                        .iter()
+                        .find(|candidate| candidate.id == *entity)
+                        .is_none_or(|candidate| {
+                            let SketchGeometry::Line { start, end } = &candidate.geometry else {
+                                return true;
+                            };
+                            if kind == Horizontal {
+                                !same_dimension_length(start.v, end.v)
+                            } else {
+                                !same_dimension_length(start.u, end.u)
+                            }
+                        });
                 if matches!(kind, Horizontal | Vertical)
-                    && entity.0.contains("sketch-entity#relation-point:")
+                    && (invalid_axis_entity
+                        || (sketch_entities.is_empty()
+                            && entity.0.contains("sketch-entity#relation-point:")))
                 {
                     return Some(native());
                 }
@@ -7762,6 +7778,22 @@ fn typed_marker_relation_definition_in_sketch(
                 let [first, second] = loci.as_slice() else {
                     return Some(native());
                 };
+                if !sketch_entities.is_empty() {
+                    let (Some(first_point), Some(second_point)) = (
+                        profile_locus_point(first, sketch_entities),
+                        profile_locus_point(second, sketch_entities),
+                    ) else {
+                        return Some(native());
+                    };
+                    let aligned = if kind == Horizontal {
+                        same_dimension_length(first_point.v, second_point.v)
+                    } else {
+                        same_dimension_length(first_point.u, second_point.u)
+                    };
+                    if !aligned {
+                        return Some(native());
+                    }
+                }
                 match kind {
                     Horizontal => SketchConstraintDefinition::HorizontalPoints {
                         first: first.clone(),
@@ -7862,6 +7894,22 @@ fn typed_marker_relation_definition_in_sketch(
             let [first, second] = loci.as_slice() else {
                 return Some(native());
             };
+            if !sketch_entities.is_empty() {
+                let (Some(first_point), Some(second_point)) = (
+                    profile_locus_point(first, sketch_entities),
+                    profile_locus_point(second, sketch_entities),
+                ) else {
+                    return Some(native());
+                };
+                let aligned = if kind == HorizontalPoints {
+                    same_dimension_length(first_point.v, second_point.v)
+                } else {
+                    same_dimension_length(first_point.u, second_point.u)
+                };
+                if !aligned {
+                    return Some(native());
+                }
+            }
             match kind {
                 HorizontalPoints => SketchConstraintDefinition::HorizontalPoints {
                     first: first.clone(),
@@ -10192,14 +10240,15 @@ mod profile_join_tests {
         relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
         resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
         sketch_frame_marker_transform, type_display_relation_parameters,
-        typed_marker_relation_definition, typed_relation_definition,
-        unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
-        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
-        unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
-        unique_profile_distance_locus, unique_profile_line_angle_entity,
-        unique_profile_line_angle_pair, unique_profile_line_distance_entity,
-        unique_profile_line_distance_pair, unique_profile_line_point_locus,
-        unique_profile_point_line_entity, unique_profile_point_line_pair, MarkerTransform,
+        typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
+        typed_relation_definition, unique_axis_aligned_linked_loci,
+        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
+        unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
+        unique_profile_distance_loci_pair, unique_profile_distance_locus,
+        unique_profile_line_angle_entity, unique_profile_line_angle_pair,
+        unique_profile_line_distance_entity, unique_profile_line_distance_pair,
+        unique_profile_line_point_locus, unique_profile_point_line_entity,
+        unique_profile_point_line_pair, MarkerTransform,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -10675,6 +10724,64 @@ mod profile_join_tests {
             single_marker_curve_entity("line-marker", &HashMap::new(), &loci, &entities),
             Some(line_id)
         );
+    }
+
+    #[test]
+    fn axis_relation_requires_aligned_evaluated_geometry() {
+        let sketch = SketchId("sketch".into());
+        let first_id = SketchEntityId("first".into());
+        let second_id = SketchEntityId("second".into());
+        let line = |id: SketchEntityId, start: Point2, end: Point2| SketchEntity {
+            id,
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let entities = vec![
+            line(
+                first_id.clone(),
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 0.0),
+            ),
+            line(
+                second_id.clone(),
+                Point2::new(1.0, 0.0),
+                Point2::new(1.0, 1.0),
+            ),
+        ];
+        let first = marker("first-marker", None);
+        let second = marker("second-marker", None);
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::HorizontalPoints);
+        relation.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: first.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: second.id.clone(),
+            },
+        ];
+        let markers = HashMap::from([
+            (first.id.as_str(), &first),
+            (second.id.as_str(), &second),
+            (relation.id.as_str(), &relation),
+        ]);
+        let loci = HashMap::from([
+            (first.id.clone(), vec![SketchLocus::Start(first_id)]),
+            (second.id.clone(), vec![SketchLocus::End(second_id)]),
+        ]);
+
+        assert!(matches!(
+            typed_marker_relation_definition_in_sketch(
+                &relation, &sketch, &entities, &markers, &loci,
+            ),
+            Some(SketchConstraintDefinition::Native { .. })
+        ));
     }
 
     #[test]
