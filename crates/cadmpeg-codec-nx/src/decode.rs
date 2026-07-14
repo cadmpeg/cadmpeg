@@ -1708,7 +1708,13 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                     SurfaceGeometry::Procedural { .. } => {
                         offset_surface_parameters(ir, surface_id, *point, uv.last().copied())
                             .or_else(|| {
-                                blend_surface_parameters(ir, surface_id, *point, uv.last().copied())
+                                blend_surface_parameters_for_fit(
+                                    ir,
+                                    surface_id,
+                                    *point,
+                                    uv.last().copied(),
+                                    *fit_tolerance,
+                                )
                             })
                     }
                     geometry => analytic_surface_parameters(geometry, *point),
@@ -1788,13 +1794,24 @@ fn decoded_surface_point_inner(
         .or_else(|| blend_surface_point_inner(ir, surface, u, v, depth + 1))
 }
 
+#[cfg(test)]
 pub(crate) fn blend_surface_parameters(
     ir: &CadIr,
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
 ) -> Option<Point2> {
-    blend_surface_parameters_inner(ir, surface, point, seed, 0)
+    blend_surface_parameters_inner(ir, surface, point, seed, None, 0)
+}
+
+pub(crate) fn blend_surface_parameters_for_fit(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+    fit_tolerance: f64,
+) -> Option<Point2> {
+    blend_surface_parameters_inner(ir, surface, point, seed, Some(fit_tolerance), 0)
 }
 
 fn blend_surface_parameters_inner(
@@ -1802,6 +1819,7 @@ fn blend_surface_parameters_inner(
     surface: &SurfaceId,
     point: Point3,
     seed: Option<Point2>,
+    fit_tolerance: Option<f64>,
     depth: usize,
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
@@ -1837,7 +1855,119 @@ fn blend_surface_parameters_inner(
             best_branch_distance = branch_distance;
         }
     }
-    best
+    let initial = best?;
+    let initial_point = blend_surface_point_inner(ir, surface, initial.u, initial.v, depth + 1)?;
+    if fit_tolerance.is_none_or(|tolerance| point_distance(initial_point, point) <= tolerance) {
+        return Some(initial);
+    }
+    refine_blend_surface_parameters(ir, surface, point, initial, depth + 1).or(Some(initial))
+}
+
+pub(crate) fn refine_blend_surface_parameters(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    mut parameters: Point2,
+    depth: usize,
+) -> Option<Point2> {
+    (depth < 32).then_some(())?;
+    let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
+    let u_domain = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == spine)
+        .and_then(|curve| match &curve.geometry {
+            CurveGeometry::Nurbs(nurbs) => {
+                let degree = usize::try_from(nurbs.degree).ok()?;
+                let count = nurbs.control_points.len();
+                Some([*nurbs.knots.get(degree)?, *nurbs.knots.get(count)?])
+            }
+            _ => None,
+        });
+    if let Some(domain) = u_domain {
+        parameters.u = parameters.u.clamp(domain[0], domain[1]);
+    }
+    let squared_distance = |candidate: Point3| {
+        (candidate.x - point.x).powi(2)
+            + (candidate.y - point.y).powi(2)
+            + (candidate.z - point.z).powi(2)
+    };
+    for _ in 0..16 {
+        let position =
+            blend_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        let current_distance = squared_distance(position);
+        let u_step = parameter_derivative_step(parameters.u, u_domain);
+        let v_step = parameter_derivative_step(parameters.v, None);
+        let derivative = |along_u: bool, step: f64| {
+            let mut before = parameters;
+            let mut after = parameters;
+            if along_u {
+                before.u -= step;
+                after.u += step;
+                if let Some(domain) = u_domain {
+                    before.u = before.u.clamp(domain[0], domain[1]);
+                    after.u = after.u.clamp(domain[0], domain[1]);
+                }
+            } else {
+                before.v -= step;
+                after.v += step;
+            }
+            let width = if along_u {
+                after.u - before.u
+            } else {
+                after.v - before.v
+            };
+            if !width.is_finite() || width == 0.0 {
+                return None;
+            }
+            let first = blend_surface_point_inner(ir, surface, before.u, before.v, depth + 1)?;
+            let second = blend_surface_point_inner(ir, surface, after.u, after.v, depth + 1)?;
+            Some(Vector3::new(
+                (second.x - first.x) / width,
+                (second.y - first.y) / width,
+                (second.z - first.z) / width,
+            ))
+        };
+        let du = derivative(true, u_step)?;
+        let dv = derivative(false, v_step)?;
+        let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
+            break;
+        };
+        let mut scale = 1.0;
+        let mut accepted = None;
+        for _ in 0..8 {
+            let mut candidate =
+                Point2::new(parameters.u - scale * step_u, parameters.v - scale * step_v);
+            if let Some(domain) = u_domain {
+                candidate.u = candidate.u.clamp(domain[0], domain[1]);
+            }
+            if let Some(position) =
+                blend_surface_point_inner(ir, surface, candidate.u, candidate.v, depth + 1)
+            {
+                if squared_distance(position) < current_distance {
+                    accepted = Some(candidate);
+                    break;
+                }
+            }
+            scale *= 0.5;
+        }
+        let Some(candidate) = accepted else {
+            break;
+        };
+        let converged = (candidate.u - parameters.u).abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
+            && (candidate.v - parameters.v).abs() <= 1.0e-12 * (1.0 + parameters.v.abs());
+        parameters = candidate;
+        if converged {
+            break;
+        }
+    }
+    Some(parameters)
 }
 
 #[cfg(test)]
@@ -1936,7 +2066,7 @@ fn surface_contact_direction(
     let parameters = match &carrier.geometry {
         SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, center, None),
         SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, surface, center, None)
-            .or_else(|| blend_surface_parameters_inner(ir, surface, center, None, depth + 1)),
+            .or_else(|| blend_surface_parameters_inner(ir, surface, center, None, None, depth + 1)),
         geometry => analytic_surface_parameters(geometry, center),
     }?;
     let contact = decoded_surface_point_inner(ir, surface, parameters.u, parameters.v, depth + 1)?;

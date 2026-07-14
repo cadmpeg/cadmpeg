@@ -8477,7 +8477,7 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
                     reversed: false,
                 }),
             ],
-            spine: Some(spine),
+            spine: Some(spine.clone()),
             radius: BlendRadiusLaw::Constant { signed_radius: 2.0 },
             cross_section: BlendCrossSection::Circular,
             native: None,
@@ -8491,6 +8491,22 @@ fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
 
     assert!((actual.u - expected.u).abs() < 1.0e-8);
     assert!((actual.v - expected.v).abs() < 1.0e-8);
+
+    let refined = crate::decode::refine_blend_surface_parameters(
+        &ir,
+        &surface,
+        point,
+        Point2::new(expected.u + 0.5, expected.v + 0.1),
+        0,
+    )
+    .unwrap();
+    let refined_point =
+        crate::decode::blend_surface_point(&ir, &surface, refined.u, refined.v).unwrap();
+    let refined_error = ((refined_point.x - point.x).powi(2)
+        + (refined_point.y - point.y).powi(2)
+        + (refined_point.z - point.z).powi(2))
+    .sqrt();
+    assert!(refined_error < 1.0e-9);
 
     let third = SurfaceId("synthetic:third-plane".into());
     ir.model.surfaces.push(Surface {
