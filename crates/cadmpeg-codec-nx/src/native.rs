@@ -442,6 +442,27 @@ pub struct FeatureOperationBodyMember {
     pub source_offset: u64,
 }
 
+/// Exact continuation following a `TRIM BODY` branch-`11` member lane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureTrimBody11Continuation {
+    /// Globally unique continuation identity.
+    pub id: String,
+    /// Owning operation label.
+    pub operation_label: String,
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Compact index in the single-entry continuation lane.
+    pub continuation_index: u32,
+    /// Absolute file offset of the continuation compact-index marker.
+    pub continuation_source_offset: u64,
+    /// Terminal object index, equal to `body_object_index`.
+    pub terminal_body_object_index: u32,
+    /// Absolute file offset of the terminal object-index marker.
+    pub terminal_source_offset: u64,
+}
+
 /// Structured `32` branch following an extrusion body-reference field.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureExtrudePayload32Branch {
@@ -1247,6 +1268,54 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
         }
     }
     members
+}
+
+/// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
+pub fn feature_trim_body_11_continuations(
+    container: &Container,
+) -> Vec<FeatureTrimBody11Continuation> {
+    let sections = container.om_sections();
+    let mut continuations = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            continuations.extend(
+                crate::om::trim_body_11_continuations(record)
+                    .into_iter()
+                    .map(|continuation| FeatureTrimBody11Continuation {
+                        id: format!(
+                            "nx:feature-history:trim-body-11-continuation#{section_key}-{operation_ordinal}-{}",
+                            continuation.body_reference_ordinal
+                        ),
+                        operation_label: format!(
+                            "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                        ),
+                        body_reference_ordinal: continuation.body_reference_ordinal,
+                        body_object_index: continuation.body_object_index,
+                        continuation_index: continuation.continuation_index,
+                        continuation_source_offset: entry_offset
+                            + continuation.continuation_offset as u64,
+                        terminal_body_object_index: continuation.terminal_body_object_index,
+                        terminal_source_offset: entry_offset + continuation.terminal_offset as u64,
+                    }),
+            );
+        }
+    }
+    continuations
 }
 
 /// Decode structured `32` branches following extrusion body-reference fields.

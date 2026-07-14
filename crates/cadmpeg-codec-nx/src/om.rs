@@ -342,6 +342,23 @@ pub struct OperationBodyMember {
     pub offset: usize,
 }
 
+/// Exact continuation following a `TRIM BODY` branch-`11` member lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TrimBody11Continuation {
+    /// Zero-based body-reference occurrence order.
+    pub body_reference_ordinal: u32,
+    /// Serialized body object index.
+    pub body_object_index: u32,
+    /// Compact index in the single-entry continuation lane.
+    pub continuation_index: u32,
+    /// Absolute offset of the continuation compact-index marker.
+    pub continuation_offset: usize,
+    /// Terminal object index, equal to `body_object_index`.
+    pub terminal_body_object_index: u32,
+    /// Absolute offset of the terminal object-index marker.
+    pub terminal_offset: usize,
+}
+
 /// Structured `32` branch following an extrusion body reference.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExtrudePayload32Branch {
@@ -943,6 +960,85 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                 });
             }
             members
+        })
+        .collect()
+}
+
+/// Decode exact continuations following `TRIM BODY` branch-`11` member lanes.
+pub fn trim_body_11_continuations(record: OperationRecord<'_>) -> Vec<TrimBody11Continuation> {
+    if record.label.value != "TRIM BODY" {
+        return Vec::new();
+    }
+    operation_body_references(record)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(body_ordinal, reference)| {
+            let token = reference.offset.checked_sub(record.offset)?;
+            let (_, end) = feature_object_index(record.bytes, token)?;
+            if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
+                return None;
+            }
+            let mut at = end + 2;
+            for _ in 0..3 {
+                let (_, _, width) = payload_scalar(record.bytes.get(at..)?)?;
+                at += width;
+            }
+            if record.bytes.get(at) != Some(&0x01) {
+                return None;
+            }
+            let member_count = usize::from(*record.bytes.get(at + 1)?);
+            if member_count < 2 {
+                return None;
+            }
+            at += 2;
+            for _ in 0..member_count - 1 {
+                if record.bytes.get(at) != Some(&0x2e) {
+                    return None;
+                }
+                at += 1;
+                let (CompactIndex::Value(_), width) = compact_index(record.bytes.get(at..)?)?
+                else {
+                    return None;
+                };
+                at += width;
+                if record.bytes.get(at) != Some(&0x00) {
+                    return None;
+                }
+                at += 1;
+            }
+            if record.bytes.get(at..at + 2) != Some(&[0x01, 0x02]) {
+                return None;
+            }
+            at += 2;
+            let continuation_at = at;
+            let (CompactIndex::Value(continuation_index), width) =
+                compact_index(record.bytes.get(at..)?)?
+            else {
+                return None;
+            };
+            at += width;
+            if record.bytes.get(at..at + 3) != Some(&[0x00, 0x00, 0x01]) {
+                return None;
+            }
+            at += 3;
+            let terminal_at = at;
+            let (Some(terminal_body_object_index), next) = feature_object_index(record.bytes, at)?
+            else {
+                return None;
+            };
+            if terminal_body_object_index != reference.object_index
+                || record.bytes.get(next..next + 2) != Some(&[0x00, 0x00])
+            {
+                return None;
+            }
+            Some(TrimBody11Continuation {
+                body_reference_ordinal: body_ordinal as u32,
+                body_object_index: reference.object_index,
+                continuation_index,
+                continuation_offset: record.offset + continuation_at,
+                terminal_body_object_index,
+                terminal_offset: record.offset + terminal_at,
+            })
         })
         .collect()
 }
