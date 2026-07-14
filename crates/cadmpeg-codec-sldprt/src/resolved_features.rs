@@ -2687,7 +2687,14 @@ pub(crate) fn bind_parameter_scalars(
                             }
                         }
                         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
-                            scalar.value == if *expected { 1.0 } else { 0.0 }
+                            let expected = if *expected { 1.0 } else { 0.0 };
+                            if length_scalars.contains(scalar.id.as_str())
+                                || angle_scalars.contains(scalar.id.as_str())
+                            {
+                                same_dimension_length(scalar.value * 1000.0, expected)
+                            } else {
+                                scalar.value == expected
+                            }
                         }
                         _ => true,
                     })
@@ -2716,6 +2723,20 @@ pub(crate) fn bind_parameter_scalars(
                             ))
                         }
                         Some(cadmpeg_ir::features::ParameterValue::Integer(_))
+                            if angle_scalars.contains(scalar.id.as_str()) =>
+                        {
+                            Some(cadmpeg_ir::features::ParameterValue::Angle(
+                                cadmpeg_ir::features::Angle(scalar.value),
+                            ))
+                        }
+                        Some(cadmpeg_ir::features::ParameterValue::Boolean(_))
+                            if length_scalars.contains(scalar.id.as_str()) =>
+                        {
+                            Some(cadmpeg_ir::features::ParameterValue::Length(
+                                cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                            ))
+                        }
+                        Some(cadmpeg_ir::features::ParameterValue::Boolean(_))
                             if angle_scalars.contains(scalar.id.as_str()) =>
                         {
                             Some(cadmpeg_ir::features::ParameterValue::Angle(

@@ -1193,6 +1193,15 @@ fn resolved_features_payload_with_names_and_relation(
     names: &[&str],
     relation_class: &str,
 ) -> Vec<u8> {
+    resolved_features_payload_with_names_relation_and_scalar(codes, names, relation_class, 0.025)
+}
+
+fn resolved_features_payload_with_names_relation_and_scalar(
+    codes: &[u32],
+    names: &[&str],
+    relation_class: &str,
+    scalar_value: f64,
+) -> Vec<u8> {
     let mut payload = Vec::new();
     for name in ["sgPointHandle", "sgLineHandle", "sgArcHandle"] {
         payload.extend_from_slice(&[0xff, 0xff, 0x01, 0x00]);
@@ -1219,7 +1228,7 @@ fn resolved_features_payload_with_names_and_relation(
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00,
                 0x00, 0x00, 0xff, 0xfe, 0xff, 0x00, 0x00, 0x00,
             ]);
-            payload.extend_from_slice(&0.025f64.to_le_bytes());
+            payload.extend_from_slice(&scalar_value.to_le_bytes());
             payload.extend_from_slice(&[
                 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
                 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x02,
@@ -1306,6 +1315,46 @@ fn sldprt_with_tagged_compact_relation_names(
     let mut file = sldprt_with_body(body);
     let mut payload =
         resolved_features_payload_with_names_and_relation(&[0, 1, 1, 1], names, relation_class);
+    let operand_offsets = payload
+        .windows(2)
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == [0xd6, 0x80]).then_some(offset))
+        .collect::<Vec<_>>();
+    for (ordinal, offset) in operand_offsets.into_iter().enumerate() {
+        payload[offset..offset + 2].copy_from_slice(&operand_tags[ordinal % 2]);
+    }
+    let d1_marker = [0x04, 0x80, 0xff, 0xfe, 0xff, 2, b'D', 0, b'1', 0];
+    let d1_offset = payload
+        .windows(d1_marker.len())
+        .position(|window| window == d1_marker)
+        .expect("D1 scalar name");
+    payload[d1_offset + 69] = 1;
+    payload.extend(parasolid_with_body(
+        "feature input sketch",
+        "SCH_SW_33103_11000",
+        &triangle_body(),
+    ));
+    file.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+    file
+}
+
+fn sldprt_with_tagged_compact_relation_scalar(
+    body: &[u8],
+    relation_class: &str,
+    operand_tags: [[u8; 2]; 2],
+    scalar_value: f64,
+) -> Vec<u8> {
+    let mut file = sldprt_with_body(body);
+    let mut payload = resolved_features_payload_with_names_relation_and_scalar(
+        &[0, 1, 1, 1],
+        &["Sketch1", "D1", "D2"],
+        relation_class,
+        scalar_value,
+    );
     let operand_offsets = payload
         .windows(2)
         .enumerate()
@@ -15358,6 +15407,36 @@ fn decode_uses_relation_units_for_bare_integer_dimensions() {
         .expect("driving vertical-distance parameter");
     assert_eq!(parameter.expression, "25");
     assert_eq!(parameter.value, Some(ParameterValue::Length(Length(25.0))));
+    assert!(parameter.native_ref.is_some());
+}
+
+#[test]
+fn decode_uses_relation_units_for_boolean_shaped_dimensions() {
+    use cadmpeg_ir::features::{Length, ParameterValue};
+
+    let mut source = sldprt_with_tagged_compact_relation_scalar(
+        &triangle_body(),
+        "sgPntPntDist",
+        [[0xd6, 0x80]; 2],
+        0.001,
+    );
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"><Dimension Name="D2">1</Dimension></Sketch></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D2")
+        .expect("driving distance parameter");
+    assert_eq!(parameter.expression, "1");
+    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(1.0))));
     assert!(parameter.native_ref.is_some());
 }
 

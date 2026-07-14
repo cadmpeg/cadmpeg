@@ -163,7 +163,7 @@ An extrusion object immediately following a `moProfileFeature_c` object consumes
 
 The inline extrusion operation trailer establishes the extrusion object family independently of its class token. This applies when a repeated token is shared by more than one declared extrusion class.
 
-An integer or Boolean Keywords dimension is discrete. A same-named native f64 scalar binds to that dimension only when it exactly represents the existing integer or Boolean value. Other same-named native scalars in the feature-object interval belong to a different semantic field.
+An integer or Boolean Keywords dimension without dimensional-relation ownership is discrete. A same-named native f64 scalar binds to that dimension only when it exactly represents the existing integer or Boolean value. Other same-named native scalars in the feature-object interval belong to a different semantic field.
 
 `moSweep_c` produces a solid sweep. Compact operation code `15` joins the swept result to the existing body. Its Boolean operation remains independently unresolved when no recognized operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
 
@@ -181,7 +181,11 @@ Distance, horizontal-distance, vertical-distance, and circular-dimension driving
 
 A bare integer Keywords dimension bound to a unique driving distance or circular-dimension scalar denotes millimetres rather than a discrete count. The scalar supplies its evaluated length and native identity while the original expression remains unchanged.
 
+A bare `0` or `1` Keywords dimension bound to a unique driving distance or circular-dimension scalar denotes millimetres rather than a Boolean. The scalar supplies its evaluated length and native identity while the original expression remains unchanged.
+
 A bare integer Keywords dimension bound to a unique driving angular scalar denotes milliradians rather than a discrete count. The scalar supplies its evaluated angle in radians and native identity while the original expression remains unchanged.
+
+A bare `0` or `1` Keywords dimension bound to a unique driving angular scalar denotes milliradians rather than a Boolean. The scalar supplies its evaluated angle in radians and native identity while the original expression remains unchanged.
 
 A uniquely owned feature-input scalar is the evaluated value of the same-named Keywords dimension. Length-valued feature scalars store metres and angular feature scalars store radians. Keywords dimension text remains the parameter expression; its unitless numeric spelling does not replace the evaluated scalar. Feature operation semantics use the evaluated scalar converted to millimetres or radians.
 
