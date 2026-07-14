@@ -53,6 +53,68 @@ pub struct Stream {
     pub schema: Option<String>,
 }
 
+/// One Parasolid attribute-class declaration preceding its field record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttributeDefinition<'a> {
+    /// Inflated-stream offset of the `00 4f` tag.
+    pub offset: usize,
+    /// Stream-local definition record identity.
+    pub xmt: u16,
+    /// Exact printable class name.
+    pub name: &'a str,
+}
+
+/// Decode length-bounded `00 4f` attribute-class declarations.
+pub fn attribute_definitions(bytes: &[u8]) -> Vec<AttributeDefinition<'_>> {
+    let mut definitions = Vec::new();
+    let mut at = 0;
+    while at + 9 <= bytes.len() {
+        if bytes.get(at..at + 2) != Some(&[0x00, 0x4f]) {
+            at += 1;
+            continue;
+        }
+        let escaped = bytes.get(at + 2) == Some(&0xff);
+        let header = at + 2 + usize::from(escaped);
+        let Some(length_bytes) = bytes.get(header..header + 4) else {
+            break;
+        };
+        let name_len = u32::from_be_bytes(length_bytes.try_into().expect("four bytes")) as usize;
+        let Some(identity) = bytes.get(header + 4..header + 6) else {
+            break;
+        };
+        let name_start = header + 6;
+        let Some(name_end) = name_start.checked_add(name_len) else {
+            at += 1;
+            continue;
+        };
+        let Some(name_bytes) = bytes.get(name_start..name_end) else {
+            at += 1;
+            continue;
+        };
+        if name_len == 0
+            || identity[0] != 0
+            || !name_bytes
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() && !byte.is_ascii_control())
+            || bytes.get(name_end..name_end + 2) != Some(&[0x00, 0x50])
+        {
+            at += 1;
+            continue;
+        }
+        let Ok(name) = std::str::from_utf8(name_bytes) else {
+            at += 1;
+            continue;
+        };
+        definitions.push(AttributeDefinition {
+            offset: at,
+            xmt: u16::from_be_bytes([identity[0], identity[1]]),
+            name,
+        });
+        at = name_end;
+    }
+    definitions
+}
+
 /// The minimum inflated length for a candidate to count as a real stream; below
 /// this a `78 01` match is almost certainly a coincidence in packed data.
 const MIN_INFLATED: usize = 64;

@@ -2748,6 +2748,8 @@ fn attach_native_object_model(
     let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
     let segment_body_bindings =
         crate::native::segment_body_bindings(&scan.container, &scan.streams);
+    let parasolid_attribute_definitions =
+        crate::native::parasolid_attribute_definitions(&scan.streams);
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
@@ -2778,6 +2780,7 @@ fn attach_native_object_model(
         && segment_om_links.is_empty()
         && segment_stream_links.is_empty()
         && segment_body_bindings.is_empty()
+        && parasolid_attribute_definitions.is_empty()
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
         && feature_operation_records.is_empty()
@@ -2820,6 +2823,13 @@ fn attach_native_object_model(
             .note(&binding.id, annotation_stream, binding.source_offset)
             .tag("UG_PART_SEGMENT_BODY_BINDING");
         annotations.exactness(&binding.id, Exactness::ByteExact);
+    }
+    for definition in &parasolid_attribute_definitions {
+        let source_stream = annotations.stream(format!("nx:s{}", definition.stream_ordinal));
+        annotations
+            .note(&definition.id, source_stream, definition.inflated_offset)
+            .tag("ATTRIBUTE_DEFINITION");
+        annotations.exactness(&definition.id, Exactness::ByteExact);
     }
     for link in &segment_om_links {
         annotations
@@ -2981,7 +2991,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(24);
+    namespace.version = namespace.version.max(25);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2990,6 +3000,12 @@ fn attach_native_object_model(
     }
     if !segment_body_bindings.is_empty() {
         namespace.set_arena("segment_body_bindings", &segment_body_bindings)?;
+    }
+    if !parasolid_attribute_definitions.is_empty() {
+        namespace.set_arena(
+            "parasolid_attribute_definitions",
+            &parasolid_attribute_definitions,
+        )?;
     }
     if !segment_om_links.is_empty() {
         namespace.set_arena("segment_om_links", &segment_om_links)?;

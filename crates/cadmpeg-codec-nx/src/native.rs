@@ -97,6 +97,21 @@ pub struct SegmentBodyBinding {
     pub source_offset: u64,
 }
 
+/// Named Parasolid attribute class declared in one inflated body stream.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidAttributeDefinition {
+    /// Globally unique native-record identity.
+    pub id: String,
+    /// Zero-based embedded stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local definition record identity.
+    pub xmt: u16,
+    /// Exact printable attribute class name.
+    pub name: String,
+    /// Offset of the declaration in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Validated link from a segment-index word to a framed OM section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentOmLink {
@@ -745,6 +760,29 @@ pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<S
                 body_object_index,
                 source_offset: entry_offset + ((pointer_word + 2) * 4) as u64,
             })
+        })
+        .collect()
+}
+
+/// Retain named attribute-class declarations from all Parasolid streams.
+pub fn parasolid_attribute_definitions(streams: &[Stream]) -> Vec<ParasolidAttributeDefinition> {
+    streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::attribute_definitions(&stream.inflated)
+                .into_iter()
+                .map(move |definition| ParasolidAttributeDefinition {
+                    id: format!(
+                        "nx:s{stream_ordinal}:attribute-definition#{}",
+                        definition.xmt
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: definition.xmt,
+                    name: definition.name.to_string(),
+                    inflated_offset: definition.offset as u64,
+                })
         })
         .collect()
 }
