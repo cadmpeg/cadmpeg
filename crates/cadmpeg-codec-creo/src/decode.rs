@@ -2587,6 +2587,11 @@ fn feature_recipe(
     scan: &ContainerScan,
     feature_id: u32,
 ) -> Option<crate::feature::FeatureRecipeKind> {
+    let stored_recipe = scan
+        .feature_operations
+        .iter()
+        .find(|operation| operation.feature_id == feature_id)
+        .and_then(|operation| operation.recipe);
     let schema_recipe = scan
         .feature_rows
         .iter()
@@ -2595,12 +2600,7 @@ fn feature_recipe(
             Some(916 | 917) => Some(crate::feature::FeatureRecipeKind::Extrude),
             _ => None,
         });
-    schema_recipe.or_else(|| {
-        scan.feature_operations
-            .iter()
-            .find(|operation| operation.feature_id == feature_id)
-            .and_then(|operation| operation.recipe)
-    })
+    stored_recipe.or(schema_recipe)
 }
 
 fn line_orientation_definition(

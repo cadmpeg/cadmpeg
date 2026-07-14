@@ -498,7 +498,10 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
         &[
             ("VisibGeom", geometry),
             ("AllFeatur", allfeatur),
-            ("MdlStatus", b"Protrusion id 4\0Round id 9\0".to_vec()),
+            (
+                "MdlStatus",
+                b"protrevolve\0Revolve id 4\0Round id 9\0".to_vec(),
+            ),
         ],
     );
     let scan = container::scan_bytes(data.clone());
@@ -519,7 +522,7 @@ fn scan_decodes_allfeatur_root_featdefs_schema_class() {
             .source_properties
             .get("recipe")
             .map(String::as_str),
-        Some("protextrude")
+        Some("protrevolve")
     );
     assert_eq!(
         result.ir.model.features[1]
