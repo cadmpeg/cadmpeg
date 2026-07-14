@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 19;
+pub const CATIA_NATIVE_VERSION: u32 = 20;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -155,6 +155,9 @@ pub struct CatiaValueSchemaSelection {
     /// Encoded value token immediately following an in-range selector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<value_block::ValueField>,
+    /// Complete encoded value after this selector and before the next selector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub encoded_value: Vec<value_block::ValueField>,
 }
 
 /// One exact `7C02` source-schema catalog.
@@ -685,15 +688,26 @@ impl CatiaValueBlock {
         catalog_pos: usize,
         catalog: Option<&CatiaCatalog>,
     ) -> Self {
-        let schema_selections = block
+        let selector_indices = block
             .fields
             .iter()
             .enumerate()
-            .filter_map(|(index, field)| match field {
+            .filter_map(|(index, field)| {
+                matches!(field, value_block::ValueField::SchemaSelector { .. }).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let schema_selections = selector_indices
+            .iter()
+            .enumerate()
+            .filter_map(|(selector_rank, index)| match &block.fields[*index] {
                 value_block::ValueField::SchemaSelector { ordinal, offset } => {
                     let entry = catalog
                         .and_then(|catalog| catalog.entries.get(*ordinal as usize))
                         .map(|entry| entry.id.clone());
+                    let value_end = selector_indices
+                        .get(selector_rank + 1)
+                        .copied()
+                        .unwrap_or(block.fields.len());
                     Some(CatiaValueSchemaSelection {
                         offset: *offset as u64,
                         ordinal: *ordinal,
@@ -701,6 +715,11 @@ impl CatiaValueBlock {
                             .as_ref()
                             .and_then(|_| block.fields.get(index + 1))
                             .cloned(),
+                        encoded_value: if entry.is_some() {
+                            block.fields[index + 1..value_end].to_vec()
+                        } else {
+                            Vec::new()
+                        },
                         entry,
                     })
                 }

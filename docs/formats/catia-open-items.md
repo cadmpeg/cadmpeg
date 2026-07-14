@@ -13,7 +13,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## Design records
 
-- The grouping of `7C0B` tokens into stored values and the relation from those values to `7C09` design-object fields are unresolved.
+- The relation from grouped `7C0B` stored values to `7C09` design-object fields is unresolved.
 
 ## Standard nested `V5_CFV2`
 

@@ -2127,7 +2127,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     );
 
     let native = crate::native::CatiaNative::decode(&bytes);
-    assert_eq!(native.version, 19);
+    assert_eq!(native.version, crate::native::CATIA_NATIVE_VERSION);
     assert_eq!(native.external_references.len(), 2);
     assert_eq!(native.external_references[0].target, "Support.CATPart");
     assert_eq!(
@@ -4522,6 +4522,21 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
             width: 1,
             offset: 7,
         })
+    );
+    assert_eq!(
+        native.value_blocks[0].schema_selections[0].encoded_value,
+        [
+            crate::value_block::ValueField::Atom {
+                value: 3,
+                width: 1,
+                offset: 7,
+            },
+            crate::value_block::ValueField::Atom {
+                value: 2,
+                width: 1,
+                offset: 8,
+            },
+        ]
     );
 }
 
