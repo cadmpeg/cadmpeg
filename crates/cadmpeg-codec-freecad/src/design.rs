@@ -80,6 +80,14 @@ pub(crate) fn transfer(
             FeatureDefinition::TreeNode {
                 role: FeatureTreeNodeRole::SolidBodies,
             }
+        } else if is_datum(&object.type_name) {
+            datum_definition(&object.type_name, &owned).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
         } else if is_sketch(&object.type_name) {
             let decoded = parse_sketch(object, &owned)?;
             let sketch = decoded.sketch;
@@ -583,21 +591,27 @@ fn sketch_nurbs(kind: &str, node: roxmltree::Node<'_, '_>) -> Option<SketchGeome
 }
 
 fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
-    let Some(value) = property(properties, "Placement")
+    placement_frame(properties).map_or_else(
+        || {
+            (
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+        },
+        |(origin, normal, x_axis, _)| (origin, normal, x_axis),
+    )
+}
+
+fn placement_frame(properties: &[&PropertyRecord]) -> Option<(Point3, Vector3, Vector3, Vector3)> {
+    let value = property(properties, "Placement")
         .or_else(|| property(properties, "AttachmentOffset"))
         .and_then(|property| {
             property
                 .values
                 .iter()
                 .find(|value| value.tag == "PropertyPlacement")
-        })
-    else {
-        return (
-            Point3::new(0.0, 0.0, 0.0),
-            Vector3::new(0.0, 0.0, 1.0),
-            Vector3::new(1.0, 0.0, 0.0),
-        );
-    };
+        })?;
     let component = |name: &str, default: f64| {
         value
             .attributes
@@ -611,7 +625,7 @@ fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
         component("Q2", 0.0),
         component("Q3", 1.0),
     ];
-    (
+    Some((
         Point3::new(
             component("Px", 0.0),
             component("Py", 0.0),
@@ -619,7 +633,8 @@ fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
         ),
         rotate_vector(quaternion, [0.0, 0.0, 1.0]),
         rotate_vector(quaternion, [1.0, 0.0, 0.0]),
-    )
+        rotate_vector(quaternion, [0.0, 1.0, 0.0]),
+    ))
 }
 
 fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
@@ -1435,6 +1450,29 @@ fn primitive_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<Fe
     Some(FeatureDefinition::Primitive { solid, op })
 }
 
+fn datum_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let (origin, z_axis, x_axis, y_axis) = placement_frame(properties)?;
+    Some(match kind {
+        "PartDesign::Plane" => FeatureDefinition::DatumPlane {
+            origin,
+            normal: z_axis,
+            u_axis: x_axis,
+        },
+        "PartDesign::Line" => FeatureDefinition::DatumAxis {
+            origin,
+            direction: z_axis,
+        },
+        "PartDesign::Point" => FeatureDefinition::DatumPoint { position: origin },
+        "PartDesign::CoordinateSystem" => FeatureDefinition::DatumCoordinateSystem {
+            origin,
+            x_axis,
+            y_axis,
+            z_axis,
+        },
+        _ => return None,
+    })
+}
+
 fn boolean_definition(kind: &str, properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
     let op = if kind.ends_with("Cut") {
         BooleanOp::Cut
@@ -1652,6 +1690,15 @@ fn feature_id(object: &ObjectRecord) -> FeatureId {
 fn is_sketch(kind: &str) -> bool {
     kind.contains("Sketcher::SketchObject")
 }
+fn is_datum(kind: &str) -> bool {
+    matches!(
+        kind,
+        "PartDesign::Plane"
+            | "PartDesign::Line"
+            | "PartDesign::Point"
+            | "PartDesign::CoordinateSystem"
+    )
+}
 fn is_extrusion(kind: &str) -> bool {
     kind.contains("PartDesign::Pad")
         || kind.contains("PartDesign::Pocket")
@@ -1705,6 +1752,7 @@ fn is_spreadsheet(kind: &str) -> bool {
 fn is_design_object(kind: &str) -> bool {
     is_spreadsheet(kind)
         || is_body(kind)
+        || is_datum(kind)
         || is_sketch(kind)
         || is_primitive(kind)
         || is_boolean(kind)

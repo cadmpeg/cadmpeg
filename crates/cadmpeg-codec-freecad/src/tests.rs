@@ -554,6 +554,66 @@ fn transfers_complete_thickness_construction_controls() {
 }
 
 #[test]
+fn transfers_datum_frames_from_persisted_placements() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="PartDesign::Plane" name="Plane" id="1"/>
+ <Object type="PartDesign::Line" name="Axis" id="2"/>
+ <Object type="PartDesign::Point" name="Point" id="3"/>
+ <Object type="PartDesign::CoordinateSystem" name="Frame" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Plane"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Axis"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Point"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="7" Py="8" Pz="9" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+ <Object name="Frame"><Properties Count="1"><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="11" Pz="12" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("datums");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("datum")
+            .definition
+    };
+    assert!(matches!(
+        definition("Plane"),
+        cadmpeg_ir::features::FeatureDefinition::DatumPlane { origin, normal, u_axis }
+            if *origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+                && *normal == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+                && *u_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+    ));
+    assert!(matches!(
+        definition("Axis"),
+        cadmpeg_ir::features::FeatureDefinition::DatumAxis { origin, direction }
+            if *origin == cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)
+                && *direction == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    ));
+    assert!(matches!(
+        definition("Point"),
+        cadmpeg_ir::features::FeatureDefinition::DatumPoint { position }
+            if *position == cadmpeg_ir::math::Point3::new(7.0, 8.0, 9.0)
+    ));
+    assert!(matches!(
+        definition("Frame"),
+        cadmpeg_ir::features::FeatureDefinition::DatumCoordinateSystem { origin, x_axis, y_axis, z_axis }
+            if *origin == cadmpeg_ir::math::Point3::new(10.0, 11.0, 12.0)
+                && *x_axis == cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
+                && *y_axis == cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+                && *z_axis == cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+    ));
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
 fn reports_attributable_native_design_blockers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>
