@@ -239,9 +239,9 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
     use cadmpeg_ir::features::{
-        Angle, ChamferForm, ChamferGroup, ChamferSpec, DesignParameter as NeutralParameter,
-        DimensionDisplay, EdgeSelection, Feature, FeatureDefinition, FilletGroup, Length,
-        ParameterId, ParameterValue, ProfileRef, RadiusForm, RadiusSpec, SketchSpace,
+        Angle, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection, Feature,
+        FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, ProfileRef,
+        RadiusForm, RadiusSpec, SketchSpace,
     };
     use std::collections::BTreeMap;
 
@@ -404,63 +404,7 @@ pub fn project_parameter_design(
                     },
                 }
             } else if scope.kind == "Chamfer" {
-                let has_parameter = |source_kind: &str| {
-                    parameters
-                        .iter()
-                        .any(|(_, parameter)| parameter.source_kind == source_kind)
-                };
-                let parameter = |source_kind: &str| {
-                    let mut matches = parameters
-                        .iter()
-                        .map(|(_, parameter)| *parameter)
-                        .filter(|parameter| parameter.source_kind == source_kind);
-                    let parameter = matches.next()?;
-                    matches.next().is_none().then_some(parameter)
-                };
-                let distance = parameter("Distance").and_then(design_length);
-                let first = parameter("Distance 1").and_then(design_length);
-                let second = parameter("Distance 2").and_then(design_length);
-                let angle = parameter("Angle").and_then(design_angle);
-                let (spec, form) =
-                    if has_parameter("Distance 1") || has_parameter("Distance 2") {
-                        (
-                            first
-                                .zip(second)
-                                .map(|(first, second)| ChamferSpec::TwoDistances { first, second }),
-                            Some(ChamferForm::TwoDistances),
-                        )
-                    } else if has_parameter("Angle") {
-                        (
-                            distance.zip(angle).map(|(distance, angle)| {
-                                ChamferSpec::DistanceAngle { distance, angle }
-                            }),
-                            Some(ChamferForm::DistanceAngle),
-                        )
-                    } else if has_parameter("Distance") {
-                        (
-                            distance.map(|distance| ChamferSpec::Distance { distance }),
-                            Some(ChamferForm::Distance),
-                        )
-                    } else {
-                        (None, None)
-                    };
-                let edges = if construction_groups.iter().any(|group| {
-                    native_stream(&group.id) == Some(native_scope)
-                        && group.scope_record_index == scope.record_index
-                        && !group.lost_edge_references.is_empty()
-                }) {
-                    EdgeSelection::Unresolved
-                } else {
-                    EdgeSelection::Native(scope.id.clone())
-                };
-                FeatureDefinition::Chamfer {
-                    groups: vec![ChamferGroup {
-                        edges,
-                        spec: spec
-                            .filter(valid_chamfer_spec)
-                            .unwrap_or(ChamferSpec::Unresolved { form }),
-                    }],
-                }
+                project_chamfer(scope, &parameters, construction_groups)
             } else {
                 let mut properties = BTreeMap::new();
                 if let Some(profile) = scope.extrude_profile.as_ref() {
@@ -695,6 +639,110 @@ fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Le
     (parameter.unit.as_deref() == Some("mm") && parameter.evaluated_value.is_finite()).then_some(
         cadmpeg_ir::features::Length(parameter.evaluated_value * 10.0),
     )
+}
+
+fn project_chamfer(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> cadmpeg_ir::features::FeatureDefinition {
+    use cadmpeg_ir::features::{
+        ChamferForm, ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition,
+    };
+
+    let native_scope = native_stream(&scope.id);
+    let mut edge_groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_scope
+                && group.scope_record_index == scope.record_index
+                && group.extrude_role.is_none()
+        })
+        .collect::<Vec<_>>();
+    edge_groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let group_count = edge_groups.len().max(1);
+
+    let ordered_parameters = |source_kind: &str| {
+        let mut matches = parameters
+            .iter()
+            .filter(|(_, parameter)| parameter.source_kind == source_kind)
+            .copied()
+            .collect::<Vec<_>>();
+        matches.sort_by_key(|(local_ordinal, _)| *local_ordinal);
+        matches
+            .into_iter()
+            .map(|(_, parameter)| parameter)
+            .collect::<Vec<_>>()
+    };
+    let distances = ordered_parameters("Distance");
+    let first_distances = ordered_parameters("Distance 1");
+    let second_distances = ordered_parameters("Distance 2");
+    let angles = ordered_parameters("Angle");
+
+    let (form, candidates) = if !first_distances.is_empty() || !second_distances.is_empty() {
+        let candidates = (first_distances.len() == group_count
+            && second_distances.len() == group_count)
+            .then(|| {
+                first_distances
+                    .iter()
+                    .zip(&second_distances)
+                    .map(|(first, second)| {
+                        design_length(first)
+                            .zip(design_length(second))
+                            .map(|(first, second)| ChamferSpec::TwoDistances { first, second })
+                    })
+                    .collect::<Vec<_>>()
+            });
+        (Some(ChamferForm::TwoDistances), candidates)
+    } else if !angles.is_empty() {
+        let candidates =
+            (distances.len() == group_count && angles.len() == group_count).then(|| {
+                distances
+                    .iter()
+                    .zip(&angles)
+                    .map(|(distance, angle)| {
+                        design_length(distance)
+                            .zip(design_angle(angle))
+                            .map(|(distance, angle)| ChamferSpec::DistanceAngle { distance, angle })
+                    })
+                    .collect::<Vec<_>>()
+            });
+        (Some(ChamferForm::DistanceAngle), candidates)
+    } else if !distances.is_empty() {
+        let candidates = (distances.len() == group_count).then(|| {
+            distances
+                .iter()
+                .map(|distance| {
+                    design_length(distance).map(|distance| ChamferSpec::Distance { distance })
+                })
+                .collect::<Vec<_>>()
+        });
+        (Some(ChamferForm::Distance), candidates)
+    } else {
+        (None, None)
+    };
+    let candidates = candidates.unwrap_or_else(|| vec![None; group_count]);
+
+    let groups = candidates
+        .into_iter()
+        .enumerate()
+        .map(|(index, spec)| {
+            let edge_group = edge_groups.get(index).copied();
+            ChamferGroup {
+                edges: match edge_group {
+                    Some(group) if !group.lost_edge_references.is_empty() => {
+                        EdgeSelection::Unresolved
+                    }
+                    Some(group) => EdgeSelection::Native(group.id.clone()),
+                    None => EdgeSelection::Native(scope.id.clone()),
+                },
+                spec: spec
+                    .filter(valid_chamfer_spec)
+                    .unwrap_or(ChamferSpec::Unresolved { form }),
+            }
+        })
+        .collect();
+    FeatureDefinition::Chamfer { groups }
 }
 
 fn project_extrude(
@@ -9291,6 +9339,63 @@ mod relation_tests {
                     edges: EdgeSelection::Native(selection),
                     spec: ChamferSpec::TwoDistances { first, second },
                 }] if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0)
+        ));
+
+        let construction_group =
+            |record_index, scope_reference_ordinal| DesignConstructionOperandGroup {
+                id: format!("f3d:native:construction-group#{record_index}"),
+                scope_record_index: 22,
+                scope_reference_ordinal,
+                record_index,
+                byte_offset: 1_000 + u64::from(scope_reference_ordinal),
+                class_tag: "288".into(),
+                member_count_offset: 1_021 + u64::from(scope_reference_ordinal),
+                members: vec![record_index + 100],
+                lost_edge_references: Vec::new(),
+                member_offsets: vec![1_026 + u64::from(scope_reference_ordinal)],
+                identity_record_index: record_index + 1,
+                identity_record_offset: 1_050 + u64::from(scope_reference_ordinal),
+                role: 0x0000_0008_0000_0000,
+                extrude_role: None,
+                extrude_face_role: None,
+                role_offset: 1_060 + u64::from(scope_reference_ordinal),
+                opaque_index: 100,
+                opaque_index_offset: 1_068 + u64::from(scope_reference_ordinal),
+                opaque_scalar: 0.5,
+                opaque_scalar_offset: 1_072 + u64::from(scope_reference_ordinal),
+                variant: false,
+                paired_class_tag: "259".into(),
+                paired_byte_offset: 1_100 + u64::from(scope_reference_ordinal),
+            };
+        let mut construction_groups = [construction_group(90, 17), construction_group(80, 4)];
+        construction_groups[1]
+            .lost_edge_references
+            .push("f3d:native:lost-edge-reference#1".into());
+        let (features, _) = project_parameter_design(
+            &[
+                parameter(74, 75, "Distance", "d5", "2 mm", 0.2),
+                parameter(84, 85, "Distance", "d4", "2.5 mm", 0.25),
+            ],
+            &[owner(74, 22, 75, 1), owner(84, 22, 85, 0)],
+            &scopes[1..],
+            &construction_groups,
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            &features[0].definition,
+            FeatureDefinition::Chamfer { groups }
+                if matches!(groups.as_slice(), [
+                    ChamferGroup {
+                        edges: EdgeSelection::Unresolved,
+                        spec: ChamferSpec::Distance { distance: Length(2.5) },
+                    },
+                    ChamferGroup {
+                        edges: EdgeSelection::Native(selection),
+                        spec: ChamferSpec::Distance { distance: Length(2.0) },
+                    },
+                ] if selection == &construction_groups[0].id)
         ));
     }
 
