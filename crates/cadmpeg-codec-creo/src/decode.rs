@@ -3766,6 +3766,75 @@ fn transfer_resolved_sketches(
     }
 }
 
+fn surface_kind_for_geometry(geometry: &SurfaceGeometry) -> Option<crate::surface::SurfaceKind> {
+    match geometry {
+        SurfaceGeometry::Plane { .. } => Some(crate::surface::SurfaceKind::Plane),
+        SurfaceGeometry::Cylinder { .. } => Some(crate::surface::SurfaceKind::Cylinder),
+        SurfaceGeometry::Cone { .. } => Some(crate::surface::SurfaceKind::Cone),
+        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
+            Some(crate::surface::SurfaceKind::TorusOrSphere)
+        }
+        SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
+        SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn ordered_line_surface_id(
+    surface_rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+    table: &crate::feature::FeatureEntityTable,
+    order: &crate::feature::FeatureOrderTable,
+    external_id: u32,
+    geometry: &SurfaceGeometry,
+) -> Option<u32> {
+    let index = order
+        .internal_id(external_id)?
+        .checked_sub(1)
+        .and_then(|value| usize::try_from(value).ok())?;
+    let surface_id = *table.entry_ids.get(index)?;
+    table.surface_ids.contains(&surface_id).then_some(())?;
+    let expected_kind = surface_kind_for_geometry(geometry)?;
+    surface_rows
+        .iter()
+        .any(|row| {
+            row.id == surface_id && row.feature_id == feature_id && row.kind == expected_kind
+        })
+        .then_some(surface_id)
+}
+
+fn ordered_family_surface_bindings(
+    surface_rows: &[crate::surface::SurfaceRow],
+    feature_id: u32,
+    table: &crate::feature::FeatureEntityTable,
+    order: &crate::feature::FeatureOrderTable,
+    external_ids: impl IntoIterator<Item = u32>,
+    expected_kind: crate::surface::SurfaceKind,
+) -> BTreeMap<u32, u32> {
+    let mut entities = external_ids
+        .into_iter()
+        .filter_map(|external_id| Some((order.internal_id(external_id)?, external_id)))
+        .collect::<Vec<_>>();
+    entities.sort_unstable();
+    let surfaces = table
+        .entry_ids
+        .iter()
+        .copied()
+        .filter(|surface_id| {
+            surface_rows.iter().any(|row| {
+                row.id == *surface_id && row.feature_id == feature_id && row.kind == expected_kind
+            })
+        })
+        .collect::<Vec<_>>();
+    if entities.len() != surfaces.len() {
+        return BTreeMap::new();
+    }
+    entities
+        .into_iter()
+        .zip(surfaces)
+        .map(|((_, external_id), surface_id)| (external_id, surface_id))
+        .collect()
+}
+
 fn transfer_resolved_revolution_surfaces(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -3805,6 +3874,15 @@ fn transfer_resolved_revolution_surfaces(
         let Some(axis) = resolved_revolution_axis(definition, transform) else {
             continue;
         };
+        let native_table = scan
+            .feature_entity_tables
+            .iter()
+            .filter(|table| table.feature_id == Some(feature_id))
+            .collect::<Vec<_>>();
+        let native_table = match native_table.as_slice() {
+            [table] => Some(*table),
+            _ => None,
+        };
         let points = resolved_section_points(definition);
         let solved_ids = definition
             .trim_entities
@@ -3812,6 +3890,28 @@ fn transfer_resolved_revolution_surfaces(
             .flat_map(|table| &table.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
+        let arc_bindings = definition
+            .order_table
+            .as_ref()
+            .zip(native_table)
+            .map_or_else(BTreeMap::new, |(order, table)| {
+                ordered_family_surface_bindings(
+                    &scan.surface_rows,
+                    feature_id,
+                    table,
+                    order,
+                    definition
+                        .segments
+                        .iter()
+                        .flat_map(|segments| &segments.rows)
+                        .filter(|segment| {
+                            solved_ids.contains(&segment.external_id)
+                                && segment.kind == crate::feature::FeatureSegmentKind::Arc
+                        })
+                        .map(|segment| segment.external_id),
+                    crate::surface::SurfaceKind::TorusOrSphere,
+                )
+            });
         for segment in definition
             .segments
             .iter()
@@ -3825,10 +3925,35 @@ fn transfer_resolved_revolution_surfaces(
             let Some(surface) = revolved_section_surface(transform, &geometry, axis) else {
                 continue;
             };
-            let surface_id = SurfaceId(format!(
-                "creo:feature:revolution_surface#{feature_id}:segment{}",
-                segment.external_id
-            ));
+            let native_surface = match segment.kind {
+                crate::feature::FeatureSegmentKind::Line => definition
+                    .order_table
+                    .as_ref()
+                    .zip(native_table)
+                    .and_then(|(order, table)| {
+                        ordered_line_surface_id(
+                            &scan.surface_rows,
+                            feature_id,
+                            table,
+                            order,
+                            segment.external_id,
+                            &surface,
+                        )
+                    }),
+                crate::feature::FeatureSegmentKind::Arc => {
+                    arc_bindings.get(&segment.external_id).copied()
+                }
+                crate::feature::FeatureSegmentKind::Point => None,
+            };
+            let surface_id = native_surface.map_or_else(
+                || {
+                    SurfaceId(format!(
+                        "creo:feature:revolution_surface#{feature_id}:segment{}",
+                        segment.external_id
+                    ))
+                },
+                |id| SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            );
             if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
                 continue;
             }
@@ -3845,9 +3970,14 @@ fn transfer_resolved_revolution_surfaces(
                 geometry: surface,
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
-                    object_id: format!(
-                        "FeatDefs:revolution#{feature_id}:segment{}",
-                        segment.external_id
+                    object_id: native_surface.map_or_else(
+                        || {
+                            format!(
+                                "FeatDefs:revolution#{feature_id}:segment{}",
+                                segment.external_id
+                            )
+                        },
+                        |id| format!("VisibGeom:{id}"),
                     ),
                     name: None,
                     color: None,
@@ -4770,6 +4900,75 @@ mod resolved_sketch_tests {
             Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
                 if major_radius == 5.0 && minor_radius == 2.0
         ));
+    }
+
+    #[test]
+    fn revolution_order_join_distinguishes_line_index_and_arc_family_order() {
+        let table = crate::feature::FeatureEntityTable {
+            feature_id: Some(17),
+            entry_ids: vec![41, 42, 43],
+            surface_ids: vec![41, 42, 43],
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        };
+        let order = crate::feature::FeatureOrderTable {
+            declared_count: 2,
+            entity_ref: Some(3),
+            rows: vec![
+                crate::feature::FeatureOrderRow {
+                    external_id: 8,
+                    internal_id: 1,
+                    bitmask: 0,
+                    offset: 0,
+                },
+                crate::feature::FeatureOrderRow {
+                    external_id: 9,
+                    internal_id: 2,
+                    bitmask: 0,
+                    offset: 0,
+                },
+            ],
+            offset: 0,
+        };
+        let row = |id, kind| crate::surface::SurfaceRow {
+            id,
+            kind,
+            feature_id: 17,
+            reversed: false,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        };
+        let rows = vec![
+            row(41, crate::surface::SurfaceKind::Cylinder),
+            row(42, crate::surface::SurfaceKind::Cone),
+            row(43, crate::surface::SurfaceKind::TorusOrSphere),
+        ];
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        assert_eq!(
+            ordered_line_surface_id(&rows, 17, &table, &order, 8, &cylinder),
+            Some(41)
+        );
+        assert_eq!(
+            ordered_line_surface_id(&rows, 17, &table, &order, 9, &cylinder),
+            None
+        );
+        assert_eq!(
+            ordered_family_surface_bindings(
+                &rows,
+                17,
+                &table,
+                &order,
+                [9],
+                crate::surface::SurfaceKind::TorusOrSphere,
+            ),
+            BTreeMap::from([(9, 43)])
+        );
     }
 
     #[test]
