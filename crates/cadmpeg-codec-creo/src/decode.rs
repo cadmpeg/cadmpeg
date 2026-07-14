@@ -3430,7 +3430,17 @@ fn feature_output_bodies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> V
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .flat_map(|table| &table.surface_ids)
-        .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}")));
+        .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}")))
+        .chain(
+            scan.feature_affected_ids
+                .iter()
+                .filter(|record| {
+                    record.feature_id == feature_id
+                        && record.kind == crate::feature::AffectedIdKind::Geometry
+                })
+                .flat_map(|record| &record.ids)
+                .map(|surface_id| SurfaceId(format!("creo:visibgeom:surface#{surface_id}"))),
+        );
     let mut outputs = Vec::new();
     let evaluated = BodyId(format!("creo:feature:extrusion#{feature_id}:body"));
     if ir.model.bodies.iter().any(|body| body.id == evaluated) {
