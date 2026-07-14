@@ -6084,12 +6084,52 @@ mod resolved_sketch_tests {
             ordered_face_loops(vec![&outer, &inner], None, &incidence, &disjoint_points,).is_none()
         );
     }
+
+    #[test]
+    fn carrier_solver_accepts_unique_plane_plane_cylinder_vertex() {
+        let cylinder = CarrierEquation::Cylinder(CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+        });
+        let cap = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 3.0],
+            normal: [0.0, 0.0, 1.0],
+        });
+        let tangent = CarrierEquation::Plane(PlaneEquation {
+            origin: [2.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[cylinder, cap, tangent]),
+            Some([2.0, 0.0, 3.0])
+        );
+
+        let secant = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(solve_carriers(&[cylinder, cap, secant]), None);
+    }
 }
 
 #[derive(Clone, Copy)]
 struct PlaneEquation {
     origin: [f64; 3],
     normal: [f64; 3],
+}
+
+#[derive(Clone, Copy)]
+struct CylinderEquation {
+    origin: [f64; 3],
+    axis: [f64; 3],
+    radius: f64,
+}
+
+#[derive(Clone, Copy)]
+enum CarrierEquation {
+    Plane(PlaneEquation),
+    Cylinder(CylinderEquation),
 }
 
 fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
@@ -6142,6 +6182,130 @@ fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
     None
 }
 
+fn intersect_two_planes_with_cylinder(
+    first: PlaneEquation,
+    second: PlaneEquation,
+    cylinder: CylinderEquation,
+) -> Vec<[f64; 3]> {
+    let direction = cross(first.normal, second.normal);
+    let denominator = dot(direction, direction);
+    if denominator <= 1e-18 {
+        return Vec::new();
+    }
+    let first_distance = dot(first.normal, first.origin);
+    let second_distance = dot(second.normal, second.origin);
+    let second_cross_direction = cross(second.normal, direction);
+    let direction_cross_first = cross(direction, first.normal);
+    let line_origin: [f64; 3] = std::array::from_fn(|index| {
+        (first_distance * second_cross_direction[index]
+            + second_distance * direction_cross_first[index])
+            / denominator
+    });
+    let Some(axis) = normalized(cylinder.axis) else {
+        return Vec::new();
+    };
+    let relative = std::array::from_fn(|index| line_origin[index] - cylinder.origin[index]);
+    let relative_axial = dot(relative, axis);
+    let direction_axial = dot(direction, axis);
+    let radial = std::array::from_fn(|index| relative[index] - relative_axial * axis[index]);
+    let radial_direction =
+        std::array::from_fn(|index| direction[index] - direction_axial * axis[index]);
+    let quadratic = dot(radial_direction, radial_direction);
+    if quadratic <= 1e-18 {
+        return Vec::new();
+    }
+    let linear = 2.0 * dot(radial, radial_direction);
+    let constant = dot(radial, radial) - cylinder.radius * cylinder.radius;
+    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+    let scale = linear
+        .abs()
+        .max((4.0 * quadratic * constant).abs().sqrt())
+        .max(1.0);
+    if discriminant < -1e-12 * scale * scale {
+        return Vec::new();
+    }
+    let root = discriminant.max(0.0).sqrt();
+    let mut parameters = vec![(-linear - root) / (2.0 * quadratic)];
+    if root > 1e-12 * scale {
+        parameters.push((-linear + root) / (2.0 * quadratic));
+    }
+    parameters
+        .into_iter()
+        .map(|parameter| {
+            std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
+        })
+        .filter(|point: &[f64; 3]| point.iter().all(|value| value.is_finite()))
+        .collect()
+}
+
+fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
+    match carrier {
+        CarrierEquation::Plane(plane) => {
+            let residual = dot(plane.normal, point) - dot(plane.normal, plane.origin);
+            residual.abs() <= 1e-7
+        }
+        CarrierEquation::Cylinder(cylinder) => {
+            let Some(axis) = normalized(cylinder.axis) else {
+                return false;
+            };
+            let relative = std::array::from_fn(|index| point[index] - cylinder.origin[index]);
+            let axial = dot(relative, axis);
+            let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
+            (dot(radial, radial).sqrt() - cylinder.radius).abs() <= 1e-7 * cylinder.radius.max(1.0)
+        }
+    }
+}
+
+fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
+    let mut candidates = Vec::new();
+    for first in 0..carriers.len() {
+        for second in first + 1..carriers.len() {
+            for third in second + 1..carriers.len() {
+                let triple = [carriers[first], carriers[second], carriers[third]];
+                let mut planes = Vec::new();
+                let mut cylinders = Vec::new();
+                for carrier in triple {
+                    match carrier {
+                        CarrierEquation::Plane(plane) => planes.push(plane),
+                        CarrierEquation::Cylinder(cylinder) => cylinders.push(cylinder),
+                    }
+                }
+                if planes.len() == 3 {
+                    if let Some(point) = solve_planes(&planes) {
+                        candidates.push(point);
+                    }
+                } else if let ([first, second], [cylinder]) =
+                    (planes.as_slice(), cylinders.as_slice())
+                {
+                    candidates.extend(intersect_two_planes_with_cylinder(
+                        *first, *second, *cylinder,
+                    ));
+                }
+            }
+        }
+    }
+    candidates.retain(|point| {
+        carriers
+            .iter()
+            .all(|carrier| point_on_carrier(*point, *carrier))
+    });
+    let mut unique = Vec::<[f64; 3]>::new();
+    for candidate in candidates {
+        if !unique.iter().any(|known| {
+            known
+                .iter()
+                .zip(candidate)
+                .all(|(left, right)| (left - right).abs() <= 1e-7)
+        }) {
+            unique.push(candidate);
+        }
+    }
+    let [point] = unique.as_slice() else {
+        return None;
+    };
+    Some(*point)
+}
+
 fn is_axis_aligned(vector: [f64; 3]) -> bool {
     vector.iter().filter(|value| value.abs() > 1e-9).count() == 1
 }
@@ -6167,6 +6331,36 @@ fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
         );
     }
     planes
+}
+
+fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEquation> {
+    let mut carriers = placed_planes(scan)
+        .into_iter()
+        .map(|(id, plane)| (id, CarrierEquation::Plane(plane)))
+        .collect::<BTreeMap<_, _>>();
+    for row in &scan.surface_rows {
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+        let Some(surface) = ir.model.surfaces.iter().find(|surface| surface.id == id) else {
+            continue;
+        };
+        if let SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            radius,
+            ..
+        } = &surface.geometry
+        {
+            carriers.insert(
+                row.id,
+                CarrierEquation::Cylinder(CylinderEquation {
+                    origin: [origin.x, origin.y, origin.z],
+                    axis: [axis.x, axis.y, axis.z],
+                    radius: *radius,
+                }),
+            );
+        }
+    }
+    carriers
 }
 
 fn geometry_section_record(scan: &ContainerScan, offset: usize) -> Option<UnknownId> {
@@ -6306,6 +6500,7 @@ fn ordered_face_loops<'a>(
 
 fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     let planes = placed_planes(scan);
+    let carriers = placed_carriers(scan, ir);
     let half_edges = scan
         .half_edges
         .iter()
@@ -6320,14 +6515,14 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         .topological_vertices
         .iter()
         .filter_map(|vertex| {
-            let incident_planes = vertex
+            let incident_carriers = vertex
                 .half_edges
                 .iter()
                 .filter_map(|half_edge| half_edges.get(half_edge))
-                .filter_map(|half_edge| planes.get(&half_edge.face_id))
+                .filter_map(|half_edge| carriers.get(&half_edge.face_id))
                 .copied()
                 .collect::<Vec<_>>();
-            solve_planes(&incident_planes).map(|point| (vertex.id, point))
+            solve_carriers(&incident_carriers).map(|point| (vertex.id, point))
         })
         .collect::<BTreeMap<_, _>>();
     let edge_vertices = scan
