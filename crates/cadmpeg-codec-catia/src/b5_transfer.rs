@@ -580,10 +580,10 @@ fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
             (point[1] - slant_range[0]) * half_angle.cos(),
         ),
         B5Surface::Torus {
-            major_radius,
-            minor_radius,
+            major_scale,
+            minor_scale,
             ..
-        } => Point2::new(point[0] / major_radius, point[1] / minor_radius),
+        } => Point2::new(point[0] / major_scale, point[1] / minor_scale),
         _ => Point2::new(point[0], point[1]),
     }
 }
@@ -655,9 +655,11 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
             axis,
             major_radius,
             minor_radius,
+            major_scale,
+            minor_scale,
         } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
             let u = pcurve.control_points.first()?[0];
-            let angle = u / major_radius;
+            let angle = u / major_scale;
             let radial = add(
                 scale(*direction_x, angle.cos()),
                 scale(*direction_y, angle.sin()),
@@ -675,10 +677,11 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
             axis,
             major_radius,
             minor_radius,
+            minor_scale,
             ..
         } => {
             let v = constant_coordinate(&pcurve.control_points, 1)?;
-            let angle = v / minor_radius;
+            let angle = v / minor_scale;
             let signed_radius = major_radius + minor_radius * angle.cos();
             (signed_radius.abs() > f64::EPSILON).then_some(())?;
             Some(CurveGeometry::Circle {
@@ -1574,6 +1577,8 @@ mod tests {
             axis: [0.0, 0.0, 1.0],
             major_radius: 5.0,
             minor_radius: 2.0,
+            major_scale: 5.0,
+            minor_scale: 2.0,
         };
         let base = B5Pcurve {
             object_id: 1,

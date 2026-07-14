@@ -651,8 +651,8 @@ pub struct A8Pcurve {
     pub knots: Vec<f64>,
     /// Multiplicity for each distinct knot.
     pub multiplicities: Vec<u32>,
-    /// Stored rational-mode flag.
-    pub rational: bool,
+    /// Stored UV-jet channel-mode byte.
+    pub mode: u8,
     /// UV positions at the knot sites.
     pub points: Vec<[f64; 2]>,
     /// UV first derivatives at the knot sites.
@@ -3230,7 +3230,7 @@ fn parse_object_stream_pcurve(
         degree,
         knots,
         multiplicities,
-        rational: mode == 5,
+        mode,
         points: u.into_iter().zip(v).map(|p| [p.0, p.1]).collect(),
         first_derivatives: du.into_iter().zip(dv).map(|p| [p.0, p.1]).collect(),
         second_derivatives: ddu.into_iter().zip(ddv).map(|p| [p.0, p.1]).collect(),

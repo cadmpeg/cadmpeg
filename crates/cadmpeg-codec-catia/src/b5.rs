@@ -147,6 +147,10 @@ pub enum B5Surface {
         major_radius: f64,
         /// Minor radius.
         minor_radius: f64,
+        /// Divisor mapping native U to the major angle.
+        major_scale: f64,
+        /// Divisor mapping native V to the minor angle.
+        minor_scale: f64,
     },
     /// `b5 03 2d`: a surface of revolution sweeping `profile_curve` about
     /// `axis_origin`/`axis_direction`.
@@ -302,10 +306,9 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         }
     }
     for jet in crate::geometry::object_stream_pcurves(bytes) {
-        if jet.rational
-            || by_id
-                .get(&jet.object_id)
-                .is_none_or(|record| record.class != 0x20)
+        if by_id
+            .get(&jet.object_id)
+            .is_none_or(|record| record.class != 0x20)
         {
             continue;
         }
@@ -318,19 +321,16 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         ) else {
             continue;
         };
-        pcurves.insert(
-            jet.object_id,
-            B5Pcurve {
-                object_id: jet.object_id,
-                surface: jet.support_id,
-                degree: jet.degree,
-                distinct_knots: jet.knots.clone(),
-                multiplicities: vec![jet.degree + 1; jet.knots.len()],
-                control_points,
-                weights: None,
-                lifted_endpoints: None,
-            },
-        );
+        pcurves.entry(jet.object_id).or_insert_with(|| B5Pcurve {
+            object_id: jet.object_id,
+            surface: jet.support_id,
+            degree: jet.degree,
+            distinct_knots: jet.knots.clone(),
+            multiplicities: vec![jet.degree + 1; jet.knots.len()],
+            control_points,
+            weights: None,
+            lifted_endpoints: None,
+        });
     }
     for pcurve in pcurves.values_mut() {
         pcurve.lifted_endpoints = surfaces
@@ -926,13 +926,13 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
         0x2b => {
             let major_radius = scalar(&record.payload, 97)?;
             let minor_radius = scalar(&record.payload, 105)?;
-            let repeated_major_radius = scalar(&record.payload, 177)?;
-            let repeated_minor_radius = scalar(&record.payload, 185)?;
+            let major_scale = scalar(&record.payload, 177)?;
+            let minor_scale = scalar(&record.payload, 185)?;
             (record.payload.len() == 201
                 && major_radius > 0.0
                 && minor_radius > 0.0
-                && repeated_major_radius == major_radius
-                && repeated_minor_radius == minor_radius)
+                && major_scale > 0.0
+                && minor_scale > 0.0)
                 .then_some(())?;
             Some(B5Surface::Torus {
                 center: point(&record.payload, 1)?,
@@ -941,6 +941,8 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                 axis: unit(point(&record.payload, 73)?)?,
                 major_radius,
                 minor_radius,
+                major_scale,
+                minor_scale,
             })
         }
         0x2d => {
@@ -1051,9 +1053,11 @@ fn lift_pcurve_endpoints(
             axis,
             major_radius,
             minor_radius,
+            major_scale,
+            minor_scale,
         } => Some(endpoints.map(|[u, v]| {
-            let major_angle = u / major_radius;
-            let minor_angle = v / minor_radius;
+            let major_angle = u / major_scale;
+            let minor_angle = v / minor_scale;
             let radial = add(
                 scale(*direction_x, major_angle.cos()),
                 scale(*direction_y, major_angle.sin()),
@@ -1852,7 +1856,7 @@ mod tests {
     }
 
     #[test]
-    fn torus_surface_reads_two_arc_length_gauges() {
+    fn torus_surface_separates_geometric_radii_from_chart_scales() {
         let mut payload = vec![0; 201];
         payload[0] = 0x80;
         for (offset, values) in [
@@ -1868,8 +1872,8 @@ mod tests {
         }
         payload[97..105].copy_from_slice(&5.0f64.to_le_bytes());
         payload[105..113].copy_from_slice(&2.0f64.to_le_bytes());
-        payload[177..185].copy_from_slice(&5.0f64.to_le_bytes());
-        payload[185..193].copy_from_slice(&2.0f64.to_le_bytes());
+        payload[177..185].copy_from_slice(&4.0f64.to_le_bytes());
+        payload[185..193].copy_from_slice(&3.0f64.to_le_bytes());
         let record = B5Record {
             offset: 0,
             family: 0xb5,
@@ -1886,6 +1890,8 @@ mod tests {
                 axis: [0.0, 0.0, 1.0],
                 major_radius: 5.0,
                 minor_radius: 2.0,
+                major_scale: 4.0,
+                minor_scale: 3.0,
             })
         );
     }

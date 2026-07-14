@@ -3057,6 +3057,17 @@ fn a8_pcurve_parser_reads_degree5_uv_jet() {
     );
     assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
     assert_eq!(pcurves[0].range, [0.0, 1.0]);
+    assert_eq!(pcurves[0].mode, 0x01);
+}
+
+#[test]
+fn a8_pcurve_parser_retains_mode_five_uv_jet() {
+    let mut bytes = a8_pcurve_stream();
+    bytes[39] = 0x05;
+    let pcurves = crate::geometry::a8_pcurves(&bytes);
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].mode, 0x05);
+    assert_eq!(pcurves[0].points, vec![[0.0, 0.0], [1.0, 1.0]]);
 }
 
 #[test]
