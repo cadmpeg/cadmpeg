@@ -359,6 +359,130 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
 }
 
 #[test]
+fn transfers_non_default_revolution_branches() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="7">
+ <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
+ <Object type="PartDesign::Revolution" name="ToFirst" id="2"/>
+ <Object type="PartDesign::Revolution" name="ToFace" id="3"/>
+ <Object type="PartDesign::Revolution" name="TwoAngles" id="4"/>
+ <Object type="PartDesign::Revolution" name="Midplane" id="5"/>
+ <Object type="PartDesign::Groove" name="ThroughAll" id="6"/>
+ <Object type="Part::Revolution" name="Standalone" id="7"/>
+</Objects>
+<ObjectData Count="7">
+ <Object name="Sketch"><Properties Count="0"/></Object>
+ <Object name="ToFirst"><Properties Count="4">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="1" y="2" z="3"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="2" z="0"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+ </Properties></Object>
+ <Object name="ToFace"><Properties Count="5">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+  <Property name="UpToFace" type="App::PropertyLinkSub"><Link object="Standalone" sub="Face1"/></Property>
+ </Properties></Object>
+ <Object name="TwoAngles"><Properties Count="6">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="4"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="120"/></Property>
+  <Property name="Angle2" type="App::PropertyAngle"><Float value="30"/></Property>
+ </Properties></Object>
+ <Object name="Midplane"><Properties Count="7">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
+  <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+ <Object name="ThroughAll"><Properties Count="4">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+ </Properties></Object>
+ <Object name="Standalone"><Properties Count="6">
+  <Property name="Source" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
+  <Property name="Angle" type="App::PropertyFloatConstraint"><Float value="45"/></Property>
+  <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("revolution branches");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition};
+    assert!(matches!(
+        definition("ToFirst"),
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                axis: Some(axis),
+                extent: Some(Extent::ToFirst),
+                ..
+            },
+            ..
+        } if axis.direction.y == 1.0 && axis.origin == cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)
+    ));
+    assert!(matches!(
+        definition("ToFace"),
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                extent: Some(Extent::ToFace { .. }),
+                ..
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("TwoAngles"),
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { extent: Some(Extent::TwoSidedAngles { first, second }), .. }, .. }
+            if (first.0 - 120_f64.to_radians()).abs() < 1e-12 && (second.0 - 30_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("Midplane"),
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), .. }, .. }
+            if axis.direction.y == -1.0
+    ));
+    assert!(matches!(
+        definition("ThroughAll"),
+        FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                extent: Some(Extent::ThroughAll),
+                ..
+            },
+            op: BooleanOp::Cut
+        }
+    ));
+    assert!(matches!(
+        definition("Standalone"),
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }) }, op: BooleanOp::NewBody }
+            if axis.direction.z == 1.0
+    ));
+}
+
+#[test]
 fn transfers_part_and_partdesign_analytic_primitives() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="3">

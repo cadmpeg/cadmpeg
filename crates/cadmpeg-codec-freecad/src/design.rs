@@ -192,18 +192,13 @@ pub(crate) fn transfer(
                     properties: BTreeMap::new(),
                 })
         } else if is_revolution(&object.type_name) {
-            FeatureDefinition::Revolve {
-                construction: RevolutionConstruction {
-                    profile: Some(profile_ref(&owned, &sketch_ids)),
-                    axis: revolution_axis(&owned),
-                    extent: revolution_extent(&owned),
-                },
-                op: if object.type_name.contains("Groove") {
-                    BooleanOp::Cut
-                } else {
-                    BooleanOp::Join
-                },
-            }
+            revolution_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
         } else if object.type_name == "PartDesign::Thickness" {
             thickness_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
                 kind: object.type_name.clone(),
@@ -1504,13 +1499,15 @@ fn near(a: Point2, b: Point2) -> bool {
 }
 
 fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId>) -> ProfileRef {
-    property(properties, "Profile")
-        .or_else(|| property(properties, "Base"))
-        .and_then(|property| {
-            property
-                .links
-                .iter()
-                .find_map(|link| link.object.as_deref())
+    ["Profile", "Base", "Source"]
+        .iter()
+        .find_map(|name| {
+            property(properties, name).and_then(|property| {
+                property
+                    .links
+                    .iter()
+                    .find_map(|link| link.object.as_deref())
+            })
         })
         .and_then(|target| sketches.get(target).cloned())
         .map_or_else(
@@ -1529,28 +1526,75 @@ fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
     })
 }
 
-fn revolution_extent(properties: &[&PropertyRecord]) -> Option<Extent> {
-    let mode = property(properties, "Type")
-        .and_then(scalar_value)
-        .unwrap_or(0.0) as i64;
-    let first = property(properties, "Angle").and_then(scalar_value)?;
-    if mode == 4 {
-        Some(Extent::TwoSidedAngles {
-            first: cadmpeg_ir::features::Angle(first.to_radians()),
-            second: cadmpeg_ir::features::Angle(
-                property(properties, "Angle2")
-                    .and_then(scalar_value)
-                    .unwrap_or(0.0)
-                    .to_radians(),
-            ),
-        })
-    } else if mode == 0 {
-        Some(Extent::Angle {
-            angle: cadmpeg_ir::features::Angle(first.to_radians()),
-        })
-    } else {
-        None
+fn revolution_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    sketches: &HashMap<&str, SketchId>,
+) -> Option<FeatureDefinition> {
+    let profile = profile_ref(properties, sketches);
+    if matches!(&profile, ProfileRef::Native(value) if value == "unresolved FCStd profile") {
+        return None;
     }
+    let mut axis = revolution_axis(properties)?;
+    axis.direction = unit_vector(axis.direction)?;
+    let angle = || {
+        scalar_named(properties, "Angle")
+            .filter(|angle| angle.is_finite() && *angle > 0.0)
+            .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()))
+    };
+    let mode = integer_property(properties, "Type").unwrap_or(0);
+    let extent = if kind == "Part::Revolution" {
+        let angle = angle()?;
+        if bool_property(properties, "Symmetric").unwrap_or(false) {
+            Extent::SymmetricAngle { angle }
+        } else {
+            Extent::Angle { angle }
+        }
+    } else {
+        match mode {
+            0 => {
+                let angle = angle()?;
+                if bool_property(properties, "Midplane").unwrap_or(false) {
+                    Extent::SymmetricAngle { angle }
+                } else {
+                    Extent::Angle { angle }
+                }
+            }
+            1 => Extent::ThroughAll,
+            2 => Extent::ToFirst,
+            3 => Extent::ToFace {
+                face: cadmpeg_ir::features::FaceSelection::Native(
+                    property(properties, "UpToFace")?.id.clone(),
+                ),
+            },
+            4 => Extent::TwoSidedAngles {
+                first: angle()?,
+                second: cadmpeg_ir::features::Angle(
+                    scalar_named(properties, "Angle2")
+                        .filter(|angle| angle.is_finite() && *angle > 0.0)?
+                        .to_radians(),
+                ),
+            },
+            _ => return None,
+        }
+    };
+    if bool_property(properties, "Reversed").unwrap_or(false) {
+        axis.direction = Vector3::new(-axis.direction.x, -axis.direction.y, -axis.direction.z);
+    }
+    Some(FeatureDefinition::Revolve {
+        construction: RevolutionConstruction {
+            profile: Some(profile),
+            axis: Some(axis),
+            extent: Some(extent),
+        },
+        op: if kind == "Part::Revolution" {
+            BooleanOp::NewBody
+        } else if kind.contains("Groove") {
+            BooleanOp::Cut
+        } else {
+            BooleanOp::Join
+        },
+    })
 }
 
 fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3> {

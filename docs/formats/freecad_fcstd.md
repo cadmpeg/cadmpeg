@@ -344,3 +344,10 @@ termination. Midplane blind features retain total symmetric travel; reversed fea
 resolved sketch-normal or explicit custom direction. A pad joins and a pocket cuts. Missing
 required lengths or selections, unsupported termination combinations, and unequal two-sided taper
 remain attributable native operations instead of being rewritten as zero-length or blind features.
+
+Part and PartDesign revolutions normalize the persisted axis direction and retain its model-space
+origin. Angular, symmetric-angular, two-angle, through-all or last-intersection,
+first-intersection, and selected-face termination remain distinct. Reversal changes the oriented
+axis rather than the magnitude of the angular extent. Standalone Part revolutions create a new
+body, PartDesign revolutions join, and grooves cut. A missing profile, zero axis, invalid angle, or
+incomplete selected termination remains an attributable native operation.
