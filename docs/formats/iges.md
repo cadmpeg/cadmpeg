@@ -100,6 +100,8 @@ Type 410 Form 0 defines an orthographic parallel view. It stores an integer view
 
 Type 402 Form 3 associates one or more Type 410 views with zero or more displayed entities. Type 402 Form 4 adds per-view line-font, color, and line-weight overrides. Each referenced view contains a trailing association back pointer. A Form 4 line font is standard value `1` through `5`, or zero with a Type 304 definition pointer. Color is standard value `0` through `8` or a negative Type 314 pointer. Line weight is nonnegative. The `view_visibility` arena preserves view-block order, optional overrides, and explicitly listed displayed entities; presentation relationships remain separate from exact model geometry.
 
+Type 402 Form 19 applies display parameters to ordered curve segments in views. Each block stores a Type 410 view, finite parameter breakpoint, display flag `0` or `1`, and independently omitted or explicit color, line-font, and nonnegative line-weight values. Negative color and line-font values resolve to Type 314 and Type 304 definitions. Blocks for one view are adjacent and have strictly increasing breakpoints; a view does not recur after a later view begins. The `segmented_visibility` arena preserves block order and omission versus explicit override for every display field.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

@@ -418,6 +418,23 @@ struct NativeViewVisibility {
     entities: Vec<Option<String>>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSegmentDisplay {
+    view: Option<String>,
+    breakpoint: Option<f64>,
+    display_flag: Option<i64>,
+    color: NativeTokenValue,
+    line_font: NativeTokenValue,
+    line_weight: NativeTokenValue,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSegmentedVisibility {
+    id: String,
+    source_entity: String,
+    blocks: Vec<NativeSegmentDisplay>,
+}
+
 #[derive(Clone)]
 struct OccurrenceDefinition {
     members: Vec<u32>,
@@ -1709,6 +1726,42 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let segmented_visibility = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && entry.form == 19)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let value = |index| {
+                record
+                    .and_then(|record| record.tokens.get(index))
+                    .map(token)
+                    .map_or(NativeTokenValue::Omitted, |token| token.value)
+            };
+            NativeSegmentedVisibility {
+                id: format!("iges:presentation:segmented-visibility#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                blocks: (0..count)
+                    .map(|index| {
+                        let start = 2 + index * 6;
+                        NativeSegmentDisplay {
+                            view: record
+                                .and_then(|record| record.integer(start))
+                                .map(|sequence| format!("iges:presentation:view#D{sequence}")),
+                            breakpoint: record.and_then(|record| record.number(start + 1)),
+                            display_flag: record.and_then(|record| record.integer(start + 2)),
+                            color: value(start + 3),
+                            line_font: value(start + 4),
+                            line_weight: value(start + 5),
+                        }
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
@@ -1834,6 +1887,7 @@ pub(crate) fn store(
     namespace.set_arena("product_properties", &product_properties)?;
     namespace.set_arena("views", &views)?;
     namespace.set_arena("view_visibility", &view_visibility)?;
+    namespace.set_arena("segmented_visibility", &segmented_visibility)?;
     namespace.set_arena("product_occurrences", &product_occurrences)?;
     Ok(())
 }

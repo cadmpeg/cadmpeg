@@ -139,6 +139,102 @@ pub(super) fn project(
 
     for entry in directory
         .iter()
+        .filter(|entry| entry.entity_type == 402 && entry.form == 19)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let count = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0);
+        let mut last_view = None;
+        let mut closed_views = BTreeSet::new();
+        let mut last_breakpoint = None;
+        let blocks_valid = count.is_some_and(|count| {
+            (0..count).all(|index| {
+                let start = 2 + index * 6;
+                let view = record
+                    .integer(start)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .filter(|sequence| {
+                        entries
+                            .get(sequence)
+                            .is_some_and(|target| target.entity_type == 410)
+                    });
+                if view != last_view {
+                    if let Some(previous) = last_view {
+                        closed_views.insert(previous);
+                    }
+                    last_breakpoint = None;
+                }
+                let view_order_valid = view.is_some_and(|view| !closed_views.contains(&view));
+                let breakpoint = record.number(start + 1).filter(|value| value.is_finite());
+                let breakpoint_order_valid = breakpoint
+                    .is_some_and(|value| last_breakpoint.is_none_or(|previous| value > previous));
+                last_view = view;
+                last_breakpoint = breakpoint;
+                let display_valid = record
+                    .integer(start + 2)
+                    .is_some_and(|value| matches!(value, 0..=1));
+                let color_valid = match record.tokens.get(start + 3).map(|token| &token.value) {
+                    None | Some(crate::parameter::TokenValue::Omitted) => true,
+                    _ => record.integer(start + 3).is_some_and(|value| {
+                        matches!(value, 0..=8)
+                            || value
+                                .checked_neg()
+                                .and_then(|value| {
+                                    u32::try_from(value).ok().filter(|sequence| {
+                                        entries
+                                            .get(sequence)
+                                            .is_some_and(|target| target.entity_type == 314)
+                                    })
+                                })
+                                .is_some()
+                    }),
+                };
+                let font_valid = match record.tokens.get(start + 4).map(|token| &token.value) {
+                    None | Some(crate::parameter::TokenValue::Omitted) => true,
+                    _ => record.integer(start + 4).is_some_and(|value| {
+                        matches!(value, 0..=5)
+                            || value
+                                .checked_neg()
+                                .and_then(|value| {
+                                    u32::try_from(value).ok().filter(|sequence| {
+                                        entries
+                                            .get(sequence)
+                                            .is_some_and(|target| target.entity_type == 304)
+                                    })
+                                })
+                                .is_some()
+                    }),
+                };
+                let weight_valid = match record.tokens.get(start + 5).map(|token| &token.value) {
+                    None | Some(crate::parameter::TokenValue::Omitted) => true,
+                    _ => record.integer(start + 5).is_some_and(|value| value >= 0),
+                };
+                view_order_valid
+                    && breakpoint_order_valid
+                    && display_valid
+                    && color_valid
+                    && font_valid
+                    && weight_valid
+            })
+        });
+        if blocks_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "segmented-view blocks, grouping, breakpoints, or display fields are invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
         .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
     {
         handled.insert(entry.sequence);

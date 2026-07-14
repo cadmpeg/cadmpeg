@@ -2459,6 +2459,25 @@ fn view_visibility_forms_file() -> Vec<u8> {
     ])
 }
 
+fn segmented_view_visibility_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW".into(),
+            status: "00000000",
+            parameters: "410,1,1,0,0,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 19,
+            label: "SEGMENTS".into(),
+            status: "00000000",
+            parameters: "402,2,1,0.5,0,,,1,1,1.0,1,2,3,4;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3808,6 +3827,28 @@ fn decode_types_view_visibility_and_display_overrides() {
     assert_eq!(visibility[1].fields["displays"][0]["line_font"], 1);
     assert_eq!(visibility[1].fields["displays"][0]["color"], 2);
     assert_eq!(visibility[1].fields["displays"][0]["line_weight"], 3);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_ordered_segmented_view_display() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(segmented_view_visibility_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let segmented = &result.ir.native.namespace("iges").unwrap().arenas["segmented_visibility"][0];
+    assert_eq!(segmented.fields["blocks"].as_array().unwrap().len(), 2);
+    assert_eq!(segmented.fields["blocks"][0]["breakpoint"], 0.5);
+    assert_eq!(segmented.fields["blocks"][0]["color"]["kind"], "omitted");
+    assert_eq!(segmented.fields["blocks"][1]["breakpoint"], 1.0);
+    assert_eq!(segmented.fields["blocks"][1]["color"]["value"], 2);
+    assert_eq!(segmented.fields["blocks"][1]["line_font"]["value"], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
