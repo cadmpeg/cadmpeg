@@ -75,6 +75,11 @@ impl Registry {
         ir: &CadIr,
         output: &mut dyn std::io::Write,
     ) -> Option<Result<ExportReport, CodecError>> {
+        if rhino_version.is_some() && id != "rhino" {
+            return Some(Err(CodecError::Malformed(
+                "Rhino archive version requires the Rhino encoder".into(),
+            )));
+        }
         if id == "rhino" {
             if let Some(version) = rhino_version {
                 return Some(cadmpeg_codec_rhino::RhinoEncoder::new(version).encode(ir, output));

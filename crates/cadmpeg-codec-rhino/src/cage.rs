@@ -92,10 +92,11 @@ pub(crate) fn decode(
         positive(&mut reader, "V count")?,
         positive(&mut reader, "W count")?,
     ];
+    let orders_offset = reader.position() - 24;
     for axis in 0..3 {
         if orders[axis] < 2 || counts[axis] < orders[axis] {
             return Err(malformed(
-                reader.position() - 12 + axis * 4,
+                orders_offset + axis * 4,
                 "invalid NURBS cage order and count",
             ));
         }

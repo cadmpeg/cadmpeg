@@ -497,6 +497,19 @@ fn general_topology_ir(ir: &CadIr) -> CadIr {
 }
 
 fn prepare_write(ir: &CadIr) -> Result<WritePlan, CodecError> {
+    if !ir.tolerances.linear.is_finite() || ir.tolerances.linear <= 0.0 {
+        return Err(CodecError::Malformed(
+            "Rhino absolute tolerance must be positive and finite".into(),
+        ));
+    }
+    if !ir.tolerances.angular.is_finite()
+        || ir.tolerances.angular <= 0.0
+        || ir.tolerances.angular > std::f64::consts::PI
+    {
+        return Err(CodecError::Malformed(
+            "Rhino angular tolerance must be finite and in (0, pi]".into(),
+        ));
+    }
     if ir
         .native
         .namespace("rhino")
@@ -3455,6 +3468,26 @@ mod tests {
             .losses
             .iter()
             .all(|loss| !loss.message.contains("relative tolerance")));
+    }
+
+    #[test]
+    fn invalid_archive_tolerances_are_rejected_before_output() {
+        for (linear, angular) in [
+            (0.0, 1.0e-10),
+            (f64::INFINITY, 1.0e-10),
+            (1.0e-6, 0.0),
+            (1.0e-6, std::f64::consts::PI.next_up()),
+        ] {
+            let mut ir = CadIr::empty(Units::default());
+            ir.tolerances.linear = linear;
+            ir.tolerances.angular = angular;
+            let mut output = vec![0xaa];
+            let error = RhinoEncoder::new(RhinoArchiveVersion::V8)
+                .encode(&ir, &mut output)
+                .expect_err("invalid tolerance must not be serialized");
+            assert!(matches!(error, cadmpeg_ir::codec::CodecError::Malformed(_)));
+            assert_eq!(output, [0xaa]);
+        }
     }
 
     #[test]

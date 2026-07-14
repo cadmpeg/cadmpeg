@@ -279,7 +279,7 @@ fn render_settings(
     scale: f64,
 ) -> Result<RenderSettingsRecord, FramingError> {
     let modern = data.get(body.start).copied() == Some(0);
-    let (mut reader, minor) = if modern {
+    let (mut reader, minor, legacy_version) = if modern {
         let chunk = chunk_at(data, body.start, body.end, archive, false)?;
         if chunk.typecode != ANONYMOUS || chunk.short || chunk.next_offset != body.end {
             return Err(FramingError::Structural {
@@ -295,7 +295,7 @@ fn render_settings(
                 "render-settings version is unsupported",
             ));
         }
-        (reader, Some(minor))
+        (reader, Some(minor), None)
     } else {
         let mut reader = BoundedReader::new(data, body.start, body.end)?;
         let version = reader.i32()?;
@@ -305,7 +305,7 @@ fn render_settings(
                 "legacy render-settings version is unsupported",
             ));
         }
-        (reader, None)
+        (reader, None, Some(version))
     };
     let custom_image_size = if modern {
         reader.bool()?
@@ -385,11 +385,7 @@ fn render_settings(
             scale_background_to_fit,
         )
     } else {
-        let version = i32::from_le_bytes(
-            data[body.start..body.start + 4]
-                .try_into()
-                .expect("bounded"),
-        );
+        let version = legacy_version.expect("legacy branch has a parsed version");
         let dpi = (version >= 101).then(|| reader.f64()).transpose()?;
         let units = (version >= 101).then(|| reader.u32()).transpose()?;
         let bottom = (version >= 102).then(|| reader.array()).transpose()?;

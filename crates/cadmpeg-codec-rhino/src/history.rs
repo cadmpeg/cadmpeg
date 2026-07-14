@@ -382,7 +382,7 @@ fn geometries(
         ));
     }
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = Vec::new();
     for _ in 0..count {
         let start = nested.position();
         let wrapper = chunk_at(nested.backing_bytes(), start, nested.end(), archive, false)?;
@@ -506,7 +506,7 @@ fn poly_edges(
         ));
     }
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = Vec::new();
     for _ in 0..count {
         let (value, value_next) = poly_edge(
             nested.backing_bytes(),
@@ -577,7 +577,7 @@ fn subd_edge_chains(
         archive,
     )?;
     let count = count(&mut nested, 1)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = Vec::new();
     for _ in 0..count {
         let (value, value_next) = subd_edge_chain(
             nested.backing_bytes(),
@@ -711,7 +711,7 @@ fn parse_record(
         ));
     }
     let value_count = count(&mut values_reader, 1)?;
-    let mut values = Vec::with_capacity(value_count);
+    let mut values = Vec::new();
     for _ in 0..value_count {
         let (value, value_next) = parse_value(
             bytes,
