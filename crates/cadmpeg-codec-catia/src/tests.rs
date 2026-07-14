@@ -17,7 +17,7 @@ use crate::variant::Variant;
 use crate::CatiaCodec;
 
 fn summary_preview_segment() -> Vec<u8> {
-    let mut bytes = b"FINJPL  \x01\x01\x00\x03CATSummaryInformation\0".to_vec();
+    let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();
     bytes.extend_from_slice(b"LastSaveVersion\0<Version>5/<Version><Release>27/<Release><ServicePack>2/<ServicePack><BuildDate>03-10-2017.22.00/<BuildDate><HotFix>0/<HotFix>\0");
     bytes.extend_from_slice(&[
         0xff, 0xd8, // SOI
@@ -29,7 +29,7 @@ fn summary_preview_segment() -> Vec<u8> {
 }
 
 fn external_reference_segment(target: &str) -> Vec<u8> {
-    let mut bytes = b"FINJPL  \x01\x01\x00\x02".to_vec();
+    let mut bytes = b"FINJPL  \x01\x01\x00\x02\x00\x00\x00\x0a\x00CATPreview".to_vec();
     for value in ["CATStorageProperty", "CATUnicodeString"] {
         bytes.push(0x34);
         bytes.push(u8::try_from(value.len()).unwrap());
@@ -1808,6 +1808,8 @@ fn detect_high_on_outer_magic() {
 #[test]
 fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
     let bytes = summary_preview_segment();
+    let segments = crate::container::finjpl_segments(&bytes, 0, bytes.len());
+    assert_eq!(segments[0].name.as_deref(), Some("CATSummaryInformation"));
     let previews = crate::container::preview_images(&bytes);
     assert_eq!(previews.len(), 1);
     assert_eq!(previews[0].width, 640);
@@ -1818,6 +1820,11 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         &bytes[previews[0].range.clone()][previews[0].range.len() - 2..],
         [0xff, 0xd9]
     );
+    let summary = crate::container::summarize(&crate::container::scan_bytes(bytes.clone()));
+    assert!(summary.entries.iter().any(|entry| {
+        entry.role == crate::container::role::FINJPL_SEGMENT
+            && entry.name == "CATSummaryInformation"
+    }));
 
     let mut truncated = bytes;
     let eoi = truncated
@@ -1886,6 +1893,13 @@ fn native_namespace_retains_summary_preview_bytes() {
     assert_eq!(preview.data.len() as u64, preview.byte_len);
     assert_eq!(&preview.data[..2], [0xff, 0xd8]);
     assert_eq!(&preview.data[preview.data.len() - 2..], [0xff, 0xd9]);
+    assert_eq!(native.finjpl_segments.len(), 1);
+    assert_eq!(
+        native.finjpl_segments[0].name.as_deref(),
+        Some("CATSummaryInformation")
+    );
+    assert_eq!(native.finjpl_segments[0].family, "project-flags");
+    assert_eq!(native.finjpl_segments[0].data, bytes);
 }
 
 #[test]

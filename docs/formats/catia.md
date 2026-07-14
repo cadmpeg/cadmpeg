@@ -67,7 +67,7 @@ The inner sub-container stores fragmented named streams and a stream directory. 
 
 ### 3.3 FINJPL segments
 
-`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. An E5 stream candidate is coherent when at least ten records walk by their declared strides. A coherent preamble wins; otherwise the segment with the largest valid walk wins, with storage type `0x0000008e` breaking equal-count ties.
+`FINJPL  ` (two trailing spaces) marks named stream blocks after the outer preamble. The four bytes after the marker are the big-endian type word. When the following bytes are `<name_length:u32be> 00 <printable-ASCII name>`, they define the segment's primary name. Every segment ends at the next `FINJPL  ` marker or the containing body boundary, and the complete bounded bytes are retained under their offset, type, family, and optional primary name. An E5 stream candidate is coherent when at least ten records walk by their declared strides. A coherent preamble wins; otherwise the segment with the largest valid walk wins, with storage type `0x0000008e` breaking equal-count ties.
 
 A project-flags segment with type word `0x01010003` contains the summary-information fields. Its JPEG preview is the complete marker stream from `ff d8` SOI through `ff d9` EOI. The JPEG start-of-frame segment supplies pixel width, height, and component count. JPEG signatures outside this segment family are not previews.
 

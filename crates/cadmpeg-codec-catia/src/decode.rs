@@ -3605,6 +3605,19 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             reference.target.clone(),
         );
     }
+    attributes.insert(
+        "finjpl_segment_count".to_string(),
+        scan.finjpl_segments.len().to_string(),
+    );
+    for (index, segment) in scan.finjpl_segments.iter().enumerate() {
+        if let Some(name) = &segment.name {
+            attributes.insert(format!("finjpl_segment_{index}_name"), name.clone());
+        }
+        attributes.insert(
+            format!("finjpl_segment_{index}_type"),
+            format!("0x{:08x}", segment.type_word),
+        );
+    }
     SourceMeta {
         format: "catia".to_string(),
         attributes,

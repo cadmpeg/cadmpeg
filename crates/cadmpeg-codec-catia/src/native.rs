@@ -10,17 +10,40 @@ use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubt
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 5;
+pub const CATIA_NATIVE_VERSION: u32 = 6;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
+    "finjpl_segments",
     "object_graph_records",
     "object_graphs",
     "preview_images",
     "value_blocks",
 ];
+
+/// One complete outer FINJPL segment retained with its framing identity.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaFinjplSegment {
+    /// Globally unique segment identity.
+    pub id: String,
+    /// FINJPL marker offset in the complete file.
+    pub byte_offset: u64,
+    /// Complete segment byte length.
+    pub byte_len: u64,
+    /// Big-endian segment type word.
+    pub type_word: u32,
+    /// Structural type family.
+    pub family: String,
+    /// Stored primary name, when the printable-ASCII name form is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Complete segment bytes from marker through the byte before the next segment.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub data: Vec<u8>,
+}
 
 /// One exact JPEG preview from the outer summary-information segment.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -182,6 +205,9 @@ pub struct CatiaNative {
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
+    /// Complete bounded outer FINJPL segments.
+    #[serde(default)]
+    pub finjpl_segments: Vec<CatiaFinjplSegment>,
     /// Outer ownership graphs.
     #[serde(default)]
     pub object_graphs: Vec<CatiaObjectGraph>,
@@ -199,6 +225,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
+            finjpl_segments: Vec::new(),
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
             value_blocks: Vec::new(),
@@ -259,10 +286,29 @@ impl CatiaNative {
                 data: bytes[preview.range].to_vec(),
             })
             .collect();
+        let finjpl_segments = container::finjpl_segments(bytes, 0, bytes.len())
+            .into_iter()
+            .enumerate()
+            .map(|(index, segment)| CatiaFinjplSegment {
+                id: format!("catia:outer:finjpl#{index}"),
+                byte_offset: segment.range.start as u64,
+                byte_len: (segment.range.end - segment.range.start) as u64,
+                type_word: segment.type_word,
+                family: match segment.kind {
+                    container::FinjplKind::Storage => "storage",
+                    container::FinjplKind::ProjectFlags => "project-flags",
+                    container::FinjplKind::Other => "other",
+                }
+                .to_string(),
+                name: segment.name,
+                data: bytes[segment.range].to_vec(),
+            })
+            .collect();
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
+            finjpl_segments,
             object_graphs,
             preview_images,
             value_blocks,
@@ -294,6 +340,12 @@ impl CatiaNative {
             graph.records.sort_by_key(|record| record.ordinal);
         }
         let value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
+        let finjpl_segments: Vec<CatiaFinjplSegment> =
+            if namespace.arenas.contains_key("finjpl_segments") {
+                namespace.arena_as("finjpl_segments")?
+            } else {
+                Vec::new()
+            };
         let preview_images: Vec<CatiaPreviewImage> =
             if namespace.arenas.contains_key("preview_images") {
                 namespace.arena_as("preview_images")?
@@ -305,6 +357,7 @@ impl CatiaNative {
             version: namespace.version,
             alias_rows,
             catalogs,
+            finjpl_segments,
             object_graphs: graphs,
             preview_images,
             value_blocks,
@@ -346,6 +399,7 @@ impl CatiaNative {
             .flat_map(|graph| graph.records.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
         namespace.set_arena("alias_rows", &self.alias_rows)?;
         namespace.set_arena("catalog_entries", &entries)?;
         namespace.set_arena("object_graphs", &graphs)?;

@@ -47,6 +47,8 @@ pub struct FinjplSegment {
     pub type_word: u32,
     /// Classified type family.
     pub kind: FinjplKind,
+    /// Primary length-prefixed ASCII block name, when present.
+    pub name: Option<String>,
 }
 
 /// One complete JPEG preview embedded in a summary-information segment.
@@ -114,9 +116,22 @@ pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<F
                 range: pos..segment_end,
                 type_word,
                 kind,
+                name: finjpl_primary_name(data, pos, segment_end),
             })
         })
         .collect()
+}
+
+fn finjpl_primary_name(data: &[u8], pos: usize, end: usize) -> Option<String> {
+    let length = usize::try_from(u32_be(data, pos + 12)?).ok()?;
+    let start = pos.checked_add(17)?;
+    let name_end = start.checked_add(length)?;
+    if data.get(pos + 16) != Some(&0) || name_end > end {
+        return None;
+    }
+    let value = data.get(start..name_end)?;
+    (!value.is_empty() && value.iter().all(|byte| matches!(byte, 0x20..=0x7e)))
+        .then(|| std::str::from_utf8(value).ok().map(str::to_owned))?
 }
 
 /// Extract length-closed JPEG previews from `CATSummaryInformation` FINJPL
@@ -393,6 +408,8 @@ pub mod role {
     pub const PREVIEW: &str = "preview";
     /// Referenced CATIA document.
     pub const EXTERNAL_REFERENCE: &str = "external-reference";
+    /// Named outer FINJPL block.
+    pub const FINJPL_SEGMENT: &str = "finjpl-segment";
 }
 
 /// One physical extent of a logical stream. `phys_off` is measured from the inner
@@ -470,6 +487,8 @@ pub struct ContainerScan {
     pub last_save_version: Option<LastSaveVersion>,
     /// External CATIA documents named by storage properties.
     pub external_references: Vec<ExternalReference>,
+    /// Every bounded outer FINJPL block in source order.
+    pub finjpl_segments: Vec<FinjplSegment>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
@@ -744,6 +763,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let previews = preview_images(&data);
     let last_save_version = last_save_version(&data);
     let external_references = external_references(&data);
+    let finjpl_segments = finjpl_segments(&data, 0, data.len());
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
@@ -772,6 +792,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         previews,
         last_save_version,
         external_references,
+        finjpl_segments,
         census,
         variant,
     }
@@ -826,6 +847,34 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             compression: "none".to_string(),
             compressed_size: 0,
             uncompressed_size: 0,
+            attributes,
+        });
+    }
+    for (index, segment) in scan.finjpl_segments.iter().enumerate() {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("file_offset".to_string(), segment.range.start.to_string());
+        attributes.insert(
+            "type_word".to_string(),
+            format!("0x{:08x}", segment.type_word),
+        );
+        attributes.insert(
+            "family".to_string(),
+            match segment.kind {
+                FinjplKind::Storage => "storage",
+                FinjplKind::ProjectFlags => "project-flags",
+                FinjplKind::Other => "other",
+            }
+            .to_string(),
+        );
+        entries.push(ContainerEntry {
+            name: segment
+                .name
+                .clone()
+                .unwrap_or_else(|| format!("FINJPL#{index}")),
+            role: role::FINJPL_SEGMENT.to_string(),
+            compression: "none".to_string(),
+            compressed_size: (segment.range.end - segment.range.start) as u64,
+            uncompressed_size: (segment.range.end - segment.range.start) as u64,
             attributes,
         });
     }
