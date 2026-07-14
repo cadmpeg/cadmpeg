@@ -1157,7 +1157,8 @@ mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve, fit_rank_one_e5_plane_axes,
         intersection_line_direction, ordered_range, point_on_known_surface, quintic_jet_pcurve,
-        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_pcurve_geometry,
+        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
+        standard_pcurve_geometry,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
@@ -1268,6 +1269,24 @@ mod chart_tests {
             resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1, 2]])
                 .expect("endpoint option pass");
         assert_eq!(choices[0], [[0, 1], [0, 2], [1, 2]]);
+    }
+
+    #[test]
+    fn standard_circle_endpoint_domain_uses_the_explicit_curve_carrier() {
+        let points = [
+            Point {
+                id: PointId("on".to_string()),
+                position: Point3::new(3.0, 4.0, 7.0),
+            },
+            Point {
+                id: PointId("off".to_string()),
+                position: Point3::new(3.0, 4.01, 7.0),
+            },
+        ];
+        assert_eq!(
+            standard_circle_endpoint_candidates(&points, Point3::new(0.0, 0.0, 7.0), 5.0),
+            [0]
+        );
     }
 
     #[test]
@@ -2686,20 +2705,9 @@ fn attach_standard_topology(
             return false;
         };
         let candidates = match &support.geometry {
-            geometry::StandardCurveGeometry::Circle { center, radius } => ir
-                .model
-                .points
-                .iter()
-                .enumerate()
-                .filter_map(|(index, point)| {
-                    let incident =
-                        (point_distance_squared(point.position, *center).sqrt() - *radius).abs()
-                            <= 1e-3
-                            && point_on_known_surface(point.position, &surface0.geometry)
-                            && point_on_known_surface(point.position, &surface1.geometry);
-                    incident.then_some(index)
-                })
-                .collect(),
+            geometry::StandardCurveGeometry::Circle { center, radius } => {
+                standard_circle_endpoint_candidates(&ir.model.points, *center, *radius)
+            }
             geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
                 faces.sort_unstable();
@@ -3215,6 +3223,21 @@ fn resolve_standard_endpoint_pairs(
             .collect();
     }
     Some(resolved)
+}
+
+fn standard_circle_endpoint_candidates(
+    points: &[Point],
+    center: Point3,
+    radius: f64,
+) -> Vec<usize> {
+    points
+        .iter()
+        .enumerate()
+        .filter_map(|(index, point)| {
+            ((point_distance_squared(point.position, center).sqrt() - radius).abs() <= 1e-3)
+                .then_some(index)
+        })
+        .collect()
 }
 
 fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) -> Option<Vector3> {
