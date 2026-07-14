@@ -188,6 +188,54 @@ fn transfers_spreadsheet_cells_aliases_and_parameter_dependencies() {
 }
 
 #[test]
+fn recovers_product_prototypes_occurrences_and_placements() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="App::Part" name="Assembly" id="1"/>
+ <Object type="Part::Feature" name="Prototype" id="2"/>
+ <Object type="App::Link" name="Occurrence" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Occurrence"><Properties Count="4">
+  <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
+  <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="3"/></Property>
+  <Property name="LinkTransform" type="App::PropertyBool"><Bool value="true"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("product structure");
+    let nodes = result
+        .ir
+        .native
+        .namespace("fcstd")
+        .expect("native")
+        .arena_as::<crate::native::ProductNodeRecord>("product_nodes")
+        .expect("product nodes");
+    assert_eq!(nodes.len(), 2);
+    let assembly = nodes.iter().find(|node| node.kind == "part").expect("part");
+    let occurrence = nodes
+        .iter()
+        .find(|node| node.kind == "occurrence")
+        .expect("occurrence");
+    assert_eq!(assembly.members, vec![occurrence.object.clone()]);
+    assert_eq!(
+        occurrence.prototype.as_deref(),
+        Some("fcstd:object:Prototype")
+    );
+    assert_eq!(occurrence.local_transform.expect("placement")[0][3], 4.0);
+    assert_eq!(occurrence.element_count, Some(3));
+    assert_eq!(occurrence.link_transform, Some(true));
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -591,7 +639,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 3);
+    assert_eq!(namespace.version, 4);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");

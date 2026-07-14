@@ -5,7 +5,32 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 3;
+pub const VERSION: u32 = 4;
+
+/// One product container, prototype, or placed link occurrence.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProductNodeRecord {
+    /// Stable record identity.
+    pub id: String,
+    /// Owning application object.
+    pub object: String,
+    /// Structural family: `group`, `part`, `link_group`, or `occurrence`.
+    pub kind: String,
+    /// Ordered contained application objects.
+    pub members: Vec<String>,
+    /// Linked prototype object for an occurrence.
+    pub prototype: Option<String>,
+    /// External document token when the prototype is not local.
+    pub external_document: Option<String>,
+    /// Local occurrence placement as a row-major affine matrix.
+    pub local_transform: Option<[[f64; 4]; 4]>,
+    /// Property supplying the placement.
+    pub placement_property: Option<String>,
+    /// Number of array elements requested by the link.
+    pub element_count: Option<i64>,
+    /// Whether the prototype transform participates in occurrence placement.
+    pub link_transform: Option<bool>,
+}
 
 /// One persisted GUI view provider linked to an application object when available.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

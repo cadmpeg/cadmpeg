@@ -8,6 +8,7 @@ mod element_map;
 mod gui;
 mod native;
 mod persistence;
+mod product;
 mod topology_transfer;
 
 use std::collections::BTreeMap;
@@ -89,6 +90,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
+    let product_nodes = match namespace.arena_as::<native::ProductNodeRecord>("product_nodes") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
 
     let mut findings = Vec::new();
     let object_ids = objects
@@ -153,6 +158,38 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Check::ReferentialIntegrity,
                 format!("{} has a missing GUI owner or side entry", property.id),
                 Some(property.id.clone()),
+            ));
+        }
+    }
+    let product_by_object = product_nodes
+        .iter()
+        .map(|node| (node.object.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    for node in &product_nodes {
+        if !object_ids.contains(node.object.as_str())
+            || node
+                .members
+                .iter()
+                .any(|member| !object_ids.contains(member.as_str()))
+            || node.prototype.as_ref().is_some_and(|prototype| {
+                !object_ids.contains(prototype.as_str()) && node.external_document.is_none()
+            })
+            || node
+                .placement_property
+                .as_ref()
+                .is_some_and(|property| !property_ids.contains(property.as_str()))
+        {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!("{} has a missing product-structure link", node.id),
+                Some(node.id.clone()),
+            ));
+        }
+        if product_cycle(node.object.as_str(), &product_by_object) {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!("{} participates in a product-structure cycle", node.id),
+                Some(node.id.clone()),
             ));
         }
     }
@@ -346,6 +383,27 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         validate_logical_chain(name, &spans, expected, &mut findings);
     }
     findings
+}
+
+fn product_cycle(start: &str, nodes: &HashMap<&str, &native::ProductNodeRecord>) -> bool {
+    fn visit<'a>(
+        current: &'a str,
+        start: &str,
+        nodes: &HashMap<&'a str, &'a native::ProductNodeRecord>,
+        seen: &mut HashSet<&'a str>,
+    ) -> bool {
+        let Some(node) = nodes.get(current) else {
+            return false;
+        };
+        node.members
+            .iter()
+            .map(String::as_str)
+            .chain(node.prototype.as_deref())
+            .any(|target| {
+                target == start || (seen.insert(target) && visit(target, start, nodes, seen))
+            })
+    }
+    visit(start, start, nodes, &mut HashSet::from([start]))
 }
 
 fn finding(check: Check, message: impl Into<String>, entity: Option<String>) -> Finding {
@@ -550,6 +608,10 @@ impl Codec for FcstdCodec {
             namespace.set_arena("logical_ledger", &logical_ledger)?;
             namespace.set_arena("shape_payloads", &shape_payloads)?;
             namespace.set_arena("string_tables", &string_tables)?;
+            namespace.set_arena(
+                "product_nodes",
+                &product::transfer(&graph.objects, &graph.properties),
+            )?;
             let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer =
                 transfer_text_surfaces(&shape_payloads, &graph.properties, &mut curve_transfer);

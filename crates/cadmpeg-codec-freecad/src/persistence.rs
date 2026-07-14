@@ -279,7 +279,7 @@ fn parse_properties(
                 raw_xml: text[value.range()].to_owned(),
             })
             .collect::<Vec<_>>();
-        let links = if type_name.contains("PropertyLink") {
+        let links = if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
             values.iter().flat_map(link_targets).collect()
         } else {
             Vec::new()
@@ -333,7 +333,7 @@ fn classify_property(type_name: &str) -> PropertyFamily {
         PropertyFamily::PythonObject
     } else if type_name.contains("PropertyExpression") {
         PropertyFamily::Expression
-    } else if type_name.contains("PropertyLink") {
+    } else if type_name.contains("PropertyLink") || type_name.contains("PropertyXLink") {
         PropertyFamily::Link
     } else if type_name.contains("PropertyFile") {
         PropertyFamily::File
@@ -390,7 +390,15 @@ fn link_targets(value: &ValueRecord) -> Vec<LinkTarget> {
             "value", "Value", "object", "Object", "obj", "Obj", "name", "Name",
         ],
     );
-    let document = attribute_any(&value.attributes, &["document", "Document", "doc", "Doc"]);
+    let document = attribute_any(&value.attributes, &["document", "Document", "doc", "Doc"])
+        .or_else(|| {
+            value
+                .tag
+                .contains("XLink")
+                .then(|| attribute_any(&value.attributes, &["file", "File"]))
+                .flatten()
+        })
+        .filter(|document| !document.is_empty());
     let subelements = value
         .attributes
         .iter()

@@ -134,6 +134,16 @@ Same-sheet aliases and qualified `Sheet.alias` references connect spreadsheet an
 parameters without evaluating arbitrary formulas in the decoder. Cell counts are bounded and must
 match their declared framing.
 
+## Product structure
+
+Native namespace version 4 adds a `product_nodes` arena for groups, parts, link groups, and placed
+link occurrences. Containers retain ordered member object identities. An occurrence retains its
+own identity separately from its local or external prototype, its local affine placement and owning
+property, link-transform policy, and array element count. Cross-document link properties use their
+document token and target name without attempting to open the document. Missing local targets and
+container/prototype cycles are validation errors; external targets remain intentionally unresolved
+records rather than being silently dropped or recursively loaded.
+
 Pad, pocket, and linear-extrusion records resolve linked neutral sketches when their profile link
 targets an earlier decoded sketch. Their literal and evaluated length values remain linked to the
 owning native property, and the operation records distinguish additive, subtractive, and
