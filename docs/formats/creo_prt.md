@@ -559,6 +559,10 @@ records.
 For an ordered saved line, senses `2` and `3` select its first and second stored
 endpoints. For an ordered saved arc they select the neutral end and start loci,
 respectively, because saved-arc evaluation reverses the stored endpoint order.
+Sense-zero saved lines participate in type-one horizontal, type-two vertical,
+type-five perpendicular, type-seven parallel, type-eight equal-length, and
+type-fourteen symmetry-axis incidences through their `order_table` external
+identifier under the same arity rules as `segtab` lines.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
