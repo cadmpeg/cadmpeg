@@ -4338,6 +4338,62 @@ fn transfer_resolved_sketches(
                 },
             });
         }
+        let mut saved_section_geometries = Vec::new();
+        for (internal_id, geometry, offset) in definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(saved_section_entity_geometry)
+        {
+            let Some(external_id) = definition
+                .order_table
+                .as_ref()
+                .and_then(|order| order.external_id(internal_id))
+            else {
+                continue;
+            };
+            let entity_id = SketchEntityId(format!(
+                "creo:featdefs:sketch_entity#{}:{external_id}",
+                definition.id
+            ));
+            if entities.iter().any(|entity| entity.id == entity_id) {
+                continue;
+            }
+            let generated_kind = match &geometry {
+                SketchGeometry::Line { .. } => crate::surface::SurfaceKind::Plane,
+                SketchGeometry::Arc { .. } => crate::surface::SurfaceKind::Cylinder,
+                _ => continue,
+            };
+            let generated = saved_entity_is_generated_profile(
+                definition.owner_feature_id,
+                external_id,
+                generated_kind,
+                &scan.feature_entity_tables,
+                &scan.surface_rows,
+            );
+            let curve_id = CurveId(format!(
+                "creo:featdefs:section_curve#{}:{external_id}",
+                definition.id
+            ));
+            annotate(
+                annotations,
+                &entity_id.0,
+                "FeatDefs",
+                offset as u64,
+                "saved_section_entity",
+                Exactness::Derived,
+            );
+            entities.push(SketchEntity {
+                id: entity_id,
+                sketch: sketch_id.clone(),
+                construction: !generated,
+                native_ref: Some(format!("creo:featdefs:saved_entity#{internal_id}")),
+                geometry_ref: Some(curve_id.0.clone()),
+                endpoint_refs: Vec::new(),
+                geometry: geometry.clone(),
+            });
+            saved_section_geometries.push((external_id, geometry, offset, curve_id));
+        }
         for spline in definition
             .saved_section
             .iter()
@@ -4433,6 +4489,35 @@ fn transfer_resolved_sketches(
                         "FeatDefs:section#{}:{}",
                         definition.id, segment.external_id
                     ),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+        }
+        for (external_id, section_geometry, offset, id) in saved_section_geometries {
+            if ir.model.curves.iter().any(|existing| existing.id == id) {
+                continue;
+            }
+            let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
+                continue;
+            };
+            annotate(
+                annotations,
+                &id,
+                "FeatDefs",
+                offset as u64,
+                "placed_saved_section_curve",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id,
+                geometry,
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("FeatDefs:section#{}:{external_id}", definition.id),
                     name: None,
                     color: None,
                     visible: None,
@@ -4560,6 +4645,30 @@ fn generated_surface_id(
         .surface_ids
         .contains(&surface_id)
         .then_some(surface_id)
+}
+
+fn saved_entity_is_generated_profile(
+    feature_id: Option<u32>,
+    source_entity_id: u32,
+    expected_kind: crate::surface::SurfaceKind,
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    let Some(feature_id) = feature_id else {
+        return false;
+    };
+    tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .flat_map(|table| &table.entries)
+        .filter(|entry| entry.source_entity_id == Some(source_entity_id))
+        .any(|entry| {
+            rows.iter().any(|row| {
+                row.id == entry.entity_id
+                    && row.feature_id == feature_id
+                    && row.kind == expected_kind
+            })
+        })
 }
 
 fn ordered_line_surface_id(
@@ -5844,6 +5953,20 @@ mod resolved_sketch_tests {
             ),
             BTreeMap::from([(9, 43)])
         );
+        assert!(saved_entity_is_generated_profile(
+            Some(17),
+            8,
+            crate::surface::SurfaceKind::Cylinder,
+            std::slice::from_ref(&table),
+            &rows,
+        ));
+        assert!(!saved_entity_is_generated_profile(
+            Some(17),
+            10,
+            crate::surface::SurfaceKind::Cylinder,
+            &[table],
+            &rows,
+        ));
     }
 
     #[test]

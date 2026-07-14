@@ -763,6 +763,13 @@ by a named-record opener and is not dictionary index `e0`.
 
 A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
 
+A saved line, arc, or circle with complete section-space geometry and an
+`order_table` join defines a neutral sketch entity under that row's `ext_id`.
+It is a profile entity when a class-200 entry with the same `ext_id` binds it to
+a same-feature generated plane or cylinder of the corresponding family. Without
+that generated-carrier binding, the evaluated geometry remains a construction
+entity and does not establish solved trim membership.
+
 The named `entity(arc)` record is followed by positional generated-entity
 rows. Each row begins after `e3` with its saved entity identifier and a header
 ending at `e2`. The identifier joins `order_table.int_id`, and the joined
