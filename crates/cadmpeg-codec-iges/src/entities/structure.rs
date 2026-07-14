@@ -127,6 +127,55 @@ fn array_mask_valid(
     unique && cardinality_valid
 }
 
+fn has_association_back_pointer(
+    record: &ParameterRecord,
+    group_sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    (1..record.tokens.len()).any(|association_count_index| {
+        let Some(association_count) = record
+            .integer(association_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            return false;
+        };
+        let association_start = association_count_index + 1;
+        let property_count_index = association_start + association_count;
+        let Some(property_count) = record
+            .integer(property_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return false;
+        };
+        if property_count_index + 1 + property_count != record.tokens.len() {
+            return false;
+        }
+        let associations = (0..association_count)
+            .map(|index| record.integer(association_start + index))
+            .collect::<Option<Vec<_>>>();
+        let properties_valid = (0..property_count).all(|index| {
+            record
+                .integer(property_count_index + 1 + index)
+                .and_then(|value| u32::try_from(value).ok())
+                .and_then(|sequence| entries.get(&sequence))
+                .is_some_and(|target| matches!(target.entity_type, 322 | 406 | 422))
+        });
+        properties_valid
+            && associations.is_some_and(|associations| {
+                associations
+                    .iter()
+                    .any(|value| *value == i64::from(group_sequence))
+                    && associations.iter().all(|value| {
+                        u32::try_from(*value)
+                            .ok()
+                            .and_then(|sequence| entries.get(&sequence))
+                            .is_some_and(|target| matches!(target.entity_type, 212 | 312 | 402))
+                    })
+            })
+    })
+}
+
 fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
     match record.tokens.get(index).map(|token| &token.value) {
         None | Some(TokenValue::Omitted) => Some(default),
@@ -185,6 +234,47 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let count = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0);
+        let members = count.and_then(|count| {
+            (0..count)
+                .map(|index| {
+                    record.integer(2 + index).and_then(|value| {
+                        let sequence = u32::try_from(value).ok()?;
+                        (sequence % 2 == 1 && entries.contains_key(&sequence)).then_some(sequence)
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+        });
+        let back_pointers_valid = members.as_ref().is_some_and(|members| {
+            !matches!(entry.form, 1 | 14)
+                || members.iter().all(|member| {
+                    records.get(member).is_some_and(|member_record| {
+                        has_association_back_pointer(member_record, entry.sequence, &entries)
+                    })
+                })
+        });
+        if members.is_some() && back_pointers_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "group member list or required association back pointer is invalid",
+            ));
+        }
+    }
 
     for entry in directory
         .iter()

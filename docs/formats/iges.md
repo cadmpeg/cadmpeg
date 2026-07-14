@@ -82,6 +82,8 @@ Type 420 Form 0 instantiates one Type 320 definition. It stores translation coor
 
 Type 416 external references are identity records and never cause implicit file or library access. Form 0 names one definition in an external file. Form 1 treats an entire external file as one definition. Form 2 names a logically related entity in an external file. Form 3 names a definition already available in the receiving system. Form 4 names a definition in a receiving-system library. File identifiers, symbolic names, and library names are nonempty Hollerith strings. The `external_references` arena preserves the form-specific reference kind and identifiers with resolution state `not_attempted`; it does not conflate an unattempted reference with a missing or resolved target.
 
+Type 402 Forms 1, 7, 14, and 15 group a positive ordered parameter list of existing entities. Forms 1 and 7 are semantically unordered; Forms 14 and 15 preserve ordered group semantics. Forms 1 and 14 require every member's first trailing pointer group to contain a back pointer to the group. Forms 7 and 15 require no back pointer. The `groups` arena preserves source member order even for semantically unordered groups, group ordering semantics, back-pointer policy, and member identities.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

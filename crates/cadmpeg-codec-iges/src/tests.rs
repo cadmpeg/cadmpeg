@@ -2273,6 +2273,39 @@ fn external_reference_forms_file() -> Vec<u8> {
     ])
 }
 
+fn group_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "ORDERED".into(),
+            status: "00000000",
+            parameters: "116,1,2,3,0,1,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 14,
+            label: "GROUP1".into(),
+            status: "00000000",
+            parameters: "402,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "UNORDER".into(),
+            status: "00000000",
+            parameters: "116,4,5,6,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 7,
+            label: "GROUP2".into(),
+            status: "00000000",
+            parameters: "402,1,5;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3441,6 +3474,28 @@ fn decode_distinguishes_all_external_reference_forms_without_resolution() {
     assert!(references
         .iter()
         .all(|reference| reference.fields["resolution_state"] == "not_attempted"));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_group_order_and_back_pointer_policy() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(group_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let groups = &result.ir.native.namespace("iges").unwrap().arenas["groups"];
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[0].fields["ordered"], true);
+    assert_eq!(groups[0].fields["back_pointers_required"], true);
+    assert_eq!(groups[0].fields["members"][0], "iges:entity:directory#1");
+    assert_eq!(groups[1].fields["ordered"], false);
+    assert_eq!(groups[1].fields["back_pointers_required"], false);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

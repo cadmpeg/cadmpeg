@@ -313,6 +313,16 @@ struct NativeExternalReference {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeGroup {
+    id: String,
+    source_entity: String,
+    ordered: bool,
+    back_pointers_required: bool,
+    declared_member_count: Option<i64>,
+    members: Vec<Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -1111,6 +1121,31 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let groups = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 1 | 7 | 14 | 15))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeGroup {
+                id: format!("iges:product:group#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                ordered: matches!(entry.form, 14 | 15),
+                back_pointers_required: matches!(entry.form, 1 | 14),
+                declared_member_count: record.and_then(|record| record.integer(1)),
+                members: (0..count)
+                    .map(|index| {
+                        record
+                            .and_then(|record| record.integer(2 + index))
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -1136,5 +1171,6 @@ pub(crate) fn store(
     namespace.set_arena("rectangular_arrays", &rectangular_arrays)?;
     namespace.set_arena("circular_arrays", &circular_arrays)?;
     namespace.set_arena("external_references", &external_references)?;
+    namespace.set_arena("groups", &groups)?;
     Ok(())
 }
