@@ -3908,6 +3908,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 id: LoopId(id(i)),
                 face: FaceId(id(owner)),
                 coedges,
+                vertex: None,
             });
         }
     }

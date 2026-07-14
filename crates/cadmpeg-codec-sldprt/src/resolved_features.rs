@@ -1785,6 +1785,7 @@ fn sketch_brep(
             id: loop_id,
             face: face_id.clone(),
             coedges: coedge_ids,
+            vertex: None,
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -1827,6 +1828,7 @@ fn sketch_brep(
             id: loop_id.clone(),
             face: face_id.clone(),
             coedges: vec![coedge_id],
+            vertex: None,
         });
         face_loops.push(loop_id);
     }

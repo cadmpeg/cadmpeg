@@ -5142,6 +5142,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         id: loop_id.clone(),
         face: face_id,
         coedges: coedge_ids,
+        vertex: None,
     });
     source_less.model.faces[0].loops.push(loop_id);
 

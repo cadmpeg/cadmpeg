@@ -1062,6 +1062,7 @@ fn emit_topology(
             id: id.clone(),
             face: face.clone(),
             coedges: Vec::new(),
+            vertex: None,
         });
         if let Some(parent) = ir
             .model

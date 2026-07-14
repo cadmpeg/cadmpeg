@@ -21,3 +21,4 @@ authored against `docs/formats/step.md`.
 | `ap242_external_documents.p21` | applied document reference and externally defined item dependency identities |
 | `ap242_geometric_set.p21` | geometrically bounded surface representation with a curve-bounded sheet carrier |
 | `ap242_degree_cone.p21` | apex-zero conical surface with a conversion-based degree context |
+| `ap242_vertex_loop.p21` | spherical face with singleton vertex boundaries at surface singularities |

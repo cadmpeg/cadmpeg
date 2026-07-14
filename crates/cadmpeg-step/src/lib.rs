@@ -723,6 +723,10 @@ impl<'a> Builder<'a> {
             .loops
             .iter()
             .find(|l| l.id.as_str() == loop_id)?;
+        if let Some(vertex) = &lp.vertex {
+            let vertex = self.emit_vertex(vertex.as_str())?;
+            return Some(self.emitter.emit("VERTEX_LOOP", &format!("'',{vertex}")));
+        }
         let coedge_ids: Vec<String> = lp.coedges.iter().map(|c| c.0.clone()).collect();
         let mut oe_refs = Vec::new();
         for cid in &coedge_ids {

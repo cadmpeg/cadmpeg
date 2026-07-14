@@ -505,6 +505,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                 id: loop_id.clone(),
                 face,
                 coedges: coedge_ids.clone(),
+                vertex: None,
             });
             for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                 let id = coedge_ids[index].clone();

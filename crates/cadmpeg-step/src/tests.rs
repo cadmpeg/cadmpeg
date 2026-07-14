@@ -304,6 +304,10 @@ fn every_repository_step_fixture_has_complete_byte_accounting() {
             include_bytes!("../tests/fixtures/ap242_tessellation.p21"),
         ),
         (
+            "ap242_vertex_loop",
+            include_bytes!("../tests/fixtures/ap242_vertex_loop.p21"),
+        ),
+        (
             "complex_instance",
             include_bytes!("../tests/fixtures/complex_instance.p21"),
         ),
@@ -550,6 +554,33 @@ fn decode_conical_apex_and_context_plane_angle_units() {
         SurfaceGeometry::Cone { radius, half_angle, .. }
             if radius == 0.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1.0e-12
     )));
+}
+
+#[test]
+fn decode_and_write_singular_vertex_loops() {
+    let bytes = include_bytes!("../tests/fixtures/ap242_vertex_loop.p21");
+    let result = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode vertex loops");
+    assert_eq!(result.ir.model.loops.len(), 2);
+    assert!(result
+        .ir
+        .model
+        .loops
+        .iter()
+        .all(|loop_| loop_.coedges.is_empty() && loop_.vertex.is_some()));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut encoded = Vec::new();
+    write_step(&result.ir, &mut encoded, &StepWriteOptions::default()).expect("write vertex loops");
+    assert_eq!(
+        String::from_utf8(encoded)
+            .unwrap()
+            .matches("VERTEX_LOOP")
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -999,6 +1030,7 @@ fn edgeless_doc() -> CadIr {
         id: LoopId("lp0".into()),
         face: FaceId("f0".into()),
         coedges: vec![CoedgeId("ce0".into())],
+        vertex: None,
     });
     ir.model.faces.push(Face {
         id: FaceId("f0".into()),

@@ -328,6 +328,23 @@ fn build(
                 }
                 let loop_step = br.parameter(1)?.reference()?;
                 let lr = exchange.records.get(&loop_step)?;
+                let lid = LoopId(format!("step:data:loop#{loop_step}-face-{face_step}"));
+                if lr.simple_name() == Some("VERTEX_LOOP") {
+                    let vertex_step = lr.parameter(1)?.reference()?;
+                    if !vdefs.contains_key(&vertex_step) {
+                        return None;
+                    }
+                    built.loops.push(Loop {
+                        id: lid.clone(),
+                        face: fid.clone(),
+                        coedges: Vec::new(),
+                        vertex: Some(VertexId(format!("step:data:vertex#{vertex_step}"))),
+                    });
+                    loop_ids.push(lid);
+                    used_v.insert(vertex_step);
+                    built.typed.extend([bound_step, loop_step]);
+                    continue;
+                }
                 if lr.simple_name() != Some("EDGE_LOOP") {
                     return None;
                 }
@@ -339,7 +356,6 @@ fn build(
                 if uses.is_empty() {
                     return None;
                 }
-                let lid = LoopId(format!("step:data:loop#{loop_step}-face-{face_step}"));
                 let mut coedge_ids = vec![];
                 for use_step in uses {
                     let o = odefs.get(&use_step)?;
@@ -378,6 +394,7 @@ fn build(
                     id: lid.clone(),
                     face: fid.clone(),
                     coedges: coedge_ids,
+                    vertex: None,
                 });
                 loop_ids.push(lid);
                 built.typed.extend([bound_step, loop_step]);

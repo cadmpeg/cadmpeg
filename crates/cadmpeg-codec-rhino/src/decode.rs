@@ -2106,6 +2106,7 @@ fn stage_extrusion_caps(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: vec![coedge_id.clone()],
+                vertex: None,
             });
             loop_ids.push(loop_id.clone());
             for id in [
@@ -2612,6 +2613,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
             id: id.clone(),
             face: face_id.clone(),
             coedges,
+            vertex: None,
         });
         staged.faces[loop_record.face as usize].loops.push(id);
     }
