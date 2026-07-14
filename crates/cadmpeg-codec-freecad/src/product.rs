@@ -91,6 +91,8 @@ pub(crate) fn transfer(
 /// Project the lossless native product records into reusable definitions and placed uses.
 pub(crate) fn transfer_neutral(
     records: &[ProductNodeRecord],
+    objects: &[ObjectRecord],
+    properties: &[PropertyRecord],
 ) -> Result<(Vec<Component>, Vec<Occurrence>), CodecError> {
     let mut component_objects = records
         .iter()
@@ -225,6 +227,19 @@ pub(crate) fn transfer_neutral(
         .iter()
         .map(|record| (record.object.as_str(), record))
         .collect::<HashMap<_, _>>();
+    let object_by_id = objects
+        .iter()
+        .map(|object| (object.id.as_str(), object))
+        .collect::<HashMap<_, _>>();
+    let properties_by_owner = properties.iter().fold(
+        HashMap::<&str, Vec<&PropertyRecord>>::new(),
+        |mut map, property| {
+            map.entry(property.owner.as_str())
+                .or_default()
+                .push(property);
+            map
+        },
+    );
     let components = component_objects
         .into_iter()
         .map(|object| {
@@ -240,9 +255,23 @@ pub(crate) fn transfer_neutral(
                 .and_then(|record| record.local_transform)
                 .unwrap_or_else(identity);
             let parent_object = parent_by_object.get(object.as_str()).copied();
+            let source_object = object_by_id.get(object.as_str()).copied();
+            let owned = properties_by_owner
+                .get(object.as_str())
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let bom_properties = ["Label2", "StockCode", "Vendor", "Manufacturer"]
+                .into_iter()
+                .filter_map(|name| scalar(owned, name).map(|value| (name.into(), value.into())))
+                .collect();
             Ok(Component {
                 id: component_id(&object),
                 kind,
+                source_name: source_object.map(|object| object.name.clone()),
+                label: scalar(owned, "Label").map(str::to_owned),
+                description: scalar(owned, "Description").map(str::to_owned),
+                part_number: scalar(owned, "PartNumber").map(str::to_owned),
+                bom_properties,
                 parent: parent_object.map(&component_id),
                 local_transform,
                 resolved_transform: resolve_container_transform(

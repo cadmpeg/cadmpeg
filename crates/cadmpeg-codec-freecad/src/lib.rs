@@ -1035,7 +1035,8 @@ impl Codec for FcstdCodec {
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
             topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(&mut ir, &graph.objects, &graph.properties, &shape_payloads)?;
-            let (components, occurrences) = product::transfer_neutral(&product_nodes)?;
+            let (components, occurrences) =
+                product::transfer_neutral(&product_nodes, &graph.objects, &graph.properties)?;
             ir.model.components = components;
             ir.model.occurrences = occurrences;
             ir.model.assembly_joints =

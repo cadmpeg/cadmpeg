@@ -41,6 +41,21 @@ pub struct Component {
     pub id: ComponentId,
     /// Structural role.
     pub kind: ComponentKind,
+    /// Stable source object name used by product/BOM tooling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_name: Option<String>,
+    /// User-visible component label, when distinct from the source name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// User-maintained BOM description.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// User-maintained part or stock number.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub part_number: Option<String>,
+    /// Additional persisted BOM identity fields by exact property name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub bom_properties: BTreeMap<String, String>,
     /// Direct containing component, absent for a product root.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<ComponentId>,

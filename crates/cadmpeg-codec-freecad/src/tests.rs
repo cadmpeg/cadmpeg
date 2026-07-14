@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "46");
+    assert_eq!(result.ir.ir_version, "47");
     let feature = |name: &str| {
         &result
             .ir
@@ -2816,7 +2816,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
 </Objects>
 <ObjectData Count="6">
  <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
- <Object name="Prototype"><Properties Count="0"/></Object>
+ <Object name="Prototype"><Properties Count="3"><Property name="Label" type="App::PropertyString"><String value="Drive gear"/></Property><Property name="Description" type="App::PropertyString"><String value="Hardened drive gear"/></Property><Property name="PartNumber" type="App::PropertyString"><String value="GEAR-42"/></Property></Properties></Object>
  <Object name="Occurrence"><Properties Count="14">
   <Property name="LinkedObject" type="App::PropertyXLinkSub"><XLink file="" name="Prototype" count="1"><Sub value="Face1"/></XLink></Property>
   <Property name="LinkPlacement" type="App::PropertyPlacement"><PropertyPlacement Px="4" Py="5" Pz="6" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
@@ -2937,6 +2937,19 @@ fn recovers_product_prototypes_occurrences_and_placements() {
         cadmpeg_ir::ComponentReference::Local { component }
             if component.0.contains("Prototype")
     ));
+    let prototype = result
+        .ir
+        .model
+        .components
+        .iter()
+        .find(|component| component.source_name.as_deref() == Some("Prototype"))
+        .expect("prototype component identity");
+    assert_eq!(prototype.label.as_deref(), Some("Drive gear"));
+    assert_eq!(
+        prototype.description.as_deref(),
+        Some("Hardened drive gear")
+    );
+    assert_eq!(prototype.part_number.as_deref(), Some("GEAR-42"));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
     let mut corrupted = result.ir.clone();
