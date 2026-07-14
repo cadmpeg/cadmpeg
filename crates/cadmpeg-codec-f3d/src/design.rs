@@ -974,7 +974,7 @@ fn resolved_face_group(
         if matches.next().is_some() {
             return None;
         }
-        let [face] = operand.candidate_faces.as_slice() else {
+        let [face] = face_operand_candidates(operand) else {
             return None;
         };
         if !faces.contains(face) {
@@ -985,6 +985,14 @@ fn resolved_face_group(
         faces,
         native: group.id.clone(),
     })
+}
+
+pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_ir::ids::FaceId] {
+    if operand.unreferenced_candidate_faces.is_empty() {
+        &operand.candidate_faces
+    } else {
+        &operand.unreferenced_candidate_faces
+    }
 }
 
 /// Resolve selected-face Extrude starts from exact sketch-plane coincidence.
@@ -1054,7 +1062,7 @@ pub(crate) fn bind_extrude_start_planes(
                 candidates.clear();
                 break;
             }
-            candidates.extend(operand.candidate_faces.iter().cloned());
+            candidates.extend(face_operand_candidates(operand).iter().cloned());
         }
         candidates.sort_by(|left, right| left.0.cmp(&right.0));
         candidates.dedup();
@@ -4634,7 +4642,7 @@ pub fn decode_dimension_recipe_records(
             else {
                 continue;
             };
-            let Some((prefix_offset, prefix_bytes)) = dimension_recipe_prefix(
+            let Some((prefix_offset, prefix_bytes)) = recipe_record_prefix(
                 bytes,
                 at,
                 recipe_offset,
@@ -4642,7 +4650,7 @@ pub fn decode_dimension_recipe_records(
             ) else {
                 continue;
             };
-            let references = decode_dimension_recipe_references(
+            let references = decode_recipe_references(
                 &prefix_bytes,
                 u64::try_from(prefix_offset).unwrap_or(u64::MAX),
             );
@@ -4674,10 +4682,10 @@ pub fn decode_dimension_recipe_records(
     Ok(out)
 }
 
-pub(crate) fn decode_dimension_recipe_references(
+pub(crate) fn decode_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
-) -> Vec<crate::records::DesignDimensionRecipeReference> {
+) -> Vec<crate::records::DesignRecipeReference> {
     if prefix
         .get(..10)
         .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
@@ -4701,17 +4709,15 @@ pub(crate) fn decode_dimension_recipe_references(
                 && u32_at(prefix, marker_at) == Some(0))
             .then_some((token, token_encoding_at + 4, marker_at + 4))
         });
-        let packed = prefix
-            .get(token_encoding_at..token_encoding_at + 4)
-            .and_then(|slot| {
-                let length = slot.iter().position(|byte| *byte == 0).unwrap_or(4);
-                (length != 0
-                    && slot[..length].iter().all(u8::is_ascii_digit)
-                    && prefix.get(token_encoding_at + 4) == Some(&0))
-                .then(|| std::str::from_utf8(&slot[..length]).ok())
-                .flatten()
-                .map(|token| (token.to_owned(), token_encoding_at, token_encoding_at + 5))
-            });
+        let packed = (1usize..=8).find_map(|length| {
+            let token = prefix.get(token_encoding_at..token_encoding_at + length)?;
+            let zero_at = token_encoding_at.checked_add(length)?;
+            (token.iter().all(u8::is_ascii_digit)
+                && prefix.get(zero_at..zero_at + 4) == Some(&[0; 4]))
+            .then(|| std::str::from_utf8(token).ok())
+            .flatten()
+            .map(|token| (token.to_owned(), token_encoding_at, zero_at + 4))
+        });
         let Some((token, token_at, marker_at)) = length_prefixed.or(packed) else {
             return Vec::new();
         };
@@ -4725,7 +4731,7 @@ pub(crate) fn decode_dimension_recipe_references(
         if u32_at(prefix, marker_at + 8) != Some(0) {
             return Vec::new();
         }
-        references.push(crate::records::DesignDimensionRecipeReference {
+        references.push(crate::records::DesignRecipeReference {
             token,
             token_offset: prefix_offset.saturating_add(token_at as u64),
             design_reference: i64::from(design_reference),
@@ -4748,9 +4754,16 @@ pub fn bind_dimension_recipe_reference_candidates(
     tags: &[PersistentSubentityTag],
 ) {
     for reference in records.iter_mut().flat_map(|record| &mut record.references) {
-        reference.candidate_faces = dimension_recipe_candidate_faces(reference, tags);
-        reference.candidate_edges = dimension_recipe_candidate_edges(reference, tags);
+        bind_recipe_reference_candidates(reference, tags);
     }
+}
+
+fn bind_recipe_reference_candidates(
+    reference: &mut crate::records::DesignRecipeReference,
+    tags: &[PersistentSubentityTag],
+) {
+    reference.candidate_faces = recipe_reference_candidate_faces(reference, tags);
+    reference.candidate_edges = recipe_reference_candidate_edges(reference, tags);
 }
 
 /// Join dimension programs to byte-identical edge-recipe program tails.
@@ -4790,8 +4803,8 @@ pub(crate) fn dimension_recipe_matching_edge_operand_ids(
     ids
 }
 
-pub(crate) fn dimension_recipe_candidate_edges(
-    reference: &crate::records::DesignDimensionRecipeReference,
+pub(crate) fn recipe_reference_candidate_edges(
+    reference: &crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
 ) -> Vec<cadmpeg_ir::ids::EdgeId> {
     use cadmpeg_ir::attributes::AttributeTarget;
@@ -4812,8 +4825,8 @@ pub(crate) fn dimension_recipe_candidate_edges(
     edges
 }
 
-pub(crate) fn dimension_recipe_candidate_faces(
-    reference: &crate::records::DesignDimensionRecipeReference,
+pub(crate) fn recipe_reference_candidate_faces(
+    reference: &crate::records::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
     use cadmpeg_ir::attributes::AttributeTarget;
@@ -4834,7 +4847,7 @@ pub(crate) fn dimension_recipe_candidate_faces(
     faces
 }
 
-fn dimension_recipe_prefix(
+fn recipe_record_prefix(
     bytes: &[u8],
     record_offset: usize,
     family_name_offset: usize,
@@ -4846,7 +4859,7 @@ fn dimension_recipe_prefix(
         return None;
     }
     let prefix = bytes.get(prefix_offset..prefix_end)?;
-    (!prefix.is_empty()).then(|| (prefix_offset, prefix.to_vec()))
+    Some((prefix_offset, prefix.to_vec()))
 }
 
 fn indexed_record_containing(
@@ -5804,6 +5817,9 @@ pub fn bind_face_operand_candidates(
         .map(|recipe| (recipe.id.as_str(), recipe))
         .collect::<HashMap<_, _>>();
     for operand in operands {
+        for reference in &mut operand.recipe_references {
+            bind_recipe_reference_candidates(reference, tags);
+        }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
             .and_then(|recipe| recipe.design_id.as_deref())
@@ -5823,6 +5839,18 @@ pub fn bind_face_operand_candidates(
             .candidate_faces
             .sort_by(|left, right| left.0.cmp(&right.0));
         operand.candidate_faces.dedup();
+        let referenced = operand
+            .recipe_references
+            .iter()
+            .filter(|reference| reference.design_reference == design_reference)
+            .flat_map(|reference| &reference.candidate_faces)
+            .collect::<HashSet<_>>();
+        operand.unreferenced_candidate_faces = operand
+            .candidate_faces
+            .iter()
+            .filter(|face| !referenced.contains(face))
+            .cloned()
+            .collect();
     }
 }
 
@@ -5837,6 +5865,9 @@ pub fn bind_edge_operand_candidates(
         .map(|recipe| (recipe.id.as_str(), recipe))
         .collect::<HashMap<_, _>>();
     for operand in operands {
+        for reference in &mut operand.recipe_references {
+            bind_recipe_reference_candidates(reference, tags);
+        }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
             .map(|recipe| i64::from(recipe.record_index))
@@ -6761,6 +6792,14 @@ fn parse_edge_operand(
     let [recipe] = matches.as_slice() else {
         return None;
     };
+    let (recipe_prefix_at, recipe_prefix_bytes) = recipe_record_prefix(
+        bytes,
+        offsets[3],
+        usize::try_from(recipe.byte_offset).ok()?,
+        b"edge_recipe_data".len(),
+    )?;
+    let recipe_references =
+        decode_recipe_references(&recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
     let recipe_program_at = usize::try_from(recipe.byte_offset)
         .ok()?
         .checked_add(b"edge_recipe_data".len())?;
@@ -6801,6 +6840,9 @@ fn parse_edge_operand(
         recipe_record_index,
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
+        recipe_prefix_offset: u64::try_from(recipe_prefix_at).ok()?,
+        recipe_prefix_bytes,
+        recipe_references,
         recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
         recipe_program,
         recipe_structure,
@@ -7016,14 +7058,22 @@ fn parse_face_operand(
     let [recipe] = matches.as_slice() else {
         return None;
     };
-    let recipe_program_at =
-        usize::try_from(recipe.byte_offset)
-            .ok()?
-            .checked_add(match recipe.kind {
-                ConstructionRecipeKind::Face => b"face_recipe_data".len(),
-                ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
-                _ => return None,
-            })?;
+    let family_name_len = match recipe.kind {
+        ConstructionRecipeKind::Face => b"face_recipe_data".len(),
+        ConstructionRecipeKind::BoundedFace => b"bounded_face_recipe_data".len(),
+        _ => return None,
+    };
+    let (recipe_prefix_at, recipe_prefix_bytes) = recipe_record_prefix(
+        bytes,
+        offsets[3],
+        usize::try_from(recipe.byte_offset).ok()?,
+        family_name_len,
+    )?;
+    let recipe_references =
+        decode_recipe_references(&recipe_prefix_bytes, u64::try_from(recipe_prefix_at).ok()?);
+    let recipe_program_at = usize::try_from(recipe.byte_offset)
+        .ok()?
+        .checked_add(family_name_len)?;
     let recipe_program_bytes =
         bytes.get(recipe_program_at..usize::try_from(next_byte_offset).ok()?)?;
     if recipe_program_bytes.is_empty()
@@ -7106,12 +7156,16 @@ fn parse_face_operand(
         recipe_record_index,
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
+        recipe_prefix_offset: u64::try_from(recipe_prefix_at).ok()?,
+        recipe_prefix_bytes,
+        recipe_references,
         recipe_kind: recipe.kind,
         recipe_program_offset,
         recipe_program,
         recipe_node_offsets,
         recipe_nodes,
         candidate_faces: Vec::new(),
+        unreferenced_candidate_faces: Vec::new(),
         preceding_candidate_faces: Vec::new(),
         changed_candidate_faces: Vec::new(),
         next_record_index: indexed[4].1,
@@ -9340,11 +9394,11 @@ mod relation_tests {
         bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
         bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
         contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
-        dimension_recipe_prefix, directional_point_dimension, exact_atomic_constraint,
-        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_sketch_entity_id,
-        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
+        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
+        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
+        next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -9352,9 +9406,9 @@ mod relation_tests {
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
         parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
         project_dimension_constraints, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design, region_containing_points,
-        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
-        two_locus_distance_dimension,
+        project_sketch_constraints, project_sketch_design, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations,
+        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -9363,9 +9417,9 @@ mod relation_tests {
         DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
         DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind,
         DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
-        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignParameterScope, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
+        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -10121,12 +10175,12 @@ mod relation_tests {
         let family_name_offset = framed.len();
         framed.extend_from_slice(b"edge_recipe_data");
         assert_eq!(
-            dimension_recipe_prefix(&framed, 0, family_name_offset, 16),
+            recipe_record_prefix(&framed, 0, family_name_offset, 16),
             Some((11, vec![7, 8, 9]))
         );
         framed[14..18].copy_from_slice(&15u32.to_le_bytes());
         assert_eq!(
-            dimension_recipe_prefix(&framed, 0, family_name_offset, 16),
+            recipe_record_prefix(&framed, 0, family_name_offset, 16),
             None
         );
     }
@@ -10157,7 +10211,7 @@ mod relation_tests {
         prefix.extend_from_slice(&0u32.to_le_bytes());
         prefix.extend_from_slice(&0u32.to_le_bytes());
 
-        let references = super::decode_dimension_recipe_references(&prefix, 1_000);
+        let references = super::decode_recipe_references(&prefix, 1_000);
         assert_eq!(references.len(), 2);
         assert_eq!(references[0].token, "13");
         assert_eq!(references[0].token_offset, 1_000 + first_token_at as u64);
@@ -10174,7 +10228,7 @@ mod relation_tests {
             1_000 + second_reference_at as u64
         );
         assert_eq!(
-            super::dimension_recipe_candidate_faces(
+            super::recipe_reference_candidate_faces(
                 &references[0],
                 &[
                     PersistentSubentityTag {
@@ -10206,7 +10260,7 @@ mod relation_tests {
             [FaceId("face-b".into())]
         );
         assert_eq!(
-            super::dimension_recipe_candidate_edges(
+            super::recipe_reference_candidate_edges(
                 &references[0],
                 &[PersistentSubentityTag {
                     id: "matching-edge".into(),
@@ -11401,21 +11455,46 @@ mod relation_tests {
         assert_eq!(operand.recipe_nodes[0].program, [-1, -1, 2, 7]);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, face_next_at);
+        operand.recipe_references.push(DesignRecipeReference {
+            token: "3".into(),
+            token_offset: 1,
+            design_reference: 303,
+            design_reference_offset: 2,
+            candidate_faces: Vec::new(),
+            candidate_edges: Vec::new(),
+        });
         bind_face_operand_candidates(
             std::slice::from_mut(&mut operand),
             std::slice::from_ref(&face_recipe),
-            &[PersistentSubentityTag {
-                id: "f3d:asm:persistent-subentity-tag#1".into(),
-                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
-                selector: 1,
-                token: "3".into(),
-                design_references: vec![303],
-                ordinal: 0,
-            }],
+            &[
+                PersistentSubentityTag {
+                    id: "f3d:asm:persistent-subentity-tag#1".into(),
+                    target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                    selector: 1,
+                    token: "3".into(),
+                    design_references: vec![303],
+                    ordinal: 0,
+                },
+                PersistentSubentityTag {
+                    id: "f3d:asm:persistent-subentity-tag#2".into(),
+                    target: AttributeTarget::Face(FaceId("f3d:brep:entity#51".into())),
+                    selector: 1,
+                    token: "4".into(),
+                    design_references: vec![303],
+                    ordinal: 1,
+                },
+            ],
         );
         assert_eq!(
             operand.candidate_faces,
-            [FaceId("f3d:brep:entity#50".into())]
+            [
+                FaceId("f3d:brep:entity#50".into()),
+                FaceId("f3d:brep:entity#51".into())
+            ]
+        );
+        assert_eq!(
+            operand.unreferenced_candidate_faces,
+            [FaceId("f3d:brep:entity#51".into())]
         );
         let group = DesignConstructionOperandGroup {
             id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
@@ -11445,12 +11524,8 @@ mod relation_tests {
         assert!(matches!(
             resolved_face_group(&group, std::slice::from_ref(&operand)),
             Some(FaceSelection::Resolved { faces, native })
-                if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+                if faces == [FaceId("f3d:brep:entity#51".into())] && native == group.id
         ));
-        operand
-            .candidate_faces
-            .push(FaceId("f3d:brep:entity#51".into()));
-        assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
     }
 
     #[test]

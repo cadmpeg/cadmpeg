@@ -617,7 +617,8 @@ pub(crate) fn bind_face_operand_history_candidates(
         if transition.previous_state_id != Some(previous_state_id) {
             continue;
         }
-        operand.preceding_candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
+        operand.preceding_candidate_faces =
+            faces_in_topology(crate::design::face_operand_candidates(operand), topology);
         operand.changed_candidate_faces =
             faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
                 .into_iter()

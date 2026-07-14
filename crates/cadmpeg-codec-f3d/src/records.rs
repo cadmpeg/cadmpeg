@@ -454,7 +454,7 @@ pub struct DesignDimensionRecipeRecord {
     #[schemars(with = "String")]
     pub prefix_bytes: Vec<u8>,
     /// Persistent Design selector/reference tails decoded from the prefix.
-    pub references: Vec<DesignDimensionRecipeReference>,
+    pub references: Vec<DesignRecipeReference>,
     /// Byte offset of the first i32 after the recipe-family name.
     pub program_offset: u64,
     /// Complete little-endian i32 program through the indexed-record boundary.
@@ -467,7 +467,7 @@ pub struct DesignDimensionRecipeRecord {
 
 /// One persistent Design selector/reference tail in a dimension recipe.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignDimensionRecipeReference {
+pub struct DesignRecipeReference {
     /// ASCII persistent-subentity selector token.
     pub token: String,
     /// Byte offset of the token bytes.
@@ -1047,6 +1047,14 @@ pub struct DesignEdgeOperand {
     pub recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
     pub recipe_id: String,
+    /// Byte offset of the recipe-specific prefix after the indexed header.
+    pub recipe_prefix_offset: u64,
+    /// Complete recipe-specific prefix before the length-prefixed family name.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub recipe_prefix_bytes: Vec<u8>,
+    /// Persistent Design selector/reference entries decoded from the prefix.
+    pub recipe_references: Vec<DesignRecipeReference>,
     /// Byte offset of the first i32 after the framed recipe-family name.
     pub recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
@@ -1156,6 +1164,14 @@ pub struct DesignFaceOperand {
     pub recipe_record_byte_offset: u64,
     /// Native construction-recipe arena id.
     pub recipe_id: String,
+    /// Byte offset of the recipe-specific prefix after the indexed header.
+    pub recipe_prefix_offset: u64,
+    /// Complete recipe-specific prefix before the length-prefixed family name.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub recipe_prefix_bytes: Vec<u8>,
+    /// Persistent Design selector/reference entries decoded from the prefix.
+    pub recipe_references: Vec<DesignRecipeReference>,
     /// Exact face-recipe family.
     pub recipe_kind: ConstructionRecipeKind,
     /// Byte offset of the first i32 after the framed recipe-family name.
@@ -1169,6 +1185,10 @@ pub struct DesignFaceOperand {
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
+    /// Candidate faces not explicitly named as topology context by a prefix
+    /// selector carrying the recipe's own Design reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreferenced_candidate_faces: Vec<FaceId>,
     /// Candidate faces present in the ASM topology immediately preceding the
     /// owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

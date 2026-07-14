@@ -1177,6 +1177,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     &native.persistent_subentity_tags,
                 )
             });
+        let mut expected_references = design::decode_recipe_references(
+            &operand.recipe_prefix_bytes,
+            operand.recipe_prefix_offset,
+        );
+        for reference in &mut expected_references {
+            reference.candidate_faces = design::recipe_reference_candidate_faces(
+                reference,
+                &native.persistent_subentity_tags,
+            );
+            reference.candidate_edges = design::recipe_reference_candidate_edges(
+                reference,
+                &native.persistent_subentity_tags,
+            );
+        }
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -1198,6 +1212,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
             && operand.recipe_record_byte_offset > operand.paired_byte_offset
             && operand.next_byte_offset > operand.recipe_record_byte_offset
+            && operand.recipe_prefix_offset == operand.recipe_record_byte_offset.saturating_add(11)
+            && operand
+                .recipe_prefix_offset
+                .saturating_add(operand.recipe_prefix_bytes.len() as u64)
+                == recipe.map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
+            && operand.recipe_references == expected_references
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == crate::records::ConstructionRecipeKind::Edge
@@ -1274,6 +1294,33 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .unwrap_or_default();
         expected_faces.sort_by(|left, right| left.0.cmp(&right.0));
         expected_faces.dedup();
+        let mut expected_references = design::decode_recipe_references(
+            &operand.recipe_prefix_bytes,
+            operand.recipe_prefix_offset,
+        );
+        for reference in &mut expected_references {
+            reference.candidate_faces = design::recipe_reference_candidate_faces(
+                reference,
+                &native.persistent_subentity_tags,
+            );
+            reference.candidate_edges = design::recipe_reference_candidate_edges(
+                reference,
+                &native.persistent_subentity_tags,
+            );
+        }
+        let recipe_design_reference = recipe
+            .and_then(|recipe| recipe.design_id.as_deref())
+            .and_then(|value| value.parse::<i64>().ok());
+        let referenced_faces = expected_references
+            .iter()
+            .filter(|reference| Some(reference.design_reference) == recipe_design_reference)
+            .flat_map(|reference| &reference.candidate_faces)
+            .collect::<HashSet<_>>();
+        let expected_unreferenced_faces = expected_faces
+            .iter()
+            .filter(|face| !referenced_faces.contains(face))
+            .cloned()
+            .collect::<Vec<_>>();
         let expected_node_offsets = operand
             .recipe_program
             .windows(3)
@@ -1322,6 +1369,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && operand.recipe_record_index == operand.record_index.saturating_add(3)
             && operand.recipe_record_byte_offset > operand.paired_byte_offset
             && operand.next_byte_offset > operand.recipe_record_byte_offset
+            && operand.recipe_prefix_offset == operand.recipe_record_byte_offset.saturating_add(11)
+            && operand
+                .recipe_prefix_offset
+                .saturating_add(operand.recipe_prefix_bytes.len() as u64)
+                == recipe.map_or(u64::MAX, |recipe| recipe.byte_offset.saturating_sub(4))
+            && operand.recipe_references == expected_references
             && matches!(
                 operand.recipe_kind,
                 records::ConstructionRecipeKind::Face
@@ -1385,6 +1438,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         .saturating_mul(4),
                 )
             && operand.candidate_faces == expected_faces
+            && operand.unreferenced_candidate_faces == expected_unreferenced_faces
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == operand.recipe_kind
@@ -1593,13 +1647,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .program_offset
             .checked_add((record.program.len() as u64).saturating_mul(4));
         let mut decoded_references =
-            design::decode_dimension_recipe_references(&record.prefix_bytes, record.prefix_offset);
+            design::decode_recipe_references(&record.prefix_bytes, record.prefix_offset);
         for reference in &mut decoded_references {
-            reference.candidate_faces = design::dimension_recipe_candidate_faces(
+            reference.candidate_faces = design::recipe_reference_candidate_faces(
                 reference,
                 &native.persistent_subentity_tags,
             );
-            reference.candidate_edges = design::dimension_recipe_candidate_edges(
+            reference.candidate_edges = design::recipe_reference_candidate_edges(
                 reference,
                 &native.persistent_subentity_tags,
             );
