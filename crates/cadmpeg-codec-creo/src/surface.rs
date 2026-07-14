@@ -516,6 +516,7 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
     if !frames.is_empty() {
         let unframed = result.clone();
         let mut framed = Vec::new();
+        let mut saw_framed_candidate = false;
         for frame in frames {
             let mut selected = Vec::<SurfaceRow>::with_capacity(frame.count);
             for row in result
@@ -524,9 +525,16 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
             {
                 selected.push(row.clone());
             }
-            framed.extend(selected);
+            saw_framed_candidate |= !selected.is_empty();
+            if selected.len() == frame.count {
+                framed.extend(selected);
+            }
         }
-        result = if framed.is_empty() { unframed } else { framed };
+        result = if saw_framed_candidate {
+            framed
+        } else {
+            unframed
+        };
     }
     result
 }
@@ -1336,6 +1344,16 @@ mod tests {
             rows(&payload).iter().map(|row| row.id).collect::<Vec<_>>(),
             [7]
         );
+    }
+
+    #[test]
+    fn surface_array_frame_withholds_a_count_mismatch() {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&[8, 0x24, 5, 0x01, 0, 0]);
+        payload.extend_from_slice(b"crv_array\0\xf8\x00");
+
+        assert!(rows(&payload).is_empty());
     }
 
     #[test]
