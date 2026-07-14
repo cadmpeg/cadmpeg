@@ -22,9 +22,8 @@ pub enum SurfaceKind {
     TorusOrSphere,
     /// `geom_type = 0x28`.
     Spline,
-    /// `geom_type = 0x29`: fillet or spline surface family; the split
-    /// between the two is not decoded (see the open-items list).
-    FilletOrSpline,
+    /// `geom_type = 0x29`: fillet surface family.
+    Fillet,
     /// `geom_type = 0x2a` or `0x2c`: a `surface_of_extrusion` linear
     /// extrusion.
     Extrusion,
@@ -38,7 +37,7 @@ impl SurfaceKind {
             0x25 => Some(Self::Cone),
             0x26 => Some(Self::TorusOrSphere),
             0x28 => Some(Self::Spline),
-            0x29 => Some(Self::FilletOrSpline),
+            0x29 => Some(Self::Fillet),
             0x2a | 0x2c => Some(Self::Extrusion),
             _ => None,
         }
@@ -99,8 +98,10 @@ pub enum SurfacePrototypeFamily {
     Cone,
     /// Torus or sphere prototype.
     Torus,
-    /// Spline or fillet prototype.
+    /// Spline-surface prototype.
     Spline,
+    /// Fillet-surface prototype.
+    Fillet,
     /// Surface-of-extrusion prototype.
     Extrusion,
     /// Structurally valid family name outside the defined set.
@@ -114,7 +115,8 @@ impl SurfacePrototypeFamily {
             "cylinder" => Self::Cylinder,
             "cone" => Self::Cone,
             "torus" | "sphere" => Self::Torus,
-            "spline" | "splsrf" | "fillet" | "fillet_srf" => Self::Spline,
+            "spline" | "splsrf" => Self::Spline,
+            "fillet" | "fillet_srf" => Self::Fillet,
             "surface_of_extrusion" | "extrusion" | "tab_cyl" | "ruled_srf" => Self::Extrusion,
             other => Self::Other(other.to_string()),
         }
@@ -1116,6 +1118,7 @@ pub fn prototypes(payload: &[u8]) -> Vec<SurfacePrototype> {
                 SurfacePrototypeFamily::Cone => SurfaceKind::Cone,
                 SurfacePrototypeFamily::Torus => SurfaceKind::TorusOrSphere,
                 SurfacePrototypeFamily::Spline => SurfaceKind::Spline,
+                SurfacePrototypeFamily::Fillet => SurfaceKind::Fillet,
                 SurfacePrototypeFamily::Extrusion => SurfaceKind::Extrusion,
                 SurfacePrototypeFamily::Other(_) => return None,
             };
@@ -1307,6 +1310,23 @@ mod tests {
                 half_angle: None,
                 offset: 0,
             }]
+        );
+    }
+
+    #[test]
+    fn distinguishes_spline_and_fillet_surface_families() {
+        let payload = b"srf_prim_ptr(splsrf)\0\xe3srf_prim_ptr(fillet_srf)\0\xe3";
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].family, SurfacePrototypeFamily::Spline);
+        assert_eq!(records[1].family, SurfacePrototypeFamily::Fillet);
+        assert_eq!(
+            prototypes(payload)
+                .into_iter()
+                .map(|prototype| prototype.kind)
+                .collect::<Vec<_>>(),
+            [SurfaceKind::Spline, SurfaceKind::Fillet]
         );
     }
 

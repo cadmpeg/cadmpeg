@@ -183,7 +183,7 @@ each defined boundary byte; `boundary_type` does not select their scalar layout.
 | `25`        | Cone                                             |
 | `26`        | Torus or sphere representation                   |
 | `28`        | Spline surface                                   |
-| `29`        | Spline or fillet surface family                  |
+| `29`        | Fillet surface                                   |
 | `2a`, `2c`  | Linear-extrusion family (`surface_of_extrusion`) |
 
 A decoder must not infer the kind of a row without a materialized parameter row from adjacent rows or topology.

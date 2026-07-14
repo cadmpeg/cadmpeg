@@ -10,7 +10,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Packed B-spline surface bodies and surface-intersection curves are unspecified.
 - The remaining `fc` curve-body grammars are unspecified, including `fc 05` variants, `fc 08`, `fc 13` field roles, `fc 02` slot semantics, and `fc 04`, `fc 07`, `fc 09`, and `fc 0a`.
 - Rotational-sweep angular termination fields are unspecified; the recipe discriminator and resolved axis do not define one-sided, symmetric, two-sided, or full-turn travel.
-- Model-space analytic equations for non-plane surface rows are unspecified, including cylinder axis and location, cone apex and axis, and the `geom_type = 29` fillet/spline split.
+- Model-space analytic equations for non-plane surface rows are unspecified, including cylinder axis and location and cone apex and axis.
 - Round and fillet byte semantics are unspecified, including non-prismatic radii, flank geometry, and generated face bindings.
 - The negative DICT prefix lattice for scalar lanes that block geometry records is unspecified.
 
