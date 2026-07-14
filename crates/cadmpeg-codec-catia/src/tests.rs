@@ -1740,7 +1740,7 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
 }
 
 fn standard_catpart_with_value_block() -> Vec<u8> {
-    let mut stream = value_block_stream(&[0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]);
+    let mut stream = value_block_stream(&[0x81, 0x83, 0x32, 4, 0, 0, 0, 0x83, 0x82]);
     stream.extend(catalog_stream(&[
         "CATCatalogManager",
         "catalogManager",
@@ -4109,7 +4109,7 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
 
 #[test]
 fn value_block_parser_reads_length_to_terminator_boundary() {
-    let payload = [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82];
+    let payload = [0x81, 0x83, 0x32, 4, 0, 0, 0, 0x83, 0x82];
     let mut bytes = value_block_stream(&payload);
     bytes.extend(catalog_stream(&[
         "CATCatalogManager",
@@ -4240,7 +4240,13 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
     assert_eq!(
         native.value_blocks[0].payload,
-        [0x81, 0x83, 0x32, 0xea, 0, 0, 0, 0x83, 0x82]
+        [0x81, 0x83, 0x32, 4, 0, 0, 0, 0x83, 0x82]
+    );
+    assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
+    assert_eq!(native.value_blocks[0].schema_selections[0].ordinal, 4);
+    assert_eq!(
+        native.value_blocks[0].schema_selections[0].entry.as_deref(),
+        Some(native.catalogs[0].entries[4].id.as_str())
     );
 }
 

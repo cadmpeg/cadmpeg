@@ -476,6 +476,8 @@ The value block owns that immediately following catalog as its source schema. Th
 
 The payload is a serialized token stream. `32 <ordinal:u32le>` selects the zero-based entry ordinal in the source schema; an ordinal equal to the schema's entry population is the absent-schema sentinel. `87 E6 <bits:u64le>` stores one IEEE-754 binary64 value. `87 E7` and `87 E8` are zero-payload markers. `8E <code:E8..EF> 84 <bytes[code-E7]>` stores one through eight inline bytes. Multi-byte token payloads are opaque to token recognition: marker-like bytes inside them do not start another token. Bytes outside these forms are single-byte literals, so tokenization preserves the complete payload without residual bytes.
 
+Resolve every in-range selector to the exact entry in the block's source schema. Preserve selector order and payload offset. Preserve the absent-schema sentinel as a selector without an entry link.
+
 ### 7.4 Outer alias rows
 
 ```text

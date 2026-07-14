@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 12;
+pub const CATIA_NATIVE_VERSION: u32 = 13;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -123,6 +123,21 @@ pub struct CatiaValueBlock {
     /// Lossless typed fields in payload order.
     #[serde(default)]
     pub fields: Vec<value_block::ValueField>,
+    /// Schema selectors in payload order, resolved against the adjacent catalog.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub schema_selections: Vec<CatiaValueSchemaSelection>,
+}
+
+/// One `0x32` selector from a value block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaValueSchemaSelection {
+    /// Byte offset within the value payload.
+    pub offset: u64,
+    /// Stored zero-based ordinal or terminal absent-schema sentinel.
+    pub ordinal: u32,
+    /// Selected catalog entry; absent for the terminal sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
 }
 
 /// One exact `7C02` source-schema catalog.
@@ -347,7 +362,7 @@ impl CatiaNative {
     /// Decode CATIA-native records directly from the complete file image.
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Self {
-        let catalogs = catalog::parse(bytes)
+        let catalogs: Vec<CatiaCatalog> = catalog::parse(bytes)
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
@@ -384,7 +399,10 @@ impl CatiaNative {
             .into_iter()
             .map(|block| {
                 let catalog_pos = block.pos + block.total_len;
-                CatiaValueBlock::from_parts(block, catalog_pos)
+                let catalog = catalogs
+                    .iter()
+                    .find(|catalog| catalog.byte_offset == catalog_pos as u64);
+                CatiaValueBlock::from_parts(block, catalog_pos, catalog)
             })
             .collect();
         let preview_images = container::preview_images(bytes)
@@ -581,12 +599,32 @@ impl CatiaNative {
 impl From<value_block::ValueBlock> for CatiaValueBlock {
     fn from(block: value_block::ValueBlock) -> Self {
         let catalog_pos = block.pos + block.total_len;
-        Self::from_parts(block, catalog_pos)
+        Self::from_parts(block, catalog_pos, None)
     }
 }
 
 impl CatiaValueBlock {
-    fn from_parts(block: value_block::ValueBlock, catalog_pos: usize) -> Self {
+    fn from_parts(
+        block: value_block::ValueBlock,
+        catalog_pos: usize,
+        catalog: Option<&CatiaCatalog>,
+    ) -> Self {
+        let schema_selections = block
+            .fields
+            .iter()
+            .filter_map(|field| match field {
+                value_block::ValueField::SchemaSelector { ordinal, offset } => {
+                    Some(CatiaValueSchemaSelection {
+                        offset: *offset as u64,
+                        ordinal: *ordinal,
+                        entry: catalog
+                            .and_then(|catalog| catalog.entries.get(*ordinal as usize))
+                            .map(|entry| entry.id.clone()),
+                    })
+                }
+                _ => None,
+            })
+            .collect();
         Self {
             id: format!("catia:outer:value-block#{:010}", block.pos),
             byte_offset: block.pos as u64,
@@ -595,6 +633,7 @@ impl CatiaValueBlock {
             catalog: format!("catia:outer:catalog#{catalog_pos:010}"),
             payload: block.payload,
             fields: block.fields,
+            schema_selections,
         }
     }
 }
