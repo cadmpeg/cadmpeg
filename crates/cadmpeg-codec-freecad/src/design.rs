@@ -798,7 +798,7 @@ fn parse_constraints(
             .filter_map(|(entity, position)| resolve_operand(*entity, *position, entities))
             .collect::<Vec<_>>();
         let all_resolved = resolved.len() == operands.len();
-        let parameter = if matches!(type_code, 6..=9 | 11 | 18 | 19) {
+        let parameter = if matches!(type_code, 6..=9 | 11 | 16 | 18 | 19) {
             node.attribute("Value")
                 .and_then(|value| value.parse::<f64>().ok())
                 .map(|value| {
@@ -809,7 +809,7 @@ fn parse_constraints(
                     ));
                     let value = match type_code {
                         9 => ParameterValue::Angle(cadmpeg_ir::features::Angle(value)),
-                        19 => ParameterValue::Real(value),
+                        16 | 19 => ParameterValue::Real(value),
                         _ => ParameterValue::Length(Length(value)),
                     };
                     let path = format!("Constraints[{index}]");
@@ -848,7 +848,63 @@ fn parse_constraints(
         } else {
             None
         };
-        let definition = neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved)
+        let internal_alignment = || {
+            use cadmpeg_ir::sketches::SketchInternalAlignment as Alignment;
+            let alignment = match int_attr(node, "InternalAlignmentType")? {
+                1 => Alignment::EllipseMajorDiameter,
+                2 => Alignment::EllipseMinorDiameter,
+                3 => Alignment::EllipseFocus1,
+                4 => Alignment::EllipseFocus2,
+                5 => Alignment::HyperbolaMajor,
+                6 => Alignment::HyperbolaMinor,
+                7 => Alignment::HyperbolaFocus,
+                8 => Alignment::ParabolaFocus,
+                9 => Alignment::BsplineControlPoint,
+                10 => Alignment::BsplineKnotPoint,
+                11 => Alignment::ParabolaFocalAxis,
+                _ => return None,
+            };
+            Some(SketchConstraintDefinition::InternalAlignment {
+                helper: locus_entity(resolved.first()?).clone(),
+                parent: locus_entity(resolved.get(1)?).clone(),
+                alignment,
+                index: node
+                    .attribute("InternalAlignmentIndex")
+                    .and_then(|value| value.parse::<u32>().ok()),
+            })
+        };
+        let grouped_geometry = || {
+            if !all_resolved || resolved.is_empty() {
+                return None;
+            }
+            match type_code {
+                20 => Some(SketchConstraintDefinition::Group {
+                    elements: resolved.clone(),
+                }),
+                21 => {
+                    let metadata = node.attribute("MetaData")?;
+                    let metadata: serde_json::Value = serde_json::from_str(metadata).ok()?;
+                    Some(SketchConstraintDefinition::Text {
+                        elements: resolved.clone(),
+                        text: metadata.get("text")?.as_str()?.to_owned(),
+                        font: metadata
+                            .get("font")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_owned),
+                        is_text_height: metadata
+                            .get("isTextHeight")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(true),
+                    })
+                }
+                _ => None,
+            }
+        };
+        let definition = (type_code == 15 && all_resolved)
+            .then(internal_alignment)
+            .flatten()
+            .or_else(grouped_geometry)
+            .or_else(|| neutral_constraint(type_code, &resolved, parameter.clone(), all_resolved))
             .unwrap_or_else(|| SketchConstraintDefinition::Native {
                 native_kind: constraint_kind(type_code).into(),
                 entities: resolved.iter().map(locus_entity).cloned().collect(),
@@ -876,10 +932,41 @@ fn parse_constraints(
             )),
             sketch: sketch.clone(),
             definition,
+            name: nonempty_attr(node, "Name"),
+            driving: bool_attr(node, "IsDriving"),
+            active: bool_attr(node, "IsActive"),
+            virtual_space: bool_attr(node, "IsInVirtualSpace"),
+            visible: bool_attr(node, "IsVisible"),
+            orientation: node
+                .attribute("Orientation")
+                .and_then(|value| value.parse().ok()),
+            label_distance: finite_attr(node, "LabelDistance"),
+            label_position: finite_attr(node, "LabelPosition"),
+            metadata: nonempty_attr(node, "MetaData"),
             native_ref: Some(property.id.clone()),
         });
     }
     Ok((constraints, parameters))
+}
+
+fn bool_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<bool> {
+    match node.attribute(name)?.to_ascii_lowercase().as_str() {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    }
+}
+
+fn finite_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<f64> {
+    node.attribute(name)
+        .and_then(|value| value.parse::<f64>().ok())
+        .filter(|value| value.is_finite())
+}
+
+fn nonempty_attr(node: roxmltree::Node<'_, '_>, name: &str) -> Option<String> {
+    node.attribute(name)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
 }
 
 fn expression_binding(properties: &[&PropertyRecord], path: &str) -> Option<(String, String)> {
@@ -957,6 +1044,7 @@ fn neutral_constraint(
     let entity = |index| loci.get(index).map(locus_entity).cloned();
     let pair = || Some((entity(0)?, entity(1)?));
     Some(match kind {
+        0 => SketchConstraintDefinition::Disabled,
         1 => SketchConstraintDefinition::CoincidentLoci {
             loci: loci.to_vec(),
         },
@@ -978,6 +1066,10 @@ fn neutral_constraint(
             let (first, second) = pair()?;
             SketchConstraintDefinition::Equal { first, second }
         }
+        13 => SketchConstraintDefinition::PointOnObject {
+            point: loci.first()?.clone(),
+            entity: entity(1)?,
+        },
         17 => SketchConstraintDefinition::Fixed { entity: entity(0)? },
         6 if loci.len() == 2 => SketchConstraintDefinition::DistanceLoci {
             first: loci[0].clone(),
@@ -1008,6 +1100,16 @@ fn neutral_constraint(
             parameter: parameter?,
         },
         18 => SketchConstraintDefinition::Diameter {
+            entity: entity(0)?,
+            parameter: parameter?,
+        },
+        16 => SketchConstraintDefinition::SnellsLaw {
+            incident: loci.first()?.clone(),
+            refracted: loci.get(1)?.clone(),
+            interface: entity(2)?,
+            parameter: parameter?,
+        },
+        19 => SketchConstraintDefinition::Weight {
             entity: entity(0)?,
             parameter: parameter?,
         },

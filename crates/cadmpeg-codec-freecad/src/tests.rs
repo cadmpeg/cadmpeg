@@ -108,7 +108,7 @@ fn transfers_bounded_rational_sketch_nurbs() {
 }
 
 #[test]
-fn neutralizes_symmetric_and_locus_distance_constraints_and_reports_fallbacks() {
+fn neutralizes_symmetric_locus_distance_and_point_on_object_constraints() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
 <ObjectData Count="1"><Object name="Sketch"><Properties Count="2">
@@ -117,10 +117,16 @@ fn neutralizes_symmetric_and_locus_distance_constraints_and_reports_fallbacks() 
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="1" EndX="1" EndY="1"/></Geometry>
  <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0.5" StartY="-1" EndX="0.5" EndY="2"/></Geometry>
 </GeometryList></Property>
-<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="3">
+<Property name="Constraints" type="Sketcher::PropertyConstraintList"><ConstraintList count="9">
  <Constrain Type="14" First="0" FirstPos="1" Second="1" SecondPos="1" Third="2" ThirdPos="0"/>
  <Constrain Type="6" First="0" FirstPos="1" Second="1" SecondPos="2" Value="4" IsDriving="1"/>
- <Constrain Type="13" First="0" FirstPos="1" Second="2" SecondPos="0"/>
+ <Constrain Name="OnAxis" MetaData="reviewed" Type="13" Orientation="4" Value="0" LabelDistance="2.5" LabelPosition="0.25" IsDriving="0" IsInVirtualSpace="1" IsVisible="0" IsActive="1" First="0" FirstPos="1" Second="2" SecondPos="0"/>
+ <Constrain Type="16" First="0" FirstPos="2" Second="1" SecondPos="1" Third="2" ThirdPos="0" Value="1.33" IsDriving="1"/>
+ <Constrain Type="19" First="0" FirstPos="0" Value="0.75" IsDriving="1"/>
+ <Constrain Type="15" InternalAlignmentType="9" InternalAlignmentIndex="2" First="0" FirstPos="0" Second="1" SecondPos="0"/>
+ <Constrain Type="20" ElementIds="2 0 1" ElementPositions="0 0 0"/>
+ <Constrain Type="21" MetaData="{&quot;text&quot;:&quot;R42&quot;,&quot;font&quot;:&quot;Mono&quot;,&quot;isTextHeight&quot;:false}" ElementIds="2 0" ElementPositions="0 0"/>
+ <Constrain Type="0" IsActive="0"/>
 </ConstraintList></Property>
 </Properties></Object></ObjectData></Document>"#;
     let result = FcstdCodec
@@ -133,16 +139,70 @@ fn neutralizes_symmetric_and_locus_distance_constraints_and_reports_fallbacks() 
         result.ir.model.sketch_constraints[0].definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::Symmetric { .. }
     ));
+    let point_on_object = &result.ir.model.sketch_constraints[2];
+    assert_eq!(point_on_object.name.as_deref(), Some("OnAxis"));
+    assert_eq!(point_on_object.metadata.as_deref(), Some("reviewed"));
+    assert_eq!(point_on_object.orientation, Some(4));
+    assert_eq!(point_on_object.label_distance, Some(2.5));
+    assert_eq!(point_on_object.label_position, Some(0.25));
+    assert_eq!(point_on_object.driving, Some(false));
+    assert_eq!(point_on_object.virtual_space, Some(true));
+    assert_eq!(point_on_object.visible, Some(false));
+    assert_eq!(point_on_object.active, Some(true));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[3].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::SnellsLaw { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[4].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Weight { .. }
+    ));
+    assert!(matches!(
+        result.ir.model.parameters[1].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 1.33).abs() < 1e-12
+    ));
+    assert!(matches!(
+        result.ir.model.parameters[2].value,
+        Some(cadmpeg_ir::features::ParameterValue::Real(value)) if (value - 0.75).abs() < 1e-12
+    ));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[5].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::InternalAlignment {
+            alignment: cadmpeg_ir::sketches::SketchInternalAlignment::BsplineControlPoint,
+            index: Some(2),
+            ..
+        }
+    ));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[6].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Group { ref elements }
+            if elements.len() == 3
+    ));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[7].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Text {
+            ref text,
+            font: Some(ref font),
+            is_text_height: false,
+            ..
+        } if text == "R42" && font == "Mono"
+    ));
+    assert!(matches!(
+        result.ir.model.sketch_constraints[8].definition,
+        cadmpeg_ir::sketches::SketchConstraintDefinition::Disabled
+    ));
     assert!(matches!(
         result.ir.model.sketch_constraints[1].definition,
         cadmpeg_ir::sketches::SketchConstraintDefinition::DistanceLoci { .. }
     ));
     assert!(matches!(
         result.ir.model.sketch_constraints[2].definition,
-        cadmpeg_ir::sketches::SketchConstraintDefinition::Native { .. }
+        cadmpeg_ir::sketches::SketchConstraintDefinition::PointOnObject {
+            point: cadmpeg_ir::sketches::SketchLocus::Start(_),
+            ..
+        }
     ));
-    assert_eq!(result.report.losses.len(), 1);
-    assert!(result.report.losses[0].message.contains("point_on_object"));
+    assert!(result.report.losses.is_empty());
 }
 
 #[test]
@@ -259,7 +319,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "16");
+    assert_eq!(result.ir.ir_version, "17");
     let feature = |name: &str| {
         &result
             .ir

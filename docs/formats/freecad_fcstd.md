@@ -301,10 +301,18 @@ resource-exceeding records remain named native carriers.
 
 Constraint transfer distinguishes whole entities from endpoint and center loci. Two-locus distance
 constraints remain locus-to-locus measurements rather than being reduced to a duplicate entity
-list, and three-operand symmetry retains both loci plus its axis entity. Dimension parameters keep
-their driving flag and native identity; angular values use radians, geometric distances use model
-lengths, and spline-weight values are dimensionless. Any constraint family left in the native
-variant emits its own attributable blocking design-loss record.
+list, three-operand symmetry retains both loci plus its axis entity, and point-on-object retains the
+point locus separately from its supporting entity. Refraction retains its two curve loci,
+interface entity, and dimensionless index ratio. Spline weights remain dimensionless parameters,
+and internal-alignment helpers retain their conic or spline family plus control-point or knot index.
+Group relations retain their ordered handle and member loci. Text relations additionally decode
+their JSON metadata into text, font, and height-versus-width control while retaining the original
+metadata string. Dimension parameters keep their driving flag
+and native identity. Every relation independently retains its name, metadata, solver-active,
+visible, virtual-space and driving flags, orientation bits, and finite label placement. Angular
+values use radians, geometric distances use model lengths, and spline-weight values are
+dimensionless. Any constraint family left in the native variant emits its own attributable
+blocking design-loss record.
 
 Standalone Part and additive or subtractive PartDesign box, cylinder, cone, sphere, and torus
 objects transfer as neutral analytic-solid primitives. Lengths are canonical model lengths and

@@ -194,6 +194,7 @@ dependencies = [
  "cadmpeg-ir",
  "roxmltree",
  "serde",
+ "serde_json",
  "tempfile",
  "zip",
 ]

@@ -198,10 +198,26 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
     for constraint in &ir.model.sketch_constraints {
+        if constraint
+            .label_distance
+            .iter()
+            .chain(&constraint.label_position)
+            .any(|value| !value.is_finite())
+        {
+            finding(
+                findings,
+                Check::Bounds,
+                &constraint.id.0,
+                "sketch constraint label placement is not finite",
+            );
+        }
         let valid = match &constraint.definition {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
+            Constraint::Group { elements } | Constraint::Text { elements, .. } => {
+                !elements.is_empty()
+            }
             Constraint::Native {
                 native_kind,
                 entities,
@@ -217,6 +233,19 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 &constraint.id.0,
                 "invalid sketch constraint arity",
             );
+        }
+        if let Constraint::PointOnObject { point: _, entity } = &constraint.definition {
+            if geometry
+                .get(entity)
+                .is_some_and(|geometry| matches!(geometry, SketchGeometry::Point { .. }))
+            {
+                finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &constraint.id.0,
+                    "point-on-object support is itself a point",
+                );
+            }
         }
         for locus in constraint_loci(&constraint.definition) {
             let Some(entity_geometry) = geometry.get(locus_entity(locus)) else {
@@ -337,11 +366,19 @@ fn locus_entity(locus: &SketchLocus) -> &crate::sketches::SketchEntityId {
 fn constraint_loci(definition: &Constraint) -> Vec<&SketchLocus> {
     match definition {
         Constraint::CoincidentLoci { loci } => loci.iter().collect(),
-        Constraint::Midpoint { point, .. } => vec![point],
+        Constraint::Midpoint { point, .. } | Constraint::PointOnObject { point, .. } => vec![point],
         Constraint::Symmetric { first, second, .. } => vec![first, second],
         Constraint::DistanceLoci { first, second, .. }
         | Constraint::HorizontalDistance { first, second, .. }
         | Constraint::VerticalDistance { first, second, .. } => vec![first, second],
+        Constraint::SnellsLaw {
+            incident,
+            refracted,
+            ..
+        } => vec![incident, refracted],
+        Constraint::Group { elements } | Constraint::Text { elements, .. } => {
+            elements.iter().collect()
+        }
         _ => Vec::new(),
     }
 }

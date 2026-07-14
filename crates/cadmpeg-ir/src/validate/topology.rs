@@ -1226,6 +1226,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             ref_error(findings, &constraint.id.0, "sketch", &constraint.sketch.0);
         }
         let (entities, parameter) = match &constraint.definition {
+            Definition::Disabled => (Vec::new(), None),
             Definition::Coincident { entities }
             | Definition::Distance {
                 entities,
@@ -1252,10 +1253,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             | Definition::Collinear { first, second } => {
                 (vec![first.clone(), second.clone()], None)
             }
+            Definition::InternalAlignment { helper, parent, .. } => {
+                (vec![helper.clone(), parent.clone()], None)
+            }
+            Definition::Group { elements } | Definition::Text { elements, .. } => {
+                (elements.iter().map(locus_entity).cloned().collect(), None)
+            }
             Definition::CoincidentLoci { loci } => {
                 (loci.iter().map(locus_entity).cloned().collect(), None)
             }
             Definition::Midpoint { point, entity } => {
+                (vec![locus_entity(point).clone(), entity.clone()], None)
+            }
+            Definition::PointOnObject { point, entity } => {
                 (vec![locus_entity(point).clone(), entity.clone()], None)
             }
             Definition::Symmetric {
@@ -1297,9 +1307,23 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 Some(parameter.0.as_str()),
             ),
             Definition::Radius { entity, parameter }
-            | Definition::Diameter { entity, parameter } => {
+            | Definition::Diameter { entity, parameter }
+            | Definition::Weight { entity, parameter } => {
                 (vec![entity.clone()], Some(parameter.0.as_str()))
             }
+            Definition::SnellsLaw {
+                incident,
+                refracted,
+                interface,
+                parameter,
+            } => (
+                vec![
+                    locus_entity(incident).clone(),
+                    locus_entity(refracted).clone(),
+                    interface.clone(),
+                ],
+                Some(parameter.0.as_str()),
+            ),
         };
         let parameter = parameter.or(match &constraint.definition {
             Definition::Distance { parameter, .. } => Some(parameter.0.as_str()),

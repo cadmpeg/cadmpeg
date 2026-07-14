@@ -902,6 +902,15 @@ pub(crate) fn project_relation_bindings(
                         })
                         .collect(),
                 },
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(relation.id.clone()),
             });
         }
@@ -1309,6 +1318,15 @@ fn project_endpoint_constraints(
             id,
             sketch: sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci { loci },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: None,
         });
     }

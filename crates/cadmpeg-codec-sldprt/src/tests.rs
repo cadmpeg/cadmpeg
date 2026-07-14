@@ -1660,6 +1660,15 @@ fn encoder_writes_source_less_line_sketches() {
                     SketchLocus::Start(entity_ids[(index + 1) % 3].clone()),
                 ],
             },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: None,
         });
     }
@@ -1948,6 +1957,15 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
         sketch: sketch_id,
         definition: SketchConstraintDefinition::Horizontal { entity: entity_id },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
 
@@ -13176,6 +13194,15 @@ fn semantic_writer_rejects_retained_sketch_constraint_edits() {
         id: SketchConstraintId("synthetic:test:constraint#horizontal".into()),
         sketch,
         definition: SketchConstraintDefinition::Horizontal { entity },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
     assert_ne!(

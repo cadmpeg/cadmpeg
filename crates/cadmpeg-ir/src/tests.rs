@@ -301,6 +301,15 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         definition: SketchConstraintDefinition::Coincident {
             entities: vec![circle_id],
         },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
     ir.finalize();
@@ -336,11 +345,16 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     let entity = SketchEntityId("synthetic:test:entity#0".into());
     let parameter = ParameterId("synthetic:test:parameter#0".into());
     let definitions = vec![
+        SketchConstraintDefinition::Disabled,
         SketchConstraintDefinition::CoincidentLoci {
             loci: vec![
                 SketchLocus::Start(entity.clone()),
                 SketchLocus::Center(entity.clone()),
             ],
+        },
+        SketchConstraintDefinition::PointOnObject {
+            point: SketchLocus::Start(entity.clone()),
+            entity: entity.clone(),
         },
         SketchConstraintDefinition::Midpoint {
             point: SketchLocus::End(entity.clone()),
@@ -381,6 +395,31 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             parameter,
+        },
+        SketchConstraintDefinition::SnellsLaw {
+            incident: SketchLocus::Start(entity.clone()),
+            refracted: SketchLocus::End(entity.clone()),
+            interface: entity.clone(),
+            parameter: ParameterId("synthetic:test:parameter#0".into()),
+        },
+        SketchConstraintDefinition::Weight {
+            entity: entity.clone(),
+            parameter: ParameterId("synthetic:test:parameter#0".into()),
+        },
+        SketchConstraintDefinition::InternalAlignment {
+            helper: entity.clone(),
+            parent: entity.clone(),
+            alignment: crate::sketches::SketchInternalAlignment::BsplineControlPoint,
+            index: Some(2),
+        },
+        SketchConstraintDefinition::Group {
+            elements: vec![SketchLocus::Entity(entity.clone())],
+        },
+        SketchConstraintDefinition::Text {
+            elements: vec![SketchLocus::Entity(entity.clone())],
+            text: "R42".into(),
+            font: Some("Mono".into()),
+            is_text_height: false,
         },
     ];
     let json = serde_json::to_string(&definitions).unwrap();
@@ -423,6 +462,15 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 SketchLocus::Start(entity),
             ],
         },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
     ir.finalize();
@@ -510,6 +558,15 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
             first,
             second: foreign,
         },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
     ir.finalize();
@@ -1716,6 +1773,15 @@ fn sketch_constraint_native_ref_must_resolve() {
                     native_ref: Some("native:missing-operand#0".into()),
                 }],
             },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: Some("native:missing-relation#0".into()),
         });
 
