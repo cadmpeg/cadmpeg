@@ -4036,7 +4036,16 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
         native.object_graphs[0].records[0].references,
-        [native.object_graphs[0].records[1].id.clone()]
+        [
+            crate::native::CatiaObjectRecordReference {
+                ordinal: 2,
+                target: Some(native.object_graphs[0].records[1].id.clone()),
+            },
+            crate::native::CatiaObjectRecordReference {
+                ordinal: 0x89ab_cdef,
+                target: None,
+            },
+        ]
     );
 }
 
@@ -4059,7 +4068,10 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
     );
     assert_eq!(
         graph.records[0].references,
-        vec![graph.records[2].id.clone()]
+        [crate::native::CatiaObjectRecordReference {
+            ordinal: 3,
+            target: Some(graph.records[2].id.clone()),
+        }]
     );
     assert_eq!(
         native.design_objects[0].dependencies,

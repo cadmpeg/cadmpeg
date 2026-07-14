@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 16;
+pub const CATIA_NATIVE_VERSION: u32 = 17;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -224,9 +224,19 @@ pub struct CatiaObjectRecord {
     pub payload: ObjectPayload,
     /// Structural payload classification.
     pub subtype: PayloadSubtype,
-    /// Exact same-graph records selected by typed payload references.
+    /// Ordered same-graph payload-reference links.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub references: Vec<String>,
+    pub references: Vec<CatiaObjectRecordReference>,
+}
+
+/// One typed payload reference from a `7C09` record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaObjectRecordReference {
+    /// Stored one-based record ordinal.
+    pub ordinal: u32,
+    /// Exact selected record; absent when the ordinal is outside the graph.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
 }
 
 /// One serialized design object formed by a shared `7C09` owner ordinal.
@@ -741,12 +751,13 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
                 .filter(|owner| owners.contains(owner))
                 .map(|owner| format!("{id}:owner#{owner}"));
             record.references = payload_references(&record.payload)
-                .filter_map(|reference| {
-                    usize::try_from(reference)
+                .map(|ordinal| CatiaObjectRecordReference {
+                    ordinal,
+                    target: usize::try_from(ordinal)
                         .ok()
                         .and_then(|ordinal| ordinal.checked_sub(1))
                         .and_then(|index| record_ids.get(index))
-                        .cloned()
+                        .cloned(),
                 })
                 .collect();
         }
