@@ -453,6 +453,18 @@ fn record_has_property_pointer(record: &ParameterRecord, property_sequence: u32)
     })
 }
 
+fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
+    let suffix = id.strip_prefix(prefix)?;
+    let digits = suffix
+        .as_bytes()
+        .iter()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    (digits > 0)
+        .then(|| suffix[..digits].parse::<u32>().ok())
+        .flatten()
+}
+
 fn placement_affine(
     instance: &DirectoryEntry,
     record: &ParameterRecord,
@@ -1604,6 +1616,22 @@ pub(crate) fn store(
                 .entry(sequence)
                 .or_default()
                 .push(surface.id.0.clone());
+        }
+    }
+    for body in &ir.model.bodies {
+        if let Some(sequence) = model_id_directory_sequence(&body.id.0, "iges:model:body#D") {
+            occurrence_neutral_links
+                .entry(sequence)
+                .or_default()
+                .push(body.id.0.clone());
+        }
+    }
+    for point in &ir.model.points {
+        if let Some(sequence) = model_id_directory_sequence(&point.id.0, "iges:model:point#D") {
+            occurrence_neutral_links
+                .entry(sequence)
+                .or_default()
+                .push(point.id.0.clone());
         }
     }
     let mut product_occurrences = Vec::new();
