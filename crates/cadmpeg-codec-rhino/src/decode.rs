@@ -681,12 +681,6 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
-        let entity_count = hatch.loops.iter().fold(1_usize, |count, hatch_loop| {
-            count.saturating_add(decoded_curve_entity_count(&hatch_loop.curve))
-        });
-        if !self.charge_entities(source_order, entity_count) {
-            return;
-        }
         let key = self.object_key(identity, source_order);
         let association = self.source_association(identity);
         let feature_id = FeatureId(format!("rhino:hatch:feature#{key}"));
@@ -887,10 +881,6 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
-        let entity_count = decoded_curve_entity_count(&detail.boundary).saturating_add(1);
-        if !self.charge_entities(source_order, entity_count) {
-            return;
-        }
         let key = self.object_key(identity, source_order);
         let association = self.source_association(identity);
         let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
@@ -990,9 +980,6 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
-        if !self.charge_entities(source_order, 1) {
-            return;
-        }
         let key = self.object_key(identity, source_order);
         let feature_id = FeatureId(format!("rhino:cage:feature#{key}"));
         let knots = cage
@@ -1119,9 +1106,6 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
-        if !self.charge_entities(source_order, 1) {
-            return;
-        }
         let key = self.object_key(identity, source_order);
         let feature = crate::morph::project(
             &morph,
@@ -1185,17 +1169,6 @@ impl<'a> DecodeContext<'a> {
                 return;
             }
         };
-        let entity_count = decoded_curve_entity_count(&construction.parameter_curve)
-            .saturating_add(
-                construction
-                    .model_curve
-                    .as_ref()
-                    .map_or(0, decoded_curve_entity_count),
-            )
-            .saturating_add(2);
-        if !self.charge_entities(source_order, entity_count) {
-            return;
-        }
         let key = self.object_key(identity, source_order);
         let association = self.source_association(identity);
         let parameter_id = format!("rhino:object:curve#{key}.curve-on-surface-c2");
