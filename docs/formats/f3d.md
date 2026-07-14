@@ -247,9 +247,10 @@ an ordered closed ring. A point wire's vertex names that wire as its owner and
 uses endpoint index `-1`. Wires owned by a subshell project onto the nearest shell
 ancestor. Each wire record retains its ordered edges or isolated vertex and side
 as typed metadata on the normalized shell. Retained writing patches the side token
-in place; source-less writing emits edge wires and rejects free vertices and
-multiple native wire records that would otherwise collapse into one neutral shell
-edge list.
+in place. Source-less writing emits one edge-ring wire for a shell's ordered wire
+edges and one point wire for each ordered free vertex. These records form the
+shell's sibling-wire chain. Each record's side is selected from metadata matching
+that exact edge list or free vertex and defaults to out when no match exists.
 
 **Face (81 B; +1 chunk if double-sided):**
 

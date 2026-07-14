@@ -10084,6 +10084,125 @@ fn generated_source_less_writes_wire_body_topology() {
 }
 
 #[test]
+fn generated_source_less_writes_isolated_vertex_wire() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_free_vertex_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated free-vertex body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    update_f3d_native(&mut source_less, |native| {
+        native.wire_topologies[0].side = crate::records::WireSide::In;
+    });
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less free-vertex wire encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less free-vertex wire round trip");
+    assert_eq!(round_trip.ir.model.bodies.len(), 1);
+    assert_eq!(
+        round_trip.ir.model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Wire
+    );
+    assert!(round_trip.ir.model.shells[0].wire_edges.is_empty());
+    assert_eq!(round_trip.ir.model.shells[0].free_vertices.len(), 1);
+    assert!(round_trip.ir.model.edges.is_empty());
+    assert_eq!(round_trip.ir.model.vertices.len(), 1);
+    assert_eq!(
+        round_trip.ir.model.points[0].position,
+        cadmpeg_ir::math::Point3::new(10.0, 20.0, 30.0)
+    );
+    assert!(f3d_native(&round_trip.ir).vertex_ownerships.is_empty());
+    let wire = &f3d_native(&round_trip.ir).wire_topologies[0];
+    assert!(wire.edges.is_empty());
+    assert_eq!(
+        wire.free_vertex,
+        Some(round_trip.ir.model.vertices[0].id.clone())
+    );
+    assert_eq!(wire.side, crate::records::WireSide::In);
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "free-vertex findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
+fn generated_source_less_writes_edge_and_point_wires_on_one_shell() {
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_wire_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated wire body decode");
+    let free = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_free_vertex_body_smbh())),
+            &DecodeOptions::default(),
+        )
+        .expect("generated free-vertex body decode");
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let free_json = free
+        .ir
+        .to_canonical_json()
+        .expect("canonical free-vertex JSON");
+    for namespace in ["generated:point_wire_one:", "generated:point_wire_two:"] {
+        let renamed = free_json.replace("f3d:brep:", namespace);
+        let mut free =
+            cadmpeg_ir::document::CadIr::from_json(&renamed).expect("renamed free-vertex IR");
+        source_less.model.shells[0]
+            .free_vertices
+            .push(free.model.vertices[0].id.clone());
+        source_less.model.vertices.append(&mut free.model.vertices);
+        source_less.model.points.append(&mut free.model.points);
+    }
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less mixed-wire shell encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less mixed-wire shell round trip");
+    assert_eq!(round_trip.ir.model.shells[0].wire_edges.len(), 1);
+    assert_eq!(round_trip.ir.model.shells[0].free_vertices.len(), 2);
+    assert_eq!(f3d_native(&round_trip.ir).wire_topologies.len(), 3);
+    assert!(f3d_native(&round_trip.ir)
+        .wire_topologies
+        .iter()
+        .any(|wire| wire.edges.len() == 1 && wire.free_vertex.is_none()));
+    assert!(f3d_native(&round_trip.ir)
+        .wire_topologies
+        .iter()
+        .any(|wire| wire.edges.is_empty() && wire.free_vertex.is_some()));
+    assert_eq!(
+        f3d_native(&round_trip.ir)
+            .wire_topologies
+            .iter()
+            .filter(|wire| wire.edges.is_empty() && wire.free_vertex.is_some())
+            .count(),
+        2
+    );
+    assert_eq!(round_trip.ir.model.vertices.len(), 4);
+    assert_eq!(round_trip.ir.model.points.len(), 4);
+    let validation = cadmpeg_ir::validate::validate(&round_trip.ir, Vec::new());
+    assert!(
+        validation.is_ok(),
+        "mixed-wire findings: {:?}",
+        validation.findings
+    );
+}
+
+#[test]
 fn generated_source_less_writes_two_independent_wire_bodies() {
     let decoded = F3dCodec
         .decode(
