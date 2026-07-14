@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
 
-use cadmpeg_ir::geometry::{PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::le::u32_at;
-use cadmpeg_ir::math::Point2;
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{BTreeMap, HashMap};
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
@@ -221,6 +221,235 @@ pub struct ZeroResolvedEdge {
     pub occurrences: [ZeroResolvedOccurrence; 2],
     /// Endpoint order after applying each occurrence's packed loop sense.
     pub occurrence_endpoints: [[[f64; 3]; 2]; 2],
+}
+
+/// Lift one decoded support pcurve through its owner carrier.
+///
+/// Plane lifts preserve the complete NURBS representation. Analytic quadric
+/// lifts are exact for isoparametric supports and produce their canonical line,
+/// circle, or ellipse carrier.
+#[must_use]
+pub fn support_curve(
+    topology: &ZeroEntityTopology,
+    occurrence: ZeroResolvedOccurrence,
+) -> Option<CurveGeometry> {
+    let support = topology.supports.get(occurrence.support_index)?;
+    let pcurve = support.pcurve.as_ref()?;
+    let run = topology
+        .carrier_runs
+        .iter()
+        .find(|run| run.carrier_ordinal == support.owner_carrier_ordinal)?;
+    lift_pcurve(pcurve, run.geometry.as_ref()?)
+}
+
+fn lift_pcurve(pcurve: &PcurveGeometry, surface: &SurfaceGeometry) -> Option<CurveGeometry> {
+    let controls: &[Point2] = match pcurve {
+        PcurveGeometry::Line { origin, direction } => {
+            return lift_parameter_line(*origin, *direction, surface);
+        }
+        PcurveGeometry::Nurbs { control_points, .. } => control_points,
+    };
+    match surface {
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        } => {
+            let v_axis = cross(*normal, *u_axis);
+            let PcurveGeometry::Nurbs {
+                degree,
+                knots,
+                control_points,
+                weights,
+                periodic,
+            } = pcurve
+            else {
+                unreachable!();
+            };
+            Some(CurveGeometry::Nurbs(NurbsCurve {
+                degree: *degree,
+                knots: knots.clone(),
+                control_points: control_points
+                    .iter()
+                    .map(|point| offset(*origin, *u_axis, point.u, v_axis, point.v))
+                    .collect(),
+                weights: weights.clone(),
+                periodic: *periodic,
+            }))
+        }
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            if let Some(u) = constant_coordinate(controls, |point| point.u) {
+                let point = cadmpeg_ir::eval::surface_point(surface, u, 0.0)?;
+                Some(CurveGeometry::Line {
+                    origin: point,
+                    direction: *axis,
+                })
+            } else {
+                let v = constant_coordinate(controls, |point| point.v)?;
+                Some(CurveGeometry::Circle {
+                    center: translate(*origin, *axis, v),
+                    axis: *axis,
+                    ref_direction: *ref_direction,
+                    radius: *radius,
+                })
+            }
+        }
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            if let Some(u) = constant_coordinate(controls, |point| point.u) {
+                let tangent = cross(*axis, *ref_direction);
+                let radial = Vector3::new(
+                    ref_direction.x * u.cos() + tangent.x * ratio * u.sin(),
+                    ref_direction.y * u.cos() + tangent.y * ratio * u.sin(),
+                    ref_direction.z * u.cos() + tangent.z * ratio * u.sin(),
+                );
+                let direction = normalize(Vector3::new(
+                    axis.x + radial.x * half_angle.tan(),
+                    axis.y + radial.y * half_angle.tan(),
+                    axis.z + radial.z * half_angle.tan(),
+                ))?;
+                Some(CurveGeometry::Line {
+                    origin: cadmpeg_ir::eval::surface_point(surface, u, 0.0)?,
+                    direction,
+                })
+            } else {
+                let v = constant_coordinate(controls, |point| point.v)?;
+                let local_radius = radius + v * half_angle.tan();
+                let sign = local_radius.signum();
+                let major_radius = local_radius.abs();
+                (major_radius > 0.0).then_some(())?;
+                let reference = scale(*ref_direction, sign);
+                if (*ratio - 1.0).abs() <= 1e-12 {
+                    Some(CurveGeometry::Circle {
+                        center: translate(*origin, *axis, v),
+                        axis: *axis,
+                        ref_direction: reference,
+                        radius: major_radius,
+                    })
+                } else {
+                    Some(CurveGeometry::Ellipse {
+                        center: translate(*origin, *axis, v),
+                        axis: *axis,
+                        major_direction: reference,
+                        major_radius,
+                        minor_radius: major_radius * ratio.abs(),
+                    })
+                }
+            }
+        }
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            if let Some(u) = constant_coordinate(controls, |point| point.u) {
+                let tangent = cross(*axis, *ref_direction);
+                let radial = Vector3::new(
+                    ref_direction.x * u.cos() + tangent.x * u.sin(),
+                    ref_direction.y * u.cos() + tangent.y * u.sin(),
+                    ref_direction.z * u.cos() + tangent.z * u.sin(),
+                );
+                Some(CurveGeometry::Circle {
+                    center: translate(*center, radial, *major_radius),
+                    axis: cross(radial, *axis),
+                    ref_direction: radial,
+                    radius: *minor_radius,
+                })
+            } else {
+                let v = constant_coordinate(controls, |point| point.v)?;
+                let ring_radius = major_radius + minor_radius * v.cos();
+                (ring_radius.abs() > 0.0).then_some(())?;
+                Some(CurveGeometry::Circle {
+                    center: translate(*center, *axis, minor_radius * v.sin()),
+                    axis: *axis,
+                    ref_direction: scale(*ref_direction, ring_radius.signum()),
+                    radius: ring_radius.abs(),
+                })
+            }
+        }
+        SurfaceGeometry::Nurbs(surface) => {
+            if let Some(u) = constant_coordinate(controls, |point| point.u) {
+                crate::geometry::nurbs_surface_isocurve(surface, u, true).map(CurveGeometry::Nurbs)
+            } else {
+                let v = constant_coordinate(controls, |point| point.v)?;
+                crate::geometry::nurbs_surface_isocurve(surface, v, false).map(CurveGeometry::Nurbs)
+            }
+        }
+        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Unknown { .. } => None,
+    }
+}
+
+fn lift_parameter_line(
+    origin: Point2,
+    direction: Point2,
+    surface: &SurfaceGeometry,
+) -> Option<CurveGeometry> {
+    let controls = [
+        origin,
+        Point2::new(origin.u + direction.u, origin.v + direction.v),
+    ];
+    let pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: controls.to_vec(),
+        weights: None,
+        periodic: false,
+    };
+    lift_pcurve(&pcurve, surface)
+}
+
+fn constant_coordinate(points: &[Point2], coordinate: impl Fn(&Point2) -> f64) -> Option<f64> {
+    let first = coordinate(points.first()?);
+    points
+        .iter()
+        .all(|point| (coordinate(point) - first).abs() <= 1e-12)
+        .then_some(first)
+}
+
+fn cross(left: Vector3, right: Vector3) -> Vector3 {
+    Vector3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    )
+}
+
+fn scale(vector: Vector3, factor: f64) -> Vector3 {
+    Vector3::new(vector.x * factor, vector.y * factor, vector.z * factor)
+}
+
+fn translate(point: Point3, vector: Vector3, factor: f64) -> Point3 {
+    Point3::new(
+        point.x + vector.x * factor,
+        point.y + vector.y * factor,
+        point.z + vector.z * factor,
+    )
+}
+
+fn offset(origin: Point3, u: Vector3, a: f64, v: Vector3, b: f64) -> Point3 {
+    Point3::new(
+        origin.x + u.x * a + v.x * b,
+        origin.y + u.y * a + v.y * b,
+        origin.z + u.z * a + v.z * b,
+    )
+}
+
+fn normalize(vector: Vector3) -> Option<Vector3> {
+    let norm = vector.norm();
+    (norm.is_finite() && norm > 0.0).then(|| scale(vector, norm.recip()))
 }
 
 /// Resolve the reference-closed subset of zero-entity edge occurrences.
@@ -1065,6 +1294,62 @@ mod occurrence_tests {
         assert_eq!(control_points.len(), 3);
         assert_eq!(weights, Some(vec![1.0, 0.5, 1.0]));
         assert!(!periodic);
+    }
+
+    #[test]
+    fn plane_support_lift_preserves_rational_nurbs_carrier() {
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(0.0, 0.0),
+                Point2::new(1.0, 2.0),
+                Point2::new(3.0, 4.0),
+            ],
+            weights: Some(vec![1.0, 0.5, 1.0]),
+            periodic: false,
+        };
+        let plane = SurfaceGeometry::Plane {
+            origin: Point3::new(10.0, 20.0, 30.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+
+        let Some(CurveGeometry::Nurbs(curve)) = lift_pcurve(&pcurve, &plane) else {
+            panic!("expected lifted NURBS curve");
+        };
+        assert_eq!(curve.control_points[1], Point3::new(11.0, 22.0, 30.0));
+        assert_eq!(curve.weights, Some(vec![1.0, 0.5, 1.0]));
+    }
+
+    #[test]
+    fn cylinder_isoparametric_support_lifts_to_circle() {
+        let pcurve = PcurveGeometry::Nurbs {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point2::new(0.0, 4.0), Point2::new(1.0, 4.0)],
+            weights: None,
+            periodic: false,
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+
+        let Some(CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        }) = lift_pcurve(&pcurve, &cylinder)
+        else {
+            panic!("expected lifted circle");
+        };
+        assert_eq!(center, Point3::new(1.0, 2.0, 7.0));
+        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(radius, 2.0);
     }
 
     #[test]

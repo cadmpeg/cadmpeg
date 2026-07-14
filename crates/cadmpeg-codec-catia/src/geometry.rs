@@ -18,7 +18,7 @@ use std::{
 
 use cadmpeg_ir::be::f32_at as f32_be;
 use cadmpeg_ir::eval::nurbs_surface_partials;
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
@@ -3846,6 +3846,125 @@ pub(crate) fn zero_entity_surface_at(data: &[u8], record: usize) -> Option<Surfa
         (0x34, 0xc8 | 0x5e) => zero_entity_nurbs_surface(data, record),
         _ => None,
     }
+}
+
+/// Contract one parameter of a tensor-product NURBS surface into its exact
+/// rational isocurve.
+pub(crate) fn nurbs_surface_isocurve(
+    surface: &NurbsSurface,
+    parameter: f64,
+    fix_u: bool,
+) -> Option<NurbsCurve> {
+    let u_count = usize::try_from(surface.u_count).ok()?;
+    let v_count = usize::try_from(surface.v_count).ok()?;
+    let (fixed_basis, varying_count, degree, knots) = if fix_u {
+        (
+            nurbs_basis_values(
+                &surface.u_knots,
+                usize::try_from(surface.u_degree).ok()?,
+                parameter,
+                u_count,
+            )?,
+            v_count,
+            surface.v_degree,
+            surface.v_knots.clone(),
+        )
+    } else {
+        (
+            nurbs_basis_values(
+                &surface.v_knots,
+                usize::try_from(surface.v_degree).ok()?,
+                parameter,
+                v_count,
+            )?,
+            u_count,
+            surface.u_degree,
+            surface.u_knots.clone(),
+        )
+    };
+    let mut control_points = Vec::with_capacity(varying_count);
+    let mut weights = Vec::with_capacity(varying_count);
+    for varying in 0..varying_count {
+        let mut numerator = [0.0; 3];
+        let mut denominator = 0.0;
+        for (fixed, basis) in fixed_basis.iter().copied().enumerate() {
+            let index = if fix_u {
+                fixed.checked_mul(v_count)?.checked_add(varying)?
+            } else {
+                varying.checked_mul(v_count)?.checked_add(fixed)?
+            };
+            let point = surface.control_points.get(index)?;
+            let weight = surface
+                .weights
+                .as_ref()
+                .and_then(|values| values.get(index))
+                .copied()
+                .unwrap_or(1.0);
+            let factor = basis * weight;
+            numerator[0] += factor * point.x;
+            numerator[1] += factor * point.y;
+            numerator[2] += factor * point.z;
+            denominator += factor;
+        }
+        if !denominator.is_finite() || denominator.abs() <= f64::EPSILON {
+            return None;
+        }
+        control_points.push(Point3::new(
+            numerator[0] / denominator,
+            numerator[1] / denominator,
+            numerator[2] / denominator,
+        ));
+        weights.push(denominator);
+    }
+    Some(NurbsCurve {
+        degree,
+        knots,
+        control_points,
+        weights: surface.weights.is_some().then_some(weights),
+        periodic: if fix_u {
+            surface.v_periodic
+        } else {
+            surface.u_periodic
+        },
+    })
+}
+
+fn nurbs_basis_values(
+    knots: &[f64],
+    degree: usize,
+    parameter: f64,
+    count: usize,
+) -> Option<Vec<f64>> {
+    if knots.len() != count.checked_add(degree)?.checked_add(1)? || count == 0 {
+        return None;
+    }
+    let mut basis = vec![0.0; count + degree];
+    for (index, value) in basis.iter_mut().enumerate() {
+        if (knots.get(index)? <= &parameter && &parameter < knots.get(index + 1)?)
+            || (parameter == *knots.last()? && index + 1 == count)
+        {
+            *value = 1.0;
+        }
+    }
+    for level in 1..=degree {
+        for index in 0..count + degree - level {
+            let left_denominator = knots[index + level] - knots[index];
+            let right_denominator = knots[index + level + 1] - knots[index + 1];
+            let left = if left_denominator.abs() <= f64::EPSILON {
+                0.0
+            } else {
+                (parameter - knots[index]) / left_denominator * basis[index]
+            };
+            let right = if right_denominator.abs() <= f64::EPSILON {
+                0.0
+            } else {
+                (knots[index + level + 1] - parameter) / right_denominator * basis[index + 1]
+            };
+            basis[index] = left + right;
+        }
+    }
+    basis.truncate(count);
+    basis.iter().all(|value| value.is_finite()).then_some(basis)
 }
 
 /// Decode the inline zero-entity non-rational NURBS carrier.  Its pole grid

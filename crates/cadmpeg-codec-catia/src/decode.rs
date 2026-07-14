@@ -148,17 +148,33 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
                     .count()
             })
             .unwrap_or_default();
-        let losses = (unresolved_pcurves != 0)
+        let unresolved_curves = ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve.is_none())
+            .count();
+        let mut losses = (unresolved_curves != 0)
             .then(|| LossNote {
-                category: LossCategory::Topology,
+                category: LossCategory::Geometry,
                 severity: Severity::Blocking,
                 message: format!(
-                    "The zero-entity B-rep graph and face orientation are reconstructed; {unresolved_pcurves} referenced-pole pcurve occurrences remain unresolved."
+                    "The zero-entity B-rep graph is reconstructed; {unresolved_curves} physical edge carriers remain unresolved."
                 ),
                 provenance: None,
             })
             .into_iter()
-            .collect();
+            .collect::<Vec<_>>();
+        if unresolved_pcurves != 0 {
+            losses.push(LossNote {
+                category: LossCategory::Topology,
+                severity: Severity::Warning,
+                message: format!(
+                    "The zero-entity B-rep graph and physical edge carriers are reconstructed; {unresolved_pcurves} referenced-pole pcurve occurrences remain unresolved."
+                ),
+                provenance: None,
+            });
+        }
         return Some((
             ir,
             DecodeReport {
@@ -478,6 +494,28 @@ fn transfer_zero_entity_topology(
 
     for (edge_index, pair) in edge_vertices.iter().enumerate() {
         let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
+        let curve = edges[edge_index]
+            .occurrences
+            .iter()
+            .find_map(|occurrence| crate::zero_entity::support_curve(topology, *occurrence))
+            .map(|geometry| {
+                let curve_id = CurveId(format!("catia:zero-entity:curve#{edge_index}"));
+                annotate(
+                    annotations,
+                    &curve_id,
+                    "zero_entity_a9_03",
+                    0,
+                    "support_pcurve_lift",
+                    Exactness::Derived,
+                );
+                annotations.derived(&curve_id, "geometry");
+                ir.model.curves.push(Curve {
+                    id: curve_id.clone(),
+                    geometry,
+                    source_object: None,
+                });
+                curve_id
+            });
         annotate(
             annotations,
             &id,
@@ -487,9 +525,12 @@ fn transfer_zero_entity_topology(
             Exactness::Derived,
         );
         annotations.derived(&id, "start").derived(&id, "end");
+        if curve.is_some() {
+            annotations.derived(&id, "curve");
+        }
         ir.model.edges.push(Edge {
             id,
-            curve: None,
+            curve,
             start: VertexId(format!("catia:zero-entity:v#{}", pair[0])),
             end: VertexId(format!("catia:zero-entity:v#{}", pair[1])),
             param_range: None,
