@@ -207,6 +207,8 @@ Sketch relations use named scalar records with reference cells at fixed scalar-r
 
 Distinct operand addresses in one binary relation select distinct markers. When address resolution initially converges on one marker, resolution of either operand excludes that marker from the other operand's exact local-identifier and reference-link candidates.
 
+A point-point dimension projects to neutral form only when its operands resolve to distinct profile loci. A line-line distance or angular dimension projects only when its operands resolve to distinct profile entities.
+
 When exactly one point-distance operand identifies a locus, the other operand identifies the sole distinct point locus in the complete owning sketch at the stored distance. Zero or multiple distance-compatible loci leave the operand unresolved.
 
 When neither point-distance operand identifies a locus, the operands identify the sole unordered pair of profile loci in the complete owning sketch separated by the stored distance. Zero or multiple distance-compatible pairs leave both operands unresolved.

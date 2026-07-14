@@ -5921,22 +5921,35 @@ fn typed_relation_definition(
                     unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)?
                 }
             };
+            if first == second {
+                return None;
+            }
             Some(SketchConstraintDefinition::DistanceLoci {
                 first,
                 second,
                 parameter: parameter_id,
             })
         }
-        PointPointHorizontalDistance => Some(SketchConstraintDefinition::HorizontalDistance {
-            first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
-            second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter: parameter_id,
-        }),
-        PointPointVerticalDistance => Some(SketchConstraintDefinition::VerticalDistance {
-            first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
-            second: marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter: parameter_id,
-        }),
+        PointPointHorizontalDistance | PointPointVerticalDistance => {
+            let first = marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?;
+            let second = marker_point_locus(marker(1)?, markers_by_id, loci_by_marker)?;
+            if first == second {
+                return None;
+            }
+            Some(match relation.family {
+                PointPointHorizontalDistance => SketchConstraintDefinition::HorizontalDistance {
+                    first,
+                    second,
+                    parameter: parameter_id,
+                },
+                PointPointVerticalDistance => SketchConstraintDefinition::VerticalDistance {
+                    first,
+                    second,
+                    parameter: parameter_id,
+                },
+                _ => unreachable!("relation family was filtered above"),
+            })
+        }
         PointLineDistance => Some(SketchConstraintDefinition::DistanceLoci {
             first: marker_point_locus(marker(0)?, markers_by_id, loci_by_marker)?,
             second: SketchLocus::Entity(single_marker_entity(
@@ -5946,18 +5959,25 @@ fn typed_relation_definition(
             )?),
             parameter: parameter_id,
         }),
-        LineLineDistance => Some(SketchConstraintDefinition::Distance {
-            entities: vec![
-                single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
-                single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?,
-            ],
-            parameter: parameter_id,
-        }),
-        Angle => Some(SketchConstraintDefinition::Angle {
-            first: single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?,
-            second: single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?,
-            parameter: parameter_id,
-        }),
+        LineLineDistance | Angle => {
+            let first = single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?;
+            let second = single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?;
+            if first == second {
+                return None;
+            }
+            Some(match relation.family {
+                LineLineDistance => SketchConstraintDefinition::Distance {
+                    entities: vec![first, second],
+                    parameter: parameter_id,
+                },
+                Angle => SketchConstraintDefinition::Angle {
+                    first,
+                    second,
+                    parameter: parameter_id,
+                },
+                _ => unreachable!("relation family was filtered above"),
+            })
+        }
         CircleDiameter => {
             let entity = sketch_entities
                 .iter()
@@ -8478,6 +8498,29 @@ mod profile_join_tests {
                 ..
             }) if parameter.0 == "distance"
         ));
+        let same_locus_relation = FeatureInputRelationInstance {
+            operands: relation
+                .operands
+                .iter()
+                .cloned()
+                .map(|mut operand| {
+                    operand.entity_ref = Some("marker-a".into());
+                    operand
+                })
+                .collect(),
+            ..relation.clone()
+        };
+        assert_eq!(
+            typed_relation_definition(
+                &same_locus_relation,
+                Some(&distance),
+                &sketch_id,
+                &[],
+                &markers,
+                &joins,
+            ),
+            None
+        );
         let circle = FeatureInputRelationInstance {
             family: FeatureInputRelationFamily::CircleDiameter,
             operands: vec![FeatureInputOperand {
