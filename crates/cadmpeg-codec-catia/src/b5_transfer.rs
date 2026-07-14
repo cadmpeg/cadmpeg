@@ -699,6 +699,7 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
             ..
         } => {
             let slant = constant_coordinate(&pcurve.control_points, 1)?;
+            (slant.abs() > f64::EPSILON).then_some(())?;
             Some(CurveGeometry::Circle {
                 center: point3(add(*apex, scale(*axis, slant * half_angle.cos()))),
                 axis: vector(*axis),

@@ -906,10 +906,13 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
             let axis = unit(point(&record.payload, 73)?)?;
             let half_angle = scalar(&record.payload, 97)?;
             let angular_offset = scalar(&record.payload, 121)?;
-            let slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
+            let mut slant_range = [scalar(&record.payload, 129)?, scalar(&record.payload, 137)?];
+            if slant_range[0].abs() <= 1e-12 {
+                slant_range[0] = 0.0;
+            }
             let angular_scale = scalar(&record.payload, 145)?;
             ((0.0..std::f64::consts::FRAC_PI_2).contains(&half_angle)
-                && slant_range[0] > 0.0
+                && slant_range[0] >= 0.0
                 && slant_range[0] < slant_range[1]
                 && angular_scale > 0.0)
                 .then_some(B5Surface::Cone {
@@ -1827,7 +1830,7 @@ mod tests {
         for (offset, value) in [
             (97, 0.25f64),
             (121, 0.5),
-            (129, 2.0),
+            (129, 0.0),
             (137, 8.0),
             (145, 3.0),
         ] {
@@ -1849,7 +1852,7 @@ mod tests {
                 axis: [0.0, 0.0, 1.0],
                 half_angle: 0.25,
                 angular_offset: 0.5,
-                slant_range: [2.0, 8.0],
+                slant_range: [0.0, 8.0],
                 angular_scale: 3.0,
             })
         );
