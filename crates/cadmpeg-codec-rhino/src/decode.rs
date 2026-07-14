@@ -425,6 +425,30 @@ impl<'a> DecodeContext<'a> {
                 self.decode_extrusion(source_order, object);
                 continue;
             }
+            if object.class_uuid == crate::hatch::CLASS {
+                self.decode_hatch(source_order, object);
+                continue;
+            }
+            if object.class_uuid == crate::detail::CLASS {
+                self.decode_detail(source_order, object);
+                continue;
+            }
+            if object.class_uuid == crate::cage::CLASS {
+                self.decode_cage(source_order, object);
+                continue;
+            }
+            if object.class_uuid == crate::morph::CLASS {
+                self.decode_morph(source_order, object);
+                continue;
+            }
+            if object.class_uuid == crate::curve_on_surface::CLASS {
+                self.decode_curve_on_surface(source_order, object);
+                continue;
+            }
+            if object.class_uuid == crate::polyedge::CURVE_CLASS {
+                self.decode_polyedge(source_order, object);
+                continue;
+            }
             if !crate::curves::supported_class(object.class_uuid)
                 && !crate::mesh::supported_class(object.class_uuid)
             {
@@ -533,6 +557,728 @@ impl<'a> DecodeContext<'a> {
                         self.mark_failed(source_order);
                     }
                 }
+            }
+        }
+    }
+
+    /// Decode semantic dimensions independently of shape carriers.
+    pub(crate) fn decode_dimensions(&mut self) {
+        if !matches!(
+            self.archive(),
+            ArchiveVersion::V5 | ArchiveVersion::V6 | ArchiveVersion::V7 | ArchiveVersion::V8
+        ) {
+            return;
+        }
+        for source_order in 0..self.scan.objects.len() {
+            let object = &self.scan.objects[source_order];
+            if !crate::dimensions::supported_class(object.class_uuid) {
+                continue;
+            }
+            if self.is_definition_member(object) {
+                self.scan_warning(
+                    source_order,
+                    "definition-member dimension retained because annotation instance expansion is unsupported",
+                );
+                continue;
+            }
+            let Some(scale) = self.unit_scale() else {
+                self.scan_warning(
+                    source_order,
+                    "dimension retained because document units are unavailable",
+                );
+                continue;
+            };
+            let Some(identity) = object.identity.as_ref() else {
+                self.scan_warning(
+                    source_order,
+                    "dimension retained because identity is unavailable",
+                );
+                continue;
+            };
+            let key = self.object_key(identity, source_order);
+            match crate::dimensions::decode(
+                &self.scan.data,
+                object.class_uuid,
+                object.class_data_range.clone(),
+                scale,
+                self.archive(),
+            ) {
+                Ok(mut dimension) => {
+                    if let Err(error) = crate::dimensions::apply_userdata(
+                        &self.scan.data,
+                        &object.userdata,
+                        self.archive(),
+                        &mut dimension,
+                    ) {
+                        self.scan_warning(
+                            source_order,
+                            &format!("dimension extension retained: {error}"),
+                        );
+                        continue;
+                    }
+                    let native_ref = Self::mint_unknown_id(source_order).to_string();
+                    let (feature, parameter) = crate::dimensions::project(
+                        &dimension,
+                        &key,
+                        (!identity.name.is_empty()).then(|| identity.name.clone()),
+                        native_ref,
+                    );
+                    let links = [feature.id.to_string(), parameter.id.0.clone()];
+                    let result = self.validate_candidate(|candidate| {
+                        candidate.model.features.push(feature);
+                        candidate.model.parameters.push(parameter);
+                    });
+                    match result {
+                        Ok(()) => {
+                            self.append_links(source_order, &links);
+                            self.mark_decoded(source_order);
+                        }
+                        Err(error) => self.scan_warning(
+                            source_order,
+                            &format!("dimension candidate rejected: {error}"),
+                        ),
+                    }
+                }
+                Err(error) => {
+                    self.scan_warning(source_order, &format!("dimension retained: {error}"));
+                    self.mark_failed(source_order);
+                }
+            }
+        }
+    }
+
+    fn decode_hatch(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "hatch retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "hatch retained because identity is unavailable",
+            );
+            return;
+        };
+        let mut hatch = match crate::hatch::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(hatch) => hatch,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "hatch {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let key = self.object_key(identity, source_order);
+        let association = self.source_association(identity);
+        let feature_id = FeatureId(format!("rhino:hatch:feature#{key}"));
+        let transform = hatch_plane_transform(&hatch.plane, scale);
+        for hatch_loop in &mut hatch.loops {
+            if let Err(error) = transform_decoded_curve(&mut hatch_loop.curve, transform) {
+                self.scan_warning(
+                    source_order,
+                    &format!("hatch loop placement failed: {error}"),
+                );
+                self.mark_failed(source_order);
+                return;
+            }
+        }
+        let loop_ids = hatch
+            .loops
+            .iter()
+            .enumerate()
+            .map(|(index, hatch_loop)| {
+                (
+                    hatch_loop.kind,
+                    format!("rhino:object:curve#{key}.hatch-loop-{index}"),
+                )
+            })
+            .collect::<Vec<_>>();
+        let mut parameters = BTreeMap::from([
+            ("pattern_index".to_string(), hatch.pattern_index.to_string()),
+            ("pattern_scale".to_string(), hatch.pattern_scale.to_string()),
+            (
+                "pattern_rotation".to_string(),
+                hatch.pattern_rotation.to_string(),
+            ),
+            (
+                "basepoint".to_string(),
+                format!("{},{}", hatch.basepoint[0], hatch.basepoint[1]),
+            ),
+        ]);
+        for (index, (kind, id)) in loop_ids.iter().enumerate() {
+            parameters.insert(
+                format!("loop_{index}"),
+                format!(
+                    "{}:{id}",
+                    match kind {
+                        crate::hatch::LoopKind::Outer => "outer",
+                        crate::hatch::LoopKind::Inner => "inner",
+                    }
+                ),
+            );
+        }
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(hatch.source_range.start).expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoHatch".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "hatch".to_string(),
+                parameters,
+                properties: BTreeMap::new(),
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        let hatch_loops = hatch.loops;
+        let result = self.validate_candidate(|candidate| {
+            for (index, hatch_loop) in hatch_loops.into_iter().enumerate() {
+                commit_curve_tree(
+                    candidate,
+                    hatch_loop.curve,
+                    &key,
+                    &association,
+                    None,
+                    &format!("hatch-loop-{index}"),
+                );
+            }
+            candidate.model.features.push(feature);
+        });
+        match result {
+            Ok(()) => {
+                for warning in hatch.warnings {
+                    self.scan_warning(source_order, &warning);
+                }
+                let mut links = loop_ids.into_iter().map(|(_, id)| id).collect::<Vec<_>>();
+                links.push(feature_id.to_string());
+                self.append_links(source_order, &links);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(source_order, &format!("hatch candidate rejected: {error}"));
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_polyedge(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "polyedge retained because identity is unavailable",
+            );
+            return;
+        };
+        let polyedge = match crate::polyedge::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            self.archive(),
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                self.scan_warning(source_order, &format!("polyedge retained: {error}"));
+                self.mark_failed(source_order);
+                return;
+            }
+        };
+        let Some(construction) = crate::polyedge::semantic_json(&polyedge) else {
+            self.scan_warning(source_order, "polyedge semantic serialization failed");
+            return;
+        };
+        let key = self.object_key(identity, source_order);
+        let id = FeatureId(format!("rhino:polyedge:feature#{key}"));
+        let feature = Feature {
+            id: id.clone(),
+            ordinal: u64::try_from(source_order).expect("source order fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoPolyEdgeReference".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "polyedge_reference".to_string(),
+                parameters: BTreeMap::new(),
+                properties: BTreeMap::from([("construction".to_string(), construction)]),
+            },
+            native_ref: Some(Self::mint_unknown_id(source_order).to_string()),
+        };
+        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+            Ok(()) => {
+                self.append_link(source_order, id.to_string());
+                self.mark_decoded(source_order);
+            }
+            Err(error) => self.scan_warning(
+                source_order,
+                &format!("polyedge candidate rejected: {error}"),
+            ),
+        }
+    }
+
+    fn decode_detail(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "detail retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "detail retained because identity is unavailable",
+            );
+            return;
+        };
+        let detail = match crate::detail::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(detail) => detail,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "detail {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let key = self.object_key(identity, source_order);
+        let association = self.source_association(identity);
+        let curve_id = format!("rhino:object:curve#{key}.detail-boundary");
+        let feature_id = FeatureId(format!("rhino:detail:feature#{key}"));
+        let view = &self.scan.data[detail.view_range.clone()];
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(detail.source_range.start).expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoDetailView".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "detail_view".to_string(),
+                parameters: BTreeMap::from([
+                    ("boundary".to_string(), curve_id.clone()),
+                    (
+                        "page_per_model_ratio".to_string(),
+                        detail.page_per_model_ratio.to_string(),
+                    ),
+                ]),
+                properties: BTreeMap::from([
+                    ("view_bytes".to_string(), view.len().to_string()),
+                    ("view_sha256".to_string(), sha256_hex(view)),
+                ]),
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        let result = self.validate_candidate(|candidate| {
+            commit_curve_tree(
+                candidate,
+                detail.boundary,
+                &key,
+                &association,
+                None,
+                "detail-boundary",
+            );
+            candidate.model.features.push(feature);
+        });
+        match result {
+            Ok(()) => {
+                self.append_links(source_order, &[curve_id, feature_id.to_string()]);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(source_order, &format!("detail candidate rejected: {error}"));
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_cage(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "NURBS cage retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "NURBS cage retained because identity is unavailable",
+            );
+            return;
+        };
+        let cage = match crate::cage::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(cage) => cage,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "NURBS cage {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let key = self.object_key(identity, source_order);
+        let feature_id = FeatureId(format!("rhino:cage:feature#{key}"));
+        let knots = cage
+            .knots
+            .iter()
+            .map(|axis| {
+                axis.iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .collect::<Vec<_>>();
+        let control_points = cage
+            .control_points
+            .iter()
+            .map(|point| {
+                point
+                    .iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .collect::<Vec<_>>()
+            .join(";");
+        let mut properties = BTreeMap::from([
+            ("u_knots".to_string(), knots[0].clone()),
+            ("v_knots".to_string(), knots[1].clone()),
+            ("w_knots".to_string(), knots[2].clone()),
+            ("control_points".to_string(), control_points),
+        ]);
+        if let Some(weights) = &cage.weights {
+            properties.insert(
+                "weights".to_string(),
+                weights
+                    .iter()
+                    .map(f64::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(cage.source_range.start).expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoNurbsCage".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "nurbs_cage".to_string(),
+                parameters: BTreeMap::from([
+                    ("dimension".to_string(), cage.dimension.to_string()),
+                    ("rational".to_string(), cage.rational.to_string()),
+                    (
+                        "orders".to_string(),
+                        format!("{},{},{}", cage.orders[0], cage.orders[1], cage.orders[2]),
+                    ),
+                    (
+                        "counts".to_string(),
+                        format!("{},{},{}", cage.counts[0], cage.counts[1], cage.counts[2]),
+                    ),
+                ]),
+                properties,
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+            Ok(()) => {
+                self.append_link(source_order, feature_id.to_string());
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(
+                    source_order,
+                    &format!("NURBS cage candidate rejected: {error}"),
+                );
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_morph(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "morph control retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "morph control retained because identity is unavailable",
+            );
+            return;
+        };
+        let morph = match crate::morph::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+        ) {
+            Ok(morph) => morph,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "morph control {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let key = self.object_key(identity, source_order);
+        let feature = crate::morph::project(
+            &morph,
+            &key,
+            (!identity.name.is_empty()).then(|| identity.name.clone()),
+            self.unknowns[source_order].id.to_string(),
+        );
+        let feature_id = feature.id.to_string();
+        match self.validate_candidate(|candidate| candidate.model.features.push(feature)) {
+            Ok(()) => {
+                self.append_link(source_order, feature_id);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(source_order, &format!("morph candidate rejected: {error}"));
+                self.mark_failed(source_order);
+            }
+        }
+    }
+
+    fn decode_curve_on_surface(&mut self, source_order: usize, object: &ObjectDescriptor) {
+        use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+        let Some(scale) = self.unit_scale() else {
+            self.scan_warning(
+                source_order,
+                "curve-on-surface retained because document units are unavailable",
+            );
+            return;
+        };
+        let Some(identity) = object.identity.as_ref() else {
+            self.scan_warning(
+                source_order,
+                "curve-on-surface retained because identity is unavailable",
+            );
+            return;
+        };
+        let construction = match crate::curve_on_surface::decode(
+            &self.scan.data,
+            object.class_data_range.clone(),
+            scale,
+            self.archive(),
+            0,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                let future = matches!(
+                    error,
+                    crate::curves::GeometryError::UnsupportedVersion { .. }
+                );
+                self.scan_warning(
+                    source_order,
+                    &format!(
+                        "curve-on-surface {}: {error}",
+                        if future { "retained" } else { "failed" }
+                    ),
+                );
+                if !future {
+                    self.mark_failed(source_order);
+                }
+                return;
+            }
+        };
+        let key = self.object_key(identity, source_order);
+        let association = self.source_association(identity);
+        let parameter_id = format!("rhino:object:curve#{key}.curve-on-surface-c2");
+        let model_id = construction
+            .model_curve
+            .as_ref()
+            .map(|_| format!("rhino:object:curve#{key}.curve-on-surface-c3"));
+        let surface_id: cadmpeg_ir::ids::SurfaceId =
+            format!("rhino:object:surface#{key}.curve-on-surface-support").into();
+        let feature_id = FeatureId(format!("rhino:curve-on-surface:feature#{key}"));
+        let feature = Feature {
+            id: feature_id.clone(),
+            ordinal: u64::try_from(construction.source_range.start)
+                .expect("source offset fits u64"),
+            name: (!identity.name.is_empty()).then(|| identity.name.clone()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("RhinoCurveOnSurface".to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: "curve_on_surface".to_string(),
+                parameters: BTreeMap::from([
+                    ("parameter_curve".to_string(), parameter_id.clone()),
+                    ("support_surface".to_string(), surface_id.to_string()),
+                ]),
+                properties: model_id
+                    .as_ref()
+                    .map(|id| BTreeMap::from([("model_curve".to_string(), id.clone())]))
+                    .unwrap_or_default(),
+            },
+            native_ref: Some(self.unknowns[source_order].id.to_string()),
+        };
+        let parameter_curve = construction.parameter_curve;
+        let model_curve = construction.model_curve;
+        let (surface_geometry, surface_derived) = match construction.surface {
+            crate::surfaces::DecodedSurface::Typed { geometry, derived } => (geometry, derived),
+            crate::surfaces::DecodedSurface::Procedural { geometry, .. } => {
+                (SurfaceGeometry::Nurbs(geometry), true)
+            }
+        };
+        let result = self.validate_candidate(|candidate| {
+            commit_curve_tree(
+                candidate,
+                parameter_curve,
+                &key,
+                &association,
+                None,
+                "curve-on-surface-c2",
+            );
+            if let Some(model_curve) = model_curve {
+                commit_curve_tree(
+                    candidate,
+                    model_curve,
+                    &key,
+                    &association,
+                    None,
+                    "curve-on-surface-c3",
+                );
+            }
+            candidate.model.surfaces.push(Surface {
+                id: surface_id.clone(),
+                geometry: surface_geometry,
+                source_object: Some(association),
+            });
+            candidate.annotations.exactness.insert(
+                surface_id.to_string(),
+                ExactnessNote {
+                    entity: if surface_derived {
+                        Exactness::Derived
+                    } else {
+                        Exactness::ByteExact
+                    },
+                    fields: BTreeMap::new(),
+                },
+            );
+            candidate.model.features.push(feature);
+        });
+        match result {
+            Ok(()) => {
+                for warning in construction.warnings {
+                    self.scan_warning(source_order, &warning);
+                }
+                let mut links = vec![parameter_id, surface_id.to_string(), feature_id.to_string()];
+                if let Some(model_id) = model_id {
+                    links.push(model_id);
+                }
+                self.append_links(source_order, &links);
+                self.geometry_transferred = true;
+                self.mark_decoded(source_order);
+            }
+            Err(error) => {
+                self.scan_warning(
+                    source_order,
+                    &format!("curve-on-surface candidate rejected: {error}"),
+                );
+                self.mark_failed(source_order);
             }
         }
     }
@@ -996,6 +1742,12 @@ impl<'a> DecodeContext<'a> {
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> DecodeResult {
+        crate::annotations::install(self.scan, &mut self.ir);
+        crate::document_data::install(self.scan, &mut self.ir);
+        crate::presentation::install(self.scan, &mut self.ir);
+        crate::product::install(self.scan, &mut self.ir);
+        crate::views::install(self.scan, &mut self.ir);
+        crate::accounting::install(self.scan, &mut self.ir);
         self.ir
             .set_native_unknowns("rhino", &self.unknowns)
             .expect("Rhino unknown records serialize");
@@ -2713,6 +3465,67 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
     Ok(staged)
 }
 
+/// Projects one embedded Brep into a self-contained semantic topology value.
+pub(crate) fn embedded_brep_json(
+    data: &[u8],
+    range: std::ops::Range<usize>,
+    archive: ArchiveVersion,
+    writer_version: Option<i64>,
+    scale: f64,
+) -> Option<String> {
+    let parsed = crate::brep::parse(data, range, archive, writer_version).ok()?;
+    let raw = match parsed {
+        crate::brep::BrepParse::Valid(value) => value.raw,
+        crate::brep::BrepParse::SemanticInvalid { .. } => return None,
+    };
+    let association = SourceObjectAssociation {
+        format: "rhino".to_string(),
+        object_id: "embedded-history-brep".to_string(),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    };
+    let unknown = UnknownId("rhino:history:embedded-brep".to_string());
+    let mut mesh_budget = crate::mesh::MeshBudget::new();
+    let staged = stage_brep(BrepTransferInput {
+        data,
+        archive,
+        writer_version,
+        raw: &raw,
+        key: "history:embedded-brep",
+        association: &association,
+        unknown: &unknown,
+        scale,
+        semantic_error: None,
+        mesh_budget: &mut mesh_budget,
+    })
+    .ok()?;
+    if staged.kind != BrepTransferKind::FullTopology {
+        return None;
+    }
+    serde_json::to_string(&serde_json::json!({
+        "kind": "brep",
+        "bodies": staged.bodies,
+        "regions": staged.regions,
+        "shells": staged.shells,
+        "faces": staged.faces,
+        "loops": staged.loops,
+        "coedges": staged.coedges,
+        "edges": staged.edges,
+        "vertices": staged.vertices,
+        "points": staged.points,
+        "surfaces": staged.surfaces,
+        "curves": staged.curves,
+        "procedural_curves": staged.procedural_curves,
+        "procedural_surfaces": staged.procedural_surfaces,
+        "pcurves": staged.pcurves,
+        "tessellations": staged.tessellations,
+    }))
+    .ok()
+}
+
 /// Rhino trim curves live in the surface's native parameter space. A plane's
 /// parameters are lengths, so a unit-scaled document moves the plane's
 /// parameterization to millimeters while the trims stay in native units;
@@ -3414,6 +4227,42 @@ fn compose_body_transform(body: &mut Body, transform: Transform) {
     });
 }
 
+fn hatch_plane_transform(plane: &crate::settings::Plane, scale: f64) -> Transform {
+    let origin = plane.origin.0;
+    let x = plane.xaxis.0;
+    let y = plane.yaxis.0;
+    let z = plane.zaxis.0;
+    Transform {
+        rows: [
+            [x[0] * scale, y[0] * scale, z[0] * scale, origin[0] * scale],
+            [x[1] * scale, y[1] * scale, z[1] * scale, origin[1] * scale],
+            [x[2] * scale, y[2] * scale, z[2] * scale, origin[2] * scale],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    }
+}
+
+fn transform_decoded_curve(
+    curve: &mut crate::curves::DecodedCurve,
+    transform: Transform,
+) -> Result<(), String> {
+    if let Some(compound) = &mut curve.compound {
+        for child in &mut compound.children {
+            transform_decoded_curve(child, transform)?;
+        }
+        return Ok(());
+    }
+    let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
+    let mut carrier = Curve {
+        id: "rhino:hatch:placement".into(),
+        geometry,
+        source_object: None,
+    };
+    transform_curve(&mut carrier, transform)?;
+    curve.geometry = carrier.geometry;
+    Ok(())
+}
+
 fn transform_curve(curve: &mut Curve, transform: Transform) -> Result<(), String> {
     let geometry = std::mem::replace(&mut curve.geometry, CurveGeometry::Unknown { record: None });
     curve.geometry = match geometry {
@@ -3621,6 +4470,16 @@ fn loss_provenance(class: &str, outcome: &ClassOutcome) -> LossProvenance {
 pub(crate) fn decode(scan: &Scan) -> DecodeResult {
     let mut context = DecodeContext::new(scan);
     context.decode_geometry();
+    context.decode_dimensions();
+    let geometry_context = context.unit_scale().map(|scale| {
+        (
+            scan.data.as_slice(),
+            scan.archive,
+            scan.metadata.properties.writer_version,
+            scale,
+        )
+    });
+    crate::history::project(&scan.history, geometry_context, &mut context.ir);
     context.commit()
 }
 
@@ -3777,6 +4636,24 @@ mod tests {
             compound: None,
             warnings: Vec::new(),
         }
+    }
+
+    #[test]
+    fn hatch_plane_places_and_scales_plane_space_loops_once() {
+        let plane = crate::settings::Plane {
+            origin: crate::settings::Point3([10.0, 20.0, 30.0]),
+            xaxis: crate::settings::Vector3([0.0, 1.0, 0.0]),
+            yaxis: crate::settings::Vector3([-1.0, 0.0, 0.0]),
+            zaxis: crate::settings::Vector3([0.0, 0.0, 1.0]),
+            equation: [0.0, 0.0, 1.0, -30.0],
+        };
+        let mut curve = decoded_nurbs(line_nurbs(0.0, 2.0, false));
+        transform_decoded_curve(&mut curve, hatch_plane_transform(&plane, 10.0)).unwrap();
+        let CurveGeometry::Nurbs(curve) = curve.geometry else {
+            panic!("hatch loop must remain NURBS");
+        };
+        assert_eq!(curve.control_points[0], Point3::new(100.0, 200.0, 300.0));
+        assert_eq!(curve.control_points[1], Point3::new(100.0, 220.0, 300.0));
     }
 
     #[test]

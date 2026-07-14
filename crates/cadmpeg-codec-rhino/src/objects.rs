@@ -348,6 +348,17 @@ pub(crate) fn parse_class_wrapper(
     archive: ArchiveVersion,
     warnings: &mut Vec<String>,
 ) -> Result<ClassDescriptor, FramingError> {
+    parse_class_wrapper_with_userdata(bytes, body, archive, warnings)
+        .map(|(descriptor, _)| descriptor)
+}
+
+/// Parses a class wrapper and retains its ordered class-userdata descriptors.
+pub(crate) fn parse_class_wrapper_with_userdata(
+    bytes: &[u8],
+    body: Range<usize>,
+    archive: ArchiveVersion,
+    warnings: &mut Vec<String>,
+) -> Result<(ClassDescriptor, Vec<UserdataDescriptor>), FramingError> {
     let wrapper = child(bytes, body.start, body.end, archive, false)?;
     require_long(&wrapper, OPENNURBS_CLASS)?;
     let uuid_chunk = child(bytes, wrapper.body.start, wrapper.body.end, archive, true)?;
@@ -379,11 +390,12 @@ pub(crate) fn parse_class_wrapper(
     }
     let mut offset = data_chunk.next_offset;
     let mut end_seen = false;
+    let mut userdata = Vec::new();
     while offset < wrapper.body.end {
         let item = child(bytes, offset, wrapper.body.end, archive, false)?;
         if item.typecode == CLASS_USERDATA {
             require_long(&item, CLASS_USERDATA)?;
-            let _ = parse_userdata(bytes, &item, archive, warnings)?;
+            userdata.push(parse_userdata(bytes, &item, archive, warnings)?);
             offset = item.next_offset;
         } else {
             require_short_zero(&item, CLASS_END)?;
@@ -395,10 +407,13 @@ pub(crate) fn parse_class_wrapper(
     if !end_seen || offset != wrapper.body.end || wrapper.next_offset != body.end {
         return Err(malformed_at(offset, "class wrapper has trailing bytes"));
     }
-    Ok(ClassDescriptor {
-        class_uuid,
-        class_data_range: data_chunk.body,
-    })
+    Ok((
+        ClassDescriptor {
+            class_uuid,
+            class_data_range: data_chunk.body,
+        },
+        userdata,
+    ))
 }
 
 fn parse_userdata(
@@ -1180,8 +1195,19 @@ pub(crate) fn parse_object_record(
     offset = uuid_chunk.next_offset;
     let data_chunk = child(bytes, offset, class.body.end, archive, false)?;
     require_long(&data_chunk, CLASS_DATA)?;
-    if let Some(note) = checksum_warning(bytes, &data_chunk)? {
-        warnings.push(note);
+    // Container CRCs exclude independently checksummed nested chunks. Family
+    // readers validate those leaf chunks while decoding their payloads.
+    let nests_chunks = crate::brep::supported_class(class_uuid)
+        || crate::mesh::supported_class(class_uuid)
+        || crate::curves::class_data_nests_chunks(class_uuid)
+        || crate::surfaces::is_procedural_class(class_uuid)
+        || class_uuid == crate::surfaces::CLIPPING_PLANE_SURFACE
+        || crate::extrusion::supported_class(class_uuid)
+        || crate::subd::supported_class(class_uuid);
+    if !nests_chunks {
+        if let Some(note) = checksum_warning(bytes, &data_chunk)? {
+            warnings.push(note);
+        }
     }
     let class_data_range = data_chunk.body.clone();
     offset = data_chunk.next_offset;

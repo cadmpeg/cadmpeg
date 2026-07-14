@@ -204,6 +204,7 @@ dependencies = [
  "cadmpeg-ir",
  "crc32fast",
  "flate2",
+ "serde",
  "serde_json",
  "sha2",
 ]
