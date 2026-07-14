@@ -1278,6 +1278,11 @@ pub(crate) fn bind_extrude_profile_selections(
     }
 }
 
+enum ResolvedProfileSelection {
+    Loops(Vec<u32>),
+    Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
+}
+
 fn resolved_extrude_profile_selection(
     sketch_id: &cadmpeg_ir::sketches::SketchId,
     group: &DesignExtrudeSelectionGroup,
@@ -1325,13 +1330,13 @@ fn resolved_extrude_profile_selection(
                 selected.push(*profile_index);
             }
         }
-        (!selected.is_empty()).then_some(selected)
+        (!selected.is_empty()).then_some(ResolvedProfileSelection::Loops(selected))
     });
     let resolved_profiles = resolved_profiles
         .flatten()
         .or_else(|| {
             exact_member_run.then(|| {
-                historical_selection_profiles(
+                historical_selection_regions(
                     &selection_members,
                     sketch,
                     resolution.entities,
@@ -1351,9 +1356,13 @@ fn resolved_extrude_profile_selection(
             )
         });
     match resolved_profiles {
-        Some(profiles) => ProfileRef::SketchProfiles {
+        Some(ResolvedProfileSelection::Loops(profiles)) => ProfileRef::SketchProfiles {
             sketch: sketch_id.clone(),
             profiles,
+        },
+        Some(ResolvedProfileSelection::Regions(regions)) => ProfileRef::SketchRegions {
+            sketch: sketch_id.clone(),
+            regions,
         },
         None => ProfileRef::SketchSelection {
             sketch: sketch_id.clone(),
@@ -1369,7 +1378,7 @@ fn transition_profile_selection(
     state_id: i64,
     previous_state_id: i64,
     linear_tolerance: f64,
-) -> Option<Vec<u32>> {
+) -> Option<ResolvedProfileSelection> {
     let mut states = histories
         .iter()
         .flat_map(|history| &history.states)
@@ -1392,17 +1401,14 @@ fn transition_profile_selection(
         let Some(points) = historical_face_points(*face, topology) else {
             continue;
         };
-        let Some(matches) = profiles_containing_points(sketch, entities, &points, tolerance) else {
+        let Some(region) = region_containing_points(sketch, entities, &points, tolerance) else {
             continue;
         };
-        let [profile] = matches.as_slice() else {
-            continue;
-        };
-        if !profiles.contains(profile) {
-            profiles.push(*profile);
+        if !profiles.contains(&region) {
+            profiles.push(region);
         }
     }
-    (profiles.len() == 1).then_some(profiles)
+    (profiles.len() == 1).then_some(ResolvedProfileSelection::Regions(profiles))
 }
 
 fn historical_face_points(
@@ -1448,13 +1454,13 @@ fn historical_face_points(
     (positions.len() >= 3).then_some(positions)
 }
 
-fn historical_selection_profiles(
+fn historical_selection_regions(
     members: &[&DesignExtrudeSelectionMember],
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     histories: &[crate::history_records::AsmHistory],
     linear_tolerance: f64,
-) -> Option<Vec<u32>> {
+) -> Option<ResolvedProfileSelection> {
     let member_points = members
         .iter()
         .map(|member| historical_member_points(member, histories))
@@ -1464,92 +1470,119 @@ fn historical_selection_profiles(
     }
     let tolerance = linear_tolerance.max(1.0e-7);
     let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
-    let common = profiles_containing_points(sketch, entities, &all_points, tolerance)?;
-    if let [profile] = common.as_slice() {
-        return Some(vec![*profile]);
+    if let Some(region) = region_containing_points(sketch, entities, &all_points, tolerance) {
+        return Some(ResolvedProfileSelection::Regions(vec![region]));
     }
-    ordered_unique_profile_matches(
+    let regions = ordered_unique_region_matches(
         member_points
             .iter()
-            .map(|points| profiles_containing_points(sketch, entities, points, tolerance)),
-    )
+            .map(|points| region_containing_points(sketch, entities, points, tolerance)),
+    )?;
+    Some(ResolvedProfileSelection::Regions(regions))
 }
 
-fn ordered_unique_profile_matches(
-    matches: impl IntoIterator<Item = Option<Vec<u32>>>,
-) -> Option<Vec<u32>> {
-    let mut profiles = Vec::new();
-    for matches in matches {
-        let matches = matches?;
-        let [profile] = matches.as_slice() else {
-            return None;
-        };
-        if !profiles.contains(profile) {
-            profiles.push(*profile);
+fn ordered_unique_region_matches(
+    matches: impl IntoIterator<Item = Option<cadmpeg_ir::features::SketchProfileRegion>>,
+) -> Option<Vec<cadmpeg_ir::features::SketchProfileRegion>> {
+    let mut regions = Vec::new();
+    for region in matches {
+        let region = region?;
+        if !regions.contains(&region) {
+            regions.push(region);
         }
     }
-    (!profiles.is_empty()).then_some(profiles)
+    (!regions.is_empty()).then_some(regions)
 }
 
-fn profiles_containing_points(
+fn region_containing_points(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     points: &[Point3],
     tolerance: f64,
-) -> Option<Vec<u32>> {
+) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    let polygons = sketch
+        .profiles
+        .iter()
+        .map(|profile| line_profile_vertices(profile, entities, tolerance))
+        .collect::<Option<Vec<_>>>()?;
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
         .collect::<Vec<_>>();
-    let boundary_profiles = sketch
-        .profiles
-        .iter()
-        .enumerate()
-        .filter(|(_, profile)| {
-            projected.iter().all(|point| {
-                let on_boundary = profile.iter().any(|use_| {
-                    entities
-                        .iter()
-                        .find(|entity| entity.id == use_.entity)
-                        .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
-                });
-                on_boundary
+    if projected.iter().any(|point| {
+        sketch.profiles.iter().any(|profile| {
+            profile.iter().any(|use_| {
+                entities
+                    .iter()
+                    .find(|entity| entity.id == use_.entity)
+                    .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
             })
         })
-        .map(|(index, _)| u32::try_from(index).ok())
-        .collect::<Option<Vec<_>>>()?;
-    if !boundary_profiles.is_empty() {
-        return Some(boundary_profiles);
+    }) {
+        return None;
     }
-    sketch
-        .profiles
+    let containing = polygons
         .iter()
         .enumerate()
-        .filter(|(_, profile)| {
+        .filter(|(_, polygon)| {
             projected
                 .iter()
-                .all(|point| point_in_line_profile(*point, profile, entities, tolerance))
+                .all(|point| point_in_polygon(*point, polygon))
         })
-        .map(|(index, _)| u32::try_from(index).ok())
-        .collect()
+        .map(|(index, polygon)| (index, polygon_area(polygon)))
+        .collect::<Vec<_>>();
+    if containing.iter().enumerate().any(|(left_index, left)| {
+        containing.iter().skip(left_index + 1).any(|right| {
+            !polygon_strictly_contains(&polygons[left.0], &polygons[right.0])
+                && !polygon_strictly_contains(&polygons[right.0], &polygons[left.0])
+        })
+    }) {
+        return None;
+    }
+    let &(outer, _) = containing
+        .iter()
+        .min_by(|left, right| left.1.total_cmp(&right.1))?;
+    let mut holes = Vec::new();
+    for (candidate, polygon) in polygons.iter().enumerate() {
+        if candidate == outer || !polygon_strictly_contains(&polygons[outer], polygon) {
+            continue;
+        }
+        let candidate_area = polygon_area(polygon);
+        let parent = polygons
+            .iter()
+            .enumerate()
+            .filter(|(index, parent)| {
+                *index != candidate
+                    && polygon_area(parent) > candidate_area
+                    && polygon_strictly_contains(parent, polygon)
+            })
+            .min_by(|left, right| polygon_area(left.1).total_cmp(&polygon_area(right.1)))
+            .map(|(index, _)| index);
+        if parent == Some(outer) {
+            holes.push(u32::try_from(candidate).ok()?);
+        }
+    }
+    Some(SketchProfileRegion {
+        outer: u32::try_from(outer).ok()?,
+        holes,
+    })
 }
 
-fn point_in_line_profile(
-    point: Point2,
+fn line_profile_vertices(
     profile: &[cadmpeg_ir::sketches::SketchEntityUse],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> bool {
+) -> Option<Vec<Point2>> {
     use cadmpeg_ir::sketches::SketchGeometry;
 
     let mut vertices = Vec::with_capacity(profile.len());
     let mut previous_end = None;
     for use_ in profile {
-        let Some(entity) = entities.iter().find(|entity| entity.id == use_.entity) else {
-            return false;
-        };
+        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
         let SketchGeometry::Line { start, end } = entity.geometry else {
-            return false;
+            return None;
         };
         let [start, end] = if use_.reversed {
             [end, start]
@@ -1557,7 +1590,7 @@ fn point_in_line_profile(
             [start, end]
         };
         if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
-            return false;
+            return None;
         }
         vertices.push(start);
         previous_end = Some(end);
@@ -1565,9 +1598,12 @@ fn point_in_line_profile(
     if vertices.len() < 3
         || previous_end.is_none_or(|end| point_distance(end, vertices[0]) > tolerance)
     {
-        return false;
+        return None;
     }
+    Some(vertices)
+}
 
+fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
     vertices
         .iter()
         .copied()
@@ -1580,6 +1616,52 @@ fn point_in_line_profile(
         .count()
         % 2
         == 1
+}
+
+fn polygon_area(vertices: &[Point2]) -> f64 {
+    vertices
+        .iter()
+        .copied()
+        .zip(vertices.iter().copied().cycle().skip(1))
+        .take(vertices.len())
+        .map(|(start, end)| start.u * end.v - end.u * start.v)
+        .sum::<f64>()
+        .abs()
+        * 0.5
+}
+
+fn polygon_strictly_contains(outer: &[Point2], inner: &[Point2]) -> bool {
+    inner.iter().all(|point| point_in_polygon(*point, outer))
+        && !polygon_edges(outer).any(|outer_edge| {
+            polygon_edges(inner).any(|inner_edge| segments_intersect(outer_edge, inner_edge))
+        })
+}
+
+fn polygon_edges(vertices: &[Point2]) -> impl Iterator<Item = (Point2, Point2)> + '_ {
+    vertices
+        .iter()
+        .copied()
+        .zip(vertices.iter().copied().cycle().skip(1))
+        .take(vertices.len())
+}
+
+fn segments_intersect(left: (Point2, Point2), right: (Point2, Point2)) -> bool {
+    fn side(line: (Point2, Point2), point: Point2) -> f64 {
+        (line.1.u - line.0.u) * (point.v - line.0.v) - (line.1.v - line.0.v) * (point.u - line.0.u)
+    }
+
+    let left_start = side(left, right.0);
+    let left_end = side(left, right.1);
+    let right_start = side(right, left.0);
+    let right_end = side(right, left.1);
+    if left_start == 0.0 && left_end == 0.0 && right_start == 0.0 && right_end == 0.0 {
+        let overlaps = |a0: f64, a1: f64, b0: f64, b1: f64| {
+            a0.min(a1) <= b0.max(b1) && b0.min(b1) <= a0.max(a1)
+        };
+        return overlaps(left.0.u, left.1.u, right.0.u, right.1.u)
+            && overlaps(left.0.v, left.1.v, right.0.v, right.1.v);
+    }
+    left_start * left_end <= 0.0 && right_start * right_end <= 0.0
 }
 
 fn historical_member_points(
@@ -8657,8 +8739,8 @@ mod relation_tests {
         parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
         parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
-        profiles_containing_points, project_dimension_constraints, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        project_dimension_constraints, project_extrude, project_parameter_design,
+        project_sketch_constraints, project_sketch_design, region_containing_points,
         remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
         two_locus_distance_dimension,
     };
@@ -8674,7 +8756,9 @@ mod relation_tests {
         SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ParameterValue};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, Length, ParameterValue, SketchProfileRegion,
+    };
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
@@ -8684,7 +8768,7 @@ mod relation_tests {
     use std::collections::{HashMap, HashSet};
 
     #[test]
-    fn historical_points_require_a_unique_profile_boundary() {
+    fn historical_points_on_profile_boundaries_are_ambiguous() {
         let sketch_id = SketchId("sketch".into());
         let entity_id = SketchEntityId("line".into());
         let mut sketch = Sketch {
@@ -8714,14 +8798,14 @@ mod relation_tests {
         };
         let point = Point3::new(11.0, 20.0, 9.0);
         assert_eq!(
-            profiles_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
-            Some(vec![0])
+            region_containing_points(&sketch, std::slice::from_ref(&entity), &[point], 1.0e-6),
+            None
         );
 
         sketch.profiles.push(sketch.profiles[0].clone());
         assert_eq!(
-            profiles_containing_points(&sketch, &[entity], &[point], 1.0e-6),
-            Some(vec![0, 1])
+            region_containing_points(&sketch, &[entity], &[point], 1.0e-6),
+            None
         );
     }
 
@@ -8766,42 +8850,110 @@ mod relation_tests {
         };
 
         assert_eq!(
-            profiles_containing_points(
-                &sketch,
-                &entities,
-                &[Point3::new(12.0, 21.0, 12.0)],
-                1.0e-6,
-            ),
-            Some(vec![0])
+            region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,),
+            Some(SketchProfileRegion {
+                outer: 0,
+                holes: Vec::new(),
+            })
         );
         assert_eq!(
-            profiles_containing_points(
-                &sketch,
-                &entities,
-                &[Point3::new(15.0, 21.0, 12.0)],
-                1.0e-6,
-            ),
-            Some(Vec::new())
+            region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,),
+            None
         );
     }
 
     #[test]
-    fn historical_selection_preserves_first_member_profile_order() {
+    fn nested_line_profiles_resolve_atomic_regions_and_immediate_holes() {
+        let sketch_id = SketchId("sketch".into());
+        let mut entities = Vec::new();
+        let mut profiles = Vec::new();
+        for (profile_index, (minimum, maximum)) in [
+            (Point2::new(0.0, 0.0), Point2::new(10.0, 10.0)),
+            (Point2::new(2.0, 2.0), Point2::new(8.0, 8.0)),
+            (Point2::new(4.0, 4.0), Point2::new(6.0, 6.0)),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let corners = [
+                minimum,
+                Point2::new(maximum.u, minimum.v),
+                maximum,
+                Point2::new(minimum.u, maximum.v),
+            ];
+            let mut profile = Vec::new();
+            for edge_index in 0..corners.len() {
+                let id = SketchEntityId(format!("line-{profile_index}-{edge_index}"));
+                profile.push(SketchEntityUse {
+                    entity: id.clone(),
+                    reversed: false,
+                });
+                entities.push(SketchEntity {
+                    id,
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Line {
+                        start: corners[edge_index],
+                        end: corners[(edge_index + 1) % corners.len()],
+                    },
+                });
+            }
+            profiles.push(profile);
+        }
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles,
+            native_ref: None,
+        };
+
         assert_eq!(
-            super::ordered_unique_profile_matches([
-                Some(vec![3]),
-                Some(vec![1]),
-                Some(vec![3]),
-                Some(vec![2]),
+            region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion {
+                outer: 0,
+                holes: vec![1],
+            })
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion {
+                outer: 1,
+                holes: vec![2],
+            })
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion {
+                outer: 2,
+                holes: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn historical_selection_preserves_first_member_region_order() {
+        let region = |outer| SketchProfileRegion {
+            outer,
+            holes: Vec::new(),
+        };
+        assert_eq!(
+            super::ordered_unique_region_matches([
+                Some(region(3)),
+                Some(region(1)),
+                Some(region(3)),
+                Some(region(2)),
             ]),
-            Some(vec![3, 1, 2])
+            Some(vec![region(3), region(1), region(2)])
         );
         assert_eq!(
-            super::ordered_unique_profile_matches([Some(vec![3]), Some(vec![1, 2])]),
-            None
-        );
-        assert_eq!(
-            super::ordered_unique_profile_matches([Some(vec![3]), None]),
+            super::ordered_unique_region_matches([Some(region(3)), None]),
             None
         );
     }
