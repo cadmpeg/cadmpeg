@@ -468,6 +468,7 @@ pub fn parse_standard_endpoint_candidates(
 struct IncidenceCandidateSearch<'a> {
     choices: &'a [Vec<[usize; 2]>],
     edge_faces: &'a [[usize; 2]],
+    face_edges: Vec<Vec<usize>>,
     edge_rows: &'a [EdgeRow],
     vertex_points: &'a [[f64; 3]],
     face_count: usize,
@@ -493,7 +494,7 @@ impl IncidenceCandidateSearch<'_> {
                 if self.degrees[face][point] != 1 {
                     continue;
                 }
-                let can_complete = (0..self.choices.len()).any(|edge| {
+                let can_complete = self.face_edges[face].iter().copied().any(|edge| {
                     self.assignment[edge].is_none()
                         && self.edge_faces[edge].contains(&face)
                         && self.choices[edge]
@@ -509,7 +510,10 @@ impl IncidenceCandidateSearch<'_> {
     }
 
     fn search(&mut self) {
-        const MAX_STATES: usize = 65_536;
+        // Candidate incidence is a fallback after native-port and trim-mesh
+        // propagation. Keep it bounded so unresolved geometric ambiguity
+        // declines atomically instead of making container decode unbounded.
+        const MAX_STATES: usize = 8_192;
         if self.solution.is_some() || self.states >= MAX_STATES {
             return;
         }
@@ -582,9 +586,18 @@ fn reconstruct_incidence_candidates(
         let mut seen = HashSet::new();
         candidates.retain(|pair| seen.insert(*pair));
     }
+    let mut face_edges = vec![Vec::new(); face_count];
+    for (edge, faces) in edge_faces.iter().enumerate() {
+        for &face in faces {
+            if face < face_count && !face_edges[face].contains(&edge) {
+                face_edges[face].push(edge);
+            }
+        }
+    }
     let mut search = IncidenceCandidateSearch {
         choices: &choices,
         edge_faces,
+        face_edges,
         edge_rows,
         vertex_points,
         face_count,
@@ -593,6 +606,26 @@ fn reconstruct_incidence_candidates(
         solution: None,
         states: 0,
     };
+    for edge in 0..choices.len() {
+        let [pair] = choices[edge].as_slice() else {
+            continue;
+        };
+        if !search.candidate_fits(edge, *pair) {
+            return None;
+        }
+        let mut faces = edge_faces[edge].to_vec();
+        faces.sort_unstable();
+        faces.dedup();
+        for face in faces {
+            for point in pair {
+                search.degrees[face][*point] += 1;
+            }
+        }
+        search.assignment[edge] = Some(*pair);
+    }
+    if !search.feasible() {
+        return None;
+    }
     search.search();
     search.solution
 }
