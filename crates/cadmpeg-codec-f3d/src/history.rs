@@ -674,6 +674,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.changed_candidate_faces.clear();
         operand.preceding_boundary_edge_slots.clear();
         operand.changed_boundary_edge_slots.clear();
+        operand.recipe_candidate_edge_slots.clear();
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -723,7 +724,60 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .copied()
             .filter(|edge| changed_edges.contains(edge))
             .collect();
+        operand.recipe_candidate_edge_slots = recipe_boundary_count_candidates(operand, topology);
     }
+}
+
+fn recipe_boundary_count_candidates(
+    operand: &crate::records::DesignEdgeOperand,
+    topology: &AsmHistoricalTopology,
+) -> Vec<i64> {
+    let Some(structure) = &operand.recipe_structure else {
+        return Vec::new();
+    };
+    if structure.sides.iter().any(|side| side.entries.len() > 1)
+        || structure.sides.iter().all(|side| side.entries.is_empty())
+    {
+        return Vec::new();
+    }
+    let required = structure
+        .sides
+        .iter()
+        .map(|side| {
+            side.entries
+                .first()
+                .map(|entry| i64::from(entry.boundary_edge_count.get()))
+        })
+        .collect::<Vec<_>>();
+    operand
+        .changed_boundary_edge_slots
+        .iter()
+        .copied()
+        .filter(|edge| {
+            let counts = edge_incident_loop_counts(*edge, topology);
+            required
+                .iter()
+                .all(|required| required.is_none_or(|count| counts.contains(&count)))
+        })
+        .collect()
+}
+
+fn edge_incident_loop_counts(edge: i64, topology: &AsmHistoricalTopology) -> Vec<i64> {
+    let owner_loops = topology
+        .coedge_topology
+        .iter()
+        .filter(|coedge| coedge.edge == edge)
+        .map(|coedge| coedge.owner_loop)
+        .collect::<HashSet<_>>();
+    let mut counts = topology
+        .loop_coedges
+        .iter()
+        .filter(|relation| owner_loops.contains(&relation.owner_ref))
+        .filter_map(|relation| i64::try_from(relation.member_refs.len()).ok())
+        .collect::<Vec<_>>();
+    counts.sort_unstable();
+    counts.dedup();
+    counts
 }
 
 fn bind_face_selection(
@@ -1550,6 +1604,7 @@ mod tests {
         assert_eq!(topology.loop_coedges[0].member_refs, [6]);
         assert_eq!(topology.coedge_topology[0].edge, 7);
         assert_eq!(topology.coedge_topology[0].radial_next, 6);
+        assert_eq!(edge_incident_loop_counts(7, &topology), [1]);
         assert_eq!(topology.edge_vertices[0].start_vertex, 8);
         assert_eq!(topology.edge_vertices[0].end_vertex, 9);
         assert_eq!(topology.face_surfaces[0].carrier, 20);

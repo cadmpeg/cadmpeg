@@ -4,6 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::num::NonZeroU32;
 
 use cadmpeg_ir::attributes::AttributeTarget;
 use cadmpeg_ir::ids::{BodyId, CoedgeId, EdgeId, FaceId, ShellId, VertexId};
@@ -1070,6 +1071,10 @@ pub struct DesignEdgeOperand {
     /// Preceding boundary-edge slots deleted or updated by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_slots: Vec<i64>,
+    /// Changed boundary-edge slots satisfying the recipe side clauses' face-loop
+    /// edge counts when each side carries at most one entry.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recipe_candidate_edge_slots: Vec<i64>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
@@ -1097,7 +1102,18 @@ pub struct DesignEdgeRecipeSide {
     /// Two-word prefix after the third clause delimiter.
     pub payload_prefix: [i32; 2],
     /// Ordered eight-word payload entries.
-    pub entries: Vec<[i32; 8]>,
+    pub entries: Vec<DesignEdgeRecipeEntry>,
+}
+
+/// One eight-word topology entry in an edge-recipe side clause.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeRecipeEntry {
+    /// Side-local selector.
+    pub selector: i32,
+    /// Number of boundary edges on the referenced face loop.
+    pub boundary_edge_count: NonZeroU32,
+    /// Six remaining topology-selector words.
+    pub signature: [i32; 6],
 }
 
 /// Face-selection operand owned by an Extrude parameter scope.

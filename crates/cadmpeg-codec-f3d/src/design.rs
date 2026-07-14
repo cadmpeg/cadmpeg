@@ -12,7 +12,7 @@ use crate::records::{
     DesignBodyMember, DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEdgeRecipeSide,
+    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEdgeRecipeEntry, DesignEdgeRecipeSide,
     DesignEdgeRecipeStructure, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
@@ -6794,6 +6794,7 @@ fn parse_edge_operand(
         changed_candidate_faces: Vec::new(),
         preceding_boundary_edge_slots: Vec::new(),
         changed_boundary_edge_slots: Vec::new(),
+        recipe_candidate_edge_slots: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -6820,6 +6821,8 @@ pub(crate) fn edge_recipe_structure(program: &[i32]) -> Option<DesignEdgeRecipeS
     {
         return None;
     }
+    let first_entries = edge_recipe_entries(&runs[4][2..])?;
+    let second_entries = edge_recipe_entries(&runs[8][2..])?;
     Some(DesignEdgeRecipeStructure {
         root: runs[0][0],
         sides: [
@@ -6828,23 +6831,30 @@ pub(crate) fn edge_recipe_structure(program: &[i32]) -> Option<DesignEdgeRecipeS
                 first: runs[2][0],
                 second: runs[3][0],
                 payload_prefix: [runs[4][0], runs[4][1]],
-                entries: runs[4][2..]
-                    .chunks_exact(8)
-                    .map(|entry| std::array::from_fn(|index| entry[index]))
-                    .collect(),
+                entries: first_entries,
             },
             DesignEdgeRecipeSide {
                 header: [runs[5][0], runs[5][1]],
                 first: runs[6][0],
                 second: runs[7][0],
                 payload_prefix: [runs[8][0], runs[8][1]],
-                entries: runs[8][2..]
-                    .chunks_exact(8)
-                    .map(|entry| std::array::from_fn(|index| entry[index]))
-                    .collect(),
+                entries: second_entries,
             },
         ],
     })
+}
+
+fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignEdgeRecipeEntry>> {
+    words
+        .chunks_exact(8)
+        .map(|entry| {
+            Some(DesignEdgeRecipeEntry {
+                selector: entry[0],
+                boundary_edge_count: std::num::NonZeroU32::new(u32::try_from(entry[1]).ok()?)?,
+                signature: std::array::from_fn(|index| entry[index + 2]),
+            })
+        })
+        .collect()
 }
 
 fn parse_face_operand(
@@ -11086,10 +11096,14 @@ mod relation_tests {
         assert_eq!(structured.sides[0].first, 2);
         assert_eq!(structured.sides[0].second, 1);
         assert_eq!(structured.sides[0].payload_prefix, [0, 1]);
-        assert_eq!(structured.sides[0].entries, [[1, 5, 4, 4, 4, 4, 3, 4]]);
+        assert_eq!(structured.sides[0].entries[0].selector, 1);
+        assert_eq!(structured.sides[0].entries[0].boundary_edge_count.get(), 5);
+        assert_eq!(structured.sides[0].entries[0].signature, [4, 4, 4, 4, 3, 4]);
         assert_eq!(structured.sides[1].header, [3, 0]);
         assert_eq!(structured.sides[1].payload_prefix, [0, 1]);
-        assert_eq!(structured.sides[1].entries, [[2, 5, 3, 3, 3, 1, 1, 1]]);
+        assert_eq!(structured.sides[1].entries[0].selector, 2);
+        assert_eq!(structured.sides[1].entries[0].boundary_edge_count.get(), 5);
+        assert_eq!(structured.sides[1].entries[0].signature, [3, 3, 3, 1, 1, 1]);
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(
