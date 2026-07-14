@@ -28,7 +28,7 @@ use cadmpeg_ir::spreadsheets::{
 };
 
 use crate::brep::ShapePayloadRecord;
-use crate::native::{ObjectRecord, PropertyRecord, ValueRecord};
+use crate::native::{EntryRecord, ObjectRecord, PropertyRecord, ValueRecord};
 
 const MAX_SKETCH_RECORDS: usize = 1_000_000;
 
@@ -37,6 +37,7 @@ pub(crate) fn transfer(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
+    entries: &[EntryRecord],
 ) -> Result<(), CodecError> {
     let properties_by_owner = properties.iter().fold(
         HashMap::<&str, Vec<&PropertyRecord>>::new(),
@@ -318,16 +319,20 @@ pub(crate) fn transfer(
                 }
             })
         } else if object.type_name.contains("Fillet") {
-            fillet_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
-                parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
+            fillet_definition(&object.type_name, &owned, entries).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
             })
         } else if object.type_name.contains("Chamfer") {
-            chamfer_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
-                kind: object.type_name.clone(),
-                parameters: native_parameters(&owned),
-                properties: BTreeMap::new(),
+            chamfer_definition(&object.type_name, &owned, entries).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
             })
         } else {
             FeatureDefinition::Native {
@@ -1848,21 +1853,21 @@ fn near(a: Point2, b: Point2) -> bool {
 }
 
 fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId>) -> ProfileRef {
-    ["Profile", "Base", "Source"]
-        .iter()
-        .find_map(|name| {
-            property(properties, name).and_then(|property| {
-                property
-                    .links
-                    .iter()
-                    .find_map(|link| link.object.as_deref())
-            })
-        })
-        .and_then(|target| sketches.get(target).cloned())
-        .map_or_else(
-            || ProfileRef::Native("unresolved FCStd profile".into()),
-            ProfileRef::Sketch,
-        )
+    let property_and_target = ["Profile", "Base", "Source"].iter().find_map(|name| {
+        let property = property(properties, name)?;
+        let target = property
+            .links
+            .iter()
+            .find_map(|link| link.object.as_deref())?;
+        (!target.is_empty()).then_some((property, target))
+    });
+    let Some((property, target)) = property_and_target else {
+        return ProfileRef::Native("unresolved FCStd profile".into());
+    };
+    sketches.get(target).cloned().map_or_else(
+        || ProfileRef::Native(property.id.clone()),
+        ProfileRef::Sketch,
+    )
 }
 
 fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
@@ -1933,7 +1938,7 @@ fn revolution_definition(
     let axis_reference_property = ["AxisLink", "ReferenceAxis"]
         .iter()
         .find_map(|name| property(properties, name))
-        .filter(|property| !property.links.is_empty());
+        .filter(|property| property.links.iter().any(nonempty_link));
     if axis_reference_property.is_some_and(|property| property.links.len() != 1) {
         return None;
     }
@@ -1989,22 +1994,24 @@ fn revolution_definition(
 }
 
 fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3> {
-    let value = property(properties, name)?
-        .values
-        .iter()
-        .find(|value| value.attributes.contains_key("x") || value.attributes.contains_key("X"))?;
-    let component = |lower: &str, upper: &str| {
+    let value = property(properties, name)?.values.iter().find(|value| {
+        value.attributes.contains_key("x")
+            || value.attributes.contains_key("X")
+            || value.attributes.contains_key("valueX")
+    })?;
+    let component = |lower: &str, upper: &str, property_name: &str| {
         value
             .attributes
             .get(lower)
-            .or_else(|| value.attributes.get(upper))?
+            .or_else(|| value.attributes.get(upper))
+            .or_else(|| value.attributes.get(property_name))?
             .parse::<f64>()
             .ok()
     };
     Some(Vector3::new(
-        component("x", "X")?,
-        component("y", "Y")?,
-        component("z", "Z")?,
+        component("x", "X", "valueX")?,
+        component("y", "Y", "valueY")?,
+        component("z", "Z", "valueZ")?,
     ))
 }
 
@@ -2467,13 +2474,27 @@ fn scale_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition>
     })
 }
 
-fn fillet_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+fn fillet_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    entries: &[EntryRecord],
+) -> Option<FeatureDefinition> {
     let edges = dress_up_edge_selection(properties);
     if matches!(edges, EdgeSelection::Unresolved) {
         return None;
     }
-    let radius =
-        scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?;
+    let radius = if kind == "Part::Fillet" {
+        let values = part_fillet_edge_values(properties, entries)?;
+        let radius = values.first()?.1;
+        values
+            .iter()
+            .all(|(_, first, second)| {
+                *first == radius && *second == radius && radius.is_finite() && radius > 0.0
+            })
+            .then_some(radius)?
+    } else {
+        scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?
+    };
     Some(FeatureDefinition::Fillet {
         edges,
         radius: RadiusSpec::Constant {
@@ -2482,17 +2503,68 @@ fn fillet_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition
     })
 }
 
-fn chamfer_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+fn chamfer_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    entries: &[EntryRecord],
+) -> Option<FeatureDefinition> {
     let edges = dress_up_edge_selection(properties);
     if matches!(edges, EdgeSelection::Unresolved) {
         return None;
     }
-    let spec = chamfer_spec(properties)?;
+    let spec = if kind == "Part::Chamfer" {
+        let values = part_fillet_edge_values(properties, entries)?;
+        let (_, first, second) = *values.first()?;
+        if !first.is_finite() || first <= 0.0 || !second.is_finite() || second <= 0.0 {
+            return None;
+        }
+        if !values.iter().all(|(_, candidate_first, candidate_second)| {
+            *candidate_first == first && *candidate_second == second
+        }) {
+            return None;
+        }
+        if first == second {
+            ChamferSpec::Distance {
+                distance: Length(first),
+            }
+        } else {
+            ChamferSpec::TwoDistances {
+                first: Length(first),
+                second: Length(second),
+            }
+        }
+    } else {
+        chamfer_spec(properties)?
+    };
     Some(FeatureDefinition::Chamfer {
         edges,
         spec,
         flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
     })
+}
+
+fn part_fillet_edge_values(
+    properties: &[&PropertyRecord],
+    entries: &[EntryRecord],
+) -> Option<Vec<(u32, f64, f64)>> {
+    let property = property(properties, "Edges")?;
+    let entry_name = property.side_entries.as_slice().first()?;
+    let data = &entries.iter().find(|entry| entry.name == *entry_name)?.data;
+    let count = u32::from_le_bytes(data.get(0..4)?.try_into().ok()?) as usize;
+    let expected = 4_usize.checked_add(count.checked_mul(20)?)?;
+    if data.len() != expected || count > MAX_SKETCH_RECORDS {
+        return None;
+    }
+    data[4..]
+        .chunks_exact(20)
+        .map(|record| {
+            Some((
+                u32::from_le_bytes(record[0..4].try_into().ok()?),
+                f64::from_le_bytes(record[4..12].try_into().ok()?),
+                f64::from_le_bytes(record[12..20].try_into().ok()?),
+            ))
+        })
+        .collect()
 }
 
 fn shell_mode(properties: &[&PropertyRecord]) -> Option<ShellMode> {
@@ -2637,7 +2709,7 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
     }
     let origin = vector_property(properties, "Base")?;
     let plane_reference = property(properties, "MirrorPlane")
-        .filter(|property| !property.links.is_empty())
+        .filter(|property| property.links.iter().any(nonempty_link))
         .map(|property| cadmpeg_ir::features::FaceSelection::Native(property.id.clone()));
     Some(FeatureDefinition::MirrorShape {
         source: BodySelection::Native(source.id.clone()),
@@ -2746,6 +2818,14 @@ fn property<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a Pro
         .iter()
         .copied()
         .find(|property| property.name == name)
+}
+
+fn nonempty_link(link: &crate::native::LinkTarget) -> bool {
+    link.document.is_some()
+        || link
+            .object
+            .as_deref()
+            .is_some_and(|object| !object.is_empty())
 }
 
 fn scalar_value(property: &PropertyRecord) -> Option<f64> {

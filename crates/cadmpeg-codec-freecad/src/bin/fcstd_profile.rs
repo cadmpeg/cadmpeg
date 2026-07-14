@@ -407,7 +407,7 @@ fn gates(
         "loft",
         "fillet",
         "chamfer",
-        "thicken",
+        "shell",
         "draft",
         "combine",
         "hole",

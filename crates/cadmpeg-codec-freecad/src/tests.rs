@@ -16,7 +16,14 @@ fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
 
 #[test]
 fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
-    let fixtures: [(&str, &[u8]); 8] = [
+    let fixtures: [(&str, &[u8]); 9] = [
+        (
+            "core_operations.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/core_operations.FCStd"
+            )),
+        ),
         (
             "sketch_constraints.FCStd",
             include_bytes!(concat!(
@@ -4984,6 +4991,34 @@ Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 +3 0 -2 0 *
     assert_eq!(result.ir.model.shells.len(), 1);
     assert_eq!(result.ir.model.shells[0].wire_edges.len(), 1);
     assert!(result.ir.model.shells[0].faces.is_empty());
+}
+
+#[test]
+fn preserves_an_unbounded_edge_as_a_free_exact_curve() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="PartDesign::Line" name="Axis" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Axis"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Axis.brp"/></Property></Properties></Object></ObjectData>
+</Document>"#;
+    let brep = b"CASCADE Topology V1, (c) Matra-Datavision
+Locations 0
+Curve2ds 0
+Curves 1
+1 0 0 0 0 0 1
+Polygon3D 0
+PolygonOnTriangulations 0
+Surfaces 0
+Triangulations 0
+TShapes 1
+Ed 0.001 1 1 0 1 1 0 0 1 0 1001000 *
++1 0 *";
+    let bytes = archive_entries(&[("Document.xml", document.as_bytes()), ("Axis.brp", brep)]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("unbounded datum axis");
+    assert!(result.ir.model.bodies.is_empty());
+    assert_eq!(result.ir.model.curves.len(), 1);
+    assert!(result.ir.model.curves[0].source_object.is_some());
+    assert_valid_document(&result.ir);
 }
 
 #[test]

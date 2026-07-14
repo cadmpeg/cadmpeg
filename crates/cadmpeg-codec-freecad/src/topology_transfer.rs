@@ -272,7 +272,29 @@ impl<'a> Builder<'a> {
 
     fn append_body(&mut self, ir: &mut CadIr, root: BodyRoot) -> Result<(), CodecError> {
         self.body_scope = root.transform;
-        let root_kind = self.shape(root.shape)?.kind;
+        let root_shape = self.shape(root.shape)?;
+        let root_kind = root_shape.kind;
+        if root_kind == TextShapeKind::Edge && root_shape.children.is_empty() {
+            let TextTShapeGeometry::Edge {
+                degenerated,
+                representations,
+                ..
+            } = &root_shape.geometry
+            else {
+                unreachable!("edge kind and geometry must agree")
+            };
+            if !degenerated
+                && !representations
+                    .iter()
+                    .any(|representation| representation.kind == 1)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "unbounded edge TShape {} has no exact curve",
+                    root.shape
+                )));
+            }
+            return Ok(());
+        }
         let body_key = occurrence_label(root.shape, root.transform);
         let body_id = BodyId(crate::native::model_id("body", &self.payload.id, &body_key));
         self.current_body = Some(body_id.clone());

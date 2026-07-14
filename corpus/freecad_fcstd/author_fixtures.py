@@ -40,6 +40,7 @@ def normalize_fcstd(target):
         output.comment = b"cadmpeg CC0 FCStd fixture"
         persistent_ids = {}
         history_tags = {}
+        design_tags = {}
         element_map_child_ids = {}
 
         def stable_persistent_id(match):
@@ -55,6 +56,13 @@ def normalize_fcstd(target):
                 source_tag, f"{len(history_tags) + 1:x}".encode()
             )
             return match.group(1) + b":" + target_tag
+
+        def stable_design_tag(match):
+            source_tag = match.group(1)
+            target_tag = design_tags.setdefault(
+                source_tag, f"{len(design_tags) + 1:x}".encode()
+            )
+            return b";D" + target_tag + b";"
 
         def stable_element_map_child_id(match):
             source_id = match.group(2)
@@ -122,6 +130,7 @@ def normalize_fcstd(target):
                     stable_history_tag,
                     data,
                 )
+                data = re.sub(rb";D([0-9a-fA-F]+);", stable_design_tag, data)
                 if source_info.filename.endswith(".Map.txt"):
                     data = re.sub(
                         rb"(?m)^(\d+ \d+ \d+ )(\d+)( \d+ ;:H)",

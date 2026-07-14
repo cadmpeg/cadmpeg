@@ -1,7 +1,7 @@
 {
   "profile_version": 2,
   "format": "fcstd",
-  "manifest_sha256": "625700d8dafc7b092035008eea577ea454cc28a2e6ac792541d8fdca03970771",
+  "manifest_sha256": "cdfb6903c23ca1d8a3d1832ecf02b59a23ecde221e9deebe1cb70ccb0ce15bac",
   "manifest_verified": true,
   "envelope": {
     "container": "ZIP-packaged FCStd",
@@ -186,6 +186,67 @@
         "surfaces_unknown_geometry": 0,
         "tessellations": 0,
         "vertices": 32,
+        "view_presentations": 0
+      }
+    },
+    {
+      "filename": "core_operations.FCStd",
+      "sha256": "9b4c0a01153737fea1c1704eb945800afc458857045fdf975ad87e2b1b7c8b32",
+      "canonical_cadir_sha256": "e61edd1ea1ececf22b6275f609bb348637b3e44c5811df378dd918155b37ec2f",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 19,
+        "coedges": 212,
+        "components": 0,
+        "configurations": 0,
+        "curves": 121,
+        "drawings": 0,
+        "edges": 114,
+        "faces": 59,
+        "features": 20,
+        "loops": 58,
+        "native.fcstd.applications": 21,
+        "native.fcstd.attachments": 20,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 20,
+        "native.fcstd.design_census": 20,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 7,
+        "native.fcstd.entries": 32,
+        "native.fcstd.extensions": 5,
+        "native.fcstd.logical_ledger": 581,
+        "native.fcstd.objects": 21,
+        "native.fcstd.physical_ledger": 225,
+        "native.fcstd.properties": 275,
+        "native.fcstd.shape_payloads": 21,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 4,
+        "pcurves": 206,
+        "points": 82,
+        "presentation_documents": 0,
+        "procedural_curves": 4,
+        "procedural_surfaces": 6,
+        "regions": 19,
+        "semantic_annotations": 0,
+        "shells": 19,
+        "sketch_constraints": 0,
+        "sketch_entities": 1,
+        "sketches": 1,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 69,
+        "surfaces_unknown_geometry": 2,
+        "tessellations": 0,
+        "vertices": 82,
         "view_presentations": 0
       }
     },
@@ -505,6 +566,7 @@
     "curves_2d": [
       "circle",
       "line",
+      "nurbs",
       "trimmed"
     ],
     "curves_3d": [
@@ -517,6 +579,7 @@
     "surfaces": [
       "cone",
       "cylinder",
+      "extrusion",
       "nurbs",
       "plane",
       "sphere",
@@ -533,10 +596,21 @@
       "wire"
     ],
     "feature_definitions": [
+      "chamfer",
+      "datum_axis",
+      "datum_coordinate_system",
+      "datum_plane",
+      "datum_point",
+      "fillet",
+      "loft",
+      "mirror_shape",
       "post_process",
       "primitive",
+      "revolve",
+      "shell",
       "sketch",
       "stored_geometry",
+      "sweep",
       "tree_node"
     ],
     "feature_operations": [
@@ -576,14 +650,25 @@
       "App::Point",
       "Mesh::Feature",
       "Part::Box",
+      "Part::Chamfer",
       "Part::Cut",
       "Part::Cylinder",
       "Part::Feature",
+      "Part::Fillet",
+      "Part::Loft",
+      "Part::Mirroring",
+      "Part::Revolution",
+      "Part::Sweep",
+      "Part::Thickness",
       "PartDesign::Body",
+      "PartDesign::CoordinateSystem",
       "PartDesign::Feature",
       "PartDesign::Fillet",
+      "PartDesign::Line",
       "PartDesign::Pad",
+      "PartDesign::Plane",
       "PartDesign::Pocket",
+      "PartDesign::Point",
       "Points::Feature",
       "Sketcher::SketchObject",
       "Spreadsheet::Sheet",
@@ -644,6 +729,7 @@
       "sketches",
       "spreadsheets",
       "surfaces",
+      "surfaces_unknown_geometry",
       "tessellations",
       "vertices",
       "view_presentations"
@@ -699,13 +785,13 @@
         {
           "id": "carrier_families",
           "passed": true,
-          "observed": "{\"circle\", \"cone\", \"cylinder\", \"ellipse\", \"line\", \"nurbs\", \"plane\", \"sphere\", \"torus\", \"trimmed\"}",
+          "observed": "{\"circle\", \"cone\", \"cylinder\", \"ellipse\", \"extrusion\", \"line\", \"nurbs\", \"plane\", \"sphere\", \"torus\", \"trimmed\"}",
           "required": "{\"circle\", \"cone\", \"cylinder\", \"ellipse\", \"line\", \"nurbs\", \"plane\", \"sphere\", \"torus\", \"trimmed\"}"
         },
         {
           "id": "application_geometry",
           "passed": true,
-          "observed": "tessellations=1, points=247",
+          "observed": "tessellations=1, points=329",
           "required": "mesh tessellation and point data"
         }
       ]
@@ -735,7 +821,7 @@
         {
           "id": "design_records",
           "passed": true,
-          "observed": "features=34, sketches=10, constraints=41, parameters=28",
+          "observed": "features=54, sketches=11, constraints=41, parameters=32",
           "required": "nonempty feature, sketch, constraint, and parameter graphs"
         },
         {
@@ -771,8 +857,8 @@
         {
           "id": "core_operation_families",
           "passed": false,
-          "observed": "{\"combine\", \"extrude\", \"fillet\", \"post_process\", \"primitive\", \"sketch\", \"stored_geometry\", \"tree_node\"}",
-          "required": "{\"chamfer\", \"combine\", \"datum_axis\", \"datum_coordinate_system\", \"datum_plane\", \"datum_point\", \"draft\", \"extrude\", \"fillet\", \"hole\", \"loft\", \"mirror_shape\", \"pattern\", \"primitive\", \"revolve\", \"sketch\", \"sweep\", \"thicken\"}"
+          "observed": "{\"chamfer\", \"combine\", \"datum_axis\", \"datum_coordinate_system\", \"datum_plane\", \"datum_point\", \"extrude\", \"fillet\", \"loft\", \"mirror_shape\", \"post_process\", \"primitive\", \"revolve\", \"shell\", \"sketch\", \"stored_geometry\", \"sweep\", \"tree_node\"}",
+          "required": "{\"chamfer\", \"combine\", \"datum_axis\", \"datum_coordinate_system\", \"datum_plane\", \"datum_point\", \"draft\", \"extrude\", \"fillet\", \"hole\", \"loft\", \"mirror_shape\", \"pattern\", \"primitive\", \"revolve\", \"shell\", \"sketch\", \"sweep\"}"
         },
         {
           "id": "non_default_operation_branches",
@@ -813,7 +899,7 @@
         {
           "id": "application_retention",
           "passed": true,
-          "observed": "application types={\"App::FeaturePython\", \"App::Line\", \"App::Link\", \"App::Origin\", \"App::Part\", \"App::Plane\", \"App::Point\", \"Mesh::Feature\", \"Part::Box\", \"Part::Cut\", \"Part::Cylinder\", \"Part::Feature\", \"PartDesign::Body\", \"PartDesign::Feature\", \"PartDesign::Fillet\", \"PartDesign::Pad\", \"PartDesign::Pocket\", \"Points::Feature\", \"Sketcher::SketchObject\", \"Spreadsheet::Sheet\", \"TechDraw::DrawPage\", \"TechDraw::DrawSVGTemplate\", \"TechDraw::DrawViewAnnotation\", \"TechDraw::DrawViewPart\", \"TechDraw::DrawViewSymbol\"}, exact=true",
+          "observed": "application types={\"App::FeaturePython\", \"App::Line\", \"App::Link\", \"App::Origin\", \"App::Part\", \"App::Plane\", \"App::Point\", \"Mesh::Feature\", \"Part::Box\", \"Part::Chamfer\", \"Part::Cut\", \"Part::Cylinder\", \"Part::Feature\", \"Part::Fillet\", \"Part::Loft\", \"Part::Mirroring\", \"Part::Revolution\", \"Part::Sweep\", \"Part::Thickness\", \"PartDesign::Body\", \"PartDesign::CoordinateSystem\", \"PartDesign::Feature\", \"PartDesign::Fillet\", \"PartDesign::Line\", \"PartDesign::Pad\", \"PartDesign::Plane\", \"PartDesign::Pocket\", \"PartDesign::Point\", \"Points::Feature\", \"Sketcher::SketchObject\", \"Spreadsheet::Sheet\", \"TechDraw::DrawPage\", \"TechDraw::DrawSVGTemplate\", \"TechDraw::DrawViewAnnotation\", \"TechDraw::DrawViewPart\", \"TechDraw::DrawViewSymbol\"}, exact=true",
           "required": "application records and exact byte coverage"
         }
       ]
