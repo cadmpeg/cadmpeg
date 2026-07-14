@@ -2620,6 +2620,7 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
             .cloned()
             .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
         spec,
+        flip_direction: false,
     }
 }
 
@@ -4793,7 +4794,17 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Chamfer { edges, spec } => {
+            FeatureDefinition::Chamfer {
+                edges,
+                spec,
+                flip_direction,
+            } => {
+                if *flip_direction {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses an unsupported reversed chamfer reference side",
+                        feature.id
+                    )));
+                }
                 let selection = edge_selection_value(edges);
                 if selection.is_none()
                     && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())

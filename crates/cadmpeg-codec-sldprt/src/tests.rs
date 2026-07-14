@@ -2257,6 +2257,7 @@ fn encoder_writes_source_less_native_features() {
                 first: Length(1.0),
                 second: Length(2.0),
             },
+            flip_direction: false,
         },
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Resolved {
@@ -7755,7 +7756,8 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             spec: ChamferSpec::DistanceAngle {
                 distance: Length(0.3),
                 angle: Angle(angle),
-            }
+            },
+            ..
         } if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
     ));
     assert_eq!(
@@ -7912,6 +7914,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
             spec: ChamferSpec::Distance {
                 distance: Length(2.0),
             },
+            ..
         } if edges == "edge:1"
     ));
     assert!(matches!(
@@ -7956,7 +7959,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .zip(replacements)
         .enumerate()
     {
-        let FeatureDefinition::Chamfer { edges, spec } = &mut feature.definition else {
+        let FeatureDefinition::Chamfer { edges, spec, .. } = &mut feature.definition else {
             panic!("typed chamfer feature");
         };
         *spec = replacement;

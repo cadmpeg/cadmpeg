@@ -351,3 +351,10 @@ first-intersection, and selected-face termination remain distinct. Reversal chan
 axis rather than the magnitude of the angular extent. Standalone Part revolutions create a new
 body, PartDesign revolutions join, and grooves cut. A missing profile, zero axis, invalid angle, or
 incomplete selected termination remains an attributable native operation.
+
+Part and PartDesign fillets distinguish an explicit edge selection from the persisted all-edges
+mode and require a finite positive constant radius. Chamfers retain equal-distance,
+two-distance, and distance-angle dimensions plus the persisted reference-side reversal. Their
+linear dimensions must be finite and positive, and their angle must lie strictly between zero and
+180 degrees. An absent selection or invalid dimensional law remains an attributable native
+operation rather than an unresolved neutral dress-up feature.

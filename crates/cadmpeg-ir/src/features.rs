@@ -471,6 +471,9 @@ pub enum FeatureDefinition {
         edges: EdgeSelection,
         /// Dimensional definition of the chamfer.
         spec: ChamferSpec,
+        /// Whether the dimensional reference side is reversed.
+        #[serde(default)]
+        flip_direction: bool,
     },
     /// Thin-wall shell operation.
     Shell {
@@ -1116,6 +1119,8 @@ pub enum ThickenSide {
 pub enum EdgeSelection {
     /// Selection exists semantically but its operands are not resolved.
     Unresolved,
+    /// Every edge of the operation's input body.
+    All,
     /// Resolved topological edges.
     Edges(Vec<EdgeId>),
     /// Resolved edges paired with the format-native selection required for rewrite.

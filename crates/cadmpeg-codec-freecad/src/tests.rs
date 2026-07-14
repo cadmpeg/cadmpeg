@@ -299,15 +299,17 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property>
  </Properties></Object>
- <Object name="Fillet"><Properties Count="2">
+ <Object name="Fillet"><Properties Count="3">
   <Property name="Base" type="App::PropertyLinkSub"><Link object="Revolution" sub="Edge1"/></Property>
   <Property name="Radius" type="App::PropertyLength"><Float value="2"/></Property>
+  <Property name="UseAllEdges" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
- <Object name="Chamfer"><Properties Count="4">
+ <Object name="Chamfer"><Properties Count="5">
   <Property name="Base" type="App::PropertyLinkSub"><Link object="Fillet" sub="Edge2"/></Property>
   <Property name="ChamferType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Size" type="App::PropertyLength"><Float value="1.5"/></Property>
   <Property name="Angle" type="App::PropertyAngle"><Float value="30"/></Property>
+  <Property name="FlipDirection" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -340,6 +342,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
     assert!(matches!(
         definition("Fillet"),
         cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::All,
             radius: cadmpeg_ir::features::RadiusSpec::Constant {
                 radius: cadmpeg_ir::features::Length(2.0)
             },
@@ -353,6 +356,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
                 distance: cadmpeg_ir::features::Length(1.5),
                 angle,
             },
+            flip_direction: true,
             ..
         } if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
     ));
@@ -516,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "18");
+    assert_eq!(result.ir.ir_version, "19");
     let feature = |name: &str| {
         &result
             .ir

@@ -214,22 +214,17 @@ pub(crate) fn transfer(
                 }
             })
         } else if object.type_name.contains("Fillet") {
-            FeatureDefinition::Fillet {
-                edges: native_edge_selection(&owned),
-                radius: property(&owned, "Radius").and_then(scalar_value).map_or(
-                    RadiusSpec::Unresolved {
-                        form: Some(cadmpeg_ir::features::RadiusForm::Constant),
-                    },
-                    |radius| RadiusSpec::Constant {
-                        radius: Length(radius),
-                    },
-                ),
-            }
+            fillet_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else if object.type_name.contains("Chamfer") {
-            FeatureDefinition::Chamfer {
-                edges: native_edge_selection(&owned),
-                spec: chamfer_spec(&owned),
-            }
+            chamfer_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
         } else {
             FeatureDefinition::Native {
                 kind: object.type_name.clone(),
@@ -1745,9 +1740,40 @@ fn extrusion_definition(
     })
 }
 
-fn native_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
+fn dress_up_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
+    if bool_property(properties, "UseAllEdges").unwrap_or(false) {
+        return EdgeSelection::All;
+    }
     property(properties, "Base").map_or(EdgeSelection::Unresolved, |property| {
         EdgeSelection::Native(property.id.clone())
+    })
+}
+
+fn fillet_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let edges = dress_up_edge_selection(properties);
+    if matches!(edges, EdgeSelection::Unresolved) {
+        return None;
+    }
+    let radius =
+        scalar_named(properties, "Radius").filter(|radius| radius.is_finite() && *radius > 0.0)?;
+    Some(FeatureDefinition::Fillet {
+        edges,
+        radius: RadiusSpec::Constant {
+            radius: Length(radius),
+        },
+    })
+}
+
+fn chamfer_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let edges = dress_up_edge_selection(properties);
+    if matches!(edges, EdgeSelection::Unresolved) {
+        return None;
+    }
+    let spec = chamfer_spec(properties)?;
+    Some(FeatureDefinition::Chamfer {
+        edges,
+        spec,
+        flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
     })
 }
 
@@ -1810,34 +1836,32 @@ fn draft_definition(
     })
 }
 
-fn chamfer_spec(properties: &[&PropertyRecord]) -> ChamferSpec {
+fn chamfer_spec(properties: &[&PropertyRecord]) -> Option<ChamferSpec> {
     let mode = property(properties, "ChamferType")
         .and_then(scalar_value)
         .unwrap_or(-1.0) as i64;
-    let first = property(properties, "Size").and_then(scalar_value);
+    let first = property(properties, "Size")
+        .and_then(scalar_value)
+        .filter(|value| value.is_finite() && *value > 0.0);
     match (mode, first) {
-        (0, Some(distance)) => ChamferSpec::Distance {
+        (0, Some(distance)) => Some(ChamferSpec::Distance {
             distance: Length(distance),
-        },
-        (1, Some(first)) => property(properties, "Size2").and_then(scalar_value).map_or(
-            ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::TwoDistances),
-            },
-            |second| ChamferSpec::TwoDistances {
+        }),
+        (1, Some(first)) => property(properties, "Size2")
+            .and_then(scalar_value)
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .map(|second| ChamferSpec::TwoDistances {
                 first: Length(first),
                 second: Length(second),
-            },
-        ),
-        (2, Some(distance)) => property(properties, "Angle").and_then(scalar_value).map_or(
-            ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
-            },
-            |angle| ChamferSpec::DistanceAngle {
+            }),
+        (2, Some(distance)) => property(properties, "Angle")
+            .and_then(scalar_value)
+            .filter(|angle| angle.is_finite() && *angle > 0.0 && *angle < 180.0)
+            .map(|angle| ChamferSpec::DistanceAngle {
                 distance: Length(distance),
                 angle: cadmpeg_ir::features::Angle(angle.to_radians()),
-            },
-        ),
-        _ => ChamferSpec::Unresolved { form: None },
+            }),
+        _ => None,
     }
 }
 
