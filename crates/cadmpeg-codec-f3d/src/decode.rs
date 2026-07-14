@@ -175,6 +175,12 @@ pub fn decode(
                 &native.design_face_operands,
                 &native.design_sketch_placements,
             );
+            crate::history::bind_feature_outputs(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &native.asm_histories,
+                &ir.model.bodies,
+            );
             (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
                 &native.design_sketch_placements,
                 &native.sketch_points,
@@ -363,6 +369,12 @@ pub fn decode(
         &native.design_fillet_radius_groups,
         &native.design_face_operands,
         &native.design_sketch_placements,
+    );
+    crate::history::bind_feature_outputs(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+        &ir.model.bodies,
     );
     (ir.model.sketches, ir.model.sketch_entities) = crate::design::project_sketch_design(
         &native.design_sketch_placements,

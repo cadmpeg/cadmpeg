@@ -440,6 +440,229 @@ fn entity_delta(
     }
 }
 
+pub(crate) fn bind_feature_outputs(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+    active_bodies: &[cadmpeg_ir::topology::Body],
+) {
+    let mut state_outputs = HashMap::<i64, Option<Vec<i64>>>::new();
+    for history in histories {
+        let by_node = history
+            .states
+            .iter()
+            .map(|state| (state.node_index, state))
+            .collect::<HashMap<_, _>>();
+        if by_node.len() != history.states.len() {
+            continue;
+        }
+        for state in &history.states {
+            let previous = match state.next_ref {
+                Some(node) => match by_node.get(&node) {
+                    Some(previous) => Some(*previous),
+                    None => continue,
+                },
+                None => None,
+            };
+            let Some(outputs) = affected_body_refs(state, previous) else {
+                continue;
+            };
+            state_outputs
+                .entry(state.state_id)
+                .and_modify(|outputs| *outputs = None)
+                .or_insert_with(|| Some(outputs));
+        }
+    }
+    let active = active_bodies
+        .iter()
+        .filter_map(|body| stable_ref(&body.id.0).map(|slot| (slot, body.id.clone())))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+        else {
+            continue;
+        };
+        let (Some(state_id), Some(previous_state_id)) =
+            (scope.history_state_id, scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let Some(Some(outputs)) = state_outputs.get(&state_id) else {
+            continue;
+        };
+        let transition_matches = histories
+            .iter()
+            .flat_map(|history| &history.states)
+            .filter(|state| state.state_id == state_id)
+            .map(|state| {
+                state
+                    .transition
+                    .as_ref()
+                    .and_then(|transition| transition.previous_state_id)
+                    == Some(previous_state_id)
+            })
+            .eq([true]);
+        if transition_matches {
+            feature.outputs = outputs
+                .iter()
+                .filter_map(|slot| active.get(slot).cloned())
+                .collect();
+        }
+    }
+}
+
+fn stable_ref(id: &str) -> Option<i64> {
+    id.rsplit_once('#')?
+        .1
+        .split(':')
+        .next()?
+        .parse::<i64>()
+        .ok()
+}
+
+fn affected_body_refs(
+    current: &AsmDeltaState,
+    previous: Option<&AsmDeltaState>,
+) -> Option<Vec<i64>> {
+    let transition = current.transition.as_ref()?;
+    if transition.previous_state_id != previous.map(|state| state.state_id) {
+        return None;
+    }
+    let current_topology = current.topology.as_ref()?;
+    let current_changes = changed_family_refs(&transition.topology, false);
+    let mut affected = bodies_intersecting(current_topology, &current_changes)?;
+    if let Some(previous) = previous {
+        let previous_topology = previous.topology.as_ref()?;
+        let deleted = changed_family_refs(&transition.topology, true);
+        affected.extend(bodies_intersecting(previous_topology, &deleted)?);
+    }
+    Some(affected.into_iter().collect())
+}
+
+fn changed_family_refs(delta: &AsmHistoricalTopologyDelta, deleted: bool) -> BTreeSet<i64> {
+    let families = [
+        &delta.bodies,
+        &delta.regions,
+        &delta.shells,
+        &delta.faces,
+        &delta.loops,
+        &delta.coedges,
+        &delta.edges,
+        &delta.vertices,
+        &delta.points,
+        &delta.surfaces,
+        &delta.curves,
+        &delta.pcurves,
+    ];
+    families
+        .into_iter()
+        .flat_map(|family| {
+            if deleted {
+                family.deleted.clone()
+            } else {
+                family
+                    .inserted
+                    .iter()
+                    .chain(&family.updated)
+                    .copied()
+                    .collect()
+            }
+        })
+        .collect()
+}
+
+fn bodies_intersecting(
+    topology: &AsmHistoricalTopology,
+    changed: &BTreeSet<i64>,
+) -> Option<BTreeSet<i64>> {
+    let body_regions = relation_map(&topology.body_regions);
+    let region_shells = relation_map(&topology.region_shells);
+    let shell_faces = relation_map(&topology.shell_faces);
+    let shell_wire_edges = relation_map(&topology.shell_wire_edges);
+    let shell_free_vertices = relation_map(&topology.shell_free_vertices);
+    let face_loops = relation_map(&topology.face_loops);
+    let loop_coedges = relation_map(&topology.loop_coedges);
+    let coedges = topology
+        .coedge_topology
+        .iter()
+        .map(|coedge| (coedge.coedge, coedge))
+        .collect::<HashMap<_, _>>();
+    let edges = topology
+        .edge_vertices
+        .iter()
+        .map(|edge| (edge.edge, edge))
+        .collect::<HashMap<_, _>>();
+    let carrier = |items: &[AsmHistoricalCarrierBinding]| {
+        items
+            .iter()
+            .map(|binding| (binding.entity, binding.carrier))
+            .collect::<HashMap<_, _>>()
+    };
+    let optional_carrier = |items: &[AsmHistoricalOptionalCarrierBinding]| {
+        items
+            .iter()
+            .map(|binding| (binding.entity, binding.carrier))
+            .collect::<HashMap<_, _>>()
+    };
+    let face_surfaces = carrier(&topology.face_surfaces);
+    let edge_curves = optional_carrier(&topology.edge_curves);
+    let coedge_pcurves = optional_carrier(&topology.coedge_pcurves);
+    let vertex_points = carrier(&topology.vertex_points);
+    let mut affected = BTreeSet::new();
+    for &body in &topology.bodies {
+        let mut closure = BTreeSet::from([body]);
+        for &region in *body_regions.get(&body)? {
+            closure.insert(region);
+            for &shell in *region_shells.get(&region)? {
+                closure.insert(shell);
+                let mut shell_edges = shell_wire_edges.get(&shell)?.to_vec();
+                let mut shell_vertices = shell_free_vertices.get(&shell)?.to_vec();
+                for &face in *shell_faces.get(&shell)? {
+                    closure.insert(face);
+                    closure.insert(*face_surfaces.get(&face)?);
+                    for &loop_ in *face_loops.get(&face)? {
+                        closure.insert(loop_);
+                        for &coedge in *loop_coedges.get(&loop_)? {
+                            closure.insert(coedge);
+                            let coedge_topology = coedges.get(&coedge)?;
+                            shell_edges.push(coedge_topology.edge);
+                            if let Some(pcurve) = coedge_pcurves.get(&coedge).copied().flatten() {
+                                closure.insert(pcurve);
+                            }
+                        }
+                    }
+                }
+                for edge in shell_edges {
+                    closure.insert(edge);
+                    let edge_topology = edges.get(&edge)?;
+                    shell_vertices.extend([edge_topology.start_vertex, edge_topology.end_vertex]);
+                    if let Some(curve) = edge_curves.get(&edge).copied().flatten() {
+                        closure.insert(curve);
+                    }
+                }
+                for vertex in shell_vertices {
+                    closure.insert(vertex);
+                    closure.insert(*vertex_points.get(&vertex)?);
+                }
+            }
+        }
+        if !closure.is_disjoint(changed) {
+            affected.insert(body);
+        }
+    }
+    Some(affected)
+}
+
+fn relation_map(items: &[AsmHistoricalRelation]) -> HashMap<i64, &[i64]> {
+    items
+        .iter()
+        .map(|relation| (relation.owner_ref, relation.member_refs.as_slice()))
+        .collect()
+}
+
 fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology> {
     fn entity_ref(id: &str) -> Option<i64> {
         id.rsplit_once('#')?
@@ -925,6 +1148,14 @@ mod tests {
         assert_eq!(topology.edge_curves[0].carrier, Some(21));
         assert_eq!(topology.coedge_pcurves[0].carrier, None);
         assert_eq!(topology.vertex_points[0].carrier, 28);
+        assert_eq!(
+            bodies_intersecting(&topology, &BTreeSet::from([20])).unwrap(),
+            BTreeSet::from([1])
+        );
+        assert_eq!(
+            bodies_intersecting(&topology, &BTreeSet::from([28])).unwrap(),
+            BTreeSet::from([1])
+        );
     }
 
     #[test]
