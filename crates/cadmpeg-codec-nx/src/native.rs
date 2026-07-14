@@ -538,6 +538,10 @@ pub struct FeatureDatumPlaneDescriptor {
     pub identity: String,
     /// Exact descriptor suffix beginning with `?`.
     pub suffix: Vec<u8>,
+    /// Non-null compact schema index following `?A`.
+    pub schema_index: u32,
+    /// Nonempty printable terminal label.
+    pub label: String,
     /// Absolute source offset of the descriptor block.
     pub source_offset: u64,
 }
@@ -2001,6 +2005,8 @@ pub fn feature_datum_plane_descriptors(
                         data_block: data_block.clone(),
                         identity: descriptor.identity,
                         suffix: descriptor.suffix,
+                        schema_index: descriptor.schema_index,
+                        label: descriptor.label,
                         source_offset,
                     })
                 })

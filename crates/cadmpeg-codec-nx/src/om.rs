@@ -501,6 +501,10 @@ pub struct DatumPlaneDescriptorBlock {
     pub identity: String,
     /// Exact descriptor suffix beginning with `?`.
     pub suffix: Vec<u8>,
+    /// Non-null compact schema index following `?A`.
+    pub schema_index: u32,
+    /// Nonempty printable terminal label.
+    pub label: String,
 }
 
 /// Fixed scalar header in one bounded extrusion payload.
@@ -1825,9 +1829,26 @@ pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<DatumPlaneDescriptor
     {
         return None;
     }
+    let suffix = bytes.get(delimiter..)?;
+    if suffix.get(..2) != Some(b"?A") {
+        return None;
+    }
+    let (CompactIndex::Value(schema_index), width) = compact_index(suffix.get(2..)?)? else {
+        return None;
+    };
+    let label_start = 2 + width + 3;
+    if suffix.get(2 + width..label_start) != Some(&[0xff, 0x02, 0x01]) {
+        return None;
+    }
+    let label = suffix.get(label_start..)?;
+    if label.is_empty() || !label.iter().all(u8::is_ascii_graphic) {
+        return None;
+    }
     Some(DatumPlaneDescriptorBlock {
         identity: std::str::from_utf8(identity).ok()?.to_string(),
-        suffix: bytes[delimiter..].to_vec(),
+        suffix: suffix.to_vec(),
+        schema_index,
+        label: std::str::from_utf8(label).ok()?.to_string(),
     })
 }
 
