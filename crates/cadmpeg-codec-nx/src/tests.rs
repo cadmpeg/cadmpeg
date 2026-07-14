@@ -55,6 +55,22 @@ fn segment_stream_payload() -> Vec<u8> {
     payload
 }
 
+fn segment_body_binding_payload() -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [7u32, 9, 11, 1, 1, 48, 64, 0, 94, 150, 19, 0] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(64, 0);
+    payload.extend_from_slice(&0x8000_0000u32.to_le_bytes());
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
+    encoder
+        .write_all(b"PS\0\0 (partition) SCH_test segment body binding payload with more than sixty-four inflated bytes........")
+        .unwrap();
+    payload.extend_from_slice(&encoder.finish().unwrap());
+    payload
+}
+
 fn segment_om_payload(separated: bool) -> Vec<u8> {
     let mut payload = Vec::new();
     for word in [32u32, 9, 11, 1, 1, 24] {
@@ -373,7 +389,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 20);
+    assert_eq!(namespace.version, 21);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -403,6 +419,27 @@ fn decode_links_segment_index_word_to_validated_stream_wrapper() {
     assert_eq!(links[0].stream_ordinal, 0);
     assert_eq!(links[0].stream_kind, "deltas");
     assert_eq!(links[0].wrapper_byte_len, 8);
+}
+
+#[test]
+fn decode_binds_segment_body_object_index_to_partition_stream() {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_body_binding_payload())]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let bindings = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::SegmentBodyBinding>("segment_body_bindings")
+        .unwrap();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].stream_ordinal, 0);
+    assert_eq!(bindings[0].stream_kind, "partition");
+    assert_eq!(bindings[0].body_object_index, 94);
+    assert_eq!(bindings[0].source_offset, 104);
 }
 
 #[test]
@@ -3290,7 +3327,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 20);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 21);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

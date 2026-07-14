@@ -16,7 +16,7 @@ This document records unresolved NX `.prt` byte semantics.
 - Per-class NX OM field-value serialization is unspecified, including field offsets for feature history, constraints, attributes, and material bindings.
 - The semantic role of the trailing byte in each OM type declaration is unspecified.
 - The lengths and roles of metadata bytes following each OM field declaration core are unspecified.
-- The bridge from feature-history Boolean target/tool object indices to partition/deltas body images is unspecified.
+- The remaining feature-history object-index relations between generated intermediate bodies, plain cached-body images, and partition images are unspecified.
 - The relationship between plain cached-body streams and their owning features is unspecified.
 - The associated `RMFastLoad` per-class entity record layout outside its object-id membership table is unspecified.
 

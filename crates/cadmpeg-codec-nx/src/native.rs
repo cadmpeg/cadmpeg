@@ -80,6 +80,23 @@ pub struct SegmentStreamLink {
     pub source_offset: u64,
 }
 
+/// Body-image identity carried beside one validated Parasolid stream wrapper.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SegmentBodyBinding {
+    /// Globally unique binding identity.
+    pub id: String,
+    /// Validated stream-wrapper link owning the metadata tuple.
+    pub stream_link: String,
+    /// Zero-based stream ordinal in source-file order.
+    pub stream_ordinal: u32,
+    /// Partition or plain cached-body stream classification.
+    pub stream_kind: String,
+    /// Object index used by feature-history body operands.
+    pub body_object_index: u32,
+    /// Absolute file offset of the object-index word in the segment index.
+    pub source_offset: u64,
+}
+
 /// Validated link from a segment-index word to a framed OM section.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SegmentOmLink {
@@ -472,6 +489,43 @@ pub fn segment_stream_links(container: &Container, streams: &[Stream]) -> Vec<Se
         }
     }
     links
+}
+
+/// Bind partition and cached-body streams to feature-history body object indices.
+pub fn segment_body_bindings(container: &Container, streams: &[Stream]) -> Vec<SegmentBodyBinding> {
+    let Some((entry, index)) = container.segment_index() else {
+        return Vec::new();
+    };
+    let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+    let words = index
+        .rows
+        .iter()
+        .flat_map(|row| [row.type_code, row.subtype_code, row.value])
+        .collect::<Vec<_>>();
+    segment_stream_links(container, streams)
+        .into_iter()
+        .filter(|link| matches!(link.stream_kind.as_str(), "partition" | "plain"))
+        .filter_map(|link| {
+            let row = link.row.rsplit_once('#')?.1.parse::<usize>().ok()?;
+            let slot = match link.slot {
+                SegmentIndexSlot::TypeCode => 0,
+                SegmentIndexSlot::SubtypeCode => 1,
+                SegmentIndexSlot::Value => 2,
+            };
+            let pointer_word = row.checked_mul(3)?.checked_add(slot)?;
+            (words.get(pointer_word + 1) == Some(&0)).then_some(())?;
+            let body_object_index = *words.get(pointer_word + 2)?;
+            (body_object_index != 0).then_some(())?;
+            Some(SegmentBodyBinding {
+                id: format!("nx:segment-body-bindings:binding#{}", link.stream_ordinal),
+                stream_link: link.id,
+                stream_ordinal: link.stream_ordinal,
+                stream_kind: link.stream_kind,
+                body_object_index,
+                source_offset: entry_offset + ((pointer_word + 2) * 4) as u64,
+            })
+        })
+        .collect()
 }
 
 /// Unit declared by an NX numeric expression.

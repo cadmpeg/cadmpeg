@@ -2674,6 +2674,8 @@ fn attach_native_object_model(
     let segment_index_rows = crate::native::segment_index_rows(&scan.container);
     let segment_om_links = crate::native::segment_om_links(&scan.container);
     let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
+    let segment_body_bindings =
+        crate::native::segment_body_bindings(&scan.container, &scan.streams);
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
     let feature_operation_records = crate::native::feature_operation_records(&scan.container);
@@ -2696,6 +2698,7 @@ fn attach_native_object_model(
     if segment_index_rows.is_empty()
         && segment_om_links.is_empty()
         && segment_stream_links.is_empty()
+        && segment_body_bindings.is_empty()
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
         && feature_operation_records.is_empty()
@@ -2729,6 +2732,12 @@ fn attach_native_object_model(
             .note(&link.id, annotation_stream, link.source_offset)
             .tag("UG_PART_SEGMENT_STREAM_LINK");
         annotations.exactness(&link.id, Exactness::ByteExact);
+    }
+    for binding in &segment_body_bindings {
+        annotations
+            .note(&binding.id, annotation_stream, binding.source_offset)
+            .tag("UG_PART_SEGMENT_BODY_BINDING");
+        annotations.exactness(&binding.id, Exactness::ByteExact);
     }
     for link in &segment_om_links {
         annotations
@@ -2869,12 +2878,15 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(20);
+    namespace.version = namespace.version.max(21);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
     if !segment_stream_links.is_empty() {
         namespace.set_arena("segment_stream_links", &segment_stream_links)?;
+    }
+    if !segment_body_bindings.is_empty() {
+        namespace.set_arena("segment_body_bindings", &segment_body_bindings)?;
     }
     if !segment_om_links.is_empty() {
         namespace.set_arena("segment_om_links", &segment_om_links)?;
