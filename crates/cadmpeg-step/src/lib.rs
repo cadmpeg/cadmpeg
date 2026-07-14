@@ -337,6 +337,7 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Face(id) => {
                     face_colors.entry(id.as_str()).or_insert(color);
                 }
+                AppearanceTarget::Edge(_) | AppearanceTarget::Vertex(_) => {}
             }
         }
         for body in &ir.model.bodies {

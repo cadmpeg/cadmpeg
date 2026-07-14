@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "12");
+    assert_eq!(result.ir.ir_version, "13");
     let feature = |name: &str| {
         &result
             .ir
@@ -2003,8 +2003,12 @@ fn transfers_connected_text_brep_topology() {
 <ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData>
 </Document>"#;
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1">
-<ViewProvider name="Shape" expanded="1"><Properties Count="3">
+<ViewProvider name="Shape" expanded="1"><Properties Count="7">
 <Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3368601600"/></Property>
+<Property name="LineColor" type="App::PropertyColor"><PropertyColor value="4278190335"/></Property>
+<Property name="LineWidth" type="App::PropertyFloatConstraint"><Float value="2.5"/></Property>
+<Property name="PointColor" type="App::PropertyColor"><PropertyColor value="16711935"/></Property>
+<Property name="PointSize" type="App::PropertyFloatConstraint"><Float value="4"/></Property>
 <Property name="Transparency" type="App::PropertyPercent"><Integer value="25"/></Property>
 <Property name="Visibility" type="App::PropertyBool"><Bool value="false"/></Property>
 </Properties></ViewProvider></ViewProviderData></Document>"#;
@@ -2047,8 +2051,56 @@ Co 1001000 +2 0 *
     assert_eq!(result.ir.model.edges.len(), 2);
     assert_eq!(result.ir.model.vertices.len(), 2);
     assert_eq!(result.ir.model.pcurves.len(), 2);
-    assert_eq!(result.ir.model.appearances.len(), 1);
-    assert_eq!(result.ir.model.appearance_bindings.len(), 1);
+    assert_eq!(result.ir.model.appearances.len(), 3);
+    assert_eq!(result.ir.model.appearance_bindings.len(), 5);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| matches!(
+                binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+            ))
+            .count(),
+        2
+    );
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| matches!(
+                binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
+            ))
+            .count(),
+        2
+    );
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearances
+            .iter()
+            .find(|appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider line style"))
+            .and_then(|appearance| appearance.properties.get("line_width")),
+        Some(&2.5)
+    );
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearances
+            .iter()
+            .find(
+                |appearance| appearance.schema.as_deref() == Some("FCStd ViewProvider point style")
+            )
+            .and_then(|appearance| appearance.properties.get("point_size")),
+        Some(&4.0)
+    );
     assert_eq!(result.ir.model.bodies[0].visible, Some(false));
     let color = result.ir.model.bodies[0].color.expect("shape color");
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
@@ -2066,7 +2118,7 @@ Co 1001000 +2 0 *
         gui_providers[0].object.as_deref(),
         Some("fcstd:object:Shape")
     );
-    assert_eq!(gui_properties.len(), 3);
+    assert_eq!(gui_properties.len(), 7);
     assert!(gui_properties
         .iter()
         .all(|property| property.raw_xml.starts_with("<Property")));
@@ -2115,9 +2167,11 @@ EndMap
 </ElementMap2>
 </Property></Properties></Object></ObjectData>
 </Document>"#;
-    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Shape"><Properties Count="2">
+    let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="Shape"><Properties Count="4">
 <Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="3435973632"/></Property>
 <Property name="DiffuseColor" type="App::PropertyColorList"><ColorList file="DiffuseColor"/></Property>
+<Property name="LineColorArray" type="App::PropertyColorList"><ColorList file="LineColorArray"/></Property>
+<Property name="PointColorArray" type="App::PropertyColorList"><ColorList file="PointColorArray"/></Property>
 </Properties></ViewProvider></ViewProviderData></Document>"#;
     let brep = b"CASCADE Topology V1, (c) Matra-Datavision
 Locations 0
@@ -2144,10 +2198,14 @@ So 1001000 +3 0 *
 Co 1001000 +2 0 *
 +1 0 *";
     let face_colors = [1_u8, 0, 0, 0, 0, 0, 0, 255];
+    let edge_colors = [2_u8, 0, 0, 0, 255, 0, 0, 255, 0, 255, 0, 255];
+    let point_colors = [2_u8, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 255];
     let bytes = archive_entries(&[
         ("Document.xml", document.as_bytes()),
         ("GuiDocument.xml", gui),
         ("DiffuseColor", &face_colors),
+        ("LineColorArray", &edge_colors),
+        ("PointColorArray", &point_colors),
         ("Shape.brp", brep),
     ]);
     let result = FcstdCodec
@@ -2176,6 +2234,38 @@ Co 1001000 +2 0 *
             cadmpeg_ir::appearance::AppearanceTarget::Face(_)
         ) && binding.channels.get("precedence").map(String::as_str) == Some("face_over_object")
     }));
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| {
+                matches!(
+                    binding.target,
+                    cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+                ) && binding.channels.get("precedence").map(String::as_str)
+                    == Some("edge_array_over_line")
+            })
+            .count(),
+        2
+    );
+    assert_eq!(
+        result
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| {
+                matches!(
+                    binding.target,
+                    cadmpeg_ir::appearance::AppearanceTarget::Vertex(_)
+                ) && binding.channels.get("precedence").map(String::as_str)
+                    == Some("vertex_array_over_point")
+            })
+            .count(),
+        2
+    );
     assert!(crate::validate_native(&result.ir).is_empty());
 }
 

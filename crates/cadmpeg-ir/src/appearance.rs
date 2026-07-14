@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::ids::{AppearanceId, BodyId, FaceId};
+use crate::ids::{AppearanceId, BodyId, EdgeId, FaceId, VertexId};
 use crate::topology::Color;
 
 /// A decoded appearance/material asset.
@@ -48,6 +48,10 @@ pub enum AppearanceTarget {
     Body(BodyId),
     /// Per-face appearance override.
     Face(FaceId),
+    /// Per-edge line appearance.
+    Edge(EdgeId),
+    /// Per-vertex point appearance.
+    Vertex(VertexId),
 }
 
 /// An explicit appearance assignment.

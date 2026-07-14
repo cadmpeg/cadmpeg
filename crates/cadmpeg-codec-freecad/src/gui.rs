@@ -179,7 +179,7 @@ pub(crate) fn transfer(
             .get("DiffuseColor")
             .and_then(|value| value.attribute("file"))
         {
-            transfer_face_colors(
+            transfer_topology_colors(
                 ir,
                 name,
                 object_id,
@@ -188,6 +188,66 @@ pub(crate) fn transfer(
                 properties,
                 payloads,
                 element_maps,
+                TopologyColorKind::Face,
+            )?;
+        }
+        let payload_prefixes = payloads_by_owner
+            .iter()
+            .filter(|(owner, _)| *owner == object_id)
+            .map(|(_, payload)| format!("{payload}:"))
+            .collect::<Vec<_>>();
+        if let Some(color) = values
+            .get("LineColor")
+            .and_then(|value| value.attribute("value"))
+            .and_then(|value| value.parse::<u32>().ok())
+        {
+            let width = values
+                .get("LineWidth")
+                .and_then(|value| value.attribute("value"))
+                .and_then(|value| value.parse::<f64>().ok());
+            transfer_edge_appearance(ir, name, object_id, color, width, &payload_prefixes);
+        }
+        if let Some(file) = values
+            .get("LineColorArray")
+            .and_then(|value| value.attribute("file"))
+        {
+            transfer_topology_colors(
+                ir,
+                name,
+                object_id,
+                file,
+                entries,
+                properties,
+                payloads,
+                element_maps,
+                TopologyColorKind::Edge,
+            )?;
+        }
+        if let Some(color) = values
+            .get("PointColor")
+            .and_then(|value| value.attribute("value"))
+            .and_then(|value| value.parse::<u32>().ok())
+        {
+            let size = values
+                .get("PointSize")
+                .and_then(|value| value.attribute("value"))
+                .and_then(|value| value.parse::<f64>().ok());
+            transfer_vertex_appearance(ir, name, object_id, color, size, &payload_prefixes);
+        }
+        if let Some(file) = values
+            .get("PointColorArray")
+            .and_then(|value| value.attribute("file"))
+        {
+            transfer_topology_colors(
+                ir,
+                name,
+                object_id,
+                file,
+                entries,
+                properties,
+                payloads,
+                element_maps,
+                TopologyColorKind::Vertex,
             )?;
         }
         let Some(packed_color) = packed_color else {
@@ -235,6 +295,104 @@ pub(crate) fn transfer(
         providers: native_providers,
         properties: native_properties,
     })
+}
+
+fn transfer_edge_appearance(
+    ir: &mut CadIr,
+    provider_name: &str,
+    object_id: &str,
+    packed_color: u32,
+    width: Option<f64>,
+    payload_prefixes: &[String],
+) {
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| {
+            payload_prefixes
+                .iter()
+                .any(|prefix| edge.id.0.starts_with(prefix))
+        })
+        .map(|edge| edge.id.clone())
+        .collect::<Vec<_>>();
+    if edges.is_empty() {
+        return;
+    }
+    let appearance_id = AppearanceId(format!("fcstd:appearance:edge#{provider_name}"));
+    ir.model.appearances.push(Appearance {
+        id: appearance_id.clone(),
+        name: Some(format!("{provider_name} line appearance")),
+        asset_guid: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: Some("FCStd ViewProvider line style".into()),
+        category: None,
+        base_color: Some(decode_color(packed_color, None)),
+        properties: width
+            .filter(|width| width.is_finite() && *width >= 0.0)
+            .map(|width| [("line_width".into(), width)].into())
+            .unwrap_or_default(),
+    });
+    for (index, edge) in edges.into_iter().enumerate() {
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: format!("fcstd:appearance:binding#edge:{provider_name}:{index}"),
+            target: AppearanceTarget::Edge(edge),
+            appearance: appearance_id.clone(),
+            source_entity_id: Some(object_id.to_owned()),
+            object_type: Some("ViewProvider Edge".into()),
+            channels: [("precedence".into(), "edge_over_object".into())].into(),
+        });
+    }
+}
+
+fn transfer_vertex_appearance(
+    ir: &mut CadIr,
+    provider_name: &str,
+    object_id: &str,
+    packed_color: u32,
+    size: Option<f64>,
+    payload_prefixes: &[String],
+) {
+    let vertices = ir
+        .model
+        .vertices
+        .iter()
+        .filter(|vertex| {
+            payload_prefixes
+                .iter()
+                .any(|prefix| vertex.id.0.starts_with(prefix))
+        })
+        .map(|vertex| vertex.id.clone())
+        .collect::<Vec<_>>();
+    if vertices.is_empty() {
+        return;
+    }
+    let appearance_id = AppearanceId(format!("fcstd:appearance:vertex#{provider_name}"));
+    ir.model.appearances.push(Appearance {
+        id: appearance_id.clone(),
+        name: Some(format!("{provider_name} point appearance")),
+        asset_guid: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: Some("FCStd ViewProvider point style".into()),
+        category: None,
+        base_color: Some(decode_color(packed_color, None)),
+        properties: size
+            .filter(|size| size.is_finite() && *size >= 0.0)
+            .map(|size| [("point_size".into(), size)].into())
+            .unwrap_or_default(),
+    });
+    for (index, vertex) in vertices.into_iter().enumerate() {
+        ir.model.appearance_bindings.push(AppearanceBinding {
+            id: format!("fcstd:appearance:binding#vertex:{provider_name}:{index}"),
+            target: AppearanceTarget::Vertex(vertex),
+            appearance: appearance_id.clone(),
+            source_entity_id: Some(object_id.to_owned()),
+            object_type: Some("ViewProvider Vertex".into()),
+            channels: [("precedence".into(), "vertex_over_object".into())].into(),
+        });
+    }
 }
 
 fn gui_state(text: &str, order: usize, node: roxmltree::Node<'_, '_>) -> GuiStateRecord {
@@ -361,8 +519,41 @@ fn append_native_provider(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+enum TopologyColorKind {
+    Face,
+    Edge,
+    Vertex,
+}
+
+impl TopologyColorKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Face => "Face",
+            Self::Edge => "Edge",
+            Self::Vertex => "Vertex",
+        }
+    }
+
+    fn schema(self) -> &'static str {
+        match self {
+            Self::Face => "FCStd DiffuseColor",
+            Self::Edge => "FCStd LineColorArray",
+            Self::Vertex => "FCStd PointColorArray",
+        }
+    }
+
+    fn precedence(self) -> &'static str {
+        match self {
+            Self::Face => "face_over_object",
+            Self::Edge => "edge_array_over_line",
+            Self::Vertex => "vertex_array_over_point",
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
-fn transfer_face_colors(
+fn transfer_topology_colors(
     ir: &mut CadIr,
     provider_name: &str,
     object_id: &str,
@@ -371,6 +562,7 @@ fn transfer_face_colors(
     properties: &[PropertyRecord],
     payloads: &[ShapePayloadRecord],
     element_maps: &[ElementMapRecord],
+    kind: TopologyColorKind,
 ) -> Result<(), CodecError> {
     let bytes = entries.get(entry_name).ok_or_else(|| {
         CodecError::Malformed(format!(
@@ -408,7 +600,11 @@ fn transfer_face_colors(
         .iter()
         .find(|map| shape_properties.contains(&map.property.as_str()))
         .and_then(|map| map.maps.last())
-        .and_then(|map| map.groups.iter().find(|group| group.indexed_name == "Face"))
+        .and_then(|map| {
+            map.groups
+                .iter()
+                .find(|group| group.indexed_name == kind.name())
+        })
     else {
         return Ok(());
     };
@@ -417,37 +613,60 @@ fn transfer_face_colors(
     }
     for (index, (bytes, names)) in bytes[4..].chunks_exact(4).zip(&group.names).enumerate() {
         let packed = u32::from_le_bytes(bytes.try_into().expect("four-byte color"));
+        let lower = kind.name().to_ascii_lowercase();
         let appearance_id = AppearanceId(format!(
-            "fcstd:appearance:face#{provider_name}:{}",
+            "fcstd:appearance:{lower}#{provider_name}:{}",
             index + 1
         ));
         ir.model.appearances.push(Appearance {
             id: appearance_id.clone(),
-            name: Some(format!("{provider_name} Face{} appearance", index + 1)),
+            name: Some(format!(
+                "{provider_name} {}{} appearance",
+                kind.name(),
+                index + 1
+            )),
             asset_guid: None,
             visual_guid: None,
             physical_token: None,
-            schema: Some("FCStd DiffuseColor".into()),
+            schema: Some(kind.schema().into()),
             category: None,
             base_color: Some(decode_color(packed, None)),
             properties: BTreeMap::new(),
         });
-        for topology_id in names
-            .iter()
-            .flat_map(|name| &name.topology_ids)
-            .filter(|id| ir.model.faces.iter().any(|face| face.id.0 == **id))
+        for topology_id in
+            names
+                .iter()
+                .flat_map(|name| &name.topology_ids)
+                .filter(|id| match kind {
+                    TopologyColorKind::Face => ir.model.faces.iter().any(|face| face.id.0 == **id),
+                    TopologyColorKind::Edge => ir.model.edges.iter().any(|edge| edge.id.0 == **id),
+                    TopologyColorKind::Vertex => {
+                        ir.model.vertices.iter().any(|vertex| vertex.id.0 == **id)
+                    }
+                })
         {
+            let target = match kind {
+                TopologyColorKind::Face => {
+                    AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(topology_id.clone()))
+                }
+                TopologyColorKind::Edge => {
+                    AppearanceTarget::Edge(cadmpeg_ir::ids::EdgeId(topology_id.clone()))
+                }
+                TopologyColorKind::Vertex => {
+                    AppearanceTarget::Vertex(cadmpeg_ir::ids::VertexId(topology_id.clone()))
+                }
+            };
             ir.model.appearance_bindings.push(AppearanceBinding {
                 id: format!(
-                    "fcstd:appearance:binding#face:{provider_name}:{}:{}",
+                    "fcstd:appearance:binding#{lower}:{provider_name}:{}:{}",
                     index + 1,
                     topology_id
                 ),
-                target: AppearanceTarget::Face(cadmpeg_ir::ids::FaceId(topology_id.clone())),
+                target,
                 appearance: appearance_id.clone(),
                 source_entity_id: Some(object_id.to_owned()),
-                object_type: Some("ViewProvider Face".into()),
-                channels: [("precedence".into(), "face_over_object".into())].into(),
+                object_type: Some(format!("ViewProvider {}", kind.name())),
+                channels: [("precedence".into(), kind.precedence().into())].into(),
             });
         }
     }

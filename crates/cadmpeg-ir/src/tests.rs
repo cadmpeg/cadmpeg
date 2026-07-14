@@ -1020,6 +1020,22 @@ fn appearance_asset_and_binding_round_trip() {
         object_type: Some("Body".into()),
         channels: std::collections::BTreeMap::new(),
     });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "synthetic:test:appearance-binding#edge".into(),
+        target: AppearanceTarget::Edge(ir.model.edges[0].id.clone()),
+        appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        source_entity_id: Some("0_1".into()),
+        object_type: Some("Edge".into()),
+        channels: std::collections::BTreeMap::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "synthetic:test:appearance-binding#vertex".into(),
+        target: AppearanceTarget::Vertex(ir.model.vertices[0].id.clone()),
+        appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        source_entity_id: Some("0_1".into()),
+        object_type: Some("Vertex".into()),
+        channels: std::collections::BTreeMap::new(),
+    });
 
     let json = ir.to_canonical_json().unwrap();
     let decoded = CadIr::from_json(&json).unwrap();

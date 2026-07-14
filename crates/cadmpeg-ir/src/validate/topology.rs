@@ -339,6 +339,12 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             AppearanceTarget::Face(face) if !ids.faces.contains(&face.0) => {
                 ref_error(findings, &owner, "face", &face.0);
             }
+            AppearanceTarget::Edge(edge) if !ids.edges.contains(&edge.0) => {
+                ref_error(findings, &owner, "edge", &edge.0);
+            }
+            AppearanceTarget::Vertex(vertex) if !ids.vertices.contains(&vertex.0) => {
+                ref_error(findings, &owner, "vertex", &vertex.0);
+            }
             _ => {}
         }
     }
