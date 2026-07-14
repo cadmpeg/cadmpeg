@@ -4831,7 +4831,7 @@ fn decode_resolves_forward_trimmed_curve_chain() {
 }
 
 #[test]
-fn decode_does_not_assert_a_trim_basis_that_misses_edge_vertices() {
+fn decode_retains_a_curve_when_its_trim_range_misses_edge_vertices() {
     let mut cur = Cursor::new(prt_with_partition(
         &mismatched_trimmed_topology_partition_stream(),
     ));
@@ -4842,7 +4842,7 @@ fn decode_does_not_assert_a_trim_basis_that_misses_edge_vertices() {
         .as_ref()
         .and_then(|id| result.ir.model.curves.iter().find(|curve| curve.id == *id))
         .expect("edge carrier");
-    assert!(matches!(carrier.geometry, CurveGeometry::Unknown { .. }));
+    assert!(matches!(carrier.geometry, CurveGeometry::Line { .. }));
     assert_eq!(edge.param_range, None);
     assert!(cadmpeg_ir::validate::validate(&result.ir, Vec::new()).is_ok());
 }

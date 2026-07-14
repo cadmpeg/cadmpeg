@@ -1727,17 +1727,6 @@ fn emit_topology(
                     }
                 }
                 None => {
-                    let unresolved = CurveId(format!("{prefix}:edge-curve#unknown-{}", node.xmt));
-                    push_unknown_edge_curve(
-                        ir,
-                        annotations,
-                        &unresolved,
-                        source_stream,
-                        node,
-                        stream_index,
-                        "UNRESOLVED_EDGE_CURVE",
-                    );
-                    curve = Some(unresolved);
                     param_range = None;
                 }
             }
@@ -2329,28 +2318,6 @@ fn synthesize_closed_edge_vertex(
         tolerance,
     });
     Some(vertex)
-}
-
-fn push_unknown_edge_curve(
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-    id: &CurveId,
-    source_stream: cadmpeg_ir::annotations::StreamHandle,
-    node: &Node,
-    stream_index: usize,
-    tag: &str,
-) {
-    annotations
-        .note(id, source_stream, node.pos as u64)
-        .tag(tag);
-    annotations.exactness(id, Exactness::Unknown);
-    ir.model.curves.push(Curve {
-        id: id.clone(),
-        geometry: CurveGeometry::Unknown {
-            record: Some(UnknownId(format!("nx:container:parasolid#{stream_index}"))),
-        },
-        source_object: None,
-    });
 }
 
 fn canonical_trim_range(ir: &CadIr, basis: &CurveId, raw: [f64; 2]) -> Option<[f64; 2]> {
