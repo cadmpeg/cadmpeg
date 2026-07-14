@@ -46,6 +46,7 @@ Start with a container target when testing an end-to-end codec path. These
 harnesses call format detection, inspection, and decoding:
 
 - `f3d_container`
+- `fcstd_container`, `fcstd_decode`
 - `sldprt_container`
 - `catia_container`
 - `creo_container`
@@ -63,6 +64,8 @@ Use a parser target for focused binary-format coverage:
   `creo_container_scan`, `creo_surface_rows`, `creo_curve_prototypes`
 - NX: `nx_parasolid`, `nx_geometry_points`, `nx_geometry_surfaces`,
   `nx_geometry_curves`, `nx_nurbs_surfaces`, `nx_nurbs_curves`
+- FCStd: `fcstd_xml`, `fcstd_gui`, `fcstd_brep`, `fcstd_element_map`,
+  `fcstd_auxiliary`
 
 Use an IR or STEP target when the input is JSON or the behavior under test is
 format-independent:
@@ -98,6 +101,7 @@ cd crates/cadmpeg-fuzz
 cargo +nightly run --bin generate_all_seeds
 cargo +nightly run --bin generate_submodule_seeds
 cargo +nightly run --bin generate_synthetic_fixtures
+cargo +nightly run --bin generate_fcstd_seeds
 ```
 
 `generate_all_seeds` writes container and IR seeds, then derives deterministic

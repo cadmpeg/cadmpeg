@@ -37,6 +37,10 @@ name = "generate_comprehensive_seeds"
 path = "src/bin/generate_comprehensive_seeds.rs"
 
 [[bin]]
+name = "generate_fcstd_seeds"
+path = "src/bin/generate_fcstd_seeds.rs"
+
+[[bin]]
 name = "f3d_container"
 path = "fuzz_targets/f3d_container.rs"
 test = false
@@ -46,6 +50,48 @@ bench = false
 [[bin]]
 name = "fcstd_container"
 path = "fuzz_targets/fcstd_container.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_decode"
+path = "fuzz_targets/fcstd_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_xml"
+path = "fuzz_targets/fcstd_xml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_gui"
+path = "fuzz_targets/fcstd_gui.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_brep"
+path = "fuzz_targets/fcstd_brep.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_element_map"
+path = "fuzz_targets/fcstd_element_map.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fcstd_auxiliary"
+path = "fuzz_targets/fcstd_auxiliary.rs"
 test = false
 doc = false
 bench = false
