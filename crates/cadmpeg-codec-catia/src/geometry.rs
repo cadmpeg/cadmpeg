@@ -4246,22 +4246,26 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
             })
         }
         0x38 => {
-            // torus: cx cy cz ax ay major minor
+            // torus: cx cy cz ax ay signed_major minor; sign(major) carries sign(az).
             let (cx, cy, cz, ax, ay, major, minor) =
                 (be(0)?, be(1)?, be(2)?, be(3)?, be(4)?, be(5)?, be(6)?);
             if !all_finite(&[cx, cy, cz, ax, ay, major, minor]) {
                 return None;
             }
-            if !(major > 0.0 && major < 1e6 && minor > 0.0 && minor < 1e6) {
+            if !(major.abs() > 0.0
+                && major.abs() < 1e6
+                && minor > 0.0
+                && minor < 1e6
+                && ax * ax + ay * ay <= 1.0 + 1e-4)
+            {
                 return None;
             }
+            let axis = axis_from_xy(ax, ay, major);
             Some(SurfaceGeometry::Torus {
                 center: pt(cx, cy, cz),
-                axis: axis_from_xy(ax, ay, 1.0),
-                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis_from_xy(
-                    ax, ay, 1.0,
-                )),
-                major_radius: major as f64,
+                axis,
+                ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
+                major_radius: major.abs() as f64,
                 minor_radius: minor as f64,
             })
         }

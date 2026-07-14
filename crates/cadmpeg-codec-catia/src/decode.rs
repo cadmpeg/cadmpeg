@@ -3700,7 +3700,7 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
             continue;
         }
         let surface_id = SurfaceId(format!(
-            "catia:a8:rolling-ball:surf#{}",
+            "catia:a8-rolling-ball:surf#{}",
             ir.model.surfaces.len()
         ));
         annotate(
@@ -3718,7 +3718,7 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
         });
 
         let procedural_id = ProceduralSurfaceId(format!(
-            "catia:a8:rolling-ball:construction#{}",
+            "catia:a8-rolling-ball:construction#{}",
             ir.model.procedural_surfaces.len()
         ));
         annotate(

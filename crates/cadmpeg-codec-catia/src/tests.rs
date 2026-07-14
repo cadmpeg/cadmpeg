@@ -16,6 +16,35 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+#[test]
+fn standard_torus_major_sign_selects_the_axis_hemisphere() {
+    let mut bytes = vec![0x00, 0x33, 0x38];
+    for value in [0.0_f32, 0.0, 7.0, 0.0, 0.0, -20.0, 5.0] {
+        bytes.extend_from_slice(&value.to_be_bytes());
+    }
+    let surface = crate::geometry::decode_curved(
+        &bytes,
+        &crate::geometry::SurfacePrefix {
+            pos: 0,
+            target: 0,
+            kind: 0x38,
+        },
+    )
+    .expect("signed torus carrier");
+    let SurfaceGeometry::Torus {
+        axis,
+        major_radius,
+        minor_radius,
+        ..
+    } = surface
+    else {
+        panic!("torus geometry");
+    };
+    assert_eq!(axis, Vector3::new(0.0, 0.0, -1.0));
+    assert_eq!(major_radius, 20.0);
+    assert_eq!(minor_radius, 5.0);
+}
+
 fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03\x00\x00\x00\x15\x00CATSummaryInformation".to_vec();
     bytes.extend_from_slice(b"LastSaveVersion\0<Version>5/<Version><Release>27/<Release><ServicePack>2/<ServicePack><BuildDate>03-10-2017.22.00/<BuildDate><HotFix>0/<HotFix>\0");
