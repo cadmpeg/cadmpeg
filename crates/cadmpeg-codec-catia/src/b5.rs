@@ -493,11 +493,19 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             parse_edge_vertex_refs(record).map(|vertices| (record.object_id, vertices))
         })
         .collect();
+    let native_vertex_coordinates = incidence_vertex_coordinates(
+        &native_edge_vertices,
+        &by_id,
+        &pcurves,
+        &surfaces,
+        &profiles,
+    );
     let bound_vertices = bind_native_vertices(
         &loops,
         &pcurves,
         &native_edge_vertices,
         &geometric_edge_vertices,
+        &native_vertex_coordinates,
         &vertex_points,
     );
     let edge_vertices = bound_vertices.edges;
@@ -587,6 +595,115 @@ fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
         .then_some([references[1], references[2]])
 }
 
+fn incidence_vertex_coordinates(
+    native_edges: &BTreeMap<u32, [u32; 2]>,
+    by_id: &HashMap<u32, &B5Record>,
+    pcurves: &BTreeMap<u32, B5Pcurve>,
+    surfaces: &BTreeMap<u32, B5Surface>,
+    profiles: &BTreeMap<u32, B5Profile>,
+) -> BTreeMap<u32, [f64; 3]> {
+    native_edges
+        .values()
+        .flatten()
+        .copied()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .filter_map(|vertex| {
+            let incidence = vertex_incidence_ref(by_id.get(&vertex)?)?;
+            let incidence_records = counted_references(by_id.get(&incidence)?, 0x05)?;
+            let point = incidence_records.into_iter().find_map(|incidence_record| {
+                let (references, parameters) = parameter_incidence(by_id.get(&incidence_record)?)?;
+                references
+                    .into_iter()
+                    .zip(parameters)
+                    .find_map(|(pcurve_id, parameter)| {
+                        let pcurve = pcurves.get(&pcurve_id)?;
+                        let uv = evaluate_pcurve(pcurve, parameter)?;
+                        lift_pcurve_endpoints(surfaces.get(&pcurve.surface)?, profiles, &[uv, uv])
+                            .map(|points| points[0])
+                    })
+            })?;
+            Some((vertex, point))
+        })
+        .collect()
+}
+
+fn vertex_incidence_ref(record: &B5Record) -> Option<u32> {
+    (record.class == 0x5d && record.payload.first() == Some(&0x81)).then_some(())?;
+    let mut position = 1;
+    let incidence = reference(&record.payload, &mut position, record.object_id)?;
+    (record.payload.get(position) == Some(&0x00) && position + 1 == record.payload.len())
+        .then_some(incidence)
+}
+
+fn counted_references(record: &B5Record, class: u8) -> Option<Vec<u32>> {
+    (record.class == class).then_some(())?;
+    let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
+    let mut position = 1;
+    let references = (0..count)
+        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .collect::<Option<Vec<_>>>()?;
+    (position == record.payload.len()).then_some(references)
+}
+
+fn parameter_incidence(record: &B5Record) -> Option<(Vec<u32>, Vec<f64>)> {
+    (record.class == 0x06).then_some(())?;
+    let count = usize::from(record.payload.first()?.checked_sub(0x80)?);
+    let mut position = 1;
+    let references = (0..count)
+        .map(|_| reference(&record.payload, &mut position, record.object_id))
+        .collect::<Option<Vec<_>>>()?;
+    (record.payload.get(position) == Some(&(0x80u8.checked_add(u8::try_from(count).ok()?)?)))
+        .then_some(())?;
+    position += 1;
+    let mut parameters = Vec::with_capacity(count);
+    for _ in 0..count {
+        parameters.push(scalar(&record.payload, position)?);
+        position += 8;
+        (record.payload.get(position) == Some(&0x05)).then_some(())?;
+        position += 1;
+    }
+    (position == record.payload.len()).then_some((references, parameters))
+}
+
+fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
+    let mut knots = Vec::new();
+    for (&knot, &multiplicity) in pcurve.distinct_knots.iter().zip(&pcurve.multiplicities) {
+        knots.extend(std::iter::repeat_n(
+            knot,
+            usize::try_from(multiplicity).ok()?,
+        ));
+    }
+    let basis = basis_values(
+        &knots,
+        usize::try_from(pcurve.degree).ok()?,
+        parameter,
+        pcurve.control_points.len(),
+    )?;
+    let weights = pcurve
+        .weights
+        .clone()
+        .unwrap_or_else(|| vec![1.0; pcurve.control_points.len()]);
+    if weights.len() != pcurve.control_points.len() {
+        return None;
+    }
+    let denominator = basis
+        .iter()
+        .zip(&weights)
+        .map(|(basis, weight)| basis * weight)
+        .sum::<f64>();
+    if !denominator.is_finite() || denominator.abs() <= f64::EPSILON {
+        return None;
+    }
+    let mut point = [0.0; 2];
+    for ((control, basis), weight) in pcurve.control_points.iter().zip(basis).zip(weights) {
+        for dimension in 0..2 {
+            point[dimension] += control[dimension] * basis * weight / denominator;
+        }
+    }
+    point.iter().all(|value| value.is_finite()).then_some(point)
+}
+
 struct BoundNativeVertices {
     edges: BTreeMap<u32, [usize; 2]>,
     refs: Vec<u32>,
@@ -599,6 +716,7 @@ fn bind_native_vertices(
     pcurves: &BTreeMap<u32, B5Pcurve>,
     native_edges: &BTreeMap<u32, [u32; 2]>,
     geometric_edges: &BTreeMap<u32, [usize; 2]>,
+    native_coordinates: &BTreeMap<u32, [f64; 3]>,
     points: &[[f64; 3]],
 ) -> BoundNativeVertices {
     let constraints: Vec<([u32; 2], [usize; 2])> = native_edges
@@ -615,6 +733,7 @@ fn bind_native_vertices(
         .into_iter()
         .map(|(vertex, point)| (vertex, points[point]))
         .collect();
+    logical_coordinates.extend(native_coordinates);
     for loop_ in loops.values() {
         for (&pcurve, &edge) in loop_.pcurves.iter().zip(&loop_.edges) {
             let (Some(vertices), Some(lifted)) = (
@@ -1815,21 +1934,13 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
         }
         position = at.max(end);
     }
-    let referenced: HashSet<u32> = records
-        .iter()
-        .filter(|record| matches!(record.class, 0x5f | 0x62))
-        .flat_map(record_references)
-        .collect();
     let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
-    let mut isolated = HashMap::<u32, Option<B5Record>>::new();
+    let mut candidates = HashMap::<u32, Option<B5Record>>::new();
     for offset in 0..bytes.len().saturating_sub(8) {
         let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
             continue;
         };
-        if existing.contains(&object_id)
-            || !referenced.contains(&object_id)
-            || !is_referenced_geometry_class(family, class)
-        {
+        if existing.contains(&object_id) || !is_reference_dependency_class(family, class) {
             continue;
         }
         let header = if family == 0xa8 { 11 } else { 8 };
@@ -1840,7 +1951,7 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             object_id,
             payload: bytes[offset + header..end].to_vec(),
         };
-        isolated
+        candidates
             .entry(object_id)
             .and_modify(|slot| {
                 if slot.as_ref().is_some_and(|existing| {
@@ -1853,7 +1964,19 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             })
             .or_insert(Some(candidate));
     }
-    let mut isolated: Vec<_> = isolated.into_values().flatten().collect();
+    let mut pending: Vec<u32> = records.iter().flat_map(record_references).collect();
+    let mut admitted = HashSet::new();
+    let mut isolated = Vec::new();
+    while let Some(object_id) = pending.pop() {
+        if existing.contains(&object_id) || !admitted.insert(object_id) {
+            continue;
+        }
+        let Some(Some(candidate)) = candidates.get(&object_id) else {
+            continue;
+        };
+        pending.extend(record_references(candidate));
+        isolated.push(candidate.clone());
+    }
     isolated.sort_unstable_by_key(|record| record.offset);
     records.extend(isolated);
     records
@@ -1886,6 +2009,11 @@ fn topology_surface_references(records: &[B5Record]) -> HashSet<u32> {
 fn is_referenced_geometry_class(family: u8, class: u8) -> bool {
     (family == 0xa8 && class == 0x34)
         || (family == 0xb5 && (matches!(class, 0x18..=0x21) || is_surface_class(class)))
+}
+
+fn is_reference_dependency_class(family: u8, class: u8) -> bool {
+    is_referenced_geometry_class(family, class)
+        || (family == 0xb5 && matches!(class, 0x05 | 0x06 | 0x23..=0x25 | 0x5d))
 }
 
 fn is_surface_class(class: u8) -> bool {
@@ -2531,6 +2659,50 @@ mod tests {
         bytes.push(0xff);
         append(&mut bytes, 0x19, 2, &[0x01]);
         assert!(!records(&bytes).iter().any(|record| record.object_id == 2));
+    }
+
+    #[test]
+    fn record_walk_closes_native_vertex_incidence_dependencies() {
+        fn append(bytes: &mut Vec<u8>, class: u8, object_id: u32, payload: &[u8]) {
+            bytes.extend_from_slice(&[0xb5, 0x03, class, payload.len() as u8]);
+            bytes.extend_from_slice(&object_id.to_le_bytes());
+            bytes.extend_from_slice(payload);
+        }
+
+        let mut bytes = Vec::new();
+        append(&mut bytes, 0x18, 2, &[0x81, 0x81]);
+        bytes.push(0xff);
+        append(&mut bytes, 0x5d, 6, &[0x81, 0x87, 0x00]);
+        bytes.push(0xff);
+        append(&mut bytes, 0x05, 7, &[0x81, 0x88]);
+        bytes.push(0xff);
+        let mut parameter = vec![0x81, 0x82, 0x81];
+        parameter.extend_from_slice(&0.5f64.to_le_bytes());
+        parameter.push(0x05);
+        append(&mut bytes, 0x06, 8, &parameter);
+        bytes.push(0xff);
+        append(
+            &mut bytes,
+            0x5e,
+            10,
+            &[0x85, 0x82, 0x86, 0x86, 0x88, 0x88, 0x21],
+        );
+        append(&mut bytes, 0x5f, 11, &[]);
+
+        assert_eq!(
+            records(&bytes)
+                .iter()
+                .map(|record| (record.object_id, record.class))
+                .collect::<std::collections::BTreeSet<_>>(),
+            std::collections::BTreeSet::from([
+                (2, 0x18),
+                (6, 0x5d),
+                (7, 0x05),
+                (8, 0x06),
+                (10, 0x5e),
+                (11, 0x5f),
+            ])
+        );
     }
 
     #[test]
