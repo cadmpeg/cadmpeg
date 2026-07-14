@@ -684,6 +684,35 @@ mod marker_tests {
     }
 
     #[test]
+    fn exact_local_operand_excludes_an_already_resolved_sibling() {
+        let point = |id: &str, offset| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: offset as u32,
+            offset,
+            object_index: None,
+            local_id: Some(3),
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m: Some([offset as f64, 0.0]),
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [point("first", 0), point("second", 1)];
+        assert_eq!(
+            resolve_operand_marker_excluding(
+                &markers,
+                FeatureInputOperandKind::Native(0xbc7c),
+                3,
+                &HashSet::from(["first".into()]),
+            )
+            .map(|marker| marker.id.as_str()),
+            Some("second")
+        );
+    }
+
+    #[test]
     fn generated_arc_angles_use_only_exact_native_quadrants() {
         assert_eq!(
             arc_angle_relation_kind(std::f64::consts::FRAC_PI_2),
@@ -1493,7 +1522,10 @@ fn resolve_operand_marker_excluding<'a>(
     compatible.sort_unstable_by_key(|entity| entity.offset);
     let mut ordinal_link_graph = false;
     if operand_uses_compatible_ordinal(kind) {
-        if let Some(entity) = compatible.get(usize::from(address)) {
+        if let Some(entity) = compatible
+            .get(usize::from(address))
+            .filter(|entity| !excluded.contains(&entity.id))
+        {
             return Some(*entity);
         }
         if !point_operand_uses_link_graph(kind) {
@@ -1507,6 +1539,7 @@ fn resolve_operand_marker_excluding<'a>(
                 .iter()
                 .copied()
                 .filter(|entity| entity.local_id == Some(u32::from(address)))
+                .filter(|entity| !excluded.contains(&entity.id))
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
