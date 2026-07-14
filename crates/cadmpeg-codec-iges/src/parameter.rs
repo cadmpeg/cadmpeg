@@ -63,6 +63,16 @@ impl ParameterRecord {
             TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
+
+    /// Return a nonnegative declared list count only when at least that many
+    /// tokens remain in this record. Each list item consumes one or more
+    /// tokens, so this is a format-derived upper bound for every count-driven
+    /// loop before its entity-specific stride is validated.
+    pub(crate) fn count(&self, index: usize) -> Option<usize> {
+        self.integer(index)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count <= self.tokens.len().saturating_sub(index + 1))
+    }
 }
 
 pub(crate) fn trailing_pointer_groups(

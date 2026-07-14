@@ -1774,8 +1774,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(3))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(3))
                 .unwrap_or_default();
             NativeSubfigureDefinition {
                 id: format!("iges:product:subfigure-definition#D{}", entry.sequence),
@@ -2319,8 +2318,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(3))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(3))
                 .unwrap_or_default();
             let mut cursor = 4;
             let mut attributes = Vec::with_capacity(count);
@@ -2333,7 +2331,9 @@ pub(crate) fn store(
                     .map(|token| &token.value)
                 {
                     None | Some(TokenValue::Omitted) => 1,
-                    Some(TokenValue::Integer(value)) => usize::try_from(*value).unwrap_or_default(),
+                    Some(TokenValue::Integer(_)) => record
+                        .and_then(|record| record.count(cursor + 2))
+                        .unwrap_or_default(),
                     Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
                 };
                 cursor += 3;

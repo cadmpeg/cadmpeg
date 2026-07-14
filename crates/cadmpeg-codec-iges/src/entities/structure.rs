@@ -1173,10 +1173,7 @@ pub(super) fn project(
         let list_type_valid = record
             .integer(2)
             .is_some_and(|value| matches!(value, 0..=9999));
-        let attribute_count = record
-            .integer(3)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0);
+        let attribute_count = record.count(3).filter(|count| *count > 0);
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
         let mut shape = Vec::new();
@@ -1185,8 +1182,11 @@ pub(super) fn project(
             let data_type = record
                 .integer(cursor + 1)
                 .filter(|value| matches!(value, 1..=6));
-            let value_count =
-                integer_or(record, cursor + 2, 1).and_then(|value| usize::try_from(value).ok());
+            let value_count = match record.tokens.get(cursor + 2).map(|token| &token.value) {
+                None | Some(TokenValue::Omitted) => Some(1),
+                Some(TokenValue::Integer(_)) => record.count(cursor + 2),
+                Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+            };
             cursor += 3;
             attributes_valid &=
                 attribute_type_valid && data_type.is_some() && value_count.is_some();

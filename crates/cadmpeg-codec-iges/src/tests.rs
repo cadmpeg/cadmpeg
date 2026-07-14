@@ -4713,6 +4713,33 @@ fn decode_types_all_attribute_table_definition_forms() {
 }
 
 #[test]
+fn decode_bounds_declared_attribute_counts_by_record_tokens() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 322,
+        form: 0,
+        label: "BADCOUNT".into(),
+        status: "00000200",
+        parameters: "322,,0,9223372036854775807;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    let definitions =
+        &result.ir.native.namespace("iges").unwrap().arenas["attribute_table_definitions"];
+    assert_eq!(definitions.len(), 1);
+    assert!(definitions[0].fields["attributes"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("attribute-table definition")));
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(
