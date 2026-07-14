@@ -3078,6 +3078,7 @@ fn attach_native_object_model(
             input_blocks: &feature_input_blocks,
             sketch_references: &feature_sketch_references,
             extrude_profile_references: &feature_extrude_profile_references,
+            extrude_construction_profiles: &feature_extrude_construction_profiles,
             parameter_bindings: &feature_parameter_bindings,
             expressions: &expressions,
             operation_records: &feature_operation_records,
@@ -3263,6 +3264,7 @@ struct FeatureOperationSources<'a> {
     input_blocks: &'a [crate::native::FeatureInputBlock],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
+    extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
@@ -3283,6 +3285,7 @@ fn attach_feature_operations(
         input_blocks,
         sketch_references,
         extrude_profile_references,
+        extrude_construction_profiles,
         parameter_bindings,
         expressions,
         operation_records,
@@ -3340,6 +3343,10 @@ fn attach_feature_operations(
             .or_default()
             .push(reference);
     }
+    let extrude_construction_profiles_by_operation = extrude_construction_profiles
+        .iter()
+        .map(|profile| (profile.operation_label.as_str(), profile))
+        .collect::<BTreeMap<_, _>>();
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -3463,6 +3470,12 @@ fn attach_feature_operations(
                     .data_block
                     .clone()
                     .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        if let Some(profile) = extrude_construction_profiles_by_operation.get(label.id.as_str()) {
+            source_properties.insert(
+                "extrude_construction_profile".to_string(),
+                profile.id.clone(),
             );
         }
         for binding in parameter_bindings_by_operation
