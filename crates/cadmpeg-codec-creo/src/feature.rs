@@ -2217,6 +2217,7 @@ fn saved_arc_scalar(
     cache: &scalar::ScalarCache,
 ) -> (Option<f64>, usize) {
     let arc_dict = match payload.get(offset).copied() {
+        Some(0xad) => Some([0x3f, 0xd9]),
         Some(0xcc) => Some([0xbf, 0xf9]),
         Some(0xd0) => Some([0xbf, 0xfe]),
         Some(0xd2) => Some([0xc0, 0x00]),
@@ -3410,6 +3411,7 @@ mod tests {
     #[test]
     fn saved_arc_negative_dict_forms_supply_ieee_high_bytes() {
         for (bytes, head) in [
+            ([0xad, 1, 2, 3, 4, 5, 6], [0x3f, 0xd9]),
             ([0xcc, 1, 2, 3, 4, 5, 6], [0xbf, 0xf9]),
             ([0xd0, 1, 2, 3, 4, 5, 6], [0xbf, 0xfe]),
             ([0xd2, 1, 2, 3, 4, 5, 6], [0xc0, 0x00]),
