@@ -6915,7 +6915,12 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             role: FeatureTreeNodeRole::SolidBodies
         }
     ));
-    assert!(matches!(definitions[3], FeatureDefinition::Native { .. }));
+    assert!(matches!(
+        definitions[3],
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::DirectionalLight
+        }
+    ));
     assert!(matches!(definitions[4], FeatureDefinition::Native { .. }));
     assert!(matches!(
         definitions[5],

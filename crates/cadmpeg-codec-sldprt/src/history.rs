@@ -1246,7 +1246,16 @@ fn project_definition(
 
 fn feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
     reserved_feature_tree_node_role(feature)
+        .or_else(|| directional_light_tree_node_role(feature))
         .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node)
+}
+
+fn directional_light_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
+    (feature.xml_tag.eq_ignore_ascii_case("Feature")
+        && feature.parameters.is_empty()
+        && feature.properties.is_empty()
+        && matches!(feature.kind.as_str(), "Directional" | "Direccional"))
+    .then_some(FeatureTreeNodeRole::DirectionalLight)
 }
 
 fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {

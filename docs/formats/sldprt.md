@@ -191,6 +191,8 @@ Point-distance operands select explicit profile loci. Line-distance and angular 
 
 `Helix/Spiral` history records use positional dimensions when explicit axis placement is absent: `D3` is the initial radius, `D4` is the signed total axial rise, `D5` is the positive revolution count, and `D7` is the start angle. The history record owns the unresolved construction axis.
 
+A parameterless, propertyless `Feature` history record with type `Directional` or `Direccional` is a directional scene-light tree node rather than a modeling operation.
+
 Built-in reference-plane history records have no dimensions or extra attributes. Source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes. Names, element tags, and type strings do not affect the role.
 
 Dimensionless, attribute-free `Feature` history records use reserved source IDs for non-modeling tree roles. Source ID `6` is the lights-and-cameras container, `12` is the ambient light, `13`, `14`, and `15` are the built-in directional lights, and `19` is the exploded-views container. Display names and type strings do not affect these roles.
