@@ -18,6 +18,8 @@ use cadmpeg_ir::sketches::{
 use crate::brep::ShapePayloadRecord;
 use crate::native::{ObjectRecord, PropertyRecord, ValueRecord};
 
+const MAX_SKETCH_RECORDS: usize = 1_000_000;
+
 pub(crate) fn transfer(
     ir: &mut CadIr,
     objects: &[ObjectRecord],
@@ -190,6 +192,7 @@ fn parse_sketch(
         let xml = roxmltree::Document::parse(&geometry.raw_xml).map_err(|error| {
             CodecError::Malformed(format!("invalid sketch geometry {}: {error}", geometry.id))
         })?;
+        validate_declared_count(&xml, "GeometryList", "Geometry", &geometry.id)?;
         for (index, node) in xml
             .descendants()
             .filter(|node| node.has_tag_name("Geometry"))
@@ -360,6 +363,7 @@ fn parse_constraints(
             property.id
         ))
     })?;
+    validate_declared_count(&xml, "ConstraintList", "Constrain", &property.id)?;
     let mut constraints = Vec::new();
     let mut parameters = Vec::new();
     for (index, node) in xml
@@ -368,7 +372,13 @@ fn parse_constraints(
         .enumerate()
     {
         let type_code = int_attr(node, "Type").unwrap_or(0);
-        let operands = constraint_operands(node);
+        let operands = constraint_operands(node).map_err(|message| {
+            CodecError::Malformed(format!(
+                "{} constraint {}: {message}",
+                property.id,
+                index + 1
+            ))
+        })?;
         let resolved = operands
             .iter()
             .filter_map(|(entity, position)| resolve_operand(*entity, *position, entities))
@@ -586,7 +596,7 @@ fn neutral_constraint(
     })
 }
 
-fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Vec<(i64, i64)> {
+fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>, &'static str> {
     let ids = node
         .attribute("ElementIds")
         .map(split_ints)
@@ -595,15 +605,53 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Vec<(i64, i64)> {
         .attribute("ElementPositions")
         .map(split_ints)
         .unwrap_or_default();
-    if !ids.is_empty() && ids.len() == positions.len() {
-        return ids.into_iter().zip(positions).collect();
+    if node.attribute("ElementIds").is_some() || node.attribute("ElementPositions").is_some() {
+        if ids.len() != positions.len() {
+            return Err("ElementIds and ElementPositions counts differ");
+        }
+        return Ok(ids.into_iter().zip(positions).collect());
     }
-    ["First", "Second", "Third"]
+    Ok(["First", "Second", "Third"]
         .into_iter()
         .zip(["FirstPos", "SecondPos", "ThirdPos"])
         .filter_map(|(entity, position)| Some((int_attr(node, entity)?, int_attr(node, position)?)))
         .filter(|(entity, _)| *entity != -2000)
-        .collect()
+        .collect())
+}
+
+fn validate_declared_count(
+    xml: &roxmltree::Document<'_>,
+    container_tag: &str,
+    record_tag: &str,
+    owner: &str,
+) -> Result<(), CodecError> {
+    let Some(container) = xml
+        .descendants()
+        .find(|node| node.has_tag_name(container_tag))
+    else {
+        return Err(CodecError::Malformed(format!(
+            "{owner} has no {container_tag} value"
+        )));
+    };
+    let declared = container
+        .attribute("count")
+        .and_then(|value| value.parse::<usize>().ok())
+        .ok_or_else(|| CodecError::Malformed(format!("{owner} has an invalid record count")))?;
+    if declared > MAX_SKETCH_RECORDS {
+        return Err(CodecError::Malformed(format!(
+            "{owner} record count exceeds {MAX_SKETCH_RECORDS}"
+        )));
+    }
+    let actual = container
+        .children()
+        .filter(|node| node.has_tag_name(record_tag))
+        .count();
+    if declared != actual {
+        return Err(CodecError::Malformed(format!(
+            "{owner} declares {declared} records but contains {actual}"
+        )));
+    }
+    Ok(())
 }
 
 fn split_ints(value: &str) -> Vec<i64> {
