@@ -529,9 +529,19 @@ fn is_shape_aspect(record: &RawRecord) -> bool {
 
 fn dimension_kind(name: Option<&str>) -> Option<DimensionKind> {
     match name? {
-        "DIMENSIONAL_SIZE" => Some(DimensionKind::Size),
-        "DIMENSIONAL_LOCATION" => Some(DimensionKind::Location),
-        "ANGULAR_SIZE" | "ANGULAR_LOCATION" => Some(DimensionKind::Angular),
+        name if name == "DIMENSIONAL_SIZE" || name.starts_with("DIMENSIONAL_SIZE_") => {
+            Some(DimensionKind::Size)
+        }
+        name if name == "DIMENSIONAL_LOCATION" || name.starts_with("DIMENSIONAL_LOCATION_") => {
+            Some(DimensionKind::Location)
+        }
+        name if name == "ANGULAR_SIZE"
+            || name.starts_with("ANGULAR_SIZE_")
+            || name == "ANGULAR_LOCATION"
+            || name.starts_with("ANGULAR_LOCATION_") =>
+        {
+            Some(DimensionKind::Angular)
+        }
         "DIAMETER_SIZE" => Some(DimensionKind::Diameter),
         "RADIUS_SIZE" => Some(DimensionKind::Radius),
         name if name.ends_with("_SIZE") || name.ends_with("_LOCATION") => {
@@ -594,6 +604,22 @@ fn measure(
     length_scale: f64,
     angle_scale: f64,
 ) -> Option<PmiValue> {
+    measure_inner(
+        value,
+        exchange,
+        length_scale,
+        angle_scale,
+        &mut BTreeSet::new(),
+    )
+}
+
+fn measure_inner(
+    value: &Value,
+    exchange: &Exchange,
+    length_scale: f64,
+    angle_scale: f64,
+    active: &mut BTreeSet<u64>,
+) -> Option<PmiValue> {
     match value {
         Value::Integer(value) => Some(PmiValue {
             value: *value as f64,
@@ -620,6 +646,9 @@ fn measure(
             },
         }),
         Value::Reference(id) => {
+            if !active.insert(*id) {
+                return None;
+            }
             let record = exchange.records.get(id)?;
             let quantity = if record.display_name().contains("LENGTH") {
                 PmiQuantity::Length
@@ -653,7 +682,7 @@ fn measure(
                     .unwrap_or(angle_scale),
                 PmiQuantity::Ratio => 1.0,
             };
-            record
+            let result = record
                 .partials
                 .iter()
                 .flat_map(|partial| &partial.parameters)
@@ -664,12 +693,16 @@ fn measure(
                             value: number * scale,
                             quantity,
                         })
-                        .or_else(|| measure(parameter, exchange, length_scale, angle_scale))
-                })
+                        .or_else(|| {
+                            measure_inner(parameter, exchange, length_scale, angle_scale, active)
+                        })
+                });
+            active.remove(id);
+            result
         }
         Value::List(values) => values
             .iter()
-            .find_map(|value| measure(value, exchange, length_scale, angle_scale)),
+            .find_map(|value| measure_inner(value, exchange, length_scale, angle_scale, active)),
         _ => None,
     }
 }

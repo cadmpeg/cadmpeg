@@ -14,7 +14,7 @@ authored against `docs/formats/step.md`.
 | `ap203_sheet.p21` | CONFIG_CONTROL_DESIGN connected triangular sheet B-rep with millimetre units |
 | `ap242_assembly.p21` | product-definition tree, NAUO identity, and item-defined occurrence placement |
 | `ap242_tessellation.p21` | exact/tessellated body linkage, one-based indices, tessellation style, and area/volume/centroid validation properties |
-| `ap242_semantic_pmi.p21` | datum, datum system, dimensional size with numeric and limits-and-fits tolerances, and complex-instance geometric-tolerance magnitude |
+| `ap242_semantic_pmi.p21` | datum, datum system, base and datum-feature dimensional sizes with numeric and limits-and-fits tolerances, and complex-instance geometric-tolerance magnitude |
 | `ap242_conversion_units.p21` | conversion-based length unit chain and representation uncertainty |
 | `ap242_presentation_pmi.p21` | drafting model, annotation plane, placed text literal, and annotation occurrence |
 | `ap242_mapped_assembly.p21` | representation map and mapped-item occurrence placement |

@@ -925,7 +925,12 @@ fn decode_transfers_ap242_semantic_pmi() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode AP242 semantic PMI");
 
-    assert_eq!(result.ir.model.pmi.len(), 4);
+    assert_eq!(result.ir.model.pmi.len(), 5);
+    assert!(!result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("PLUS_MINUS_TOLERANCE #26")));
     let dimension = result
         .ir
         .model
