@@ -1505,12 +1505,15 @@ pub fn project_dimension_constraints(
             if let Some(definition) = directional_point_dimension(
                 &entities,
                 parameter.evaluated_value * 10.0,
-                parameter_id,
+                parameter_id.clone(),
             ) {
                 return Some(definition);
             }
             if group.state == 0 && group.unknown_constraint_bits == 0 {
-                return exact_counted_dimension_relation(&entities);
+                if let Some(definition) = exact_counted_dimension_relation(&entities) {
+                    return Some(definition);
+                }
+                return two_locus_distance_dimension(&entities, parameter_id);
             }
         }
         None
@@ -2016,6 +2019,18 @@ fn directional_point_dimension(
     } else {
         None
     }
+}
+
+fn two_locus_distance_dimension(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    parameter: cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+
+    (entities.len() == 2).then(|| Definition::Distance {
+        entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+        parameter,
+    })
 }
 
 fn exact_counted_dimension_relation(
@@ -6816,7 +6831,7 @@ mod relation_tests {
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
         parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
         project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations, resolved_face_group,
+        remove_dimension_frame_relations, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -8366,6 +8381,42 @@ mod relation_tests {
             } if first_id == &first.id && second_id == &second.id && parameter_id == &parameter
         ));
         assert!(directional_point_dimension(&[&first, &second], 3.0, parameter).is_none());
+    }
+
+    #[test]
+    fn unclassified_two_locus_linear_group_is_parameter_backed_distance() {
+        let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let point = entity(
+            "generated:point#dimension",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        );
+        let line = entity(
+            "generated:line#dimension",
+            SketchGeometry::Line {
+                start: Point2::new(-10.0, 0.0),
+                end: Point2::new(-50.0, 0.0),
+            },
+        );
+        let parameter = cadmpeg_ir::features::ParameterId("generated:parameter#distance".into());
+
+        assert!(exact_counted_dimension_relation(&[&point, &line]).is_none());
+        assert!(matches!(
+            two_locus_distance_dimension(&[&point, &line], parameter.clone()),
+            Some(SketchConstraintDefinition::Distance {
+                ref entities,
+                parameter: ref actual_parameter,
+            }) if entities == &[point.id, line.id] && actual_parameter == &parameter
+        ));
     }
 
     #[test]
