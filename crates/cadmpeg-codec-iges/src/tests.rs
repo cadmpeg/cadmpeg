@@ -91,6 +91,33 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
 }
 
 #[test]
+fn repeated_decode_is_canonical_for_ir_report_and_byte_ledger() {
+    let bytes = explicit_tetrahedron_solid_with_boolean_file();
+    let first = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let second = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(
+        first.ir.to_canonical_json().unwrap(),
+        second.ir.to_canonical_json().unwrap()
+    );
+    assert_eq!(
+        serde_json::to_vec(&first.report).unwrap(),
+        serde_json::to_vec(&second.report).unwrap()
+    );
+    assert_eq!(first.ir.byte_ledger, second.ir.byte_ledger);
+}
+
+#[test]
 fn decode_names_forms_outside_the_closed_envelope() {
     let bytes = owned_test_file(&[OwnedTestEntity {
         entity_type: 430,
