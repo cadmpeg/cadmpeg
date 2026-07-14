@@ -33,7 +33,7 @@ This document records F3D semantics that the format specification does not yet d
 ## Tolerant topology variants
 
 - The `tedge` record inherits the base edge fields, but the byte position and unit semantics of its additional tolerance carrier are undefined.
-- The `tcoedge` record carries `tStart` and `tEnd`, then version-selected boolean/reference fields and a variable tail containing integers or embedded curve records. The tail termination and embedded-record boundaries are undefined.
+- After the release-selected fixed fields, a `tcoedge` may carry a variable tail containing integers or embedded curve records. The tail termination and embedded-record boundaries are undefined.
 
 ## Material assets
 

@@ -433,6 +433,8 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
     let mut parameter_tail = Vec::new();
     t_dbl(&mut parameter_tail, 0.25);
     t_dbl(&mut parameter_tail, 0.75);
+    parameter_tail.push(0x0b);
+    t_ref(&mut parameter_tail, -1);
     append_generated_record_tail(&mut smbh, "coedge", &parameter_tail);
     replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
     let mut decoded = F3dCodec
@@ -453,6 +455,16 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
             .collect::<Vec<_>>(),
         vec![[0.25, 0.75]; 3]
     );
+    assert!(f3d_native(&decoded.ir)
+        .tolerant_coedge_parameters
+        .iter()
+        .all(|parameters| matches!(
+            parameters.extension,
+            crate::records::TolerantCoedgeExtension::BooleanReference {
+                flag: false,
+                target: None
+            }
+        )));
 
     decoded.ir.model.coedges[0].sense = cadmpeg_ir::topology::Sense::Reversed;
     update_f3d_native(&mut decoded.ir, |native| {
@@ -473,6 +485,50 @@ fn decode_transfers_generated_tolerant_coedge_parameters_and_topology() {
         f3d_native(&round_trip.ir).tolerant_coedge_parameters[0].parameter_range,
         [-1.5, 2.25]
     );
+}
+
+#[test]
+fn decode_selects_tolerant_coedge_extension_from_asm_release() {
+    for (release, fixed_tail, expected) in [
+        (
+            21900u32,
+            {
+                let mut bytes = Vec::new();
+                t_ref(&mut bytes, 17);
+                bytes
+            },
+            crate::records::TolerantCoedgeExtension::Reference { target: Some(17) },
+        ),
+        (
+            21400u32,
+            Vec::new(),
+            crate::records::TolerantCoedgeExtension::None,
+        ),
+    ] {
+        let mut smbh = synthetic_geometry_smbh();
+        smbh[15..19].copy_from_slice(&release.to_le_bytes());
+        let mut tail = Vec::new();
+        t_dbl(&mut tail, -0.5);
+        t_dbl(&mut tail, 1.5);
+        tail.extend_from_slice(&fixed_tail);
+        append_generated_record_tail(&mut smbh, "coedge", &tail);
+        replace_generated_record_head(&mut smbh, "coedge", "tcoedge");
+
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh_and_protein(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("release-selected tolerant coedges must decode");
+        assert_eq!(
+            f3d_native(&decoded.ir)
+                .tolerant_coedge_parameters
+                .iter()
+                .map(|parameters| parameters.extension)
+                .collect::<Vec<_>>(),
+            vec![expected; 3]
+        );
+    }
 }
 
 fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
@@ -4008,6 +4064,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [0.25, 0.75],
+            extension: crate::records::TolerantCoedgeExtension::None,
         }];
         native.body_visibilities = vec![crate::records::BodyVisibility {
             id: "f3d:design:body-visibility#generated".into(),
@@ -5617,6 +5674,7 @@ fn generated_source_less_unit_cube_writes_closed_shared_edge_shell() {
             coedge: tolerant_coedge,
             record_index: 0,
             parameter_range: [-1.5, 2.25],
+            extension: crate::records::TolerantCoedgeExtension::None,
         }];
     let mut encoded = Vec::new();
     F3dCodec

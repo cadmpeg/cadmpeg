@@ -189,15 +189,12 @@ fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
         .filter_map(|change| change.old_ref)
         .collect::<Vec<_>>();
     old_references.sort_unstable();
-    if old_references
-        .first()
-        .is_none_or(|first| {
-            old_references
-                .iter()
-                .copied()
-                .ne(*first..*first + old_references.len() as i64)
-        })
-    {
+    if old_references.first().is_none_or(|first| {
+        old_references
+            .iter()
+            .copied()
+            .ne(*first..*first + old_references.len() as i64)
+    }) {
         return;
     }
     let snapshot_records = states
@@ -439,7 +436,9 @@ fn materialize_record_table(
             return None;
         }
         let mut record = if version.record_ref < active_count {
-            active_records.get(usize::try_from(version.record_ref).ok()?)?.clone()
+            active_records
+                .get(usize::try_from(version.record_ref).ok()?)?
+                .clone()
         } else {
             archived_records.get(&version.record_ref)?.clone()
         };

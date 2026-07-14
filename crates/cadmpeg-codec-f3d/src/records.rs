@@ -175,6 +175,30 @@ pub struct TolerantCoedgeParameters {
     pub record_index: u32,
     /// Native start and end parameters following the base coedge fields.
     pub parameter_range: [f64; 2],
+    /// Release-selected fixed fields following the parameter interval.
+    #[serde(default)]
+    pub extension: TolerantCoedgeExtension,
+}
+
+/// Release-selected fixed fields following a tolerant-coedge parameter interval.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "layout")]
+pub enum TolerantCoedgeExtension {
+    /// Releases below 215 have no fixed extension fields.
+    #[default]
+    None,
+    /// Releases 215 through 219 carry one nullable entity reference.
+    Reference {
+        /// Referenced record index; `None` is the native null reference.
+        target: Option<i64>,
+    },
+    /// Releases above 219 carry a boolean followed by a nullable reference.
+    BooleanReference {
+        /// Stored boolean token.
+        flag: bool,
+        /// Referenced record index; `None` is the native null reference.
+        target: Option<i64>,
+    },
 }
 
 /// Zero-payload ASM surface sentinel whose shape is supplied only by tessellation attributes.

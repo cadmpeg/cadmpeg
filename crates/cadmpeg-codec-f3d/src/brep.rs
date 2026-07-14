@@ -20,8 +20,8 @@ use std::collections::{HashMap, HashSet};
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceContainment,
     FaceSidedness, MeshSurfaceSentinel, PersistentDesignLink, PersistentSubentityTag,
-    SketchCurveLink, TolerantCoedgeParameters, TolerantVertexTail, TransformHints, VertexOwnership,
-    WireSide, WireTopology,
+    SketchCurveLink, TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantVertexTail,
+    TransformHints, VertexOwnership, WireSide, WireTopology,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -707,6 +707,10 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     let ref_width = header
         .as_ref()
         .map_or(8, |header| usize::from(header.width));
+    let release_major = header
+        .as_ref()
+        .and_then(|header| header.release)
+        .map(|release| release / 100);
     let header_scale = header.and_then(|header| header.scale).unwrap_or(1.0);
 
     let attribute_color = |entity: &Record| attribute_chain_color(entity, &by_index);
@@ -4018,12 +4022,38 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 if let (Some(Token::Double(start)), Some(Token::Double(end))) =
                     (r.chunk(11), r.chunk(12))
                 {
+                    let extension = match release_major {
+                        Some(major) if major > 219 => {
+                            let flag = match r.chunk(13) {
+                                Some(Token::True) => Some(true),
+                                Some(Token::False) => Some(false),
+                                _ => None,
+                            };
+                            let target = match r.chunk(14) {
+                                Some(Token::Ref(target)) => Some((*target >= 0).then_some(*target)),
+                                _ => None,
+                            };
+                            flag.zip(target).map(|(flag, target)| {
+                                TolerantCoedgeExtension::BooleanReference { flag, target }
+                            })
+                        }
+                        Some(215..=219) => match r.chunk(13) {
+                            Some(Token::Ref(target)) => Some(TolerantCoedgeExtension::Reference {
+                                target: (*target >= 0).then_some(*target),
+                            }),
+                            _ => None,
+                        },
+                        Some(_) => Some(TolerantCoedgeExtension::None),
+                        None => None,
+                    };
+                    let Some(extension) = extension else { continue };
                     out.tolerant_coedge_parameters
                         .push(TolerantCoedgeParameters {
                             id: format!("f3d:asm:tolerant-coedge-parameters#{i}"),
                             coedge: CoedgeId(id(i)),
                             record_index: r.index as u32,
                             parameter_range: [*start, *end],
+                            extension,
                         });
                 }
             }
