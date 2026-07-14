@@ -612,11 +612,24 @@ fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
     (next > cursor).then_some(next)
 }
 
-fn scalar_values(body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
+fn decode_row_scalar(
+    kind: SurfaceKind,
+    body: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(f64, usize)> {
+    if kind == SurfaceKind::TorusOrSphere {
+        scalar::decode_in_torus_row_lane(body, offset, cache)
+    } else {
+        scalar::decode_in_surface_row_lane(body, offset, cache)
+    }
+}
+
+fn scalar_values(kind: SurfaceKind, body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
     let mut values = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
-        if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
+        if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
             values.push(value);
             cursor = next;
         } else {
@@ -641,13 +654,17 @@ fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
     .then_some(name_len + 3)
 }
 
-fn named_record_boundary(body: &[u8], cache: &scalar::ScalarCache) -> Option<usize> {
+fn named_record_boundary(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
     let mut cursor = 0;
     while cursor < body.len() {
         if named_record_length(body, cursor).is_some() {
             return Some(cursor);
         }
-        if let Some((_, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
+        if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
             cursor = next;
         } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
             cursor += 7;
@@ -685,19 +702,22 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
         } else {
             SurfaceBodyBoundary::SectionEnd
         };
-        if let Some(relative) = surface_body_compound_close(&payload[*body_start..body_end], &cache)
+        if let Some(relative) =
+            surface_body_compound_close(row.kind, &payload[*body_start..body_end], &cache)
         {
             body_end = body_start + relative;
             boundary = SurfaceBodyBoundary::CompoundClose;
         }
-        if let Some(relative) = named_record_boundary(&payload[*body_start..body_end], &cache) {
+        if let Some(relative) =
+            named_record_boundary(row.kind, &payload[*body_start..body_end], &cache)
+        {
             body_end = body_start + relative;
             boundary = SurfaceBodyBoundary::NamedRecord;
         }
         let body = payload[*body_start..body_end].to_vec();
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
-            scalar_values: scalar_values(&body, &cache),
+            scalar_values: scalar_values(row.kind, &body, &cache),
             body,
             boundary,
             offset: row.offset,
@@ -707,13 +727,17 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
     records
 }
 
-fn surface_body_compound_close(body: &[u8], cache: &scalar::ScalarCache) -> Option<usize> {
+fn surface_body_compound_close(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<usize> {
     let mut cursor = 0;
     while cursor < body.len() {
         if body[cursor] == psb::token::COMPOUND_CLOSE {
             return Some(cursor);
         }
-        if let Some((_, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache) {
+        if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
             cursor = next;
         } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
             cursor += 7;
