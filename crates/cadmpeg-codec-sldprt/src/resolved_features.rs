@@ -625,6 +625,13 @@ mod marker_tests {
             coordinate_marker_local_links(&payload, 0),
             Some((vec![7, 11], 0x8386))
         );
+        for start in [86, 98] {
+            payload[start..start + 2].copy_from_slice(&0xbc87u16.to_le_bytes());
+        }
+        assert_eq!(
+            coordinate_marker_local_links(&payload, 0),
+            Some((vec![7, 11], 0xbc87))
+        );
         payload[98] ^= 1;
         assert_eq!(coordinate_marker_local_links(&payload, 0), None);
     }
@@ -1744,17 +1751,26 @@ fn coordinate_marker_local_links(payload: &[u8], offset: usize) -> Option<(Vec<u
         return None;
     }
     let mut links = Vec::with_capacity(count);
+    let mut selector = None;
     for index in 0..count {
         let start = offset.checked_add(86 + index * 12)?;
         let cell = payload.get(start..start + 12)?;
-        if cell[0..2] != [0x86, 0x83] || cell[4..8] != [0xff; 4] || cell[8..12] != [0; 4] {
+        let tag = u16::from_le_bytes([cell[0], cell[1]]);
+        let kind = operand_kind([cell[0], cell[1]])?;
+        if !operand_accepts_marker(kind, SketchInputKind::LineOrCircle)
+            || !operand_accepts_marker(kind, SketchInputKind::Arc)
+            || selector.is_some_and(|selector| selector != tag)
+            || cell[4..8] != [0xff; 4]
+            || cell[8..12] != [0; 4]
+        {
             return None;
         }
+        selector = Some(tag);
         links.push(u16::from_le_bytes([cell[2], cell[3]]));
     }
     let sentinel = offset.checked_add(86 + count * 12)?;
     (payload.get(sentinel..sentinel + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff])
-        .then_some((links, 0x8386))
+        .then_some((links, selector?))
 }
 
 fn relation_instances(
