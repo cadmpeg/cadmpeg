@@ -133,7 +133,7 @@ def normalize_fcstd(target):
                 data = re.sub(rb";D([0-9a-fA-F]+);", stable_design_tag, data)
                 if source_info.filename.endswith(".Map.txt"):
                     data = re.sub(
-                        rb"(?m)^(\d+ \d+ \d+ )(\d+)( \d+ ;:H)",
+                        rb"(?m)^(\d+ \d+ \d+ )(-?\d+)( \d+ ;:H)",
                         stable_element_map_child_id,
                         data,
                     )

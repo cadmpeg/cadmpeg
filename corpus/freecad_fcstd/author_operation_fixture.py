@@ -37,6 +37,25 @@ revolution.Angle = 225
 revolution.Symmetric = True
 revolution.Solid = False
 
+extrusion_profile = feature(
+    "ExtrusionProfile",
+    Part.makePolygon(
+        [
+            App.Vector(0, 0, 0),
+            App.Vector(8, 0, 0),
+            App.Vector(8, 6, 0),
+            App.Vector(0, 6, 0),
+            App.Vector(0, 0, 0),
+        ]
+    ),
+)
+extrusion = document.addObject("Part::Extrusion", "SymmetricExtrusion")
+extrusion.Base = extrusion_profile
+extrusion.Dir = App.Vector(0, 0, 12)
+extrusion.Symmetric = True
+extrusion.Solid = True
+extrusion.TaperAngle = 3
+
 loft_section_a = feature(
     "LoftSectionA", Part.Wire(Part.makeCircle(4, App.Vector(0, 0, 0)))
 )
@@ -74,7 +93,7 @@ fillet.Edges = [(1, 2.0, 2.0)]
 chamfer_base = feature("ChamferBase", Part.makeBox(18, 12, 9))
 chamfer = document.addObject("Part::Chamfer", "PartChamfer")
 chamfer.Base = chamfer_base
-chamfer.Edges = [(1, 1.5, 1.5)]
+chamfer.Edges = [(1, 1.5, 2.5)]
 
 thickness_base = feature("ThicknessBase", Part.makeBox(16, 14, 8))
 thickness = document.addObject("Part::Thickness", "Thickness")
@@ -89,6 +108,7 @@ mirror = document.addObject("Part::Mirroring", "Mirror")
 mirror.Source = mirror_base
 mirror.Normal = App.Vector(1, 0, 0)
 
+datums = {}
 for type_name, name, placement in [
     ("PartDesign::Plane", "DatumPlane", App.Vector(0, 0, 4)),
     ("PartDesign::Line", "DatumAxis", App.Vector(2, 3, 0)),
@@ -97,6 +117,48 @@ for type_name, name, placement in [
 ]:
     datum = document.addObject(type_name, name)
     datum.Placement.Base = placement
+    datums[name] = datum
+
+draft_body = document.addObject("PartDesign::Body", "DraftBody")
+draft_base = draft_body.newObject("PartDesign::Feature", "DraftBase")
+draft_base.Shape = Part.makeBox(20, 15, 10)
+draft = draft_body.newObject("PartDesign::Draft", "Draft")
+draft.Base = (draft_base, ["Face1", "Face2"])
+draft.NeutralPlane = (datums["DatumPlane"], [""])
+draft.PullDirection = (datums["DatumAxis"], [""])
+draft.Angle = 5
+draft.Reversed = True
+
+hole_body = document.addObject("PartDesign::Body", "HoleBody")
+hole_base = hole_body.newObject("PartDesign::Feature", "HoleBase")
+hole_base.Shape = Part.makeBox(24, 18, 10)
+hole_profile = hole_body.newObject("Sketcher::SketchObject", "HoleProfile")
+hole_profile.Placement.Base = App.Vector(0, 0, 10)
+hole_profile.addGeometry(
+    Part.Circle(App.Vector(12, 9, 0), App.Vector(0, 0, 1), 3), False
+)
+hole = hole_body.newObject("PartDesign::Hole", "Hole")
+hole.Profile = hole_profile
+hole.Diameter = 6
+hole.DepthType = "Dimension"
+hole.Depth = 7
+hole.HoleCutType = "Countersink"
+hole.HoleCutDiameter = 10
+hole.HoleCutCountersinkAngle = 82
+hole.DrillPoint = "Angled"
+hole.DrillPointAngle = 118
+
+pattern_body = document.addObject("PartDesign::Body", "PatternBody")
+pattern_base = pattern_body.newObject("PartDesign::AdditiveBox", "PatternBase")
+pattern_base.Length = 4
+pattern_base.Width = 4
+pattern_base.Height = 8
+pattern = pattern_body.newObject("PartDesign::LinearPattern", "LinearPattern")
+pattern.Originals = [pattern_base]
+pattern.Direction = (datums["DatumAxis"], [""])
+pattern.Length = 24
+pattern.Occurrences = 4
+pattern.Reversed = True
 
 document.recompute()
 thickness.Shape = Part.makeBox(16, 14, 8).cut(

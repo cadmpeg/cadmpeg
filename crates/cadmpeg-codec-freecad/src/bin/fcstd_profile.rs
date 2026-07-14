@@ -59,6 +59,7 @@ struct Observed {
     topology: BTreeSet<String>,
     feature_definitions: BTreeSet<String>,
     feature_operations: BTreeSet<String>,
+    feature_branches: BTreeSet<String>,
     sketch_constraint_definitions: BTreeSet<String>,
     application_types: BTreeSet<String>,
     native_arenas: BTreeSet<String>,
@@ -294,6 +295,12 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
             if let Some(Value::Object(operation)) = definition.get("operation") {
                 insert_string(operation, "definition", &mut observed.feature_operations);
             }
+            collect_feature_branches(
+                &Value::Object(definition),
+                None,
+                "",
+                &mut observed.feature_branches,
+            );
         }
     }
     for constraint in &ir.model.sketch_constraints {
@@ -304,6 +311,65 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
                 &mut observed.sketch_constraint_definitions,
             );
         }
+    }
+}
+
+fn collect_feature_branches(
+    value: &Value,
+    family: Option<&str>,
+    path: &str,
+    output: &mut BTreeSet<String>,
+) {
+    let Value::Object(fields) = value else {
+        return;
+    };
+    let family = fields.get("definition").and_then(Value::as_str).or(family);
+    for (name, child) in fields {
+        if name == "definition" {
+            continue;
+        }
+        let child_path = if path.is_empty() {
+            name.clone()
+        } else {
+            format!("{path}.{name}")
+        };
+        if child.is_object() {
+            collect_feature_branches(child, family, &child_path, output);
+            continue;
+        }
+        if !matches!(
+            name.as_str(),
+            "kind"
+                | "op"
+                | "closed"
+                | "solid"
+                | "ruled"
+                | "max_degree"
+                | "outward"
+                | "mode"
+                | "join"
+                | "resolve_intersections"
+                | "allow_self_intersections"
+                | "flip_direction"
+                | "count"
+                | "transition"
+                | "transformation"
+                | "x"
+                | "y"
+                | "z"
+        ) {
+            continue;
+        }
+        let Some(family) = family else {
+            continue;
+        };
+        let scalar = match child {
+            Value::String(value) => value.clone(),
+            Value::Bool(value) => value.to_string(),
+            Value::Number(value) => value.to_string(),
+            _ => continue,
+        };
+        output.insert(format!("{family}:{child_path}={scalar}"));
     }
 }
 
@@ -417,6 +483,35 @@ fn gates(
     let design_definitions = observed
         .feature_definitions
         .union(&observed.feature_operations)
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let required_feature_branches = BTreeSet::from([
+        "chamfer:spec.kind=two_distances",
+        "combine:operation.op=cut",
+        "datum_axis:origin.x=2.0",
+        "datum_coordinate_system:origin.z=9.0",
+        "datum_plane:origin.z=4.0",
+        "datum_point:position.z=6.0",
+        "draft:operation.outward=true",
+        "extrude:extent.kind=symmetric",
+        "fillet:radius.kind=constant",
+        "hole:operation.bottom.kind=angled",
+        "hole:operation.kind.kind=countersink",
+        "loft:max_degree=4",
+        "loft:ruled=true",
+        "mirror_shape:plane_normal.x=1.0",
+        "pattern:operation.pattern.count=4",
+        "pattern:operation.pattern.direction.z=-1.0",
+        "primitive:solid.kind=box",
+        "primitive:solid.kind=cylinder",
+        "revolve:construction.extent.kind=symmetric_angle",
+        "revolve:construction.solid=false",
+        "shell:resolve_intersections=true",
+        "sweep:orientation.kind=frenet",
+    ]);
+    let feature_branches = observed
+        .feature_branches
+        .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     let mut gates = vec![
@@ -555,9 +650,9 @@ fn gates(
                 ),
                 assertion(
                     "non_default_operation_branches",
-                    false,
-                    "public operation-branch matrix incomplete",
-                    "each supported core operation family's non-default semantic branches",
+                    required_feature_branches.is_subset(&feature_branches),
+                    format!("{feature_branches:?}"),
+                    format!("{required_feature_branches:?}"),
                 ),
             ],
         ),
