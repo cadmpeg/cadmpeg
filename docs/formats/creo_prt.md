@@ -380,6 +380,9 @@ line endpoint. The equality propagates in either direction and does not
 overwrite conflicting solved coordinates.
 A three-item type-fourteen incidence stores a sense-zero line followed by two
 endpoint-selected loci. The loci are symmetric about the line, in stored order.
+When the axis is uniquely horizontal or vertical and its held coordinate is
+solved, one solved locus determines the other by copying the coordinate along
+the axis and reflecting the perpendicular coordinate through the axis.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values

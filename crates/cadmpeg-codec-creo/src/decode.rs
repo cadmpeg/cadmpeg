@@ -1321,6 +1321,12 @@ pub(crate) fn resolved_section_points(
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_point_on_line(definition, skamp))
         .collect::<Vec<_>>();
+    let symmetric_point_constraints = definition
+        .relations
+        .iter()
+        .flat_map(|table| &table.skamps)
+        .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
+        .collect::<Vec<_>>();
     let signed_dimensions = definition
         .relations
         .iter()
@@ -1431,6 +1437,41 @@ pub(crate) fn resolved_section_points(
                 _ => {}
             }
         }
+        for &(axis_point_id, first_id, second_id, fixed_coordinate) in &symmetric_point_constraints
+        {
+            let [axis, first, second] = [axis_point_id, first_id, second_id]
+                .map(|id| points.get(&id).copied().unwrap_or([None, None]));
+            let parallel_coordinate = 1usize.saturating_sub(fixed_coordinate);
+            match [first[parallel_coordinate], second[parallel_coordinate]] {
+                [Some(value), None] => {
+                    points.entry(second_id).or_insert([None, None])[parallel_coordinate] =
+                        Some(value);
+                    changed = true;
+                }
+                [None, Some(value)] => {
+                    points.entry(first_id).or_insert([None, None])[parallel_coordinate] =
+                        Some(value);
+                    changed = true;
+                }
+                _ => {}
+            }
+            let Some(axis_value) = axis[fixed_coordinate] else {
+                continue;
+            };
+            match [first[fixed_coordinate], second[fixed_coordinate]] {
+                [Some(value), None] => {
+                    points.entry(second_id).or_insert([None, None])[fixed_coordinate] =
+                        Some(2.0 * axis_value - value);
+                    changed = true;
+                }
+                [None, Some(value)] => {
+                    points.entry(first_id).or_insert([None, None])[fixed_coordinate] =
+                        Some(2.0 * axis_value - value);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
         if !changed {
             break;
         }
@@ -1505,6 +1546,23 @@ fn section_skamp_point_on_line(
     }?;
     let coordinate = section_line_fixed_coordinate(definition, pair.0)?;
     Some((pair.0.point_ids[0], pair.1, coordinate))
+}
+
+fn section_skamp_axis_symmetry(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(u32, u32, u32, usize)> {
+    let (14, [axis_item, first_item, second_item]) = (skamp.kind, skamp.items.as_slice()) else {
+        return None;
+    };
+    let axis = unique_section_skamp_segment(definition, axis_item.entity_id)?;
+    (axis_item.sense == 0 && axis.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    Some((
+        axis.point_ids[0],
+        section_skamp_selected_point_id(definition, first_item)?,
+        section_skamp_selected_point_id(definition, second_item)?,
+        section_line_fixed_coordinate(definition, axis)?,
+    ))
 }
 
 fn section_skamp_endpoint_point_id(
@@ -8680,6 +8738,23 @@ mod resolved_sketch_tests {
             }
         );
         let mut coincident_definition = definition.clone();
+        coincident_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids: [7, 8],
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 17,
+                offset: 87,
+            });
         coincident_definition.variables = Some(crate::feature::FeatureVariableTable {
             declared_count: 2,
             entity_ref: None,
@@ -8702,6 +8777,16 @@ mod resolved_sketch_tests {
                 },
                 crate::feature::FeatureSectionPoint {
                     point_id: 6,
+                    u: None,
+                    v: None,
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 7,
+                    u: Some(2.0),
+                    v: Some(6.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 8,
                     u: None,
                     v: None,
                 },
@@ -8775,11 +8860,44 @@ mod resolved_sketch_tests {
                 ],
                 offset: 86,
             },
+            crate::feature::FeatureSkamp {
+                id: 21,
+                kind: 1,
+                flags: 0,
+                status: 0,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                }],
+                offset: 88,
+            },
+            crate::feature::FeatureSkamp {
+                id: 22,
+                kind: 14,
+                flags: 0,
+                status: 0,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 12,
+                        sense: 0,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 17,
+                        sense: 2,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 17,
+                        sense: 3,
+                    },
+                ],
+                offset: 89,
+            },
         ];
         let coincident_points = resolved_section_points(&coincident_definition);
         assert_eq!(coincident_points.get(&5), Some(&[3.0, 4.0]));
         assert_eq!(coincident_points.get(&4), Some(&[3.0, 9.0]));
         assert_eq!(coincident_points.get(&6), Some(&[3.0, 9.0]));
+        assert_eq!(coincident_points.get(&8), Some(&[2.0, 2.0]));
         let mut saved_definition = definition;
         saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 1,
