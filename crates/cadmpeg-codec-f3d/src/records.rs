@@ -882,6 +882,9 @@ pub struct DesignExtrudeSelectionMember {
     /// the selected Sketch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_geometry: Option<SketchRelationOperand>,
+    /// Construction-operand identity chains that terminate at this member.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub operand_identity_ids: Vec<String>,
     /// Identity of the indexed record immediately following this member.
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this member.

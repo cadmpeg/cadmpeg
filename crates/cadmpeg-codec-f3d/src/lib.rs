@@ -902,6 +902,28 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             [target] => Some(target.clone()),
             _ => None,
         };
+        let mut expected_identities = native
+            .design_construction_operand_identities
+            .iter()
+            .filter(|identity| {
+                design_stream(&identity.id) == native_stream
+                    && identity.following_record_index == member.record_index
+                    && identity.following_byte_offset == member.byte_offset
+                    && identity
+                        .persistent_identity
+                        .as_ref()
+                        .is_some_and(|persistent| {
+                            persistent.local_id == member.local_id
+                                && persistent.asset_id == member.asset_id
+                                && persistent.context_id == member.context_id
+                        })
+            })
+            .collect::<Vec<_>>();
+        expected_identities.sort_by_key(|identity| identity.wrapper_byte_offsets.first().copied());
+        let expected_identity_ids = expected_identities
+            .into_iter()
+            .map(|identity| identity.id.as_str())
+            .collect::<Vec<_>>();
         let valid = member.class_tag.len() == 3
             && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.is_some_and(|group| {
@@ -920,6 +942,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && valid_design_guid(&member.context_id)
             && selected_profile.is_some_and(|profile| profile.asset_id == member.asset_id)
             && member.resolved_geometry == expected_target
+            && member
+                .operand_identity_ids
+                .iter()
+                .map(String::as_str)
+                .eq(expected_identity_ids)
             && member.next_byte_offset == member.byte_offset.saturating_add(190)
             && member.next_record_index != 0
             && member_slots.insert((

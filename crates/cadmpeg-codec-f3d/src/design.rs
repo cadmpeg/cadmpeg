@@ -5103,6 +5103,40 @@ pub fn bind_extrude_selection_geometry(
     }
 }
 
+/// Bind selection members to construction-operand identity chains that
+/// terminate at the same fixed persistent identity record.
+pub fn bind_extrude_selection_identities(
+    members: &mut [DesignExtrudeSelectionMember],
+    identities: &[DesignConstructionOperandIdentity],
+) {
+    for member in members {
+        let Some(stream) = native_stream(&member.id) else {
+            continue;
+        };
+        let mut matches = identities
+            .iter()
+            .filter(|identity| {
+                native_stream(&identity.id) == Some(stream)
+                    && identity.following_record_index == member.record_index
+                    && identity.following_byte_offset == member.byte_offset
+                    && identity
+                        .persistent_identity
+                        .as_ref()
+                        .is_some_and(|persistent| {
+                            persistent.local_id == member.local_id
+                                && persistent.asset_id == member.asset_id
+                                && persistent.context_id == member.context_id
+                        })
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by_key(|identity| identity.wrapper_byte_offsets.first().copied());
+        member.operand_identity_ids = matches
+            .into_iter()
+            .map(|identity| identity.id.clone())
+            .collect();
+    }
+}
+
 fn parse_extrude_selection_member(
     bytes: &[u8],
     group: &DesignExtrudeSelectionGroup,
@@ -5125,6 +5159,7 @@ fn parse_extrude_selection_member(
         context_id: member.context_id,
         context_id_offset: member.context_id_offset,
         resolved_geometry: None,
+        operand_identity_ids: Vec::new(),
         next_record_index: member.next_record_index,
         next_byte_offset: member.next_byte_offset,
     })
@@ -7407,12 +7442,12 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
-        bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
-        bind_sketch_graph, closed_sketch_profiles, companion_owned_interval,
-        decode_fillet_radius_groups, directional_point_dimension, exact_atomic_constraint,
-        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
+        bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
+        bind_parameter_companion_payloads, bind_sketch_graph, closed_sketch_profiles,
+        companion_owned_interval, decode_fillet_radius_groups, directional_point_dimension,
+        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
+        exact_offset_constraint, find_dimension_locus_groups, find_dimension_locus_pair,
+        identity_matrix, indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
         next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
@@ -7426,6 +7461,7 @@ mod relation_tests {
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
+        DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
         DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
         DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
         DesignExtrudeStart, DesignObjectKind, DesignParameterCompanion, DesignParameterKind,
@@ -8413,6 +8449,31 @@ mod relation_tests {
 
         group.id = "f3d:Design/BulkStream.dat:selection-group#100".into();
         member.id = "f3d:Design/BulkStream.dat:selection-member#200".into();
+        let identity = DesignConstructionOperandIdentity {
+            id: "f3d:Design/BulkStream.dat:operand-identity#50".into(),
+            group_record_index: 50,
+            wrapper_record_indices: vec![150],
+            wrapper_byte_offsets: vec![50],
+            wrapper_class_tags: vec!["289".into()],
+            following_record_index: 200,
+            following_byte_offset: 0,
+            following_class_tag: "290".into(),
+            persistent_identity: Some(DesignConstructionPersistentIdentity {
+                local_id: 586,
+                local_id_offset: 21,
+                asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
+                asset_id_offset: 33,
+                context_id: "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".into(),
+                context_id_offset: 113,
+                next_record_index: 201,
+                next_byte_offset: 190,
+            }),
+        };
+        bind_extrude_selection_identities(
+            std::slice::from_mut(&mut member),
+            std::slice::from_ref(&identity),
+        );
+        assert_eq!(member.operand_identity_ids, [identity.id]);
         let mut owning_scope = scope;
         owning_scope.extrude_profile = Some(DesignExtrudeProfileOperand {
             scope_reference_ordinal: 1,
