@@ -368,7 +368,6 @@ fn gates(
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
     let required_constraints = BTreeSet::from([
-        "disabled",
         "coincident_loci",
         "point_on_object",
         "horizontal",
@@ -389,8 +388,6 @@ fn gates(
         "weight",
         "symmetric",
         "internal_alignment",
-        "group",
-        "text",
     ]);
     let constraint_definitions = observed
         .sketch_constraint_definitions
