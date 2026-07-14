@@ -1048,6 +1048,9 @@ pub struct ExpressionDeclaration {
     /// Qualified role following the parameter identifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub qualifier: Option<String>,
+    /// Independently framed constant numeric expression in the declaration record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub literal: Option<String>,
     /// Directory entry containing the declaration record.
     pub source_entry: String,
     /// Absolute file offset of the declaration-name marker.
@@ -2101,6 +2104,7 @@ pub fn expression_declarations(container: &Container) -> Vec<ExpressionDeclarati
                         name: declaration.value.to_string(),
                         parameter_index: declaration.parameter_index,
                         qualifier: declaration.qualifier.map(str::to_string),
+                        literal: declaration.literal.map(str::to_string),
                         source_entry: entry.name.clone(),
                         source_offset: entry_offset
                             + record.offset as u64

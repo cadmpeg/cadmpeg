@@ -247,6 +247,8 @@ pub struct ExpressionDeclarationName<'a> {
     pub parameter_index: u32,
     /// Qualified role following the parameter identifier.
     pub qualifier: Option<&'a str>,
+    /// Independently framed numeric literal in the declaration record.
+    pub literal: Option<&'a str>,
 }
 
 /// Primary body-object reference carried by one bounded operation record.
@@ -565,6 +567,7 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
 /// Decode the unique `04, length, p<decimal>[_qualifier], 00` declaration name.
 pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclarationName<'_>> {
     let mut matches = Vec::new();
+    let mut literals = Vec::new();
     for at in 0..bytes.len().saturating_sub(4) {
         if bytes[at] != 0x04 {
             continue;
@@ -585,13 +588,18 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
         let Ok(value) = std::str::from_utf8(raw) else {
             continue;
         };
-        if !value
+        let parameter = if value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
         {
-            continue;
-        }
-        let (Some(parameter_index), qualifier) = parameter_name(value) else {
+            parameter_name(value)
+        } else {
+            (None, None)
+        };
+        let (Some(parameter_index), qualifier) = parameter else {
+            if evaluate_constant_expression(value).is_some() {
+                literals.push(value);
+            }
             continue;
         };
         matches.push(ExpressionDeclarationName {
@@ -599,12 +607,20 @@ pub fn expression_declaration_name(bytes: &[u8]) -> Option<ExpressionDeclaration
             value,
             parameter_index,
             qualifier,
+            literal: None,
         });
     }
     let [declaration] = matches.as_slice() else {
         return None;
     };
-    Some(*declaration)
+    let literal = match literals.as_slice() {
+        [literal] => Some(*literal),
+        _ => None,
+    };
+    Some(ExpressionDeclarationName {
+        literal,
+        ..*declaration
+    })
 }
 
 /// Decode the unique `01 02 10 index ff` primary-body field in one operation.
