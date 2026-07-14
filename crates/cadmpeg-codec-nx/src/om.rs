@@ -331,6 +331,15 @@ pub struct ExtrudePayload32Branch {
     pub terminal_object_index: u32,
 }
 
+/// Ordered construction-reference field at the start of a `BLOCK` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BlockConstructionReferenceField {
+    /// Payload control byte preceding the field framing.
+    pub control: u8,
+    /// Eighteen leading references followed by the terminal reference.
+    pub references: Vec<ExtrudeProfileReference>,
+}
+
 /// Self-framed NX parameter name in one bounded expression declaration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpressionDeclarationName<'a> {
@@ -845,6 +854,47 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         first_indices,
         second_indices,
         terminal_object_index,
+    })
+}
+
+/// Decode the ordered construction-reference field at the start of a `BLOCK` payload.
+pub fn block_construction_references(
+    record: OperationRecord<'_>,
+) -> Option<BlockConstructionReferenceField> {
+    const TRAILER: [u8; 15] = [
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+    ];
+    if record.label.value != "BLOCK"
+        || record.payload.get(1..6) != Some(&[0x00, 0x00, 0x01, 0x00, 0x00])
+    {
+        return None;
+    }
+    let mut at = 6usize;
+    let mut references = Vec::with_capacity(19);
+    for _ in 0..18 {
+        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        references.push(ExtrudeProfileReference {
+            offset: record.payload_offset + at,
+            object_index,
+        });
+        at += width;
+    }
+    if record.payload.get(at) != Some(&0x01) {
+        return None;
+    }
+    at += 1;
+    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    references.push(ExtrudeProfileReference {
+        offset: record.payload_offset + at,
+        object_index,
+    });
+    at += width;
+    if record.payload.get(at..at + TRAILER.len()) != Some(&TRAILER) {
+        return None;
+    }
+    Some(BlockConstructionReferenceField {
+        control: record.payload[0],
+        references,
     })
 }
 

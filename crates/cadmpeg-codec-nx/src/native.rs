@@ -423,6 +423,28 @@ pub struct FeatureExtrudePayload32Branch {
     pub source_offset: u64,
 }
 
+/// Ordered construction reference carried by a bounded `BLOCK` payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBlockConstructionReference {
+    /// Globally unique construction-reference identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Payload control byte preceding the construction field.
+    pub control: u8,
+    /// Zero-based reference order across the complete field.
+    pub ordinal: u32,
+    /// Whether this is the reference following the separator byte.
+    pub terminal: bool,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1130,6 +1152,55 @@ pub fn feature_extrude_payload_32_branches(
         }
     }
     branches
+}
+
+/// Decode and resolve ordered construction references in `BLOCK` payloads.
+pub fn feature_block_construction_references(
+    container: &Container,
+) -> Vec<FeatureBlockConstructionReference> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut references = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(field) = crate::om::block_construction_references(record) else {
+                continue;
+            };
+            let terminal_ordinal = field.references.len() - 1;
+            references.extend(field.references.into_iter().enumerate().map(
+                |(ordinal, reference)| FeatureBlockConstructionReference {
+                    id: format!(
+                        "nx:feature-history:block-construction-reference#{section_key}-{operation_ordinal}-{ordinal}"
+                    ),
+                    operation_label: format!(
+                        "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                    ),
+                    control: field.control,
+                    ordinal: ordinal as u32,
+                    terminal: ordinal == terminal_ordinal,
+                    object_index: reference.object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                },
+            ));
+        }
+    }
+    references
 }
 
 fn unique_offset_data_block(

@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 40);
+    assert_eq!(namespace.version, 41);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1390,6 +1390,48 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     invalid[36] = 0xff;
     assert!(
         crate::om::extrude_payload_32_branch(crate::om::OperationRecord {
+            bytes: &invalid,
+            payload: &invalid,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_block_construction_field_decodes_ordered_canonical_references() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "BLOCK",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let mut payload = vec![0x26, 0, 0, 1, 0, 0];
+    for value in 1..=18u8 {
+        payload.extend([0xf0, value]);
+    }
+    payload.extend([0x01, 0xf1, 0x01, 0x00]);
+    payload.extend([0xff; 11]);
+    payload.extend([0; 4]);
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label,
+    };
+    let field = crate::om::block_construction_references(record).unwrap();
+    assert_eq!(field.control, 0x26);
+    assert_eq!(field.references.len(), 19);
+    assert_eq!(field.references[0].object_index, 1);
+    assert_eq!(field.references[18].object_index, 256);
+    assert_eq!(field.references[0].offset, 206);
+
+    let mut invalid = payload.clone();
+    invalid[42] = 0xf0;
+    assert!(
+        crate::om::block_construction_references(crate::om::OperationRecord {
             bytes: &invalid,
             payload: &invalid,
             ..record
@@ -4084,7 +4126,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 40);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 41);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
