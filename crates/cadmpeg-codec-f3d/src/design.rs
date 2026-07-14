@@ -1522,6 +1522,42 @@ fn point_on_sketch_entity(
             let angle = (point.v - center.v).atan2(point.u - center.u);
             angle_in_sweep(angle, start_angle.0, end_angle.0, tolerance / radius.0)
         }
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_angle,
+            end_angle,
+        } if major_radius.0 > 0.0 && minor_radius.0 > 0.0 => {
+            let du = point.u - center.u;
+            let dv = point.v - center.v;
+            let cosine = major_angle.0.cos();
+            let sine = major_angle.0.sin();
+            let local_u = du * cosine + dv * sine;
+            let local_v = -du * sine + dv * cosine;
+            let parameter = (local_v / minor_radius.0).atan2(local_u / major_radius.0);
+            let boundary = Point2::new(
+                center.u + major_radius.0 * parameter.cos() * cosine
+                    - minor_radius.0 * parameter.sin() * sine,
+                center.v
+                    + major_radius.0 * parameter.cos() * sine
+                    + minor_radius.0 * parameter.sin() * cosine,
+            );
+            if point_distance(point, boundary) > tolerance {
+                return false;
+            }
+            match (start_angle, end_angle) {
+                (None, None) => true,
+                (Some(start), Some(end)) => angle_in_sweep(
+                    parameter,
+                    start.0,
+                    end.0,
+                    tolerance / major_radius.0.min(minor_radius.0),
+                ),
+                _ => false,
+            }
+        }
         SketchGeometry::Nurbs {
             degree,
             knots,
@@ -8326,7 +8362,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn historical_point_membership_respects_arc_domain_and_nurbs_endpoints() {
+    fn historical_point_membership_respects_conic_domains_and_nurbs_endpoints() {
         let sketch = SketchId("sketch".into());
         let entity = |geometry| SketchEntity {
             id: SketchEntityId("curve".into()),
@@ -8347,6 +8383,30 @@ mod relation_tests {
         assert!(!point_on_sketch_entity(
             Point2::new(-2.0, 0.0),
             &arc,
+            1.0e-6
+        ));
+
+        let ellipse = entity(SketchGeometry::Ellipse {
+            center: Point2::new(1.0, -1.0),
+            major_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+            major_radius: Length(4.0),
+            minor_radius: Length(2.0),
+            start_angle: Some(cadmpeg_ir::features::Angle(0.0)),
+            end_angle: Some(cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2)),
+        });
+        assert!(point_on_sketch_entity(
+            Point2::new(-1.0, -1.0),
+            &ellipse,
+            1.0e-6
+        ));
+        assert!(!point_on_sketch_entity(
+            Point2::new(3.0, -1.0),
+            &ellipse,
+            1.0e-6
+        ));
+        assert!(!point_on_sketch_entity(
+            Point2::new(-1.0, -0.9),
+            &ellipse,
             1.0e-6
         ));
 
