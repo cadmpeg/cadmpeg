@@ -1158,9 +1158,10 @@ mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
-        e5_boundary_curve, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
-        intersection_line_direction, ordered_range, point_on_known_surface, quintic_jet_pcurve,
-        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
+        e5_boundary_curve, equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes,
+        include_native_endpoint_pairs, intersection_line_direction, ordered_range,
+        point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
+        resolve_standard_endpoint_pairs, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
@@ -1368,6 +1369,30 @@ mod chart_tests {
             nurbs.control_points.last(),
             Some(&Point3::new(2.0, 4.0, 3.0))
         );
+    }
+
+    #[test]
+    fn e5_intersection_requires_equivalent_two_sided_carriers() {
+        let left = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.0,
+        };
+        let right = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius: 4.0,
+        };
+        assert!(equivalent_e5_curve_carriers(&left, &right));
+        let displaced = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.01),
+            axis: Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius: 4.0,
+        };
+        assert!(!equivalent_e5_curve_carriers(&left, &displaced));
     }
 
     #[test]
@@ -1921,22 +1946,21 @@ fn transfer_e5_topology(
                 if forward.min(reversed) > 2e-3 {
                     return false;
                 }
-                if !support.intersection {
-                    if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
-                        &decoded_surface.geometry,
-                        pcurve,
-                        &geometry,
-                        range,
-                        endpoints,
-                    ) {
-                        if reversed < forward {
-                            let Some(reversed_curve) =
-                                reverse_e5_boundary_curve(&curve, curve_range)
-                            else {
-                                return false;
-                            };
-                            (curve, curve_range) = reversed_curve;
-                        }
+                if let Some((mut curve, mut curve_range)) = e5_boundary_curve(
+                    &decoded_surface.geometry,
+                    pcurve,
+                    &geometry,
+                    range,
+                    endpoints,
+                ) {
+                    if reversed < forward {
+                        let Some(reversed_curve) = reverse_e5_boundary_curve(&curve, curve_range)
+                        else {
+                            return false;
+                        };
+                        (curve, curve_range) = reversed_curve;
+                    }
+                    if !support.intersection {
                         if let Some(existing) = edge_curve_plan.get(&edge_ref) {
                             if existing != &(curve, curve_range) {
                                 return false;
@@ -1955,6 +1979,99 @@ fn transfer_e5_topology(
                 }
             }
         }
+    }
+
+    let mut intersection_sides =
+        BTreeMap::<u32, BTreeMap<u32, (SurfaceId, PcurveGeometry, CurveGeometry, [f64; 2])>>::new();
+    for (&edge_ref, edge) in &topology.edges {
+        let Some(support) = topology.curve_supports.get(&edge.support) else {
+            return false;
+        };
+        if !support.intersection {
+            continue;
+        }
+        let (Some(start), Some(end)) = (
+            point_for_ref.get(&edge.start_vertex),
+            point_for_ref.get(&edge.end_vertex),
+        ) else {
+            return false;
+        };
+        for pcurve_ref in &support.pcurves {
+            let Some(pcurve) = topology.pcurves.get(pcurve_ref) else {
+                return false;
+            };
+            let surface_ref = match pcurve {
+                crate::e5::E5Pcurve::Line { surface, .. }
+                | crate::e5::E5Pcurve::Circle { surface, .. }
+                | crate::e5::E5Pcurve::Jet { surface, .. } => *surface,
+            };
+            let Some((surface_id, decoded_surface)) = surface_for_ref.get(&surface_ref) else {
+                return false;
+            };
+            let Some((geometry, range, endpoints)) = e5_pcurve_on_surface(pcurve, decoded_surface)
+            else {
+                continue;
+            };
+            let forward =
+                point_distance(endpoints[0], *start).max(point_distance(endpoints[1], *end));
+            let reversed =
+                point_distance(endpoints[0], *end).max(point_distance(endpoints[1], *start));
+            if forward.min(reversed) > 2e-3 {
+                continue;
+            }
+            let Some((mut curve, mut curve_range)) = e5_boundary_curve(
+                &decoded_surface.geometry,
+                pcurve,
+                &geometry,
+                range,
+                endpoints,
+            ) else {
+                continue;
+            };
+            if reversed < forward {
+                let Some(reversed_curve) = reverse_e5_boundary_curve(&curve, curve_range) else {
+                    continue;
+                };
+                (curve, curve_range) = reversed_curve;
+            }
+            intersection_sides.entry(edge_ref).or_default().insert(
+                *pcurve_ref,
+                (surface_id.clone(), geometry, curve, curve_range),
+            );
+        }
+    }
+
+    let mut intersection_plan = BTreeMap::<u32, IntcurveSupportContext>::new();
+    for (&edge_ref, sides) in &intersection_sides {
+        let Some(edge) = topology.edges.get(&edge_ref) else {
+            return false;
+        };
+        let Some(support) = topology.curve_supports.get(&edge.support) else {
+            return false;
+        };
+        let [left_ref, right_ref] = support.pcurves.as_slice() else {
+            continue;
+        };
+        let (Some(left), Some(right)) = (sides.get(left_ref), sides.get(right_ref)) else {
+            continue;
+        };
+        if !equivalent_e5_curve_carriers(&left.2, &right.2)
+            || ((left.3[1] - left.3[0]) - (right.3[1] - right.3[0])).abs() > 1e-9
+        {
+            continue;
+        }
+        edge_curve_plan.insert(edge_ref, (left.2.clone(), left.3));
+        intersection_plan.insert(
+            edge_ref,
+            IntcurveSupportContext {
+                sides: [left, right].map(|side| IntcurveSupportSide {
+                    surface: Some(side.0.clone()),
+                    pcurve: Some(side.1.clone()),
+                }),
+                parameter_range: left.3,
+                discontinuities: std::array::from_fn(|_| Vec::new()),
+            },
+        );
     }
 
     let body_faces: Vec<(Option<u32>, Vec<u32>)> = if topology.bodies.is_empty() {
@@ -2013,6 +2130,30 @@ fn transfer_e5_topology(
             (record_id, id)
         })
         .collect();
+    for (&record_id, context) in &intersection_plan {
+        let Some(curve) = edge_curve_ids.get(&record_id) else {
+            return false;
+        };
+        let id = ProceduralCurveId(format!("catia:e5:intersection#{record_id}"));
+        annotate(
+            annotations,
+            &id,
+            "e5_0d_03",
+            0,
+            "c1_surface_intersection",
+            Exactness::Derived,
+        );
+        annotations.derived(&id, "curve").derived(&id, "definition");
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id,
+            curve: curve.clone(),
+            definition: ProceduralCurveDefinition::Intersection {
+                context: context.clone(),
+                discontinuity_flag: false,
+            },
+            cache_fit_tolerance: None,
+        });
+    }
     for (&record_id, edge) in &topology.edges {
         let id = edge_ids[&record_id].clone();
         annotate(
@@ -2538,6 +2679,44 @@ fn reverse_e5_boundary_curve(
             ))
         }
         _ => None,
+    }
+}
+
+fn equivalent_e5_curve_carriers(left: &CurveGeometry, right: &CurveGeometry) -> bool {
+    match (left, right) {
+        (
+            CurveGeometry::Line {
+                origin: left_origin,
+                direction: left_direction,
+            },
+            CurveGeometry::Line {
+                origin: right_origin,
+                direction: right_direction,
+            },
+        ) => {
+            point_distance(*left_origin, *right_origin) <= 2e-3
+                && axis_dot(*left_direction, *right_direction).abs() >= 1.0 - 1e-9
+        }
+        (
+            CurveGeometry::Circle {
+                center: left_center,
+                axis: left_axis,
+                radius: left_radius,
+                ..
+            },
+            CurveGeometry::Circle {
+                center: right_center,
+                axis: right_axis,
+                radius: right_radius,
+                ..
+            },
+        ) => {
+            point_distance(*left_center, *right_center) <= 2e-3
+                && (left_radius - right_radius).abs() <= 2e-3
+                && axis_dot(*left_axis, *right_axis).abs() >= 1.0 - 1e-9
+        }
+        (CurveGeometry::Nurbs(left), CurveGeometry::Nurbs(right)) => left == right,
+        _ => false,
     }
 }
 
