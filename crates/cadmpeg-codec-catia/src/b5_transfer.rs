@@ -579,6 +579,11 @@ fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
             point[0] / angular_scale,
             (point[1] - slant_range[0]) * half_angle.cos(),
         ),
+        B5Surface::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } => Point2::new(point[0] / major_radius, point[1] / minor_radius),
         _ => Point2::new(point[0], point[1]),
     }
 }
@@ -641,6 +646,46 @@ fn lifted_curve_geometry(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<Curve
                     scale(*axis, half_angle.cos()),
                     scale(radial, half_angle.sin()),
                 )),
+            })
+        }
+        B5Surface::Torus {
+            center,
+            direction_x,
+            direction_y,
+            axis,
+            major_radius,
+            minor_radius,
+        } if constant_coordinate(&pcurve.control_points, 0).is_some() => {
+            let u = pcurve.control_points.first()?[0];
+            let angle = u / major_radius;
+            let radial = add(
+                scale(*direction_x, angle.cos()),
+                scale(*direction_y, angle.sin()),
+            );
+            Some(CurveGeometry::Circle {
+                center: point3(add(*center, scale(radial, *major_radius))),
+                axis: vector(cross(radial, *axis)),
+                ref_direction: vector(radial),
+                radius: *minor_radius,
+            })
+        }
+        B5Surface::Torus {
+            center,
+            direction_x,
+            axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let v = constant_coordinate(&pcurve.control_points, 1)?;
+            let angle = v / minor_radius;
+            let signed_radius = major_radius + minor_radius * angle.cos();
+            (signed_radius.abs() > f64::EPSILON).then_some(())?;
+            Some(CurveGeometry::Circle {
+                center: point3(add(*center, scale(*axis, minor_radius * angle.sin()))),
+                axis: vector(*axis),
+                ref_direction: vector(scale(*direction_x, signed_radius.signum())),
+                radius: signed_radius.abs(),
             })
         }
         B5Surface::Cone {
@@ -912,6 +957,20 @@ fn neutral_surface(
                 half_angle: *half_angle,
             }
         }
+        B5Surface::Torus {
+            center,
+            direction_x,
+            axis,
+            major_radius,
+            minor_radius,
+            ..
+        } => SurfaceGeometry::Torus {
+            center: point(*center),
+            axis: vector(*axis),
+            ref_direction: vector(*direction_x),
+            major_radius: *major_radius,
+            minor_radius: *minor_radius,
+        },
         B5Surface::Nurbs(surface) => SurfaceGeometry::Nurbs(surface.clone()),
         B5Surface::Revolution {
             profile_curve,
@@ -1504,6 +1563,61 @@ mod tests {
         assert_eq!(center, Point3::new(0.0, 0.0, 4.0 * half_angle.cos()));
         assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
         assert!((radius - 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn torus_chart_lifts_meridians_and_latitudes_exactly() {
+        let torus = B5Surface::Torus {
+            center: [0.0, 0.0, 0.0],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            major_radius: 5.0,
+            minor_radius: 2.0,
+        };
+        let base = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[0.0, 0.0], [0.0, 4.0 * std::f64::consts::PI]],
+            weights: None,
+            lifted_endpoints: None,
+        };
+        assert_eq!(
+            neutral_pcurve_point([5.0 * std::f64::consts::PI, 2.0], &torus),
+            Point2::new(std::f64::consts::PI, 1.0)
+        );
+        let Some(CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        }) = lifted_curve_geometry(&base, &torus)
+        else {
+            panic!("expected meridian circle");
+        };
+        assert_eq!(center, Point3::new(5.0, 0.0, 0.0));
+        assert_eq!(axis, Vector3::new(0.0, -1.0, 0.0));
+        assert_eq!(radius, 2.0);
+
+        let latitude = B5Pcurve {
+            control_points: vec![[0.0, 0.0], [10.0 * std::f64::consts::PI, 0.0]],
+            ..base
+        };
+        let Some(CurveGeometry::Circle {
+            center,
+            axis,
+            radius,
+            ..
+        }) = lifted_curve_geometry(&latitude, &torus)
+        else {
+            panic!("expected latitude circle");
+        };
+        assert_eq!(center, Point3::new(0.0, 0.0, 0.0));
+        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+        assert_eq!(radius, 7.0);
     }
 
     #[test]

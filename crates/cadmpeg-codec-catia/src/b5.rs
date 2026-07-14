@@ -133,6 +133,21 @@ pub enum B5Surface {
         /// Divisor mapping native U to azimuth.
         angular_scale: f64,
     },
+    /// `b5 03 2b`: a torus in its two arc-length angular coordinates.
+    Torus {
+        /// Torus center.
+        center: [f64; 3],
+        /// Zero-major-angle direction.
+        direction_x: [f64; 3],
+        /// Quarter-turn major-angle direction.
+        direction_y: [f64; 3],
+        /// Torus axis.
+        axis: [f64; 3],
+        /// Major radius.
+        major_radius: f64,
+        /// Minor radius.
+        minor_radius: f64,
+    },
     /// `b5 03 2d`: a surface of revolution sweeping `profile_curve` about
     /// `axis_origin`/`axis_direction`.
     Revolution {
@@ -908,6 +923,26 @@ fn parse_surface(record: &B5Record) -> Option<B5Surface> {
                     angular_scale,
                 })
         }
+        0x2b => {
+            let major_radius = scalar(&record.payload, 97)?;
+            let minor_radius = scalar(&record.payload, 105)?;
+            let repeated_major_radius = scalar(&record.payload, 177)?;
+            let repeated_minor_radius = scalar(&record.payload, 185)?;
+            (record.payload.len() == 201
+                && major_radius > 0.0
+                && minor_radius > 0.0
+                && repeated_major_radius == major_radius
+                && repeated_minor_radius == minor_radius)
+                .then_some(())?;
+            Some(B5Surface::Torus {
+                center: point(&record.payload, 1)?,
+                direction_x: unit(point(&record.payload, 25)?)?,
+                direction_y: unit(point(&record.payload, 49)?)?,
+                axis: unit(point(&record.payload, 73)?)?,
+                major_radius,
+                minor_radius,
+            })
+        }
         0x2d => {
             let mut position = 1;
             let profile_curve = reference(&record.payload, &mut position, record.object_id)?;
@@ -1006,6 +1041,28 @@ fn lift_pcurve_endpoints(
                         scale(radial, half_angle.sin()),
                     ),
                     v,
+                ),
+            )
+        })),
+        B5Surface::Torus {
+            center,
+            direction_x,
+            direction_y,
+            axis,
+            major_radius,
+            minor_radius,
+        } => Some(endpoints.map(|[u, v]| {
+            let major_angle = u / major_radius;
+            let minor_angle = v / minor_radius;
+            let radial = add(
+                scale(*direction_x, major_angle.cos()),
+                scale(*direction_y, major_angle.sin()),
+            );
+            add(
+                *center,
+                add(
+                    scale(radial, major_radius + minor_radius * minor_angle.cos()),
+                    scale(*axis, minor_radius * minor_angle.sin()),
                 ),
             )
         })),
@@ -1541,7 +1598,7 @@ fn object_frame(bytes: &[u8], start: usize) -> Option<(usize, u8, u8, u32)> {
 fn is_topology_class(class: u8) -> bool {
     matches!(
         class,
-        0x0e | 0x0f | 0x18 | 0x20 | 0x21 | 0x27 | 0x28 | 0x29 | 0x2d | 0x5e | 0x5f | 0x62
+        0x0e | 0x0f | 0x18 | 0x20 | 0x21 | 0x27 | 0x28 | 0x29 | 0x2b | 0x2d | 0x5e | 0x5f | 0x62
     )
 }
 
@@ -1790,6 +1847,45 @@ mod tests {
                 angular_offset: 0.5,
                 slant_range: [2.0, 8.0],
                 angular_scale: 3.0,
+            })
+        );
+    }
+
+    #[test]
+    fn torus_surface_reads_two_arc_length_gauges() {
+        let mut payload = vec![0; 201];
+        payload[0] = 0x80;
+        for (offset, values) in [
+            (1, [1.0f64, 2.0, 3.0]),
+            (25, [1.0, 0.0, 0.0]),
+            (49, [0.0, 1.0, 0.0]),
+            (73, [0.0, 0.0, 1.0]),
+        ] {
+            for (index, value) in values.into_iter().enumerate() {
+                payload[offset + 8 * index..offset + 8 * index + 8]
+                    .copy_from_slice(&value.to_le_bytes());
+            }
+        }
+        payload[97..105].copy_from_slice(&5.0f64.to_le_bytes());
+        payload[105..113].copy_from_slice(&2.0f64.to_le_bytes());
+        payload[177..185].copy_from_slice(&5.0f64.to_le_bytes());
+        payload[185..193].copy_from_slice(&2.0f64.to_le_bytes());
+        let record = B5Record {
+            offset: 0,
+            family: 0xb5,
+            class: 0x2b,
+            object_id: 7,
+            payload,
+        };
+        assert_eq!(
+            parse_surface(&record),
+            Some(B5Surface::Torus {
+                center: [1.0, 2.0, 3.0],
+                direction_x: [1.0, 0.0, 0.0],
+                direction_y: [0.0, 1.0, 0.0],
+                axis: [0.0, 0.0, 1.0],
+                major_radius: 5.0,
+                minor_radius: 2.0,
             })
         );
     }
