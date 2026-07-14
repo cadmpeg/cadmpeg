@@ -4096,7 +4096,7 @@ pub(crate) fn project_relation_point_geometry(
         })
         .collect::<HashMap<_, _>>();
     let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
-    let referenced = lanes
+    let mut referenced = lanes
         .iter()
         .flat_map(|lane| {
             lane.relation_instances
@@ -4112,6 +4112,24 @@ pub(crate) fn project_relation_point_geometry(
                 )
         })
         .collect::<HashSet<_>>();
+    let markers_by_id = lanes
+        .iter()
+        .flat_map(|lane| &lane.sketch_entities)
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
+    loop {
+        let linked = referenced
+            .iter()
+            .filter_map(|marker| markers_by_id.get(marker).copied())
+            .flat_map(|marker| &marker.links)
+            .map(|link| link.entity_ref.as_str())
+            .filter(|marker| !referenced.contains(marker))
+            .collect::<Vec<_>>();
+        if linked.is_empty() {
+            break;
+        }
+        referenced.extend(linked);
+    }
     for lane in lanes {
         let lane_key = lane
             .id
@@ -7124,7 +7142,18 @@ mod profile_join_tests {
                 entity_ref: endpoint_b.id.clone(),
             },
         ];
-        markers.extend([endpoint_a, endpoint_b, relation_line.clone()]);
+        let mut support_handle = marker("support-handle", None);
+        support_handle.offset = 85;
+        support_handle.links = vec![SketchInputLink {
+            local_id: 3,
+            entity_ref: relation_line.id.clone(),
+        }];
+        markers.extend([
+            endpoint_a,
+            endpoint_b,
+            relation_line.clone(),
+            support_handle.clone(),
+        ]);
         let mut native_payload = vec![0; 108];
         for offset in [0, 27, 54] {
             native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
@@ -7173,7 +7202,7 @@ mod profile_join_tests {
                         reference_ref: "line-reference".into(),
                         kind: FeatureInputOperandKind::Native(0x8386),
                         entity_index: 0,
-                        entity_ref: Some(relation_line.id),
+                        entity_ref: Some(support_handle.id),
                     }],
                 },
             ],
