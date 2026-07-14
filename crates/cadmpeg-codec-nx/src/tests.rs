@@ -322,7 +322,7 @@ fn size_framed_om_section_with_record_area() -> Vec<u8> {
     bytes.extend_from_slice(&13u32.to_le_bytes());
     bytes.extend_from_slice(&14u32.to_le_bytes());
     bytes.extend_from_slice(&44u32.to_le_bytes());
-    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\xff\xff\x03\x07UNITE\0");
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0");
     let payload_len = (bytes.len() - 16) as u32;
     bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
     bytes
@@ -373,7 +373,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 16);
+    assert_eq!(namespace.version, 17);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -494,6 +494,10 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(labels.len(), 1);
     assert_eq!(labels[0].ordinal, 0);
     assert_eq!(labels[0].value, "UNITE");
+    assert_eq!(
+        labels[0].object_indices,
+        [Some(1), Some(576), Some(6099), None]
+    );
     assert_eq!(labels[0].section_link, areas[0].section_link);
 }
 
@@ -555,16 +559,22 @@ fn om_size_frame_uses_validated_internal_record_area_pointer() {
 
 #[test]
 fn om_operation_labels_require_the_complete_frame() {
-    let bytes = b"\xff\xff\x03\x07UNITE\0\xff\xff\x03\x08SKETCH\0";
+    let bytes = b"\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x01\x82\x40\x90\x17\xd3\xff\x03\x07UNITE\0\x80\xcd\x01\x04\x01\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xff\xff\x02\x03\xff\xff\x03\x08SKETCH\0";
     let labels = crate::om::operation_labels(bytes, 100);
     assert_eq!(labels.len(), 2);
-    assert_eq!(labels[0].offset, 102);
+    assert_eq!(labels[0].offset, 122);
     assert_eq!(labels[0].value, "UNITE");
+    assert_eq!(
+        labels[0].object_indices,
+        [Some(1), Some(576), Some(6099), None]
+    );
     assert_eq!(labels[1].value, "SKETCH");
+    assert_eq!(labels[1].object_indices, [Some(2), Some(3), None, None]);
 
-    assert!(crate::om::operation_labels(b"\x00\xff\x03\x07UNITE\0", 0).is_empty());
-    assert!(crate::om::operation_labels(b"\xff\xff\x03\x06UNITE\0", 0).is_empty());
-    assert!(crate::om::operation_labels(b"\xff\xff\x03\x07UNIT\x01\0", 0).is_empty());
+    assert!(crate::om::operation_labels(b"\xff\xff\x03\x07UNITE\0", 0).is_empty());
+    let mut invalid = bytes.to_vec();
+    invalid[15] = 0x91;
+    assert_eq!(crate::om::operation_labels(&invalid, 0).len(), 1);
 }
 
 #[test]
@@ -3216,7 +3226,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 16);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 17);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

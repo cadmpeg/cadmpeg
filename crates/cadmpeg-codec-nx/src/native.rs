@@ -147,6 +147,8 @@ pub struct FeatureOperationLabel {
     pub ordinal: u32,
     /// Exact printable operation name.
     pub value: String,
+    /// Four object-index slots in header order.
+    pub object_indices: [Option<u32>; 4],
     /// Absolute file offset of the `03` label tag.
     pub source_offset: u64,
 }
@@ -212,6 +214,7 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
                 section_link: link.id.clone(),
                 ordinal: ordinal as u32,
                 value: label.value.to_string(),
+                object_indices: label.object_indices,
                 source_offset: entry_offset + label.offset as u64,
             },
         ));

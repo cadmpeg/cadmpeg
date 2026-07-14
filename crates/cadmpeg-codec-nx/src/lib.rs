@@ -45,7 +45,7 @@
 //!
 //! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
 //! representation. Deltas streams pair with the preceding equal-schema partition
-//! in validated UG_PART segment order and apply
+//! in validated `UG_PART` segment order and apply
 //! supported non-topology full records and exact-key tombstones using the last
 //! event for each key. Valid partition topology remains authoritative. Unmatched
 //! tombstone relations remain unresolved. Multiple

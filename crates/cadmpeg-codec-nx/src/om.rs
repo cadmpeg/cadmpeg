@@ -202,6 +202,8 @@ pub struct OperationLabel<'a> {
     pub offset: usize,
     /// Printable operation name without its terminating NUL.
     pub value: &'a str,
+    /// Four object-index slots in header order; `None` is the `ff` sentinel.
+    pub object_indices: [Option<u32>; 4],
 }
 
 impl<'a> IndexedSection<'a> {
@@ -314,14 +316,34 @@ impl<'a> Section<'a> {
     }
 }
 
-/// Decode `ff ff 03 length name 00` operation-label frames.
+/// Decode complete feature-operation headers and their label frames.
 pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<'_>> {
+    const HEADER: &[u8] = &[
+        0x80, 0xcd, 0x01, 0x04, 0x01, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0xff, 0xff,
+    ];
     let mut labels = Vec::new();
-    for at in 2..bytes.len().saturating_sub(3) {
-        if bytes[at - 2..at] != [0xff, 0xff] || bytes[at] != 0x03 {
+    for marker in bytes
+        .windows(HEADER.len())
+        .enumerate()
+        .filter_map(|(offset, window)| (window == HEADER).then_some(offset))
+    {
+        let mut at = marker + HEADER.len();
+        let mut object_indices = [None; 4];
+        let mut valid = true;
+        for slot in &mut object_indices {
+            let Some((value, next)) = feature_object_index(bytes, at) else {
+                valid = false;
+                break;
+            };
+            *slot = value;
+            at = next;
+        }
+        if !valid || bytes.get(at) != Some(&0x03) {
             continue;
         }
-        let length = usize::from(bytes[at + 1]);
+        let Some(length) = bytes.get(at + 1).copied().map(usize::from) else {
+            continue;
+        };
         if length < 3 {
             continue;
         }
@@ -346,9 +368,30 @@ pub fn operation_labels(bytes: &[u8], base_offset: usize) -> Vec<OperationLabel<
         labels.push(OperationLabel {
             offset: base_offset + at,
             value,
+            object_indices,
         });
     }
     labels
+}
+
+fn feature_object_index(bytes: &[u8], at: usize) -> Option<(Option<u32>, usize)> {
+    let prefix = *bytes.get(at)?;
+    match prefix {
+        0x00..=0x7f => Some((Some(u32::from(prefix)), at + 1)),
+        0x80..=0x8f => Some((
+            Some(u32::from(prefix - 0x80) * 256 + u32::from(*bytes.get(at + 1)?)),
+            at + 2,
+        )),
+        0x90 => Some((
+            Some(u32::from(u16::from_be_bytes([
+                *bytes.get(at + 1)?,
+                *bytes.get(at + 2)?,
+            ]))),
+            at + 3,
+        )),
+        0xff => Some((None, at + 1)),
+        _ => None,
+    }
 }
 
 /// Decode count-framed runs of same-section record references.
