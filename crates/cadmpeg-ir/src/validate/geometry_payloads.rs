@@ -42,6 +42,29 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if mesh
+            .faces
+            .iter()
+            .any(|face| !ir.model.faces.iter().any(|candidate| candidate.id == *face))
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "references a missing tessellation face".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if mesh
+            .chordal_deflection
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "has an invalid tessellation deflection".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if mesh
             .vertices
             .iter()
             .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())

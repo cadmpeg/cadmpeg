@@ -3293,6 +3293,8 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
         .map(|(index, body)| Tessellation {
             id: format!("synthetic:test:tessellation#{index}"),
             body: Some(body.clone()),
+            faces: Vec::new(),
+            chordal_deflection: None,
             source_object: None,
             vertices: vec![
                 Point3::new(0.0, 0.0, 0.0),
@@ -14481,6 +14483,8 @@ fn semantic_writer_expands_indexed_tessellation() {
     let mesh = Tessellation {
         id: "synthetic:test:indexed-tessellation".into(),
         body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
         source_object: None,
         vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
@@ -14516,6 +14520,8 @@ fn semantic_writer_rejects_out_of_range_tessellation_indices() {
     let mesh = Tessellation {
         id: "synthetic:test:invalid-tessellation".into(),
         body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
         source_object: None,
         vertices: vec![Point3::new(0.0, 0.0, 0.0); 3],
         triangles: vec![[0, 1, 3]],

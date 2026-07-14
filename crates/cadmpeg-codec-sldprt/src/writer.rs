@@ -1447,6 +1447,8 @@ pub(super) fn sequential_tessellation(
     Ok(cadmpeg_ir::tessellation::Tessellation {
         id: mesh.id.clone(),
         body: mesh.body.clone(),
+        faces: mesh.faces.clone(),
+        chordal_deflection: mesh.chordal_deflection,
         source_object: mesh.source_object.clone(),
         vertices,
         triangles: triangles_from_strips(&vec![3; triangle_count as usize])?,

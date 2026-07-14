@@ -782,6 +782,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
 
 #[test]
 fn tessellation_counts_must_be_consistent() {
+    use crate::ids::FaceId;
     use crate::math::{Point3, Vector3};
     use crate::tessellation::Tessellation;
 
@@ -789,6 +790,8 @@ fn tessellation_counts_must_be_consistent() {
     ir.model.tessellations.push(Tessellation {
         id: "synthetic:test:tessellation#invalid-counts".into(),
         body: None,
+        faces: vec![FaceId("synthetic:test:face#missing".into())],
+        chordal_deflection: Some(-1.0),
         source_object: None,
         vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
@@ -803,6 +806,8 @@ fn tessellation_counts_must_be_consistent() {
     ir.model.tessellations.push(Tessellation {
         id: "synthetic:test:tessellation#invalid-strips".into(),
         body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
         source_object: None,
         vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
@@ -828,6 +833,14 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("triangles do not match strips")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("missing tessellation face")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid tessellation deflection")));
 }
 
 #[test]

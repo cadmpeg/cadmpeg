@@ -14,27 +14,42 @@ use cadmpeg_ir::ids::{
     SurfaceId, VertexId,
 };
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
 use cadmpeg_ir::transform::Transform;
+use cadmpeg_ir::SourceObjectAssociation;
 
 use crate::brep::{
     ShapePayloadRecord, TextCurve2d, TextLocation, TextOrientation, TextShapeKind, TextShapeUse,
-    TextTShape, TextTShapeGeometry,
+    TextTShape, TextTShapeGeometry, TextTriangulation,
 };
+use crate::native::PropertyRecord;
 
 /// Transfer text or binary shape-set topology with placements applied once.
-pub(crate) fn transfer(ir: &mut CadIr, payloads: &[ShapePayloadRecord]) -> Result<(), CodecError> {
+pub(crate) fn transfer(
+    ir: &mut CadIr,
+    payloads: &[ShapePayloadRecord],
+    properties: &[PropertyRecord],
+) -> Result<(), CodecError> {
     for payload in payloads {
         let Some(tables) = Tables::from_payload(payload) else {
             continue;
         };
-        let mut builder = Builder::new(payload, tables);
+        let source_object = properties
+            .iter()
+            .find(|property| property.id == payload.property)
+            .map_or_else(
+                || payload.property.clone(),
+                |property| property.owner.clone(),
+            );
+        let mut builder = Builder::new(payload, tables, source_object);
         builder.emit_pcurves(ir);
         for root in builder.body_roots()? {
             builder.append_body(ir, root)?;
         }
+        builder.emit_unowned_triangulations(ir);
     }
     close_radial_rings(&mut ir.model.coedges);
     Ok(())
@@ -45,6 +60,7 @@ struct Tables<'a> {
     locations: &'a [TextLocation],
     curve2ds: &'a [TextCurve2d],
     tshapes: &'a [TextTShape],
+    triangulations: &'a [TextTriangulation],
     roots: &'a [TextShapeUse],
 }
 
@@ -57,6 +73,7 @@ impl<'a> Tables<'a> {
                 locations: &text.locations,
                 curve2ds: &text.curve2ds,
                 tshapes: &text.tshapes,
+                triangulations: &text.triangulations,
                 roots: &text.roots,
             })
             .or_else(|| {
@@ -64,6 +81,7 @@ impl<'a> Tables<'a> {
                     locations: &binary.locations,
                     curve2ds: &binary.curve2ds,
                     tshapes: &binary.tshapes,
+                    triangulations: &binary.triangulations,
                     roots: &binary.roots,
                 })
             })
@@ -107,11 +125,14 @@ struct Builder<'a> {
     edges: HashMap<OccurrenceKey, EdgeId>,
     emitted_curves: HashSet<CurveId>,
     emitted_surfaces: HashSet<SurfaceId>,
+    emitted_triangulations: HashSet<usize>,
     body_scope: Transform,
+    current_body: Option<BodyId>,
+    source_object: String,
 }
 
 impl<'a> Builder<'a> {
-    fn new(payload: &'a ShapePayloadRecord, tables: Tables<'a>) -> Self {
+    fn new(payload: &'a ShapePayloadRecord, tables: Tables<'a>, source_object: String) -> Self {
         Self {
             payload,
             tables,
@@ -119,7 +140,10 @@ impl<'a> Builder<'a> {
             edges: HashMap::new(),
             emitted_curves: HashSet::new(),
             emitted_surfaces: HashSet::new(),
+            emitted_triangulations: HashSet::new(),
             body_scope: Transform::identity(),
+            current_body: None,
+            source_object,
         }
     }
 
@@ -157,6 +181,39 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn emit_unowned_triangulations(&self, ir: &mut CadIr) {
+        for (offset, triangulation) in self.tables.triangulations.iter().enumerate() {
+            let index = offset + 1;
+            if self.emitted_triangulations.contains(&index) {
+                continue;
+            }
+            ir.model.tessellations.push(Tessellation {
+                id: format!("{}:triangulation#{index}", self.payload.id),
+                body: None,
+                faces: Vec::new(),
+                chordal_deflection: Some(triangulation.deflection),
+                source_object: Some(SourceObjectAssociation {
+                    format: "fcstd".into(),
+                    object_id: self.source_object.clone(),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+                vertices: triangulation.nodes.clone(),
+                triangles: triangulation
+                    .triangles
+                    .iter()
+                    .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
+                    .collect(),
+                strip_lengths: Vec::new(),
+                normals: triangulation.normals.clone().unwrap_or_default(),
+                channels: Vec::new(),
+            });
+        }
+    }
+
     fn pcurve_id(&self, edge: usize, representation: usize, secondary: bool) -> PcurveId {
         PcurveId(format!(
             "{}:pcurve#{}:{}:{}",
@@ -184,15 +241,17 @@ impl<'a> Builder<'a> {
 
     fn append_body(&mut self, ir: &mut CadIr, root: BodyRoot) -> Result<(), CodecError> {
         self.body_scope = root.transform;
-        let root_shape = self.shape(root.shape)?;
+        let root_kind = self.shape(root.shape)?.kind;
         let body_key = occurrence_label(root.shape, root.transform);
         let body_id = BodyId(format!("{}:body#{body_key}", self.payload.id));
-        let kind = match root_shape.kind {
+        self.current_body = Some(body_id.clone());
+        let kind = match root_kind {
             TextShapeKind::Solid => BodyKind::Solid,
             TextShapeKind::Wire | TextShapeKind::Edge => BodyKind::Wire,
             TextShapeKind::Shell | TextShapeKind::Face => BodyKind::Sheet,
             _ => BodyKind::General,
         };
+        let tessellation_start = ir.model.tessellations.len();
         let mut regions = Vec::new();
         self.append_shape_regions(
             ir,
@@ -203,6 +262,7 @@ impl<'a> Builder<'a> {
             &mut regions,
         )?;
         if regions.is_empty() {
+            ir.model.tessellations.truncate(tessellation_start);
             return Ok(());
         }
         ir.model.bodies.push(Body {
@@ -391,6 +451,7 @@ impl<'a> Builder<'a> {
             tolerance,
             surface,
             location,
+            triangulation,
             ..
         } = shape.geometry
         else {
@@ -403,6 +464,49 @@ impl<'a> Builder<'a> {
         let surface_id = self.located_surface(ir, surface, surface_transform)?;
         let face_key = self.topology_label(face_use.shape, face_transform);
         let face_id = FaceId(format!("{}:face#{face_key}", self.payload.id));
+        if let Some(index) = triangulation {
+            self.emitted_triangulations.insert(index);
+            let triangulation = &self.tables.triangulations[index - 1];
+            let deflection_scale = similarity(surface_transform)?.scale;
+            let normals = triangulation
+                .normals
+                .as_ref()
+                .map(|normals| {
+                    normals
+                        .iter()
+                        .map(|normal| transform_vector(surface_transform, *normal))
+                        .collect()
+                })
+                .unwrap_or_default();
+            ir.model.tessellations.push(Tessellation {
+                id: format!("{}:triangulation#{}@{}", self.payload.id, index, face_key),
+                body: self.current_body.clone(),
+                faces: vec![face_id.clone()],
+                chordal_deflection: Some(triangulation.deflection * deflection_scale),
+                source_object: Some(SourceObjectAssociation {
+                    format: "fcstd".into(),
+                    object_id: self.source_object.clone(),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+                vertices: triangulation
+                    .nodes
+                    .iter()
+                    .map(|point| transform_point(surface_transform, *point))
+                    .collect(),
+                triangles: triangulation
+                    .triangles
+                    .iter()
+                    .map(|triangle| [triangle[0] - 1, triangle[1] - 1, triangle[2] - 1])
+                    .collect(),
+                strip_lengths: Vec::new(),
+                normals,
+                channels: Vec::new(),
+            });
+        }
         let mut loops = Vec::new();
         for (loop_index, wire_use) in shape
             .children
@@ -868,6 +972,33 @@ fn transform_point(transform: Transform, point: Point3) -> Point3 {
             + transform.rows[2][2] * point.z
             + transform.rows[2][3],
     )
+}
+
+fn transform_vector(transform: Transform, vector: Vector3) -> Vector3 {
+    let transformed = Vector3::new(
+        transform.rows[0][0] * vector.x
+            + transform.rows[0][1] * vector.y
+            + transform.rows[0][2] * vector.z,
+        transform.rows[1][0] * vector.x
+            + transform.rows[1][1] * vector.y
+            + transform.rows[1][2] * vector.z,
+        transform.rows[2][0] * vector.x
+            + transform.rows[2][1] * vector.y
+            + transform.rows[2][2] * vector.z,
+    );
+    let magnitude = (transformed.x * transformed.x
+        + transformed.y * transformed.y
+        + transformed.z * transformed.z)
+        .sqrt();
+    if magnitude > 0.0 && magnitude.is_finite() {
+        Vector3::new(
+            transformed.x / magnitude,
+            transformed.y / magnitude,
+            transformed.z / magnitude,
+        )
+    } else {
+        transformed
+    }
 }
 
 fn multiply(left: Transform, right: Transform) -> Transform {

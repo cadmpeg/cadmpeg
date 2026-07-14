@@ -4192,6 +4192,8 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         id: "generated:tessellation#0".into(),
         source_object: None,
         body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
         vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),

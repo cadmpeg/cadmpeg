@@ -259,7 +259,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "13");
+    assert_eq!(result.ir.ir_version, "14");
     let feature = |name: &str| {
         &result
             .ir
@@ -1885,7 +1885,8 @@ fn transfers_binary_exact_curve_and_surface_carriers() {
     brep.extend_from_slice(&0.001_f64.to_le_bytes());
     brep.extend_from_slice(&1_i32.to_le_bytes());
     brep.extend_from_slice(&0_i32.to_le_bytes());
-    brep.push(0);
+    brep.push(2);
+    brep.extend_from_slice(&1_i32.to_le_bytes());
     flags(&mut brep);
     child(&mut brep, 0, 5);
     brep.push(b'*');
@@ -1916,6 +1917,14 @@ fn transfers_binary_exact_curve_and_surface_carriers() {
     assert_eq!(result.ir.model.tessellations[0].triangles, [[0, 1, 2]]);
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(
+        result.ir.model.tessellations[0].body.as_ref(),
+        Some(&result.ir.model.bodies[0].id)
+    );
+    assert_eq!(
+        result.ir.model.tessellations[0].faces,
+        [result.ir.model.faces[0].id.clone()]
+    );
     assert_eq!(result.ir.model.coedges.len(), 1);
     assert!(result.report.geometry_transferred);
 }
@@ -2697,6 +2706,12 @@ fn recovers_objects_dynamic_properties_links_and_side_entries() {
     assert_eq!(result.ir.model.tessellations.len(), 1);
     assert_eq!(result.ir.model.tessellations[0].vertices.len(), 3);
     assert_eq!(result.ir.model.tessellations[0].triangles, [[0, 1, 2]]);
+    assert!(result.ir.model.tessellations[0].body.is_none());
+    assert!(result.ir.model.tessellations[0].faces.is_empty());
+    assert_eq!(
+        result.ir.model.tessellations[0].chordal_deflection,
+        Some(0.01)
+    );
     let entries = namespace
         .arena_as::<crate::native::EntryRecord>("entries")
         .expect("entries");
