@@ -425,6 +425,18 @@ pub fn decode(
                     linear_tolerance: ir.tolerances.linear,
                 },
             );
+            crate::design::bind_extrude_start_planes(
+                &mut ir.model.features,
+                &ir.model.sketches,
+                crate::design::ExtrudeStartPlaneResolution {
+                    faces: &ir.model.faces,
+                    surfaces: &ir.model.surfaces,
+                    groups: &native.design_construction_operand_groups,
+                    operands: &native.design_face_operands,
+                    linear_tolerance: ir.tolerances.linear,
+                    angular_tolerance: ir.tolerances.angular,
+                },
+            );
             ir.model.sketch_constraints = crate::design::project_sketch_constraints(
                 &native.design_sketch_placements,
                 &native.sketch_points,
@@ -642,6 +654,18 @@ pub fn decode(
             entities: &ir.model.sketch_entities,
             histories: &native.asm_histories,
             linear_tolerance: ir.tolerances.linear,
+        },
+    );
+    crate::design::bind_extrude_start_planes(
+        &mut ir.model.features,
+        &ir.model.sketches,
+        crate::design::ExtrudeStartPlaneResolution {
+            faces: &ir.model.faces,
+            surfaces: &ir.model.surfaces,
+            groups: &native.design_construction_operand_groups,
+            operands: &native.design_face_operands,
+            linear_tolerance: ir.tolerances.linear,
+            angular_tolerance: ir.tolerances.angular,
         },
     );
     ir.model.sketch_constraints = crate::design::project_sketch_constraints(

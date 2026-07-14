@@ -986,6 +986,151 @@ fn resolved_face_group(
     })
 }
 
+/// Resolve selected-face Extrude starts from exact sketch-plane coincidence.
+#[derive(Clone, Copy)]
+pub(crate) struct ExtrudeStartPlaneResolution<'a> {
+    pub faces: &'a [cadmpeg_ir::topology::Face],
+    pub surfaces: &'a [cadmpeg_ir::geometry::Surface],
+    pub groups: &'a [DesignConstructionOperandGroup],
+    pub operands: &'a [DesignFaceOperand],
+    pub linear_tolerance: f64,
+    pub angular_tolerance: f64,
+}
+
+pub(crate) fn bind_extrude_start_planes(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    resolution: ExtrudeStartPlaneResolution<'_>,
+) {
+    use cadmpeg_ir::features::{ExtrudeStart, FaceSelection, FeatureDefinition, ProfileRef};
+
+    for feature in features {
+        let FeatureDefinition::Extrude { profile, start, .. } = &mut feature.definition else {
+            continue;
+        };
+        let sketch_id = match profile {
+            ProfileRef::Sketch(sketch)
+            | ProfileRef::SketchProfiles { sketch, .. }
+            | ProfileRef::SketchRegions { sketch, .. }
+            | ProfileRef::SketchSelection { sketch, .. } => sketch,
+            ProfileRef::Native(_) | ProfileRef::Faces(_) => continue,
+        };
+        let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+            continue;
+        };
+        let ExtrudeStart::FromFace {
+            face: FaceSelection::Native(native),
+            offset,
+        } = start
+        else {
+            continue;
+        };
+        let retained_offset = *offset;
+        let mut matching_groups = resolution.groups.iter().filter(|group| group.id == *native);
+        let Some(group) = matching_groups.next() else {
+            continue;
+        };
+        if matching_groups.next().is_some()
+            || group.extrude_face_role != Some(DesignExtrudeFaceRole::Start)
+        {
+            continue;
+        }
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let mut candidates = Vec::new();
+        for record_index in &group.members {
+            let mut matching_operands = resolution.operands.iter().filter(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.record_index == *record_index
+            });
+            let Some(operand) = matching_operands.next() else {
+                candidates.clear();
+                break;
+            };
+            if matching_operands.next().is_some() {
+                candidates.clear();
+                break;
+            }
+            candidates.extend(operand.candidate_faces.iter().cloned());
+        }
+        candidates.sort_by(|left, right| left.0.cmp(&right.0));
+        candidates.dedup();
+        let coincident = candidates
+            .into_iter()
+            .filter(|candidate| {
+                face_coincident_with_sketch(
+                    candidate,
+                    sketch,
+                    resolution.faces,
+                    resolution.surfaces,
+                    resolution.linear_tolerance,
+                    resolution.angular_tolerance,
+                )
+            })
+            .collect::<Vec<_>>();
+        if let [face] = coincident.as_slice() {
+            *start = ExtrudeStart::FromFace {
+                face: FaceSelection::Resolved {
+                    faces: vec![face.clone()],
+                    native: native.clone(),
+                },
+                offset: retained_offset,
+            };
+        }
+    }
+}
+
+fn face_coincident_with_sketch(
+    candidate: &cadmpeg_ir::ids::FaceId,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    faces: &[cadmpeg_ir::topology::Face],
+    surfaces: &[cadmpeg_ir::geometry::Surface],
+    linear_tolerance: f64,
+    angular_tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+
+    let Some(face) = faces.iter().find(|face| face.id == *candidate) else {
+        return false;
+    };
+    let Some(surface) = surfaces.iter().find(|surface| surface.id == face.surface) else {
+        return false;
+    };
+    let SurfaceGeometry::Plane { origin, normal, .. } = &surface.geometry else {
+        return false;
+    };
+    parallel_vectors(*normal, sketch.normal, angular_tolerance)
+        && point_plane_distance(*origin, sketch.origin, sketch.normal) <= linear_tolerance
+}
+
+fn parallel_vectors(left: Vector3, right: Vector3, tolerance: f64) -> bool {
+    let cross = Vector3::new(
+        left.y * right.z - left.z * right.y,
+        left.z * right.x - left.x * right.z,
+        left.x * right.y - left.y * right.x,
+    );
+    let left_length = (left.x * left.x + left.y * left.y + left.z * left.z).sqrt();
+    let right_length = (right.x * right.x + right.y * right.y + right.z * right.z).sqrt();
+    let cross_length = (cross.x * cross.x + cross.y * cross.y + cross.z * cross.z).sqrt();
+    left_length > 0.0
+        && right_length > 0.0
+        && cross_length <= tolerance * left_length * right_length
+}
+
+fn point_plane_distance(point: Point3, origin: Point3, normal: Vector3) -> f64 {
+    let normal_length = (normal.x * normal.x + normal.y * normal.y + normal.z * normal.z).sqrt();
+    if normal_length == 0.0 {
+        return f64::INFINITY;
+    }
+    ((point.x - origin.x) * normal.x
+        + (point.y - origin.y) * normal.y
+        + (point.z - origin.z) * normal.z)
+        .abs()
+        / normal_length
+}
+
 fn design_angle(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Angle> {
     (parameter.unit.as_deref() == Some("deg") && parameter.evaluated_value.is_finite())
         .then_some(cadmpeg_ir::features::Angle(parameter.evaluated_value))
@@ -8822,7 +8967,7 @@ mod relation_tests {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, Length, ParameterValue, SketchProfileRegion,
     };
-    use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::ids::{FaceId, ShellId, SurfaceId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId,
@@ -10665,6 +10810,83 @@ mod relation_tests {
             .candidate_faces
             .push(FaceId("f3d:brep:entity#51".into()));
         assert!(resolved_face_group(&group, std::slice::from_ref(&operand)).is_none());
+    }
+
+    #[test]
+    fn selected_face_start_requires_unique_sketch_plane_coincidence() {
+        use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+        use cadmpeg_ir::topology::{Face, Sense};
+
+        let sketch = Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 2.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let face = |id: &str, surface: &str| Face {
+            id: FaceId(id.into()),
+            shell: ShellId("shell".into()),
+            surface: SurfaceId(surface.into()),
+            sense: Sense::Forward,
+            loops: Vec::new(),
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let plane = |id: &str, origin: Point3, normal: Vector3| Surface {
+            id: SurfaceId(id.into()),
+            geometry: SurfaceGeometry::Plane {
+                origin,
+                normal,
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
+            source_object: None,
+        };
+        let faces = [
+            face("coincident", "surface-coincident"),
+            face("offset", "surface-offset"),
+            face("tilted", "surface-tilted"),
+        ];
+        let surfaces = [
+            plane(
+                "surface-coincident",
+                Point3::new(5.0, -3.0, 2.0),
+                Vector3::new(0.0, 0.0, -2.0),
+            ),
+            plane(
+                "surface-offset",
+                Point3::new(0.0, 0.0, 2.1),
+                Vector3::new(0.0, 0.0, 1.0),
+            ),
+            plane(
+                "surface-tilted",
+                Point3::new(0.0, 0.0, 2.0),
+                Vector3::new(0.0, 1.0, 0.0),
+            ),
+        ];
+
+        assert!(super::face_coincident_with_sketch(
+            &faces[0].id,
+            &sketch,
+            &faces,
+            &surfaces,
+            1.0e-6,
+            1.0e-10,
+        ));
+        for candidate in &faces[1..] {
+            assert!(!super::face_coincident_with_sketch(
+                &candidate.id,
+                &sketch,
+                &faces,
+                &surfaces,
+                1.0e-6,
+                1.0e-10,
+            ));
+        }
     }
 
     #[test]
