@@ -1380,6 +1380,20 @@ pub fn project_dimension_constraints(
             );
         }
         if parameter.source_kind.starts_with("Linear Dimension") {
+            if group.state == 0x20 && group.unknown_constraint_bits == 0 {
+                let loci = group
+                    .loci
+                    .iter()
+                    .map(|locus| (locus.geometry_record_index, locus.role))
+                    .collect::<Vec<_>>();
+                let entities_by_record = group
+                    .loci
+                    .iter()
+                    .zip(&entities)
+                    .map(|(locus, entity)| (locus.geometry_record_index, *entity))
+                    .collect::<HashMap<_, _>>();
+                return exact_counted_offset(&loci, &group.return_members, &entities_by_record);
+            }
             if let Some(definition) = directional_point_dimension(
                 &entities,
                 parameter.evaluated_value * 10.0,
@@ -1988,6 +2002,76 @@ fn exact_counted_dimension_relation(
     (dot.abs() <= scale * 1.0e-9).then(|| Definition::Perpendicular {
         first: first.id.clone(),
         second: second.id.clone(),
+    })
+}
+
+fn exact_counted_offset(
+    loci: &[(u32, u32)],
+    return_members: &[u32],
+    entities: &HashMap<u32, &cadmpeg_ir::sketches::SketchEntity>,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::features::Length;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
+
+    if loci.len() != entities.len()
+        || loci.len() != return_members.len()
+        || loci.len() < 2
+        || !loci.len().is_multiple_of(2)
+        || !return_members.len().is_multiple_of(2)
+    {
+        return None;
+    }
+    let source_count = loci.iter().position(|(_, role)| *role == 0)?;
+    if source_count == 0
+        || source_count * 2 != loci.len()
+        || loci[..source_count].iter().any(|(_, role)| *role == 0)
+        || loci[source_count..].iter().any(|(_, role)| *role != 0)
+    {
+        return None;
+    }
+    let roles = loci.iter().copied().collect::<HashMap<_, _>>();
+    if roles.len() != loci.len() {
+        return None;
+    }
+    let mut used_members = HashSet::new();
+    let mut pairs = Vec::with_capacity(source_count);
+    let mut signed_distance: Option<f64> = None;
+    for members in return_members.chunks_exact(2) {
+        let [source_record_index, result_record_index] = members else {
+            unreachable!("chunks_exact(2) always yields pairs")
+        };
+        if roles.get(source_record_index).copied()? == 0
+            || roles.get(result_record_index).copied()? != 0
+            || !used_members.insert(*source_record_index)
+            || !used_members.insert(*result_record_index)
+        {
+            return None;
+        }
+        let source = entities.get(source_record_index)?;
+        let result = entities.get(result_record_index)?;
+        let distance = parallel_line_offset(&source.geometry, &result.geometry)?;
+        if distance.abs() <= 1.0e-9 {
+            return None;
+        }
+        if let Some(expected) = signed_distance {
+            let scale = 1.0 + distance.abs().max(expected.abs());
+            if (distance - expected).abs() > scale * 1.0e-9 {
+                return None;
+            }
+        } else {
+            signed_distance = Some(distance);
+        }
+        pairs.push(SketchOffsetPair {
+            source: source.id.clone(),
+            result: result.id.clone(),
+        });
+    }
+    if used_members.len() != loci.len() {
+        return None;
+    }
+    Some(Definition::Offset {
+        pairs,
+        signed_distance: Length(signed_distance?),
     })
 }
 
@@ -6427,16 +6511,17 @@ mod relation_tests {
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_sketch_graph, companion_owned_interval,
         decode_fillet_radius_groups, directional_point_dimension, exact_atomic_constraint,
-        exact_counted_dimension_relation, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indirect_angular_lines, neutral_sketch_id,
-        next_indexed_record_offset, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, remove_dimension_frame_relations,
+        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indirect_angular_lines, neutral_sketch_id, next_indexed_record_offset,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7976,6 +8061,57 @@ mod relation_tests {
             exact_counted_dimension_relation(&[&horizontal, &point]),
             Some(SketchConstraintDefinition::Coincident { .. })
         ));
+    }
+
+    #[test]
+    fn counted_offset_return_run_pairs_sources_and_results() {
+        let entity = |id: &str, start, end| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let bottom = entity(
+            "generated:line#bottom",
+            Point2::new(10.0, 0.0),
+            Point2::new(0.0, 0.0),
+        );
+        let top = entity(
+            "generated:line#top",
+            Point2::new(0.0, 10.0),
+            Point2::new(10.0, 10.0),
+        );
+        let inset_top = entity(
+            "generated:line#inset-top",
+            Point2::new(2.0, 8.0),
+            Point2::new(8.0, 8.0),
+        );
+        let inset_bottom = entity(
+            "generated:line#inset-bottom",
+            Point2::new(8.0, 2.0),
+            Point2::new(2.0, 2.0),
+        );
+
+        let entities =
+            HashMap::from([(1, &bottom), (2, &top), (3, &inset_top), (4, &inset_bottom)]);
+        let definition =
+            exact_counted_offset(&[(1, 3), (2, 2), (3, 0), (4, 0)], &[1, 4, 2, 3], &entities)
+                .expect("counted offset graph");
+        let SketchConstraintDefinition::Offset {
+            pairs,
+            signed_distance,
+        } = definition
+        else {
+            panic!("expected offset")
+        };
+        assert_eq!(pairs[0].source, bottom.id);
+        assert_eq!(pairs[0].result, inset_bottom.id);
+        assert_eq!(pairs[1].source, top.id);
+        assert_eq!(pairs[1].result, inset_top.id);
+        assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
     }
 
     #[test]
