@@ -28,6 +28,30 @@ fn summary_preview_segment() -> Vec<u8> {
     bytes
 }
 
+fn external_reference_segment(target: &str) -> Vec<u8> {
+    let mut bytes = b"FINJPL  \x01\x01\x00\x02".to_vec();
+    for value in ["CATStorageProperty", "CATUnicodeString"] {
+        bytes.push(0x34);
+        bytes.push(u8::try_from(value.len()).unwrap());
+        bytes.extend_from_slice(value.as_bytes());
+        let suffix: &[u8] = if value == "CATStorageProperty" {
+            &[
+                0x80, 0x01, 0, 0, 0, 0, 0x22, 0x0c, 0, 0, 0, 0x34, 0x01, 0x01, 0x00,
+            ]
+        } else {
+            &[0xa0, 0x02, 0, 0, 0, 0]
+        };
+        bytes.extend_from_slice(suffix);
+    }
+    bytes.extend_from_slice(&[0x34, 5]);
+    bytes.extend_from_slice(b"CATIA");
+    bytes.extend_from_slice(&[0x9f, 0xa0, 0x02, 0, 0, 0, 0, 0x34]);
+    bytes.push(u8::try_from(target.len()).unwrap());
+    bytes.extend_from_slice(target.as_bytes());
+    bytes.push(0x9f);
+    bytes
+}
+
 fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     let mut entity_count = 0;
     macro_rules! check {
@@ -1824,6 +1848,29 @@ fn summary_version_parser_requires_one_consistent_tuple() {
     other[release + 10] = b'8';
     conflicting.extend_from_slice(&other);
     assert!(crate::container::last_save_version(&conflicting).is_none());
+}
+
+#[test]
+fn storage_property_parser_enumerates_external_catia_documents() {
+    let mut bytes = external_reference_segment("Support.CATPart");
+    bytes.extend_from_slice(&external_reference_segment("Assembly.CATProduct"));
+    bytes.extend_from_slice(&external_reference_segment("notes.txt"));
+    let references = crate::container::external_references(&bytes);
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].target, "Support.CATPart");
+    assert_eq!(references[1].target, "Assembly.CATProduct");
+
+    let scan = crate::container::scan_bytes(bytes);
+    let summary = crate::container::summarize(&scan);
+    assert_eq!(
+        summary
+            .entries
+            .iter()
+            .filter(|entry| entry.role == crate::container::role::EXTERNAL_REFERENCE)
+            .map(|entry| entry.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Support.CATPart", "Assembly.CATProduct"]
+    );
 }
 
 #[test]

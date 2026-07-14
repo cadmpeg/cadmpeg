@@ -73,6 +73,8 @@ A project-flags segment with type word `0x01010003` contains the summary-informa
 
 The `LastSaveVersion` summary field stores ASCII values delimited by `<Version>`/`/<Version>`, `<Release>`/`/<Release>`, `<ServicePack>`/`/<ServicePack>`, `<BuildDate>`/`/<BuildDate>`, and `<HotFix>`/`/<HotFix>`. Repeated identical tuples are one saved-by version; conflicting tuples do not define a governing version.
 
+An external-document storage property in a project-flags segment is the atom sequence `34 12 "CATStorageProperty" 80 01 00 00 00 00 22 0c 00 00 00 34 01 01 00`, `34 10 "CATUnicodeString" a0 02 00 00 00 00`, `34 05 "CATIA" 9f a0 02 00 00 00 00`, then `34 <length:u8> <ASCII target> 9f`. Targets ending in `.CATPart`, `.CATProduct`, `.CATShape`, or `.cgr`, compared case-insensitively, are external CATIA document references.
+
 ### 3.4 Nested-container stream directory
 
 ```text

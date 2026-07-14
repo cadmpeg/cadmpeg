@@ -77,6 +77,15 @@ pub struct LastSaveVersion {
     pub build_date: String,
 }
 
+/// One external CATIA document named by a storage-property record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExternalReference {
+    /// File offset of the length-prefixed target string.
+    pub offset: usize,
+    /// Referenced CATIA document name or path.
+    pub target: String,
+}
+
 /// Split FINJPL segments within a bounded outer-body range.
 #[must_use]
 pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<FinjplSegment> {
@@ -146,6 +155,73 @@ pub fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
         .collect::<Vec<_>>();
     versions.dedup();
     (versions.len() == 1).then(|| versions.remove(0))
+}
+
+/// Enumerate exact `CATStorageProperty` external-document references from
+/// project-flags segments.
+#[must_use]
+pub fn external_references(data: &[u8]) -> Vec<ExternalReference> {
+    const STORAGE: &[u8] = b"\x34\x12CATStorageProperty";
+    finjpl_segments(data, 0, data.len())
+        .into_iter()
+        .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
+        .flat_map(|segment| {
+            let bytes = &data[segment.range.clone()];
+            bytes
+                .windows(STORAGE.len())
+                .enumerate()
+                .filter_map(move |(relative, value)| {
+                    (value == STORAGE).then_some(relative).and_then(|start| {
+                        parse_external_reference(bytes, start).map(|mut reference| {
+                            reference.offset += segment.range.start;
+                            reference
+                        })
+                    })
+                })
+        })
+        .collect()
+}
+
+fn parse_external_reference(data: &[u8], start: usize) -> Option<ExternalReference> {
+    let mut at = start;
+    (length_prefixed_ascii(data, &mut at)? == "CATStorageProperty").then_some(())?;
+    (data.get(at..at + 6) == Some(&[0x80, 0x01, 0, 0, 0, 0])).then_some(())?;
+    at += 6;
+    (data.get(at..at + 9) == Some(&[0x22, 0x0c, 0, 0, 0, 0x34, 0x01, 0x01, 0x00])).then_some(())?;
+    at += 9;
+    (length_prefixed_ascii(data, &mut at)? == "CATUnicodeString").then_some(())?;
+    (data.get(at..at + 6) == Some(&[0xa0, 0x02, 0, 0, 0, 0])).then_some(())?;
+    at += 6;
+    (length_prefixed_ascii(data, &mut at)? == "CATIA").then_some(())?;
+    (data.get(at) == Some(&0x9f)).then_some(())?;
+    at += 1;
+    (data.get(at..at + 6) == Some(&[0xa0, 0x02, 0, 0, 0, 0])).then_some(())?;
+    at += 6;
+    let target_offset = at;
+    let target = length_prefixed_ascii(data, &mut at)?;
+    (data.get(at) == Some(&0x9f) && is_catia_document_name(&target)).then_some(())?;
+    Some(ExternalReference {
+        offset: target_offset,
+        target,
+    })
+}
+
+fn length_prefixed_ascii(data: &[u8], at: &mut usize) -> Option<String> {
+    (data.get(*at) == Some(&0x34)).then_some(())?;
+    let length = usize::from(*data.get(*at + 1)?);
+    let start = (*at).checked_add(2)?;
+    let end = start.checked_add(length)?;
+    let value = data.get(start..end)?;
+    *at = end;
+    value
+        .is_ascii()
+        .then(|| std::str::from_utf8(value).ok().map(str::to_owned))?
+}
+
+fn is_catia_document_name(value: &str) -> bool {
+    [".catpart", ".catproduct", ".catshape", ".cgr"]
+        .iter()
+        .any(|extension| value.to_ascii_lowercase().ends_with(extension))
 }
 
 fn parse_last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
@@ -315,6 +391,8 @@ pub mod role {
     pub const STREAM: &str = "stream";
     /// JPEG preview embedded in the outer summary-information segment.
     pub const PREVIEW: &str = "preview";
+    /// Referenced CATIA document.
+    pub const EXTERNAL_REFERENCE: &str = "external-reference";
 }
 
 /// One physical extent of a logical stream. `phys_off` is measured from the inner
@@ -390,6 +468,8 @@ pub struct ContainerScan {
     pub previews: Vec<PreviewImage>,
     /// Unique saved-by application version from summary information.
     pub last_save_version: Option<LastSaveVersion>,
+    /// External CATIA documents named by storage properties.
+    pub external_references: Vec<ExternalReference>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
@@ -663,6 +743,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let previews = preview_images(&data);
     let last_save_version = last_save_version(&data);
+    let external_references = external_references(&data);
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
@@ -690,6 +771,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         brep,
         previews,
         last_save_version,
+        external_references,
         census,
         variant,
     }
@@ -731,6 +813,18 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
             role: role::PREVIEW.to_string(),
             compression: "jpeg".to_string(),
             compressed_size: (preview.range.end - preview.range.start) as u64,
+            uncompressed_size: 0,
+            attributes,
+        });
+    }
+    for reference in &scan.external_references {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("file_offset".to_string(), reference.offset.to_string());
+        entries.push(ContainerEntry {
+            name: reference.target.clone(),
+            role: role::EXTERNAL_REFERENCE.to_string(),
+            compression: "none".to_string(),
+            compressed_size: 0,
             uncompressed_size: 0,
             attributes,
         });

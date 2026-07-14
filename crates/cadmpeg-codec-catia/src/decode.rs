@@ -3595,6 +3595,16 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         attributes.insert("catia_hot_fix".to_string(), version.hot_fix.to_string());
         attributes.insert("catia_build_date".to_string(), version.build_date.clone());
     }
+    attributes.insert(
+        "external_reference_count".to_string(),
+        scan.external_references.len().to_string(),
+    );
+    for (index, reference) in scan.external_references.iter().enumerate() {
+        attributes.insert(
+            format!("external_reference_{index}"),
+            reference.target.clone(),
+        );
+    }
     SourceMeta {
         format: "catia".to_string(),
         attributes,
