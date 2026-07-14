@@ -2685,19 +2685,44 @@ struct MeshSelectionSearch<'a> {
 }
 
 fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
+    fn canonical_cycle(boundary: &[MeshBoundaryEdgeCandidate]) -> Vec<(usize, Option<bool>)> {
+        fn rotations(values: &[(usize, Option<bool>)]) -> Vec<Vec<(usize, Option<bool>)>> {
+            (0..values.len())
+                .map(|start| {
+                    values[start..]
+                        .iter()
+                        .chain(&values[..start])
+                        .copied()
+                        .collect()
+                })
+                .collect()
+        }
+
+        let forward = boundary
+            .iter()
+            .map(|use_| (use_.edge, use_.reversed))
+            .collect::<Vec<_>>();
+        let reversed = boundary
+            .iter()
+            .rev()
+            .map(|use_| (use_.edge, use_.reversed.map(|value| !value)))
+            .collect::<Vec<_>>();
+        rotations(&forward)
+            .into_iter()
+            .chain(rotations(&reversed))
+            .min()
+            .unwrap_or_default()
+    }
+
     for assignments in faces {
         let mut seen = HashSet::new();
         assignments.retain(|assignment| {
-            let signature = assignment
+            let mut signature = assignment
                 .boundaries
                 .iter()
-                .map(|boundary| {
-                    boundary
-                        .iter()
-                        .map(|use_| (use_.edge, use_.reversed))
-                        .collect::<Vec<_>>()
-                })
+                .map(|boundary| canonical_cycle(boundary))
                 .collect::<Vec<_>>();
+            signature.sort_unstable();
             seen.insert(signature)
         });
     }
@@ -3636,19 +3661,42 @@ mod motif_tests {
         };
         let mut faces = vec![vec![
             MeshFaceBoundaryAssignment {
-                boundaries: vec![vec![use_(0, 0, 1), use_(1, 1, 4)]],
+                boundaries: vec![vec![
+                    use_(0, 0, 1),
+                    use_(1, 1, 2),
+                    use_(2, 2, 3),
+                    use_(3, 3, 4),
+                ]],
             },
             MeshFaceBoundaryAssignment {
-                boundaries: vec![vec![use_(0, 0, 3), use_(1, 3, 4)]],
+                boundaries: vec![vec![
+                    use_(0, 0, 2),
+                    use_(1, 2, 3),
+                    use_(2, 3, 4),
+                    use_(3, 4, 5),
+                ]],
             },
             MeshFaceBoundaryAssignment {
-                boundaries: vec![vec![use_(1, 0, 1), use_(0, 1, 4)]],
+                boundaries: vec![vec![
+                    use_(3, 0, 1),
+                    use_(2, 1, 2),
+                    use_(1, 2, 3),
+                    use_(0, 3, 4),
+                ]],
+            },
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![
+                    use_(0, 0, 1),
+                    use_(2, 1, 2),
+                    use_(1, 2, 3),
+                    use_(3, 3, 4),
+                ]],
             },
         ]];
         deduplicate_mesh_quotient_assignments(&mut faces);
         assert_eq!(faces[0].len(), 2);
         assert_eq!(faces[0][0].boundaries[0][0].edge, 0);
-        assert_eq!(faces[0][1].boundaries[0][0].edge, 1);
+        assert_eq!(faces[0][1].boundaries[0][1].edge, 2);
     }
 
     #[test]

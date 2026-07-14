@@ -205,6 +205,8 @@ Initialize the quotient by collapsing equal serialized port identities. Use comp
 
 Assignments with the same ordered physical-edge rows and the same resolved occurrence directions induce the same logical-corner quotient. Differences confined to boundary-segment allocation do not create distinct quotient choices. Positional assignments remain distinct while deriving trim-corner endpoint constraints.
 
+Boundary rotation, reversal with every resolved occurrence direction inverted, and permutation of separate boundaries leave the face's port-corner equations unchanged. These are one quotient choice. Canonicalize each cycle over all rotations and both traversal directions, sort the cycle signatures, and retain the first serialized representative.
+
 Each physical port initially admits every coordinate row present in one of its edge's endpoint-pair candidates. An edge with no local endpoint predicate admits the complete coordinate-row table. Collapsing two ports intersects their coordinate domains. Reject an empty intersection immediately. A complete quotient is valid only when it has one component per coordinate row and the component domains have one bijective coordinate assignment.
 
 Port-domain intersections preserve physical-edge pair correlation. For every edge with an explicit pair domain, at least one pair must place one member in each of the edge's two current port components. The two ports remain distinct. Check this constraint after each complete boundary-cycle merge and on the complete quotient.
