@@ -613,7 +613,16 @@ pub(crate) fn bind_scalar_operands(
                         FeatureInputOperandKind::D6
                             | FeatureInputOperandKind::E1
                             | FeatureInputOperandKind::Native(
-                                0x837b | 0x8386 | 0x83fe | 0x8dcb | 0x8dda | 0xbc7c | 0xbc87
+                                0x837b
+                                    | 0x8386
+                                    | 0x83fe
+                                    | 0x8ab6
+                                    | 0x8dcb
+                                    | 0x8dda
+                                    | 0x929d
+                                    | 0xbc7c
+                                    | 0xbc87
+                                    | 0xbd69
                             )
                     ) {
                         continue;
@@ -835,9 +844,9 @@ pub(crate) fn operand_accepts_marker(
             )
         }
         FeatureInputOperandKind::E1
-        | FeatureInputOperandKind::Native(0x8386 | 0x83fe | 0x8dda | 0xbc87) => {
-            marker == SketchInputKind::LineOrCircle
-        }
+        | FeatureInputOperandKind::Native(
+            0x8386 | 0x83fe | 0x8ab6 | 0x8dda | 0x929d | 0xbc87 | 0xbd69,
+        ) => marker == SketchInputKind::LineOrCircle,
         _ => true,
     }
 }
@@ -847,7 +856,7 @@ fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> bool {
         kind,
         FeatureInputOperandKind::D6
             | FeatureInputOperandKind::E1
-            | FeatureInputOperandKind::Native(0x83fe)
+            | FeatureInputOperandKind::Native(0x83fe | 0x8ab6 | 0x929d | 0xbd69)
     )
 }
 
@@ -1003,7 +1012,11 @@ fn relation_signature(
         PointPointHorizontalDistance, PointPointVerticalDistance,
     };
     if family == CircleDiameter {
-        return matches!(operands, [operand] if operand.kind == Native(0x83fe));
+        return matches!(
+            operands,
+            [operand]
+                if matches!(operand.kind, Native(0x83fe | 0x8ab6 | 0x929d | 0xbd69))
+        );
     }
     let [first, second] = operands else {
         return false;

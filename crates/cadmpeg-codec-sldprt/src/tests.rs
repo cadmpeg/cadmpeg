@@ -14899,6 +14899,38 @@ fn decode_groups_unary_circle_diameter_relations() {
 }
 
 #[test]
+fn decode_groups_each_circle_dimension_operand_tag() {
+    for tag in [[0xfe, 0x83], [0xb6, 0x8a], [0x9d, 0x92], [0x69, 0xbd]] {
+        let mut source =
+            sldprt_with_tagged_compact_relation(&triangle_body(), "sgCircleDim", [tag, [0, 0]]);
+        source.extend(make_block(
+            0x42,
+            "Contents/Keywords",
+            br#"<Keywords><Sketch Name="Sketch1" Type="ProfileFeature"/></Keywords>"#,
+        ));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let native = sldprt_native(&decoded.ir);
+        let [relation] = native.feature_input_lanes[0].relation_instances.as_slice() else {
+            panic!("one circle-diameter relation for tag {tag:02x?}");
+        };
+        assert_eq!(
+            relation.family,
+            crate::records::FeatureInputRelationFamily::CircleDiameter
+        );
+        let [operand] = relation.operands.as_slice() else {
+            panic!("one circle-diameter operand for tag {tag:02x?}");
+        };
+        assert_eq!(
+            operand.kind,
+            crate::records::FeatureInputOperandKind::Native(u16::from_le_bytes(tag))
+        );
+        assert_eq!(operand.entity_index, 0);
+    }
+}
+
+#[test]
 fn decode_uses_declaration_to_disambiguate_native_relation_tags() {
     let cases = [
         (
