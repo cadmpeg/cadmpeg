@@ -3350,7 +3350,10 @@ fn validate_compact_edge_selection_edits(
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
+        let Some(edge_selections) = selections
+            .get(native_ref)
+            .filter(|selections| !selections.is_empty())
+        else {
             continue;
         };
         let edges = match &feature.definition {
@@ -3360,7 +3363,7 @@ fn validate_compact_edge_selection_edits(
             _ => continue,
         };
         let expected = EdgeSelection::Native(
-            crate::resolved_features::compact_edge_selection_value(&selection.local_edge_ids),
+            crate::resolved_features::compact_edge_selection_set_value(edge_selections),
         );
         if edges != &expected {
             return Err(CodecError::NotImplemented(format!(

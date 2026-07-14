@@ -507,7 +507,45 @@ mod marker_tests {
         }
         assert_eq!(compact_edge_selection_at(&payload, 12), Some(vec![4, 0, 5]));
         payload[12 + 18 + 28 + 4] ^= 1;
-        assert_eq!(compact_edge_selection_at(&payload, 12), None);
+        assert_eq!(compact_edge_selection_at(&payload, 12), Some(vec![4, 0, 5]));
+    }
+
+    #[test]
+    fn compact_edge_selection_accepts_heterogeneous_component_paths() {
+        let marker = 12;
+        let mut payload = vec![0; 100];
+        payload[..4].copy_from_slice(&2u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[8..12].copy_from_slice(&37u32.to_le_bytes());
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let first = marker + 18;
+        payload[first..first + 4].copy_from_slice(&[0x3d, 0x80, 0, 0]);
+        payload[first + 4..first + 16].copy_from_slice(&[1; 12]);
+        payload[first + 16..first + 20].copy_from_slice(&2u32.to_le_bytes());
+        let second = first + 28;
+        payload[second..second + 4].copy_from_slice(&[0x4a, 0x80, 0, 0]);
+        payload[second + 4..second + 16].copy_from_slice(&[2; 12]);
+        payload[second + 16..second + 20].copy_from_slice(&3u32.to_le_bytes());
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![2, 3])
+        );
+    }
+
+    #[test]
+    fn compact_edge_selection_accepts_counted_u16_ids() {
+        let marker = 12;
+        let mut payload = vec![0; 80];
+        payload[..4].copy_from_slice(&3u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let ids = marker + 18;
+        payload[ids..ids + 6].copy_from_slice(&[4, 0, 8, 0, 12, 0]);
+        payload[ids + 22..ids + 25].copy_from_slice(&[0xff, 0xfe, 0xff]);
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![4, 8, 12])
+        );
     }
 
     #[test]
@@ -993,28 +1031,42 @@ fn compact_edge_selections(
         let direct_child = usize::try_from(compact_edge_class.offset)
             .ok()
             .filter(|offset| (start..end).contains(offset));
-        let selection = if let Some(child_start) = direct_child {
-            lane.native_payload
+        let mut selections = Vec::new();
+        if let Some(child_start) = direct_child {
+            if let Some(selection) = lane
+                .native_payload
                 .get(child_start..end)
                 .and_then(|payload| compact_edge_selection_vector(payload, child_start))
-        } else {
-            let Some(token) = compact_edge_token else {
-                continue;
-            };
-            unique_repeated_edge_selection(&lane.native_payload, start, end, token)
-        };
-        let Some((offset, local_edge_ids)) = selection else {
-            continue;
-        };
-        result.push(FeatureInputEdgeSelection {
-            id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
-            parent: lane.id.clone(),
-            ordinal: result.len() as u32,
-            offset: offset as u64,
-            object_name_ref: name.id.clone(),
-            feature_ref: feature.id.clone(),
-            local_edge_ids,
-        });
+            {
+                selections.push(selection);
+            }
+        }
+        if let Some(token) = compact_edge_token {
+            selections.extend(repeated_edge_selections(
+                &lane.native_payload,
+                start,
+                end,
+                token,
+            ));
+        }
+        selections.extend(edge_selection_vectors_in_interval(
+            &lane.native_payload,
+            start,
+            end,
+        ));
+        selections.sort_unstable_by_key(|selection| selection.0);
+        selections.dedup_by_key(|selection| selection.0);
+        for (offset, local_edge_ids) in selections {
+            result.push(FeatureInputEdgeSelection {
+                id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
+                parent: lane.id.clone(),
+                ordinal: result.len() as u32,
+                offset: offset as u64,
+                object_name_ref: name.id.clone(),
+                feature_ref: feature.id.clone(),
+                local_edge_ids,
+            });
+        }
     }
     result
 }
@@ -1114,16 +1166,18 @@ pub(crate) fn compact_surface_selection_at(payload: &[u8], marker: usize) -> Opt
     (!ids.is_empty()).then_some(ids)
 }
 
-fn unique_repeated_edge_selection(
+fn repeated_edge_selections(
     payload: &[u8],
     start: usize,
     end: usize,
     token: u16,
-) -> Option<(usize, Vec<u32>)> {
+) -> Vec<(usize, Vec<u32>)> {
     let token = token.to_le_bytes();
     let mut selections = Vec::new();
     for offset in start..end.saturating_sub(110) {
-        if payload.get(offset..offset + 2)? != token || payload.get(offset + 2)? != &2 {
+        if payload.get(offset..offset + 2) != Some(token.as_slice())
+            || payload.get(offset + 2) != Some(&2)
+        {
             continue;
         }
         let marker = offset + 108;
@@ -1131,10 +1185,21 @@ fn unique_repeated_edge_selection(
             selections.push((marker, ids));
         }
     }
-    let [selection] = selections.as_slice() else {
-        return None;
-    };
-    Some(selection.clone())
+    selections
+}
+
+fn edge_selection_vectors_in_interval(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Vec<(usize, Vec<u32>)> {
+    (start.saturating_add(12)..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+        .filter(|marker| {
+            payload.get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        })
+        .filter_map(|marker| compact_edge_selection_at(payload, marker).map(|ids| (marker, ids)))
+        .collect()
 }
 
 const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
@@ -1158,7 +1223,7 @@ fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, 
 
 pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
-        || payload.get(marker - 8..marker)? != [0x00, 0x02, 0x00, 0x00, 0, 0, 0, 0]
+        || payload.get(marker - 8..marker - 4)? != [0x00, 0x02, 0x00, 0x00]
         || payload.get(marker + 16..marker + 18)? != [0, 0]
     {
         return None;
@@ -1170,7 +1235,16 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     if count == 0 {
         return None;
     }
-    let mut cursor = marker + 18;
+    compact_homogeneous_edge_ids(payload, marker + 18, count)
+        .or_else(|| compact_heterogeneous_edge_path_ids(payload, marker + 18, count))
+        .or_else(|| compact_u16_edge_ids(payload, marker + 18, count))
+}
+
+fn compact_homogeneous_edge_ids(
+    payload: &[u8],
+    mut cursor: usize,
+    count: usize,
+) -> Option<Vec<u32>> {
     let signature = payload.get(cursor + 4..cursor + 16)?.to_vec();
     let mut ids = Vec::with_capacity(count);
     for index in 0..count {
@@ -1197,6 +1271,64 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
         }
     }
     Some(ids)
+}
+
+fn compact_heterogeneous_edge_path_ids(
+    payload: &[u8],
+    mut cursor: usize,
+    count: usize,
+) -> Option<Vec<u32>> {
+    let entry_at = |offset: usize| {
+        let instance = payload.get(offset..offset + 4)?;
+        (instance[0..2] != [0, 0]
+            && instance[0..2] != [0xff, 0xff]
+            && instance[2..4] == [0, 0]
+            && payload.get(offset + 4..offset + 20).is_some())
+        .then_some(())
+    };
+    let mut ids = Vec::with_capacity(count);
+    for index in 0..count {
+        entry_at(cursor)?;
+        ids.push(u32::from_le_bytes(
+            payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
+        ));
+        cursor += 20;
+        if index + 1 == count {
+            continue;
+        }
+        let gaps = [0usize, 4, 8]
+            .into_iter()
+            .filter(|gap| match *gap {
+                0 => true,
+                4 => payload.get(cursor..cursor + 4) == Some(&[0; 4]),
+                8 => matches!(
+                    payload.get(cursor..cursor + 8),
+                    Some([0, 0, 0, 0, 0, 0, 0, 0] | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
+                ),
+                _ => false,
+            })
+            .filter(|gap| entry_at(cursor + gap).is_some())
+            .collect::<Vec<_>>();
+        let [gap] = gaps.as_slice() else {
+            return None;
+        };
+        cursor += gap;
+    }
+    Some(ids)
+}
+
+fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
+    let end = cursor.checked_add(count.checked_mul(2)?)?;
+    let ids = payload
+        .get(cursor..end)?
+        .chunks_exact(2)
+        .map(|bytes| u32::from(u16::from_le_bytes([bytes[0], bytes[1]])))
+        .collect::<Vec<_>>();
+    let suffix = payload.get(end..end + 19)?;
+    (ids.iter().all(|id| *id != 0)
+        && suffix[..16].iter().all(|byte| *byte == 0)
+        && suffix[16..19] == [0xff, 0xfe, 0xff])
+    .then_some(ids)
 }
 
 fn compact_body_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {
@@ -2366,7 +2498,10 @@ pub(crate) fn project_compact_edge_selections(
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
+        let Some(edge_selections) = selections
+            .get(native_ref)
+            .filter(|selections| !selections.is_empty())
+        else {
             continue;
         };
         let edges = match &mut feature.definition {
@@ -2376,8 +2511,8 @@ pub(crate) fn project_compact_edge_selections(
             _ => continue,
         };
         if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
-            *edges = cadmpeg_ir::features::EdgeSelection::Native(compact_edge_selection_value(
-                &selection.local_edge_ids,
+            *edges = cadmpeg_ir::features::EdgeSelection::Native(compact_edge_selection_set_value(
+                edge_selections,
             ));
         }
     }
@@ -2661,6 +2796,27 @@ pub(crate) fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
             value.push(',');
         }
         write!(&mut value, "{edge_id}").expect("writing to String cannot fail");
+    }
+    value
+}
+
+pub(crate) fn compact_edge_selection_set_value(
+    selections: &[&FeatureInputEdgeSelection],
+) -> String {
+    if let [selection] = selections {
+        return compact_edge_selection_value(&selection.local_edge_ids);
+    }
+    let mut value = String::from("sldprt:feature-input:edge-selection-vectors:");
+    for (selection_index, selection) in selections.iter().enumerate() {
+        if selection_index != 0 {
+            value.push(';');
+        }
+        for (id_index, id) in selection.local_edge_ids.iter().enumerate() {
+            if id_index != 0 {
+                value.push(',');
+            }
+            write!(&mut value, "{id}").expect("writing to String cannot fail");
+        }
     }
     value
 }
