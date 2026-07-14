@@ -311,7 +311,7 @@ fn object_reference(
     let point = point(&mut reader)?;
     let mut evaluation = evaluation(&mut reader, 0)?;
     let path_count = count(&mut reader, 1)?;
-    let mut instance_path = Vec::with_capacity(path_count);
+    let mut instance_path = Vec::new();
     for _ in 0..path_count {
         let (value, value_next) =
             instance_reference(bytes, reader.position(), reader.end(), archive)?;
@@ -351,7 +351,7 @@ fn object_references(
     archive: ArchiveVersion,
 ) -> Result<Vec<ObjectReference>, FramingError> {
     let count = count(reader, 1)?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = Vec::new();
     for _ in 0..count {
         let (value, next) = object_reference(
             reader.backing_bytes(),
@@ -468,7 +468,7 @@ fn poly_edge(
         ));
     }
     let segment_count = count(&mut reader, 1)?;
-    let mut segments = Vec::with_capacity(segment_count);
+    let mut segments = Vec::new();
     for _ in 0..segment_count {
         let (segment, segment_next) = curve_proxy(bytes, reader.position(), reader.end(), archive)?;
         reader.skip(segment_next - reader.position())?;

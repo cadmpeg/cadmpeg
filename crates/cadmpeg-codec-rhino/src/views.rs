@@ -843,7 +843,7 @@ fn parse_list(
                 "view count exceeds limit",
             ));
         }
-        let mut views = Vec::with_capacity(count);
+        let mut views = Vec::new();
         for index in 0..count {
             let view = chunk_at(data, reader.position(), reader.end(), archive, false)?;
             if view.typecode != VIEW_RECORD || view.short {
@@ -875,7 +875,7 @@ fn parse_named_cplanes(
         .ok()
         .filter(|count| *count <= 1 << 16)
         .ok_or_else(|| structural(count_offset, "named construction-plane count is invalid"))?;
-    let mut values = Vec::with_capacity(count);
+    let mut values = Vec::new();
     for index in 0..count {
         let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
         if chunk.typecode != VIEW_CPLANE || chunk.short {
