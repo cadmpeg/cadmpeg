@@ -395,6 +395,11 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &lanes,
     );
+    crate::resolved_features::project_relation_point_geometry(
+        &mut sketch_entities,
+        &ir.model.features,
+        &lanes,
+    );
     crate::resolved_features::project_relation_bindings(
         &mut sketch_constraints,
         &ir.model.features,
@@ -950,6 +955,11 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &ir.model.surfaces,
         &ir.model.features,
         &ir.model.parameters,
+        &lanes,
+    );
+    crate::resolved_features::project_relation_point_geometry(
+        &mut ir.model.sketch_entities,
+        &ir.model.features,
         &lanes,
     );
     crate::resolved_features::project_relation_bindings(
