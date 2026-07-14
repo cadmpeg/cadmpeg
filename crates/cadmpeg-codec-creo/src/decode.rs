@@ -5393,6 +5393,18 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn transferred_geometry_is_derived_from_ir_arenas() {
+        let mut ir = CadIr::empty(Units::default());
+        assert!(!has_transferred_geometry(&ir));
+
+        ir.model.points.push(Point {
+            id: PointId("point".to_string()),
+            position: Point3::new(1.0, 2.0, 3.0),
+        });
+        assert!(has_transferred_geometry(&ir));
+    }
+
+    #[test]
     fn full_revolution_uses_exact_quadratic_circle_poles() {
         let directrix = NurbsCurve {
             degree: 1,
@@ -6391,7 +6403,7 @@ pub fn decode(
     let scan = container::scan(reader)?;
 
     let ir = build_ir(&scan)?;
-    let report = build_report(&scan, options.container_only);
+    let report = build_report(&scan, &ir, options.container_only);
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -7048,7 +7060,20 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
 }
 
 /// Build diagnostics for data that cannot be represented in the emitted IR.
-fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
+fn has_transferred_geometry(ir: &CadIr) -> bool {
+    let model = &ir.model;
+    !model.points.is_empty()
+        || !model.surfaces.is_empty()
+        || !model.curves.is_empty()
+        || !model.subds.is_empty()
+        || !model.pcurves.is_empty()
+        || !model.procedural_surfaces.is_empty()
+        || !model.procedural_curves.is_empty()
+        || !model.sketch_entities.is_empty()
+        || !model.tessellations.is_empty()
+}
+
+fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
     let geom_sections = scan
         .sections
@@ -7192,7 +7217,7 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     DecodeReport {
         format: "creo".to_string(),
         container_only,
-        geometry_transferred: !scan.datum_planes.is_empty() || placed_plane_count != 0,
+        geometry_transferred: has_transferred_geometry(ir),
         losses,
         notes: summary.notes,
     }
