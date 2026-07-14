@@ -1637,6 +1637,26 @@ fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<Nur
     })
 }
 
+fn placed_section_nurbs(
+    transform: &crate::placement::FeatureSectionTransform,
+    nurbs: &NurbsCurve,
+) -> NurbsCurve {
+    NurbsCurve {
+        degree: nurbs.degree,
+        knots: nurbs.knots.clone(),
+        control_points: nurbs
+            .control_points
+            .iter()
+            .map(|point| {
+                let placed = section_xyz_in_model(transform, [point.x, point.y, point.z]);
+                Point3::new(placed[0], placed[1], placed[2])
+            })
+            .collect(),
+        weights: nurbs.weights.clone(),
+        periodic: nurbs.periodic,
+    }
+}
+
 fn revolved_nurbs_surface(directrix: &NurbsCurve, axis: RevolutionAxis) -> Option<NurbsSurface> {
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -3024,13 +3044,6 @@ fn transfer_resolved_sketches(
             let Some(nurbs) = saved_spline_nurbs(spline) else {
                 continue;
             };
-            if nurbs
-                .control_points
-                .iter()
-                .any(|point| point.z.abs() > 1e-12)
-            {
-                continue;
-            }
             let suffix = spline.entity_id.map_or_else(
                 || format!("offset{}", spline.offset),
                 |entity_id| entity_id.to_string(),
@@ -3045,18 +3058,38 @@ fn transfer_resolved_sketches(
             ));
             annotate(
                 annotations,
-                &entity_id.0,
-                "FeatDefs",
-                spline.offset as u64,
-                "saved_interpolation_spline",
-                Exactness::Derived,
-            );
-            annotate(
-                annotations,
                 &curve_id,
                 "FeatDefs",
                 spline.offset as u64,
                 "placed_saved_interpolation_spline",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id: curve_id.clone(),
+                geometry: CurveGeometry::Nurbs(placed_section_nurbs(transform, &nurbs)),
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("FeatDefs:saved_spline#{suffix}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            if nurbs
+                .control_points
+                .iter()
+                .any(|point| point.z.abs() > 1e-12)
+            {
+                continue;
+            }
+            annotate(
+                annotations,
+                &entity_id.0,
+                "FeatDefs",
+                spline.offset as u64,
+                "saved_interpolation_spline",
                 Exactness::Derived,
             );
             entities.push(SketchEntity {
@@ -3077,33 +3110,6 @@ fn transfer_resolved_sketches(
                     weights: None,
                     periodic: false,
                 },
-            });
-            ir.model.curves.push(Curve {
-                id: curve_id,
-                geometry: CurveGeometry::Nurbs(NurbsCurve {
-                    degree: nurbs.degree,
-                    knots: nurbs.knots,
-                    control_points: nurbs
-                        .control_points
-                        .into_iter()
-                        .map(|point| {
-                            let placed =
-                                section_xyz_in_model(transform, [point.x, point.y, point.z]);
-                            Point3::new(placed[0], placed[1], placed[2])
-                        })
-                        .collect(),
-                    weights: None,
-                    periodic: false,
-                }),
-                source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
-                    object_id: format!("FeatDefs:saved_spline#{suffix}"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
             });
         }
         if entities.is_empty() {
@@ -5155,6 +5161,31 @@ mod resolved_sketch_tests {
             assert!((derivative[0] - 1.0).abs() < 1e-12);
             assert!(derivative[1].abs() < 1e-12 && derivative[2].abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn nonplanar_saved_spline_places_as_model_curve() {
+        let transform = crate::placement::FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(40),
+            origin: [10.0, 20.0, 30.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [0.0, -1.0, 0.0],
+            offset: 5,
+        };
+        let local = NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(1.0, 2.0, 3.0), Point3::new(4.0, 5.0, 6.0)],
+            weights: None,
+            periodic: false,
+        };
+
+        let placed = placed_section_nurbs(&transform, &local);
+
+        assert_eq!(placed.control_points[0], Point3::new(11.0, 17.0, 32.0));
+        assert_eq!(placed.control_points[1], Point3::new(14.0, 14.0, 35.0));
     }
 
     #[test]
