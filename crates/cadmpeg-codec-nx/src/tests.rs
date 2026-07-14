@@ -427,7 +427,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 33);
+    assert_eq!(namespace.version, 34);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -619,6 +619,43 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
             "nx:feature-history:input-block#0-7-0",
             "nx:feature-history:input-block#0-7-2"
         ]
+    );
+}
+
+#[test]
+fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
+    use crate::native::{DataBlockReference, FeatureInputBlock};
+
+    let input = FeatureInputBlock {
+        id: "nx:feature-history:input-block#0-7-0".to_string(),
+        operation_label: "nx:feature-history:operation-label#0-7".to_string(),
+        input_slot: 0,
+        object_index: 45,
+        data_block: "nx:om-data-blocks-2:block#45".to_string(),
+        source_offset: 700,
+    };
+    let reference = |ordinal: u32, declaration: Option<&str>| DataBlockReference {
+        id: format!("nx:om-data-block-references-2-45:reference#{ordinal}"),
+        data_block: input.data_block.clone(),
+        ordinal,
+        object_id: 201 + ordinal,
+        target_record: Some(format!("nx:om-record-directory-0:entry#{ordinal}")),
+        target_expression_declaration: declaration.map(str::to_string),
+        source_offset: 800 + u64::from(ordinal),
+    };
+    let references = [
+        reference(0, Some("nx:om-expression-declarations-0:declaration#3")),
+        reference(1, None),
+    ];
+
+    let bindings = crate::native::feature_parameter_bindings(&[input], &references);
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].input_slot, 0);
+    assert_eq!(bindings[0].reference_ordinal, 0);
+    assert_eq!(bindings[0].object_id, 201);
+    assert_eq!(
+        bindings[0].expression_declaration,
+        "nx:om-expression-declarations-0:declaration#3"
     );
 }
 
@@ -3780,7 +3817,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 33);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 34);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -280,6 +280,27 @@ pub struct FeatureInputBlock {
     pub source_offset: u64,
 }
 
+/// Ordered parameter declaration reached through one feature input block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureParameterBinding {
+    /// Globally unique binding identity.
+    pub id: String,
+    /// Owning operation-label identity.
+    pub operation_label: String,
+    /// Zero-based operation-header input slot.
+    pub input_slot: u8,
+    /// Input block carrying the object-reference field.
+    pub input_block: String,
+    /// Zero-based object-reference order within the input block.
+    pub reference_ordinal: u32,
+    /// Target parameter declaration in the native expression arena.
+    pub expression_declaration: String,
+    /// Persistent OM object ID of the declaration.
+    pub object_id: u32,
+    /// Absolute file offset of the object-index token.
+    pub source_offset: u64,
+}
+
 /// Ordered sketch-history record and its exact native input lanes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchRecord {
@@ -776,6 +797,35 @@ pub fn feature_sketch_records(
             })
         })
         .collect()
+}
+
+/// Join operation input lanes to uniquely resolved parameter declarations.
+pub fn feature_parameter_bindings(
+    inputs: &[FeatureInputBlock],
+    references: &[DataBlockReference],
+) -> Vec<FeatureParameterBinding> {
+    let mut bindings = Vec::new();
+    for input in inputs {
+        for reference in references
+            .iter()
+            .filter(|reference| reference.data_block == input.data_block)
+        {
+            let Some(expression_declaration) = &reference.target_expression_declaration else {
+                continue;
+            };
+            bindings.push(FeatureParameterBinding {
+                id: format!("{}:parameter#{}", input.id, reference.ordinal),
+                operation_label: input.operation_label.clone(),
+                input_slot: input.input_slot,
+                input_block: input.data_block.clone(),
+                reference_ordinal: reference.ordinal,
+                expression_declaration: expression_declaration.clone(),
+                object_id: reference.object_id,
+                source_offset: reference.source_offset,
+            });
+        }
+    }
+    bindings
 }
 
 /// Resolve segment-index words that point to validated framed OM sections.

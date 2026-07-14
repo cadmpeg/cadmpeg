@@ -2781,6 +2781,8 @@ fn attach_native_object_model(
     let object_records = crate::native::object_records(&scan.container);
     let data_blocks = crate::native::data_blocks(&scan.container);
     let data_block_references = crate::native::data_block_references(&scan.container);
+    let feature_parameter_bindings =
+        crate::native::feature_parameter_bindings(&feature_input_blocks, &data_block_references);
     let store_headers = crate::native::store_headers(&scan.container);
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
@@ -2811,6 +2813,7 @@ fn attach_native_object_model(
         && object_records.is_empty()
         && data_blocks.is_empty()
         && data_block_references.is_empty()
+        && feature_parameter_bindings.is_empty()
         && store_headers.is_empty()
         && string_values.is_empty()
         && object_references.is_empty()
@@ -2925,6 +2928,12 @@ fn attach_native_object_model(
             .tag("OM_DATA_BLOCK_REFERENCE");
         annotations.exactness(&reference.id, Exactness::ByteExact);
     }
+    for binding in &feature_parameter_bindings {
+        annotations
+            .note(&binding.id, annotation_stream, binding.source_offset)
+            .tag("FEATURE_PARAMETER_BINDING");
+        annotations.exactness(&binding.id, Exactness::Derived);
+    }
     for header in &store_headers {
         annotations
             .note(&header.id, annotation_stream, header.source_offset)
@@ -3031,6 +3040,7 @@ fn attach_native_object_model(
             body_references: &feature_body_references,
             body_reference_occurrences: &feature_body_reference_occurrences,
             input_blocks: &feature_input_blocks,
+            parameter_bindings: &feature_parameter_bindings,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
             body_bindings: &segment_body_bindings,
@@ -3042,7 +3052,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(33);
+    namespace.version = namespace.version.max(34);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3112,6 +3122,9 @@ fn attach_native_object_model(
     if !data_block_references.is_empty() {
         namespace.set_arena("data_block_references", &data_block_references)?;
     }
+    if !feature_parameter_bindings.is_empty() {
+        namespace.set_arena("feature_parameter_bindings", &feature_parameter_bindings)?;
+    }
     if !store_headers.is_empty() {
         namespace.set_arena("store_headers", &store_headers)?;
     }
@@ -3146,6 +3159,7 @@ struct FeatureOperationSources<'a> {
     body_references: &'a [crate::native::FeatureBodyReference],
     body_reference_occurrences: &'a [crate::native::FeatureBodyReferenceOccurrence],
     input_blocks: &'a [crate::native::FeatureInputBlock],
+    parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
     body_bindings: &'a [crate::native::SegmentBodyBinding],
@@ -3162,6 +3176,7 @@ fn attach_feature_operations(
         body_references,
         body_reference_occurrences,
         input_blocks,
+        parameter_bindings,
         operation_records,
         payload_strings,
         body_bindings,
@@ -3200,6 +3215,14 @@ fn attach_feature_operations(
             .entry(input.operation_label.as_str())
             .or_default()
             .push(input);
+    }
+    let mut parameter_bindings_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
+    for binding in parameter_bindings {
+        parameter_bindings_by_operation
+            .entry(binding.operation_label.as_str())
+            .or_default()
+            .push(binding);
     }
     let operation_labels_by_record = operation_records
         .iter()
@@ -3290,6 +3313,19 @@ fn attach_feature_operations(
             source_properties.insert(
                 format!("input_block.{}", input.input_slot),
                 input.data_block.clone(),
+            );
+        }
+        for binding in parameter_bindings_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!(
+                    "input_parameter_declaration.{}.{}",
+                    binding.input_slot, binding.reference_ordinal
+                ),
+                binding.expression_declaration.clone(),
             );
         }
         let operation_payload_strings = payload_strings_by_operation
