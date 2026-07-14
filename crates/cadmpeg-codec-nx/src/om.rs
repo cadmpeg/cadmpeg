@@ -463,6 +463,13 @@ pub struct DatumPlaneSingleReferenceBranch {
     pub object_offset: usize,
 }
 
+/// Two canonical references carried by a tag-`29` datum-plane branch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DatumPlaneDoubleReferenceBranch {
+    /// Canonical payload object indices in branch order.
+    pub references: [ExtrudeProfileReference; 2],
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1615,6 +1622,58 @@ pub fn datum_plane_single_reference_branch(
         descriptor_offset,
         object_index,
         object_offset,
+    })
+}
+
+/// Decode either exact tag-`29` two-reference branch form.
+pub fn datum_plane_double_reference_branch(
+    record: OperationRecord<'_>,
+) -> Option<DatumPlaneDoubleReferenceBranch> {
+    const COUNT_TWO_MIDDLE: [u8; 11] = [
+        0x01, 0x01, 0x18, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff,
+    ];
+    const COUNT_TWO_SUFFIX: [u8; 23] = [
+        0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
+    ];
+    const COUNT_THREE_MIDDLE: [u8; 5] = [0x01, 0x01, 0x3a, 0x01, 0x02];
+    const COUNT_THREE_SUFFIX: [u8; 34] = [
+        0x01, 0x17, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x0d,
+    ];
+    let header = datum_plane_payload_header(record)?;
+    if header.branch_tag != 0x29 || !matches!(header.declared_count, 2 | 3) {
+        return None;
+    }
+    let mut at = 10;
+    let (first_index, first_width) = payload_object_index(record.payload.get(at..)?)?;
+    let first = ExtrudeProfileReference {
+        offset: record.payload_offset + at,
+        object_index: first_index,
+    };
+    at += first_width;
+    let middle = if header.declared_count == 2 {
+        COUNT_TWO_MIDDLE.as_slice()
+    } else {
+        COUNT_THREE_MIDDLE.as_slice()
+    };
+    (record.payload.get(at..at + middle.len()) == Some(middle)).then_some(())?;
+    at += middle.len();
+    let (second_index, second_width) = payload_object_index(record.payload.get(at..)?)?;
+    let second = ExtrudeProfileReference {
+        offset: record.payload_offset + at,
+        object_index: second_index,
+    };
+    at += second_width;
+    let suffix = if header.declared_count == 2 {
+        COUNT_TWO_SUFFIX.as_slice()
+    } else {
+        COUNT_THREE_SUFFIX.as_slice()
+    };
+    (record.payload.get(at..at + suffix.len()) == Some(suffix)).then_some(())?;
+    Some(DatumPlaneDoubleReferenceBranch {
+        references: [first, second],
     })
 }
 

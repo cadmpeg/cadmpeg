@@ -438,24 +438,24 @@ pub struct FeatureDatumPlaneHeader {
     pub declared_count: u8,
     /// Tag selecting the following construction branch.
     pub branch_tag: u8,
-    /// Compact descriptor index for the count-two `1b`/`23` branch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub descriptor_index: Option<u32>,
-    /// Canonical object index for the count-two `1b`/`23` branch.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_index: Option<u32>,
-    /// Uniquely resolved same-store block addressed by the descriptor index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub descriptor_data_block: Option<String>,
-    /// Uniquely resolved same-store block addressed by the canonical object index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_data_block: Option<String>,
-    /// Absolute offset of the compact descriptor index.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub descriptor_source_offset: Option<u64>,
-    /// Absolute offset of the canonical object-index marker.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub object_source_offset: Option<u64>,
+    /// Ordered compact descriptor indices carried by the selected branch.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub descriptor_indices: Vec<u32>,
+    /// Ordered canonical object indices carried by the selected branch.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_indices: Vec<u32>,
+    /// Atomically resolved same-store descriptor blocks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub descriptor_data_blocks: Vec<String>,
+    /// Atomically resolved same-store canonical object blocks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_data_blocks: Vec<String>,
+    /// Absolute offsets of compact descriptor indices.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub descriptor_source_offsets: Vec<u64>,
+    /// Absolute offsets of canonical object-index markers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub object_source_offsets: Vec<u64>,
     /// Absolute offset of the payload control byte.
     pub source_offset: u64,
 }
@@ -1678,7 +1678,22 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
             let Some(header) = crate::om::datum_plane_payload_header(record) else {
                 continue;
             };
-            let branch = crate::om::datum_plane_single_reference_branch(record);
+            let single = crate::om::datum_plane_single_reference_branch(record);
+            let double = crate::om::datum_plane_double_reference_branch(record);
+            let descriptor_indices = single
+                .iter()
+                .map(|branch| branch.descriptor_index)
+                .collect::<Vec<_>>();
+            let object_indices = single
+                .iter()
+                .map(|branch| branch.object_index)
+                .chain(double.iter().flat_map(|branch| {
+                    branch
+                        .references
+                        .iter()
+                        .map(|reference| reference.object_index)
+                }))
+                .collect::<Vec<_>>();
             let operation_label =
                 format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
             let input_prefixes = inputs
@@ -1691,20 +1706,32 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                         .map(|(prefix, _)| prefix)
                 })
                 .collect::<BTreeSet<_>>();
-            let resolved = branch.and_then(|branch| {
-                if input_prefixes.len() != 1 {
-                    return None;
-                }
-                let input_prefix = *input_prefixes.iter().next()?;
-                let descriptor = unique_offset_data_block(&indexed, branch.descriptor_index)?;
-                let object = unique_offset_data_block(&indexed, branch.object_index)?;
-                let same_store = |block: &str| {
-                    block
-                        .rsplit_once(":block#")
-                        .is_some_and(|(prefix, _)| prefix == input_prefix)
-                };
-                (same_store(&descriptor) && same_store(&object)).then_some((descriptor, object))
-            });
+            let resolved = (object_indices.len() + descriptor_indices.len() > 0)
+                .then_some(())
+                .and_then(|()| {
+                    if input_prefixes.len() != 1 {
+                        return None;
+                    }
+                    let input_prefix = *input_prefixes.iter().next()?;
+                    let descriptor_blocks = descriptor_indices
+                        .iter()
+                        .map(|index| unique_offset_data_block(&indexed, *index))
+                        .collect::<Option<Vec<_>>>()?;
+                    let object_blocks = object_indices
+                        .iter()
+                        .map(|index| unique_offset_data_block(&indexed, *index))
+                        .collect::<Option<Vec<_>>>()?;
+                    let same_store = |block: &str| {
+                        block
+                            .rsplit_once(":block#")
+                            .is_some_and(|(prefix, _)| prefix == input_prefix)
+                    };
+                    descriptor_blocks
+                        .iter()
+                        .chain(&object_blocks)
+                        .all(|block| same_store(block))
+                        .then_some((descriptor_blocks, object_blocks))
+                });
             headers.push(FeatureDatumPlaneHeader {
                 id: format!(
                     "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal}"
@@ -1713,14 +1740,28 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                 control: header.control,
                 declared_count: header.declared_count,
                 branch_tag: header.branch_tag,
-                descriptor_index: branch.map(|branch| branch.descriptor_index),
-                object_index: branch.map(|branch| branch.object_index),
-                descriptor_data_block: resolved.as_ref().map(|(block, _)| block.clone()),
-                object_data_block: resolved.as_ref().map(|(_, block)| block.clone()),
-                descriptor_source_offset: branch
-                    .map(|branch| entry_offset + branch.descriptor_offset as u64),
-                object_source_offset: branch
-                    .map(|branch| entry_offset + branch.object_offset as u64),
+                descriptor_indices,
+                object_indices,
+                descriptor_data_blocks: resolved
+                    .as_ref()
+                    .map_or_else(Vec::new, |(blocks, _)| blocks.clone()),
+                object_data_blocks: resolved
+                    .as_ref()
+                    .map_or_else(Vec::new, |(_, blocks)| blocks.clone()),
+                descriptor_source_offsets: single
+                    .iter()
+                    .map(|branch| entry_offset + branch.descriptor_offset as u64)
+                    .collect(),
+                object_source_offsets: single
+                    .iter()
+                    .map(|branch| entry_offset + branch.object_offset as u64)
+                    .chain(double.iter().flat_map(|branch| {
+                        branch
+                            .references
+                            .iter()
+                            .map(|reference| entry_offset + reference.offset as u64)
+                    }))
+                    .collect(),
                 source_offset: entry_offset + record.payload_offset as u64,
             });
         }

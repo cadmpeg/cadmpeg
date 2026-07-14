@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 83);
+    assert_eq!(namespace.version, 84);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1371,6 +1371,50 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     assert_eq!(branch.descriptor_offset, 110);
     assert_eq!(branch.object_index, 699);
     assert_eq!(branch.object_offset, 113);
+
+    let double_payload = [
+        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x02, 0x29, 0x01, 0x02, 0xf1, 0x02, 0x77, 0x01, 0x01,
+        0x18, 0x03, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0xff, 0xf1, 0x02, 0x78, 0x01, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x0d,
+    ];
+    let double = crate::om::datum_plane_double_reference_branch(crate::om::OperationRecord {
+        bytes: &double_payload,
+        payload: &double_payload,
+        ..record
+    })
+    .unwrap();
+    assert_eq!(
+        double.references.map(|reference| reference.object_index),
+        [631, 632]
+    );
+    assert_eq!(
+        double.references.map(|reference| reference.offset),
+        [110, 124]
+    );
+
+    let count_three_payload = [
+        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x29, 0x01, 0x02, 0xf1, 0x02, 0xcf, 0x01, 0x01,
+        0x3a, 0x01, 0x02, 0xf1, 0x02, 0xd0, 0x01, 0x17, 0x02, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+        0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
+    ];
+    let count_three = crate::om::datum_plane_double_reference_branch(crate::om::OperationRecord {
+        bytes: &count_three_payload,
+        payload: &count_three_payload,
+        ..record
+    })
+    .unwrap();
+    assert_eq!(
+        count_three
+            .references
+            .map(|reference| reference.object_index),
+        [719, 720]
+    );
+    assert_eq!(
+        count_three.references.map(|reference| reference.offset),
+        [110, 118]
+    );
 }
 
 #[test]
@@ -5166,7 +5210,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 83);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 84);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
