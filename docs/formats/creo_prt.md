@@ -340,6 +340,10 @@ directrix-coordinate DICT lattice and fixed-width coordinate forms. Stock-vector
 and zero macros retain their local-system expansion rules. Generic positional
 row scalar mappings do not apply to these slots.
 
+The `41` fixed-width prefix in this lane supplies the implicit leading byte
+`bf`; its seven following bytes complete a negative IEEE-754 binary64 value.
+Other scalar lanes assign a positive leading byte to this prefix.
+
 In a compound-closed `geom_type = 26` row, the final two tokens of the terminal
 scalar frame store the per-instance torus `radius1` and `radius2` in that order
 when both are positive row-radius forms of at most seven bytes. The tokens are

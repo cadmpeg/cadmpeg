@@ -1405,7 +1405,7 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
             continue;
         }
         if let Some((value, next)) =
-            scalar::decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+            scalar::decode_named_local_system_coordinate(body, cursor, cache)
         {
             slots.push(Some(value));
             cursor = next;
@@ -2153,7 +2153,7 @@ mod tests {
 
         assert_eq!(values[0], Some(0.997_523_383_819_597_8));
         assert_eq!(values[1], Some(0.070_335_614_969_227_37));
-        assert_eq!(values[6], Some(0.070_335_614_969_227_37));
+        assert_eq!(values[6], Some(-0.070_335_614_969_227_37));
         assert_eq!(values[7], Some(0.997_523_383_819_597_8));
         assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
     }
