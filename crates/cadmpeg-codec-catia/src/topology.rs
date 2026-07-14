@@ -2528,30 +2528,98 @@ impl MeshQuotient {
         })
     }
 
-    fn assignment_adjacencies_viable(&mut self, assignment: &MeshFaceBoundaryAssignment) -> bool {
-        assignment.boundaries.iter().all(|boundary| {
-            !boundary.is_empty()
-                && (0..boundary.len()).all(|index| {
-                    let left = boundary[index];
-                    let right = boundary[(index + 1) % boundary.len()];
-                    let left_ports = left
-                        .reversed
-                        .map_or([Some(left.edge * 2), Some(left.edge * 2 + 1)], |reversed| {
-                            [Some(left.edge * 2 + usize::from(!reversed)), None]
-                        });
-                    let right_ports = right.reversed.map_or(
-                        [Some(right.edge * 2), Some(right.edge * 2 + 1)],
-                        |reversed| [Some(right.edge * 2 + usize::from(reversed)), None],
+    fn assignment_has_option(
+        &self,
+        assignment: &MeshFaceBoundaryAssignment,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> bool {
+        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
+        }
+
+        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge
+                .checked_mul(2)?
+                .checked_add(usize::from(!reversed))
+        }
+
+        fn walk(
+            boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
+            boundary_index: usize,
+            at: usize,
+            directions: &mut Vec<bool>,
+            quotient: &MeshQuotient,
+            edge_candidates: &[Vec<[usize; 2]>],
+        ) -> bool {
+            if boundary_index == boundaries.len() {
+                return true;
+            }
+            let boundary = &boundaries[boundary_index];
+            if boundary.is_empty() {
+                return false;
+            }
+            if at == boundary.len() {
+                let mut quotient = quotient.clone();
+                let Some(last_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
+                    return false;
+                };
+                let Some(first_start) = edge_start(boundary[0], directions[0]) else {
+                    return false;
+                };
+                let Some(root) = quotient.merge(last_end, first_start) else {
+                    return false;
+                };
+                return quotient.component_edge_domains_viable(root, edge_candidates)
+                    && walk(
+                        boundaries,
+                        boundary_index + 1,
+                        0,
+                        &mut Vec::new(),
+                        &quotient,
+                        edge_candidates,
                     );
-                    left_ports.into_iter().flatten().any(|left_port| {
-                        let left_root = self.union.find(left_port);
-                        right_ports.into_iter().flatten().any(|right_port| {
-                            let right_root = self.union.find(right_port);
-                            !self.domains[left_root].is_disjoint(&self.domains[right_root])
-                        })
-                    })
-                })
-        })
+            }
+            let choices = boundary[at]
+                .reversed
+                .map_or([Some(false), Some(true)], |value| [Some(value), None]);
+            choices.into_iter().flatten().any(|reversed| {
+                let mut quotient = quotient.clone();
+                if at > 0 {
+                    let Some(previous_end) = edge_end(boundary[at - 1], directions[at - 1]) else {
+                        return false;
+                    };
+                    let Some(current_start) = edge_start(boundary[at], reversed) else {
+                        return false;
+                    };
+                    let Some(root) = quotient.merge(previous_end, current_start) else {
+                        return false;
+                    };
+                    if !quotient.component_edge_domains_viable(root, edge_candidates) {
+                        return false;
+                    }
+                }
+                directions.push(reversed);
+                let supported = walk(
+                    boundaries,
+                    boundary_index,
+                    at + 1,
+                    directions,
+                    &quotient,
+                    edge_candidates,
+                );
+                directions.pop();
+                supported
+            })
+        }
+
+        walk(
+            &assignment.boundaries,
+            0,
+            0,
+            &mut Vec::new(),
+            self,
+            edge_candidates,
+        )
     }
 
     fn assignment_options(
@@ -2788,7 +2856,9 @@ impl MeshSelectionSearch<'_> {
                 self.face_work[face]?;
                 let supported = self.assignments[face]
                     .iter()
-                    .filter(|assignment| measured.assignment_adjacencies_viable(assignment))
+                    .filter(|assignment| {
+                        measured.assignment_has_option(assignment, self.edge_candidates)
+                    })
                     .count();
                 if supported == 0 {
                     return Some((0, 0, face));
@@ -2878,8 +2948,7 @@ impl MeshSelectionSearch<'_> {
         }
         for assignment_index in 0..self.assignments[face].len() {
             let assignment = &self.assignments[face][assignment_index];
-            let mut measured = quotient.clone();
-            if !measured.assignment_adjacencies_viable(assignment) {
+            if !quotient.assignment_has_option(assignment, self.edge_candidates) {
                 continue;
             }
             for (directions, next_quotient) in
@@ -2956,10 +3025,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
         return None;
     }
     for face in &mut assignments {
-        face.retain(|assignment| {
-            let mut quotient = quotient.clone();
-            quotient.assignment_adjacencies_viable(assignment)
-        });
+        face.retain(|assignment| quotient.assignment_has_option(assignment, edge_candidates));
         if face.is_empty() {
             return None;
         }
@@ -3745,7 +3811,7 @@ mod motif_tests {
     }
 
     #[test]
-    fn quotient_adjacency_rejects_disjoint_edge_port_domains() {
+    fn quotient_assignment_requires_one_consistent_closed_orientation() {
         let mut quotient = MeshQuotient {
             union: UnionFind::new(4),
             domains: [vec![0], vec![1], vec![2], vec![3]]
@@ -3769,9 +3835,11 @@ mod motif_tests {
                 },
             ]],
         };
-        assert!(!quotient.assignment_adjacencies_viable(&assignment));
+        assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
         quotient.domains[2].insert(1);
-        assert!(quotient.assignment_adjacencies_viable(&assignment));
+        assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
+        quotient.domains[3].insert(0);
+        assert!(quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
     }
 
     #[test]
