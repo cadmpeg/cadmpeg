@@ -189,6 +189,16 @@ fixture_classes = ["offset-curves"]
 assertions = ["source-definition", "parameter-domain", "byte-coverage"]
 
 [[entity]]
+type = 132
+name = "connect-point"
+forms = [0]
+domain = "product-structure"
+decoder = "entities::structure::decode_connect_point"
+destination = "native.iges.connect_points"
+fixture_classes = ["network-connect-points"]
+assertions = ["owner-links", "classification", "placement", "byte-coverage"]
+
+[[entity]]
 type = 140
 name = "offset-surface"
 forms = [0]

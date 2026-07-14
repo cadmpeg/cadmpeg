@@ -70,6 +70,14 @@ fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64
     }
 }
 
+fn integer_or(record: &ParameterRecord, index: usize, default: i64) -> Option<i64> {
+    match record.tokens.get(index).map(|token| &token.value) {
+        None | Some(TokenValue::Omitted) => Some(default),
+        Some(TokenValue::Integer(value)) => Some(*value),
+        Some(TokenValue::Real(_) | TokenValue::String(_)) => None,
+    }
+}
+
 fn assembly_cycle(
     sequence: u32,
     definitions: &BTreeMap<u32, SolidAssembly>,
@@ -112,6 +120,78 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 132 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let position_valid = (1..=3).all(|index| record.number(index).is_some_and(f64::is_finite));
+        let optional_pointer_valid = |index: usize, entity_type: Option<i64>| {
+            integer_or(record, index, 0).is_some_and(|value| {
+                value == 0
+                    || u32::try_from(value).ok().is_some_and(|sequence| {
+                        sequence % 2 == 1
+                            && entries.get(&sequence).is_some_and(|target| {
+                                entity_type.is_none_or(|expected| target.entity_type == expected)
+                            })
+                    })
+            })
+        };
+        let type_flag_valid = integer_or(record, 5, 0)
+            .is_some_and(|value| matches!(value, 0..=2 | 101..=104 | 201..=203 | 5001..=9999));
+        let function_flag_valid =
+            integer_or(record, 6, 0).is_some_and(|value| matches!(value, 0..=2));
+        let strings_valid = record.string(7).is_some() && record.string(9).is_some();
+        let identifier_valid = record.integer(11).is_some();
+        let function_code_valid = integer_or(record, 12, 0)
+            .is_some_and(|value| matches!(value, 0..=49 | 98..=99 | 5001..=9999));
+        let swap_valid = integer_or(record, 13, 0).is_some_and(|value| matches!(value, 0..=1));
+        let owner_valid = integer_or(record, 14, 0).is_some_and(|value| {
+            value == 0
+                || u32::try_from(value).ok().is_some_and(|sequence| {
+                    sequence % 2 == 1
+                        && entries
+                            .get(&sequence)
+                            .is_some_and(|target| matches!(target.entity_type, 320 | 420))
+                })
+        });
+        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                &mut BTreeSet::new(),
+            )
+            .is_ok()
+        });
+        if position_valid
+            && optional_pointer_valid(4, None)
+            && type_flag_valid
+            && function_flag_valid
+            && strings_valid
+            && optional_pointer_valid(8, Some(312))
+            && optional_pointer_valid(10, Some(312))
+            && identifier_valid
+            && function_code_valid
+            && swap_valid
+            && owner_valid
+            && transform_valid
+            && entry.status.use_flag == 4
+        {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "connect-point fields, references, placement, or use flag are invalid",
+            ));
+        }
+    }
 
     let mut solid_instances = BTreeMap::new();
     for entry in directory

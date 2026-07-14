@@ -2292,6 +2292,39 @@ fn network_subfigure_file() -> Vec<u8> {
     ])
 }
 
+fn connected_network_subfigure_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 132,
+            form: 0,
+            label: "DEFPIN".into(),
+            status: "00000400",
+            parameters: "132,0,0,0,0,101,1,2HP1,0,3HPIN,0,1,1,0,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 320,
+            form: 0,
+            label: "NETWORK".into(),
+            status: "00000200",
+            parameters: "320,0,3HNET,0,1,2HR1,0,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 132,
+            form: 0,
+            label: "INSTPIN".into(),
+            status: "00000400",
+            parameters: "132,1,2,3,0,101,1,2HP1,0,3HPIN,0,2,1,0,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 420,
+            form: 0,
+            label: "NETINST".into(),
+            status: "00000000",
+            parameters: "420,3,10,20,30,1,,,1,2HU1,0,1,5;".into(),
+        },
+    ])
+}
+
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
     explicit_multi_pcurve_loop_file_with_first_pcurve(
         "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
@@ -3434,6 +3467,30 @@ fn decode_preserves_network_definition_and_anisotropic_instance() {
     assert_eq!(instance.fields["scale"][0], 2.0);
     assert!(instance.fields["scale"][1].is_null());
     assert!(instance.fields["scale"][2].is_null());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_owned_network_connect_points() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(connected_network_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let points = &native.arenas["connect_points"];
+    assert_eq!(points.len(), 2);
+    assert_eq!(points[0].fields["type_flag"], 101);
+    assert_eq!(points[0].fields["function_identifier"][0], 80);
+    assert_eq!(points[0].fields["function_identifier"][1], 49);
+    assert_eq!(points[0].fields["owner"], "iges:entity:directory#3");
+    assert_eq!(points[1].fields["position"][2], 3.0);
+    assert_eq!(points[1].fields["owner"], "iges:entity:directory#7");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
