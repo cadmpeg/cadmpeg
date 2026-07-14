@@ -573,7 +573,9 @@ For a class-913 cylindrical slot fillet, the first two `geoms_affected`
 identifiers are the axial cap planes. The remaining identifiers are tangent
 support faces. The constant fillet radius is half the perpendicular gap between
 parallel support planes. Multiple parallel support pairs define one constant
-radius only when all nonzero gaps have the same magnitude.
+radius only when all nonzero gaps have the same magnitude. When every generated
+cylinder carrier is placed, their common positive radius independently defines
+the constant fillet radius; differing radii define no constant-radius result.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 

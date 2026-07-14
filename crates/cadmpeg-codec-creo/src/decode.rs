@@ -6331,12 +6331,33 @@ fn parallel_support_radius(planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])
 }
 
 fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
-    scan.surface_rows
+    let cylinder_rows = scan
+        .surface_rows
         .iter()
-        .any(|row| {
+        .filter(|row| {
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
         })
-        .then_some(())?;
+        .collect::<Vec<_>>();
+    if cylinder_rows.is_empty() {
+        return None;
+    }
+    let cylinder_radii = cylinder_rows
+        .iter()
+        .filter_map(|row| {
+            let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
+            ir.model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == id)
+                .and_then(|surface| match surface.geometry {
+                    SurfaceGeometry::Cylinder { radius, .. } => Some(radius),
+                    _ => None,
+                })
+        })
+        .collect::<Vec<_>>();
+    if cylinder_radii.len() == cylinder_rows.len() {
+        return unique_positive_length(&cylinder_radii);
+    }
     let named_records = scan
         .feature_affected_ids
         .iter()
@@ -6375,6 +6396,24 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         })
         .collect::<Vec<_>>();
     (support_planes.len() == support_ids.len()).then(|| parallel_support_radius(support_planes))?
+}
+
+fn unique_positive_length(values: &[f64]) -> Option<f64> {
+    let value = *values.first()?;
+    if !value.is_finite() || value <= 0.0 {
+        return None;
+    }
+    let scale = values
+        .iter()
+        .copied()
+        .map(f64::abs)
+        .fold(value.abs().max(1.0), f64::max);
+    values
+        .iter()
+        .all(|candidate| {
+            candidate.is_finite() && *candidate > 0.0 && (*candidate - value).abs() <= 1e-9 * scale
+        })
+        .then_some(value)
 }
 
 fn schema_feature_definition(
@@ -7649,6 +7688,9 @@ mod resolved_sketch_tests {
 
     #[test]
     fn unique_parallel_round_supports_define_constant_radius() {
+        assert_eq!(unique_positive_length(&[0.5, 0.5 + 1e-12]), Some(0.5));
+        assert_eq!(unique_positive_length(&[0.5, 0.6]), None);
+        assert_eq!(unique_positive_length(&[0.0]), None);
         assert_eq!(
             parallel_support_radius([
                 ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
