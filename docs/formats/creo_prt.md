@@ -185,6 +185,7 @@ each defined boundary byte; `boundary_type` does not select their scalar layout.
 | `28`        | Spline surface                                   |
 | `29`        | Spline or fillet surface family                  |
 | `2a`, `2c`  | Linear-extrusion family (`surface_of_extrusion`) |
+| `2b`        | Sphere                                            |
 
 A decoder must not infer the kind of a row without a materialized parameter row from adjacent rows or topology.
 
@@ -215,7 +216,7 @@ Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid
 
 ### 3.3 Torus and sphere representation
 
-A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A sphere uses `radius1 = 0` and radius `radius2`; a torus uses nonzero `radius1`. Per-instance row-body overrides use a separate grammar.
+A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A type-`26` row uses `radius1 = 0` and radius `radius2` for a sphere and nonzero `radius1` for a torus. Type `2b` is unconditionally a sphere and uses the same zero-`radius1`, positive-`radius2` prototype form. Per-instance row-body overrides use a separate grammar.
 
 ### 3.4 Planes
 

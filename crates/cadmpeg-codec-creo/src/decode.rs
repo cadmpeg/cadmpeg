@@ -5557,9 +5557,8 @@ fn surface_kind_for_geometry(geometry: &SurfaceGeometry) -> Option<crate::surfac
         SurfaceGeometry::Plane { .. } => Some(crate::surface::SurfaceKind::Plane),
         SurfaceGeometry::Cylinder { .. } => Some(crate::surface::SurfaceKind::Cylinder),
         SurfaceGeometry::Cone { .. } => Some(crate::surface::SurfaceKind::Cone),
-        SurfaceGeometry::Sphere { .. } | SurfaceGeometry::Torus { .. } => {
-            Some(crate::surface::SurfaceKind::TorusOrSphere)
-        }
+        SurfaceGeometry::Sphere { .. } => Some(crate::surface::SurfaceKind::Sphere),
+        SurfaceGeometry::Torus { .. } => Some(crate::surface::SurfaceKind::TorusOrSphere),
         SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
         SurfaceGeometry::Unknown { .. } => None,
     }
@@ -11885,13 +11884,21 @@ fn transfer_first_instance_prototype_surfaces(
 ) -> usize {
     let mut transferred = 0;
     for record in &scan.surface_prototype_records {
-        let row_kind = match record.family {
+        let row_kinds: &[crate::surface::SurfaceKind] = match record.family {
             crate::surface::SurfacePrototypeFamily::Cylinder => {
-                crate::surface::SurfaceKind::Cylinder
+                &[crate::surface::SurfaceKind::Cylinder]
             }
-            crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
+            crate::surface::SurfacePrototypeFamily::Cone => &[crate::surface::SurfaceKind::Cone],
             crate::surface::SurfacePrototypeFamily::Torus => {
-                crate::surface::SurfaceKind::TorusOrSphere
+                let radius1 = prototype_scalar(record, "radius1");
+                if radius1 == Some(0.0) {
+                    &[
+                        crate::surface::SurfaceKind::TorusOrSphere,
+                        crate::surface::SurfaceKind::Sphere,
+                    ]
+                } else {
+                    &[crate::surface::SurfaceKind::TorusOrSphere]
+                }
             }
             _ => continue,
         };
@@ -11915,8 +11922,8 @@ fn transfer_first_instance_prototype_surfaces(
             })
             .min_by_key(|row| row.offset);
         let row = preceding
-            .filter(|row| row.kind == row_kind)
-            .or_else(|| following.filter(|row| row.kind == row_kind));
+            .filter(|row| row_kinds.contains(&row.kind))
+            .or_else(|| following.filter(|row| row_kinds.contains(&row.kind)));
         let Some(row) = row else {
             continue;
         };
