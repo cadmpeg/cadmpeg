@@ -4280,6 +4280,7 @@ fn profile_loci_by_marker(
         })
         .collect::<HashMap<_, _>>();
     let mut profile_loci = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
+    let mut line_midpoints = HashMap::<&SketchId, Vec<(Point2, SketchLocus)>>::new();
     let geometry_by_entity = sketch_entities
         .iter()
         .map(|entity| (&entity.id, &entity.geometry))
@@ -4291,6 +4292,12 @@ fn profile_loci_by_marker(
                 .entry(&entity.sketch)
                 .or_default()
                 .push((point, locus));
+        }
+        if let SketchGeometry::Line { start, end } = &entity.geometry {
+            line_midpoints.entry(&entity.sketch).or_default().push((
+                Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5),
+                SketchLocus::Entity(entity.id.clone()),
+            ));
         }
     }
     let mut result = HashMap::<String, Vec<SketchLocus>>::new();
@@ -4333,6 +4340,27 @@ fn profile_loci_by_marker(
                     continue;
                 };
                 let Some(marker_loci) = loci_by_point.get(&translated) else {
+                    if marker.kind != SketchInputKind::LineOrCircle {
+                        continue;
+                    }
+                    let Some(midpoints) = line_midpoints.get(sketch) else {
+                        continue;
+                    };
+                    let marker_loci = midpoints
+                        .iter()
+                        .filter_map(|(point, locus)| {
+                            (quantize(*point, QUANTUM) == translated).then_some(locus.clone())
+                        })
+                        .collect::<Vec<_>>();
+                    if marker_loci.is_empty() {
+                        continue;
+                    }
+                    let loci = result.entry(marker.id.clone()).or_default();
+                    for locus in marker_loci {
+                        if !loci.contains(&locus) {
+                            loci.push(locus);
+                        }
+                    }
                     continue;
                 };
                 let mut marker_loci = marker_loci
@@ -4342,7 +4370,16 @@ fn profile_loci_by_marker(
                             .get(&locus_entity(locus))
                             .is_some_and(|geometry| marker_accepts_locus(marker.kind, geometry))
                     })
-                    .cloned()
+                    .map(|locus| {
+                        if matches!(
+                            marker.kind,
+                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                        ) {
+                            SketchLocus::Entity(locus_entity(locus))
+                        } else {
+                            locus.clone()
+                        }
+                    })
                     .collect::<Vec<_>>();
                 marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
                 marker_loci.dedup();
@@ -5704,6 +5741,113 @@ mod profile_join_tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn line_handle_midpoints_identify_profile_entities() {
+        let sketch = SketchId("sketch".into());
+        let line_ids = ["horizontal", "vertical", "offset"].map(|id| SketchEntityId(id.into()));
+        let entities = vec![
+            SketchEntity {
+                id: line_ids[0].clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(10.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: line_ids[1].clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(0.0, 20.0),
+                },
+            },
+            SketchEntity {
+                id: line_ids[2].clone(),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(10.0, 3.0),
+                    end: Point2::new(20.0, 3.0),
+                },
+            },
+        ];
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch),
+            },
+            native_ref: Some("feature-native".into()),
+        };
+        let mut native_payload = vec![0; 81];
+        let mut markers = Vec::new();
+        for (ordinal, (id, coordinates_m)) in [
+            ("horizontal-marker", [0.005, 0.0]),
+            ("vertical-marker", [0.0, 0.010]),
+            ("offset-marker", [0.015, 0.003]),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let offset = ordinal * 27;
+            native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+            let mut handle = marker(id, Some(coordinates_m));
+            handle.ordinal = ordinal as u32;
+            handle.offset = offset as u64;
+            handle.kind = SketchInputKind::LineOrCircle;
+            markers.push(handle);
+        }
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: markers,
+        };
+
+        let joins = profile_loci_by_marker(&[feature], &entities, std::slice::from_ref(&lane));
+        for (marker, entity) in [
+            ("horizontal-marker", &line_ids[0]),
+            ("vertical-marker", &line_ids[1]),
+            ("offset-marker", &line_ids[2]),
+        ] {
+            assert_eq!(
+                joins[marker],
+                vec![cadmpeg_ir::sketches::SketchLocus::Entity(entity.clone())]
+            );
+        }
     }
 
     #[test]
