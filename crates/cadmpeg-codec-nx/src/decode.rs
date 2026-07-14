@@ -2794,6 +2794,8 @@ fn attach_native_object_model(
         &feature_datum_plane_headers,
         &feature_input_blocks,
     );
+    let feature_datum_plane_payloads =
+        crate::native::feature_datum_plane_payloads(&scan.container, &feature_datum_plane_headers);
     let feature_datum_csys_block_uses = crate::native::feature_datum_csys_block_uses(
         &feature_datum_csys_constructions,
         &feature_input_blocks,
@@ -2919,6 +2921,7 @@ fn attach_native_object_model(
         && feature_datum_csys_constructions.is_empty()
         && feature_datum_plane_headers.is_empty()
         && feature_datum_plane_block_uses.is_empty()
+        && feature_datum_plane_payloads.is_empty()
         && feature_datum_csys_block_uses.is_empty()
         && feature_sketch_references.is_empty()
         && feature_extrude_profile_references.is_empty()
@@ -3215,6 +3218,7 @@ fn attach_native_object_model(
             datum_csys_constructions: &feature_datum_csys_constructions,
             datum_plane_headers: &feature_datum_plane_headers,
             datum_plane_block_uses: &feature_datum_plane_block_uses,
+            datum_plane_payloads: &feature_datum_plane_payloads,
             sketch_references: &feature_sketch_references,
             extrude_profile_references: &feature_extrude_profile_references,
             extrude_construction_profiles: &feature_extrude_construction_profiles,
@@ -3239,7 +3243,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(87);
+    namespace.version = namespace.version.max(88);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3319,6 +3323,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_datum_plane_block_uses",
             &feature_datum_plane_block_uses,
+        )?;
+    }
+    if !feature_datum_plane_payloads.is_empty() {
+        namespace.set_arena(
+            "feature_datum_plane_payloads",
+            &feature_datum_plane_payloads,
         )?;
     }
     if !feature_sketch_references.is_empty() {
@@ -3532,6 +3542,7 @@ struct FeatureOperationSources<'a> {
     datum_csys_constructions: &'a [crate::native::FeatureDatumCsysConstruction],
     datum_plane_headers: &'a [crate::native::FeatureDatumPlaneHeader],
     datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
+    datum_plane_payloads: &'a [crate::native::FeatureDatumPlanePayload],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
@@ -3565,6 +3576,7 @@ fn attach_feature_operations(
         datum_csys_constructions,
         datum_plane_headers,
         datum_plane_block_uses,
+        datum_plane_payloads,
         sketch_references,
         extrude_profile_references,
         extrude_construction_profiles,
@@ -3624,6 +3636,10 @@ fn attach_feature_operations(
     let datum_plane_headers_by_operation = datum_plane_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
+        .collect::<BTreeMap<_, _>>();
+    let datum_plane_payloads_by_operation = datum_plane_payloads
+        .iter()
+        .map(|payload| (payload.operation_label.as_str(), payload))
         .collect::<BTreeMap<_, _>>();
     let mut datum_plane_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureDatumPlaneBlockUse>>::new();
@@ -3847,6 +3863,9 @@ fn attach_feature_operations(
         }
         if let Some(header) = datum_plane_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_header".to_string(), header.id.clone());
+        }
+        if let Some(payload) = datum_plane_payloads_by_operation.get(label.id.as_str()) {
+            source_properties.insert("datum_plane_payload".to_string(), payload.id.clone());
         }
         for block_use in datum_plane_uses_by_input_operation
             .get(label.id.as_str())

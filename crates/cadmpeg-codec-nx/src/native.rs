@@ -460,6 +460,29 @@ pub struct FeatureDatumPlaneHeader {
     pub source_offset: u64,
 }
 
+/// Exact logical datum-plane object payload reconstructed in lane order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumPlanePayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `DATUM_PLANE` operation label.
+    pub operation_label: String,
+    /// Header defining the ordered object-block lane.
+    pub datum_plane_header: String,
+    /// Ordered source blocks.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Starting payload offset of each source block.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact byte length of each source block.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute file offset of each source block.
+    pub block_source_offsets: Vec<u64>,
+}
+
 /// Datum-plane construction lane containing a reused block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1800,6 +1823,34 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
         }
     }
     headers
+}
+
+/// Reconstruct datum-plane object payloads across ordered store blocks.
+pub fn feature_datum_plane_payloads(
+    container: &Container,
+    headers: &[FeatureDatumPlaneHeader],
+) -> Vec<FeatureDatumPlanePayload> {
+    let blocks = offset_data_block_bytes(container);
+    headers
+        .iter()
+        .filter(|header| !header.object_data_blocks.is_empty())
+        .filter_map(|header| {
+            let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
+                join_data_block_bytes(&header.object_data_blocks, &blocks)?;
+            let key = header.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+            Some(FeatureDatumPlanePayload {
+                id: format!("nx:feature-history:datum-plane-payload#{key}"),
+                operation_label: header.operation_label.clone(),
+                datum_plane_header: header.id.clone(),
+                data_blocks: header.object_data_blocks.clone(),
+                byte_len: payload.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&payload),
+                block_payload_offsets,
+                block_byte_lengths,
+                block_source_offsets,
+            })
+        })
+        .collect()
 }
 
 /// Join resolved datum-plane blocks to operation inputs addressing the same block.
