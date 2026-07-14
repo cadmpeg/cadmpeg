@@ -437,7 +437,7 @@ In a round-feature generated-entity table, a rowless face-use entry is a cylinde
 
 A cylinder coaxial with a torus intersects it in one tangent circle when the cylinder radius equals the torus outer radius `R + r` or its positive inner radius `|R - r|`. The circle lies in the torus central plane, has the common axis, and has the cylinder radius. Other coaxial radii produce multiple or no circle components and remain unresolved without a native branch binding.
 
-A circular cone and a coaxial cylinder intersect in one circle. If the cone has radius `r0` at its reference origin and half-angle `a`, the circle center is displaced by `(rc - r0) / tan(a)` along the cone axis and its radius is the cylinder radius `rc`.
+A circular cone and a coaxial sphere intersect in one circle when substitution of the cone radial function into the sphere equation produces one repeated axial root. For cone radius `r0`, slope `k = tan(a)`, and sphere center at axial coordinate `c` from the cone origin, the axial equation is `(1 + k²)t² + 2(r0 k - c)t + r0² + c² - Rs² = 0`. A zero discriminant gives the single tangent circle at axial coordinate `t`; its radius is `|r0 + kt|`. Positive discriminants produce two circles and remain unresolved without a native branch binding.
 
 A plane through a circular cone's apex is tangent to the cone when the absolute dot product of their unit normal and axis equals the sine of the cone half-angle. Their intersection is the single generator through the apex in the projection of the cone axis onto the plane. A plane normal to the cone axis intersects it in one circle away from the apex. Other plane/cone orientations have multi-branch conic classifications that require the native branch binding.
 
