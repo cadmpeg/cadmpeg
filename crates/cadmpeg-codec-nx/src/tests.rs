@@ -3706,6 +3706,127 @@ fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
 }
 
 #[test]
+fn topology_numeric_attribute_values_transfer_in_native_lane_order() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    use cadmpeg_ir::ids::FaceId;
+    use cadmpeg_ir::AnnotationBuilder;
+
+    use crate::native::{
+        ParasolidAttributeDefinition, ParasolidEntity51NumericKind, ParasolidEntity51NumericUse,
+        ParasolidEntity52IntegerRecord, ParasolidEntity53DoubleRecord,
+        ParasolidTopologyAttributeClassUse, ParasolidTopologyAttributeListReference,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.faces[0].id = FaceId("nx:s3:face#60".into());
+    let reference = ParasolidTopologyAttributeListReference {
+        id: "topology-reference".into(),
+        stream_ordinal: 3,
+        topology_type: 14,
+        topology_xmt: 60,
+        attribute_list_xmt: 50,
+        attribute_list_record: Some("entity".into()),
+        inflated_offset: 300,
+    };
+    let definition = ParasolidAttributeDefinition {
+        id: "definition".into(),
+        stream_ordinal: 3,
+        xmt: 18,
+        name: "SDL/TYSA_DENSITY".into(),
+        field_count: 2,
+        field_record_xmt: 19,
+        field_record_references: [21, 22],
+        field_record_header_words: [0, 9000],
+        field_descriptor_prefix: [0; 26],
+        field_codes: vec![1, 2],
+        inflated_offset: 100,
+    };
+    let class_use = ParasolidTopologyAttributeClassUse {
+        id: "class-use".into(),
+        topology_attribute_reference: reference.id.clone(),
+        entity_51_record: "entity".into(),
+        definition_ordinal: 1,
+        attribute_definition: definition.id.clone(),
+    };
+    let integer = ParasolidEntity52IntegerRecord {
+        id: "integers".into(),
+        stream_ordinal: 3,
+        xmt: 70,
+        values: vec![4, u32::MAX],
+        byte_len: 18,
+        inflated_offset: 400,
+    };
+    let double = ParasolidEntity53DoubleRecord {
+        id: "doubles".into(),
+        stream_ordinal: 3,
+        xmt: 71,
+        values: vec![0.25, 7.5],
+        byte_len: 26,
+        inflated_offset: 500,
+    };
+    let uses = [
+        ParasolidEntity51NumericUse {
+            id: "double-use".into(),
+            stream_ordinal: 3,
+            entity_51_record: "entity".into(),
+            reference_ordinal: 4,
+            referenced_xmt: 71,
+            kind: ParasolidEntity51NumericKind::Doubles,
+            value_record: double.id.clone(),
+            inflated_offset: 200,
+        },
+        ParasolidEntity51NumericUse {
+            id: "integer-use".into(),
+            stream_ordinal: 3,
+            entity_51_record: "entity".into(),
+            reference_ordinal: 3,
+            referenced_xmt: 70,
+            kind: ParasolidEntity51NumericKind::UnsignedIntegers,
+            value_record: integer.id.clone(),
+            inflated_offset: 200,
+        },
+    ];
+    let mut annotations = AnnotationBuilder::new();
+
+    crate::decode::attach_parasolid_topology_numeric_attributes(
+        &mut ir,
+        &crate::decode::ParasolidNumericAttributeSources {
+            topology_references: &[reference],
+            class_uses: &[class_use],
+            definitions: &[definition],
+            numeric_uses: &uses,
+            integers: &[integer],
+            doubles: &[double],
+        },
+        &mut annotations,
+    );
+
+    let attributes = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.id.0.contains("topology-numeric-attribute"))
+        .collect::<Vec<_>>();
+    assert_eq!(attributes.len(), 2);
+    assert_eq!(
+        attributes[0].target,
+        AttributeTarget::Face(FaceId("nx:s3:face#60".into()))
+    );
+    assert_eq!(attributes[0].name, "SDL/TYSA_DENSITY.integer_reference_3");
+    assert_eq!(
+        attributes[0].values,
+        [
+            AttributeValue::Integer(4),
+            AttributeValue::Integer(i64::from(u32::MAX))
+        ]
+    );
+    assert_eq!(
+        attributes[1].values,
+        [AttributeValue::Float(0.25), AttributeValue::Float(7.5)]
+    );
+}
+
+#[test]
 fn topology_rejects_shell_with_broken_face_ownership_chain() {
     let valid = topology_partition_stream();
     let graph = crate::topology::Graph::parse(&valid);

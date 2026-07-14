@@ -3487,6 +3487,18 @@ fn attach_native_object_model(
         &parasolid_entity_54_string_records,
         annotations,
     );
+    attach_parasolid_topology_numeric_attributes(
+        ir,
+        &ParasolidNumericAttributeSources {
+            topology_references: &parasolid_topology_attribute_list_references,
+            class_uses: &parasolid_topology_attribute_class_uses,
+            definitions: &parasolid_attribute_definitions,
+            numeric_uses: &parasolid_entity_51_numeric_uses,
+            integers: &parasolid_entity_52_integer_records,
+            doubles: &parasolid_entity_53_double_records,
+        },
+        annotations,
+    );
     for record in &external_reference_records {
         annotations
             .note(&record.id, annotation_stream, record.source_offset)
@@ -4148,6 +4160,188 @@ fn attach_parasolid_topology_string_attributes(
                     },
                 ),
                 values: vec![AttributeValue::String(string.value.clone())],
+            });
+        }
+    }
+    ir.model
+        .attributes
+        .sort_by(|first, second| first.id.0.cmp(&second.id.0));
+}
+
+pub(crate) struct ParasolidNumericAttributeSources<'a> {
+    pub(crate) topology_references: &'a [crate::native::ParasolidTopologyAttributeListReference],
+    pub(crate) class_uses: &'a [crate::native::ParasolidTopologyAttributeClassUse],
+    pub(crate) definitions: &'a [crate::native::ParasolidAttributeDefinition],
+    pub(crate) numeric_uses: &'a [crate::native::ParasolidEntity51NumericUse],
+    pub(crate) integers: &'a [crate::native::ParasolidEntity52IntegerRecord],
+    pub(crate) doubles: &'a [crate::native::ParasolidEntity53DoubleRecord],
+}
+
+pub(crate) fn attach_parasolid_topology_numeric_attributes(
+    ir: &mut CadIr,
+    sources: &ParasolidNumericAttributeSources<'_>,
+    annotations: &mut AnnotationBuilder,
+) {
+    let definitions_by_id = sources
+        .definitions
+        .iter()
+        .map(|definition| (definition.id.as_str(), definition))
+        .collect::<BTreeMap<_, _>>();
+    let class_names_by_reference = sources
+        .class_uses
+        .iter()
+        .filter_map(|class_use| {
+            definitions_by_id
+                .get(class_use.attribute_definition.as_str())
+                .map(|definition| {
+                    (
+                        class_use.topology_attribute_reference.as_str(),
+                        definition.name.as_str(),
+                    )
+                })
+        })
+        .collect::<BTreeMap<_, _>>();
+    let integers_by_id = sources
+        .integers
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let doubles_by_id = sources
+        .doubles
+        .iter()
+        .map(|record| (record.id.as_str(), record))
+        .collect::<BTreeMap<_, _>>();
+    let mut uses_by_entity =
+        BTreeMap::<&str, Vec<&crate::native::ParasolidEntity51NumericUse>>::new();
+    for numeric_use in sources.numeric_uses {
+        uses_by_entity
+            .entry(numeric_use.entity_51_record.as_str())
+            .or_default()
+            .push(numeric_use);
+    }
+    for uses in uses_by_entity.values_mut() {
+        uses.sort_by_key(|numeric_use| numeric_use.reference_ordinal);
+    }
+    let mut references_by_target =
+        BTreeMap::<String, Vec<&crate::native::ParasolidTopologyAttributeListReference>>::new();
+    for reference in sources.topology_references {
+        let kind = match reference.topology_type {
+            14 => "face",
+            16 => "edge",
+            17 => "fin",
+            18 => "vertex",
+            _ => continue,
+        };
+        references_by_target
+            .entry(format!(
+                "nx:s{}:{kind}#{}",
+                reference.stream_ordinal, reference.topology_xmt
+            ))
+            .or_default()
+            .push(reference);
+    }
+    let mut emitted_targets = BTreeMap::<String, AttributeTarget>::new();
+    emitted_targets.extend(
+        ir.model
+            .faces
+            .iter()
+            .map(|face| (face.id.0.clone(), AttributeTarget::Face(face.id.clone()))),
+    );
+    emitted_targets.extend(
+        ir.model
+            .edges
+            .iter()
+            .map(|edge| (edge.id.0.clone(), AttributeTarget::Edge(edge.id.clone()))),
+    );
+    emitted_targets.extend(ir.model.coedges.iter().map(|coedge| {
+        (
+            coedge.id.0.clone(),
+            AttributeTarget::Coedge(coedge.id.clone()),
+        )
+    }));
+    emitted_targets.extend(ir.model.vertices.iter().map(|vertex| {
+        (
+            vertex.id.0.clone(),
+            AttributeTarget::Vertex(vertex.id.clone()),
+        )
+    }));
+
+    for (target_key, references) in references_by_target {
+        let [reference] = references.as_slice() else {
+            continue;
+        };
+        let Some(target) = emitted_targets.get(target_key.as_str()) else {
+            continue;
+        };
+        let Some(entity) = reference.attribute_list_record.as_deref() else {
+            continue;
+        };
+        let class_name = class_names_by_reference.get(reference.id.as_str()).copied();
+        for numeric_use in uses_by_entity.get(entity).into_iter().flatten() {
+            let (values, source_offset, tag, lane) = match numeric_use.kind {
+                crate::native::ParasolidEntity51NumericKind::UnsignedIntegers => {
+                    let Some(record) = integers_by_id.get(numeric_use.value_record.as_str()) else {
+                        continue;
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .map(|value| AttributeValue::Integer(i64::from(*value)))
+                            .collect(),
+                        record.inflated_offset,
+                        "ENTITY_52_INTEGER_ATTRIBUTE",
+                        "integer",
+                    )
+                }
+                crate::native::ParasolidEntity51NumericKind::Doubles => {
+                    let Some(record) = doubles_by_id.get(numeric_use.value_record.as_str()) else {
+                        continue;
+                    };
+                    (
+                        record
+                            .values
+                            .iter()
+                            .copied()
+                            .map(AttributeValue::Float)
+                            .collect(),
+                        record.inflated_offset,
+                        "ENTITY_53_DOUBLE_ATTRIBUTE",
+                        "double",
+                    )
+                }
+            };
+            let id = AttributeId(format!(
+                "nx:s{}:topology-numeric-attribute#{}-{}-{}",
+                reference.stream_ordinal,
+                reference.topology_type,
+                reference.topology_xmt,
+                numeric_use.reference_ordinal
+            ));
+            let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
+            annotations
+                .note(&id.0, source_stream, source_offset)
+                .tag(tag);
+            annotations.derived(&id.0, "target");
+            annotations.derived(&id.0, "name");
+            ir.model.attributes.push(SourceAttribute {
+                id,
+                target: target.clone(),
+                name: class_name.map_or_else(
+                    || {
+                        format!(
+                            "parasolid_type_{lane}_reference_{}",
+                            numeric_use.reference_ordinal
+                        )
+                    },
+                    |class_name| {
+                        format!(
+                            "{class_name}.{lane}_reference_{}",
+                            numeric_use.reference_ordinal
+                        )
+                    },
+                ),
+                values,
             });
         }
     }
