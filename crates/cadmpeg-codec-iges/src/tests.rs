@@ -1432,6 +1432,118 @@ fn explicit_open_shell_file() -> Vec<u8> {
     bytes
 }
 
+fn explicit_non_manifold_open_shell_file() -> Vec<u8> {
+    let mut entities = vec![
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "LOCATION".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "NORMAL".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 190,
+            form: 0,
+            label: "SURFACE".into(),
+            status: "00010000",
+            parameters: "190,1,3;".into(),
+        },
+    ];
+    for (index, parameters) in [
+        "110,0,0,0,1,0,0;",
+        "110,1,0,0,0,1,0;",
+        "110,0,1,0,0,0,0;",
+        "110,0,0,0,0,-1,0;",
+        "110,0,-1,0,1,0,0;",
+        "110,1,0,0,0.5,1,0;",
+        "110,0.5,1,0,0,0,0;",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        entities.push(OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: format!("EDGE{}", index + 1),
+            status: "00010000",
+            parameters: parameters.into(),
+        });
+    }
+    entities.extend([
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "VERTICES".into(),
+            status: "00010000",
+            parameters: "502,5,0,0,0,1,0,0,0,1,0,0,-1,0,0.5,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 504,
+            form: 1,
+            label: "EDGES".into(),
+            status: "00010001",
+            parameters: "504,7,7,21,1,21,2,9,21,2,21,3,11,21,3,21,1,13,21,1,21,4,15,21,4,21,2,17,21,2,21,5,19,21,5,21,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "LOOP1".into(),
+            status: "00010000",
+            parameters: "508,3,0,23,1,1,0,0,23,2,1,0,0,23,3,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "LOOP2".into(),
+            status: "00010000",
+            parameters: "508,3,0,23,1,0,0,0,23,4,1,0,0,23,5,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "LOOP3".into(),
+            status: "00010000",
+            parameters: "508,3,0,23,1,1,0,0,23,6,1,0,0,23,7,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE1".into(),
+            status: "00010000",
+            parameters: "510,5,1,1,25;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE2".into(),
+            status: "00010000",
+            parameters: "510,5,1,1,27;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE3".into(),
+            status: "00010000",
+            parameters: "510,5,1,1,29;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 514,
+            form: 2,
+            label: "SHELL".into(),
+            status: "00000000",
+            parameters: "514,3,31,1,33,1,35,1;".into(),
+        },
+    ]);
+    owned_test_file(&entities)
+}
+
 fn explicit_tetrahedron_solid_file() -> Vec<u8> {
     explicit_tetrahedron_solid_file_with_options(false, false)
 }
@@ -2811,6 +2923,49 @@ fn decode_builds_shared_explicit_open_shell_topology() {
             .len(),
         4
     );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_a_three_use_non_manifold_radial_ring() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_non_manifold_open_shell_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let edge = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id.0 == "iges:model:edge#D37:D23:1")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    let uses = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == edge.id)
+        .collect::<Vec<_>>();
+    assert_eq!(uses.len(), 3);
+    let by_id = uses
+        .iter()
+        .map(|coedge| (&coedge.id, *coedge))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut current = uses[0];
+    let mut visited = std::collections::BTreeSet::new();
+    for _ in 0..3 {
+        assert!(visited.insert(current.id.clone()));
+        current = by_id[&current.radial_next];
+    }
+    assert_eq!(current.id, uses[0].id);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
