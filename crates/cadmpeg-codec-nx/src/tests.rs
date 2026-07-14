@@ -631,6 +631,60 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
 }
 
 #[test]
+fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
+    use crate::native::{
+        FeatureSimpleHolePlacement2d, FeatureSimpleHolePlacementBlockReferences,
+        FeatureSimpleHoleTemplate, SimpleHoleEndTreatment, SimpleHoleExtent, SimpleHoleFamily,
+        SimpleHoleForm,
+    };
+    let operation = "nx:feature-history:operation-label#1-4";
+    let template = FeatureSimpleHoleTemplate {
+        id: "template".to_string(),
+        operation_label: operation.to_string(),
+        payload_string: "string".to_string(),
+        family: SimpleHoleFamily::GeneralHole,
+        form: SimpleHoleForm::Simple,
+        extent: SimpleHoleExtent::Through,
+        start_treatment: SimpleHoleEndTreatment::Chamfer,
+        end_treatment: SimpleHoleEndTreatment::Chamfer,
+    };
+    let placement = FeatureSimpleHolePlacement2d {
+        id: "placement".to_string(),
+        operation_label: operation.to_string(),
+        position: [508.0, 38.1],
+        first_witness_offsets: [10, 18],
+        second_witness_offsets: [30, 38],
+    };
+    let blocks = FeatureSimpleHolePlacementBlockReferences {
+        id: "blocks".to_string(),
+        operation_label: operation.to_string(),
+        first_data_blocks: ["block#231".to_string(), "block#232".to_string()],
+        second_data_blocks: ["block#233".to_string(), "block#234".to_string()],
+        first_reference_offsets: [20, 22],
+        second_reference_offsets: [40, 42],
+    };
+    let properties = crate::decode::simple_hole_native_properties(
+        operation,
+        &[template],
+        &[placement],
+        &[blocks],
+    );
+    assert_eq!(properties["simple_hole_template"], "template");
+    assert_eq!(properties["simple_hole_placement_2d"], "placement");
+    assert_eq!(
+        properties["simple_hole_placement_block_references"],
+        "blocks"
+    );
+    assert!(crate::decode::simple_hole_native_properties(
+        "nx:feature-history:operation-label#1-5",
+        &[],
+        &[],
+        &[],
+    )
+    .is_empty());
+}
+
+#[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use crate::native::{
         FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,

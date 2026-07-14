@@ -3192,6 +3192,9 @@ fn attach_native_object_model(
             expressions: &expressions,
             operation_records: &feature_operation_records,
             payload_strings: &feature_payload_strings,
+            simple_hole_templates: &feature_simple_hole_templates,
+            simple_hole_placements_2d: &feature_simple_hole_placements_2d,
+            simple_hole_placement_block_references: &feature_simple_hole_placement_block_references,
             body_bindings: &segment_body_bindings,
         },
         annotations,
@@ -3475,6 +3478,10 @@ struct FeatureOperationSources<'a> {
     expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
     payload_strings: &'a [crate::native::FeaturePayloadString],
+    simple_hole_templates: &'a [crate::native::FeatureSimpleHoleTemplate],
+    simple_hole_placements_2d: &'a [crate::native::FeatureSimpleHolePlacement2d],
+    simple_hole_placement_block_references:
+        &'a [crate::native::FeatureSimpleHolePlacementBlockReferences],
     body_bindings: &'a [crate::native::SegmentBodyBinding],
 }
 
@@ -3500,6 +3507,9 @@ fn attach_feature_operations(
         expressions,
         operation_records,
         payload_strings,
+        simple_hole_templates,
+        simple_hole_placements_2d,
+        simple_hole_placement_block_references,
         body_bindings,
     } = *sources;
     let stream = annotations.stream("nx:container");
@@ -3685,6 +3695,12 @@ fn attach_feature_operations(
                 construction.id.clone(),
             );
         }
+        source_properties.extend(simple_hole_native_properties(
+            &label.id,
+            simple_hole_templates,
+            simple_hole_placements_2d,
+            simple_hole_placement_block_references,
+        ));
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
                 format!("object_index.{slot}"),
@@ -3832,6 +3848,37 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn simple_hole_native_properties(
+    operation_label: &str,
+    templates: &[crate::native::FeatureSimpleHoleTemplate],
+    placements: &[crate::native::FeatureSimpleHolePlacement2d],
+    block_references: &[crate::native::FeatureSimpleHolePlacementBlockReferences],
+) -> BTreeMap<String, String> {
+    let mut properties = BTreeMap::new();
+    if let Some(template) = templates
+        .iter()
+        .find(|template| template.operation_label == operation_label)
+    {
+        properties.insert("simple_hole_template".to_string(), template.id.clone());
+    }
+    if let Some(placement) = placements
+        .iter()
+        .find(|placement| placement.operation_label == operation_label)
+    {
+        properties.insert("simple_hole_placement_2d".to_string(), placement.id.clone());
+    }
+    if let Some(references) = block_references
+        .iter()
+        .find(|references| references.operation_label == operation_label)
+    {
+        properties.insert(
+            "simple_hole_placement_block_references".to_string(),
+            references.id.clone(),
+        );
+    }
+    properties
 }
 
 pub(crate) fn feature_parameter_content(
