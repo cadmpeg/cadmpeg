@@ -1294,6 +1294,224 @@ pub fn standard_mesh_boundary_assignments(
         .collect()
 }
 
+fn boundary_endpoint_support(
+    boundary: &[MeshBoundaryEdgeCandidate],
+    edge_candidates: &[Vec<[usize; 2]>],
+    work: &mut usize,
+) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
+    const MAX_BOUNDARY_SUPPORT_WORK: usize = 20_000_000;
+
+    #[derive(Clone, Copy)]
+    struct State {
+        pair: [usize; 2],
+        start: usize,
+        end: usize,
+    }
+
+    let layers = boundary
+        .iter()
+        .map(|use_| {
+            edge_candidates.get(use_.edge).and_then(|pairs| {
+                (!pairs.is_empty()).then(|| {
+                    pairs
+                        .iter()
+                        .flat_map(|&pair| {
+                            let mut unordered = pair;
+                            unordered.sort_unstable();
+                            [
+                                State {
+                                    pair: unordered,
+                                    start: unordered[0],
+                                    end: unordered[1],
+                                },
+                                State {
+                                    pair: unordered,
+                                    start: unordered[1],
+                                    end: unordered[0],
+                                },
+                            ]
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let first_layer = layers.first()?;
+    let mut supported = layers
+        .iter()
+        .map(|layer| vec![false; layer.len()])
+        .collect::<Vec<_>>();
+    for first in 0..first_layer.len() {
+        let mut forward = layers
+            .iter()
+            .map(|layer| vec![false; layer.len()])
+            .collect::<Vec<_>>();
+        forward[0][first] = true;
+        for layer in 1..layers.len() {
+            *work = work.checked_add(layers[layer - 1].len() * layers[layer].len())?;
+            if *work > MAX_BOUNDARY_SUPPORT_WORK {
+                return None;
+            }
+            for (right, right_state) in layers[layer].iter().enumerate() {
+                forward[layer][right] =
+                    layers[layer - 1]
+                        .iter()
+                        .enumerate()
+                        .any(|(left, left_state)| {
+                            forward[layer - 1][left] && left_state.end == right_state.start
+                        });
+            }
+        }
+        let mut backward = layers
+            .iter()
+            .map(|layer| vec![false; layer.len()])
+            .collect::<Vec<_>>();
+        let last = layers.len() - 1;
+        for (state, (reachable, value)) in layers[last]
+            .iter()
+            .zip(forward[last].iter().zip(&mut backward[last]))
+        {
+            *value = *reachable && state.end == first_layer[first].start;
+        }
+        for layer in (0..last).rev() {
+            for (left, left_state) in layers[layer].iter().enumerate() {
+                backward[layer][left] =
+                    layers[layer + 1]
+                        .iter()
+                        .enumerate()
+                        .any(|(right, right_state)| {
+                            backward[layer + 1][right] && left_state.end == right_state.start
+                        });
+            }
+        }
+        if backward[0][first] {
+            for layer in 0..layers.len() {
+                for state in 0..layers[layer].len() {
+                    supported[layer][state] |= forward[layer][state] && backward[layer][state];
+                }
+            }
+        }
+    }
+    let mut by_edge = HashMap::<usize, HashSet<[usize; 2]>>::new();
+    for (layer, use_) in boundary.iter().enumerate() {
+        let values = layers[layer]
+            .iter()
+            .zip(&supported[layer])
+            .filter_map(|(state, supported)| supported.then_some(state.pair))
+            .collect::<HashSet<_>>();
+        if values.is_empty() {
+            return None;
+        }
+        by_edge
+            .entry(use_.edge)
+            .and_modify(|stored| stored.retain(|pair| values.contains(pair)))
+            .or_insert(values);
+    }
+    by_edge
+        .values()
+        .all(|domain| !domain.is_empty())
+        .then_some(by_edge)
+}
+
+/// Prune endpoint-pair domains through every ordered trim-boundary candidate.
+/// A pair survives only when each incident face retains a complete assignment
+/// whose ordered cycles admit a closed head-to-tail traversal using that pair.
+#[must_use]
+pub fn standard_mesh_prune_endpoint_candidates(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    if edge_faces.len() != edge_candidates.len() || edge_candidates.iter().any(Vec::is_empty) {
+        return None;
+    }
+    let mut candidates = edge_candidates.to_vec();
+    let mut faces = standard_mesh_boundary_assignments(bytes, edge_faces)?;
+    loop {
+        let before = (
+            faces.iter().map(Vec::len).sum::<usize>(),
+            candidates.iter().map(Vec::len).sum::<usize>(),
+        );
+        let mut face_supports = Vec::with_capacity(faces.len());
+        let mut work = 0usize;
+        for assignments in &mut faces {
+            let evaluated = assignments
+                .iter()
+                .enumerate()
+                .filter_map(|(index, assignment)| {
+                    let mut support = HashMap::<usize, HashSet<[usize; 2]>>::new();
+                    for boundary in &assignment.boundaries {
+                        for (edge, domain) in
+                            boundary_endpoint_support(boundary, &candidates, &mut work)?
+                        {
+                            support
+                                .entry(edge)
+                                .and_modify(|stored| stored.retain(|pair| domain.contains(pair)))
+                                .or_insert(domain);
+                        }
+                    }
+                    support
+                        .values()
+                        .all(|domain| !domain.is_empty())
+                        .then_some((index, support))
+                })
+                .collect::<Vec<_>>();
+            if evaluated.is_empty() {
+                return None;
+            }
+            *assignments = evaluated
+                .iter()
+                .map(|(index, _)| assignments[*index].clone())
+                .collect();
+            face_supports.push(
+                evaluated
+                    .into_iter()
+                    .map(|(_, support)| support)
+                    .collect::<Vec<_>>(),
+            );
+        }
+        for (edge, domain) in candidates.iter_mut().enumerate() {
+            let mut allowed = None::<HashSet<[usize; 2]>>;
+            let mut incident = edge_faces[edge].to_vec();
+            incident.sort_unstable();
+            incident.dedup();
+            for face in incident {
+                let support = face_supports[face]
+                    .iter()
+                    .filter_map(|assignment| assignment.get(&edge))
+                    .flatten()
+                    .copied()
+                    .collect::<HashSet<_>>();
+                if support.is_empty() {
+                    return None;
+                }
+                if let Some(allowed) = &mut allowed {
+                    allowed.retain(|pair| support.contains(pair));
+                } else {
+                    allowed = Some(support);
+                }
+            }
+            let allowed = allowed?;
+            domain.retain(|pair| {
+                let mut pair = *pair;
+                pair.sort_unstable();
+                allowed.contains(&pair)
+            });
+            if domain.is_empty() {
+                return None;
+            }
+        }
+        let after = (
+            faces.iter().map(Vec::len).sum::<usize>(),
+            candidates.iter().map(Vec::len).sum::<usize>(),
+        );
+        if after == before {
+            break;
+        }
+    }
+    Some(candidates)
+}
+
 type MeshCorner = (usize, usize, usize);
 type MeshCornerPoints = HashMap<MeshCorner, HashSet<usize>>;
 

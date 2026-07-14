@@ -2846,27 +2846,39 @@ fn attach_standard_topology(
                         .map(|[pair]| pair)
                 })
                 .collect::<Vec<_>>();
-            let Some(placement_domains) =
-                topology::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
-            else {
-                break;
-            };
             let mut changed = false;
-            for (edge, domain) in placement_domains.into_iter().enumerate() {
-                if domain.is_empty() {
-                    continue;
+            if let Some(placement_domains) =
+                topology::standard_mesh_placement_endpoint_pairs(brep, &edge_faces, &seeds)
+            {
+                for (edge, domain) in placement_domains.into_iter().enumerate() {
+                    if domain.is_empty() {
+                        continue;
+                    }
+                    let previous = options[edge].clone();
+                    if options[edge].is_empty() {
+                        options[edge] = domain;
+                    } else {
+                        options[edge].retain(|pair| {
+                            domain
+                                .iter()
+                                .any(|candidate| topology::same_unordered_pair(*pair, *candidate))
+                        });
+                    }
+                    changed |= options[edge] != previous;
                 }
-                let previous = options[edge].clone();
-                if options[edge].is_empty() {
-                    options[edge] = domain;
-                } else {
+            }
+            if let Some(boundary_domains) =
+                topology::standard_mesh_prune_endpoint_candidates(brep, &edge_faces, options)
+            {
+                for (edge, domain) in boundary_domains.into_iter().enumerate() {
+                    let previous = options[edge].clone();
                     options[edge].retain(|pair| {
                         domain
                             .iter()
                             .any(|candidate| topology::same_unordered_pair(*pair, *candidate))
                     });
+                    changed |= options[edge] != previous;
                 }
-                changed |= options[edge] != previous;
             }
             if !changed {
                 break;
