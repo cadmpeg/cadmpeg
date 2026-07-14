@@ -6432,32 +6432,37 @@ fn transfer_plane_intersection_curves(
 
 /// Decode a `.prt` stream into an IR document and loss report.
 ///
-/// The stream is read from its beginning. `options.container_only` is reflected
-/// in the report, but the current decoder always performs the same structural
-/// scan.
+/// The stream is read from its beginning. When `options.container_only` is set,
+/// the returned IR contains source metadata and preserved geometry sections but
+/// no transferred entities.
 pub fn decode(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
+    if options.container_only {
+        let ir = build_container_ir(&scan)?;
+        let report = build_report(&scan, &ir, true);
+        return Ok(DecodeResult::new(ir, report));
+    }
+
     let ir = build_ir(&scan)?;
-    let report = build_report(&scan, &ir, options.container_only);
+    let report = build_report(&scan, &ir, false);
     Ok(DecodeResult::new(ir, report))
 }
 
-/// Build source metadata, preserved geometry records, and datum-plane surfaces.
-fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
-    let mut ir = CadIr::empty(Units::default());
-    let mut annotations = AnnotationBuilder::new();
-    ir.source = Some(source_meta(scan));
-
+fn preserve_geometry_sections(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> Result<(), CodecError> {
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
         let end = (section.offset + section.length).min(scan.data.len());
         let bytes = &scan.data[section.offset..end];
         let id = UnknownId(format!("creo:{}:section#{}", section.name, section.offset));
         annotate(
-            &mut annotations,
+            annotations,
             &id,
             &section.name,
             section.offset as u64,
@@ -6476,6 +6481,24 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             },
         )?;
     }
+    Ok(())
+}
+
+fn build_container_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    ir.source = Some(source_meta(scan));
+    preserve_geometry_sections(scan, &mut ir, &mut annotations)?;
+    ir.annotations = annotations.build();
+    Ok(ir)
+}
+
+/// Build source metadata, preserved geometry records, and transferred entities.
+fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+    let mut ir = CadIr::empty(Units::default());
+    let mut annotations = AnnotationBuilder::new();
+    ir.source = Some(source_meta(scan));
+    preserve_geometry_sections(scan, &mut ir, &mut annotations)?;
     for plane in &scan.datum_planes {
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
         annotate(
@@ -7138,8 +7161,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
-            message: "Container-only decode requested; only the container layer was read."
-                .to_string(),
+            message: "Container-only decode requested; entity transfer was skipped.".to_string(),
             provenance: None,
         });
     }
@@ -7192,7 +7214,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         provenance: None,
     });
 
-    if placed_plane_count != 0 {
+    if !container_only && placed_plane_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
@@ -7204,7 +7226,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    if !scan.datum_planes.is_empty() {
+    if !container_only && !scan.datum_planes.is_empty() {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,

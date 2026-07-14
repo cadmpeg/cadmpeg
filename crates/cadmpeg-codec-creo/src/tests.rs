@@ -2716,6 +2716,37 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
 }
 
 #[test]
+fn container_only_preserves_sections_without_transferring_entities() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("MdlStatus", b"Datum Plane id 4\0".to_vec()),
+        ],
+    );
+    let result = decode::decode(
+        &mut Cursor::new(data),
+        &DecodeOptions {
+            container_only: true,
+        },
+    )
+    .expect("container decode");
+
+    assert!(result.report.container_only);
+    assert!(!result.report.geometry_transferred);
+    assert!(result.ir.model.surfaces.is_empty());
+    assert!(result.ir.model.features.is_empty());
+    assert_eq!(result.ir.native_unknowns("creo").unwrap().len(), 1);
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.starts_with("Transferred ")));
+}
+
+#[test]
 fn inspect_summary_has_layout_and_census_notes() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(7, 9))]);
     let mut reader = Cursor::new(data);
