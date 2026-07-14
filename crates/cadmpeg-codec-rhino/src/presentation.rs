@@ -695,7 +695,7 @@ fn texture_array(
             "texture count exceeds limit",
         ));
     }
-    let mut textures = Vec::with_capacity(count);
+    let mut textures = Vec::new();
     for _ in 0..count {
         let object = chunk_at(data, values.position(), values.end(), archive, false)?;
         if object.short {

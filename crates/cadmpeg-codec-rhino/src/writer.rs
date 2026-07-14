@@ -2159,11 +2159,6 @@ fn canonicalize_native_curve_knots(
     let stored = curve.knots[1..curve.knots.len() - 1].to_vec();
     curve.knots = crate::surfaces::reconstruct_knots(&stored, order, count)
         .map_err(|error| CodecError::Malformed(format!("curve {id}: {error}")))?;
-    curve.periodic = crate::surfaces::periodic_knots(
-        &curve.knots[1..curve.knots.len() - 1],
-        order,
-        count,
-    );
     Ok(())
 }
 
@@ -2386,7 +2381,14 @@ fn validate_nurbs_trim_loop(
                     .knots
                     .iter()
                     .copied()
-                    .filter(|value| *value > domain[0] && *value < domain[1]),
+                    .filter(|value| *value > domain[0] && *value < domain[1])
+                    .map(|value| {
+                        if coedge.sense == Sense::Forward {
+                            value
+                        } else {
+                            domain[0] + domain[1] - value
+                        }
+                    }),
             );
         }
         if let cadmpeg_ir::geometry::PcurveGeometry::Nurbs { knots, .. } = &pcurve.geometry {
@@ -3627,7 +3629,10 @@ mod tests {
         super::canonicalize_native_curve_knots(&mut curve, "reversed")
             .expect("reflected stored knots reconstruct");
 
-        assert_eq!([curve.knots[2], curve.knots[6]], [1.0, 10.0]);
+        assert_eq!(
+            curve.knots,
+            [-1.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 12.0]
+        );
         super::check_knot_roundtrip(
             "reversed",
             "curve",
@@ -3774,6 +3779,10 @@ mod tests {
             .encode(&ir, &mut v5)
             .unwrap();
         assert_eq!(v5_report.losses.len(), 1);
+        let decoded_v5 = RhinoCodec
+            .decode(&mut Cursor::new(v5), &DecodeOptions::default())
+            .unwrap();
+        assert_ne!(decoded_v5.ir.model.tessellations[0].vertices[0].x, 0.1);
         let mut v8 = Vec::new();
         let v8_report = RhinoEncoder::new(RhinoArchiveVersion::V8)
             .encode(&ir, &mut v8)

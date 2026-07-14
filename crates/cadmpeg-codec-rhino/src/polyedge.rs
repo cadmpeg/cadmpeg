@@ -137,7 +137,7 @@ pub(crate) fn decode(
         }
         parameters.push(value);
     }
-    let mut segments = Vec::with_capacity(segment_count);
+    let mut segments = Vec::new();
     for _ in 0..segment_count {
         let start = reader.position();
         let wrapper = chunk_at(data, start, reader.end(), archive, false)?;

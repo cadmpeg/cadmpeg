@@ -533,7 +533,13 @@ fn subd_edge_chain(
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(SubdEdgeChain, usize), FramingError> {
-    let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
+    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
+    if minor != 0 {
+        return Err(structural(
+            reader.position(),
+            "unsupported SubD edge-chain version",
+        ));
+    }
     let subd_id = uuid(&mut reader)?;
     let count = count(&mut reader, 1)?;
     let edge_ids = array(&mut reader, 4, read_u32)?;
@@ -570,12 +576,18 @@ fn subd_edge_chains(
     reader: &mut BoundedReader<'_>,
     archive: ArchiveVersion,
 ) -> Result<Vec<SubdEdgeChain>, FramingError> {
-    let (mut nested, next, _) = anonymous(
+    let (mut nested, next, minor) = anonymous(
         reader.backing_bytes(),
         reader.position(),
         reader.end(),
         archive,
     )?;
+    if minor != 0 {
+        return Err(structural(
+            nested.position(),
+            "unsupported SubD edge-chain list version",
+        ));
+    }
     let count = count(&mut nested, 1)?;
     let mut values = Vec::new();
     for _ in 0..count {
@@ -604,7 +616,13 @@ fn parse_value(
     end: usize,
     archive: ArchiveVersion,
 ) -> Result<(HistoryValue, usize), FramingError> {
-    let (mut reader, next, _) = anonymous(bytes, offset, end, archive)?;
+    let (mut reader, next, minor) = anonymous(bytes, offset, end, archive)?;
+    if minor != 0 {
+        return Err(structural(
+            reader.position(),
+            "unsupported history-value version",
+        ));
+    }
     let type_code = reader.i32()?;
     let id = reader.i32()?;
     let payload = reader.position()..reader.end();

@@ -400,7 +400,7 @@ pub(crate) fn decode(
         });
     }
     let localizer_count = count(&mut list, 12, MAX_LOCALIZERS)?;
-    let mut localizers = Vec::with_capacity(localizer_count);
+    let mut localizers = Vec::new();
     for _ in 0..localizer_count {
         localizers.push(localizer(data, &mut list, scale, archive)?);
     }
