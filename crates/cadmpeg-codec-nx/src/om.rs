@@ -39,6 +39,8 @@ pub struct FieldDefinition<'a> {
     pub name: &'a str,
     /// Declaration code immediately following the name.
     pub trailing_code: u8,
+    /// Bytes between this declaration core and the next member declaration.
+    pub registry_suffix: &'a [u8],
 }
 
 /// One self-framed printable string value in an NX OM entity.
@@ -1110,6 +1112,7 @@ fn field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDefinit
         limit = search.saturating_add(256).min(end);
         out.push(definition);
     }
+    bound_field_registry_suffixes(bytes, &mut out);
     out
 }
 
@@ -1124,7 +1127,16 @@ fn all_field_definitions(bytes: &[u8], start: usize, end: usize) -> Vec<FieldDef
             at += 1;
         }
     }
+    bound_field_registry_suffixes(bytes, &mut out);
     out
+}
+
+fn bound_field_registry_suffixes<'a>(bytes: &'a [u8], definitions: &mut [FieldDefinition<'a>]) {
+    for index in 0..definitions.len().saturating_sub(1) {
+        let suffix_start = definitions[index].offset + definitions[index].name.len() + 2;
+        let suffix_end = definitions[index + 1].offset;
+        definitions[index].registry_suffix = &bytes[suffix_start..suffix_end];
+    }
 }
 
 fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefinition<'_>> {
@@ -1139,6 +1151,7 @@ fn field_definition_at(bytes: &[u8], at: usize, end: usize) -> Option<FieldDefin
         offset: at,
         name: std::str::from_utf8(raw).ok()?,
         trailing_code: bytes[name_end],
+        registry_suffix: &[],
     })
 }
 

@@ -419,7 +419,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 27);
+    assert_eq!(namespace.version, 28);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3632,7 +3632,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 27);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 28);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -3855,8 +3855,10 @@ fn decode_retains_length_framed_nx_field_definitions() {
     assert_eq!(fields.len(), 2);
     assert_eq!(fields[0].name, "m_target");
     assert_eq!(fields[0].ordinal, 0);
+    assert_eq!(fields[0].registry_suffix, [0x01, 0x02]);
     assert_eq!(fields[1].name, "m_tools");
     assert_eq!(fields[1].trailing_code, 0x81);
+    assert!(fields[1].registry_suffix.is_empty());
     assert_eq!(fields[1].source_entry, "/Root/UG_PART/UG_PART");
     let classes = result
         .ir

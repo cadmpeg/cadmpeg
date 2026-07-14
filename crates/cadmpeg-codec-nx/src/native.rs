@@ -963,6 +963,9 @@ pub struct FieldDefinition {
     pub ordinal: u32,
     /// Declaration code serialized immediately after the name.
     pub trailing_code: u8,
+    /// Exact bytes between this declaration core and the next member declaration.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub registry_suffix: Vec<u8>,
     /// Absolute file offset of the containing OM section signature.
     pub section_offset: u64,
     /// Directory entry containing the OM section.
@@ -1457,6 +1460,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    registry_suffix: definition.registry_suffix.to_vec(),
                     section_offset: entry_offset + section.offset as u64,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
@@ -1480,6 +1484,7 @@ pub fn field_definitions(container: &Container) -> Vec<FieldDefinition> {
                     name: definition.name.to_string(),
                     ordinal: ordinal as u32,
                     trailing_code: definition.trailing_code,
+                    registry_suffix: definition.registry_suffix.to_vec(),
                     section_offset,
                     source_entry: entry.name.clone(),
                     source_offset: entry_offset + definition.offset as u64,
