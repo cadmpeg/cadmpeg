@@ -78,6 +78,7 @@ struct SettingRecord {
     byte_len: u64,
     typecode: String,
     sha256: String,
+    parse_error: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -503,7 +504,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
             sha256: cadmpeg_ir::hash::sha256_hex(&scan.data[value.source.range.clone()]),
         })
         .collect::<Vec<_>>();
-    let setting_records = settings
+    let mut setting_records = settings
         .unsupported
         .iter()
         .enumerate()
@@ -513,6 +514,7 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
             byte_len: value.source.range.len() as u64,
             typecode: format!("{:#010x}", value.typecode),
             sha256: cadmpeg_ir::hash::sha256_hex(&scan.data[value.source.range.clone()]),
+            parse_error: None,
         })
         .collect::<Vec<_>>();
     let scale = settings
@@ -528,28 +530,33 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
             continue;
         }
         for record in &table.records {
-            if record.typecode == ANNOTATION_SETTINGS {
-                if let Ok(value) =
-                    annotation_settings(&scan.data, record.body.clone(), record.range.start, scale)
-                {
-                    annotations.push(value);
-                }
+            let result = if record.typecode == ANNOTATION_SETTINGS {
+                annotation_settings(&scan.data, record.body.clone(), record.range.start, scale)
+                    .map(|value| annotations.push(value))
             } else if record.typecode == GRID_DEFAULTS {
-                if let Ok(value) =
-                    grid_defaults(&scan.data, record.body.clone(), record.range.start, scale)
-                {
-                    grids.push(value);
-                }
+                grid_defaults(&scan.data, record.body.clone(), record.range.start, scale)
+                    .map(|value| grids.push(value))
             } else if record.typecode == RENDER_SETTINGS {
-                if let Ok(value) = render_settings(
+                render_settings(
                     &scan.data,
                     record.body.clone(),
                     record.range.start,
                     scan.archive,
                     scale,
-                ) {
-                    renders.push(value);
-                }
+                )
+                .map(|value| renders.push(value))
+            } else {
+                continue;
+            };
+            if let Err(error) = result {
+                setting_records.push(SettingRecord {
+                    id: format!("rhino:document:setting#error-{:04}", setting_records.len()),
+                    source_offset: record.range.start as u64,
+                    byte_len: record.range.len() as u64,
+                    typecode: format!("{:#010x}", record.typecode),
+                    sha256: cadmpeg_ir::hash::sha256_hex(&scan.data[record.range.clone()]),
+                    parse_error: Some(error.to_string()),
+                });
             }
         }
     }

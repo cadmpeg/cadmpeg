@@ -832,35 +832,34 @@ fn parse_list(
     scale: f64,
     kind: &'static str,
 ) -> Vec<ViewRecord> {
-    (|| {
-        let mut reader = BoundedReader::new(data, record.body.start, record.body.end)?;
-        let count = reader.i32()?;
-        let count = usize::try_from(count)
-            .map_err(|_| structural(reader.position() - 4, "negative view count"))?;
-        if count > 1 << 16 {
-            return Err(structural(
-                reader.position() - 4,
-                "view count exceeds limit",
-            ));
-        }
-        let mut views = Vec::new();
-        for index in 0..count {
-            let view = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-            if view.typecode != VIEW_RECORD || view.short {
-                return Err(structural(reader.position(), "view record is invalid"));
+    let Ok(mut reader) = BoundedReader::new(data, record.body.start, record.body.end) else {
+        return Vec::new();
+    };
+    let Ok(signed_count) = reader.i32() else {
+        return Vec::new();
+    };
+    let Ok(count) = usize::try_from(signed_count) else {
+        return Vec::new();
+    };
+    if count > 1 << 16 {
+        return Vec::new();
+    }
+    let mut views = Vec::new();
+    for index in 0..count {
+        let Ok(view) = chunk_at(data, reader.position(), reader.end(), archive, false) else {
+            break;
+        };
+        let next = view.next_offset;
+        if view.typecode == VIEW_RECORD && !view.short {
+            if let Ok(value) = parse_view(data, &view, archive, scale, kind, index) {
+                views.push(value);
             }
-            views.push(parse_view(data, &view, archive, scale, kind, index)?);
-            reader.skip(view.next_offset - reader.position())?;
         }
-        if reader.remaining() != 0 {
-            return Err(structural(
-                reader.position(),
-                "view list has trailing bytes",
-            ));
+        if reader.skip(next - reader.position()).is_err() {
+            break;
         }
-        Ok(views)
-    })()
-    .unwrap_or_default()
+    }
+    views
 }
 
 fn parse_named_cplanes(

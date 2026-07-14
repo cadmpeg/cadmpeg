@@ -1921,46 +1921,51 @@ fn rendering_materials(
                 "rendering-material count exceeds limit",
             ));
         }
-        let mut values = Vec::with_capacity(count);
+        let mut values = Vec::new();
         for _ in 0..count {
             let chunk = chunk_at(data, reader.position(), reader.end(), archive, false)?;
-            let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
-            if value.i32()? != 1 {
-                return Err(structural(
-                    value.position(),
-                    "rendering-material version is unsupported",
-                ));
+            let parsed = (|| {
+                let mut value = BoundedReader::new(data, chunk.body.start, chunk.body.end)?;
+                if value.i32()? != 1 {
+                    return Err(structural(
+                        value.position(),
+                        "rendering-material version is unsupported",
+                    ));
+                }
+                let minor = value.i32()?;
+                let plugin_uuid = uuid(&mut value)?.to_string();
+                let front_material_uuid = uuid(&mut value)?.to_string();
+                let mapping_count = value.i32()?;
+                if mapping_count != 0 {
+                    return Err(structural(
+                        value.position() - 4,
+                        "obsolete rendering mappings are nonempty",
+                    ));
+                }
+                let (back_material_uuid, material_source) = if minor >= 1 {
+                    let id = uuid(&mut value)?;
+                    let source = value.u8()?;
+                    value.skip(3)?;
+                    ((!id.is_nil()).then(|| id.to_string()), Some(source))
+                } else {
+                    (None, None)
+                };
+                if value.remaining() != 0 {
+                    return Err(structural(
+                        value.position(),
+                        "rendering-material reference has trailing bytes",
+                    ));
+                }
+                Ok(RenderingMaterialReference {
+                    plugin_uuid,
+                    front_material_uuid,
+                    back_material_uuid,
+                    material_source,
+                })
+            })();
+            if let Ok(value) = parsed {
+                values.push(value);
             }
-            let minor = value.i32()?;
-            let plugin_uuid = uuid(&mut value)?.to_string();
-            let front_material_uuid = uuid(&mut value)?.to_string();
-            let mapping_count = value.i32()?;
-            if mapping_count != 0 {
-                return Err(structural(
-                    value.position() - 4,
-                    "obsolete rendering mappings are nonempty",
-                ));
-            }
-            let (back_material_uuid, material_source) = if minor >= 1 {
-                let id = uuid(&mut value)?;
-                let source = value.u8()?;
-                value.skip(3)?;
-                ((!id.is_nil()).then(|| id.to_string()), Some(source))
-            } else {
-                (None, None)
-            };
-            if value.remaining() != 0 {
-                return Err(structural(
-                    value.position(),
-                    "rendering-material reference has trailing bytes",
-                ));
-            }
-            values.push(RenderingMaterialReference {
-                plugin_uuid,
-                front_material_uuid,
-                back_material_uuid,
-                material_source,
-            });
             reader.skip(chunk.next_offset - reader.position())?;
         }
         if reader.remaining() != 0 {

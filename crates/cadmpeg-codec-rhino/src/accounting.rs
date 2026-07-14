@@ -69,6 +69,12 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
     let data = &scan.data;
     let mut spans = Vec::new();
     let mut opaque = Vec::new();
+    let object_orders = scan
+        .objects
+        .iter()
+        .enumerate()
+        .map(|(source_order, object)| (object.range.start, source_order))
+        .collect::<std::collections::BTreeMap<_, _>>();
 
     spans.push(span(data, 0..32, "typed", "archive_header", None));
     let comment_id = "rhino:source:opaque#comment".to_string();
@@ -126,12 +132,16 @@ pub(crate) fn install(scan: &Scan, ir: &mut CadIr) {
                 record.typecode
             );
             if record.typecode == 0x2000_8070 {
+                let source_order = object_orders
+                    .get(&record.range.start)
+                    .copied()
+                    .expect("scanned object record has a global source order");
                 spans.push(span(
                     data,
                     record.range.clone(),
                     "opaque",
                     kind,
-                    Some(format!("rhino:object:record#{record_index:06}")),
+                    Some(format!("rhino:object:record#{source_order:06}")),
                 ));
             } else {
                 let id =
