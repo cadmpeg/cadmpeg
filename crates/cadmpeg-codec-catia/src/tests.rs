@@ -903,6 +903,13 @@ fn b2_topology_metadata_stream() -> Vec<u8> {
     bytes
 }
 
+fn b2_edge_node_stream() -> Vec<u8> {
+    vec![
+        0xb2, 0x03, 0x5e, 0x0d, 0x05, 0x04, 0xd8, 0x08, 0x79, 0x03, 0x08, 0x7f, 0x03, 0x04, 0xd7,
+        0x04, 0xd6, 0x21,
+    ]
+}
+
 fn b2_revolution_stream() -> Vec<u8> {
     let scale = 2.0;
     let angular_lo = scale * 0.5;
@@ -2792,6 +2799,19 @@ fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
     assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
     assert_eq!(uses[0].sense, Some(B2UseSense::Sense88));
     assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
+}
+
+#[test]
+fn b2_edge_node_parser_reads_compact_native_vertex_identities() {
+    let nodes = crate::geometry::b2_edge_nodes(&b2_edge_node_stream());
+    assert_eq!(nodes.len(), 1);
+    assert_eq!(nodes[0].header_token, 5);
+    assert_eq!(nodes[0].curve_ref, 216);
+    assert_eq!(nodes[0].start_vertex_ref, 889);
+    assert_eq!(nodes[0].end_vertex_ref, 895);
+    assert_eq!(nodes[0].start_parameter_ref, 215);
+    assert_eq!(nodes[0].end_parameter_ref, 214);
+    assert_eq!(nodes[0].tail, 0x21);
 }
 
 #[test]

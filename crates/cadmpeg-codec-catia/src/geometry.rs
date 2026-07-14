@@ -746,6 +746,27 @@ pub struct B2EdgeMetadata {
     pub references: Vec<u16>,
 }
 
+/// Structurally decoded width-coded class-`0x5e` edge node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct B2EdgeNode {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded header token following the payload length.
+    pub header_token: u32,
+    /// Native curve-support identity.
+    pub curve_ref: u32,
+    /// Native start-vertex identity.
+    pub start_vertex_ref: u32,
+    /// Native end-vertex identity.
+    pub end_vertex_ref: u32,
+    /// Native start-parameter identity.
+    pub start_parameter_ref: u32,
+    /// Native end-parameter identity.
+    pub end_parameter_ref: u32,
+    /// Terminal layout byte following the five references.
+    pub tail: u8,
+}
+
 /// Decode class-`0x06` payloads and their settled terminal sense codes.
 #[must_use]
 pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
@@ -789,6 +810,32 @@ pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
                 payload,
                 references,
             }
+        })
+        .collect()
+}
+
+/// Decode length-closed `b2/b3/b4 03 5e` records containing exactly five
+/// compact references followed by one terminal byte.
+#[must_use]
+pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
+    b_family_frames(data, 0x5e)
+        .into_iter()
+        .filter_map(|frame| {
+            let mut at = frame.payload;
+            let references = (0..5)
+                .map(|_| compact_int(data, &mut at))
+                .collect::<Option<Vec<_>>>()?;
+            let tail = *data.get(at)?;
+            (at + 1 == frame.end).then_some(B2EdgeNode {
+                pos: frame.pos,
+                header_token: frame.header_token,
+                curve_ref: references[0],
+                start_vertex_ref: references[1],
+                end_vertex_ref: references[2],
+                start_parameter_ref: references[3],
+                end_parameter_ref: references[4],
+                tail,
+            })
         })
         .collect()
 }
