@@ -10,6 +10,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Packed B-spline surface bodies and surface-intersection curves are unspecified.
 - The prototype-adjacent `tab_cyl` instance rows use a construction distinct
   from the repeated cubic replay; its point and parameter fields are unspecified.
+- The placement role of the six-scalar frame in replay-bound `tab_cyl` rows is unspecified.
 - The remaining `fc` curve-body grammars are unspecified, including `fc 05` variants, `fc 08`, `fc 13` field roles, `fc 02` slot semantics, and `fc 04`, `fc 07`, `fc 09`, and `fc 0a`.
 - Rotational-sweep angular termination fields are unspecified; the recipe discriminator and resolved axis do not define one-sided, symmetric, two-sided, or full-turn travel.
 - Model-space analytic equations for non-plane surface rows are unspecified, including cylinder axis and location and cone apex and axis.

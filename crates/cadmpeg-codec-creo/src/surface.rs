@@ -347,7 +347,7 @@ impl SurfaceParameterRecord {
             .then_some(direction)
     }
 
-    /// Decode the two-frame positional body used by a straight
+    /// Decode the two-frame positional body used by an unbound straight
     /// `surface_of_extrusion` instance.
     #[must_use]
     pub fn line_extrusion_frame(&self, type_byte: u8) -> Option<LineExtrusionFrame> {

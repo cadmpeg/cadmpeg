@@ -355,6 +355,12 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
         result.ir.annotations.provenance[&native.id].tag.as_deref(),
         Some("tabulated_cylinder_curve_replay")
     );
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.0 != "creo:visibgeom:surface#7"));
 }
 
 #[test]

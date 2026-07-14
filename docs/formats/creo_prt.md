@@ -253,13 +253,12 @@ Positional cylinder rows store cap-plane point data rather than a `local_sys` re
 
 The direction/directrix form of a `geom_type = 2c` positional body begins with
 a three-scalar model-space sweep-direction frame followed by the bytes
-`00 0c 9a`. The directrix construction begins after this marker. For a straight
-directrix it is a six-scalar frame containing the start and end XYZ points. An
-optional terminal `f7` entity reference follows the directrix frame. A nonzero
-sweep direction and a nondegenerate straight directrix define an unbounded
-plane. The normalized directrix is the plane's first parameter direction, and
-the normalized cross product of the directrix with the sweep direction is the
-plane normal.
+`00 0c 9a`. The directrix construction begins after this marker. Replay-bound
+rows carry a six-scalar frame after the marker; that frame does not contain two
+straight-directrix endpoints. An optional terminal `f7` entity reference
+follows the frame. In a row without a cubic replay, the six-scalar frame stores
+the start and end XYZ points of a straight directrix. A nonzero sweep direction
+and nondegenerate straight directrix define an unbounded plane.
 
 A repeated `tab_cyl` cubic-curve replay has this structure:
 

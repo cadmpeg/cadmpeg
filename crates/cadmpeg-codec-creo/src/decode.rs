@@ -12959,6 +12959,11 @@ fn transfer_positional_line_extrusion_planes(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
+    let replay_bound_surfaces = scan
+        .tabulated_cylinder_curve_replays
+        .iter()
+        .map(|replay| replay.surface_id)
+        .collect::<BTreeSet<_>>();
     let row_types = scan
         .surface_rows
         .iter()
@@ -12966,6 +12971,9 @@ fn transfer_positional_line_extrusion_planes(
         .collect::<BTreeMap<_, _>>();
     let mut transferred = 0;
     for record in &scan.surface_parameters {
+        if replay_bound_surfaces.contains(&record.surface_id) {
+            continue;
+        }
         let Some((crate::surface::SurfaceKind::Extrusion, type_byte)) =
             row_types.get(&record.surface_id).copied()
         else {
@@ -15097,7 +15105,6 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         })
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
-
     let mut losses = Vec::new();
 
     if container_only {
@@ -15126,7 +15133,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, complete first-instance \
-             analytic prototypes, straight positional surface-of-extrusion planes, \
+             analytic prototypes, unbound straight positional surface-of-extrusion planes, \
              topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry circular-sweep cylinders, \
              and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
@@ -15190,7 +15197,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {positional_line_extrusion_plane_count} straight positional \
+                "Transferred {positional_line_extrusion_plane_count} unbound straight positional \
                  surface-of-extrusion carrier(s) from complete sweep-direction and directrix \
                  frames."
             ),
