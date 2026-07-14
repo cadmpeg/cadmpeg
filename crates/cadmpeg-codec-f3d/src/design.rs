@@ -2044,6 +2044,25 @@ pub fn project_dimension_constraints(
             let (parameter, parameter_id) = parameter_for(scope, pair.companion_record_index)?;
             let indices = [pair.geometry_record_index];
             let sketch = sketch_for_geometry(scope, &indices)?;
+            if let Some(entity) = projected.get(&(scope, pair.geometry_record_index)) {
+                if let Some(definition) = null_locus_dimension_definition(
+                    pair,
+                    entity,
+                    &parameter.source_kind,
+                    parameter_id.clone(),
+                ) {
+                    return Some(SketchConstraint {
+                        id: neutral_dimension_constraint_id(
+                            &pair.id,
+                            "null-pair",
+                            pair.record_index,
+                        ),
+                        sketch,
+                        definition,
+                        native_ref: Some(pair.id.clone()),
+                    });
+                }
+            }
             let mut operands = vec![SketchNativeOperand {
                 native_kind: "null_locus".into(),
                 object_index: 0,
@@ -2072,6 +2091,27 @@ pub fn project_dimension_constraints(
         .collect::<Vec<_>>();
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+fn null_locus_dimension_definition(
+    pair: &DesignDimensionNullLocusPair,
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    source_kind: &str,
+    parameter: cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchAxis, SketchConstraintDefinition as Definition, SketchGeometry,
+    };
+
+    (source_kind == "Angular Dimension-2"
+        && pair.null_role == 14
+        && pair.geometry_role == 3
+        && matches!(entity.geometry, SketchGeometry::Line { .. }))
+    .then(|| Definition::AngleToAxis {
+        entity: entity.id.clone(),
+        axis: SketchAxis::Horizontal,
+        parameter,
+    })
 }
 
 /// Remove generic relation parses whose exact stream position is owned by a
@@ -7276,15 +7316,15 @@ mod relation_tests {
         exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
         find_dimension_locus_pair, identity_matrix, indirect_angular_lines,
         neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
-        two_locus_distance_dimension,
+        null_locus_dimension_definition, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, remove_dimension_frame_relations,
+        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7300,8 +7340,8 @@ mod relation_tests {
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
-        SketchGeometry, SketchId,
+        Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId,
+        SketchEntityUse, SketchGeometry, SketchId,
     };
     use std::collections::{HashMap, HashSet};
 
@@ -7568,6 +7608,44 @@ mod relation_tests {
         assert!(
             parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none()
         );
+
+        let mut axis_pair = pair;
+        axis_pair.null_role = 14;
+        axis_pair.geometry_role = 3;
+        let entity = SketchEntity {
+            id: SketchEntityId("f3d:model:sketch-entity#line".into()),
+            sketch: SketchId("f3d:model:sketch#axis-angle".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 1.0),
+            },
+        };
+        let parameter = cadmpeg_ir::features::ParameterId("f3d:model:parameter#angle".into());
+        assert!(matches!(
+            null_locus_dimension_definition(
+                &axis_pair,
+                &entity,
+                "Angular Dimension-2",
+                parameter.clone(),
+            ),
+            Some(SketchConstraintDefinition::AngleToAxis {
+                entity: ref actual_entity,
+                axis: SketchAxis::Horizontal,
+                parameter: ref actual_parameter,
+            }) if actual_entity == &entity.id && actual_parameter == &parameter
+        ));
+        axis_pair.null_role = 13;
+        assert!(null_locus_dimension_definition(
+            &axis_pair,
+            &entity,
+            "Angular Dimension-2",
+            parameter,
+        )
+        .is_none());
     }
 
     #[test]

@@ -1182,6 +1182,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 vec![first.clone(), second.clone()],
                 Some(parameter.0.as_str()),
             ),
+            Definition::AngleToAxis {
+                entity, parameter, ..
+            } => (vec![entity.clone()], Some(parameter.0.as_str())),
             Definition::Radius { entity, parameter }
             | Definition::Diameter { entity, parameter } => {
                 (vec![entity.clone()], Some(parameter.0.as_str()))

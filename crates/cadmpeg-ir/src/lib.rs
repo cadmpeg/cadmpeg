@@ -77,8 +77,8 @@ pub use report::{
     Check, DecodeReport, ExportReport, Finding, LossCategory, LossNote, Severity, ValidationReport,
 };
 pub use sketches::{
-    Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
-    SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
+    Sketch, SketchAxis, SketchConstraint, SketchConstraintDefinition, SketchConstraintId,
+    SketchEntity, SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

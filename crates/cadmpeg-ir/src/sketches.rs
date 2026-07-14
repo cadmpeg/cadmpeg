@@ -24,6 +24,16 @@ string_id!(
     "Identifies a geometric sketch constraint."
 );
 
+/// Canonical reference axis in neutral sketch coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SketchAxis {
+    /// Positive sketch-u direction.
+    Horizontal,
+    /// Positive sketch-v direction.
+    Vertical,
+}
+
 /// A planar sketch and its ordered profile loops.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Sketch {
@@ -338,6 +348,15 @@ pub enum SketchConstraintDefinition {
         first: SketchEntityId,
         /// Second angular entity.
         second: SketchEntityId,
+        /// Driving angle parameter.
+        parameter: ParameterId,
+    },
+    /// Angle from a canonical sketch axis to one line entity.
+    AngleToAxis {
+        /// Measured line entity.
+        entity: SketchEntityId,
+        /// Canonical sketch reference axis.
+        axis: SketchAxis,
         /// Driving angle parameter.
         parameter: ParameterId,
     },
