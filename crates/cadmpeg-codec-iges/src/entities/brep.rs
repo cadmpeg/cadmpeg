@@ -872,6 +872,35 @@ pub(super) fn project(
                                 valid = false;
                                 break;
                             };
+                            let curve_agrees = source_edge.param_range.is_some_and(|range| {
+                                ir.model
+                                    .curves
+                                    .iter()
+                                    .find(|curve| curve.id == curve_id)
+                                    .is_some_and(|curve| {
+                                        let evaluated_start =
+                                            evaluation::curve(&curve.geometry, range[0]);
+                                        let evaluated_end =
+                                            evaluation::curve(&curve.geometry, range[1]);
+                                        global.minimum_resolution_mm().is_some_and(|tolerance| {
+                                            evaluated_start.is_some_and(|point| {
+                                                evaluation::distance(point, natural_start)
+                                                    <= tolerance
+                                            }) && evaluated_end.is_some_and(|point| {
+                                                evaluation::distance(point, natural_end)
+                                                    <= tolerance
+                                            })
+                                        })
+                                    })
+                            });
+                            if !curve_agrees {
+                                losses.push(entity_loss(
+                                    entry,
+                                    "edge curve endpoints disagree with the vertex-list points",
+                                ));
+                                valid = false;
+                                break;
+                            }
                             let id = EdgeId(format!(
                                 "iges:model:edge#{stem}:D{}:{}",
                                 edge_key.0,

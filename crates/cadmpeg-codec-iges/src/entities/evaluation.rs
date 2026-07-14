@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact evaluation helpers for decoded neutral carriers.
 
-use cadmpeg_ir::geometry::{NurbsSurface, PcurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 fn add(origin: Point3, direction: Vector3, scale: f64) -> Point3 {
@@ -88,6 +88,89 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             }
             (denominator != 0.0).then(|| Point2::new(u / denominator, v / denominator))
         }
+    }
+}
+
+pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> {
+    match geometry {
+        CurveGeometry::Line { origin, direction } => Some(add(*origin, *direction, parameter)),
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            let side = cross(*axis, *ref_direction);
+            let point = add(*center, *ref_direction, radius * parameter.cos());
+            Some(add(point, side, radius * parameter.sin()))
+        }
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let minor_direction = cross(*axis, *major_direction);
+            let point = add(*center, *major_direction, major_radius * parameter.cos());
+            Some(add(point, minor_direction, minor_radius * parameter.sin()))
+        }
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => {
+            let minor_direction = cross(*axis, *major_direction);
+            let point = add(
+                *vertex,
+                *major_direction,
+                focal_distance * parameter * parameter,
+            );
+            Some(add(
+                point,
+                minor_direction,
+                2.0 * focal_distance * parameter,
+            ))
+        }
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let minor_direction = cross(*axis, *major_direction);
+            let point = add(*center, *major_direction, major_radius * parameter.cosh());
+            Some(add(point, minor_direction, minor_radius * parameter.sinh()))
+        }
+        CurveGeometry::Degenerate { point } => Some(*point),
+        CurveGeometry::Nurbs(nurbs) => {
+            let values = basis(
+                &nurbs.knots,
+                usize::try_from(nurbs.degree).ok()?,
+                nurbs.control_points.len(),
+                parameter,
+            )?;
+            let mut point = Point3::new(0.0, 0.0, 0.0);
+            let mut denominator = 0.0;
+            for (index, value) in values.into_iter().enumerate() {
+                let weight = nurbs.weights.as_ref().map_or(1.0, |weights| weights[index]);
+                let coefficient = value * weight;
+                point.x += coefficient * nurbs.control_points[index].x;
+                point.y += coefficient * nurbs.control_points[index].y;
+                point.z += coefficient * nurbs.control_points[index].z;
+                denominator += coefficient;
+            }
+            (denominator != 0.0).then(|| {
+                Point3::new(
+                    point.x / denominator,
+                    point.y / denominator,
+                    point.z / denominator,
+                )
+            })
+        }
+        CurveGeometry::Unknown { .. } => None,
     }
 }
 

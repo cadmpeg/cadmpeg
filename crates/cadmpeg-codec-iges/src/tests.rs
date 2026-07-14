@@ -1733,6 +1733,17 @@ fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
 }
 
 fn explicit_multi_pcurve_loop_file_with_first_pcurve(first_pcurve: &str) -> Vec<u8> {
+    explicit_multi_pcurve_loop_file_with_carriers(first_pcurve, "110,0,0,0,1,0,0;")
+}
+
+fn explicit_multi_pcurve_loop_file_with_first_edge(first_edge: &str) -> Vec<u8> {
+    explicit_multi_pcurve_loop_file_with_carriers(
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
+        first_edge,
+    )
+}
+
+fn explicit_multi_pcurve_loop_file_with_carriers(first_pcurve: &str, first_edge: &str) -> Vec<u8> {
     let mut entities = vec![
         OwnedTestEntity {
             entity_type: 116,
@@ -1757,7 +1768,7 @@ fn explicit_multi_pcurve_loop_file_with_first_pcurve(first_pcurve: &str) -> Vec<
         },
     ];
     for (index, parameters) in [
-        "110,0,0,0,1,0,0;",
+        first_edge,
         "110,1,0,0,1,1,0;",
         "110,1,1,0,0,1,0;",
         "110,0,1,0,0,0,0;",
@@ -2289,6 +2300,29 @@ fn decode_rejects_disagreeing_explicit_loop_pcurves() {
     assert!(result.report.losses.iter().any(|loss| loss
         .message
         .contains("loop edge-use pcurves disagree with the edge vertices")));
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_rejects_explicit_edges_that_miss_their_vertices() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_multi_pcurve_loop_file_with_first_edge(
+                "110,0,0,0,1.1,0,0;",
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.id.0 != "iges:model:body#D27"));
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("edge curve endpoints disagree with the vertex-list points")));
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
