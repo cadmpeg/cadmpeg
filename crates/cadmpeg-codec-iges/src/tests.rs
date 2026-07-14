@@ -2820,6 +2820,74 @@ fn bounded_associativity_forms_file() -> Vec<u8> {
     ])
 }
 
+fn flow_associativity_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 132,
+            form: 0,
+            label: "SIGNALPT".into(),
+            status: "00000400",
+            parameters: "132,0,0,0,0,101,1,2HP1,0,3HPIN,0,1,1,0,0,1,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "SIGNAL".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,1,0,0,1,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "FLOWNAME".into(),
+            status: "00000100",
+            parameters: "212,1,4,4,1,1,1.5707963267948966,0,0,0,0,0,0,4HFLOW;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 18,
+            label: "FLOW".into(),
+            status: "00000200",
+            parameters: "402,2,0,1,1,1,1,1,1,2,1,3,4HFLOW,5,9;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 18,
+            label: "FLOWTAIL".into(),
+            status: "00000200",
+            parameters: "402,2,0,0,0,1,0,0,1,2,4HTAIL,1,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 132,
+            form: 0,
+            label: "PIPEPT".into(),
+            status: "00000400",
+            parameters: "132,0,0,0,0,101,1,2HP2,0,4HPIPE,0,2,2,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "PIPE".into(),
+            status: "00000000",
+            parameters: "110,0,0,0,2,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 20,
+            label: "PIPEFLOW".into(),
+            status: "00000200",
+            parameters: "402,1,0,1,1,1,0,1,2,11,13,4HPIPE,17;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 20,
+            label: "PIPETAIL".into(),
+            status: "00000200",
+            parameters: "402,1,0,0,0,1,0,0,2,4HTAIL;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4466,6 +4534,49 @@ fn decode_types_bounded_predefined_associativity_roles() {
         .unwrap();
     assert!(planar.fields["plane_transform"].is_null());
     assert_eq!(planar.fields["entities"].as_array().unwrap().len(), 2);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_signal_and_piping_flow_class_order() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(flow_associativity_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let associativities = &result.ir.native.namespace("iges").unwrap().arenas["associativities"];
+    let signal = associativities
+        .iter()
+        .find(|value| {
+            value.fields["kind"] == "flow"
+                && value.fields["form"] == 18
+                && value.fields["connections"].as_array().unwrap().len() == 1
+        })
+        .unwrap();
+    assert_eq!(signal.fields["type_flag"], 1);
+    assert_eq!(signal.fields["function_flag"], 2);
+    assert_eq!(signal.fields["connections"][0], "iges:entity:directory#1");
+    assert_eq!(signal.fields["joins"][0], "iges:entity:directory#3");
+    assert_eq!(signal.fields["names"][0][0], 70);
+    assert_eq!(signal.fields["name_displays"][0], "iges:entity:directory#5");
+    assert_eq!(signal.fields["continuations"][0], "iges:entity:directory#9");
+    let pipe = associativities
+        .iter()
+        .find(|value| {
+            value.fields["kind"] == "flow"
+                && value.fields["form"] == 20
+                && value.fields["connections"].as_array().unwrap().len() == 1
+        })
+        .unwrap();
+    assert_eq!(pipe.fields["type_flag"], 2);
+    assert!(pipe.fields["function_flag"].is_null());
+    assert_eq!(pipe.fields["connections"][0], "iges:entity:directory#11");
+    assert_eq!(pipe.fields["continuations"][0], "iges:entity:directory#17");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

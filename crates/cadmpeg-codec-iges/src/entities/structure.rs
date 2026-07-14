@@ -40,6 +40,13 @@ struct NetworkInstance {
     valid_fields: bool,
 }
 
+#[derive(Clone)]
+struct FlowAssociativity {
+    form: i64,
+    associated: Vec<u32>,
+    continuations: Vec<Option<u32>>,
+}
+
 fn single_target_cycle(
     sequence: u32,
     targets: &BTreeMap<u32, u32>,
@@ -319,6 +326,153 @@ fn predefined_associativity_valid(
     }
 }
 
+fn flow_associativity(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> Option<FlowAssociativity> {
+    let form = entry.form;
+    let context_count = if form == 18 { 2 } else { 1 };
+    if record.integer(1) != Some(context_count) {
+        return None;
+    }
+    let counts = (2..=7)
+        .map(|index| {
+            record
+                .integer(index)
+                .and_then(|value| usize::try_from(value).ok())
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let _type_flag = record.integer(8).filter(|value| matches!(value, 0..=2))?;
+    let function_flag = (form == 18)
+        .then(|| record.integer(9).filter(|value| matches!(value, 0..=2)))
+        .flatten();
+    if form == 18 && function_flag.is_none() {
+        return None;
+    }
+    let mut cursor = if form == 18 { 10 } else { 9 };
+    let pointers = |cursor: &mut usize, count: usize, nullable: bool| {
+        (0..count)
+            .map(|_| {
+                let raw = record.integer(*cursor)?;
+                *cursor += 1;
+                if nullable && raw == 0 {
+                    return Some(None);
+                }
+                existing_pointer(record, *cursor - 1, entries).map(Some)
+            })
+            .collect::<Option<Vec<_>>>()
+    };
+    let associated = pointers(&mut cursor, counts[0], false)?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let connections = pointers(&mut cursor, counts[1], false)?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let joins = pointers(&mut cursor, counts[2], false)?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let _names = (0..counts[3])
+        .map(|_| {
+            let name = record
+                .string(cursor)
+                .filter(|name| !name.is_empty())?
+                .to_vec();
+            cursor += 1;
+            Some(name)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let displays = pointers(&mut cursor, counts[4], false)?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let continuations = pointers(&mut cursor, counts[5], true)?;
+    let associated_valid = associated.iter().all(|sequence| {
+        entries
+            .get(sequence)
+            .is_some_and(|target| target.entity_type == 402 && target.form == form)
+    });
+    let connections_valid = connections.iter().all(|sequence| {
+        entries.get(sequence).is_some_and(|target| {
+            if form == 18 {
+                target.entity_type == 132
+                    || (target.entity_type == 402 && matches!(target.form, 1 | 7 | 14 | 15))
+            } else {
+                target.entity_type == 132
+            }
+        }) && (form == 20
+            || records.get(sequence).is_some_and(|member| {
+                has_association_back_pointer(member, entry.sequence, entries)
+            }))
+    });
+    let joins_valid = joins.iter().all(|sequence| {
+        (form == 20
+            || records.get(sequence).is_some_and(|member| {
+                has_association_back_pointer(member, entry.sequence, entries)
+            }))
+            && entries
+                .get(sequence)
+                .is_some_and(|target| target.entity_type != 402 || target.form == 7)
+    });
+    let displays_valid = displays.iter().all(|sequence| {
+        entries.get(sequence).is_some_and(|target| {
+            target.entity_type == 312 || (form == 18 && target.entity_type == 212)
+        })
+    });
+    let continuations_valid = continuations.iter().flatten().all(|sequence| {
+        entries.get(sequence).is_some_and(|target| {
+            target.entity_type == 402
+                && if form == 18 {
+                    matches!(target.form, 11 | 18)
+                } else {
+                    target.form == 20
+                }
+        }) && (form == 20
+            || records.get(sequence).is_some_and(|member| {
+                has_association_back_pointer(member, entry.sequence, entries)
+            }))
+    });
+    (cursor == entity_parameter_end(record, entries)
+        && associated_valid
+        && connections_valid
+        && joins_valid
+        && displays_valid
+        && continuations_valid)
+        .then_some(FlowAssociativity {
+            form,
+            associated,
+            continuations,
+        })
+}
+
+fn flow_continuation_cycle(
+    sequence: u32,
+    flows: &BTreeMap<u32, FlowAssociativity>,
+    visiting: &mut BTreeSet<u32>,
+    visited: &mut BTreeSet<u32>,
+) -> bool {
+    if visited.contains(&sequence) {
+        return false;
+    }
+    if !visiting.insert(sequence) {
+        return true;
+    }
+    if flows.get(&sequence).is_some_and(|flow| {
+        flow.continuations.iter().flatten().any(|target| {
+            flows.contains_key(target) && flow_continuation_cycle(*target, flows, visiting, visited)
+        })
+    }) {
+        return true;
+    }
+    visiting.remove(&sequence);
+    visited.insert(sequence);
+    false
+}
+
 fn assembly_cycle(
     sequence: u32,
     definitions: &BTreeMap<u32, SolidAssembly>,
@@ -362,6 +516,14 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
+    let flows = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
+        .filter_map(|entry| {
+            let record = records.get(&entry.sequence).copied()?;
+            flow_associativity(entry, record, &entries, &records).map(|flow| (entry.sequence, flow))
+        })
+        .collect::<BTreeMap<_, _>>();
 
     for entry in directory
         .iter()
@@ -621,6 +783,45 @@ pub(super) fn project(
             losses.push(entity_loss(
                 entry,
                 "predefined associativity counts, class layout, links, back pointers, or structure are invalid",
+            ));
+        }
+    }
+
+    let mut visited_flows = BTreeSet::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 18 | 20))
+    {
+        handled.insert(entry.sequence);
+        let flow = flows.get(&entry.sequence);
+        let flow_targets_valid = flow.is_some_and(|flow| {
+            flow.form == entry.form
+                && flow.associated.iter().all(|target| {
+                    flows
+                        .get(target)
+                        .is_some_and(|target_flow| target_flow.form == flow.form)
+                })
+                && flow.continuations.iter().flatten().all(|target| {
+                    entries.get(target).is_some_and(|target_entry| {
+                        (flow.form == 18 && target_entry.form == 11)
+                            || flows
+                                .get(target)
+                                .is_some_and(|target_flow| target_flow.form == flow.form)
+                    })
+                })
+        });
+        let cyclic = flow_continuation_cycle(
+            entry.sequence,
+            &flows,
+            &mut BTreeSet::new(),
+            &mut visited_flows,
+        );
+        if entry.structure == 0 && flow_targets_valid && !cyclic {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "flow class counts, flags, typed links, required back pointers, continuation tree, or structure are invalid",
             ));
         }
     }

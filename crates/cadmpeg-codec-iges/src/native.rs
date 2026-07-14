@@ -386,6 +386,19 @@ enum NativeAssociativity {
         plane_transform: Option<String>,
         entities: Vec<Option<String>>,
     },
+    Flow {
+        id: String,
+        source_entity: String,
+        form: i64,
+        type_flag: Option<i64>,
+        function_flag: Option<i64>,
+        associated_flows: Vec<Option<String>>,
+        connections: Vec<Option<String>>,
+        joins: Vec<Option<String>>,
+        names: Vec<Option<Vec<u8>>>,
+        name_displays: Vec<Option<String>>,
+        continuations: Vec<Option<String>>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1698,7 +1711,9 @@ pub(crate) fn store(
     associativities.extend(
         directory
             .iter()
-            .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16))
+            .filter(|entry| {
+                entry.entity_type == 402 && matches!(entry.form, 5 | 9 | 12 | 13 | 16 | 18 | 20)
+            })
             .map(|entry| {
                 let record = by_directory.get(&entry.sequence).copied();
                 let id = format!("iges:structure:associativity#D{}", entry.sequence);
@@ -1797,6 +1812,54 @@ pub(crate) fn store(
                                 .filter(|sequence| *sequence != 0)
                                 .map(|sequence| format!("iges:native:transformation#D{sequence}")),
                             entities: (0..count).map(|offset| entity_link(4 + offset)).collect(),
+                        }
+                    }
+                    18 | 20 => {
+                        let counts = (2..=7)
+                            .map(|index| {
+                                record
+                                    .and_then(|record| record.integer(index))
+                                    .and_then(|value| usize::try_from(value).ok())
+                                    .unwrap_or_default()
+                            })
+                            .collect::<Vec<_>>();
+                        let link_range = |start, count| {
+                            (0..count)
+                                .map(|offset| entity_link(start + offset))
+                                .collect::<Vec<_>>()
+                        };
+                        let mut cursor = if entry.form == 18 { 10 } else { 9 };
+                        let associated_flows = link_range(cursor, counts[0]);
+                        cursor += counts[0];
+                        let connections = link_range(cursor, counts[1]);
+                        cursor += counts[1];
+                        let joins = link_range(cursor, counts[2]);
+                        cursor += counts[2];
+                        let names = (0..counts[3])
+                            .map(|offset| {
+                                record
+                                    .and_then(|record| record.string(cursor + offset))
+                                    .map(<[u8]>::to_vec)
+                            })
+                            .collect::<Vec<_>>();
+                        cursor += counts[3];
+                        let name_displays = link_range(cursor, counts[4]);
+                        cursor += counts[4];
+                        let continuations = link_range(cursor, counts[5]);
+                        NativeAssociativity::Flow {
+                            id,
+                            source_entity,
+                            form: entry.form,
+                            type_flag: record.and_then(|record| record.integer(8)),
+                            function_flag: (entry.form == 18)
+                                .then(|| record.and_then(|record| record.integer(9)))
+                                .flatten(),
+                            associated_flows,
+                            connections,
+                            joins,
+                            names,
+                            name_displays,
+                            continuations,
                         }
                     }
                     _ => unreachable!("filtered predefined associativity form"),
