@@ -2749,41 +2749,20 @@ fn exact_atomic_constraint(
                 axis: axis.id.clone(),
             })
         }
+        SketchConstraintKind::Symmetry => {
+            let (first, second, axis) = reflected_symmetry(entities)?;
+            Some(Definition::Symmetric {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(first.id.clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(second.id.clone()),
+                axis: axis.id.clone(),
+            })
+        }
         SketchConstraintKind::EqualLength => {
             lines().map(|(first, second)| Definition::Equal { first, second })
         }
         SketchConstraintKind::Parallel => lines()
             .map(|(first, second)| Definition::Parallel { first, second })
-            .or_else(|| {
-                let (line, point) = match entities {
-                    [line, point]
-                        if matches!(line.geometry, Geometry::Line { .. })
-                            && matches!(point.geometry, Geometry::Point { .. }) =>
-                    {
-                        (*line, *point)
-                    }
-                    [point, line]
-                        if matches!(line.geometry, Geometry::Line { .. })
-                            && matches!(point.geometry, Geometry::Point { .. }) =>
-                    {
-                        (*line, *point)
-                    }
-                    _ => return None,
-                };
-                let Geometry::Line { start, end } = &line.geometry else {
-                    unreachable!("line operand matched above")
-                };
-                let Geometry::Point { position } = &point.geometry else {
-                    unreachable!("point operand matched above")
-                };
-                let midpoint = Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5);
-                ((position.u - midpoint.u).abs() <= 1.0e-9
-                    && (position.v - midpoint.v).abs() <= 1.0e-9)
-                    .then(|| Definition::Midpoint {
-                        point: cadmpeg_ir::sketches::SketchLocus::Entity(point.id.clone()),
-                        entity: line.id.clone(),
-                    })
-            }),
+            .or_else(|| midpoint_constraint(entities)),
         SketchConstraintKind::Perpendicular => {
             lines().map(|(first, second)| Definition::Perpendicular { first, second })
         }
@@ -2809,12 +2788,50 @@ fn exact_atomic_constraint(
             first: entities[0].id.clone(),
             second: entities[1].id.clone(),
         }),
+        SketchConstraintKind::Midpoint => midpoint_constraint(entities),
         SketchConstraintKind::Equal if entities.len() == 2 => Some(Definition::Equal {
             first: entities[0].id.clone(),
             second: entities[1].id.clone(),
         }),
         _ => None,
     }
+}
+
+fn midpoint_constraint(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry as Geometry, SketchLocus,
+    };
+
+    let (line, point) = match entities {
+        [line, point]
+            if matches!(line.geometry, Geometry::Line { .. })
+                && matches!(point.geometry, Geometry::Point { .. }) =>
+        {
+            (*line, *point)
+        }
+        [point, line]
+            if matches!(line.geometry, Geometry::Line { .. })
+                && matches!(point.geometry, Geometry::Point { .. }) =>
+        {
+            (*line, *point)
+        }
+        _ => return None,
+    };
+    let Geometry::Line { start, end } = &line.geometry else {
+        unreachable!("line operand matched above")
+    };
+    let Geometry::Point { position } = &point.geometry else {
+        unreachable!("point operand matched above")
+    };
+    let midpoint = Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5);
+    ((position.u - midpoint.u).abs() <= 1.0e-9 && (position.v - midpoint.v).abs() <= 1.0e-9).then(
+        || Definition::Midpoint {
+            point: SketchLocus::Entity(point.id.clone()),
+            entity: line.id.clone(),
+        },
+    )
 }
 
 fn indirect_angular_lines(
@@ -10100,10 +10117,22 @@ mod relation_tests {
             constraints[4].definition,
             SketchConstraintDefinition::Curvature { .. }
         ));
+        let line = entities
+            .iter()
+            .find(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+            .unwrap();
+        let point = entities
+            .iter()
+            .find(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
+            .unwrap();
+        assert!(matches!(
+            exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
+            Some(SketchConstraintDefinition::Midpoint { .. })
+        ));
     }
 
     #[test]
-    fn three_member_concentric_state_projects_unique_reflection_symmetry() {
+    fn three_member_symmetry_states_project_unique_reflection_axis() {
         let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
             id: SketchEntityId(id.into()),
             sketch: SketchId("generated:sketch#0".into()),
@@ -10133,21 +10162,23 @@ mod relation_tests {
             },
         );
 
-        let definition = exact_atomic_constraint(
+        for kind in [
             SketchConstraintKind::Concentric,
-            &[&first, &axis_entity, &second],
-        )
-        .unwrap();
-        assert!(matches!(
-            definition,
-            SketchConstraintDefinition::Symmetric {
-                first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
-                second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
-                axis: ref axis_id,
-            } if first_id == &first.id
-                && second_id == &second.id
-                && axis_id == &axis_entity.id
-        ));
+            SketchConstraintKind::Symmetry,
+        ] {
+            let definition =
+                exact_atomic_constraint(kind, &[&first, &axis_entity, &second]).unwrap();
+            assert!(matches!(
+                definition,
+                SketchConstraintDefinition::Symmetric {
+                    first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
+                    second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
+                    axis: ref axis_id,
+                } if first_id == &first.id
+                    && second_id == &second.id
+                    && axis_id == &axis_entity.id
+            ));
+        }
 
         let off_axis = entity(
             "generated:line#off-axis",
