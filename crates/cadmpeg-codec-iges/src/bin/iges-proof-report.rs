@@ -88,8 +88,7 @@ struct LadderDecision {
 struct PublicFixture {
     filename: String,
     fixture_classes: Vec<String>,
-    assertions: Vec<String>,
-    tests: Vec<String>,
+    assertions: BTreeMap<String, Vec<String>>,
     inspect_sha256: String,
     ir_sha256: String,
     report_sha256: String,
@@ -261,7 +260,6 @@ fn valid_public_fixture(
         || !extension_is_iges
         || fixture.fixture_classes.is_empty()
         || fixture.assertions.is_empty()
-        || fixture.tests.is_empty()
         || fixture.inspect_sha256.len() != 64
         || fixture.ir_sha256.len() != 64
         || fixture.report_sha256.len() != 64
@@ -466,34 +464,26 @@ fn build_report(root: &Path) -> Result<Report, String> {
                 ));
             }
         }
-        let assertion_count = fixture.assertions.iter().collect::<BTreeSet<_>>().len();
-        if assertion_count != fixture.assertions.len() {
-            evidence_errors.push(format!(
-                "public fixture {} repeats an assertion",
-                fixture.filename
-            ));
-        }
-        for assertion in &fixture.assertions {
+        for (assertion, tests) in &fixture.assertions {
             if !known_assertions.contains(assertion) {
                 evidence_errors.push(format!(
                     "public fixture {} names unknown assertion {}",
                     fixture.filename, assertion
                 ));
             }
-        }
-        let test_count = fixture.tests.iter().collect::<BTreeSet<_>>().len();
-        if test_count != fixture.tests.len() {
-            evidence_errors.push(format!(
-                "public fixture {} repeats a test",
-                fixture.filename
-            ));
-        }
-        for test in &fixture.tests {
-            if !test_function_mentions_fixture(&test_source, test, &fixture.filename) {
+            if tests.is_empty() {
                 evidence_errors.push(format!(
-                    "public fixture {} names missing test {} or the test does not name the fixture",
-                    fixture.filename, test
+                    "public fixture {} assertion {} has no tests",
+                    fixture.filename, assertion
                 ));
+            }
+            for test in tests {
+                if !test_function_mentions_fixture(&test_source, test, &fixture.filename) {
+                    evidence_errors.push(format!(
+                        "public fixture {} assertion {} names missing test {} or the test does not name the fixture",
+                        fixture.filename, assertion, test
+                    ));
+                }
             }
         }
     }
@@ -541,7 +531,7 @@ fn build_report(root: &Path) -> Result<Report, String> {
         for assertion in &gate.assertions {
             if !relevant_public
                 .iter()
-                .any(|fixture| fixture.assertions.contains(assertion))
+                .any(|fixture| fixture.assertions.contains_key(assertion))
                 && !gate.fixture_classes.is_empty()
             {
                 missing.push(format!("public_assertion:{assertion}"));
@@ -599,7 +589,7 @@ fn build_report(root: &Path) -> Result<Report, String> {
         for assertion in &entity.assertions {
             if !relevant_public
                 .iter()
-                .any(|fixture| fixture.assertions.contains(assertion))
+                .any(|fixture| fixture.assertions.contains_key(assertion))
             {
                 missing.push(format!("public_assertion:{assertion}"));
             }
