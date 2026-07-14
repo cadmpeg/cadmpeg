@@ -84,22 +84,25 @@ pub fn decode(
     let scan = scan(reader)?;
 
     if options.container_only {
-        let ir = build_metadata_ir(&scan)?;
+        let (ir, annotations) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return Ok(decode_result(ir, report));
+        return Ok(decode_result(ir, report, annotations));
     }
 
-    if let Some((ir, report)) = try_decode_geometry(&scan) {
-        return Ok(decode_result(ir, report));
+    if let Some((ir, report, annotations)) = try_decode_geometry(&scan) {
+        return Ok(decode_result(ir, report, annotations));
     }
 
-    let ir = build_metadata_ir(&scan)?;
+    let (ir, annotations) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    Ok(decode_result(ir, report))
+    Ok(decode_result(ir, report, annotations))
 }
 
-fn decode_result(mut ir: CadIr, report: DecodeReport) -> DecodeResult {
-    let annotations = std::mem::take(&mut ir.annotations);
+fn decode_result(
+    ir: CadIr,
+    report: DecodeReport,
+    annotations: cadmpeg_ir::Annotations,
+) -> DecodeResult {
     DecodeResult::with_source_fidelity(
         ir,
         report,
@@ -147,7 +150,7 @@ impl Counts {
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
-fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
+fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport, cadmpeg_ir::Annotations)> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -538,10 +541,10 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         &scan.container.rmfastload_object_ids(),
     );
     attach_free_topology(&mut ir, &mut annotations);
-    ir.annotations = annotations.build();
-    retain_live_annotations(&mut ir);
+    let mut annotations = annotations.build();
+    retain_live_annotations(&ir, &mut annotations);
     let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
-    Some((ir, report))
+    Some((ir, report, annotations))
 }
 
 fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
@@ -570,7 +573,7 @@ fn semantic_streams(scan: &Scan) -> Vec<Vec<u8>> {
     semantic
 }
 
-fn retain_live_annotations(ir: &mut CadIr) {
+fn retain_live_annotations(ir: &CadIr, annotations: &mut cadmpeg_ir::Annotations) {
     let mut ids = BTreeSet::new();
     macro_rules! add_ids {
         ($($arena:expr),+ $(,)?) => {
@@ -596,8 +599,8 @@ fn retain_live_annotations(ir: &mut CadIr) {
     if let Ok(unknowns) = ir.native_unknowns("nx") {
         ids.extend(unknowns.iter().map(|unknown| unknown.id.to_string()));
     }
-    ir.annotations.provenance.retain(|id, _| ids.contains(id));
-    ir.annotations.exactness.retain(|id, _| ids.contains(id));
+    annotations.provenance.retain(|id, _| ids.contains(id));
+    annotations.exactness.retain(|id, _| ids.contains(id));
 }
 
 fn topology_body_node_ids(stream_index: usize, graph: &Graph) -> BTreeMap<BodyId, BTreeSet<u32>> {
@@ -1378,7 +1381,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     }
 }
 
-fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
+fn build_metadata_ir(scan: &Scan) -> Result<(CadIr, cadmpeg_ir::Annotations), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -1395,8 +1398,7 @@ fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
     }
     attach_native_object_model(&mut ir, scan)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
-    ir.annotations = annotations.build();
-    Ok(ir)
+    Ok((ir, annotations.build()))
 }
 
 fn attach_native_object_model(

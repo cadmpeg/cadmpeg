@@ -2594,7 +2594,6 @@ fn decode_dual_writes_inline_entity_metadata_to_annotations() {
             Exactness::Derived
         );
     }
-    assert_eq!(ir.annotations, cadmpeg_ir::Annotations::default());
 }
 
 #[test]
