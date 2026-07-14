@@ -881,14 +881,17 @@ fn project_design_history(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
-    let mut projection = histories.to_vec();
-    crate::resolved_features::enrich_history_parameters(&mut projection, lanes);
-    crate::resolved_features::enrich_history_reference_planes(&mut projection, lanes);
-    crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
-    ir.model.features = crate::history::project_features(&projection);
+    let mut semantic_projection = histories.to_vec();
+    crate::resolved_features::enrich_history_parameters(&mut semantic_projection, lanes, true);
+    crate::resolved_features::enrich_history_reference_planes(&mut semantic_projection, lanes);
+    crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
+    ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::project_compact_body_selections(&mut ir.model.features, lanes);
-    ir.model.configurations = crate::history::project_configurations(&projection);
-    ir.model.parameters = crate::history::project_parameters(&projection);
+    ir.model.configurations = crate::history::project_configurations(&semantic_projection);
+    let mut parameter_projection = histories.to_vec();
+    crate::resolved_features::enrich_history_parameters(&mut parameter_projection, lanes, false);
+    crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
+    ir.model.parameters = crate::history::project_parameters(&parameter_projection);
     crate::resolved_features::bind_parameter_scalars(
         &mut ir.model.parameters,
         &ir.model.features,

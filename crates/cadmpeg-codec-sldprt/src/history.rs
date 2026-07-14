@@ -533,9 +533,16 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
     }
 }
 
-pub(crate) fn format_native_scalar(feature: &Feature, name: &str, value: f64) -> String {
-    if native_parameter_is_length(feature, name, None) {
+pub(crate) fn format_native_scalar(
+    feature: &Feature,
+    name: &str,
+    value: f64,
+    expression: Option<&str>,
+) -> String {
+    if native_parameter_is_length(feature, name, expression) {
         format_length_mm(value * 1000.0)
+    } else if expression.and_then(parse_angle_rad).is_some() {
+        format_angle_rad(value)
     } else {
         format_f64_literal(value)
     }

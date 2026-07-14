@@ -15439,6 +15439,54 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 }
 
 #[test]
+fn decode_separates_document_expression_from_evaluated_feature_scalar() {
+    use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ParameterValue};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss" Type="BossExtrude" id="42"><Dimension Name="D1">2.5</Dimension></Extrusion></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload_with_names(&[0], &["Boss", "D1"]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .expect("projected extrusion");
+    assert!(matches!(
+        feature.definition,
+        FeatureDefinition::Extrude {
+            extent: Extent::Blind {
+                length: Length(25.0)
+            },
+            op: BooleanOp::Join,
+            ..
+        }
+    ));
+    let parameter = decoded
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.owner == feature.id && parameter.name == "D1")
+        .expect("projected D1 parameter");
+    assert_eq!(parameter.expression, "2.5");
+    assert_eq!(parameter.value, Some(ParameterValue::Length(Length(25.0))));
+    assert!(parameter.native_ref.is_some());
+}
+
+#[test]
 fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry, SketchLocus};
 

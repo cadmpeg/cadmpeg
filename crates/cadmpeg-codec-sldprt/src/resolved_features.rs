@@ -1066,6 +1066,7 @@ fn scalar_role(payload: &[u8], trailer_offset: usize) -> FeatureInputScalarRole 
 pub(crate) fn enrich_history_parameters(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
+    replace_existing: bool,
 ) {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum ScalarUnit {
@@ -1164,11 +1165,20 @@ pub(crate) fn enrich_history_parameters(
         }
         let feature = &mut histories[history_index].features[feature_index];
         let expression = match unit {
-            ScalarUnit::Native => crate::history::format_native_scalar(feature, &name, first),
+            ScalarUnit::Native => crate::history::format_native_scalar(
+                feature,
+                &name,
+                first,
+                feature.parameters.get(&name).map(String::as_str),
+            ),
             ScalarUnit::Length => crate::history::format_length_mm(first * 1000.0),
             ScalarUnit::Angle => crate::history::format_angle_rad(first),
         };
-        feature.parameters.entry(name).or_insert(expression);
+        if replace_existing {
+            feature.parameters.insert(name, expression);
+        } else {
+            feature.parameters.entry(name).or_insert(expression);
+        }
     }
 }
 
@@ -1676,6 +1686,25 @@ pub(crate) fn bind_parameter_scalars(
                 };
                 if let [scalar] = candidates.as_slice() {
                     parameter.native_ref = Some(scalar.id.clone());
+                    let evaluated = match parameter.value.as_ref() {
+                        Some(cadmpeg_ir::features::ParameterValue::Length(_)) => {
+                            Some(cadmpeg_ir::features::ParameterValue::Length(
+                                cadmpeg_ir::features::Length(scalar.value * 1000.0),
+                            ))
+                        }
+                        Some(cadmpeg_ir::features::ParameterValue::Angle(_)) => {
+                            Some(cadmpeg_ir::features::ParameterValue::Angle(
+                                cadmpeg_ir::features::Angle(scalar.value),
+                            ))
+                        }
+                        Some(cadmpeg_ir::features::ParameterValue::Real(_)) => {
+                            Some(cadmpeg_ir::features::ParameterValue::Real(scalar.value))
+                        }
+                        _ => None,
+                    };
+                    if let Some(evaluated) = evaluated {
+                        parameter.value = Some(evaluated);
+                    }
                 }
             }
         }
