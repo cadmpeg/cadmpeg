@@ -1616,9 +1616,38 @@ fn exact_atomic_constraint(
         SketchConstraintKind::EqualLength => {
             lines().map(|(first, second)| Definition::Equal { first, second })
         }
-        SketchConstraintKind::Parallel => {
-            lines().map(|(first, second)| Definition::Parallel { first, second })
-        }
+        SketchConstraintKind::Parallel => lines()
+            .map(|(first, second)| Definition::Parallel { first, second })
+            .or_else(|| {
+                let (line, point) = match entities {
+                    [line, point]
+                        if matches!(line.geometry, Geometry::Line { .. })
+                            && matches!(point.geometry, Geometry::Point { .. }) =>
+                    {
+                        (*line, *point)
+                    }
+                    [point, line]
+                        if matches!(line.geometry, Geometry::Line { .. })
+                            && matches!(point.geometry, Geometry::Point { .. }) =>
+                    {
+                        (*line, *point)
+                    }
+                    _ => return None,
+                };
+                let Geometry::Line { start, end } = &line.geometry else {
+                    unreachable!("line operand matched above")
+                };
+                let Geometry::Point { position } = &point.geometry else {
+                    unreachable!("point operand matched above")
+                };
+                let midpoint = Point2::new((start.u + end.u) * 0.5, (start.v + end.v) * 0.5);
+                ((position.u - midpoint.u).abs() <= 1.0e-9
+                    && (position.v - midpoint.v).abs() <= 1.0e-9)
+                    .then(|| Definition::Midpoint {
+                        point: cadmpeg_ir::sketches::SketchLocus::Entity(point.id.clone()),
+                        entity: line.id.clone(),
+                    })
+            }),
         SketchConstraintKind::Perpendicular => {
             lines().map(|(first, second)| Definition::Perpendicular { first, second })
         }
@@ -6927,7 +6956,7 @@ mod relation_tests {
             entity_genesis: None,
             persistent_id: 10,
             paired_reference: 0,
-            coordinates: Point2::new(2.0, 3.0),
+            coordinates: Point2::new(2.5, 4.0),
             raw_bytes: Vec::new(),
         };
         let line = SketchCurveIdentity {
@@ -6959,7 +6988,7 @@ mod relation_tests {
         assert_eq!(entities.len(), 2);
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
-            SketchGeometry::Point { position } if position == Point2::new(2.0, 3.0)
+            SketchGeometry::Point { position } if position == Point2::new(2.5, 4.0)
         )));
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
@@ -7008,6 +7037,11 @@ mod relation_tests {
         curve_point_coincidence.member_offsets.push(40);
         curve_point_coincidence.state = 1;
         curve_point_coincidence.constraint_kinds = vec![SketchConstraintKind::Coincident];
+        let mut midpoint = curve_point_coincidence.clone();
+        midpoint.record_index = 703;
+        midpoint.id = "f3d:native:relation#703".into();
+        midpoint.state = 0x10;
+        midpoint.constraint_kinds = vec![SketchConstraintKind::Parallel];
         let constraints = project_sketch_constraints(
             &placements,
             &points,
@@ -7031,6 +7065,7 @@ mod relation_tests {
                     },
                 ),
                 curve_point_coincidence,
+                midpoint,
             ],
             &entities,
         );
@@ -7050,6 +7085,10 @@ mod relation_tests {
         assert!(matches!(
             constraints[2].definition,
             SketchConstraintDefinition::Coincident { ref entities } if entities.len() == 2
+        ));
+        assert!(matches!(
+            constraints[3].definition,
+            SketchConstraintDefinition::Midpoint { .. }
         ));
     }
 
