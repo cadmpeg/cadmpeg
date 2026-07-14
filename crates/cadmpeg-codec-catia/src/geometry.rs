@@ -2412,8 +2412,24 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
             })
         }
         0x62 if frame_token == 0x0e && data.get(p + 89) == Some(&0x03) => {
+            let vector = read_f64_array::<2>(data, p + 25)?;
+            let one = f64_le(data, p + 41)?;
             let radius = f64_le(data, p + 49)?;
-            if !(0.0..1e6).contains(&radius) {
+            let u_range = read_f64_array::<2>(data, p + 57)?;
+            let v_range = read_f64_array::<2>(data, p + 73)?;
+            let phase = f64_le(data, p + 90)?;
+            if one != 1.0
+                || !(0.0..1e6).contains(&radius)
+                || origin_values.iter().any(|value| !value.is_finite())
+                || vector.iter().any(|value| !value.is_finite())
+                || u_range.iter().any(|value| !value.is_finite())
+                || v_range.iter().any(|value| !value.is_finite())
+                || (vector[0].hypot(vector[1]) - 1.0).abs() > 1e-9
+                || !phase.is_finite()
+                || u_range[0] >= u_range[1]
+                || v_range[0] >= v_range[1]
+                || u_range[1] - u_range[0] > 2.0 * std::f64::consts::PI * radius + 1e-6
+            {
                 return None;
             }
             Some(B2Cylinder {
@@ -2421,10 +2437,10 @@ fn parse_b2_cylinder(data: &[u8], frame: ConsolidatedFrame) -> Option<B2Cylinder
                 layout,
                 frame_token,
                 geometry: None,
-                u_range: read_f64_array::<2>(data, p + 57)?,
-                v_range: read_f64_array::<2>(data, p + 73)?,
-                stored_vector: Some(read_f64_array::<2>(data, p + 25)?),
-                phase: Some(f64_le(data, p + 90)?),
+                u_range,
+                v_range,
+                stored_vector: Some(vector),
+                phase: Some(phase),
             })
         }
         _ => None,

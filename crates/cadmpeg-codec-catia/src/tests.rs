@@ -1595,6 +1595,7 @@ fn b2_phase_tailed_cylinder_stream() -> Vec<u8> {
     record[p + 24] = 0x0e;
     record[p + 25..p + 33].copy_from_slice(&le_f64(0.0));
     record[p + 33..p + 41].copy_from_slice(&le_f64(1.0));
+    record[p + 41..p + 49].copy_from_slice(&le_f64(1.0));
     record[p + 49..p + 57].copy_from_slice(&le_f64(4.0));
     record[p + 57..p + 65].copy_from_slice(&le_f64(0.0));
     record[p + 65..p + 73].copy_from_slice(&le_f64(8.0));
@@ -4108,6 +4109,12 @@ fn b2_cylinder_parser_preserves_phase_tailed_layout_raw() {
     assert!(cylinders[0].geometry.is_none());
     assert_eq!(cylinders[0].stored_vector, Some([0.0, 1.0]));
     assert_eq!(cylinders[0].phase, Some(0.75));
+
+    for range in [30..38, 46..54, 95..103] {
+        let mut malformed = b2_phase_tailed_cylinder_stream();
+        malformed[range].copy_from_slice(&f64::NAN.to_le_bytes());
+        assert!(crate::geometry::b2_cylinders(&malformed).is_empty());
+    }
 }
 
 #[test]
