@@ -40,10 +40,9 @@
 //! bodies, faces, loops, coedges, and edges when the stored trim and endpoint
 //! relations resolve to one graph. Other recognized layouts expose supported
 //! analytic or NURBS carriers and selected bindings. The codec does not write
-//! `CATPart` files or decode assemblies, feature parameters, sketch geometry and
-//! constraints, tessellation, appearances, materials, persistent tags, or
-//! general document metadata beyond the embedded JPEG preview. Catalog-bound
-//! construction records transfer as ordered native operations.
+//! `CATPart` files or decode assemblies, design history, tessellation,
+//! appearances, materials, persistent tags, or general document metadata beyond
+//! the embedded JPEG preview.
 //!
 //! The low-level [`geometry`], [`topology`], [`b5`], [`e5`], and
 //! [`zero_entity`] modules expose record decoders for applications that need
@@ -54,7 +53,6 @@ mod b5_transfer;
 pub mod catalog;
 pub mod container;
 pub mod decode;
-pub mod design;
 pub mod e5;
 pub mod geometry;
 pub mod native;

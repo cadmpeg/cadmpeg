@@ -181,7 +181,7 @@ See [`formats/siemens_nx.md`](formats/siemens_nx.md) and [`formats/siemens_nx-op
 - **Geometry: Partial.** Standard-nested files transfer vertices, planes when their bridge records resolve, curved analytic surfaces, supported edge curves, consolidated NURBS carriers, uniquely domain-bound constant-offset constructions, and fit-free rolling-ball surface jets. Other layouts transfer subsets of analytic or freeform carriers.
 - **Topology: Partial.** Standard-nested files can emit a connected body, shell, face, loop, coedge, edge, and vertex graph when trim, support, and endpoint assignment resolve. Other parsed topology families remain disconnected from the common IR.
 - **Tessellation: None.**
-- **Design intent: Partial.** Catalog-bound sketch, pad, pocket, shaft, groove, hole, edge-fillet, chamfer, draft, shell, rib, pattern, and mirror records transfer in construction order as native operations. Owner and operation-operand references are retained. Operation parameters, neutral operation definitions, sketch contents, and constraint semantics remain open.
+- **Design intent: None.**
 - **Product structure: None.**
 - **Presentation and metadata: Partial.** The summary-information JPEG preview transfers byte-exactly with its dimensions. Persistent tags, attributes, materials, and appearance bindings remain outside the IR.
 

@@ -92,11 +92,6 @@ fn finish_decode(
     mut ir: CadIr,
     report: DecodeReport,
 ) -> Result<DecodeResult, CodecError> {
-    ir.model
-        .features
-        .extend(crate::design::features(&crate::object_graph::parse_all(
-            &scan.data,
-        )));
     CatiaNative::decode(&scan.data).store(ir.native.namespace_mut("catia"))?;
     Ok(DecodeResult::new(ir, report))
 }
