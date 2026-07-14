@@ -5959,23 +5959,50 @@ fn typed_relation_definition(
             )?),
             parameter: parameter_id,
         }),
-        LineLineDistance | Angle => {
-            let first = single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?;
-            let second = single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?;
+        LineLineDistance => {
+            let first = marker(0)
+                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
+            let second = marker(1)
+                .and_then(|marker| single_marker_entity(marker, markers_by_id, loci_by_marker));
+            let (first, second) = match (first, second) {
+                (Some(first), Some(second)) => (first, second),
+                (Some(known), None) => (
+                    known.clone(),
+                    unique_profile_line_distance_entity(
+                        sketch,
+                        &known,
+                        parameter,
+                        sketch_entities,
+                    )?,
+                ),
+                (None, Some(known)) => (
+                    unique_profile_line_distance_entity(
+                        sketch,
+                        &known,
+                        parameter,
+                        sketch_entities,
+                    )?,
+                    known,
+                ),
+                (None, None) => {
+                    unique_profile_line_distance_pair(sketch, parameter, sketch_entities)?
+                }
+            };
             if first == second {
                 return None;
             }
-            Some(match relation.family {
-                LineLineDistance => SketchConstraintDefinition::Distance {
-                    entities: vec![first, second],
-                    parameter: parameter_id,
-                },
-                Angle => SketchConstraintDefinition::Angle {
-                    first,
-                    second,
-                    parameter: parameter_id,
-                },
-                _ => unreachable!("relation family was filtered above"),
+            Some(SketchConstraintDefinition::Distance {
+                entities: vec![first, second],
+                parameter: parameter_id,
+            })
+        }
+        Angle => {
+            let first = single_marker_entity(marker(0)?, markers_by_id, loci_by_marker)?;
+            let second = single_marker_entity(marker(1)?, markers_by_id, loci_by_marker)?;
+            (first != second).then_some(SketchConstraintDefinition::Angle {
+                first,
+                second,
+                parameter: parameter_id,
             })
         }
         CircleDiameter => {
@@ -6083,6 +6110,105 @@ fn unique_profile_distance_loci_pair(
         return None;
     };
     Some(candidate.clone())
+}
+
+fn unique_profile_line_distance_entity(
+    sketch: &SketchId,
+    known: &SketchEntityId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<SketchEntityId> {
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let known = sketch_entities.iter().find(|entity| entity.id == *known)?;
+    let mut candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch && entity.id != known.id)
+        .filter_map(|candidate| {
+            line_line_distance(known, candidate)
+                .filter(|measured| same_dimension_length(*measured, distance.0))
+                .map(|_| candidate.id.clone())
+        })
+        .collect::<Vec<_>>();
+    candidates.sort();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn unique_profile_line_distance_pair(
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchEntityId, SketchEntityId)> {
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let lines = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .filter(|entity| matches!(entity.geometry, SketchGeometry::Line { .. }))
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for (first_index, first) in lines.iter().enumerate() {
+        for second in &lines[first_index + 1..] {
+            if line_line_distance(first, second)
+                .is_some_and(|measured| same_dimension_length(measured, distance.0))
+            {
+                candidates.push((first.id.clone(), second.id.clone()));
+            }
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
+fn line_line_distance(first: &SketchEntity, second: &SketchEntity) -> Option<f64> {
+    let SketchGeometry::Line {
+        start: first_start,
+        end: first_end,
+    } = &first.geometry
+    else {
+        return None;
+    };
+    let SketchGeometry::Line {
+        start: second_start,
+        end: second_end,
+    } = &second.geometry
+    else {
+        return None;
+    };
+    let first_direction = [first_end.u - first_start.u, first_end.v - first_start.v];
+    let second_direction = [second_end.u - second_start.u, second_end.v - second_start.v];
+    let first_length = first_direction[0].hypot(first_direction[1]);
+    let second_length = second_direction[0].hypot(second_direction[1]);
+    if first_length <= SKETCH_POINT_TOLERANCE || second_length <= SKETCH_POINT_TOLERANCE {
+        return None;
+    }
+    let cross = |left: [f64; 2], right: [f64; 2]| left[0] * right[1] - left[1] * right[0];
+    if cross(first_direction, second_direction).abs()
+        > SKETCH_POINT_TOLERANCE * first_length * second_length
+    {
+        return None;
+    }
+    Some(
+        cross(
+            [
+                second_start.u - first_start.u,
+                second_start.v - first_start.v,
+            ],
+            first_direction,
+        )
+        .abs()
+            / first_length,
+    )
 }
 
 fn unique_dimensioned_circle_entity(
@@ -7287,7 +7413,8 @@ mod profile_join_tests {
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
-        unique_profile_distance_loci_pair, unique_profile_distance_locus, MarkerTransform,
+        unique_profile_distance_loci_pair, unique_profile_distance_locus,
+        unique_profile_line_distance_entity, unique_profile_line_distance_pair, MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
@@ -7648,6 +7775,59 @@ mod profile_join_tests {
         let ambiguous = point("ambiguous", 23.0, 24.0);
         assert_eq!(
             unique_profile_distance_loci_pair(
+                &sketch,
+                &parameter,
+                &[first, second, unrelated, ambiguous],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn line_distance_fallback_requires_one_parallel_pair_in_the_complete_sketch() {
+        let sketch = SketchId("sketch".into());
+        let line = |id: &str, start: Point2, end: Point2| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let first = line("first", Point2::new(0.0, 0.0), Point2::new(10.0, 0.0));
+        let second = line("second", Point2::new(0.0, 5.0), Point2::new(10.0, 5.0));
+        let unrelated = line(
+            "unrelated",
+            Point2::new(20.0, 20.0),
+            Point2::new(21.0, 21.0),
+        );
+        let parameter = DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: FeatureId("feature".into()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "5mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let entities = [first.clone(), second.clone(), unrelated.clone()];
+        assert_eq!(
+            unique_profile_line_distance_entity(&sketch, &first.id, &parameter, &entities),
+            Some(second.id.clone())
+        );
+        assert_eq!(
+            unique_profile_line_distance_pair(&sketch, &parameter, &entities),
+            Some((first.id.clone(), second.id.clone()))
+        );
+
+        let ambiguous = line("ambiguous", Point2::new(0.0, 10.0), Point2::new(10.0, 10.0));
+        assert_eq!(
+            unique_profile_line_distance_pair(
                 &sketch,
                 &parameter,
                 &[first, second, unrelated, ambiguous],
