@@ -92,6 +92,8 @@ struct PublicFixture {
     inspect_sha256: String,
     ir_sha256: String,
     report_sha256: String,
+    #[serde(skip)]
+    observed_entities: BTreeSet<(i64, i64)>,
 }
 
 #[derive(Deserialize)]
@@ -178,6 +180,7 @@ struct PublicOutputDigests {
     inspect: String,
     ir: String,
     report: String,
+    observed_entities: BTreeSet<(i64, i64)>,
 }
 
 fn read_toml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
@@ -208,6 +211,14 @@ fn test_function_mentions_fixture(source: &str, test: &str, filename: &str) -> b
     tail[..end].contains(filename)
 }
 
+fn matrix_forms_admit(forms: &toml::Value, form: i64) -> bool {
+    forms.as_array().is_some_and(|forms| {
+        forms
+            .iter()
+            .any(|candidate| candidate.as_integer() == Some(form))
+    }) || (forms.as_str() == Some("implementor-defined") && (5001..=9999).contains(&form))
+}
+
 fn public_output_digests(bytes: &[u8], filename: &str) -> Result<PublicOutputDigests, String> {
     let inspect = IgesCodec
         .inspect(&mut Cursor::new(bytes))
@@ -236,16 +247,31 @@ fn public_output_digests(bytes: &[u8], filename: &str) -> Result<PublicOutputDig
             "public fixture {filename} decode is not deterministic"
         ));
     }
+    let observed_entities = first
+        .ir
+        .native
+        .namespace("iges")
+        .and_then(|namespace| namespace.arenas.get("entities"))
+        .into_iter()
+        .flatten()
+        .filter_map(|entity| {
+            Some((
+                entity.fields.get("entity_type")?.as_i64()?,
+                entity.fields.get("form")?.as_i64()?,
+            ))
+        })
+        .collect();
     Ok(PublicOutputDigests {
         inspect: cadmpeg_ir::hash::sha256_hex(&inspect_json),
         ir: cadmpeg_ir::hash::sha256_hex(first_ir.as_bytes()),
         report: cadmpeg_ir::hash::sha256_hex(&first_report),
+        observed_entities,
     })
 }
 
 fn valid_public_fixture(
     root: &Path,
-    fixture: &PublicFixture,
+    fixture: &mut PublicFixture,
     manifest: &BTreeMap<String, CorpusFile>,
 ) -> Result<(), String> {
     let fixture_path = Path::new(&fixture.filename);
@@ -303,6 +329,7 @@ fn valid_public_fixture(
         ));
     }
     let outputs = public_output_digests(&bytes, &fixture.filename)?;
+    fixture.observed_entities = outputs.observed_entities;
     for (kind, actual, expected) in [
         ("inspect", outputs.inspect, &fixture.inspect_sha256),
         ("canonical IR", outputs.ir, &fixture.ir_sha256),
@@ -402,7 +429,7 @@ fn build_report(root: &Path) -> Result<Report, String> {
     };
     let mut valid_public = Vec::new();
     let mut public_ids = BTreeSet::new();
-    for fixture in public.fixtures {
+    for mut fixture in public.fixtures {
         if !public_ids.insert(fixture.filename.clone()) {
             evidence_errors.push(format!(
                 "duplicate public fixture evidence {}",
@@ -410,7 +437,7 @@ fn build_report(root: &Path) -> Result<Report, String> {
             ));
             continue;
         }
-        match valid_public_fixture(root, &fixture, &manifest) {
+        match valid_public_fixture(root, &mut fixture, &manifest) {
             Ok(()) => valid_public.push(fixture),
             Err(error) => evidence_errors.push(error),
         }
@@ -562,6 +589,11 @@ fn build_report(root: &Path) -> Result<Report, String> {
         }
         let mut original_tests = BTreeSet::new();
         let mut public_ids = BTreeSet::new();
+        let covers_entity = |fixture: &&PublicFixture| {
+            fixture.observed_entities.iter().any(|(entity_type, form)| {
+                *entity_type == entity.r#type && matrix_forms_admit(&entity.forms, *form)
+            })
+        };
         for class in &entity.fixture_classes {
             match originals.get(class) {
                 Some(tests) => original_tests.extend(tests.iter().cloned()),
@@ -570,6 +602,7 @@ fn build_report(root: &Path) -> Result<Report, String> {
             let fixtures = valid_public
                 .iter()
                 .filter(|fixture| fixture.fixture_classes.contains(class))
+                .filter(covers_entity)
                 .collect::<Vec<_>>();
             if fixtures.is_empty() {
                 missing.push(format!("public_fixture_class:{class}"));
@@ -585,6 +618,7 @@ fn build_report(root: &Path) -> Result<Report, String> {
                     .iter()
                     .any(|class| entity.fixture_classes.contains(class))
             })
+            .filter(covers_entity)
             .collect::<Vec<_>>();
         for assertion in &entity.assertions {
             if !relevant_public
@@ -763,8 +797,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_report, public_output_digests, serialized_report, test_function_mentions_fixture,
-        workspace_root,
+        build_report, matrix_forms_admit, public_output_digests, serialized_report,
+        test_function_mentions_fixture, workspace_root,
     };
 
     fn card(data: &[u8], section: u8, sequence: u32) -> Vec<u8> {
@@ -799,6 +833,20 @@ mod tests {
         assert_eq!(digests.inspect.len(), 64);
         assert_eq!(digests.ir.len(), 64);
         assert_eq!(digests.report.len(), 64);
+        assert!(digests.observed_entities.is_empty());
+    }
+
+    #[test]
+    fn matrix_form_matching_is_closed() {
+        let fixed = toml::Value::Array(vec![toml::Value::Integer(-1), toml::Value::Integer(2)]);
+        let implementor_defined = toml::Value::String("implementor-defined".into());
+
+        assert!(matrix_forms_admit(&fixed, -1));
+        assert!(matrix_forms_admit(&fixed, 2));
+        assert!(!matrix_forms_admit(&fixed, 0));
+        assert!(matrix_forms_admit(&implementor_defined, 5001));
+        assert!(matrix_forms_admit(&implementor_defined, 9999));
+        assert!(!matrix_forms_admit(&implementor_defined, 5000));
     }
 
     #[test]
