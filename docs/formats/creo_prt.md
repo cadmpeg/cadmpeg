@@ -657,12 +657,15 @@ retains the same `segtab_ptr`, `dimtab_ptr`, `relat_ptr`, `var_arr`,
 
 Positional `segtab_ptr` replay ends at the first following section-table label,
 including `dimtab_ptr`, `relat_ptr`, `var_arr`, `gsec3d_ptr`, `order_ptr`, or
-`p_saved_result`; bytes in later tables are not segment rows.
+`p_saved_result`, or at the next sibling `S2D<N>` record. Bytes in later tables
+or sibling section records are not segment rows.
 
 In an instantiated positional definition, the `S2D<N>` name terminator is
 followed immediately by the unlabeled `segtab_ptr` array body. Its `f8` extent
-is the number of segment rows. The entity-reference header and segment rows use
-the same framing and field order as the labelled `segtab_ptr` table.
+bounds the section-entry table and can include non-segment entries; decoded
+line, arc, and point rows are the entries with segment type `2`, `3`, and `5`.
+The entity-reference header and segment rows use the same framing and field
+order as the labelled `segtab_ptr` table.
 
 The positional dimension table repeats the labelled template's `dimtab_ptr`
 table-class reference in an unlabeled `f8 <count> f7 <table-class> fb e2`

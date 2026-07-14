@@ -1625,6 +1625,7 @@ fn segment_table_body(
         b"gsec3d_ptr\0",
         b"order_ptr\0",
         b"p_saved_result\0",
+        b"S2D",
     ]
     .into_iter()
     .filter_map(|label| find_bytes(payload, label, cursor, end))
@@ -4858,6 +4859,23 @@ mod tests {
         assert_eq!(segments.rows[0].point_ids, [7, 8]);
         assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
         assert_eq!(segments.rows[1].center_id, Some(10));
+        assert_eq!(segments.rows[1].external_id, 43);
+    }
+
+    #[test]
+    fn positional_segment_table_stops_at_the_next_s2d_record() {
+        let mut payload = b"\xe3S2D0004\0\xf8\x03\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+        payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2]);
+        payload.extend_from_slice(b"\xe3S2D0004\0");
+        payload.extend_from_slice(&[2, 0, 0, 0, 1, 2, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2]);
+
+        let segments = positional_segment_table(&payload, 0, payload.len())
+            .expect("first positional segment table");
+
+        assert_eq!(segments.declared_count, 3);
+        assert_eq!(segments.rows.len(), 2);
+        assert_eq!(segments.rows[0].external_id, 42);
         assert_eq!(segments.rows[1].external_id, 43);
     }
 
