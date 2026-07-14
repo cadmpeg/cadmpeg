@@ -715,13 +715,12 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
         return None;
     }
 
-    attach_native_object_model(&mut ir, scan, &mut annotations).ok()?;
-
     let active_body_selection = select_active_body(
         &mut ir,
         &body_node_ids,
         &scan.container.rmfastload_object_ids(),
     );
+    attach_native_object_model(&mut ir, scan, &mut annotations).ok()?;
     prune_unreferenced_unknown_carriers(&mut ir);
     classify_body_kinds(&mut ir);
     finalize_point_topology(&mut ir, &mut annotations);
@@ -2871,6 +2870,7 @@ fn attach_native_object_model(
         ir,
         &feature_operation_labels,
         &feature_boolean_operations,
+        &segment_body_bindings,
         annotations,
     );
     attach_expression_parameters(ir, &expressions, annotations);
@@ -2949,6 +2949,7 @@ fn attach_feature_operations(
     ir: &mut CadIr,
     labels: &[crate::native::FeatureOperationLabel],
     booleans: &[crate::native::FeatureBooleanOperation],
+    body_bindings: &[crate::native::SegmentBodyBinding],
     annotations: &mut AnnotationBuilder,
 ) {
     let stream = annotations.stream("nx:container");
@@ -2957,6 +2958,23 @@ fn attach_feature_operations(
         .iter()
         .map(|operation| (operation.operation_label.as_str(), operation))
         .collect::<BTreeMap<_, _>>();
+    let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
+    for binding in body_bindings {
+        let prefix = format!("nx:s{}:", binding.stream_ordinal);
+        let bodies = bodies_by_object_index
+            .entry(binding.body_object_index)
+            .or_default();
+        for body in ir
+            .model
+            .bodies
+            .iter()
+            .filter(|body| body.id.0.starts_with(&prefix))
+        {
+            if !bodies.contains(&body.id) {
+                bodies.push(body.id.clone());
+            }
+        }
+    }
     for (ordinal, label) in labels.iter().enumerate() {
         let key = label.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
         let id = FeatureId(format!("nx:feature-history:feature#{key}"));
@@ -2974,19 +2992,24 @@ fn attach_feature_operations(
                 properties: BTreeMap::new(),
             },
             |operation| FeatureDefinition::Combine {
-                target: BodySelection::Native(format!(
-                    "nx:om-object-index#{}",
-                    operation.target_object_index
-                )),
-                tools: BodySelection::Native(format!(
-                    "nx:om-object-indices#{}",
-                    operation
-                        .tool_object_indices
-                        .iter()
-                        .map(u32::to_string)
-                        .collect::<Vec<_>>()
-                        .join(",")
-                )),
+                target: feature_body_selection(
+                    &[operation.target_object_index],
+                    &bodies_by_object_index,
+                    format!("nx:om-object-index#{}", operation.target_object_index),
+                ),
+                tools: feature_body_selection(
+                    &operation.tool_object_indices,
+                    &bodies_by_object_index,
+                    format!(
+                        "nx:om-object-indices#{}",
+                        operation
+                            .tool_object_indices
+                            .iter()
+                            .map(u32::to_string)
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    ),
+                ),
                 op: match operation.kind {
                     crate::native::FeatureBooleanKind::Unite => BooleanOp::Join,
                     crate::native::FeatureBooleanKind::Subtract => BooleanOp::Cut,
@@ -3014,6 +3037,28 @@ fn attach_feature_operations(
             native_ref: Some(label.id.clone()),
         });
     }
+}
+
+pub(crate) fn feature_body_selection(
+    object_indices: &[u32],
+    bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
+    native: String,
+) -> BodySelection {
+    let mut bodies = Vec::new();
+    for index in object_indices {
+        let Some(bound) = bodies_by_object_index
+            .get(index)
+            .filter(|bound| !bound.is_empty())
+        else {
+            return BodySelection::Native(native);
+        };
+        for body in bound {
+            if !bodies.contains(body) {
+                bodies.push(body.clone());
+            }
+        }
+    }
+    BodySelection::Resolved { bodies, native }
 }
 
 pub(crate) fn attach_expression_parameters(

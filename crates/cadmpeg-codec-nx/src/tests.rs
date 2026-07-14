@@ -443,6 +443,36 @@ fn decode_binds_segment_body_object_index_to_partition_stream() {
 }
 
 #[test]
+fn feature_body_selection_resolves_complete_segment_bindings_atomically() {
+    use cadmpeg_ir::features::BodySelection;
+    use cadmpeg_ir::ids::BodyId;
+    use std::collections::BTreeMap;
+
+    let first = BodyId("nx:s2:body#3".to_string());
+    let second = BodyId("nx:s4:body#3".to_string());
+    let bindings = BTreeMap::from([(94, vec![first.clone()]), (122, vec![second.clone()])]);
+    assert_eq!(
+        crate::decode::feature_body_selection(
+            &[94, 122],
+            &bindings,
+            "nx:om-object-indices#94,122".to_string(),
+        ),
+        BodySelection::Resolved {
+            bodies: vec![first, second],
+            native: "nx:om-object-indices#94,122".to_string(),
+        }
+    );
+    assert!(matches!(
+        crate::decode::feature_body_selection(
+            &[94, 123],
+            &bindings,
+            "nx:om-object-indices#94,123".to_string(),
+        ),
+        BodySelection::Native(_)
+    ));
+}
+
+#[test]
 fn segment_order_pairs_delta_across_intervening_non_history_stream() {
     use crate::parasolid::{Stream, StreamKind};
     use std::collections::BTreeSet;
