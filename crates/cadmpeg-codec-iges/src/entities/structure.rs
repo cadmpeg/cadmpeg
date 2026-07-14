@@ -4,7 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{ParameterRecord, TokenValue};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,6 +12,26 @@ use std::collections::{BTreeMap, BTreeSet};
 struct SolidAssembly {
     form: i64,
     items: Vec<(u32, u32)>,
+}
+
+#[derive(Clone)]
+struct SubfigureDefinition {
+    depth: usize,
+    members: Vec<u32>,
+}
+
+#[derive(Clone, Copy)]
+struct SubfigureInstance {
+    definition: u32,
+    valid_fields: bool,
+}
+
+fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
+    match record.tokens.get(index).map(|token| &token.value) {
+        None | Some(TokenValue::Omitted) => Some(default),
+        Some(TokenValue::Integer(_) | TokenValue::Real(_)) => record.number(index),
+        Some(TokenValue::String(_)) => None,
+    }
 }
 
 fn assembly_cycle(
@@ -155,6 +175,136 @@ pub(super) fn project(
             continue;
         }
         decoded.insert(*sequence);
+    }
+
+    let mut definitions = BTreeMap::new();
+    let mut definition_fields_valid = BTreeSet::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 308 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let depth = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok());
+        let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
+        let count = record
+            .integer(3)
+            .and_then(|value| usize::try_from(value).ok());
+        let members = count.and_then(|count| {
+            (0..count)
+                .map(|index| {
+                    record.integer(4 + index).and_then(|value| {
+                        let sequence = u32::try_from(value).ok()?;
+                        (sequence % 2 == 1 && entries.contains_key(&sequence)).then_some(sequence)
+                    })
+                })
+                .collect::<Option<Vec<_>>>()
+        });
+        let (Some(depth), Some(members)) = (depth, members) else {
+            losses.push(entity_loss(
+                entry,
+                "subfigure depth, member count, or member pointer is invalid",
+            ));
+            continue;
+        };
+        definitions.insert(entry.sequence, SubfigureDefinition { depth, members });
+        if name_valid && entry.status.use_flag == 2 && entry.transform == 0 {
+            definition_fields_valid.insert(entry.sequence);
+        }
+    }
+
+    let mut instances = BTreeMap::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 408 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let definition = record.integer(1).and_then(|value| {
+            let sequence = u32::try_from(value).ok()?;
+            (sequence % 2 == 1 && definitions.contains_key(&sequence)).then_some(sequence)
+        });
+        let translation_valid =
+            (2..=4).all(|index| number_or(record, index, 0.0).is_some_and(f64::is_finite));
+        let scale_valid =
+            number_or(record, 5, 1.0).is_some_and(|value| value.is_finite() && value > 0.0);
+        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                &mut BTreeSet::new(),
+            )
+            .is_ok()
+        });
+        let Some(definition) = definition else {
+            losses.push(entity_loss(
+                entry,
+                "subfigure-instance definition pointer is invalid",
+            ));
+            continue;
+        };
+        instances.insert(
+            entry.sequence,
+            SubfigureInstance {
+                definition,
+                valid_fields: translation_valid && scale_valid && transform_valid,
+            },
+        );
+    }
+
+    let valid_instances = instances
+        .iter()
+        .filter_map(|(sequence, instance)| {
+            (instance.valid_fields && definition_fields_valid.contains(&instance.definition))
+                .then_some(*sequence)
+        })
+        .collect::<BTreeSet<_>>();
+    for (sequence, definition) in &definitions {
+        let entry = entries[sequence];
+        let nesting_valid = definition.members.iter().all(|member| {
+            let Some(member_entry) = entries.get(member) else {
+                return false;
+            };
+            if member_entry.entity_type != 408 {
+                return true;
+            }
+            let Some(instance) = instances.get(member) else {
+                return false;
+            };
+            valid_instances.contains(member)
+                && definitions
+                    .get(&instance.definition)
+                    .is_some_and(|child| child.depth < definition.depth)
+        });
+        if definition_fields_valid.contains(sequence) && nesting_valid {
+            decoded.insert(*sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "subfigure definition fields or nesting depth is invalid",
+            ));
+        }
+    }
+    for (sequence, instance) in &instances {
+        let entry = entries[sequence];
+        if valid_instances.contains(sequence) && decoded.contains(&instance.definition) {
+            decoded.insert(*sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "subfigure-instance placement or decoded definition is invalid",
+            ));
+        }
     }
 
     Projection {

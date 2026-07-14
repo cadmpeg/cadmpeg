@@ -2188,6 +2188,72 @@ fn solid_assembly_file() -> Vec<u8> {
     ])
 }
 
+fn nested_subfigure_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "MEMBER".into(),
+            status: "00010000",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "CHILD".into(),
+            status: "00000200",
+            parameters: "308,0,5HCHILD,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "CHILDINS".into(),
+            status: "00000000",
+            parameters: "408,3,1,2,3,0.5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "PARENT".into(),
+            status: "00000200",
+            parameters: "308,1,6HPARENT,1,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "PARENTIN".into(),
+            status: "00000000",
+            parameters: "408,7,10,20,30,2;".into(),
+        },
+    ])
+}
+
+fn invalid_subfigure_depth_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "CHILD".into(),
+            status: "00000200",
+            parameters: "308,0,5HCHILD,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 408,
+            form: 0,
+            label: "INSTANCE".into(),
+            status: "00000000",
+            parameters: "408,1,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 308,
+            form: 0,
+            label: "PARENT".into(),
+            status: "00000200",
+            parameters: "308,0,6HPARENT,1,3;".into(),
+        },
+    ])
+}
+
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
     explicit_multi_pcurve_loop_file_with_first_pcurve(
         "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
@@ -2952,14 +3018,11 @@ fn decode_types_template_and_visible_blank_line_fonts() {
         line_display.fields["line_font_definition"],
         "iges:entity:directory#5"
     );
-    assert!(result.report.losses.iter().any(|loss| loss
-        .message
-        .contains("IGES entity type 308 form 0 retained without neutral projection")));
-    assert!(!result
-        .report
-        .losses
-        .iter()
-        .any(|loss| loss.message.contains("IGES entity type 304 form")));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
 }
 
 #[test]
@@ -3228,6 +3291,59 @@ fn decode_rejects_cyclic_solid_assembly_definitions() {
                 "solid-assembly use flag, form, members, transforms, or acyclicity is invalid"
             ))
             .count(),
+        2
+    );
+}
+
+#[test]
+fn decode_preserves_nested_subfigure_definitions_and_instances() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(nested_subfigure_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let definitions = &native.arenas["subfigure_definitions"];
+    assert_eq!(definitions.len(), 2);
+    let parent = definitions
+        .iter()
+        .find(|definition| definition.id == "iges:product:subfigure-definition#D7")
+        .unwrap();
+    assert_eq!(parent.fields["depth"], 1);
+    assert_eq!(parent.fields["members"][0], "iges:entity:directory#5");
+    let instances = &native.arenas["subfigure_instances"];
+    assert_eq!(instances.len(), 2);
+    let child = instances
+        .iter()
+        .find(|instance| instance.id == "iges:product:subfigure-instance#D5")
+        .unwrap();
+    assert_eq!(
+        child.fields["definition"],
+        "iges:product:subfigure-definition#D3"
+    );
+    assert_eq!(child.fields["translation"][0], 1.0);
+    assert_eq!(child.fields["scale"], 0.5);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_rejects_non_decreasing_subfigure_nesting_depth() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(invalid_subfigure_depth_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("subfigure definition fields or nesting depth is invalid")));
+    assert_eq!(
+        result.ir.native.namespace("iges").unwrap().arenas["subfigure_definitions"].len(),
         2
     );
 }

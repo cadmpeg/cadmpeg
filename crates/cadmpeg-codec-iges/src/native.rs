@@ -191,6 +191,26 @@ struct NativeSolidAssembly {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSubfigureDefinition {
+    id: String,
+    source_entity: String,
+    depth: Option<i64>,
+    name: Option<Vec<u8>>,
+    declared_member_count: Option<i64>,
+    members: Vec<Option<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSubfigureInstance {
+    id: String,
+    source_entity: String,
+    definition: Option<String>,
+    translation: [Option<f64>; 3],
+    scale: Option<f64>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -682,6 +702,55 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let subfigure_definitions = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 308 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(3))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeSubfigureDefinition {
+                id: format!("iges:product:subfigure-definition#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                depth: record.and_then(|record| record.integer(1)),
+                name: record
+                    .and_then(|record| record.string(2))
+                    .map(<[u8]>::to_vec),
+                declared_member_count: record.and_then(|record| record.integer(3)),
+                members: (0..count)
+                    .map(|index| {
+                        record
+                            .and_then(|record| record.integer(4 + index))
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
+    let subfigure_instances = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 408 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            NativeSubfigureInstance {
+                id: format!("iges:product:subfigure-instance#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                definition: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| format!("iges:product:subfigure-definition#D{sequence}")),
+                translation: [
+                    record.and_then(|record| record.number(2)),
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                ],
+                scale: record.and_then(|record| record.number(5)),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -698,5 +767,7 @@ pub(crate) fn store(
     namespace.set_arena("boolean_trees", &boolean_trees)?;
     namespace.set_arena("selected_components", &selected_components)?;
     namespace.set_arena("solid_assemblies", &solid_assemblies)?;
+    namespace.set_arena("subfigure_definitions", &subfigure_definitions)?;
+    namespace.set_arena("subfigure_instances", &subfigure_instances)?;
     Ok(())
 }

@@ -66,6 +66,10 @@ The `native.iges` `procedural_solids` arena retains sweep kind, form, profile id
 
 Type 184 Forms 0 and 1 define an ordered solid assembly and have entity-use flag `02`. A positive member count is followed by that many solid-item pointers and a parallel list of the same number of Transformation Matrix pointers. A zero member transformation means identity. Each nonzero member transformation is applied to that member before the assembly's Directory transformation is applied to the complete collection. Assembly references are acyclic. Form 0 members are primitives, solid instances, Boolean trees, or other assemblies. Form 1 contains at least one Manifold Solid B-rep member and otherwise admits the same member classes. The `solid_assemblies` arena preserves definition identity, member order, member-to-transformation pairing, form, and collection placement.
 
+Type 308 Form 0 defines a reusable subfigure and has entity-use flag `02`. It stores a nonnegative nesting depth, nonempty Hollerith name, nonnegative member count, and that many ordered entity pointers. A depth-zero definition contains no Type 408 members. Every contained Type 408 instance references a definition whose depth is strictly less than the containing definition's depth. Type 308 carries no independent transformation.
+
+Type 408 Form 0 instantiates one Type 308 definition. It stores the definition pointer, a model-space translation defaulting componentwise to zero, and a positive scale defaulting to one. Its Directory transformation supplies rotation or other permitted affine placement and is applied in addition to the instance translation and scale. The `subfigure_definitions` and `subfigure_instances` arenas preserve definition identity separately from occurrence identity, ordered members, native placement components, and nesting links.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.
