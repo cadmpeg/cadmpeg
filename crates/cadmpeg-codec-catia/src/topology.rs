@@ -2706,6 +2706,7 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 impl MeshSelectionSearch<'_> {
     fn search(&mut self, quotient: &MeshQuotient) {
         const MAX_SELECTION_STATES: usize = 512;
+        const MAX_FORWARD_ASSIGNMENTS: usize = 128;
 
         if self.solution.is_some() || self.states >= MAX_SELECTION_STATES {
             return;
@@ -2726,6 +2727,22 @@ impl MeshSelectionSearch<'_> {
             .map(Vec::len)
             .sum::<usize>();
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
+            return;
+        }
+        if self
+            .selected
+            .iter()
+            .enumerate()
+            .filter(|(_, selected)| selected.is_none())
+            .filter(|(face, _)| self.assignments[*face].len() <= MAX_FORWARD_ASSIGNMENTS)
+            .any(|(face, _)| {
+                !self.assignments[face].iter().any(|assignment| {
+                    !quotient
+                        .assignment_options(assignment, self.edge_candidates)
+                        .is_empty()
+                })
+            })
+        {
             return;
         }
         let next = self
