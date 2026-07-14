@@ -17,6 +17,11 @@ pub(super) struct PresentationProjection {
     pub(super) losses: Vec<LossNote>,
 }
 
+#[derive(Clone, Copy)]
+struct TextFontDefinition {
+    supersedes: Option<u32>,
+}
+
 fn loss(entry: &DirectoryEntry, message: impl Into<String>) -> LossNote {
     LossNote {
         category: LossCategory::Material,
@@ -84,6 +89,99 @@ fn integer_or(record: &ParameterRecord, index: usize, default: i64) -> Option<i6
     }
 }
 
+fn text_font_definition(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<TextFontDefinition> {
+    let parameter_end = trailing_pointer_groups(record, entries)
+        .map_or(record.tokens.len(), |groups| groups.token_start);
+    let directory_valid = entry.status.use_flag == 2
+        && entry.structure == 0
+        && entry.line_font == 0
+        && entry.level == 0
+        && entry.view == 0
+        && entry.transform == 0
+        && entry.label_display == 0
+        && entry.line_weight == 0
+        && entry.color == 0;
+    if !directory_valid
+        || record.integer(1).is_none_or(|value| value < 0)
+        || record.string(2).is_none_or(<[u8]>::is_empty)
+        || record.integer(4).is_none_or(|scale| scale <= 0)
+    {
+        return None;
+    }
+    let supersedes = match record.tokens.get(3).map(|token| &token.value) {
+        None | Some(TokenValue::Omitted) => None,
+        Some(TokenValue::Integer(value)) if *value >= 0 => None,
+        Some(TokenValue::Integer(value)) => value
+            .checked_neg()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|sequence| sequence % 2 == 1)
+            .filter(|sequence| {
+                entries
+                    .get(sequence)
+                    .is_some_and(|target| target.entity_type == 310 && target.form == 0)
+            }),
+        Some(TokenValue::Real(_) | TokenValue::String(_)) => return None,
+    };
+    if record.integer(3).is_some_and(|value| value < 0) && supersedes.is_none() {
+        return None;
+    }
+    let count = record
+        .integer(5)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)?;
+    let mut cursor = 6;
+    let mut character_codes = BTreeSet::new();
+    for _ in 0..count {
+        let character_code = record
+            .integer(cursor)
+            .filter(|value| matches!(value, 0..=127))?;
+        if !character_codes.insert(character_code) {
+            return None;
+        }
+        record.integer(cursor + 1)?;
+        record.integer(cursor + 2)?;
+        let motion_count = record
+            .integer(cursor + 3)
+            .and_then(|value| usize::try_from(value).ok())?;
+        cursor += 4;
+        for _ in 0..motion_count {
+            integer_or(record, cursor, 0).filter(|value| matches!(value, 0..=1))?;
+            record.integer(cursor + 1)?;
+            record.integer(cursor + 2)?;
+            cursor += 3;
+        }
+    }
+    (cursor == parameter_end).then_some(TextFontDefinition { supersedes })
+}
+
+fn text_font_cycle(
+    sequence: u32,
+    fonts: &BTreeMap<u32, TextFontDefinition>,
+    visiting: &mut BTreeSet<u32>,
+    visited: &mut BTreeSet<u32>,
+) -> bool {
+    if visited.contains(&sequence) {
+        return false;
+    }
+    if !visiting.insert(sequence) {
+        return true;
+    }
+    if fonts
+        .get(&sequence)
+        .and_then(|font| font.supersedes)
+        .is_some_and(|target| text_font_cycle(target, fonts, visiting, visited))
+    {
+        return true;
+    }
+    visiting.remove(&sequence);
+    visited.insert(sequence);
+    false
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -103,6 +201,40 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut defined = BTreeMap::new();
     let mut names = BTreeMap::new();
+    let text_fonts = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 310 && entry.form == 0)
+        .filter_map(|entry| {
+            let record = records.get(&entry.sequence).copied()?;
+            text_font_definition(entry, record, &entries).map(|font| (entry.sequence, font))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut visited_fonts = BTreeSet::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 310 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let cyclic = text_font_cycle(
+            entry.sequence,
+            &text_fonts,
+            &mut BTreeSet::new(),
+            &mut visited_fonts,
+        );
+        let target_valid = text_fonts.get(&entry.sequence).is_some_and(|font| {
+            font.supersedes
+                .is_none_or(|target| text_fonts.contains_key(&target))
+        });
+        if target_valid && !cyclic {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(loss(
+                entry,
+                "font header, superseded-font chain, character grammar, pen motions, or Directory fields are invalid",
+            ));
+        }
+    }
 
     for entry in directory
         .iter()

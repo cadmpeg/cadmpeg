@@ -2961,6 +2961,32 @@ fn text_display_template_forms_file() -> Vec<u8> {
     ])
 }
 
+fn text_font_definition_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "BASEFONT".into(),
+            status: "00000200",
+            parameters: "310,101,4HBASE,,10,2,65,8,0,3,,0,0,0,4,10,0,8,0,66,8,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 310,
+            form: 0,
+            label: "MODFONT".into(),
+            status: "00000200",
+            parameters: "310,102,3HMOD,-1,10,1,67,8,0,2,1,0,0,,8,10;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 312,
+            form: 0,
+            label: "FONTUSE".into(),
+            status: "00000200",
+            parameters: "312,4,2,-3,1.5707963267948966,0,0,0,0,0,0;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4721,6 +4747,56 @@ fn decode_distinguishes_absolute_and_incremental_text_templates() {
     assert_eq!(incremental.fields["vertical"], 1);
     assert_eq!(incremental.fields["origin_or_increment"][0], 2.0);
     assert_eq!(incremental.fields["origin_or_increment"][1], -1.0);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_text_font_glyphs_and_supersession() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(text_font_definition_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let fonts = &result.ir.native.namespace("iges").unwrap().arenas["text_fonts"];
+    assert_eq!(fonts.len(), 2);
+    let base = fonts
+        .iter()
+        .find(|font| font.fields["font_code"] == 101)
+        .unwrap();
+    assert_eq!(base.fields["characters"].as_array().unwrap().len(), 2);
+    assert_eq!(base.fields["characters"][0]["character_code"], 65);
+    assert_eq!(
+        base.fields["characters"][0]["motions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        3
+    );
+    assert!(base.fields["characters"][0]["motions"][0]["pen_up"].is_null());
+    assert_eq!(base.fields["characters"][0]["motions"][1]["pen_up"], false);
+    assert_eq!(base.fields["characters"][1]["declared_motion_count"], 0);
+    let modification = fonts
+        .iter()
+        .find(|font| font.fields["font_code"] == 102)
+        .unwrap();
+    assert_eq!(
+        modification.fields["supersedes_definition"],
+        "iges:presentation:text-font#D1"
+    );
+    assert_eq!(
+        modification.fields["characters"][0]["motions"][0]["pen_up"],
+        true
+    );
+    let template = &result.ir.native.namespace("iges").unwrap().arenas["text_templates"][0];
+    assert_eq!(
+        template.fields["font_definition"],
+        "iges:presentation:text-font#D3"
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

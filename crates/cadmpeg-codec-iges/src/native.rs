@@ -132,6 +132,33 @@ struct NativeTextDisplayTemplate {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeGlyphMotion {
+    pen_up: Option<bool>,
+    point: [Option<i64>; 2],
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeGlyph {
+    character_code: Option<i64>,
+    next_origin: [Option<i64>; 2],
+    declared_motion_count: Option<i64>,
+    motions: Vec<NativeGlyphMotion>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeTextFontDefinition {
+    id: String,
+    source_entity: String,
+    font_code: Option<i64>,
+    name: Option<Vec<u8>>,
+    supersedes_code: Option<i64>,
+    supersedes_definition: Option<String>,
+    grid_units_per_text_height: Option<i64>,
+    declared_character_count: Option<i64>,
+    characters: Vec<NativeGlyph>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeDefinitionLevels {
     id: String,
     source_entity: String,
@@ -1186,6 +1213,67 @@ pub(crate) fn store(
                     record.and_then(|record| record.number(9)),
                     record.and_then(|record| record.number(10)),
                 ],
+            }
+        })
+        .collect::<Vec<_>>();
+    let text_fonts = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 310 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(5))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let supersedes_code = record.and_then(|record| record.integer(3));
+            let mut cursor = 6;
+            let characters = (0..count)
+                .map(|_| {
+                    let motion_count = record
+                        .and_then(|record| record.integer(cursor + 3))
+                        .and_then(|value| usize::try_from(value).ok())
+                        .unwrap_or_default();
+                    let glyph = NativeGlyph {
+                        character_code: record.and_then(|record| record.integer(cursor)),
+                        next_origin: [
+                            record.and_then(|record| record.integer(cursor + 1)),
+                            record.and_then(|record| record.integer(cursor + 2)),
+                        ],
+                        declared_motion_count: record.and_then(|record| record.integer(cursor + 3)),
+                        motions: (0..motion_count)
+                            .map(|offset| {
+                                let start = cursor + 4 + offset * 3;
+                                NativeGlyphMotion {
+                                    pen_up: record
+                                        .and_then(|record| record.integer(start))
+                                        .map(|value| value == 1),
+                                    point: [
+                                        record.and_then(|record| record.integer(start + 1)),
+                                        record.and_then(|record| record.integer(start + 2)),
+                                    ],
+                                }
+                            })
+                            .collect(),
+                    };
+                    cursor += 4 + motion_count * 3;
+                    glyph
+                })
+                .collect();
+            NativeTextFontDefinition {
+                id: format!("iges:presentation:text-font#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                font_code: record.and_then(|record| record.integer(1)),
+                name: record
+                    .and_then(|record| record.string(2))
+                    .map(<[u8]>::to_vec),
+                supersedes_code,
+                supersedes_definition: supersedes_code
+                    .filter(|value| *value < 0)
+                    .and_then(i64::checked_neg)
+                    .map(|sequence| format!("iges:presentation:text-font#D{sequence}")),
+                grid_units_per_text_height: record.and_then(|record| record.integer(4)),
+                declared_character_count: record.and_then(|record| record.integer(5)),
+                characters,
             }
         })
         .collect::<Vec<_>>();
@@ -2743,6 +2831,7 @@ pub(crate) fn store(
     namespace.set_arena("display_attributes", &display_attributes)?;
     namespace.set_arena("line_fonts", &line_fonts)?;
     namespace.set_arena("text_templates", &text_templates)?;
+    namespace.set_arena("text_fonts", &text_fonts)?;
     namespace.set_arena("definition_levels", &definition_levels)?;
     namespace.set_arena("primitive_solids", &primitive_solids)?;
     namespace.set_arena("procedural_solids", &procedural_solids)?;
