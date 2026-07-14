@@ -888,6 +888,33 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
 }
 
 #[test]
+fn writer_round_trips_rigid_body_placements() {
+    let mut ir = unit_cube();
+    ir.model.bodies[0].transform = Some(cadmpeg_ir::transform::Transform {
+        rows: [
+            [0.0, -1.0, 0.0, 15.0],
+            [1.0, 0.0, 0.0, 4.0],
+            [0.0, 0.0, 1.0, 2.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    });
+    let options = StepWriteOptions {
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    write_step(&ir, &mut output, &options).expect("write placed body");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode placed body");
+    assert_eq!(decoded.ir.model.bodies.len(), 1);
+    assert_eq!(
+        decoded.ir.model.bodies[0].transform,
+        ir.model.bodies[0].transform
+    );
+}
+
+#[test]
 fn writer_declares_each_supported_target_schema_exactly() {
     for schema in [
         StepSchema::Ap203Edition1,

@@ -426,7 +426,7 @@ impl<'a> Builder<'a> {
     fn build(&mut self) {
         let context = self.emit_context();
 
-        let mut shape_items = self.emit_shape_items();
+        let mut shape_items = self.emit_shape_items(context);
         shape_items.extend(self.emit_standalone_geometry());
         if shape_items.is_empty() {
             self.loss(
@@ -1065,28 +1065,11 @@ impl<'a> Builder<'a> {
 
     /// Emit one solid per region across all displayed bodies; returns the
     /// solid references. Bodies the source document hides are omitted.
-    fn emit_shape_items(&mut self) -> Vec<Ref> {
+    fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
         // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas
         // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
-        for body in &ir.model.bodies {
-            if let Some(t) = &body.transform {
-                if !is_identity(&t.rows) {
-                    self.loss(
-                        LossCategory::Geometry,
-                        Severity::Warning,
-                        format!(
-                            "body '{}' carries a non-identity transform that was not \
-                             applied to the exported geometry; coordinates are written \
-                             in body-local space",
-                            body.id
-                        ),
-                    );
-                }
-            }
-        }
-
         for region in &ir.model.regions {
             let body_kind = ir
                 .model
@@ -1097,10 +1080,11 @@ impl<'a> Builder<'a> {
                 .unwrap_or(BodyKind::General);
             if body_kind == BodyKind::Wire {
                 if let Some(item) = self.emit_wire_region(region) {
-                    items.push(item);
+                    let shape_item = self.place_body_item(&region.body, item, context);
+                    items.push(shape_item);
                     self.body_shape_refs
                         .entry(region.body.0.clone())
-                        .or_insert(item);
+                        .or_insert(shape_item);
                     self.body_step_refs
                         .entry(region.body.0.clone())
                         .or_insert(item);
@@ -1137,15 +1121,66 @@ impl<'a> Builder<'a> {
                     &format!("'',{outer},{}", refs(&void_refs)),
                 )
             };
-            items.push(item);
+            let shape_item = self.place_body_item(&region.body, item, context);
+            items.push(shape_item);
             self.body_shape_refs
                 .entry(region.body.0.clone())
-                .or_insert(item);
+                .or_insert(shape_item);
             self.body_step_refs
                 .entry(region.body.0.clone())
                 .or_insert(if closed { item } else { *outer });
         }
         items
+    }
+
+    fn place_body_item(
+        &mut self,
+        body_id: &cadmpeg_ir::ids::BodyId,
+        item: Ref,
+        context: Ref,
+    ) -> Ref {
+        let transform = self
+            .ir
+            .model
+            .bodies
+            .iter()
+            .find(|body| body.id == *body_id)
+            .and_then(|body| body.transform);
+        let Some(transform) = transform.filter(|transform| !is_identity(&transform.rows)) else {
+            return item;
+        };
+        if !is_rigid_transform(&transform.rows) {
+            self.loss(
+                LossCategory::Geometry,
+                Severity::Warning,
+                format!("body '{body_id}' carries a non-rigid transform"),
+            );
+            return item;
+        }
+        let origin = geometry::placement(
+            &mut self.emitter,
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        );
+        let representation = self.emitter.emit(
+            "SHAPE_REPRESENTATION",
+            &format!("'body-local',({item}),{context}"),
+        );
+        let map = self
+            .emitter
+            .emit("REPRESENTATION_MAP", &format!("{origin},{representation}"));
+        let rows = transform.rows;
+        let target = geometry::placement(
+            &mut self.emitter,
+            cadmpeg_ir::math::Point3::new(rows[0][3], rows[1][3], rows[2][3]),
+            cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
+            cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
+        );
+        self.emitter.emit(
+            "MAPPED_ITEM",
+            &format!("'cadmpeg body placement',{map},{target}"),
+        )
     }
 
     fn emit_visibility(&mut self) {

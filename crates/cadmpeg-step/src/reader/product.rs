@@ -144,6 +144,7 @@ pub(super) fn decode(
         definition_occurrences.insert(usage.child_definition, id);
         typed.insert(usage_id);
     }
+    apply_body_placements(exchange, geometry, &usages, ir, &mut warnings);
     for (&id, record) in &exchange.records {
         if matches!(
             record.simple_name(),
@@ -166,6 +167,85 @@ pub(super) fn decode(
     ProductResult {
         typed_records: typed,
         warnings,
+    }
+}
+
+fn apply_body_placements(
+    exchange: &Exchange,
+    geometry: &GeometryResult,
+    usages: &BTreeMap<u64, Usage>,
+    ir: &mut CadIr,
+    warnings: &mut Vec<String>,
+) {
+    let pds = exchange
+        .records
+        .iter()
+        .filter_map(|(&id, record)| {
+            (record.simple_name() == Some("PRODUCT_DEFINITION_SHAPE"))
+                .then_some((id, record.parameter(2)?.reference()?))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let definition_representations = exchange
+        .records
+        .values()
+        .filter(|record| record.simple_name() == Some("SHAPE_DEFINITION_REPRESENTATION"))
+        .filter_map(|record| {
+            let definition = *pds.get(&record.parameter(0)?.reference()?)?;
+            Some((definition, record.parameter(1)?.reference()?))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let assembly_representations = usages
+        .values()
+        .filter_map(|usage| {
+            definition_representations
+                .get(&usage.child_definition)
+                .copied()
+        })
+        .collect::<BTreeSet<_>>();
+    let body_indices = ir
+        .model
+        .bodies
+        .iter()
+        .enumerate()
+        .map(|(index, body)| (body.id.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    for (&id, item) in &exchange.records {
+        if item.simple_name() != Some("MAPPED_ITEM") {
+            continue;
+        }
+        let Some(map) = item
+            .parameter(1)
+            .and_then(ValueExt::reference)
+            .and_then(|map| exchange.records.get(&map))
+        else {
+            continue;
+        };
+        let Some(origin) = map.parameter(0).and_then(ValueExt::reference) else {
+            continue;
+        };
+        let Some(representation) = map.parameter(1).and_then(ValueExt::reference) else {
+            continue;
+        };
+        if assembly_representations.contains(&representation) {
+            continue;
+        }
+        let Some(target) = item.parameter(2).and_then(ValueExt::reference) else {
+            continue;
+        };
+        let Some(transform) = geometry
+            .placements
+            .get(&origin)
+            .zip(geometry.placements.get(&target))
+            .map(|(from, to)| between(*from, *to))
+        else {
+            warnings.push(format!("MAPPED_ITEM #{id} has no resolved body placement"));
+            continue;
+        };
+        for body in representation_bodies(representation, exchange, &mut BTreeSet::new()) {
+            if let Some(index) = body_indices.get(&body) {
+                ir.model.bodies[*index].transform = Some(transform);
+            }
+        }
     }
 }
 
