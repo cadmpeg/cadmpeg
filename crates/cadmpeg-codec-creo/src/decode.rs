@@ -3912,6 +3912,29 @@ fn transfer_resolved_revolution_surfaces(
                     crate::surface::SurfaceKind::TorusOrSphere,
                 )
             });
+        let spline_bindings = definition
+            .order_table
+            .as_ref()
+            .zip(native_table)
+            .map_or_else(BTreeMap::new, |(order, table)| {
+                ordered_family_surface_bindings(
+                    &scan.surface_rows,
+                    feature_id,
+                    table,
+                    order,
+                    definition
+                        .saved_section
+                        .iter()
+                        .flat_map(|saved| &saved.entities)
+                        .filter_map(|entity| match entity {
+                            crate::feature::FeatureSavedEntity::Spline(spline) => {
+                                order.external_id(spline.entity_id?)
+                            }
+                            _ => None,
+                        }),
+                    crate::surface::SurfaceKind::Spline,
+                )
+            });
         for segment in definition
             .segments
             .iter()
@@ -4017,12 +4040,25 @@ fn transfer_resolved_revolution_surfaces(
             let Some(surface) = revolved_nurbs_surface(directrix, axis) else {
                 continue;
             };
-            let surface_id = SurfaceId(format!(
-                "creo:feature:revolution_surface#{feature_id}:{suffix}"
-            ));
+            let native_surface = definition
+                .order_table
+                .as_ref()
+                .and_then(|order| order.external_id(spline.entity_id?))
+                .and_then(|external_id| spline_bindings.get(&external_id).copied());
+            let surface_id = native_surface.map_or_else(
+                || {
+                    SurfaceId(format!(
+                        "creo:feature:revolution_surface#{feature_id}:{suffix}"
+                    ))
+                },
+                |id| SurfaceId(format!("creo:visibgeom:surface#{id}")),
+            );
             let procedural_id = ProceduralSurfaceId(format!(
                 "creo:feature:revolution_construction#{feature_id}:{suffix}"
             ));
+            if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
+                continue;
+            }
             annotate(
                 annotations,
                 &surface_id,
@@ -4044,7 +4080,10 @@ fn transfer_resolved_revolution_surfaces(
                 geometry: SurfaceGeometry::Nurbs(surface),
                 source_object: Some(SourceObjectAssociation {
                     format: "creo".to_string(),
-                    object_id: format!("FeatDefs:revolution#{feature_id}:{suffix}"),
+                    object_id: native_surface.map_or_else(
+                        || format!("FeatDefs:revolution#{feature_id}:{suffix}"),
+                        |id| format!("VisibGeom:{id}"),
+                    ),
                     name: None,
                     color: None,
                     visible: None,
