@@ -3646,6 +3646,20 @@ fn consolidated_record_walk_inventory_preserves_width_flag_and_boundaries() {
 }
 
 #[test]
+fn consolidated_record_walk_suppresses_payload_records_and_resumes_after_parent() {
+    let nested = [0xb2, 0x03, 0x20, 1, 7, 0xaa];
+    let mut outer = vec![0xb2, 0x03, 0x20, nested.len() as u8, 1];
+    outer.extend_from_slice(&nested);
+    let sibling_start = outer.len();
+    outer.extend_from_slice(&[0xb2, 0x03, 0x20, 1, 2, 0xbb]);
+
+    let records = crate::geometry::consolidated_records(&outer);
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0].range, 0..sibling_start);
+    assert_eq!(records[1].range, sibling_start..outer.len());
+}
+
+#[test]
 fn b2_cylinder_parser_reads_implicit_axis_layout() {
     let cylinders = crate::geometry::b2_cylinders(&b2_implicit_axis_cylinder_stream());
     assert_eq!(cylinders.len(), 1);

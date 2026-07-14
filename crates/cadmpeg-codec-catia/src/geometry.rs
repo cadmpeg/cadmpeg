@@ -3060,13 +3060,15 @@ pub fn consolidated_records(data: &[u8]) -> Vec<ConsolidatedRecord> {
         });
     }
     let mut records: Vec<ConsolidatedRecord> = Vec::new();
+    let mut active_payload: Option<Range<usize>> = None;
     for candidate in candidates {
-        if records
-            .iter()
-            .any(|record| record.payload.contains(&candidate.range.start))
+        if active_payload
+            .as_ref()
+            .is_some_and(|payload| payload.contains(&candidate.range.start))
         {
             continue;
         }
+        active_payload = Some(candidate.payload.clone());
         records.push(candidate);
     }
     records
