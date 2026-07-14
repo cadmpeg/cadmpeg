@@ -669,6 +669,12 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
         };
         let family = String::from_utf8_lossy(&payload[family_start..close]);
         let mut record_end = find(payload, b"srf_prim_ptr(", close + 2).unwrap_or(payload.len());
+        if let Some(at) = find(payload, b"srf_prim_ptr\0", close + 2) {
+            record_end = record_end.min(at);
+        }
+        if let Some(at) = find(payload, b"\xe0\x00entity_ptr(", close + 2) {
+            record_end = record_end.min(at);
+        }
         for marker in [b"crv_array\0".as_slice(), b"lo_array\0", b"qlt_array\0"] {
             if let Some(at) = find(payload, marker, close + 2) {
                 record_end = record_end.min(at);
@@ -1524,6 +1530,35 @@ mod tests {
         assert_eq!(field.name, "radius2");
         assert_eq!(field.body, [0x2e, 0x05, 0x33, 0xf1, 0xf7, 0x0e]);
         assert_eq!(field.value, SurfaceNamedValue::ScalarSequence(vec![2.65]));
+    }
+
+    #[test]
+    fn parenthesized_prototype_ends_at_legacy_prototype_record() {
+        let payload = b"srf_prim_ptr(plane)\0\xe0\x02local_sys\0\xf9\x04\x03\
+            \x0f\x18\xe5\x0f\x18\xe5\x0f\x18\xe5\
+            \xe0\x00srf_prim_ptr\0geom_type\0\x24\
+            \xe0\x02radius\0\x2f\x05\x00";
+
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].family, SurfacePrototypeFamily::Plane);
+        assert_eq!(records[0].parameters.len(), 1);
+        assert_eq!(records[0].parameters[0].name, "local_sys");
+    }
+
+    #[test]
+    fn parenthesized_prototype_ends_at_peer_entity_record() {
+        let payload = b"srf_prim_ptr(plane)\0\xe0\x02local_sys\0\xf9\x04\x03\
+            \x0f\x18\xe5\x0f\x18\xe5\x0f\x18\xe5\
+            \xe0\x00entity_ptr(coord_sys)\0\xe3\
+            \xe0\x02radius\0\x2f\x05\x00";
+
+        let records = named_prototype_records(payload);
+
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].parameters.len(), 1);
+        assert_eq!(records[0].parameters[0].name, "local_sys");
     }
 
     #[test]
