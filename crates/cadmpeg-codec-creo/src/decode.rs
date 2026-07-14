@@ -10310,6 +10310,16 @@ mod resolved_sketch_tests {
             solve_carriers(&[sphere, external_tangent_sphere, equator]),
             Some([2.0, 0.0, 0.0])
         );
+        let noncoaxial_cylinder = CarrierEquation::Cylinder(CylinderEquation {
+            origin: [1.0, 3.0_f64.sqrt(), 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0,
+        });
+        assert_eq!(
+            solve_carriers(&[sphere, tangent, noncoaxial_cylinder]),
+            Some([2.0, 0.0, 0.0])
+        );
         let enclosing_sphere = CarrierEquation::Sphere(SphereEquation {
             center: [0.0, 0.0, 0.0],
             ref_direction: [0.0, 1.0, 0.0],
@@ -11038,6 +11048,21 @@ fn tangent_sphere_point(first: SphereEquation, second: SphereEquation) -> Option
     }))
 }
 
+fn tangent_plane_sphere_point(plane: PlaneEquation, sphere: SphereEquation) -> Option<[f64; 3]> {
+    let normal = normalized(plane.normal)?;
+    let signed_distance = dot(
+        normal,
+        std::array::from_fn(|index| sphere.center[index] - plane.origin[index]),
+    );
+    let scale = sphere.radius.max(1.0);
+    if sphere.radius <= 0.0 || (signed_distance.abs() - sphere.radius).abs() > 1e-9 * scale {
+        return None;
+    }
+    Some(std::array::from_fn(|index| {
+        sphere.center[index] - signed_distance * normal[index]
+    }))
+}
+
 fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
     let mut candidates = Vec::new();
     for first in 0..carriers.len() {
@@ -11056,6 +11081,13 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                         CarrierEquation::Cone(cone) => cones.push(cone),
                         CarrierEquation::Sphere(sphere) => spheres.push(sphere),
                         CarrierEquation::Torus(torus) => tori.push(torus),
+                    }
+                }
+                for plane in &planes {
+                    for sphere in &spheres {
+                        if let Some(point) = tangent_plane_sphere_point(*plane, *sphere) {
+                            candidates.push(point);
+                        }
                     }
                 }
                 if planes.len() == 3 {

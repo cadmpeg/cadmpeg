@@ -553,6 +553,8 @@ A sphere whose center lies on a torus axis reduces their intersection to two cir
 Two externally or non-concentrically internally tangent spheres have one common
 point on their center line. That point is a unique topological vertex when it
 also lies on every other incident carrier; it is not a zero-radius curve.
+A plane tangent to a sphere likewise contributes its projected contact point
+to vertex incidence without creating a zero-radius circle.
 
 Two coaxial tori reduce their intersection to their tube circles in a shared axial meridian plane. External tangency or non-concentric internal tangency of the tube circles produces one point with positive radial coordinate and therefore one model-space circle about the common axis. Secant tube circles produce multiple model-space circles and remain unresolved without a native branch binding.
 
