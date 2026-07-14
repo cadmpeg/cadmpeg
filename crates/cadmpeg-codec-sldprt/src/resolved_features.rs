@@ -1342,6 +1342,41 @@ fn feature_object_name<'a>(
     matches.next().is_none().then_some(first)
 }
 
+fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3> {
+    let class_offset = usize::try_from(class_offset).ok()?;
+    let direction_offset = if payload.get(class_offset + 136..class_offset + 144)
+        == Some(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff])
+        && payload.get(class_offset + 148..class_offset + 152) == Some(&[0xf8, 0x2a, 0, 0])
+    {
+        class_offset + 200
+    } else if payload.get(class_offset + 144..class_offset + 156)
+        == Some(&[
+            0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
+        ])
+        && payload.get(class_offset + 160..class_offset + 164) == Some(&[0xf8, 0x2a, 0, 0])
+    {
+        class_offset + 220
+    } else {
+        return None;
+    };
+    let scalar = |offset: usize| {
+        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let direction = Vector3::new(
+        scalar(direction_offset)?,
+        scalar(direction_offset + 8)?,
+        scalar(direction_offset + 16)?,
+    );
+    let norm =
+        (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z).sqrt();
+    ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
+        direction.x / norm,
+        direction.y / norm,
+        direction.z / norm,
+    ))
+}
+
 /// Bind pattern operands carried by adjacent feature-input objects.
 pub(crate) fn bind_pattern_inputs(
     model_features: &mut [cadmpeg_ir::features::Feature],
@@ -1364,6 +1399,7 @@ pub(crate) fn bind_pattern_inputs(
         PathRef,
     )>::new();
     let mut linear_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
+    let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
 
     for lane in lanes {
         let mut starts = history_features
@@ -1393,6 +1429,32 @@ pub(crate) fn bind_pattern_inputs(
                     continue;
                 };
                 linear_seed_assignments.push((model_index, model_features[seed_index].id.clone()));
+                let end = starts
+                    .get(start_index + 1)
+                    .map_or(u64::MAX, |(offset, _)| *offset);
+                let mut directions = lane
+                    .classes
+                    .iter()
+                    .filter(|class| {
+                        class.name == "moLineRef_w"
+                            && class.offset > starts[start_index].0
+                            && class.offset < end
+                    })
+                    .filter_map(|class| {
+                        line_reference_direction(&lane.native_payload, class.offset)
+                    })
+                    .collect::<Vec<_>>();
+                directions.sort_by_key(|direction| {
+                    [
+                        direction.x.to_bits(),
+                        direction.y.to_bits(),
+                        direction.z.to_bits(),
+                    ]
+                });
+                directions.dedup();
+                if let [direction] = directions.as_slice() {
+                    linear_direction_assignments.push((model_index, *direction));
+                }
                 continue;
             }
             if feature.input_class.as_deref() != Some("moCurvePattern_c") {
@@ -1490,6 +1552,29 @@ pub(crate) fn bind_pattern_inputs(
         if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
             if seeds.is_empty() {
                 seeds.push(seed.clone());
+            }
+        }
+    }
+    let mut linear_directions_by_pattern = HashMap::<usize, Vec<Vector3>>::new();
+    for (index, direction) in linear_direction_assignments {
+        let candidates = linear_directions_by_pattern.entry(index).or_default();
+        if !candidates.contains(&direction) {
+            candidates.push(direction);
+        }
+    }
+    for (index, candidates) in linear_directions_by_pattern {
+        let [direction] = candidates.as_slice() else {
+            continue;
+        };
+        if let FeatureDefinition::Pattern {
+            pattern: PatternKind::Linear {
+                direction: slot, ..
+            },
+            ..
+        } = &mut model_features[index].definition
+        {
+            if slot.is_none() {
+                *slot = Some(*direction);
             }
         }
     }
@@ -8157,8 +8242,8 @@ mod profile_join_tests {
     use super::{
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, line_endpoint_markers, marker_entities, marker_point_locus,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
+        marker_point_locus, profile_loci_by_marker, project_dimensioned_sketch_geometry,
         project_relation_point_geometry, project_relation_solved_point_geometry,
         relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
@@ -8173,10 +8258,11 @@ mod profile_join_tests {
         unique_profile_point_line_pair, MarkerTransform,
     };
     use crate::records::{
-        Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureInputName,
-        FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
-        FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
-        SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
+        Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+        FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
+        FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
+        FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchInputLink,
+        SketchRelationKind,
     };
     use cadmpeg_ir::features::{
         Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
@@ -8902,7 +8988,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn curve_pattern_binds_the_adjacent_seed_and_sketch_objects() {
+    fn pattern_inputs_bind_adjacent_objects_and_line_reference_direction() {
         let native_feature = |id: &str, source_id: &str, name: &str| NativeFeature {
             id: id.into(),
             parent: "history".into(),
@@ -8944,16 +9030,51 @@ mod profile_join_tests {
             value: value.into(),
             object_id: Some(object_id),
         };
+        let line_ref_offset = 120usize;
+        let mut native_payload = vec![0; 400];
+        native_payload[line_ref_offset + 136..line_ref_offset + 144]
+            .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        native_payload[line_ref_offset + 148..line_ref_offset + 152]
+            .copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+        for (index, value) in [-1.0f64, 0.0, 0.0].into_iter().enumerate() {
+            let offset = line_ref_offset + 200 + index * 8;
+            native_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        assert_eq!(
+            line_reference_direction(&native_payload, line_ref_offset as u64),
+            Some(Vector3::new(-1.0, 0.0, 0.0))
+        );
+        let mut three_word_payload = vec![0; 400];
+        three_word_payload[line_ref_offset + 144..line_ref_offset + 156].copy_from_slice(&[
+            0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
+        ]);
+        three_word_payload[line_ref_offset + 160..line_ref_offset + 164]
+            .copy_from_slice(&[0xf8, 0x2a, 0, 0]);
+        for (index, value) in [0.0f64, 0.6, 0.8].into_iter().enumerate() {
+            let offset = line_ref_offset + 220 + index * 8;
+            three_word_payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        assert_eq!(
+            line_reference_direction(&three_word_payload, line_ref_offset as u64),
+            Some(Vector3::new(0.0, 0.6, 0.8))
+        );
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
-            native_payload: Vec::new(),
-            classes: Vec::new(),
+            native_payload,
+            classes: vec![FeatureInputClass {
+                id: "line-reference".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: line_ref_offset as u64,
+                name: "moLineRef_w".into(),
+                role: FeatureInputClassRole::Reference,
+            }],
             names: vec![
                 name(50, 5, "SeedFeature"),
                 name(100, 10, "Pattern1"),
-                name(150, 20, "PathSketch"),
-                name(200, 30, "NextFeature"),
+                name(500, 20, "PathSketch"),
+                name(600, 30, "NextFeature"),
             ],
             scalars: Vec::new(),
             relation_bindings: Vec::new(),
@@ -9038,7 +9159,7 @@ mod profile_join_tests {
         assert_eq!(seeds, std::slice::from_ref(&features[2].id));
 
         let mut ambiguous_lane = lane.clone();
-        ambiguous_lane.names.insert(2, name(175, 20, "PathSketch"));
+        ambiguous_lane.names.insert(2, name(450, 20, "PathSketch"));
         if let FeatureDefinition::Pattern {
             pattern: PatternKind::CurveDriven { path, .. },
             seeds,
@@ -9082,6 +9203,16 @@ mod profile_join_tests {
         };
         assert_eq!(seeds, std::slice::from_ref(&features[2].id));
         assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                pattern: PatternKind::Linear {
+                    direction: Some(Vector3 { x, y, z }),
+                    ..
+                },
+                ..
+            } if x == -1.0 && y == 0.0 && z == 0.0
+        ));
     }
 
     #[test]

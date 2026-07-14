@@ -265,7 +265,9 @@ Point-distance operands select explicit profile loci. Line-distance and angular 
 
 An `moCurvePattern_c` feature-input object is immediately preceded by its seed feature object and followed by its path feature object. The preceding object identifies the repeated neutral feature. When the following object is an `moProfileFeature_c` sketch with one resolved neutral sketch, that sketch is the curve-driven pattern path. A missing or multiply addressed adjacent object, or a following object that is not a resolved sketch, leaves both pattern inputs unresolved.
 
-An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That preceding object identifies the repeated neutral feature. A missing or multiply addressed preceding object leaves the linear-pattern seed unresolved.
+An `moLineRef_w` declaration has two direction layouts. When two consecutive `c7 cf ff ff` words occur at declaration offsets `+136` and `+140` and `f8 2a 00 00` occurs at `+148`, three little-endian f64 values at `+200`, `+208`, and `+216` store its unit xyz direction. When three consecutive `c7 cf ff ff` words occur at `+144`, `+148`, and `+152` and `f8 2a 00 00` occurs at `+160`, the unit xyz direction is at `+220`, `+228`, and `+236`.
+
+An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That preceding object identifies the repeated neutral feature. The sole structurally valid `moLineRef_w` declaration before the next feature object supplies the linear-pattern direction. A missing or multiply addressed preceding object, or zero or multiple direction references, leaves the corresponding linear-pattern input unresolved.
 
 A parameterless, propertyless `Feature` history record with type `Directional` or `Direccional` is a directional scene-light tree node rather than a modeling operation.
 
