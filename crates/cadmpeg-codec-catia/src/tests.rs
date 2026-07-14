@@ -2820,6 +2820,21 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
 }
 
 #[test]
+fn standard_face_witness_requires_an_analytic_marker() {
+    let mut record = vec![0u8; 48];
+    record[5..8].copy_from_slice(&[0x00, 0x33, 0x33]);
+    for (index, value) in [1.0f32, 2.0, 3.0].into_iter().enumerate() {
+        record[32 + index * 4..36 + index * 4].copy_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(
+        crate::geometry::standard_face_witness(&record, 5),
+        Some(cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0))
+    );
+    record[6] = 0x32;
+    assert!(crate::geometry::standard_face_witness(&record, 5).is_none());
+}
+
+#[test]
 fn standard_curve_supports_begin_after_the_surface_roster() {
     let mut bytes = vec![
         0x60, 1, 0, 0, 0, 2, 0, 0x33, 0x36, 0, 0, // earlier valid-looking row

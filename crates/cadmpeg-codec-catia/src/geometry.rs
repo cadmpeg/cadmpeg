@@ -4311,6 +4311,9 @@ pub fn decode_curved(brep: &[u8], prefix: &SurfacePrefix) -> Option<SurfaceGeome
 /// carrier's big-endian parameter block.
 #[must_use]
 pub fn standard_face_witness(brep: &[u8], marker_pos: usize) -> Option<Point3> {
+    if brep.get(marker_pos..marker_pos + 2) != Some(&[0x00, 0x33]) {
+        return None;
+    }
     let kind = *brep.get(marker_pos + 2)?;
     let offset = match kind {
         0x33 => 27,
