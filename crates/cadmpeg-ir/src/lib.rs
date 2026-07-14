@@ -65,7 +65,10 @@ pub use codec::{
     CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
     DecodeResult, Encoder, ReadSeek,
 };
-pub use diff::{diff, diff_byte_ledger, ArenaDiff, ByteLedgerDiff, IrDiff, ModifiedEntity};
+pub use diff::{
+    diff, diff_byte_ledger, diff_source_fidelity, AnnotationDiff, ArenaDiff, ByteLedgerDiff,
+    IrDiff, ModifiedEntity, SourceFidelityDiff,
+};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
