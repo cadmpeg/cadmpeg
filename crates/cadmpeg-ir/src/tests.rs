@@ -1864,11 +1864,15 @@ fn pcurve_surface_mismatch_is_flagged() {
     // derived u/v frame maps `(u, v) -> (u, -v, 0)`. Edge #0 runs from
     // `(0,0,0)` to `(10,0,0)`, so its parameter image is the line
     // `(0,0) -> (10,0)`.
-    let good = |u_end: f64, v_end: f64| {
+    let good = |u_end: f64, v_end: f64, line: bool| {
         let mut ir = unit_cube();
-        ir.model.pcurves.push(crate::geometry::Pcurve {
-            id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
-            geometry: crate::geometry::PcurveGeometry::Nurbs {
+        let geometry = if line {
+            crate::geometry::PcurveGeometry::Line {
+                origin: crate::math::Point2::new(0.0, 0.0),
+                direction: crate::math::Point2::new(u_end, v_end),
+            }
+        } else {
+            crate::geometry::PcurveGeometry::Nurbs {
                 degree: 1,
                 knots: vec![0.0, 0.0, 1.0, 1.0],
                 control_points: vec![
@@ -1877,10 +1881,14 @@ fn pcurve_surface_mismatch_is_flagged() {
                 ],
                 weights: None,
                 periodic: false,
-            },
+            }
+        };
+        ir.model.pcurves.push(crate::geometry::Pcurve {
+            id: crate::ids::PcurveId("synthetic:cube:pcurve#0".into()),
+            geometry,
             wrapper_reversed: None,
             native_tail_flags: None,
-            parameter_range: None,
+            parameter_range: line.then_some([0.0, 1.0]),
             fit_tolerance: None,
         });
         let coedge = ir
@@ -1895,7 +1903,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         validate(&ir, Vec::new())
     };
 
-    let consistent = good(10.0, 0.0);
+    let consistent = good(10.0, 0.0, false);
     assert!(
         !consistent
             .findings
@@ -1905,7 +1913,7 @@ fn pcurve_surface_mismatch_is_flagged() {
         consistent.findings
     );
 
-    let inconsistent = good(10.0, 5.0);
+    let inconsistent = good(10.0, 5.0, false);
     assert!(
         inconsistent
             .findings
@@ -1914,6 +1922,27 @@ fn pcurve_surface_mismatch_is_flagged() {
                 && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
         "off-surface-image pcurve must be flagged, got: {:?}",
         inconsistent.findings
+    );
+
+    let consistent_line = good(10.0, 0.0, true);
+    assert!(
+        !consistent_line
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency),
+        "matching bounded line pcurve must validate, got: {:?}",
+        consistent_line.findings
+    );
+
+    let inconsistent_line = good(10.0, 5.0, true);
+    assert!(
+        inconsistent_line
+            .findings
+            .iter()
+            .any(|f| f.check == Check::GeometricConsistency
+                && f.entity.as_deref().is_some_and(|e| e.contains("coedge"))),
+        "off-surface-image bounded line pcurve must be flagged, got: {:?}",
+        inconsistent_line.findings
     );
 }
 
