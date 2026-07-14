@@ -16,7 +16,7 @@ fn transfers_sketch_pad_and_pocket_design_history() {
   <ObjectDeps Name="Pocket"><Dep Name="Pad"/><Dep Name="Sketch"/></ObjectDeps>
 </Objects>
 <ObjectData Count="3">
-  <Object name="Sketch"><Properties Count="2">
+  <Object name="Sketch"><Properties Count="3">
     <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="4">
       <Geometry type="Part::GeomLineSegment"><LineSegment StartX="0" StartY="0" EndX="10" EndY="0"/><Construction value="0"/></Geometry>
       <Geometry type="Part::GeomLineSegment"><LineSegment StartX="10" StartY="0" EndX="10" EndY="5"/><Construction value="0"/></Geometry>
@@ -27,14 +27,16 @@ fn transfers_sketch_pad_and_pocket_design_history() {
       <Constrain Type="2" First="0" FirstPos="0"/>
       <Constrain Name="Width" Type="7" Value="10" IsDriving="1" First="0" FirstPos="1" Second="1" SecondPos="1"/>
     </ConstraintList></Property>
+    <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="2" Pz="3" Q0="0.7071067811865476" Q1="0" Q2="0" Q3="0.7071067811865476"/></Property>
   </Properties></Object>
   <Object name="Pad"><Properties Count="2">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Length" type="App::PropertyLength"><Float value="10"/></Property>
   </Properties></Object>
-  <Object name="Pocket"><Properties Count="2">
+  <Object name="Pocket"><Properties Count="3">
     <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
     <Property name="Length" type="App::PropertyLength"><Float value="2.5"/></Property>
+    <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
   </Properties></Object>
 </ObjectData>
 </Document>"#;
@@ -48,6 +50,8 @@ fn transfers_sketch_pad_and_pocket_design_history() {
     assert_eq!(result.ir.model.sketch_entities.len(), 4);
     assert_eq!(result.ir.model.sketches[0].profiles.len(), 1);
     assert_eq!(result.ir.model.sketches[0].profiles[0].len(), 4);
+    assert_eq!(result.ir.model.sketches[0].origin.x, 1.0);
+    assert!((result.ir.model.sketches[0].normal.y + 1.0).abs() < 1e-12);
     assert_eq!(result.ir.model.features.len(), 3);
     assert_eq!(result.ir.model.sketch_constraints.len(), 2);
     assert_eq!(result.ir.model.parameters.len(), 3);
@@ -77,6 +81,14 @@ fn transfers_sketch_pad_and_pocket_design_history() {
         .iter()
         .find(|feature| feature.name.as_deref() == Some("Pocket"))
         .expect("pocket");
+    assert!(pocket.suppressed);
+    assert_eq!(
+        pocket
+            .source_properties
+            .get("Suppressed")
+            .map(String::as_str),
+        Some("true")
+    );
     assert!(matches!(
         pad.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {

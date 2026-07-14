@@ -108,7 +108,9 @@ Construction objects retain source order and native identity independently of th
 Planar sketch geometry is transferred in persisted entity order. Non-construction line segments
 are connected into deterministic oriented profile chains; circles and arcs retain canonical
 millimetre/radian values, while unsupported geometry families remain explicit native sketch
-entities.
+entities. A persisted placement supplies the sketch origin, normal, and in-plane axis by applying
+its normalized quaternion to the canonical sketch basis. Attachment support and mapping mode remain
+linked source state when their complete support-frame composition is not resolved.
 
 Sketch constraints retain their append-only native family code and ordered geometry-position
 operands. Coincident, horizontal, vertical, parallel, tangent, perpendicular, equal, block,

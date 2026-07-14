@@ -131,10 +131,10 @@ pub(crate) fn transfer(
             id,
             ordinal: object.order as u64,
             name: Some(object.name.clone()),
-            suppressed: false,
+            suppressed: bool_property(&owned, "Suppressed").unwrap_or(false),
             parent: None,
             dependencies,
-            source_properties: BTreeMap::new(),
+            source_properties: feature_state(&owned),
             source_tag: Some(object.type_name.clone()),
             source_text: None,
             source_content: Vec::new(),
@@ -203,14 +203,15 @@ fn parse_sketch(
     }
     let profiles = build_profiles(&entities);
     let (constraints, parameters) = parse_constraints(object, properties, &id, &entities)?;
+    let (origin, normal, u_axis) = sketch_frame(properties);
     Ok(SketchTransfer {
         sketch: Sketch {
             id,
             name: Some(object.name.clone()),
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            origin,
+            normal,
+            u_axis,
             profiles,
             native_ref: Some(object.id.clone()),
         },
@@ -218,6 +219,100 @@ fn parse_sketch(
         constraints,
         parameters,
     })
+}
+
+fn sketch_frame(properties: &[&PropertyRecord]) -> (Point3, Vector3, Vector3) {
+    let Some(value) = property(properties, "Placement")
+        .or_else(|| property(properties, "AttachmentOffset"))
+        .and_then(|property| {
+            property
+                .values
+                .iter()
+                .find(|value| value.tag == "PropertyPlacement")
+        })
+    else {
+        return (
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+    };
+    let component = |name: &str, default: f64| {
+        value
+            .attributes
+            .get(name)
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(default)
+    };
+    let quaternion = [
+        component("Q0", 0.0),
+        component("Q1", 0.0),
+        component("Q2", 0.0),
+        component("Q3", 1.0),
+    ];
+    (
+        Point3::new(
+            component("Px", 0.0),
+            component("Py", 0.0),
+            component("Pz", 0.0),
+        ),
+        rotate_vector(quaternion, [0.0, 0.0, 1.0]),
+        rotate_vector(quaternion, [1.0, 0.0, 0.0]),
+    )
+}
+
+fn rotate_vector(quaternion: [f64; 4], vector: [f64; 3]) -> Vector3 {
+    let [x, y, z, w] = quaternion;
+    let norm = (x * x + y * y + z * z + w * w).sqrt();
+    if norm <= f64::EPSILON {
+        return Vector3::new(vector[0], vector[1], vector[2]);
+    }
+    let (x, y, z, w) = (x / norm, y / norm, z / norm, w / norm);
+    let [vx, vy, vz] = vector;
+    Vector3::new(
+        (1.0 - 2.0 * (y * y + z * z)) * vx
+            + 2.0 * (x * y - z * w) * vy
+            + 2.0 * (x * z + y * w) * vz,
+        2.0 * (x * y + z * w) * vx
+            + (1.0 - 2.0 * (x * x + z * z)) * vy
+            + 2.0 * (y * z - x * w) * vz,
+        2.0 * (x * z - y * w) * vx
+            + 2.0 * (y * z + x * w) * vy
+            + (1.0 - 2.0 * (x * x + y * y)) * vz,
+    )
+}
+
+fn feature_state(properties: &[&PropertyRecord]) -> BTreeMap<String, String> {
+    const STATE_NAMES: &[&str] = &[
+        "Active",
+        "Frozen",
+        "Invalid",
+        "MapMode",
+        "Support",
+        "Suppressed",
+        "Tip",
+        "Touched",
+        "Visibility",
+    ];
+    properties
+        .iter()
+        .filter(|property| STATE_NAMES.contains(&property.name.as_str()))
+        .map(|property| {
+            let value = scalar_text(property)
+                .or_else(|| property.links.first().and_then(|link| link.object.clone()))
+                .unwrap_or_else(|| property.raw_xml.clone());
+            (property.name.clone(), value)
+        })
+        .collect()
+}
+
+fn bool_property(properties: &[&PropertyRecord], name: &str) -> Option<bool> {
+    let value = scalar_text(property(properties, name)?)?;
+    match value.to_ascii_lowercase().as_str() {
+        "1" | "true" => Some(true),
+        "0" | "false" => Some(false),
+        _ => None,
+    }
 }
 
 fn parse_constraints(
