@@ -61,8 +61,8 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
 
     let ids = IdSets::build(ir);
     check_version(ir, &mut findings);
-    // The identity walk enumerates every entity id in the document; annotation
-    // and link targets resolve against that set.
+    // The identity walk enumerates every entity id in the product document;
+    // native links resolve against that set.
     let all_ids = check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
     check_references(ir, &ids, &mut findings);
@@ -70,7 +70,6 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_coedge_pairing(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
-    check_annotations(ir, &ir.annotations, &all_ids, &mut findings);
     check_native_links(ir, &all_ids, &mut findings);
     check_parameter_domains(ir, &mut findings);
     check_edge_endpoint_consistency(ir, &mut findings);

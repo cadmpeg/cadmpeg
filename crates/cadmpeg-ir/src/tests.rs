@@ -1576,8 +1576,9 @@ fn orphan_carrier_is_flagged() {
 
 #[test]
 fn annotation_keys_streams_and_field_paths_are_checked() {
-    let mut ir = unit_cube();
-    ir.annotations.provenance.insert(
+    let ir = unit_cube();
+    let mut source_fidelity = crate::SourceFidelity::default();
+    source_fidelity.annotations.provenance.insert(
         "missing".into(),
         Provenance {
             stream: u32::MAX,
@@ -1585,7 +1586,7 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
             tag: None,
         },
     );
-    ir.annotations.exactness.insert(
+    source_fidelity.annotations.exactness.insert(
         ir.model.edges[0].id.0.clone(),
         ExactnessNote {
             entity: Exactness::Derived,
@@ -1595,7 +1596,7 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
             )]),
         },
     );
-    let findings = validate(&ir, Vec::new()).findings;
+    let findings = crate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::Annotations && finding.severity == crate::report::Severity::Error
     }));

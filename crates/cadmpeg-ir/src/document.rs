@@ -105,8 +105,8 @@ fn ir_version_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
 
 /// A versioned CAD document.
 ///
-/// `model` holds the format-neutral graph. `annotations`, `native`, and
-/// `unknowns` retain source fidelity without changing that graph's semantics.
+/// `model` holds the format-neutral graph. `native` retains typed
+/// format-specific product data without changing that graph's semantics.
 /// Entity IDs must be globally unique across all document arenas.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CadIr {
