@@ -3893,7 +3893,7 @@ fn typed_marker_relation_definition(
                     _ => unreachable!("relation kind was filtered above"),
                 }
             } else if matches!(kind, Horizontal | Vertical) {
-                let Some(loci) = linked_single_loci(marker, loci_by_marker) else {
+                let Some(loci) = linked_single_loci(marker, markers_by_id, loci_by_marker) else {
                     return Some(native());
                 };
                 let [first, second] = loci.as_slice() else {
@@ -3931,7 +3931,8 @@ fn typed_marker_relation_definition(
             }
         }
         Parallel | Perpendicular | Tangent | Equal | Collinear | Concentric => {
-            let Some(entities) = linked_single_entities(marker, loci_by_marker) else {
+            let Some(entities) = linked_single_entities(marker, markers_by_id, loci_by_marker)
+            else {
                 return Some(native());
             };
             let [first, second] = entities.as_slice() else {
@@ -3966,7 +3967,7 @@ fn typed_marker_relation_definition(
             }
         }
         Coincident => {
-            let Some(loci) = linked_single_loci(marker, loci_by_marker) else {
+            let Some(loci) = linked_single_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
             if loci.len() < 2 {
@@ -3975,7 +3976,7 @@ fn typed_marker_relation_definition(
             SketchConstraintDefinition::CoincidentLoci { loci }
         }
         HorizontalPoints | VerticalPoints => {
-            let Some(loci) = linked_single_loci(marker, loci_by_marker) else {
+            let Some(loci) = linked_single_loci(marker, markers_by_id, loci_by_marker) else {
                 return Some(native());
             };
             let [first, second] = loci.as_slice() else {
@@ -4026,7 +4027,7 @@ fn linked_single_arc_entity(
     {
         return None;
     }
-    let entities = linked_single_entities(marker, loci_by_marker)?;
+    let entities = linked_single_entities(marker, markers_by_id, loci_by_marker)?;
     let [entity] = entities.as_slice() else {
         return None;
     };
@@ -4061,16 +4062,14 @@ fn linked_midpoint_operands(
 
 fn linked_single_loci(
     marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<Vec<SketchLocus>> {
     let mut result = Vec::new();
     for link in &marker.links {
-        let loci = loci_by_marker.get(&link.entity_ref)?;
-        let [locus] = loci.as_slice() else {
-            return None;
-        };
-        if !result.contains(locus) {
-            result.push(locus.clone());
+        let locus = marker_point_locus(&link.entity_ref, markers_by_id, loci_by_marker)?;
+        if !result.contains(&locus) {
+            result.push(locus);
         }
     }
     Some(result)
@@ -4078,17 +4077,12 @@ fn linked_single_loci(
 
 fn linked_single_entities(
     marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<Vec<SketchEntityId>> {
     let mut result = Vec::new();
     for link in &marker.links {
-        let mut entities = loci_by_marker
-            .get(&link.entity_ref)?
-            .iter()
-            .map(locus_entity)
-            .collect::<Vec<_>>();
-        entities.sort_by(|left, right| left.0.cmp(&right.0));
-        entities.dedup();
+        let entities = marker_entities(&link.entity_ref, markers_by_id, loci_by_marker);
         let [entity] = entities.as_slice() else {
             return None;
         };
@@ -5502,6 +5496,15 @@ mod profile_join_tests {
             typed_marker_relation_definition(markers["reference"], &markers, &joins,),
             Some(SketchConstraintDefinition::Vertical {
                 entity: first.clone(),
+            })
+        );
+        let mut nested_horizontal = nested_reference.clone();
+        nested_horizontal.kind = SketchInputKind::Relation(SketchRelationKind::HorizontalPoints);
+        assert_eq!(
+            typed_marker_relation_definition(&nested_horizontal, &markers, &joins),
+            Some(SketchConstraintDefinition::HorizontalPoints {
+                first: joins["marker-a"][0].clone(),
+                second: joins["marker-b"][0].clone(),
             })
         );
         let mut coordinate_horizontal = marker("coordinate-horizontal", Some([0.0, 0.0]));
