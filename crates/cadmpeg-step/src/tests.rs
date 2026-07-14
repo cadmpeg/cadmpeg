@@ -940,6 +940,41 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
 }
 
 #[test]
+fn writer_round_trips_product_body_ownership() {
+    let mut ir = unit_cube();
+    let product = cadmpeg_ir::ids::ProductId("product-0".into());
+    ir.model.products.push(cadmpeg_ir::product::Product {
+        id: product.clone(),
+        product_id: "PART-001".into(),
+        name: Some("Cube part".into()),
+        bodies: vec![ir.model.bodies[0].id.clone()],
+    });
+    ir.model
+        .occurrences
+        .push(cadmpeg_ir::product::ProductOccurrence {
+            id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
+            product,
+            parent: cadmpeg_ir::product::OccurrenceParent::Root,
+            transform: cadmpeg_ir::transform::Transform::identity(),
+            name: Some("Cube root".into()),
+        });
+    let options = StepWriteOptions {
+        schema: StepSchema::Ap242Edition3,
+        unsupported: StepUnsupportedPolicy::Reject,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    write_step(&ir, &mut output, &options).expect("write product-owned body");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode product-owned body");
+    assert_eq!(decoded.ir.model.products.len(), 1);
+    assert_eq!(decoded.ir.model.products[0].product_id, "PART-001");
+    assert_eq!(decoded.ir.model.products[0].bodies.len(), 1);
+    assert_eq!(decoded.ir.model.occurrences.len(), 1);
+}
+
+#[test]
 fn decode_builds_product_occurrences_with_relative_placement() {
     use cadmpeg_ir::product::OccurrenceParent;
 
@@ -963,6 +998,27 @@ fn decode_builds_product_occurrences_with_relative_placement() {
     assert_eq!(child.transform.rows[2][3], 0.0);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let options = StepWriteOptions {
+        schema: StepSchema::Ap242Edition3,
+        ..StepWriteOptions::default()
+    };
+    let mut output = Vec::new();
+    write_step(&result.ir, &mut output, &options).expect("write product graph");
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written product graph");
+    assert_eq!(roundtrip.ir.model.products.len(), 2);
+    assert_eq!(roundtrip.ir.model.occurrences.len(), 2);
+    let child = roundtrip
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
+        .expect("round-tripped child occurrence");
+    assert!(matches!(child.parent, OccurrenceParent::Occurrence { .. }));
+    assert_eq!(child.transform.rows[0][3], 25.0);
 }
 
 #[test]
