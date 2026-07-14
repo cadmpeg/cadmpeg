@@ -337,23 +337,26 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             continue;
         }
         let basis_step = record.parameter(1).and_then(Value::reference);
-        let start = record.parameter(2).and_then(trim_parameter);
-        let end = record.parameter(3).and_then(trim_parameter);
         let sense = record.parameter(4).and_then(Value::logical);
-        let Some((basis_step, start, end, sense)) = basis_step
-            .zip(start)
-            .zip(end)
-            .zip(sense)
-            .map(|(((basis, start), end), sense)| (basis, start, end, sense))
-        else {
-            warnings.push(format!(
-                "TRIMMED_CURVE #{id} requires numeric trim parameters"
-            ));
+        let Some((basis_step, sense)) = basis_step.zip(sense) else {
+            warnings.push(format!("TRIMMED_CURVE #{id} has invalid basis or sense"));
             continue;
         };
         let basis = CurveId(format!("step:data:curve#{basis_step}"));
         let Some(geometry) = curve_geometries.get(&basis).cloned() else {
             warnings.push(format!("TRIMMED_CURVE #{id} has no decoded basis curve"));
+            continue;
+        };
+        let start = record
+            .parameter(2)
+            .and_then(|value| trim_parameter(value, &points, &geometry));
+        let end = record
+            .parameter(3)
+            .and_then(|value| trim_parameter(value, &points, &geometry));
+        let Some((start, end)) = start.zip(end) else {
+            warnings.push(format!(
+                "TRIMMED_CURVE #{id} has trim selectors incompatible with its basis curve"
+            ));
             continue;
         };
         let curve = CurveId(format!("step:data:curve#{id}"));
@@ -973,14 +976,68 @@ fn measure_number(value: &Value) -> Option<f64> {
     }
 }
 
-fn trim_parameter(value: &Value) -> Option<f64> {
+fn trim_parameter(
+    value: &Value,
+    points: &BTreeMap<u64, Point3>,
+    geometry: &CurveGeometry,
+) -> Option<f64> {
     match value {
         Value::Integer(value) => Some(*value as f64),
         Value::Real(value) => Some(*value),
-        Value::Typed(_, value) => trim_parameter(value),
-        Value::List(values) => values.iter().find_map(trim_parameter),
+        Value::Typed(_, value) => trim_parameter(value, points, geometry),
+        Value::Reference(id) => points
+            .get(id)
+            .and_then(|point| curve_parameter_at_point(geometry, *point)),
+        Value::List(values) => values
+            .iter()
+            .find_map(|value| trim_parameter(value, points, geometry)),
         _ => None,
     }
+}
+
+fn curve_parameter_at_point(geometry: &CurveGeometry, point: Point3) -> Option<f64> {
+    let offset =
+        |origin: Point3| Vector3::new(point.x - origin.x, point.y - origin.y, point.z - origin.z);
+    match geometry {
+        CurveGeometry::Line { origin, direction } => Some(dot(offset(*origin), *direction)),
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            ..
+        } => {
+            let radial = offset(*center);
+            let y_axis = cross(*axis, *ref_direction);
+            Some(dot(radial, y_axis).atan2(dot(radial, *ref_direction)))
+        }
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => {
+            let radial = offset(*center);
+            let minor_direction = cross(*axis, *major_direction);
+            Some(
+                (dot(radial, minor_direction) / minor_radius)
+                    .atan2(dot(radial, *major_direction) / major_radius),
+            )
+        }
+        _ => None,
+    }
+}
+
+fn dot(a: Vector3, b: Vector3) -> f64 {
+    a.x * b.x + a.y * b.y + a.z * b.z
+}
+
+fn cross(a: Vector3, b: Vector3) -> Vector3 {
+    Vector3::new(
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x,
+    )
 }
 
 fn composite_curve(

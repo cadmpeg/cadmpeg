@@ -344,13 +344,25 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert_eq!(placed.position.x, 1.0);
     assert_eq!(placed.position.y, 2.0);
     assert_eq!(placed.position.z, 3.0);
-    assert_eq!(result.ir.model.curves.len(), 6);
+    assert_eq!(result.ir.model.curves.len(), 7);
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Line { origin, direction }
             if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0
                 && direction.x == 0.0 && direction.y == 0.0 && direction.z == 1.0
     )));
+    assert!(result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| matches!(
+            curve.definition,
+            cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+                parameter_range: [start, end],
+                ..
+            } if start == 0.0 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        )));
     assert!(result.ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Ellipse { major_radius, minor_radius, .. }
@@ -431,7 +443,21 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             if center.x == 1.0 && center.y == 2.0 && center.z == 3.0 && radius == 4.0
     )));
     assert!(result.report.geometry_transferred);
-    assert_eq!(result.ir.model.procedural_curves.len(), 2);
+    assert_eq!(result.ir.model.procedural_curves.len(), 3);
+    let cartesian_trim = result
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "step:construction:trimmed_curve#29")
+        .expect("Cartesian trimmed curve");
+    assert!(matches!(
+        cartesian_trim.definition,
+        cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset {
+            parameter_range: [start, end],
+            ..
+        } if start == 0.0 && (end - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+    ));
     let (source, parameter_range) = result
         .ir
         .model
