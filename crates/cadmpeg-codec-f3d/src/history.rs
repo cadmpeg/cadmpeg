@@ -567,10 +567,10 @@ pub(crate) fn bind_feature_face_selections(
             continue;
         };
         if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
-            bind_face_selection(face, scope, groups, operands, topology);
+            bind_face_selection(face, scope, groups, operands, topology, transition);
         }
         if let cadmpeg_ir::features::Extent::ToFace { face, .. } = extent {
-            bind_face_selection(face, scope, groups, operands, topology);
+            bind_face_selection(face, scope, groups, operands, topology, transition);
         }
     }
 }
@@ -581,6 +581,7 @@ fn bind_face_selection(
     groups: &[crate::records::DesignConstructionOperandGroup],
     operands: &[crate::records::DesignFaceOperand],
     topology: &AsmHistoricalTopology,
+    transition: &crate::history_records::AsmHistoricalTransition,
 ) {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
         return;
@@ -611,13 +612,24 @@ fn bind_face_selection(
         if matches.next().is_some() {
             return;
         }
-        let candidates = faces_in_topology(&operand.candidate_faces, topology);
-        let [face] = candidates.as_slice() else {
-            return;
+        let previous_candidates = faces_in_topology(&operand.candidate_faces, topology);
+        let candidate = match previous_candidates.as_slice() {
+            [face] => face,
+            _ => {
+                let changed = faces_changed_by_transition(&previous_candidates, transition);
+                let [face] = changed.as_slice() else {
+                    return;
+                };
+                *face
+            }
         };
-        if !faces.contains(face) {
-            faces.push(face.clone());
+        if faces.contains(candidate) {
+            continue;
         }
+        if !operand.candidate_faces.contains(candidate) {
+            return;
+        }
+        faces.push(candidate.clone());
     }
     if !faces.is_empty() {
         *selection = cadmpeg_ir::features::FaceSelection::Resolved {
@@ -625,6 +637,24 @@ fn bind_face_selection(
             native: native.clone(),
         };
     }
+}
+
+fn faces_changed_by_transition<'a>(
+    candidates: &'a [cadmpeg_ir::ids::FaceId],
+    transition: &crate::history_records::AsmHistoricalTransition,
+) -> Vec<&'a cadmpeg_ir::ids::FaceId> {
+    let changed = transition
+        .topology
+        .faces
+        .deleted
+        .iter()
+        .chain(&transition.topology.faces.updated)
+        .copied()
+        .collect::<HashSet<_>>();
+    candidates
+        .iter()
+        .filter(|face| stable_ref(&face.0).is_some_and(|slot| changed.contains(&slot)))
+        .collect()
 }
 
 fn faces_in_topology(
@@ -1389,6 +1419,18 @@ mod tests {
                 &topology,
             ),
             [FaceId(id(4))]
+        );
+        let mut transition = AsmHistoricalTransition {
+            previous_state_id: Some(1),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        transition.topology.faces.updated = vec![4];
+        transition.topology.faces.inserted = vec![99];
+        let candidates = [FaceId(id(4)), FaceId(id(99))];
+        assert_eq!(
+            faces_changed_by_transition(&candidates, &transition),
+            [&candidates[0]]
         );
     }
 
