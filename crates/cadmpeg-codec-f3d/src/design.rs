@@ -6678,17 +6678,39 @@ fn parse_face_operand(
         return None;
     }
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
-    let recipe_node_offsets = recipe_program
+    let recipe_node_indices = recipe_program
         .windows(3)
         .enumerate()
         .filter(|(_, values)| *values == [-1, -1, 2])
-        .map(|(index, _)| u64::try_from(recipe_program_at.checked_add(index.checked_mul(4)?)?).ok())
-        .collect::<Option<Vec<_>>>()?;
-    if recipe_node_offsets.len() != node_count
-        || recipe_node_offsets.first()? != &recipe_program_offset.checked_add(12)?
-    {
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    if recipe_node_indices.len() != node_count || recipe_node_indices.first() != Some(&3) {
         return None;
     }
+    let recipe_node_offsets = recipe_node_indices
+        .iter()
+        .map(|index| u64::try_from(recipe_program_at.checked_add(index.checked_mul(4)?)?).ok())
+        .collect::<Option<Vec<_>>>()?;
+    let recipe_nodes = recipe_node_indices
+        .iter()
+        .copied()
+        .zip(
+            recipe_node_indices
+                .iter()
+                .copied()
+                .skip(1)
+                .chain(std::iter::once(recipe_program.len())),
+        )
+        .map(|(start, end)| {
+            Some(crate::records::DesignFaceRecipeNode {
+                byte_offset: u64::try_from(recipe_program_at.checked_add(start.checked_mul(4)?)?)
+                    .ok()?,
+                end_byte_offset: u64::try_from(recipe_program_at.checked_add(end.checked_mul(4)?)?)
+                    .ok()?,
+                program: recipe_program.get(start..end)?.to_vec(),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
     Some(DesignFaceOperand {
         id: format!(
             "f3d:{}:design-face-operand#{}",
@@ -6709,6 +6731,7 @@ fn parse_face_operand(
         recipe_program_offset,
         recipe_program,
         recipe_node_offsets,
+        recipe_nodes,
         candidate_faces: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
@@ -10758,6 +10781,13 @@ mod relation_tests {
             operand.recipe_node_offsets,
             [face_recipe_name_at as u64 + 36]
         );
+        assert_eq!(operand.recipe_nodes.len(), 1);
+        assert_eq!(
+            operand.recipe_nodes[0].byte_offset,
+            face_recipe_name_at as u64 + 36
+        );
+        assert_eq!(operand.recipe_nodes[0].end_byte_offset, face_next_at);
+        assert_eq!(operand.recipe_nodes[0].program, [-1, -1, 2, 7]);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, face_next_at);
         bind_face_operand_candidates(

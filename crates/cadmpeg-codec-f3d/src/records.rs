@@ -1064,6 +1064,8 @@ pub struct DesignFaceOperand {
     pub recipe_program: Vec<i32>,
     /// Byte offsets of the `[-1, -1, 2]` node openers declared by the program.
     pub recipe_node_offsets: Vec<u64>,
+    /// Ordered nodes partitioning the program after its three-word header.
+    pub recipe_nodes: Vec<DesignFaceRecipeNode>,
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
@@ -1071,6 +1073,17 @@ pub struct DesignFaceOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+/// One length-delimited node in a face regeneration recipe program.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFaceRecipeNode {
+    /// Byte offset of the node's `[-1, -1, 2]` opener.
+    pub byte_offset: u64,
+    /// Exclusive byte offset of the next node or the operand's following record.
+    pub end_byte_offset: u64,
+    /// Complete node words, including the three-word opener.
+    pub program: Vec<i32>,
 }
 
 /// Local-to-model placement frame referenced by a Design sketch scope.

@@ -1263,6 +1263,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .saturating_add(u64::try_from(index).unwrap_or(u64::MAX).saturating_mul(4))
             })
             .collect::<Vec<_>>();
+        let expected_nodes = expected_node_offsets
+            .iter()
+            .copied()
+            .zip(
+                expected_node_offsets
+                    .iter()
+                    .copied()
+                    .skip(1)
+                    .chain(std::iter::once(operand.next_byte_offset)),
+            )
+            .collect::<Vec<_>>();
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -1299,6 +1310,24 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && usize::try_from(operand.recipe_program[2]).ok()
                 == Some(operand.recipe_node_offsets.len())
             && operand.recipe_node_offsets == expected_node_offsets
+            && operand.recipe_nodes.len() == expected_nodes.len()
+            && operand
+                .recipe_nodes
+                .iter()
+                .zip(expected_nodes)
+                .all(|(node, (start, end))| {
+                    node.byte_offset == start
+                        && node.end_byte_offset == end
+                        && node.program.get(0..3) == Some(&[-1, -1, 2])
+                        && u64::try_from(node.program.len()).ok().is_some_and(|words| {
+                            start.saturating_add(words.saturating_mul(4)) == end
+                        })
+                })
+            && operand
+                .recipe_nodes
+                .iter()
+                .flat_map(|node| node.program.iter().copied())
+                .eq(operand.recipe_program.iter().copied().skip(3))
             && operand.recipe_node_offsets.first()
                 == Some(&operand.recipe_program_offset.saturating_add(12))
             && operand.recipe_program_offset
