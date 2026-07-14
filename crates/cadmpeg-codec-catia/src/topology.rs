@@ -910,6 +910,23 @@ pub struct MeshFaceCoverage {
     pub missing_edges: Vec<usize>,
 }
 
+/// One admissible placement of an unmatched physical edge within a recovered
+/// trim-boundary gap. Domains contain only placements participating in a
+/// complete end-to-end partition of every gap on the face.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct MeshEdgePlacementCandidate {
+    /// Physical edge-row ordinal.
+    pub edge: usize,
+    /// Positional face ordinal.
+    pub face: usize,
+    /// Boundary-cycle ordinal within the face.
+    pub cycle: usize,
+    /// First covered boundary-segment index.
+    pub start: usize,
+    /// Number of consecutive boundary segments covered by the edge.
+    pub segment_count: usize,
+}
+
 /// Recover exact face-local mesh coverage without assigning unmatched edge rows
 /// to gaps. A result exists only for a unique trim-handle width and when every
 /// matched interior occurs on one of its two serialized incident faces.
@@ -1003,6 +1020,138 @@ pub fn standard_mesh_face_coverage(
     <[Vec<MeshFaceCoverage>; 1]>::try_from(solutions)
         .ok()
         .map(|[coverage]| coverage)
+}
+
+/// Retain every complete span-consistent placement for edge rows that have no
+/// exact interior-handle occurrence. Rows with stored interiors cover exactly
+/// `arity - 1` segments. Arity-two rows carry no interior discretization and
+/// may cover any positive remaining span. The result is atomic when a face has
+/// more than 65,536 complete assignments.
+#[must_use]
+pub fn standard_mesh_missing_edge_placements(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+    const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
+
+    fn enumerate_face(
+        face: usize,
+        gaps: &[MeshBoundaryGap],
+        cycle_lengths: &[usize],
+        missing: &[usize],
+        rows: &[EdgeRow],
+    ) -> Option<Vec<MeshEdgePlacementCandidate>> {
+        struct Search<'a> {
+            face: usize,
+            gaps: &'a [MeshBoundaryGap],
+            cycle_lengths: &'a [usize],
+            missing: &'a [usize],
+            rows: &'a [EdgeRow],
+            assignments: usize,
+            candidates: HashSet<MeshEdgePlacementCandidate>,
+        }
+        impl Search<'_> {
+            fn walk(
+                &mut self,
+                gap: usize,
+                offset: usize,
+                used: u64,
+                placed: &mut Vec<MeshEdgePlacementCandidate>,
+            ) -> Option<()> {
+                if self.assignments > MAX_ASSIGNMENTS_PER_FACE {
+                    return None;
+                }
+                if gap == self.gaps.len() {
+                    if used.count_ones() as usize == self.missing.len() {
+                        self.assignments += 1;
+                        self.candidates.extend(placed.iter().copied());
+                    }
+                    return Some(());
+                }
+                let target = self.gaps[gap].length;
+                if offset == target {
+                    return self.walk(gap + 1, 0, used, placed);
+                }
+                for rank in 0..self.missing.len() {
+                    if used & (1 << rank) != 0 {
+                        continue;
+                    }
+                    let edge = self.missing[rank];
+                    let stored_span = self.rows[edge].handles.len().checked_sub(1)?;
+                    let remaining = target - offset;
+                    let spans: Box<dyn Iterator<Item = usize>> = if stored_span == 1 {
+                        Box::new(1..=remaining)
+                    } else {
+                        Box::new(std::iter::once(stored_span))
+                    };
+                    for segment_count in spans.filter(|span| *span <= remaining) {
+                        let value = MeshEdgePlacementCandidate {
+                            edge,
+                            face: self.face,
+                            cycle: self.gaps[gap].cycle,
+                            start: (self.gaps[gap].start + offset)
+                                % self.cycle_lengths[self.gaps[gap].cycle],
+                            segment_count,
+                        };
+                        placed.push(value);
+                        self.walk(gap, offset + segment_count, used | (1 << rank), placed)?;
+                        placed.pop();
+                    }
+                }
+                Some(())
+            }
+        }
+
+        if missing.len() > u64::BITS as usize {
+            return None;
+        }
+        let mut search = Search {
+            face,
+            gaps,
+            cycle_lengths,
+            missing,
+            rows,
+            assignments: 0,
+            candidates: HashSet::new(),
+        };
+        search.walk(0, 0, 0, &mut Vec::new())?;
+        if search.assignments == 0 || search.assignments > MAX_ASSIGNMENTS_PER_FACE {
+            return None;
+        }
+        let mut candidates = search.candidates.into_iter().collect::<Vec<_>>();
+        candidates.sort_unstable();
+        Some(candidates)
+    }
+
+    let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
+    let coverage = standard_mesh_face_coverage(bytes, edge_faces)?;
+    let mut solutions = Vec::new();
+    for width in [1, 2, 3] {
+        let Some(trims) = parse_trim_chain(bytes, face_start, face_count, width) else {
+            continue;
+        };
+        let cycles = trims
+            .iter()
+            .map(|trim| boundary_cycles(&trim.triangles))
+            .collect::<Option<Vec<_>>>()?;
+        let candidates = coverage
+            .iter()
+            .map(|face| {
+                enumerate_face(
+                    face.face,
+                    &face.gaps,
+                    &cycles[face.face].iter().map(Vec::len).collect::<Vec<_>>(),
+                    &face.missing_edges,
+                    &edge_rows,
+                )
+            })
+            .collect::<Option<Vec<_>>>()?;
+        solutions.push(candidates);
+    }
+    <[Vec<Vec<MeshEdgePlacementCandidate>>; 1]>::try_from(solutions)
+        .ok()
+        .map(|[candidates]| candidates)
 }
 
 /// Propagate byte-level endpoint ports through independently resolved physical

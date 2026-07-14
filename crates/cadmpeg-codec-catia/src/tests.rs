@@ -263,6 +263,11 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     assert_eq!(coverage[0].missing_edges, [0]);
     assert_eq!(coverage[0].gaps.len(), 1);
     assert_eq!(coverage[0].gaps[0].length, 2);
+    let placements = crate::topology::standard_mesh_missing_edge_placements(&bytes, &[[0, 0]; 4])
+        .expect("complete missing-edge placement domain");
+    assert_eq!(placements[0].len(), 1);
+    assert_eq!(placements[0][0].edge, 0);
+    assert_eq!(placements[0][0].segment_count, 2);
 }
 
 #[test]
