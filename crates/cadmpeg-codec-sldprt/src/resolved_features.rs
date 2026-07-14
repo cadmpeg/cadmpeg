@@ -5317,9 +5317,13 @@ pub(crate) fn project_relation_bindings(
             else {
                 continue;
             };
-            let Some(definition) =
-                typed_marker_relation_definition(marker, &markers_by_id, &loci_by_marker)
-            else {
+            let Some(definition) = typed_marker_relation_definition_in_sketch(
+                marker,
+                sketch,
+                sketch_entities,
+                &markers_by_id,
+                &loci_by_marker,
+            ) else {
                 continue;
             };
             constraints.push(SketchConstraint {
@@ -5374,8 +5378,25 @@ fn relation_parameter_by_display_name<'a>(
         .then_some(first)
 }
 
+#[cfg(test)]
 fn typed_marker_relation_definition(
     marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+) -> Option<SketchConstraintDefinition> {
+    typed_marker_relation_definition_in_sketch(
+        marker,
+        &SketchId(String::new()),
+        &[],
+        markers_by_id,
+        loci_by_marker,
+    )
+}
+
+fn typed_marker_relation_definition_in_sketch(
+    marker: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchConstraintDefinition> {
@@ -5476,7 +5497,18 @@ fn typed_marker_relation_definition(
                     _ => unreachable!("relation kind was filtered above"),
                 }
             } else if matches!(kind, Horizontal | Vertical) {
-                let Some(loci) = linked_single_loci(marker, markers_by_id, loci_by_marker) else {
+                let loci =
+                    linked_single_loci(marker, markers_by_id, loci_by_marker).or_else(|| {
+                        unique_axis_aligned_linked_loci(
+                            marker,
+                            sketch,
+                            sketch_entities,
+                            markers_by_id,
+                            loci_by_marker,
+                            kind == Horizontal,
+                        )
+                    });
+                let Some(loci) = loci else {
                     return Some(native());
                 };
                 let [first, second] = loci.as_slice() else {
@@ -5607,6 +5639,58 @@ fn typed_marker_relation_definition(
         | crate::records::SketchRelationKind::Radius
         | crate::records::SketchRelationKind::Diameter => return None,
         _ => native(),
+    })
+}
+
+fn unique_axis_aligned_linked_loci(
+    marker: &SketchInputEntity,
+    sketch: &SketchId,
+    sketch_entities: &[SketchEntity],
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    horizontal: bool,
+) -> Option<Vec<SketchLocus>> {
+    let [first_link, second_link] = marker.links.as_slice() else {
+        return None;
+    };
+    let first = marker_point_locus(&first_link.entity_ref, markers_by_id, loci_by_marker);
+    let second = marker_point_locus(&second_link.entity_ref, markers_by_id, loci_by_marker);
+    let (known, known_is_first) = match (first, second) {
+        (Some(known), None) => (known, true),
+        (None, Some(known)) => (known, false),
+        _ => return None,
+    };
+    let point = |locus: &SketchLocus| {
+        let entity = sketch_entities
+            .iter()
+            .find(|entity| entity.id == locus_entity(locus))?;
+        sketch_entity_loci(entity)
+            .into_iter()
+            .find_map(|(point, candidate)| (candidate == *locus).then_some(point))
+    };
+    let known_point = point(&known)?;
+    let mut candidates = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .flat_map(sketch_entity_loci)
+        .filter_map(|(candidate_point, candidate)| {
+            let aligned = if horizontal {
+                same_dimension_length(candidate_point.v, known_point.v)
+            } else {
+                same_dimension_length(candidate_point.u, known_point.u)
+            };
+            (candidate != known && aligned).then_some(candidate)
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(if known_is_first {
+        vec![known, candidate.clone()]
+    } else {
+        vec![candidate.clone(), known]
     })
 }
 
@@ -7148,9 +7232,9 @@ mod profile_join_tests {
         relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
-        typed_relation_definition, unique_compatible_marker_transform,
-        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_distance_loci_pair,
-        unique_profile_distance_locus, MarkerTransform,
+        typed_relation_definition, unique_axis_aligned_linked_loci,
+        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
+        unique_profile_distance_loci_pair, unique_profile_distance_locus, MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
@@ -7514,6 +7598,74 @@ mod profile_join_tests {
                 &sketch,
                 &parameter,
                 &[first, second, unrelated, ambiguous],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn axis_relation_fallback_requires_one_aligned_locus_in_the_complete_sketch() {
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, u: f64, v: f64| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        };
+        let first_entity = point("first-entity", 1.0, 2.0);
+        let second_entity = point("second-entity", 4.0, 2.0);
+        let unrelated = point("unrelated", 8.0, 9.0);
+        let first = marker("first-marker", Some([0.001, 0.002]));
+        let second = marker("second-marker", None);
+        let mut relation = marker("relation", None);
+        relation.links = vec![
+            SketchInputLink {
+                local_id: 1,
+                entity_ref: first.id.clone(),
+            },
+            SketchInputLink {
+                local_id: 2,
+                entity_ref: second.id.clone(),
+            },
+        ];
+        let markers = HashMap::from([(first.id.as_str(), &first), (second.id.as_str(), &second)]);
+        let loci = HashMap::from([(
+            first.id.clone(),
+            vec![SketchLocus::Entity(first_entity.id.clone())],
+        )]);
+        assert_eq!(
+            unique_axis_aligned_linked_loci(
+                &relation,
+                &sketch,
+                &[
+                    first_entity.clone(),
+                    second_entity.clone(),
+                    unrelated.clone()
+                ],
+                &markers,
+                &loci,
+                true,
+            ),
+            Some(vec![
+                SketchLocus::Entity(first_entity.id.clone()),
+                SketchLocus::Entity(second_entity.id.clone()),
+            ])
+        );
+
+        let ambiguous = point("ambiguous", 6.0, 2.0);
+        assert_eq!(
+            unique_axis_aligned_linked_loci(
+                &relation,
+                &sketch,
+                &[first_entity, second_entity, unrelated, ambiguous],
+                &markers,
+                &loci,
+                true,
             ),
             None
         );

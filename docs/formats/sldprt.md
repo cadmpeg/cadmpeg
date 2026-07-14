@@ -147,6 +147,8 @@ Operand-cell tags `d6 80`, `cc 80`, `7b 83`, `b6 8a`, `cb 8d`, `9d 92`, `7c bc`,
 
 A point operand projects to a typed sketch constraint only when its marker identifies exactly one profile locus. A coordinate shared by multiple profile loci does not select one by ordering.
 
+When exactly one operand of a horizontal-points or vertical-points relation identifies a profile locus, the other operand identifies the sole distinct locus in the complete owning sketch with the same vertical or horizontal coordinate, respectively. Zero or multiple aligned loci leave the relation unresolved.
+
 A circular dimension whose operand marker does not identify a profile locus selects the unique circle or circular arc in the owning sketch whose solved radius equals the radius parameter or half the diameter parameter. Zero or multiple radius matches leave the relation native.
 
 A unique profile-derived coordinate transform supersedes placement-derived projection. When multiple profile-compatible transforms remain, an axis-aligned placement selects its identical signed permutation and translation when present among them. When no profile transform exists and the sketch normal, u-axis, and `normal × u` axis are each parallel to distinct world axes, the marker coordinate pair supplies the two ascending world-coordinate components other than the normal axis. The signed axis permutation and sketch origin supply the fallback sketch coordinates. An arbitrarily rotated in-plane frame does not determine marker-coordinate semantics without profile anchors.
