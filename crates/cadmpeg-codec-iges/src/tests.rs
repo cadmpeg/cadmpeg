@@ -2615,6 +2615,12 @@ fn decode_applies_standard_body_color_and_face_color_override() {
         .any(|appearance| appearance.id.0 == "iges:appearance:color#D13"
             && appearance.name.as_deref() == Some("custom")));
     assert_eq!(result.ir.model.appearance_bindings.len(), 2);
+    let native = result.ir.native.namespace("iges").unwrap();
+    assert_eq!(native.version, 2);
+    assert_eq!(native.arenas["colors"].len(), 1);
+    assert_eq!(native.arenas["colors"][0].id, "iges:presentation:color#D13");
+    assert_eq!(native.arenas["colors"][0].fields["red_percent"], 20.0);
+    assert_eq!(native.arenas["display_attributes"].len(), 7);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -3790,9 +3796,11 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
         source_length
     );
     let native = result.ir.native.namespace("iges").unwrap();
-    assert_eq!(native.version, 1);
+    assert_eq!(native.version, 2);
     assert_eq!(native.arenas["cards"].len(), 7);
     assert_eq!(native.arenas["entities"].len(), 1);
+    assert!(native.arenas["colors"].is_empty());
+    assert_eq!(native.arenas["display_attributes"].len(), 1);
     assert_eq!(native.arenas["entities"][0].id, "iges:entity:directory#1");
     assert_eq!(result.ir.model.points.len(), 1);
     assert_eq!(result.ir.model.points[0].position.x, 1.0);

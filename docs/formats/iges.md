@@ -72,6 +72,8 @@ Directory color zero supplies no direct color. Positive values `1` through `8` s
 
 A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. Curve and surface source-object associations retain their direct Directory colors.
 
+The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type 314 percentages, names, and fallback color numbers. Its `display_attributes` arena stores one record per Directory entity with visibility, line-font number or definition link, level number or definition link, view, line weight, and color number or definition link. These values remain distinct from effective neutral appearance bindings.
+
 ## Byte accounting
 
 Every source byte belongs to one nonempty half-open ledger span. Typed spans cover values with decoded semantics. Structural spans cover framing, delimiters, padding, and sequence fields. Opaque spans name the native record that retains their bytes or their length and digest. Canonical ledger order is ascending start offset. Adjacent spans may be coalesced only when class, owner, and meaning are identical. Coverage starts at zero, ends at source length, and has neither gaps nor overlaps.

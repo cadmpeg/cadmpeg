@@ -66,6 +66,32 @@ struct NativeCopiousData {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeColorDefinition {
+    id: String,
+    source_entity: String,
+    red_percent: Option<f64>,
+    green_percent: Option<f64>,
+    blue_percent: Option<f64>,
+    name: Option<Vec<u8>>,
+    fallback_color_number: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct NativeDisplayAttributes {
+    id: String,
+    source_entity: String,
+    visible: bool,
+    line_font_number: i64,
+    line_font_definition: Option<String>,
+    level_number: i64,
+    level_definition: Option<String>,
+    view: i64,
+    line_weight_number: i64,
+    color_number: i64,
+    color_definition: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -266,12 +292,51 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let colors = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 314 && entry.form == 0)
+        .map(|entry| {
+            let parameters = by_directory.get(&entry.sequence).copied();
+            NativeColorDefinition {
+                id: format!("iges:presentation:color#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                red_percent: parameters.and_then(|record| record.number(1)),
+                green_percent: parameters.and_then(|record| record.number(2)),
+                blue_percent: parameters.and_then(|record| record.number(3)),
+                name: parameters
+                    .and_then(|record| record.string(4))
+                    .map(<[u8]>::to_vec),
+                fallback_color_number: entry.color,
+            }
+        })
+        .collect::<Vec<_>>();
+    let display_attributes = directory
+        .iter()
+        .map(|entry| NativeDisplayAttributes {
+            id: format!("iges:presentation:display-attributes#D{}", entry.sequence),
+            source_entity: format!("iges:entity:directory#{}", entry.sequence),
+            visible: entry.status.blank == 0,
+            line_font_number: entry.line_font,
+            line_font_definition: (entry.line_font < 0)
+                .then(|| format!("iges:entity:directory#{}", entry.line_font.unsigned_abs())),
+            level_number: entry.level,
+            level_definition: (entry.level < 0)
+                .then(|| format!("iges:entity:directory#{}", entry.level.unsigned_abs())),
+            view: entry.view,
+            line_weight_number: entry.line_weight,
+            color_number: entry.color,
+            color_definition: (entry.color < 0)
+                .then(|| format!("iges:presentation:color#D{}", entry.color.unsigned_abs())),
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
-    namespace.version = 1;
+    namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
     namespace.set_arena("entities", &entities)?;
     namespace.set_arena("directions", &directions)?;
     namespace.set_arena("transformations", &transforms)?;
     namespace.set_arena("copious_data", &copious_data)?;
+    namespace.set_arena("colors", &colors)?;
+    namespace.set_arena("display_attributes", &display_attributes)?;
     Ok(())
 }
