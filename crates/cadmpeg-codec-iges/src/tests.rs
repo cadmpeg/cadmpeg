@@ -2207,6 +2207,32 @@ fn solid_instance_file() -> Vec<u8> {
     ])
 }
 
+fn patterned_instance_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "BASE".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 412,
+            form: 0,
+            label: "RECT".into(),
+            status: "00000000",
+            parameters: "412,1,2,1,2,3,2,3,10,5,0.25,1,0,2;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 414,
+            form: 0,
+            label: "CIRCLE".into(),
+            status: "00000000",
+            parameters: "414,3,4,10,20,30,8,0.5,1.25,2,1,1,3;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3310,6 +3336,32 @@ fn decode_preserves_solid_definition_and_instance_identities() {
     assert_eq!(instances.len(), 1);
     assert_eq!(instances[0].id, "iges:product:solid-instance#D3");
     assert_eq!(instances[0].fields["solid"], "iges:entity:directory#1");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_preserves_rectangular_and_circular_pattern_order() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(patterned_instance_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let rectangular = &native.arenas["rectangular_arrays"][0];
+    assert_eq!(rectangular.fields["base"], "iges:entity:directory#1");
+    assert_eq!(rectangular.fields["columns"], 2);
+    assert_eq!(rectangular.fields["rows"], 3);
+    assert_eq!(rectangular.fields["positions"][0], 2);
+    let circular = &native.arenas["circular_arrays"][0];
+    assert_eq!(circular.fields["base"], "iges:entity:directory#3");
+    assert_eq!(circular.fields["location_count"], 4);
+    assert_eq!(circular.fields["positions"][0], 1);
+    assert_eq!(circular.fields["positions"][1], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

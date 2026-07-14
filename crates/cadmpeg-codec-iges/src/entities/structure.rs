@@ -40,7 +40,7 @@ struct NetworkInstance {
     valid_fields: bool,
 }
 
-fn solid_instance_cycle(
+fn single_target_cycle(
     sequence: u32,
     targets: &BTreeMap<u32, u32>,
     visiting: &mut BTreeSet<u32>,
@@ -53,13 +53,78 @@ fn solid_instance_cycle(
         return true;
     }
     if targets.get(&sequence).is_some_and(|target| {
-        targets.contains_key(target) && solid_instance_cycle(*target, targets, visiting, visited)
+        targets.contains_key(target) && single_target_cycle(*target, targets, visiting, visited)
     }) {
         return true;
     }
     visiting.remove(&sequence);
     visited.insert(sequence);
     false
+}
+
+fn array_base_type(entity_type: i64, form: i64) -> bool {
+    matches!(
+        entity_type,
+        100 | 104
+            | 110
+            | 112
+            | 116
+            | 126
+            | 202
+            | 206
+            | 208
+            | 210
+            | 212
+            | 214
+            | 216
+            | 218
+            | 220
+            | 222
+            | 228
+            | 308
+            | 412
+            | 414
+    ) || (entity_type == 402 && matches!(form, 1 | 7 | 14 | 15))
+}
+
+fn array_mask_valid(
+    record: &ParameterRecord,
+    count_index: usize,
+    flag_index: usize,
+    first_position_index: usize,
+    total: usize,
+) -> bool {
+    let Some(count) = record
+        .integer(count_index)
+        .and_then(|value| usize::try_from(value).ok())
+    else {
+        return false;
+    };
+    let Some(flag) = record
+        .integer(flag_index)
+        .filter(|value| matches!(*value, 0..=1))
+    else {
+        return false;
+    };
+    let positions = (0..count)
+        .map(|index| {
+            record
+                .integer(first_position_index + index)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|position| *position >= 1 && *position <= total)
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(positions) = positions else {
+        return false;
+    };
+    let unique = positions.iter().copied().collect::<BTreeSet<_>>().len() == positions.len();
+    let cardinality_valid = count == 0
+        || if flag == 0 {
+            count <= total / 2
+        } else {
+            count >= total.div_ceil(2)
+        };
+    unique && cardinality_valid
 }
 
 fn number_or(record: &ParameterRecord, index: usize, default: f64) -> Option<f64> {
@@ -120,6 +185,91 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
+
+    let array_targets = directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
+        .filter_map(|entry| {
+            records
+                .get(&entry.sequence)
+                .and_then(|record| record.integer(1))
+                .and_then(|value| u32::try_from(value).ok())
+                .map(|target| (entry.sequence, target))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut visited_arrays = BTreeSet::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let target_valid = array_targets.get(&entry.sequence).is_some_and(|target| {
+            target % 2 == 1
+                && entries
+                    .get(target)
+                    .is_some_and(|base| array_base_type(base.entity_type, base.form))
+        });
+        let cyclic = single_target_cycle(
+            entry.sequence,
+            &array_targets,
+            &mut BTreeSet::new(),
+            &mut visited_arrays,
+        );
+        let transform_valid = global.length_factor_mm().is_some_and(|factor| {
+            resolve_transform(
+                entry.transform,
+                &entries,
+                &records,
+                factor,
+                &mut BTreeSet::new(),
+            )
+            .is_ok()
+        });
+        let fields_valid = if entry.entity_type == 412 {
+            let scale_valid =
+                number_or(record, 2, 1.0).is_some_and(|value| value.is_finite() && value > 0.0);
+            let coordinates_valid =
+                (3..=5).all(|index| record.number(index).is_some_and(f64::is_finite));
+            let columns = record
+                .integer(6)
+                .and_then(|value| usize::try_from(value).ok());
+            let rows = record
+                .integer(7)
+                .and_then(|value| usize::try_from(value).ok());
+            let dimensions = columns.zip(rows).and_then(|(columns, rows)| {
+                (columns > 0 && rows > 0)
+                    .then(|| columns.checked_mul(rows))
+                    .flatten()
+            });
+            scale_valid
+                && coordinates_valid
+                && (8..=10).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && dimensions.is_some_and(|total| array_mask_valid(record, 11, 12, 13, total))
+        } else {
+            let locations = record
+                .integer(2)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0);
+            (3..=5).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && record
+                    .number(6)
+                    .is_some_and(|value| value.is_finite() && value > 0.0)
+                && (7..=8).all(|index| record.number(index).is_some_and(f64::is_finite))
+                && locations.is_some_and(|total| array_mask_valid(record, 9, 10, 11, total))
+        };
+        if target_valid && !cyclic && transform_valid && fields_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "array base, dimensions, selection mask, transform, or acyclicity is invalid",
+            ));
+        }
+    }
 
     for entry in directory
         .iter()
@@ -240,7 +390,7 @@ pub(super) fn project(
             )
             .is_ok()
         });
-        let cyclic = solid_instance_cycle(
+        let cyclic = single_target_cycle(
             *sequence,
             &solid_instances,
             &mut BTreeSet::new(),

@@ -269,6 +269,38 @@ struct NativeConnectPoint {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeRectangularArray {
+    id: String,
+    source_entity: String,
+    base: Option<String>,
+    scale: Option<f64>,
+    origin: [Option<f64>; 3],
+    columns: Option<i64>,
+    rows: Option<i64>,
+    column_spacing: Option<f64>,
+    row_spacing: Option<f64>,
+    rotation: Option<f64>,
+    do_dont_flag: Option<i64>,
+    positions: Vec<Option<i64>>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeCircularArray {
+    id: String,
+    source_entity: String,
+    base: Option<String>,
+    location_count: Option<i64>,
+    center: [Option<f64>; 3],
+    radius: Option<f64>,
+    start_angle: Option<f64>,
+    delta_angle: Option<f64>,
+    do_dont_flag: Option<i64>,
+    positions: Vec<Option<i64>>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -962,6 +994,74 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let rectangular_arrays = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 412 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(11))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeRectangularArray {
+                id: format!("iges:product:rectangular-array#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                base: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                scale: record.and_then(|record| record.number(2)),
+                origin: [
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                    record.and_then(|record| record.number(5)),
+                ],
+                columns: record.and_then(|record| record.integer(6)),
+                rows: record.and_then(|record| record.integer(7)),
+                column_spacing: record.and_then(|record| record.number(8)),
+                row_spacing: record.and_then(|record| record.number(9)),
+                rotation: record.and_then(|record| record.number(10)),
+                do_dont_flag: record.and_then(|record| record.integer(12)),
+                positions: (0..count)
+                    .map(|index| record.and_then(|record| record.integer(13 + index)))
+                    .collect(),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
+    let circular_arrays = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 414 && entry.form == 0)
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(9))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            NativeCircularArray {
+                id: format!("iges:product:circular-array#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                base: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                location_count: record.and_then(|record| record.integer(2)),
+                center: [
+                    record.and_then(|record| record.number(3)),
+                    record.and_then(|record| record.number(4)),
+                    record.and_then(|record| record.number(5)),
+                ],
+                radius: record.and_then(|record| record.number(6)),
+                start_angle: record.and_then(|record| record.number(7)),
+                delta_angle: record.and_then(|record| record.number(8)),
+                do_dont_flag: record.and_then(|record| record.integer(10)),
+                positions: (0..count)
+                    .map(|index| record.and_then(|record| record.integer(11 + index)))
+                    .collect(),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -984,5 +1084,7 @@ pub(crate) fn store(
     namespace.set_arena("network_definitions", &network_definitions)?;
     namespace.set_arena("network_instances", &network_instances)?;
     namespace.set_arena("connect_points", &connect_points)?;
+    namespace.set_arena("rectangular_arrays", &rectangular_arrays)?;
+    namespace.set_arena("circular_arrays", &circular_arrays)?;
     Ok(())
 }
