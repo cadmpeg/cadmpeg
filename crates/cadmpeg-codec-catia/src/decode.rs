@@ -1219,7 +1219,7 @@ mod chart_tests {
             faces: [0, 1],
             geometry: StandardCurveGeometry::Bspline,
         };
-        let id = build_standard_edge_curve(
+        let (id, range) = build_standard_edge_curve(
             &mut ir,
             &mut annotations,
             &[
@@ -1233,9 +1233,9 @@ mod chart_tests {
             &[],
             &support,
             [0, 0],
-        )
-        .0
-        .expect("spline support identifies a curve carrier");
+        );
+        let id = id.expect("spline support identifies a curve carrier");
+        assert_eq!(range, Some([0.0, 1.0]));
         assert_eq!(ir.model.curves[0].id, id);
         assert!(matches!(
             ir.model.curves[0].geometry,
@@ -5021,7 +5021,7 @@ fn build_standard_edge_curve(
     support: &geometry::StandardCurveSupport,
     points: [usize; 2],
 ) -> (Option<CurveId>, Option<[f64; 2]>) {
-    let (geometry, param_range) = match &support.geometry {
+    let (geometry, mut param_range) = match &support.geometry {
         geometry::StandardCurveGeometry::Line => {
             let start = ir.model.points[points[0]].position;
             let end = ir.model.points[points[1]].position;
@@ -5167,6 +5167,7 @@ fn build_standard_edge_curve(
                 },
                 cache_fit_tolerance: None,
             });
+            param_range = Some([0.0, 1.0]);
         }
     }
     (Some(id), param_range)
