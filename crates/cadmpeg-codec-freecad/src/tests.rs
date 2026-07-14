@@ -439,6 +439,71 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
 }
 
 #[test]
+fn transfers_uniform_linear_patterns_and_retains_nonuniform_patterns_natively() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="3">
+ <Object type="PartDesign::Feature" name="Seed" id="1"/>
+ <Object type="PartDesign::LinearPattern" name="Uniform" id="2"/>
+ <Object type="PartDesign::LinearPattern" name="Custom" id="3"/>
+</Objects>
+<ObjectData Count="3">
+ <Object name="Seed"><Properties Count="0"/></Object>
+ <Object name="Uniform"><Properties Count="7">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="-1" z="0"/></Property>
+  <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Length" type="App::PropertyLength"><Float value="12"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="4"/></Property>
+  <Property name="Occurrences2" type="App::PropertyInteger"><Integer value="1"/></Property>
+ </Properties></Object>
+ <Object name="Custom"><Properties Count="6">
+  <Property name="Originals" type="App::PropertyLinkList"><LinkList count="1"><Link value="Seed"/></LinkList></Property>
+  <Property name="Direction" type="App::PropertyVector"><Vector x="1" y="0" z="0"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Offset" type="App::PropertyLength"><Float value="5"/></Property>
+  <Property name="Occurrences" type="App::PropertyInteger"><Integer value="3"/></Property>
+  <Property name="Spacings" type="App::PropertyFloatList"><FloatList count="2"><Float value="2"/><Float value="7"/></FloatList></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("linear patterns");
+    let feature = |name: &str| {
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+    };
+    assert!(matches!(
+        &feature("Uniform").definition,
+        cadmpeg_ir::features::FeatureDefinition::Pattern {
+            seeds,
+            pattern: cadmpeg_ir::features::PatternKind::Linear {
+                direction: Some(direction),
+                spacing: cadmpeg_ir::features::Length(4.0),
+                count: 4,
+            },
+        } if seeds.len() == 1 && direction.y == 1.0
+    ));
+    assert!(matches!(
+        &feature("Custom").definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. }
+            if kind == "PartDesign::LinearPattern"
+    ));
+    assert_eq!(feature("Uniform").dependencies.len(), 1);
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("retained natively but has no neutral semantics")));
+}
+
+#[test]
 fn reports_attributable_native_design_blockers() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="PartDesign::FeatureCustom" name="Custom" id="1"/></Objects>

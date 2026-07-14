@@ -8,8 +8,8 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
     BodySelection, BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature,
     FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
-    PathRef, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    SketchSpace, SweepMode,
+    PathRef, PatternKind, PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, SketchSpace, SweepMode,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -119,6 +119,14 @@ pub(crate) fn transfer(
             })
         } else if is_sweep(&object.type_name) {
             sweep_definition(&object.type_name, &owned, &sketch_ids).unwrap_or_else(|| {
+                FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                }
+            })
+        } else if is_pattern(&object.type_name) {
+            pattern_definition(&object.type_name, &owned, &feature_ids).unwrap_or_else(|| {
                 FeatureDefinition::Native {
                     kind: object.type_name.clone(),
                     parameters: native_parameters(&owned),
@@ -1488,6 +1496,111 @@ fn sweep_definition(
     })
 }
 
+fn pattern_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    features: &HashMap<&str, FeatureId>,
+) -> Option<FeatureDefinition> {
+    let originals = property(properties, "Originals")?;
+    let seeds = originals
+        .links
+        .iter()
+        .filter_map(|link| link.object.as_deref())
+        .filter_map(|object| features.get(object).cloned())
+        .collect::<Vec<_>>();
+    if seeds.is_empty() || seeds.len() != originals.links.len() {
+        return None;
+    }
+
+    let count = integer_property(properties, "Occurrences")?;
+    if count == 0 || count > u32::MAX as u64 {
+        return None;
+    }
+    let count = count as u32;
+    let mode = integer_property(properties, "Mode").unwrap_or(0);
+
+    let pattern = if kind.ends_with("LinearPattern") {
+        // The neutral linear form is one-dimensional and evenly spaced. Preserve
+        // two-direction and custom-spacing patterns natively until the IR can
+        // describe their complete transform sequence.
+        if integer_property(properties, "Occurrences2").unwrap_or(1) > 1
+            || has_custom_spacing(properties, "Spacings", "SpacingPattern")?
+        {
+            return None;
+        }
+        let spacing = match mode {
+            0 if count > 1 => scalar_named(properties, "Length")? / f64::from(count - 1),
+            1 => scalar_named(properties, "Offset")?,
+            _ => return None,
+        };
+        if !spacing.is_finite() || spacing <= 0.0 {
+            return None;
+        }
+        let mut direction = vector_property(properties, "Direction");
+        if bool_property(properties, "Reversed").unwrap_or(false) {
+            direction = direction.map(|value| Vector3::new(-value.x, -value.y, -value.z));
+        }
+        PatternKind::Linear {
+            direction,
+            spacing: Length(spacing),
+            count,
+        }
+    } else if kind.ends_with("PolarPattern") {
+        if has_custom_spacing(properties, "Spacings", "SpacingPattern")? {
+            return None;
+        }
+        let mut axis_dir = vector_property(properties, "Axis")?;
+        if bool_property(properties, "Reversed").unwrap_or(false) {
+            axis_dir = Vector3::new(-axis_dir.x, -axis_dir.y, -axis_dir.z);
+        }
+        let angle_degrees = match mode {
+            0 => scalar_named(properties, "Angle")?,
+            1 if count > 1 => scalar_named(properties, "Offset")? * f64::from(count - 1),
+            _ => return None,
+        };
+        PatternKind::Circular {
+            axis_origin: Point3::new(0.0, 0.0, 0.0),
+            axis_dir,
+            angle: cadmpeg_ir::features::Angle(angle_degrees.to_radians()),
+            count,
+        }
+    } else {
+        return None;
+    };
+    Some(FeatureDefinition::Pattern { seeds, pattern })
+}
+
+fn scalar_named(properties: &[&PropertyRecord], name: &str) -> Option<f64> {
+    property(properties, name).and_then(scalar_value)
+}
+
+fn integer_property(properties: &[&PropertyRecord], name: &str) -> Option<u64> {
+    let value = scalar_named(properties, name)?;
+    (value.is_finite() && value >= 0.0 && value.fract() == 0.0).then_some(value as u64)
+}
+
+fn has_custom_spacing(
+    properties: &[&PropertyRecord],
+    spacings_name: &str,
+    pattern_name: &str,
+) -> Option<bool> {
+    let spacings =
+        property(properties, spacings_name).map_or_else(|| Some(Vec::new()), numeric_list)?;
+    let pattern =
+        property(properties, pattern_name).map_or_else(|| Some(Vec::new()), numeric_list)?;
+    Some(spacings.iter().any(|value| *value != -1.0) || pattern.len() > 1)
+}
+
+fn numeric_list(property: &PropertyRecord) -> Option<Vec<f64>> {
+    let document = roxmltree::Document::parse(&property.raw_xml).ok()?;
+    document
+        .descendants()
+        .filter_map(|node| node.attribute("value").or_else(|| node.attribute("Value")))
+        .map(str::parse::<f64>)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()
+}
+
 fn operation_boolean(kind: &str) -> BooleanOp {
     if kind.contains("Subtractive") {
         BooleanOp::Cut
@@ -1539,6 +1652,12 @@ fn is_sweep(kind: &str) -> bool {
             "PartDesign::AdditivePipe" | "PartDesign::SubtractivePipe"
         )
 }
+fn is_pattern(kind: &str) -> bool {
+    matches!(
+        kind,
+        "PartDesign::LinearPattern" | "PartDesign::PolarPattern"
+    )
+}
 fn is_dress_up(kind: &str) -> bool {
     kind.contains("Fillet") || kind.contains("Chamfer")
 }
@@ -1556,6 +1675,7 @@ fn is_design_object(kind: &str) -> bool {
         || is_boolean(kind)
         || is_loft(kind)
         || is_sweep(kind)
+        || is_pattern(kind)
         || is_extrusion(kind)
         || is_revolution(kind)
         || is_dress_up(kind)

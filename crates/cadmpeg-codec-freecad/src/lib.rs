@@ -1108,6 +1108,29 @@ fn semantic_losses(ir: &CadIr) -> Vec<LossNote> {
             })
         })
         .collect::<Vec<_>>();
+    losses.extend(ir.model.features.iter().filter_map(|feature| {
+        let cadmpeg_ir::features::FeatureDefinition::Pattern {
+            pattern:
+                cadmpeg_ir::features::PatternKind::Linear {
+                    direction: None, ..
+                },
+            ..
+        } = &feature.definition
+        else {
+            return None;
+        };
+        Some(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Blocking,
+            message: "FCStd linear-pattern direction is retained as a native reference but is not geometrically resolved".into(),
+            provenance: Some(cadmpeg_ir::LossProvenance {
+                format: "fcstd".into(),
+                stream: "Document.xml".into(),
+                offset: 0,
+                tag: feature.native_ref.clone(),
+            }),
+        })
+    }));
     losses.extend(ir.model.sketch_entities.iter().filter_map(|entity| {
         let cadmpeg_ir::sketches::SketchGeometry::Native { native_kind } = &entity.geometry else {
             return None;
