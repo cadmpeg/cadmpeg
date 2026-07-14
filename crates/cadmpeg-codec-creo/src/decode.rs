@@ -560,9 +560,17 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    let ir = build_ir(&scan)?;
+    let mut ir = build_ir(&scan)?;
     let report = build_report(&scan, options.container_only);
-    Ok(DecodeResult::new(ir, report))
+    let annotations = std::mem::take(&mut ir.annotations);
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        cadmpeg_ir::SourceFidelity {
+            annotations,
+            ..cadmpeg_ir::SourceFidelity::default()
+        },
+    ))
 }
 
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
