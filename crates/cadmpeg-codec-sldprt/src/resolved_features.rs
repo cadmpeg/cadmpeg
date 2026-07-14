@@ -253,7 +253,8 @@ mod marker_tests {
     use super::{
         arc_angle_relation_kind, compact_body_path_at, compact_body_retention_mode,
         compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
-        compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
+        compact_edge_component_path_at, compact_edge_selection_at,
+        compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_surface_selection_at, component_path_features, component_path_terminal_feature,
@@ -1104,6 +1105,21 @@ mod marker_tests {
             compact_edge_selection_at(&payload, marker),
             Some(vec![2, 3])
         );
+        assert_eq!(
+            compact_edge_component_path_at(&payload, marker),
+            Some(vec![
+                FeatureInputComponentPathEntry {
+                    instance: 0x803d,
+                    type_signature: [1; 12],
+                    local_id: 2,
+                },
+                FeatureInputComponentPathEntry {
+                    instance: 0x804a,
+                    type_signature: [2; 12],
+                    local_id: 3,
+                },
+            ])
+        );
     }
 
     #[test]
@@ -1145,6 +1161,7 @@ mod marker_tests {
             compact_edge_selection_at(&payload, marker),
             Some(vec![4, 8, 12])
         );
+        assert_eq!(compact_edge_component_path_at(&payload, marker), None);
     }
 
     #[test]
@@ -2344,6 +2361,11 @@ fn compact_edge_selections(
     histories: &[crate::records::FeatureHistory],
     lane: &FeatureInputLane,
 ) -> Vec<FeatureInputEdgeSelection> {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .cloned()
+        .collect::<Vec<_>>();
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -2419,6 +2441,11 @@ fn compact_edge_selections(
         selections.sort_unstable_by_key(|selection| selection.0);
         selections.dedup_by_key(|selection| selection.0);
         for (offset, local_edge_ids) in selections {
+            let components =
+                compact_edge_component_path_at(&lane.native_payload, offset).unwrap_or_default();
+            let producer_feature_refs = component_path_features(&components, &history_features);
+            let terminal_feature_ref =
+                component_path_terminal_feature(&components, &history_features);
             result.push(FeatureInputEdgeSelection {
                 id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
                 parent: lane.id.clone(),
@@ -2427,6 +2454,9 @@ fn compact_edge_selections(
                 object_name_ref: name.id.clone(),
                 feature_ref: feature.id.clone(),
                 local_edge_ids,
+                components,
+                producer_feature_refs,
+                terminal_feature_ref,
             });
         }
     }
@@ -2631,6 +2661,25 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     compact_homogeneous_edge_ids(payload, marker + 18, count)
         .or_else(|| compact_heterogeneous_edge_path_ids(payload, marker + 18, count))
         .or_else(|| compact_u16_edge_ids(payload, marker + 18, count))
+}
+
+pub(crate) fn compact_edge_component_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker - 8..marker - 4)? != [0x00, 0x02, 0x00, 0x00]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| *count != 0)?;
+    compact_heterogeneous_component_path(payload, marker + 18, count)
+        .map(|(components, _)| components)
 }
 
 fn compact_homogeneous_edge_ids(
@@ -4854,6 +4903,10 @@ pub(crate) fn project_compact_edge_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) {
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
     let selections = lanes.iter().flat_map(|lane| &lane.edge_selections).fold(
         HashMap::<&str, Vec<&FeatureInputEdgeSelection>>::new(),
         |mut by_feature, selection| {
@@ -4881,9 +4934,29 @@ pub(crate) fn project_compact_edge_selections(
             _ => continue,
         };
         if matches!(edges, cadmpeg_ir::features::EdgeSelection::Unresolved) {
-            *edges = cadmpeg_ir::features::EdgeSelection::Native(compact_edge_selection_set_value(
-                edge_selections,
-            ));
+            let native = compact_edge_selection_set_value(edge_selections);
+            let generated = edge_selections
+                .iter()
+                .map(|selection| {
+                    let native_feature = selection.terminal_feature_ref.as_ref()?;
+                    let feature = feature_ids_by_native.get(native_feature)?.clone();
+                    let local_id = selection.components.last()?.local_id.to_string();
+                    Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
+                })
+                .collect::<Option<Vec<_>>>();
+            *edges = match generated.filter(|edges| !edges.is_empty()) {
+                Some(edges) => cadmpeg_ir::features::EdgeSelection::Generated { edges, native },
+                None => cadmpeg_ir::features::EdgeSelection::Native(native),
+            };
+            for dependency in edge_selections
+                .iter()
+                .flat_map(|selection| &selection.producer_feature_refs)
+                .filter_map(|native| feature_ids_by_native.get(native))
+            {
+                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                    feature.dependencies.push(dependency.clone());
+                }
+            }
         }
     }
 }

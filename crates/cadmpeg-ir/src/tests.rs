@@ -2529,7 +2529,7 @@ fn flex_modes_round_trip_and_validate() {
 
 #[test]
 fn edge_selections_round_trip_through_json() {
-    use crate::features::EdgeSelection;
+    use crate::features::{EdgeSelection, FeatureId, GeneratedEdgeRef};
     use crate::ids::EdgeId;
 
     let selections = vec![
@@ -2538,6 +2538,13 @@ fn edge_selections_round_trip_through_json() {
         EdgeSelection::Resolved {
             edges: vec![EdgeId("synthetic:test:edge#0".into())],
             native: "edge:10".into(),
+        },
+        EdgeSelection::Generated {
+            edges: vec![GeneratedEdgeRef {
+                feature: FeatureId("synthetic:test:feature#4".into()),
+                local_id: "7".into(),
+            }],
+            native: "persistent:4:7".into(),
         },
         EdgeSelection::Native("sldprt:history:feature#10:0".into()),
     ];

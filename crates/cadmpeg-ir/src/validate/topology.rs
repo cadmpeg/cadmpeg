@@ -2080,14 +2080,32 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in edge_selections {
-            if let EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } = selection {
-                check_ids(
-                    findings,
-                    &feature.id.0,
-                    "selected edge",
-                    edges.iter().map(|id| id.0.as_str()),
-                    &ids.edges,
-                );
+            match selection {
+                EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "selected edge",
+                        edges.iter().map(|id| id.0.as_str()),
+                        &ids.edges,
+                    );
+                }
+                EdgeSelection::Generated { edges, native } => {
+                    if edges.is_empty()
+                        || native.trim().is_empty()
+                        || edges.iter().any(|edge| {
+                            edge.local_id.trim().is_empty()
+                                || !feature.dependencies.contains(&edge.feature)
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated edge selection is invalid",
+                        );
+                    }
+                }
+                EdgeSelection::Unresolved | EdgeSelection::Native(_) => {}
             }
         }
         for selection in face_selections {

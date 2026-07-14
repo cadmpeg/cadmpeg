@@ -954,8 +954,25 @@ pub enum EdgeSelection {
         /// Format-native selection reference.
         native: String,
     },
+    /// Edges in intermediate regenerated feature results, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local edge identities.
+        edges: Vec<GeneratedEdgeRef>,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
+}
+
+/// Persistent identity of an edge in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedEdgeRef {
+    /// Feature whose regenerated result owns the edge.
+    pub feature: FeatureId,
+    /// Feature-local persistent edge identity.
+    pub local_id: String,
 }
 
 /// Persistent identity of a face in one regenerated feature result.

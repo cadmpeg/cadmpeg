@@ -261,6 +261,15 @@ pub struct FeatureInputEdgeSelection {
     pub feature_ref: String,
     /// Ordered feature-local edge identifiers.
     pub local_edge_ids: Vec<u32>,
+    /// Complete typed path entries when this is an entry-form vector.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub components: Vec<FeatureInputComponentPathEntry>,
+    /// Ordered history features traversed by the persistent edge path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub producer_feature_refs: Vec<String>,
+    /// History feature owning the terminal edge component.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_feature_ref: Option<String>,
 }
 
 /// One compact feature-local surface-component selection.

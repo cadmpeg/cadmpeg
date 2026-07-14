@@ -3016,7 +3016,9 @@ fn face_selection_value(selection: &FaceSelection) -> Option<String> {
 
 fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
     match selection {
-        EdgeSelection::Native(native) | EdgeSelection::Resolved { native, .. }
+        EdgeSelection::Native(native)
+        | EdgeSelection::Resolved { native, .. }
+        | EdgeSelection::Generated { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
@@ -3442,6 +3444,10 @@ fn validate_compact_edge_selection_edits(
             .or_default()
             .push(selection);
     }
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
     for feature in features {
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
@@ -3458,9 +3464,20 @@ fn validate_compact_edge_selection_edits(
             }
             _ => continue,
         };
-        let expected = EdgeSelection::Native(
-            crate::resolved_features::compact_edge_selection_set_value(edge_selections),
-        );
+        let native = crate::resolved_features::compact_edge_selection_set_value(edge_selections);
+        let generated = edge_selections
+            .iter()
+            .map(|selection| {
+                let native_feature = selection.terminal_feature_ref.as_deref()?;
+                let feature = feature_ids_by_native.get(native_feature)?.clone();
+                let local_id = selection.components.last()?.local_id.to_string();
+                Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
+            })
+            .collect::<Option<Vec<_>>>();
+        let expected = match generated.filter(|edges| !edges.is_empty()) {
+            Some(edges) => EdgeSelection::Generated { edges, native },
+            None => EdgeSelection::Native(native),
+        };
         if edges != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact edge selection",
