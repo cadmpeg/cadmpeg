@@ -301,7 +301,7 @@ assertions = ["primitive-semantics", "placement", "byte-coverage"]
 [[entity]]
 type = 162
 name = "solid-of-revolution"
-forms = [0]
+forms = [0, 1]
 domain = "geometry"
 decoder = "entities::csg::decode_revolution"
 destination = "native.iges.solids"

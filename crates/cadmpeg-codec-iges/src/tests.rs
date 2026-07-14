@@ -1556,6 +1556,18 @@ fn explicit_tetrahedron_solid_file_with_options(
     transformed: bool,
     inconsistent_radial_sense: bool,
 ) -> Vec<u8> {
+    explicit_tetrahedron_solid_file_extended(transformed, inconsistent_radial_sense, false)
+}
+
+fn explicit_tetrahedron_solid_with_boolean_file() -> Vec<u8> {
+    explicit_tetrahedron_solid_file_extended(false, false, true)
+}
+
+fn explicit_tetrahedron_solid_file_extended(
+    transformed: bool,
+    inconsistent_radial_sense: bool,
+    with_boolean: bool,
+) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut entities = vec![
         (116, 0, "POINTA", "00010000", "116,0,0,0,0;"),
@@ -1647,6 +1659,12 @@ fn explicit_tetrahedron_solid_file_with_options(
             "00010000",
             "124,1,0,0,10,0,1,0,20,0,0,1,30;",
         ));
+    }
+    if with_boolean {
+        entities.extend([
+            (158, 0, "SPHERE", "00000000", "158,1,2,2,2;"),
+            (180, 1, "MIXED", "00000000", "180,3,-55,-57,1;"),
+        ]);
     }
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -2064,6 +2082,67 @@ fn primitive_solids_file() -> Vec<u8> {
             label: "ELLIPSO".into(),
             status: "00000000",
             parameters: "168,4,3,2,1,2,3,1,0,0,0,0,1;".into(),
+        },
+    ])
+}
+
+fn procedural_and_boolean_solids_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "PROFILE1".into(),
+            status: "00010000",
+            parameters: "110,1,0,0,2,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "PROFILE2".into(),
+            status: "00010000",
+            parameters: "100,0,0,0,1,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 162,
+            form: 0,
+            label: "REVOPEN".into(),
+            status: "00000000",
+            parameters: "162,1,0.5,0,0,0,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 162,
+            form: 1,
+            label: "REVCLOSE".into(),
+            status: "00000000",
+            parameters: "162,3,1,0,0,0,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 164,
+            form: 0,
+            label: "EXTRUDE".into(),
+            status: "00000000",
+            parameters: "164,3,5,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE1".into(),
+            status: "00000000",
+            parameters: "158,2,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE2".into(),
+            status: "00000000",
+            parameters: "158,1,3,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "UNION".into(),
+            status: "00000000",
+            parameters: "180,3,-11,-13,1;".into(),
         },
     ])
 }
@@ -2962,6 +3041,115 @@ fn decode_rejects_invalid_csg_primitive_dimensions_semantically() {
         .message
         .contains("primitive dimension invariant is violated")));
     assert!(!result.report.geometry_transferred);
+}
+
+#[test]
+fn decode_types_swept_solids_and_balanced_boolean_postfix() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(procedural_and_boolean_solids_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+    let procedural = &native.arenas["procedural_solids"];
+    assert_eq!(procedural.len(), 3);
+    let open_revolution = procedural
+        .iter()
+        .find(|solid| solid.id == "iges:solid:procedural#D5")
+        .unwrap();
+    assert_eq!(open_revolution.fields["kind"], "revolution");
+    assert_eq!(open_revolution.fields["form"], 0);
+    assert_eq!(open_revolution.fields["amount"], 0.5);
+    let closed_revolution = procedural
+        .iter()
+        .find(|solid| solid.id == "iges:solid:procedural#D7")
+        .unwrap();
+    assert_eq!(closed_revolution.fields["form"], 1);
+    let extrusion = procedural
+        .iter()
+        .find(|solid| solid.id == "iges:solid:procedural#D9")
+        .unwrap();
+    assert_eq!(extrusion.fields["kind"], "linear_extrusion");
+    let trees = &native.arenas["boolean_trees"];
+    assert_eq!(trees.len(), 1);
+    assert_eq!(trees[0].fields["declared_length"], 3);
+    assert_eq!(trees[0].fields["terms"].as_array().unwrap().len(), 3);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_form_one_boolean_tree_with_brep_operand() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_with_boolean_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let trees = &result.ir.native.namespace("iges").unwrap().arenas["boolean_trees"];
+    let tree = trees
+        .iter()
+        .find(|tree| tree.id == "iges:solid:boolean-tree#D59")
+        .unwrap_or_else(|| panic!("losses={:#?}", result.report.losses));
+    assert_eq!(tree.fields["form"], 1);
+    assert_eq!(
+        tree.fields["terms"][0]["entity"],
+        "iges:entity:directory#55"
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_rejects_cyclic_boolean_tree_references() {
+    let bytes = owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "158,1,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "TREE1".into(),
+            status: "00000000",
+            parameters: "180,3,-1,-5,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 180,
+            form: 0,
+            label: "TREE2".into(),
+            status: "00000000",
+            parameters: "180,3,-1,-3,1;".into(),
+        },
+    ]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        result.ir.native.namespace("iges").unwrap().arenas["boolean_trees"].len(),
+        2
+    );
+    assert_eq!(
+        result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss
+                .message
+                .contains("Boolean operands, form, or reference acyclicity is invalid"))
+            .count(),
+        2
+    );
 }
 
 fn append_tetrahedral_shell(

@@ -136,6 +136,36 @@ struct NativePrimitiveSolid {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeProceduralSolid {
+    id: String,
+    source_entity: String,
+    kind: String,
+    form: i64,
+    profile: Option<String>,
+    amount: Option<f64>,
+    origin: Option<[Option<f64>; 3]>,
+    direction: [Option<f64>; 3],
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum NativeBooleanTerm {
+    Operand { entity: Option<String>, raw: i64 },
+    Operation { operation: i64 },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeBooleanTree {
+    id: String,
+    source_entity: String,
+    form: i64,
+    declared_length: Option<i64>,
+    terms: Vec<NativeBooleanTerm>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -513,6 +543,69 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let procedural_solids = directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 162 | 164))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let number = |index| record.and_then(|record| record.number(index));
+            let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
+            let revolution = entry.entity_type == 162;
+            NativeProceduralSolid {
+                id: format!("iges:solid:procedural#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                kind: if revolution {
+                    "revolution".into()
+                } else {
+                    "linear_extrusion".into()
+                },
+                form: entry.form,
+                profile: record
+                    .and_then(|record| record.integer(1))
+                    .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                amount: number(2),
+                origin: revolution.then(|| axis(3)),
+                direction: axis(if revolution { 6 } else { 3 }),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
+    let boolean_trees = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let terms = (0..count)
+                .filter_map(|index| record.and_then(|record| record.integer(2 + index)))
+                .map(|value| {
+                    if value < 0 {
+                        NativeBooleanTerm::Operand {
+                            entity: value
+                                .checked_neg()
+                                .map(|sequence| format!("iges:entity:directory#{sequence}")),
+                            raw: value,
+                        }
+                    } else {
+                        NativeBooleanTerm::Operation { operation: value }
+                    }
+                })
+                .collect();
+            NativeBooleanTree {
+                id: format!("iges:solid:boolean-tree#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                declared_length: record.and_then(|record| record.integer(1)),
+                terms,
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -525,5 +618,7 @@ pub(crate) fn store(
     namespace.set_arena("line_fonts", &line_fonts)?;
     namespace.set_arena("definition_levels", &definition_levels)?;
     namespace.set_arena("primitive_solids", &primitive_solids)?;
+    namespace.set_arena("procedural_solids", &procedural_solids)?;
+    namespace.set_arena("boolean_trees", &boolean_trees)?;
     Ok(())
 }

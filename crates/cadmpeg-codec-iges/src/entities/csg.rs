@@ -5,6 +5,7 @@ use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
 use crate::parameter::{ParameterRecord, TokenValue};
+use cadmpeg_ir::ids::CurveId;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -33,8 +34,73 @@ fn orthogonal(left: Vector3, right: Vector3) -> bool {
     (left.x * right.x + left.y * right.y + left.z * right.z).abs() <= 1.0e-10
 }
 
+fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
+    record.integer(index).and_then(|value| {
+        let sequence = u32::try_from(value).ok()?;
+        (sequence % 2 == 1).then_some(sequence)
+    })
+}
+
+fn profile_closed(ir: &CadIr, sequence: u32, tolerance: f64) -> Option<bool> {
+    let curve = CurveId(format!("iges:model:curve#D{sequence}"));
+    let edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.curve.as_ref() == Some(&curve))?;
+    let point = |vertex: &cadmpeg_ir::ids::VertexId| {
+        let point_id = &ir
+            .model
+            .vertices
+            .iter()
+            .find(|item| item.id == *vertex)?
+            .point;
+        ir.model
+            .points
+            .iter()
+            .find(|item| item.id == *point_id)
+            .map(|item| item.position)
+    };
+    let start = point(&edge.start)?;
+    let end = point(&edge.end)?;
+    Some(super::evaluation::distance(start, end) <= tolerance)
+}
+
+#[derive(Clone, Copy)]
+enum BooleanTerm {
+    Operand(u32),
+    Operation,
+}
+
+fn boolean_cycle(
+    sequence: u32,
+    definitions: &BTreeMap<u32, Vec<BooleanTerm>>,
+    visiting: &mut BTreeSet<u32>,
+    visited: &mut BTreeSet<u32>,
+) -> bool {
+    if visited.contains(&sequence) {
+        return false;
+    }
+    if !visiting.insert(sequence) {
+        return true;
+    }
+    if definitions.get(&sequence).is_some_and(|terms| {
+        terms.iter().any(|term| match term {
+            BooleanTerm::Operand(target) if definitions.contains_key(target) => {
+                boolean_cycle(*target, definitions, visiting, visited)
+            }
+            BooleanTerm::Operand(_) | BooleanTerm::Operation => false,
+        })
+    }) {
+        return true;
+    }
+    visiting.remove(&sequence);
+    visited.insert(sequence);
+    false
+}
+
 pub(super) fn project(
-    _ir: &mut CadIr,
+    ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     global: &Global,
@@ -177,6 +243,194 @@ pub(super) fn project(
             continue;
         }
         decoded.insert(entry.sequence);
+    }
+
+    for entry in directory.iter().filter(|entry| {
+        (entry.entity_type == 162 && matches!(entry.form, 0 | 1))
+            || (entry.entity_type == 164 && entry.form == 0)
+    }) {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        let Some(profile) = pointer(record, 1).filter(|sequence| {
+            ir.model
+                .curves
+                .iter()
+                .any(|curve| curve.id == CurveId(format!("iges:model:curve#D{sequence}")))
+        }) else {
+            losses.push(entity_loss(entry, "solid profile curve pointer is invalid"));
+            continue;
+        };
+        let Some(amount) =
+            number_or(record, 2, 1.0).filter(|value| value.is_finite() && *value > 0.0)
+        else {
+            losses.push(entity_loss(entry, "solid sweep amount is invalid"));
+            continue;
+        };
+        if entry.entity_type == 162 && amount > 1.0 {
+            losses.push(entity_loss(
+                entry,
+                "solid revolution fraction is greater than one",
+            ));
+            continue;
+        }
+        let (origin, direction_start) = if entry.entity_type == 162 {
+            (vector_or(record, 3, Vector3::new(0.0, 0.0, 0.0)), 6)
+        } else {
+            (Some(Vector3::new(0.0, 0.0, 0.0)), 3)
+        };
+        let direction = vector_or(record, direction_start, Vector3::new(0.0, 0.0, 1.0));
+        if origin.is_none_or(|origin| {
+            !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite()
+        }) || direction.is_none_or(|direction| !unit(direction))
+        {
+            losses.push(entity_loss(entry, "solid sweep axis is invalid"));
+            continue;
+        }
+        let Some(closed) = global
+            .minimum_resolution_mm()
+            .and_then(|tolerance| profile_closed(ir, profile, tolerance))
+        else {
+            losses.push(entity_loss(
+                entry,
+                "solid profile endpoints are unavailable",
+            ));
+            continue;
+        };
+        if (entry.entity_type == 162 && entry.form == 0 && closed)
+            || (entry.entity_type == 164 && !closed)
+        {
+            losses.push(entity_loss(
+                entry,
+                "solid sweep form disagrees with profile closure",
+            ));
+            continue;
+        }
+        if resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        )
+        .is_err()
+        {
+            losses.push(entity_loss(entry, "solid sweep placement is invalid"));
+            continue;
+        }
+        decoded.insert(entry.sequence);
+    }
+
+    let mut boolean_definitions = BTreeMap::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 180 && matches!(entry.form, 0 | 1))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(count) = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 2)
+        else {
+            losses.push(entity_loss(
+                entry,
+                "Boolean postfix length is not greater than two",
+            ));
+            continue;
+        };
+        let terms = (0..count)
+            .map(|index| {
+                let value = record.integer(2 + index)?;
+                if value < 0 {
+                    let sequence = u32::try_from(value.checked_neg()?).ok()?;
+                    (sequence % 2 == 1).then_some(BooleanTerm::Operand(sequence))
+                } else if matches!(value, 1..=3) {
+                    Some(BooleanTerm::Operation)
+                } else {
+                    None
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(terms) = terms else {
+            losses.push(entity_loss(entry, "Boolean postfix term is invalid"));
+            continue;
+        };
+        let mut depth = 0_usize;
+        let valid_stack = terms.iter().all(|term| match term {
+            BooleanTerm::Operand(_) => {
+                depth += 1;
+                true
+            }
+            BooleanTerm::Operation if depth >= 2 => {
+                depth -= 1;
+                true
+            }
+            BooleanTerm::Operation => false,
+        });
+        if !valid_stack || depth != 1 {
+            losses.push(entity_loss(entry, "Boolean postfix stack is unbalanced"));
+            continue;
+        }
+        boolean_definitions.insert(entry.sequence, terms);
+    }
+    let mut visited = BTreeSet::new();
+    for (sequence, terms) in &boolean_definitions {
+        let entry = entries[sequence];
+        let operands_valid = terms.iter().all(|term| match term {
+            BooleanTerm::Operation => true,
+            BooleanTerm::Operand(target) => entries.get(target).is_some_and(|target_entry| {
+                matches!(
+                    target_entry.entity_type,
+                    150 | 152 | 154 | 156 | 158 | 160 | 162 | 164 | 168 | 180 | 430
+                ) || (entry.form == 1 && target_entry.entity_type == 186)
+            }),
+        });
+        let has_brep = terms.iter().any(|term| match term {
+            BooleanTerm::Operand(target) => entries
+                .get(target)
+                .is_some_and(|target_entry| target_entry.entity_type == 186),
+            BooleanTerm::Operation => false,
+        });
+        let cyclic = boolean_cycle(
+            *sequence,
+            &boolean_definitions,
+            &mut BTreeSet::new(),
+            &mut visited,
+        );
+        if !operands_valid || (entry.form == 1) != has_brep || cyclic {
+            losses.push(entity_loss(
+                entry,
+                "Boolean operands, form, or reference acyclicity is invalid",
+            ));
+            continue;
+        }
+        let Some(factor) = global.length_factor_mm() else {
+            losses.push(entity_loss(entry, "units or model scale are unsupported"));
+            continue;
+        };
+        if resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        )
+        .is_err()
+        {
+            losses.push(entity_loss(entry, "Boolean result placement is invalid"));
+            continue;
+        }
+        decoded.insert(*sequence);
     }
 
     Projection {

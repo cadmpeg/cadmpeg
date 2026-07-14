@@ -54,6 +54,12 @@ Type 150 stores three positive block lengths, origin, X axis, and Z axis. Type 1
 
 The `native.iges` `primitive_solids` arena retains the typed primitive kind, named native dimensions, omitted-versus-present origin and axis components, source entity, and transformation link. Invalid dimensions, axes, units, or transformation chains prevent semantic decoding while the generic native entity remains intact.
 
+Type 162 defines a solid of revolution from a profile-curve pointer, a revolution fraction in `(0,1]` defaulting to `1`, an axis origin defaulting to `(0,0,0)`, and a unit axis defaulting to `(0,0,1)`. Form 0 requires an open profile whose endpoints close to the axis by projection. Form 1 carries a profile whose area is closed by the profile itself or by joining its endpoints. Type 164 defines a linear extrusion from a closed profile, a positive length, and a unit direction defaulting to `(0,0,1)`. Both retain their Directory transformation as the resulting solid's placement.
+
+Type 180 Forms 0 and 1 store a postorder regularized Boolean expression. The declared term count is greater than two. Negative terms are negated odd Directory pointers to solid operands; positive terms `1`, `2`, and `3` mean union, intersection, and difference. Each operation consumes two stack values and produces one. The stack never underflows and contains exactly one value after the final term. Operand links are acyclic. Form 0 excludes Manifold Solid B-rep operands; Form 1 contains at least one such operand. The typed `boolean_trees` arena retains ordered operands and operations without converting the expression to an unordered relationship graph.
+
+The `native.iges` `procedural_solids` arena retains sweep kind, form, profile identity, native sweep amount, omitted-versus-present axis fields, and transformation link. Semantic decoding requires a decoded profile carrier and closure consistent with the owning form.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.
