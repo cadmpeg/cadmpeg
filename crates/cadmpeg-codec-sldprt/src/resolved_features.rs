@@ -855,6 +855,27 @@ fn compact_edge_selections(
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
     let mut result = Vec::new();
+    let mut compact_edge_classes = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moCompEdge_c");
+    let Some(compact_edge_class) = compact_edge_classes.next() else {
+        return result;
+    };
+    if compact_edge_classes.next().is_some() {
+        return result;
+    }
+    let class_name_end = usize::try_from(compact_edge_class.offset)
+        .ok()
+        .and_then(|offset| offset.checked_add(6 + compact_edge_class.name.len()));
+    let compact_edge_token = class_name_end.and_then(|offset| {
+        Some(u16::from_le_bytes(
+            lane.native_payload
+                .get(offset..offset + 2)?
+                .try_into()
+                .ok()?,
+        ))
+    });
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
         if !matches!(
             native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
@@ -869,22 +890,20 @@ fn compact_edge_selections(
             .get(object_index + 1)
             .and_then(|(next, _)| usize::try_from(next.offset).ok())
             .unwrap_or(lane.native_payload.len());
-        let mut child_classes = lane.classes.iter().filter(|class| {
-            class.name == "moCompEdge_c"
-                && usize::try_from(class.offset).is_ok_and(|offset| (start..end).contains(&offset))
-        });
-        let Some(child_class) = child_classes.next() else {
-            continue;
+        let direct_child = usize::try_from(compact_edge_class.offset)
+            .ok()
+            .filter(|offset| (start..end).contains(offset));
+        let selection = if let Some(child_start) = direct_child {
+            lane.native_payload
+                .get(child_start..end)
+                .and_then(|payload| compact_edge_selection_vector(payload, child_start))
+        } else {
+            let Some(token) = compact_edge_token else {
+                continue;
+            };
+            unique_repeated_edge_selection(&lane.native_payload, start, end, token)
         };
-        if child_classes.next().is_some() {
-            continue;
-        }
-        let child_start = usize::try_from(child_class.offset).expect("class offset was checked");
-        let Some(payload) = lane.native_payload.get(child_start..end) else {
-            continue;
-        };
-        let Some((offset, local_edge_ids)) = compact_edge_selection_vector(payload, child_start)
-        else {
+        let Some((offset, local_edge_ids)) = selection else {
             continue;
         };
         result.push(FeatureInputEdgeSelection {
@@ -898,6 +917,29 @@ fn compact_edge_selections(
         });
     }
     result
+}
+
+fn unique_repeated_edge_selection(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    token: u16,
+) -> Option<(usize, Vec<u32>)> {
+    let token = token.to_le_bytes();
+    let mut selections = Vec::new();
+    for offset in start..end.saturating_sub(110) {
+        if payload.get(offset..offset + 2)? != token || payload.get(offset + 2)? != &2 {
+            continue;
+        }
+        let marker = offset + 108;
+        if let Some(ids) = compact_edge_selection_at(payload, marker) {
+            selections.push((marker, ids));
+        }
+    }
+    let [selection] = selections.as_slice() else {
+        return None;
+    };
+    Some(selection.clone())
 }
 
 const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
