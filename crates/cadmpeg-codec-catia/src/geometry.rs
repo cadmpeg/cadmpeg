@@ -631,6 +631,9 @@ pub struct A8SurfaceHeader {
     pub v_count: u32,
     /// Whether the record selects rational weights.
     pub rational: bool,
+    /// The fixed 141-byte surface tail begins immediately after the mode byte,
+    /// so no inline pole or weight grid is present.
+    pub poles_elided: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -3674,6 +3677,18 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
     if u_count == 0 || v_count == 0 || u_count > 20_000 || v_count > 20_000 {
         return None;
     }
+    let tail_end = at.checked_add(141)?;
+    let poles_elided = matches!(data.get(at..at + 4), Some([0x05, a, 0x05, b]) if *a % 4 == 1 && *b % 4 == 1)
+        && tail_end <= end
+        && (tail_end == end
+            || matches!(
+                data.get(tail_end..tail_end + 3),
+                Some([
+                    0xa5 | 0xa8 | 0xa9 | 0xb2 | 0xb3 | 0xb4 | 0xb5 | 0xb6,
+                    0x03,
+                    _
+                ])
+            ));
     Some(ParsedA8SurfaceHeader {
         header: A8SurfaceHeader {
             pos,
@@ -3687,6 +3702,7 @@ fn parse_a8_surface_header(data: &[u8], pos: usize) -> Option<ParsedA8SurfaceHea
             u_count,
             v_count,
             rational: mode == 0x05,
+            poles_elided,
         },
         pole_start: at,
         end,
@@ -3710,8 +3726,12 @@ fn a8_surface(data: &[u8], pos: usize) -> Option<A8Surface> {
         u_count,
         v_count,
         rational,
+        poles_elided,
         ..
     } = header;
+    if poles_elided {
+        return None;
+    }
     let poles = (u_count as usize).checked_mul(v_count as usize)?;
     let pole_bytes = poles.checked_mul(24)?;
     if pole_start.checked_add(pole_bytes)? > end {

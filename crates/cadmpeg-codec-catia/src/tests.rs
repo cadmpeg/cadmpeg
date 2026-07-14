@@ -2989,6 +2989,23 @@ fn a8_surface_header_survives_an_opaque_pole_representation() {
     assert_eq!((headers[0].u_count, headers[0].v_count), (3, 3));
     assert_eq!(headers[0].u_multiplicities, [3, 3]);
     assert_eq!(headers[0].v_multiplicities, [3, 3]);
+    assert!(!headers[0].poles_elided);
+}
+
+#[test]
+fn a8_surface_header_identifies_an_elided_pole_grid() {
+    let mut bytes = a8_surface_stream();
+    bytes.truncate(59);
+    let mut tail = vec![0; 141];
+    tail[..4].copy_from_slice(&[0x05, 0x21, 0x05, 0x05]);
+    bytes.extend_from_slice(&tail);
+    bytes.extend_from_slice(&[0xb5, 0x03, 0x5e, 0, 1, 0, 0, 0]);
+    let payload_len = u32::try_from(bytes.len() - 11).unwrap();
+    bytes[3..7].copy_from_slice(&payload_len.to_le_bytes());
+    assert!(crate::geometry::a8_surfaces(&bytes).is_empty());
+    let headers = crate::geometry::a8_surface_headers(&bytes);
+    assert_eq!(headers.len(), 1);
+    assert!(headers[0].poles_elided);
 }
 
 #[test]

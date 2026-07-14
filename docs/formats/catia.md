@@ -345,6 +345,8 @@ Frame: `a8 03 <cls> <payload_len:u32le @+3> <object_id:u32le @+7> <payload @+11>
 
 For `a8 03 34`, the lead byte, U degree/flags/distinct knots/multiplicities, V degree/flags/distinct knots/multiplicities, and mode form a complete parameter-lattice header. The pole counts are `sum(multiplicities) - degree - 1` independently in U and V. Header validity is independent of whether the following pole representation is the inline XYZ grid.
 
+The elided-pole form places the fixed 141-byte range/affine/extrapolation tail immediately after the mode byte. The byte after that tail is the end of the `a8` frame or the first owned A/B-family child record. It carries no inline XYZ pole grid or rational-weight grid.
+
 **In-stream object-id resolver:** `a8 03` and `b5 03` records hold an inline `object_id`; references are compact tokens selecting an id width (`18`→u16, `38`→u24). Binding is an **in-stream walk** (index `object_id → record` while walking; resolve each ref), not a byte-offset directory. The `object_id` is a dense creation-order ordinal (monotonic with offset, with clean segment resets), so ids can equivalently be assigned by counting objects.
 
 ### 6.7 Object-stream topology (`b5 03`)
