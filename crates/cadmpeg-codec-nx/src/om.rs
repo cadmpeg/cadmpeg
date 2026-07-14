@@ -219,6 +219,10 @@ pub struct OperationRecord<'a> {
     pub offset: usize,
     /// Complete record bytes through the next operation header or section end.
     pub bytes: &'a [u8],
+    /// Absolute offset of the first byte after the operation-label terminator.
+    pub payload_offset: usize,
+    /// Post-label serialized operation payload.
+    pub payload: &'a [u8],
     /// Label decoded from this record's header.
     pub label: OperationLabel<'a>,
 }
@@ -475,9 +479,15 @@ pub fn operation_records(bytes: &[u8], base_offset: usize) -> Vec<OperationRecor
             let end = labels
                 .get(ordinal + 1)
                 .map_or(bytes.len(), |next| next.header_offset - base_offset);
+            let label_at = label.offset.checked_sub(base_offset)?;
+            let payload_start = label_at
+                .checked_add(usize::from(*bytes.get(label_at + 1)?))?
+                .checked_add(1)?;
             Some(OperationRecord {
                 offset: label.header_offset,
                 bytes: bytes.get(start..end)?,
+                payload_offset: base_offset + payload_start,
+                payload: bytes.get(payload_start..end)?,
                 label: *label,
             })
         })

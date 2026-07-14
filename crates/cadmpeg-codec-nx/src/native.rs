@@ -210,6 +210,12 @@ pub struct FeatureOperationRecord {
     pub byte_len: u64,
     /// SHA-256 of the complete operation record.
     pub sha256: String,
+    /// Exact serialized post-label payload length.
+    pub payload_byte_len: u64,
+    /// SHA-256 of the post-label serialized operation payload.
+    pub payload_sha256: String,
+    /// Absolute file offset of the first post-label payload byte.
+    pub payload_source_offset: u64,
     /// Absolute file offset of the fixed operation-header marker.
     pub source_offset: u64,
 }
@@ -438,6 +444,9 @@ pub fn feature_operation_records(container: &Container) -> Vec<FeatureOperationR
                     ordinal: ordinal as u32,
                     byte_len: record.bytes.len() as u64,
                     sha256: cadmpeg_ir::hash::sha256_hex(record.bytes),
+                    payload_byte_len: record.payload.len() as u64,
+                    payload_sha256: cadmpeg_ir::hash::sha256_hex(record.payload),
+                    payload_source_offset: entry_offset + record.payload_offset as u64,
                     source_offset: entry_offset + record.offset as u64,
                 }
             },

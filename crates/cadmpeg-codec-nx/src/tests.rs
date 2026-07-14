@@ -419,7 +419,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 28);
+    assert_eq!(namespace.version, 29);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -565,6 +565,9 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         ordinal: 7,
         byte_len: 173,
         sha256: "00".repeat(32),
+        payload_byte_len: 140,
+        payload_sha256: "11".repeat(32),
+        payload_source_offset: 733,
         source_offset: 700,
     };
     let input = |slot, index| FeatureInputBlock {
@@ -790,6 +793,8 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
     let record = crate::om::OperationRecord {
         offset: 100,
         bytes: &bytes,
+        payload_offset: 100,
+        payload: &bytes,
         label,
     };
     assert_eq!(
@@ -805,6 +810,8 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         crate::om::operation_body_reference(crate::om::OperationRecord {
             offset: 100,
             bytes: &duplicate,
+            payload_offset: 100,
+            payload: &duplicate,
             label,
         })
         .is_none()
@@ -962,8 +969,11 @@ fn om_operation_records_use_consecutive_validated_headers() {
     assert_eq!(records[0].offset, 16);
     assert_eq!(records[0].label.value, "UNITE");
     assert!(records[0].bytes.ends_with(b"payload"));
+    assert_eq!(records[0].payload, b"payload");
+    assert_eq!(records[0].payload_offset, 43);
     assert_eq!(records[1].label.value, "SKETCH");
     assert!(records[1].bytes.ends_with(b"tail"));
+    assert_eq!(records[1].payload, b"tail");
 }
 
 #[test]
@@ -3632,7 +3642,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 28);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 29);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
