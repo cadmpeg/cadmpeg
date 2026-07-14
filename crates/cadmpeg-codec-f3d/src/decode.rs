@@ -1264,6 +1264,11 @@ fn extend_related_design_records(
         &native.construction_recipes,
         &native.persistent_subentity_tags,
     );
+    crate::history::bind_face_operand_history_candidates(
+        &mut native.design_face_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+    );
     native.design_sketch_placements =
         crate::design::decode_sketch_placements(scan, &native.design_parameter_scopes)?;
     let stream_lengths: std::collections::HashMap<String, usize> = scan

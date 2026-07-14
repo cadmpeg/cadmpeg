@@ -6822,6 +6822,8 @@ fn parse_face_operand(
         recipe_node_offsets,
         recipe_nodes,
         candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
     })

@@ -558,7 +558,7 @@ pub(crate) fn bind_feature_face_selections(
         let Some(Some(previous)) = states.get(&previous_state_id) else {
             continue;
         };
-        let Some(topology) = &previous.topology else {
+        let Some(_topology) = &previous.topology else {
             continue;
         };
         let cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } =
@@ -567,11 +567,60 @@ pub(crate) fn bind_feature_face_selections(
             continue;
         };
         if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
-            bind_face_selection(face, scope, groups, operands, topology, transition);
+            bind_face_selection(face, scope, groups, operands);
         }
         if let cadmpeg_ir::features::Extent::ToFace { face, .. } = extent {
-            bind_face_selection(face, scope, groups, operands, topology, transition);
+            bind_face_selection(face, scope, groups, operands);
         }
+    }
+}
+
+pub(crate) fn bind_face_operand_history_candidates(
+    operands: &mut [crate::records::DesignFaceOperand],
+    scopes: &[crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+) {
+    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    for operand in operands {
+        let stream = crate::design::native_stream(&operand.id);
+        let mut matching_scopes = scopes.iter().filter(|scope| {
+            scope.record_index == operand.scope_record_index
+                && crate::design::native_stream(&scope.id) == stream
+        });
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let (Some(state_id), Some(previous_state_id)) =
+            (scope.history_state_id, scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let (Some(Some(state)), Some(Some(previous))) =
+            (states.get(&state_id), states.get(&previous_state_id))
+        else {
+            continue;
+        };
+        let (Some(transition), Some(topology)) = (&state.transition, &previous.topology) else {
+            continue;
+        };
+        if transition.previous_state_id != Some(previous_state_id) {
+            continue;
+        }
+        operand.preceding_candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
+        operand.changed_candidate_faces =
+            faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
+                .into_iter()
+                .cloned()
+                .collect();
     }
 }
 
@@ -580,8 +629,6 @@ fn bind_face_selection(
     scope: &crate::records::DesignParameterScope,
     groups: &[crate::records::DesignConstructionOperandGroup],
     operands: &[crate::records::DesignFaceOperand],
-    topology: &AsmHistoricalTopology,
-    transition: &crate::history_records::AsmHistoricalTransition,
 ) {
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
         return;
@@ -612,15 +659,14 @@ fn bind_face_selection(
         if matches.next().is_some() {
             return;
         }
-        let previous_candidates = faces_in_topology(&operand.candidate_faces, topology);
+        let previous_candidates = &operand.preceding_candidate_faces;
         let candidate = match previous_candidates.as_slice() {
             [face] => face,
             _ => {
-                let changed = faces_changed_by_transition(&previous_candidates, transition);
-                let [face] = changed.as_slice() else {
+                let [face] = operand.changed_candidate_faces.as_slice() else {
                     return;
                 };
-                *face
+                face
             }
         };
         if faces.contains(candidate) {

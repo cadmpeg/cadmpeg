@@ -1087,6 +1087,14 @@ pub struct DesignFaceOperand {
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
+    /// Candidate faces present in the ASM topology immediately preceding the
+    /// owning feature.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub preceding_candidate_faces: Vec<FaceId>,
+    /// Preceding candidate faces deleted or updated by the owning feature's
+    /// exact ASM state transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changed_candidate_faces: Vec<FaceId>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
