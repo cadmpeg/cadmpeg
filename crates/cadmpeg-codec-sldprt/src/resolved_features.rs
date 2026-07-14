@@ -251,10 +251,10 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        arc_angle_relation_kind, compact_body_path_at, compact_body_retention_mode,
-        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
-        compact_edge_component_path_at, compact_edge_selection_at,
-        compact_extrusion_through_all_at, compact_extrusion_to_face_at,
+        arc_angle_relation_kind, compact_body_component_path_at, compact_body_path_at,
+        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
+        compact_body_state_ids, compact_combine_operation_at, compact_edge_component_path_at,
+        compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
         compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_surface_selection_at, component_path_features, component_path_terminal_feature,
@@ -1171,6 +1171,10 @@ mod marker_tests {
         payload[second + 4..second + 16].copy_from_slice(&[2; 12]);
         payload[second + 16..second + 20].copy_from_slice(&7u32.to_le_bytes());
         assert_eq!(compact_body_path_at(&payload, marker), Some(vec![6, 7]));
+        assert_eq!(
+            compact_body_component_path_at(&payload, marker).map(|components| components.len()),
+            Some(2)
+        );
 
         payload[..4].copy_from_slice(&3u32.to_le_bytes());
         payload[second + 20..second + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
@@ -1178,6 +1182,23 @@ mod marker_tests {
 
         payload[4] = 2;
         assert_eq!(compact_body_path_at(&payload, marker), None);
+    }
+
+    #[test]
+    fn compact_combine_operation_is_name_length_relative() {
+        let offset = 7;
+        let mut payload = vec![0; 180];
+        payload[offset..offset + 5].copy_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff]);
+        payload[offset + 5] = 8;
+        let operation = offset + 117 + 16;
+        payload[operation..operation + 4].copy_from_slice(&2u32.to_le_bytes());
+        payload[operation + 10..operation + 14].copy_from_slice(&[0xff; 4]);
+        assert_eq!(
+            compact_combine_operation_at(&payload, offset),
+            Some("Intersect")
+        );
+        payload[operation - 1] = 1;
+        assert_eq!(compact_combine_operation_at(&payload, offset), None);
     }
 
     #[test]
@@ -5276,7 +5297,8 @@ pub(crate) fn enrich_history_combine_selections(
                 })
                 .collect::<Vec<_>>();
             if let [target, tools] = paths.as_slice() {
-                selections.insert(feature_id.clone(), (*target, *tools));
+                let operation = compact_combine_operation_at(&lane.native_payload, start);
+                selections.insert(feature_id.clone(), (*target, *tools, operation));
             }
         }
         let lane_key = lane
@@ -5287,7 +5309,7 @@ pub(crate) fn enrich_history_combine_selections(
             .iter_mut()
             .flat_map(|history| &mut history.features)
         {
-            let Some(&(target, tools)) = selections.get(&feature.id) else {
+            let Some(&(target, tools, operation)) = selections.get(&feature.id) else {
                 continue;
             };
             feature
@@ -5298,7 +5320,38 @@ pub(crate) fn enrich_history_combine_selections(
                 .properties
                 .entry("Tools".into())
                 .or_insert_with(|| format!("sldprt:feature-input:body-path:{lane_key}:{tools}"));
+            if let Some(operation) = operation {
+                feature
+                    .properties
+                    .entry("Operation".into())
+                    .or_insert_with(|| operation.into());
+            }
         }
+    }
+}
+
+pub(crate) fn compact_combine_operation_at(
+    payload: &[u8],
+    name_offset: usize,
+) -> Option<&'static str> {
+    if payload.get(name_offset..name_offset + 5)? != [0x04, 0x80, 0xff, 0xfe, 0xff] {
+        return None;
+    }
+    let name_units = usize::from(*payload.get(name_offset + 5)?);
+    let operation = name_offset.checked_add(117 + name_units.checked_mul(2)?)?;
+    if payload
+        .get(operation - 12..operation)?
+        .iter()
+        .any(|byte| *byte != 0)
+        || payload.get(operation + 4..operation + 14)? != [0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff]
+    {
+        return None;
+    }
+    match u32::from_le_bytes(payload.get(operation..operation + 4)?.try_into().ok()?) {
+        0 => Some("Join"),
+        1 => Some("Cut"),
+        2 => Some("Intersect"),
+        _ => None,
     }
 }
 
@@ -5431,6 +5484,148 @@ pub(crate) fn compact_body_path_at(payload: &[u8], marker: usize) -> Option<Vec<
             (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
                 .then_some(ids)
         })
+}
+
+pub(crate) fn compact_body_component_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    if marker < 12
+        || payload.get(marker..marker + 16) != Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+        || payload.get(marker - 8..marker - 4) != Some(&[0, 3, 0, 0])
+        || payload.get(marker + 16..marker + 18) != Some(&[0, 0])
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(marker - 12..marker - 8)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| *count != 0)?;
+    compact_heterogeneous_component_path(payload, marker + 18, count)
+        .map(|(components, _)| components)
+        .or_else(|| {
+            let (components, end) = (count > 1)
+                .then(|| compact_heterogeneous_component_path(payload, marker + 18, count - 1))
+                .flatten()?;
+            (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
+                .then_some(components)
+        })
+}
+
+pub(crate) fn project_compact_combine_paths(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    struct Projection {
+        target: cadmpeg_ir::features::BodySelection,
+        tools: cadmpeg_ir::features::BodySelection,
+        dependencies: Vec<cadmpeg_ir::features::FeatureId>,
+    }
+
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
+        .collect::<HashMap<_, _>>();
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut projections = HashMap::<String, Projection>::new();
+    for history_feature in &history_features {
+        let (Some(target), Some(tools)) = (
+            history_feature.properties.get("Target"),
+            history_feature.properties.get("Tools"),
+        ) else {
+            continue;
+        };
+        let project = |native: &str| {
+            let (prefix, offset) = native.rsplit_once(':')?;
+            let offset = offset.parse::<usize>().ok()?;
+            let lane_key = prefix.rsplit_once(':')?.1;
+            let lane = lanes.iter().find(|lane| {
+                lane.id
+                    .rsplit_once('#')
+                    .map_or(lane.id.as_str(), |(_, key)| key)
+                    == lane_key
+            })?;
+            let components = compact_body_component_path_at(&lane.native_payload, offset)?;
+            let producer = component_path_terminal_feature(&components, &history_features)?;
+            let feature = feature_ids_by_native.get(&producer)?.clone();
+            let local_id = components
+                .iter()
+                .map(|component| component.local_id.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            Some((
+                cadmpeg_ir::features::BodySelection::Generated {
+                    bodies: vec![cadmpeg_ir::features::GeneratedBodyRef {
+                        feature: feature.clone(),
+                        local_id,
+                    }],
+                    native: native.to_owned(),
+                },
+                components,
+                feature,
+            ))
+        };
+        let (
+            Some((target, target_components, target_owner)),
+            Some((tools, tool_components, tool_owner)),
+        ) = (project(target), project(tools))
+        else {
+            continue;
+        };
+        let mut dependencies = target_components
+            .iter()
+            .chain(&tool_components)
+            .filter_map(|component| {
+                let native = component_path_terminal_feature(
+                    std::slice::from_ref(component),
+                    &history_features,
+                )?;
+                feature_ids_by_native.get(&native).cloned()
+            })
+            .collect::<Vec<_>>();
+        dependencies.push(target_owner);
+        dependencies.push(tool_owner);
+        dependencies.sort_by_key(|dependency| {
+            features
+                .iter()
+                .find(|feature| feature.id == *dependency)
+                .map_or(u64::MAX, |feature| feature.ordinal)
+        });
+        dependencies.dedup();
+        projections.insert(
+            history_feature.id.clone(),
+            Projection {
+                target,
+                tools,
+                dependencies,
+            },
+        );
+    }
+    for feature in features {
+        let Some(projection) = feature
+            .native_ref
+            .as_ref()
+            .and_then(|native| projections.remove(native))
+        else {
+            continue;
+        };
+        let FeatureDefinition::Combine { target, tools, .. } = &mut feature.definition else {
+            continue;
+        };
+        *target = projection.target;
+        *tools = projection.tools;
+        for dependency in projection.dependencies {
+            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                feature.dependencies.push(dependency);
+            }
+        }
+    }
 }
 
 pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {

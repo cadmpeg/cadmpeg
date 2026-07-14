@@ -185,6 +185,8 @@ A `moCompSurfaceBody_c` child of `moThicken_c` carries the selected surface comp
 
 A compact `moCombineBodies_c` object carries its target and tool as the first and second type-3 component-path vectors in its feature-object interval. A type-3 vector uses the duplicated component marker, a positive count at marker −12, `00 03 00 00` at marker −8, two zero bytes after the marker, and heterogeneous 20-byte typed path entries with the same separator grammar as edge component paths. The count either equals the entry count or includes one terminal null slot encoded as `ff ff ff ff 00 00 00 00`. The two paths retain their ordered native identities independently of the Boolean operation.
 
+The compact Combine operation is a little-endian u32 at feature-name marker offset `+ 117 + 2 × name-code-unit-count`. Twelve zero bytes precede it; six zero bytes and `ff ff ff ff` follow it. Values `0`, `1`, and `2` mean join, subtract, and intersect respectively.
+
 An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. A compact extrusion without `DissectableChildren` also consumes a `moProfileFeature_c` object immediately following it. The profile feature is an ordered dependency of the extrusion. These adjacency forms are independent of the `DissectableChildren` property used by explicitly linked extrusion objects.
 
 The inline extrusion operation trailer establishes the extrusion object family independently of its class token. This applies when a repeated token is shared by more than one declared extrusion class.
@@ -199,7 +201,7 @@ A solid `moSweep_c` object without an enclosed profile stream can be preceded an
 
 A repeated general-curve form with a two-byte wrapper token, two zero bytes, a two-byte child token, and the compact child prefix `2b 80 02 00 00 00 00 00 00 00` retains the wrapper offset as its stable native path identity when it carries no component-profile source record.
 
-A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. An absent attribute leaves that field unresolved.
+A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. Compact operation and component-path carriers supply absent attributes independently.
 
 A planar sketch history name ending in `<N>`, where `N` is one or more decimal digits, aliases the uniquely named unsuffixed sketch when both records have the same XML element tag, resolved feature-input class, ordered content, and complete parameter map. The unsuffixed history feature remains the sole owner of the solved sketch geometry, and the geometry-less alias feature depends on that owner. Feature operands naming the alias bind to the owner's sketch and depend on the unsuffixed owner. A missing base, multiple matching bases, or any record-content difference leaves the alias operand native.
 

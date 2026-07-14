@@ -2585,7 +2585,7 @@ fn face_selections_round_trip_through_json() {
 
 #[test]
 fn body_selections_round_trip_through_json() {
-    use crate::features::BodySelection;
+    use crate::features::{BodySelection, FeatureId, GeneratedBodyRef};
     use crate::ids::BodyId;
 
     let selections = vec![
@@ -2594,6 +2594,13 @@ fn body_selections_round_trip_through_json() {
         BodySelection::Resolved {
             bodies: vec![BodyId("synthetic:test:body#0".into())],
             native: "body:17".into(),
+        },
+        BodySelection::Generated {
+            bodies: vec![GeneratedBodyRef {
+                feature: FeatureId("synthetic:test:feature#4".into()),
+                local_id: "6,0,7,1,5".into(),
+            }],
+            native: "persistent:4:6,0,7,1,5".into(),
         },
         BodySelection::Native("body:17,body:18".into()),
     ];

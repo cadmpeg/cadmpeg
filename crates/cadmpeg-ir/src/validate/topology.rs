@@ -2138,16 +2138,32 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for selection in body_selections {
-            if let BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } =
-                selection
-            {
-                check_ids(
-                    findings,
-                    &feature.id.0,
-                    "selected body",
-                    bodies.iter().map(|id| id.0.as_str()),
-                    &ids.bodies,
-                );
+            match selection {
+                BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
+                    check_ids(
+                        findings,
+                        &feature.id.0,
+                        "selected body",
+                        bodies.iter().map(|id| id.0.as_str()),
+                        &ids.bodies,
+                    );
+                }
+                BodySelection::Generated { bodies, native } => {
+                    if bodies.is_empty()
+                        || native.trim().is_empty()
+                        || bodies.iter().any(|body| {
+                            body.local_id.trim().is_empty()
+                                || !feature.dependencies.contains(&body.feature)
+                        })
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "generated body selection is invalid",
+                        );
+                    }
+                }
+                BodySelection::Unresolved | BodySelection::Native(_) => {}
             }
         }
     }

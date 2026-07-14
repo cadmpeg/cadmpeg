@@ -1026,8 +1026,25 @@ pub enum BodySelection {
         /// Format-native selection expression.
         native: String,
     },
+    /// Bodies in intermediate regenerated feature results, paired with the
+    /// format-native selection required for rewrite.
+    Generated {
+        /// Feature-local body identities.
+        bodies: Vec<GeneratedBodyRef>,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
     /// Format-native selection expression.
     Native(String),
+}
+
+/// Persistent identity of a body in one regenerated feature result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct GeneratedBodyRef {
+    /// Feature whose regenerated result owns the body.
+    pub feature: FeatureId,
+    /// Feature-local persistent body identity.
+    pub local_id: String,
 }
 
 /// Direct face-motion law.

@@ -3036,7 +3036,9 @@ fn edge_selection_value(selection: &EdgeSelection) -> Option<String> {
 
 fn body_selection_value(selection: &BodySelection) -> Option<String> {
     match selection {
-        BodySelection::Native(native) | BodySelection::Resolved { native, .. }
+        BodySelection::Native(native)
+        | BodySelection::Resolved { native, .. }
+        | BodySelection::Generated { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())

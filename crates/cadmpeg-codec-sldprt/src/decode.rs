@@ -1145,6 +1145,11 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::project_compact_body_selections(&mut ir.model.features, lanes);
+    crate::resolved_features::project_compact_combine_paths(
+        &mut ir.model.features,
+        &semantic_projection,
+        lanes,
+    );
     crate::resolved_features::project_compact_edge_selections(&mut ir.model.features, lanes);
     crate::resolved_features::project_compact_surface_selections(&mut ir.model.features, lanes);
     crate::resolved_features::project_adjacent_extrusion_profiles(
