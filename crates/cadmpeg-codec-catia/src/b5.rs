@@ -740,8 +740,12 @@ fn implicit_pcurve_bindings(
                     .and_then(|incidence| parameter_incidence(incidence))
                     .is_some_and(|(references, _)| references.contains(&pcurve))
             };
-            if !endpoint_incidence_contains(edge_references[3])
-                || !endpoint_incidence_contains(edge_references[4])
+            let curve_wrapper_contains = by_id.get(&edge_references[0]).is_some_and(|wrapper| {
+                matches!(wrapper.class, 0x23..=0x25) && record_references(wrapper).contains(&pcurve)
+            });
+            if !(curve_wrapper_contains
+                || endpoint_incidence_contains(edge_references[3])
+                    && endpoint_incidence_contains(edge_references[4]))
             {
                 continue;
             }
@@ -2904,6 +2908,56 @@ mod tests {
                 class: 0x06,
                 object_id: 16,
                 payload: incidence_payload(1.0, 0x05),
+            },
+        ];
+        let by_id = records
+            .iter()
+            .map(|record| (record.object_id, record))
+            .collect();
+        let surfaces = BTreeMap::from([(
+            11,
+            B5Surface::Unknown {
+                family: 0xb5,
+                class: 0x34,
+                payload: Vec::new(),
+            },
+        )]);
+
+        assert_eq!(
+            implicit_pcurve_bindings(
+                &records,
+                &by_id,
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &surfaces,
+            ),
+            BTreeMap::from([(9, 11)])
+        );
+    }
+
+    #[test]
+    fn loop_and_edge_curve_wrapper_bind_an_unframed_pcurve_occurrence() {
+        let records = vec![
+            B5Record {
+                offset: 0,
+                family: 0xb5,
+                class: 0x62,
+                object_id: 1,
+                payload: vec![0x83, 0x89, 0x8a, 0x8b],
+            },
+            B5Record {
+                offset: 1,
+                family: 0xb5,
+                class: 0x5e,
+                object_id: 10,
+                payload: vec![0x85, 0x8c, 0x8d, 0x8e, 0x8f, 0x90, 0x22],
+            },
+            B5Record {
+                offset: 2,
+                family: 0xb5,
+                class: 0x25,
+                object_id: 12,
+                payload: vec![0x82, 0x89, 0x91, 0x81],
             },
         ];
         let by_id = records
