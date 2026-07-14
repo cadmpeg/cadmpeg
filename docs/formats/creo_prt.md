@@ -861,7 +861,10 @@ When the two incident `segtab` rows have exactly one common endpoint
 `pointid`, that point's complete `var_arr` coordinate is the trim-vertex
 coordinate. This join applies to line-line, line-arc, and arc-arc incidences.
 Without a unique common point, independently evaluated carriers must have one
-unique intersection before a coordinate is assigned.
+unique intersection before a coordinate is assigned. Two circular carriers
+define a trim coordinate at internal or external tangency. Secant circular
+carriers have two roots and remain unresolved without an independent root
+selector.
 
 The positional `vert_tab.chains` opener uses the same bucket-count framing.
 Each populated entry begins with `f7 <entry_class>` and stores two incident

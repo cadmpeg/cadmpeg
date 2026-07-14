@@ -2052,6 +2052,52 @@ fn intersect_section_line_arc(first: &SketchGeometry, second: &SketchGeometry) -
     Some(candidates[usize::from(distances[1] < distances[0])])
 }
 
+fn intersect_tangent_section_arcs(
+    first: &SketchGeometry,
+    second: &SketchGeometry,
+) -> Option<[f64; 2]> {
+    let (
+        SketchGeometry::Arc {
+            center: first_center,
+            radius: first_radius,
+            ..
+        },
+        SketchGeometry::Arc {
+            center: second_center,
+            radius: second_radius,
+            ..
+        },
+    ) = (first, second)
+    else {
+        return None;
+    };
+    if first_radius.0 <= 1e-12 || second_radius.0 <= 1e-12 {
+        return None;
+    }
+    let delta = [
+        second_center.u - first_center.u,
+        second_center.v - first_center.v,
+    ];
+    let distance = delta[0].hypot(delta[1]);
+    let scale = distance.max(first_radius.0).max(second_radius.0).max(1.0);
+    if distance <= 1e-12 * scale {
+        return None;
+    }
+    let offset = (first_radius
+        .0
+        .mul_add(first_radius.0, -(second_radius.0 * second_radius.0))
+        + distance * distance)
+        / (2.0 * distance);
+    let height_squared = first_radius.0.mul_add(first_radius.0, -(offset * offset));
+    if height_squared.abs() > 1e-9 * scale * scale {
+        return None;
+    }
+    Some([
+        first_center.u + offset * delta[0] / distance,
+        first_center.v + offset * delta[1] / distance,
+    ])
+}
+
 fn resolved_trim_vertex_coordinates(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -2151,6 +2197,7 @@ fn resolved_trim_vertex_coordinates(
                     .then(|| intersect_section_line_arc(&first.geometry, &second.geometry))
                     .flatten()
             })
+            .or_else(|| intersect_tangent_section_arcs(&first.geometry, &second.geometry))
         {
             coordinates.insert(vertex, coordinate);
         }
@@ -8028,6 +8075,25 @@ mod resolved_sketch_tests {
             .expect("line has one endpoint on the arc");
         assert!((intersection[0] - 2.0).abs() <= 1e-12);
         assert!(intersection[1].abs() <= 1e-12);
+
+        let circle = |center, radius| SketchGeometry::Arc {
+            center: cadmpeg_ir::math::Point2::new(center, 0.0),
+            radius: Length(radius),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::TAU),
+        };
+        assert_eq!(
+            intersect_tangent_section_arcs(&circle(0.0, 2.0), &circle(3.0, 1.0)),
+            Some([2.0, 0.0])
+        );
+        assert_eq!(
+            intersect_tangent_section_arcs(&circle(0.0, 3.0), &circle(2.0, 1.0)),
+            Some([3.0, 0.0])
+        );
+        assert_eq!(
+            intersect_tangent_section_arcs(&circle(0.0, 2.0), &circle(2.0, 2.0)),
+            None
+        );
     }
 
     #[test]
