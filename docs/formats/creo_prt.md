@@ -655,6 +655,9 @@ A positional `gsec3d_ptr` record begins with `07 S2D<N> 00`, followed by
 reference, `fb e2`, and row-class reference. Each row replays `plane_id`,
 `ref_type`, `ext_ref_id`, `seg_id`, `sub_index`, and `flip_flag`; rows after the
 first follow `f2 f7 <table-class> e2` and their nested row payload.
+The in-plane orientation is the unique referenced plane perpendicular to the
+resolved sketch plane; parallel support planes and non-plane references do not
+define the section axis.
 
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is a one-byte generated-entity order index. In a feature-generated table, a line entity with `int_id = N` maps to table position `N - 1`. Arc entities map in `int_id` order to cylinder entries in generated-table order only when the feature's arc count equals its cylinder-entry count; `int_id - 1` does not index arc-generated cylinders.
 

@@ -203,31 +203,54 @@ pub(crate) fn resolve(
         let Some(sketch_id) = section.sketch_plane_entity_id else {
             continue;
         };
-        let Some(reference_id) = section.reference_plane_datum_geometry_id else {
-            continue;
-        };
-        let Some((mut reference_normal, mut reference_offset)) = plane_equation(
-            reference_id,
-            sources.datums,
-            sources.model_planes,
-            sources.outline_planes,
-        ) else {
-            continue;
-        };
-        let Some((mut sketch_normal, mut sketch_offset)) = plane_equation(
+        let mut reference_ids = section.reference_plane_entity_ids.clone();
+        if let Some(reference_id) = section.reference_plane_datum_geometry_id {
+            reference_ids.push(reference_id);
+        }
+        reference_ids.sort_unstable();
+        reference_ids.dedup();
+        let direct_sketch = plane_equation(
             sketch_id,
             sources.datums,
             sources.model_planes,
             sources.outline_planes,
-        )
-        .or_else(|| {
-            generated_datum_plane_equation(sketch_id, reference_id, reference_normal, sources)
-        }) else {
+        );
+        let mut candidates = Vec::new();
+        for reference_id in reference_ids {
+            let direct_reference = plane_equation(
+                reference_id,
+                sources.datums,
+                sources.model_planes,
+                sources.outline_planes,
+            );
+            if let Some(sketch) = direct_sketch {
+                let reference = direct_reference.or_else(|| {
+                    generated_datum_plane_equation(reference_id, sketch_id, sketch.0, sources)
+                });
+                if let Some(reference) = reference {
+                    if dot(sketch.0, reference.0).abs() <= 1e-12
+                        && !candidates.contains(&(sketch, reference))
+                    {
+                        candidates.push((sketch, reference));
+                    }
+                }
+            } else if let Some(reference) = direct_reference {
+                if let Some(sketch) =
+                    generated_datum_plane_equation(sketch_id, reference_id, reference.0, sources)
+                {
+                    if dot(sketch.0, reference.0).abs() <= 1e-12
+                        && !candidates.contains(&(sketch, reference))
+                    {
+                        candidates.push((sketch, reference));
+                    }
+                }
+            }
+        }
+        let [(sketch, reference)] = candidates.as_slice() else {
             continue;
         };
-        if dot(sketch_normal, reference_normal).abs() > 1e-12 {
-            continue;
-        }
+        let (mut sketch_normal, mut sketch_offset) = *sketch;
+        let (mut reference_normal, mut reference_offset) = *reference;
         if section.sketch_plane_flip == Some(BinaryFlag::Set) {
             sketch_normal = scale(sketch_normal, -1.0);
             sketch_offset = -sketch_offset;
@@ -295,7 +318,7 @@ mod tests {
             section_3d: Some(FeatureSection3d {
                 sketch_plane_entity_id: Some(2),
                 sketch_plane_flip: Some(BinaryFlag::Clear),
-                reference_plane_entity_ids: vec![4],
+                reference_plane_entity_ids: vec![3, 4],
                 reference_plane_datum_geometry_id: Some(4),
                 orientation: FeatureSectionOrientation::default(),
                 dimension_ids: Vec::new(),
@@ -312,6 +335,7 @@ mod tests {
                 &PlacementSources {
                     datums: &[
                         datum(2, [1.0, 0.0, 0.0], 2.0),
+                        datum(3, [1.0, 0.0, 0.0], 1.0),
                         datum(4, [0.0, 0.0, 1.0], 3.0),
                     ],
                     surface_rows: &[],
