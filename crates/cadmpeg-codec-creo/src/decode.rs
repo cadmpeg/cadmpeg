@@ -1657,6 +1657,70 @@ fn placed_section_nurbs(
     }
 }
 
+fn transfer_saved_spline_curves(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for transform in &scan.feature_section_transforms {
+        let Some(definition) = scan
+            .feature_definitions
+            .iter()
+            .find(|definition| definition.id == transform.definition_id)
+        else {
+            continue;
+        };
+        for spline in definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+            .filter_map(|entity| match entity {
+                crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+                _ => None,
+            })
+        {
+            let Some(nurbs) = saved_spline_nurbs(spline) else {
+                continue;
+            };
+            let suffix = spline.entity_id.map_or_else(
+                || format!("offset{}", spline.offset),
+                |entity_id| entity_id.to_string(),
+            );
+            let curve_id = CurveId(format!(
+                "creo:featdefs:saved_spline_curve#{}:{suffix}",
+                definition.id
+            ));
+            if ir.model.curves.iter().any(|curve| curve.id == curve_id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &curve_id,
+                "FeatDefs",
+                spline.offset as u64,
+                "placed_saved_interpolation_spline",
+                Exactness::Derived,
+            );
+            ir.model.curves.push(Curve {
+                id: curve_id,
+                geometry: CurveGeometry::Nurbs(placed_section_nurbs(transform, &nurbs)),
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!("FeatDefs:saved_spline#{suffix}"),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            transferred += 1;
+        }
+    }
+    transferred
+}
+
 fn revolved_nurbs_surface(directrix: &NurbsCurve, axis: RevolutionAxis) -> Option<NurbsSurface> {
     let axis_direction = normalized([axis.direction.x, axis.direction.y, axis.direction.z])?;
     let axis_origin = [axis.origin.x, axis.origin.y, axis.origin.z];
@@ -3056,27 +3120,6 @@ fn transfer_resolved_sketches(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
                 definition.id
             ));
-            annotate(
-                annotations,
-                &curve_id,
-                "FeatDefs",
-                spline.offset as u64,
-                "placed_saved_interpolation_spline",
-                Exactness::Derived,
-            );
-            ir.model.curves.push(Curve {
-                id: curve_id.clone(),
-                geometry: CurveGeometry::Nurbs(placed_section_nurbs(transform, &nurbs)),
-                source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
-                    object_id: format!("FeatDefs:saved_spline#{suffix}"),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
             if nurbs
                 .control_points
                 .iter()
@@ -6117,6 +6160,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     transfer_plane_intersection_curves(scan, &mut ir, &mut annotations);
     transfer_plane_brep(scan, &mut ir, &mut annotations);
+    let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
     transfer_resolved_sketches(scan, &mut ir, &mut annotations);
     let feature_revolution_surface_count =
         transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
@@ -6125,6 +6169,10 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
     if let Some(source) = &mut ir.source {
+        source.attributes.insert(
+            "transferred_saved_spline_curve_count".to_string(),
+            saved_spline_curve_count.to_string(),
+        );
         source.attributes.insert(
             "transferred_feature_revolution_surface_count".to_string(),
             feature_revolution_surface_count.to_string(),
