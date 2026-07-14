@@ -876,6 +876,51 @@ enum NativeAnnotation {
         segment_tails: Vec<[Option<f64>; 3]>,
         transformation: Option<String>,
     },
+    AngularDimension {
+        id: String,
+        source_entity: String,
+        note: Option<String>,
+        witnesses: [Option<String>; 2],
+        vertex: [Option<f64>; 2],
+        radius: Option<f64>,
+        leaders: [Option<String>; 2],
+        transformation: Option<String>,
+    },
+    CurveDimension {
+        id: String,
+        source_entity: String,
+        note: Option<String>,
+        curves: [Option<String>; 2],
+        leaders: [Option<String>; 2],
+        witnesses: [Option<String>; 2],
+        transformation: Option<String>,
+    },
+    DiameterDimension {
+        id: String,
+        source_entity: String,
+        note: Option<String>,
+        leaders: [Option<String>; 2],
+        center: [Option<f64>; 2],
+        transformation: Option<String>,
+    },
+    FlagNote {
+        id: String,
+        source_entity: String,
+        origin: [Option<f64>; 3],
+        rotation: Option<f64>,
+        note: Option<String>,
+        declared_leader_count: Option<i64>,
+        leaders: Vec<Option<String>>,
+        transformation: Option<String>,
+    },
+    GeneralLabel {
+        id: String,
+        source_entity: String,
+        note: Option<String>,
+        declared_leader_count: Option<i64>,
+        leaders: Vec<Option<String>>,
+        transformation: Option<String>,
+    },
     LinearDimension {
         id: String,
         source_entity: String,
@@ -3035,7 +3080,8 @@ pub(crate) fn store(
     let annotations = directory
         .iter()
         .filter(|entry| {
-            (matches!(entry.entity_type, 212 | 213) && entry.form == 0)
+            (matches!(entry.entity_type, 202 | 204 | 206 | 208 | 210 | 212 | 213)
+                && entry.form == 0)
                 || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
                 || matches!(
                     (entry.entity_type, entry.form),
@@ -3196,6 +3242,83 @@ pub(crate) fn store(
                 let id = format!("iges:presentation:annotation#D{}", entry.sequence);
                 let source_entity = format!("iges:entity:directory#{}", entry.sequence);
                 match entry.entity_type {
+                    202 => NativeAnnotation::AngularDimension {
+                        id,
+                        source_entity,
+                        note: annotation_link(1),
+                        witnesses: [entity_link(2), entity_link(3)],
+                        vertex: [
+                            record.and_then(|record| record.number(4)),
+                            record.and_then(|record| record.number(5)),
+                        ],
+                        radius: record.and_then(|record| record.number(6)),
+                        leaders: [annotation_link(7), annotation_link(8)],
+                        transformation,
+                    },
+                    204 => NativeAnnotation::CurveDimension {
+                        id,
+                        source_entity,
+                        note: annotation_link(1),
+                        curves: [entity_link(2), entity_link(3)],
+                        leaders: [annotation_link(4), annotation_link(5)],
+                        witnesses: [entity_link(6), entity_link(7)],
+                        transformation,
+                    },
+                    206 => NativeAnnotation::DiameterDimension {
+                        id,
+                        source_entity,
+                        note: annotation_link(1),
+                        leaders: [annotation_link(2), annotation_link(3)],
+                        center: [
+                            record.and_then(|record| record.number(4)),
+                            record.and_then(|record| record.number(5)),
+                        ],
+                        transformation,
+                    },
+                    208 | 210 => {
+                        let (note_index, count_index, leader_start) = if entry.entity_type == 208 {
+                            (5, 6, 7)
+                        } else {
+                            (1, 2, 3)
+                        };
+                        let leader_count = record
+                            .and_then(|record| record.integer(count_index))
+                            .and_then(|value| usize::try_from(value).ok())
+                            .filter(|count| {
+                                record.is_some_and(|record| *count <= record.tokens.len())
+                            })
+                            .unwrap_or_default();
+                        let leaders = (0..leader_count)
+                            .map(|offset| annotation_link(leader_start + offset))
+                            .collect();
+                        if entry.entity_type == 208 {
+                            NativeAnnotation::FlagNote {
+                                id,
+                                source_entity,
+                                origin: [
+                                    record.and_then(|record| record.number(1)),
+                                    record.and_then(|record| record.number(2)),
+                                    record.and_then(|record| record.number(3)),
+                                ],
+                                rotation: record.and_then(|record| record.number(4)),
+                                note: annotation_link(note_index),
+                                declared_leader_count: record
+                                    .and_then(|record| record.integer(count_index)),
+                                leaders,
+                                transformation,
+                            }
+                        } else {
+                            NativeAnnotation::GeneralLabel {
+                                id,
+                                source_entity,
+                                note: annotation_link(note_index),
+                                declared_leader_count: record
+                                    .and_then(|record| record.integer(count_index)),
+                                leaders,
+                                transformation,
+                            }
+                        }
+                    }
                     216 => NativeAnnotation::LinearDimension {
                         id,
                         source_entity,

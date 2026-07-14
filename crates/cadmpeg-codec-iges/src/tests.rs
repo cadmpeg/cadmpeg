@@ -2933,6 +2933,88 @@ fn dimension_forms_file() -> Vec<u8> {
     ])
 }
 
+fn legacy_dimension_and_label_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 212,
+            form: 0,
+            label: "NOTE".into(),
+            status: "00010100",
+            parameters: "212,1,1,1,1,1,1.5707963267948966,0,0,0,0,0,0,1HA;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "LEADER1".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,0,0,2,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 214,
+            form: 1,
+            label: "LEADER2".into(),
+            status: "00010100",
+            parameters: "214,1,2,1,0,1,0,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 106,
+            form: 40,
+            label: "WITNESS".into(),
+            status: "00010100",
+            parameters: "106,1,3,0,0,0,1,0,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: "CURVE1".into(),
+            status: "00010100",
+            parameters: "110,0,0,0,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 100,
+            form: 0,
+            label: "CURVE2".into(),
+            status: "00010100",
+            parameters: "100,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 202,
+            form: 0,
+            label: "ANGULAR".into(),
+            status: "00000100",
+            parameters: "202,1,7,0,0,0,2,3,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 204,
+            form: 0,
+            label: "CURVEDIM".into(),
+            status: "00000100",
+            parameters: "204,1,9,11,3,5,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 206,
+            form: 0,
+            label: "DIAMETER".into(),
+            status: "00000100",
+            parameters: "206,1,3,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 208,
+            form: 0,
+            label: "FLAGNOTE".into(),
+            status: "00000100",
+            parameters: "208,0,0,0,0,1,2,3,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 210,
+            form: 0,
+            label: "LABEL".into(),
+            status: "00000100",
+            parameters: "210,1,1,3;".into(),
+        },
+    ])
+}
+
 fn symbol_and_sectioned_area_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -4943,6 +5025,33 @@ fn decode_types_dimension_component_roles_for_every_admitted_form() {
         radius.fields["leaders"][1],
         "iges:presentation:annotation#D9"
     );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_angular_curve_diameter_flag_and_label_annotations() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(legacy_dimension_and_label_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
+    for kind in [
+        "angular_dimension",
+        "curve_dimension",
+        "diameter_dimension",
+        "flag_note",
+        "general_label",
+    ] {
+        assert!(annotations
+            .iter()
+            .any(|annotation| annotation.fields["kind"] == kind));
+    }
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

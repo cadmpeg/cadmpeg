@@ -239,6 +239,13 @@ fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEnt
         && (3..4 + count * 2).all(|index| finite(record, index))
 }
 
+fn parameterized_curve_type(entry: &DirectoryEntry) -> bool {
+    matches!(
+        entry.entity_type,
+        100 | 102 | 104 | 106 | 110 | 112 | 126 | 130 | 142
+    )
+}
+
 fn dimension_valid(
     entry: &DirectoryEntry,
     record: &ParameterRecord,
@@ -250,6 +257,112 @@ fn dimension_valid(
         note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
     let mut children = note.into_iter().collect::<Vec<_>>();
     let fields_valid = match (entry.entity_type, entry.form) {
+        (202, 0) => {
+            let witnesses = [record.integer(2), record.integer(3)];
+            let leaders = [pointer(record, 7, entries), pointer(record, 8, entries)];
+            let witnesses_valid = witnesses.iter().enumerate().all(|(offset, raw)| match raw {
+                Some(0) => true,
+                Some(_) => pointer(record, 2 + offset, entries).is_some_and(|sequence| {
+                    child_valid(sequence, 106, |form| form == 40, entries, records)
+                }),
+                None => false,
+            });
+            let leaders_valid = leaders.iter().all(|leader| {
+                leader.is_some_and(|sequence| {
+                    child_valid(
+                        sequence,
+                        214,
+                        |form| matches!(form, 1..=12),
+                        entries,
+                        records,
+                    )
+                })
+            });
+            children.extend((2..=3).filter_map(|index| pointer(record, index, entries)));
+            children.extend(leaders.into_iter().flatten());
+            exact_parameter_count(record, 9, entries)
+                && witnesses_valid
+                && (4..=5).all(|index| finite(record, index))
+                && record
+                    .number(6)
+                    .is_some_and(|value| value.is_finite() && value > 0.0)
+                && leaders_valid
+        }
+        (204, 0) => {
+            let curves = [pointer(record, 2, entries), pointer(record, 3, entries)];
+            let curve_entries =
+                curves.map(|curve| curve.and_then(|sequence| entries.get(&sequence).copied()));
+            let curves_valid = curve_entries[0].is_some_and(|curve| {
+                parameterized_curve_type(curve)
+                    && curve.status.subordinate == 1
+                    && curve.status.use_flag == 1
+            })
+                && match record.integer(3) {
+                    Some(0) => true,
+                    Some(_) => curve_entries[1].is_some_and(|curve| {
+                        parameterized_curve_type(curve)
+                            && curve.status.subordinate == 1
+                            && curve.status.use_flag == 1
+                            && !(curve.entity_type == 110
+                                && curve_entries[0].is_some_and(|first| first.entity_type == 110))
+                    }),
+                    None => false,
+                };
+            let leaders = [pointer(record, 4, entries), pointer(record, 5, entries)];
+            let leaders_valid = leaders.iter().all(|leader| {
+                leader.is_some_and(|sequence| {
+                    child_valid(
+                        sequence,
+                        214,
+                        |form| matches!(form, 1..=12),
+                        entries,
+                        records,
+                    )
+                })
+            });
+            let witnesses_valid = (6..=7).all(|index| match record.integer(index) {
+                Some(0) => true,
+                Some(_) => pointer(record, index, entries).is_some_and(|sequence| {
+                    child_valid(sequence, 106, |form| form == 40, entries, records)
+                }),
+                None => false,
+            });
+            children.extend((2..=7).filter_map(|index| pointer(record, index, entries)));
+            exact_parameter_count(record, 8, entries)
+                && curves_valid
+                && leaders_valid
+                && witnesses_valid
+        }
+        (206, 0) => {
+            let first = pointer(record, 2, entries);
+            let second = pointer(record, 3, entries);
+            let leaders_valid = first.is_some_and(|sequence| {
+                child_valid(
+                    sequence,
+                    214,
+                    |form| matches!(form, 1..=12),
+                    entries,
+                    records,
+                )
+            }) && match record.integer(3) {
+                Some(0) => true,
+                Some(_) => second.is_some_and(|sequence| {
+                    child_valid(
+                        sequence,
+                        214,
+                        |form| matches!(form, 1..=12),
+                        entries,
+                        records,
+                    )
+                }),
+                None => false,
+            };
+            children.extend(first);
+            children.extend(second);
+            exact_parameter_count(record, 6, entries)
+                && leaders_valid
+                && (4..=5).all(|index| finite(record, index))
+        }
         (216, 0..=2) => {
             let leaders = [pointer(record, 2, entries), pointer(record, 3, entries)];
             let witnesses = [record.integer(4), record.integer(5)];
@@ -370,6 +483,59 @@ fn dimension_valid(
         _ => false,
     };
     note_valid && fields_valid && dimension_children_valid(entry, &children, entries)
+}
+
+fn flag_or_label_valid(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+    records: &BTreeMap<u32, &ParameterRecord>,
+) -> bool {
+    let (note_index, count_index, leader_start) = if entry.entity_type == 208 {
+        (5, 6, 7)
+    } else {
+        (1, 2, 3)
+    };
+    let note = pointer(record, note_index, entries);
+    let note_valid =
+        note.is_some_and(|sequence| child_valid(sequence, 212, |form| form == 0, entries, records));
+    let count = record
+        .integer(count_index)
+        .and_then(|value| usize::try_from(value).ok());
+    let leaders_valid = count.is_some_and(|count| {
+        (0..count).all(|offset| {
+            pointer(record, leader_start + offset, entries).is_some_and(|sequence| {
+                child_valid(
+                    sequence,
+                    214,
+                    |form| matches!(form, 1..=12),
+                    entries,
+                    records,
+                )
+            })
+        })
+    });
+    let shape_valid = if entry.entity_type == 208 {
+        count.is_some_and(|count| exact_parameter_count(record, 7 + count, entries))
+            && (1..=4).all(|index| finite(record, index))
+            && note
+                .and_then(|sequence| records.get(&sequence))
+                .and_then(|note| note.integer(1))
+                .is_some_and(|strings| {
+                    let strings = usize::try_from(strings).unwrap_or_default();
+                    (0..strings)
+                        .map(|offset| {
+                            note.and_then(|sequence| records.get(&sequence))
+                                .and_then(|note| note.integer(2 + offset * 12))
+                                .unwrap_or_default()
+                        })
+                        .sum::<i64>()
+                        <= 10
+                })
+    } else {
+        count.is_some_and(|count| count > 0 && exact_parameter_count(record, 3 + count, entries))
+    };
+    note_valid && leaders_valid && shape_valid
 }
 
 fn general_symbol_valid(
@@ -510,7 +676,7 @@ pub(super) fn project(
     let mut losses = Vec::new();
 
     for entry in directory.iter().filter(|entry| {
-        (matches!(entry.entity_type, 212 | 213) && entry.form == 0)
+        (matches!(entry.entity_type, 202 | 204 | 206 | 208 | 210 | 212 | 213) && entry.form == 0)
             || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
             || matches!(
                 (entry.entity_type, entry.form),
@@ -533,6 +699,8 @@ pub(super) fn project(
             entry.status.use_flag == 1
                 && transform_valid
                 && match entry.entity_type {
+                    202 | 204 | 206 => dimension_valid(entry, record, &entries, &records),
+                    208 | 210 => flag_or_label_valid(entry, record, &entries, &records),
                     212 => general_note_valid(record, &entries),
                     213 => new_general_note_valid(record, &entries),
                     214 => leader_valid(entry, record, &entries),
@@ -546,7 +714,7 @@ pub(super) fn project(
             decoded.insert(entry.sequence);
         } else {
             let message = match entry.entity_type {
-                216 | 218 | 220 | 222 => {
+                202 | 204 | 206 | 216 | 218 | 220 | 222 => {
                     "dimension components, role types, transforms, or Directory status are invalid"
                 }
                 228 => "symbol note, defining geometry, or leader list is invalid",
