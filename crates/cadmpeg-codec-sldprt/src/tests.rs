@@ -16721,6 +16721,7 @@ fn matching_numbered_sketch_alias_binds_the_base_geometry() {
         &features[1].definition,
         FeatureDefinition::Sketch { sketch: None, .. }
     ));
+    assert_eq!(features[1].dependencies, vec![FeatureId("base".into())]);
     assert!(matches!(
         &features[2].definition,
         FeatureDefinition::Sketch { sketch: None, .. }

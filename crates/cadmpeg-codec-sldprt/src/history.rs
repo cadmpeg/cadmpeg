@@ -760,6 +760,11 @@ pub fn bind_unique_sketch_feature(
         let Some(native_ref) = features[*index].native_ref.clone() else {
             continue;
         };
+        if !features[*index].dependencies.contains(base_dependency) {
+            features[*index]
+                .dependencies
+                .push((*base_dependency).clone());
+        }
         aliases.push((
             *base_index,
             (*base_dependency).clone(),
