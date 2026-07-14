@@ -112,7 +112,7 @@ fn valid_design_guid(value: &str) -> bool {
 
 /// Validate Fusion native design-record relationships and exact sketch frames.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     let Some(namespace) = ir.native.namespace("f3d") else {
         return Vec::new();
@@ -1153,6 +1153,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
     let mut edge_operand_scopes = HashSet::new();
+    let mut expected_edge_operands = native.design_edge_operands.clone();
+    history::bind_edge_operand_history_candidates(
+        &mut expected_edge_operands,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+    );
+    let expected_edge_operands = expected_edge_operands
+        .iter()
+        .map(|operand| (operand.id.as_str(), operand))
+        .collect::<HashMap<_, _>>();
     for operand in &native.design_edge_operands {
         let native_stream = design_stream(&operand.id);
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
@@ -1195,6 +1205,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && recipe.byte_offset < operand.next_byte_offset
             })
             && expected_faces.as_ref() == Some(&operand.candidate_faces)
+            && expected_edge_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_operand_slots.insert((
                 native_stream,
                 operand.scope_record_index,

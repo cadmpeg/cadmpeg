@@ -588,6 +588,8 @@ pub(crate) fn bind_face_operand_history_candidates(
             .or_insert(Some(state));
     }
     for operand in operands {
+        operand.preceding_candidate_faces.clear();
+        operand.changed_candidate_faces.clear();
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -621,6 +623,106 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .into_iter()
                 .cloned()
                 .collect();
+    }
+}
+
+fn face_boundary_edges(
+    faces: &[cadmpeg_ir::ids::FaceId],
+    topology: &AsmHistoricalTopology,
+) -> Vec<i64> {
+    let face_slots = faces
+        .iter()
+        .filter_map(|face| stable_ref(&face.0))
+        .collect::<HashSet<_>>();
+    let loops = topology
+        .face_loops
+        .iter()
+        .filter(|relation| face_slots.contains(&relation.owner_ref))
+        .flat_map(|relation| relation.member_refs.iter().copied())
+        .collect::<HashSet<_>>();
+    let coedges = topology
+        .loop_coedges
+        .iter()
+        .filter(|relation| loops.contains(&relation.owner_ref))
+        .flat_map(|relation| relation.member_refs.iter().copied())
+        .collect::<HashSet<_>>();
+    let mut edges = topology
+        .coedge_topology
+        .iter()
+        .filter(|coedge| coedges.contains(&coedge.coedge))
+        .map(|coedge| coedge.edge)
+        .collect::<Vec<_>>();
+    edges.sort_unstable();
+    edges.dedup();
+    edges
+}
+
+pub(crate) fn bind_edge_operand_history_candidates(
+    operands: &mut [crate::records::DesignEdgeOperand],
+    scopes: &[crate::records::DesignParameterScope],
+    histories: &[AsmHistory],
+) {
+    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    for operand in operands {
+        operand.preceding_candidate_faces.clear();
+        operand.changed_candidate_faces.clear();
+        operand.preceding_boundary_edge_slots.clear();
+        operand.changed_boundary_edge_slots.clear();
+        let stream = crate::design::native_stream(&operand.id);
+        let mut matching_scopes = scopes.iter().filter(|scope| {
+            scope.record_index == operand.scope_record_index
+                && crate::design::native_stream(&scope.id) == stream
+        });
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let (Some(state_id), Some(previous_state_id)) =
+            (scope.history_state_id, scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let (Some(Some(state)), Some(Some(previous))) =
+            (states.get(&state_id), states.get(&previous_state_id))
+        else {
+            continue;
+        };
+        let (Some(transition), Some(topology)) = (&state.transition, &previous.topology) else {
+            continue;
+        };
+        if transition.previous_state_id != Some(previous_state_id) {
+            continue;
+        }
+        operand.preceding_candidate_faces = faces_in_topology(&operand.candidate_faces, topology);
+        operand.changed_candidate_faces =
+            faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
+                .into_iter()
+                .cloned()
+                .collect();
+        operand.preceding_boundary_edge_slots =
+            face_boundary_edges(&operand.preceding_candidate_faces, topology);
+        let changed_edges = transition
+            .topology
+            .edges
+            .deleted
+            .iter()
+            .chain(&transition.topology.edges.updated)
+            .copied()
+            .collect::<HashSet<_>>();
+        operand.changed_boundary_edge_slots = operand
+            .preceding_boundary_edge_slots
+            .iter()
+            .copied()
+            .filter(|edge| changed_edges.contains(edge))
+            .collect();
     }
 }
 

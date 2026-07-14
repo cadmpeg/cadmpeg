@@ -6749,6 +6749,10 @@ fn parse_edge_operand(
         recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
         recipe_program,
         candidate_faces: Vec::new(),
+        preceding_candidate_faces: Vec::new(),
+        changed_candidate_faces: Vec::new(),
+        preceding_boundary_edge_slots: Vec::new(),
+        changed_boundary_edge_slots: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
