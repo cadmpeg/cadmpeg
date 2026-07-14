@@ -635,6 +635,12 @@ followed immediately by the unlabeled `segtab_ptr` array body. Its `f8` extent
 is the number of segment rows. The entity-reference header and segment rows use
 the same framing and field order as the labelled `segtab_ptr` table.
 
+The positional dimension table repeats the labelled template's `dimtab_ptr`
+table-class reference in an unlabeled `f8 <count> f7 <table-class> fb e2`
+header. The following entity reference selects the dimension-row class. The
+first row follows that reference; later rows follow
+`f3 f7 <table-class> e2`. All rows use the labelled dimension field order.
+
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is a one-byte generated-entity order index. In a feature-generated table, a line entity with `int_id = N` maps to table position `N - 1`. Arc entities map in `int_id` order to cylinder entries in generated-table order only when the feature's arc count equals its cylinder-entry count; `int_id - 1` does not index arc-generated cylinders.
 
 Positional `order_table` tuples are separated by `e2`. The final tuple may

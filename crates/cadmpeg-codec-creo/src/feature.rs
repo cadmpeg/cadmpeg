@@ -2112,6 +2112,58 @@ fn dimension_table(
     })
 }
 
+fn positional_dimension_table(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+    cache: &scalar::ScalarCache,
+) -> Option<FeatureDimensionTable> {
+    let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
+        (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+        let (declared_count, after_count) = psb::compact_int(payload, table + 1);
+        (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let reference_start = after_count + 1;
+        let (class, after_reference) = psb::reference_id(payload, reference_start).ok()?;
+        (class == table_class
+            && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
+        .then(|| {
+            (
+                table,
+                declared_count,
+                after_reference + 2,
+                payload[reference_start..after_reference].to_vec(),
+            )
+        })
+    })?;
+    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (_, after_row_class) = psb::reference_id(payload, cursor + 1).ok()?;
+    cursor = after_row_class;
+
+    let mut separator = vec![0xf3, psb::token::ENTITY_REF];
+    separator.extend_from_slice(&reference_bytes);
+    separator.push(0xe2);
+    let mut rows = Vec::new();
+    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    while cursor < end && rows.len() < row_limit {
+        let row_end = find_bytes(payload, &separator, cursor, end).unwrap_or(end);
+        let row = positional_dimension(payload, cursor, row_end, cache)?;
+        rows.push(row);
+        if rows.len() == row_limit {
+            break;
+        }
+        (payload.get(row_end..row_end + separator.len()) == Some(separator.as_slice()))
+            .then_some(())?;
+        cursor = row_end + separator.len();
+    }
+    (rows.len() == row_limit && !rows.is_empty()).then_some(FeatureDimensionTable {
+        declared_count,
+        entity_ref: Some(table_class),
+        rows,
+        offset: table,
+    })
+}
+
 fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp> {
     let Some(table) = find_bytes(payload, b"skamp_ptr\0", start, end) else {
         return Vec::new();
@@ -3647,6 +3699,7 @@ fn definitions_in_ranges(
 ) -> Vec<FeatureDefinition> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
+    let mut replay_dimension_class = None;
     for (index, &(start, id, owner_override)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
@@ -3736,7 +3789,14 @@ fn definitions_in_ranges(
         );
         let order_table = order_table(payload, start, end);
         let section_3d = section_3d(payload, start, end);
-        let dimensions = dimension_table(payload, start, end, &cache);
+        let dimensions = dimension_table(payload, start, end, &cache).or_else(|| {
+            owner_override.and_then(|_| {
+                positional_dimension_table(payload, start, end, replay_dimension_class?, &cache)
+            })
+        });
+        if owner_override.is_none() {
+            replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
+        }
         let relations = relation_table(payload, start, end);
         let saved_section = saved_section(
             payload,
@@ -4150,6 +4210,45 @@ mod tests {
         assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
         assert_eq!(segments.rows[1].center_id, Some(10));
         assert_eq!(segments.rows[1].external_id, 43);
+    }
+
+    #[test]
+    fn positional_dimension_table_uses_the_inherited_table_class() {
+        let mut payload = b"prefix\xf8\x02\xf7\x58\xfb\xe2\xf7\x59".to_vec();
+        payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
+        payload.extend_from_slice(b"\xf3\xf7\x58\xe2");
+        payload.extend_from_slice(&[10, 0x60, 0xc8, 0x1e, 0x15, 0xd4, 0xaf, 0x9f, 0, 0x18, 44]);
+        let cache = scalar::ScalarCache::from_section(&payload);
+
+        let dimensions = positional_dimension_table(&payload, 0, payload.len(), 88, &cache)
+            .expect("positional dimtab");
+
+        assert_eq!(dimensions.declared_count, 2);
+        assert_eq!(dimensions.entity_ref, Some(88));
+        assert_eq!(dimensions.rows.len(), 2);
+        assert_eq!(dimensions.rows[0].value, Some(3.0));
+        assert_eq!(dimensions.rows[0].external_id, 43);
+        assert_eq!(dimensions.rows[1].dimension_type, 10);
+        assert_eq!(dimensions.rows[1].external_id, 44);
+    }
+
+    #[test]
+    fn positional_definition_inherits_the_labeled_dimension_table_class() {
+        let mut payload = b"feat_defs_917\0dimtab_ptr\0\xf8\x01\xf7\x58\xfb\xe2\
+            type\0\x01value\0\xe4direct\0\x00aux_value\0\x18ext_id\0\x04\
+            \xe0\x01feat_id\0\x2a\xe0\x00ref_model_info\0\xe3S2D0004\0\
+            \xf8\x01\xf7\x58\xfb\xe2\xf7\x59"
+            .to_vec();
+        payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
+
+        let decoded = definitions(&payload);
+        let dimensions = decoded[1].dimensions.as_ref().expect("positional dimtab");
+
+        assert_eq!(decoded[1].owner_feature_id, Some(42));
+        assert_eq!(dimensions.entity_ref, Some(88));
+        assert_eq!(dimensions.rows.len(), 1);
+        assert_eq!(dimensions.rows[0].value, Some(3.0));
+        assert_eq!(dimensions.rows[0].external_id, 43);
     }
 
     #[test]
