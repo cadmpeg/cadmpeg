@@ -7139,8 +7139,9 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: format!(
-            "General model B-rep transfer remains incomplete. Exact single-loop plane components \
-             transfer when their vertices are determined by placed-plane intersections. Selected \
+            "General model B-rep transfer remains incomplete. Exact planar components transfer \
+             when every loop is solved from placed-plane intersections and one strict containment \
+             outer boundary exists per face. Selected \
              cylinders transfer when an exact `fc 05` record and placed cap outline establish the \
              complete axis placement, parameterization, and radius. VisibGeom \
              stores one surface prototype per family (a first-instance template), not per-instance \
