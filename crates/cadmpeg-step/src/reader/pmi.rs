@@ -56,21 +56,27 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         if record.simple_name() != Some("DATUM_SYSTEM") {
             continue;
         }
-        let datum_ids = record
+        let constituents = record
             .parameters()
             .iter()
-            .flat_map(references)
-            .filter(|reference| annotations.contains_key(reference))
-            .collect::<Vec<_>>();
-        let datum_references = datum_ids
+            .rev()
+            .find_map(ValueExt::list)
+            .unwrap_or_default();
+        let mut datum_records = BTreeSet::new();
+        let datum_references = constituents
             .iter()
             .enumerate()
-            .map(|(index, datum)| DatumReference {
-                datum: pmi_id(*datum),
-                precedence: u32::try_from(index + 1).expect("datum precedence exceeds u32"),
-                modifiers: Vec::new(),
+            .flat_map(|(index, constituent)| {
+                datum_references(
+                    constituent,
+                    u32::try_from(index + 1).expect("datum precedence exceeds u32"),
+                    exchange,
+                    &annotations,
+                    &mut datum_records,
+                    geometry.length_scale,
+                )
             })
-            .collect();
+            .collect::<Vec<_>>();
         push_annotation(
             ir,
             &mut annotations,
@@ -88,7 +94,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             },
         );
         typed.insert(id);
-        typed.extend(datum_ids);
+        typed.extend(datum_records);
     }
 
     for (&id, record) in &exchange.records {
@@ -272,6 +278,90 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     PmiResult {
         typed_records: typed,
         warnings,
+    }
+}
+
+fn datum_references(
+    value: &Value,
+    precedence: u32,
+    exchange: &Exchange,
+    annotations: &BTreeMap<u64, usize>,
+    typed: &mut BTreeSet<u64>,
+    length_scale: f64,
+) -> Vec<DatumReference> {
+    let Some(compartment_id) = value.reference() else {
+        return Vec::new();
+    };
+    let Some(compartment) = exchange.records.get(&compartment_id) else {
+        return Vec::new();
+    };
+    if !matches!(
+        compartment.simple_name(),
+        Some("DATUM_REFERENCE_COMPARTMENT" | "DATUM_REFERENCE_ELEMENT")
+    ) {
+        return Vec::new();
+    }
+    typed.insert(compartment_id);
+    let modifiers = compartment
+        .parameter(5)
+        .and_then(ValueExt::list)
+        .into_iter()
+        .flatten()
+        .filter_map(|modifier| modifier_text(modifier, exchange, typed, length_scale))
+        .collect::<Vec<_>>();
+    datum_ids(compartment.parameter(4))
+        .into_iter()
+        .filter(|datum| annotations.contains_key(datum))
+        .map(|datum| {
+            typed.insert(datum);
+            DatumReference {
+                datum: pmi_id(datum),
+                precedence,
+                modifiers: modifiers.clone(),
+            }
+        })
+        .collect()
+}
+
+fn datum_ids(value: Option<&Value>) -> Vec<u64> {
+    match value {
+        Some(Value::Reference(id)) => vec![*id],
+        Some(Value::Typed(kind, value)) if kind == "COMMON_DATUM_LIST" => value
+            .list()
+            .unwrap_or_default()
+            .iter()
+            .flat_map(|value| datum_ids(Some(value)))
+            .collect(),
+        Some(Value::List(values)) => values
+            .iter()
+            .flat_map(|value| datum_ids(Some(value)))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn modifier_text(
+    value: &Value,
+    exchange: &Exchange,
+    typed: &mut BTreeSet<u64>,
+    length_scale: f64,
+) -> Option<String> {
+    match value {
+        Value::Enumeration(value) => Some(value.to_ascii_lowercase()),
+        Value::Typed(_, value) => modifier_text(value, exchange, typed, length_scale),
+        Value::Reference(id) => {
+            let record = exchange.records.get(id)?;
+            if record.simple_name() != Some("DATUM_REFERENCE_MODIFIER_WITH_VALUE") {
+                return None;
+            }
+            typed.insert(*id);
+            let kind = record.parameter(0)?.enumeration()?.to_ascii_lowercase();
+            let measure_id = record.parameter(1)?.reference()?;
+            let value = measure(&Value::Reference(measure_id), exchange, length_scale)?.value;
+            typed.insert(measure_id);
+            Some(format!("{kind}:{value}"))
+        }
+        _ => None,
     }
 }
 
@@ -525,6 +615,9 @@ impl RecordExt for RawRecord {
 trait ValueExt {
     fn text(&self) -> Option<String>;
     fn number(&self) -> Option<f64>;
+    fn reference(&self) -> Option<u64>;
+    fn list(&self) -> Option<&[Value]>;
+    fn enumeration(&self) -> Option<&str>;
 }
 
 impl ValueExt for Value {
@@ -540,6 +633,27 @@ impl ValueExt for Value {
             Value::Integer(value) => Some(*value as f64),
             Value::Real(value) => Some(*value),
             _ => None,
+        }
+    }
+    fn reference(&self) -> Option<u64> {
+        if let Value::Reference(id) = self {
+            Some(*id)
+        } else {
+            None
+        }
+    }
+    fn list(&self) -> Option<&[Value]> {
+        if let Value::List(values) = self {
+            Some(values)
+        } else {
+            None
+        }
+    }
+    fn enumeration(&self) -> Option<&str> {
+        if let Value::Enumeration(value) = self {
+            Some(value)
+        } else {
+            None
         }
     }
 }

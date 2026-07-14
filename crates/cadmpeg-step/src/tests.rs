@@ -763,6 +763,20 @@ fn decode_transfers_ap242_semantic_pmi() {
         .iter()
         .find(|annotation| annotation.name.as_deref() == Some("surface flatness"))
         .unwrap();
+    let datum_system = result
+        .ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("primary system"))
+        .expect("datum system");
+    assert!(matches!(
+        &datum_system.definition,
+        PmiDefinition::DatumSystem { references }
+            if references.len() == 1
+                && references[0].precedence == 1
+                && references[0].modifiers == ["maximum_material_requirement", "distance:0.2"]
+    ));
     assert!(matches!(
         tolerance.definition,
         PmiDefinition::GeometricTolerance {
