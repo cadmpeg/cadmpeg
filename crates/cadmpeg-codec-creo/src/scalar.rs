@@ -240,6 +240,21 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     decode_in_surface_row_lane(data, offset, cache)
 }
 
+/// Decode one scalar in a replay-bound tabulated-cylinder envelope frame.
+///
+/// The frame otherwise uses the second-coordinate lane, but `0x4a` is a
+/// seven-byte positive IEEE form with an implicit zero low byte.
+pub fn decode_tabulated_cylinder_frame_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x4a) {
+        return ieee7(data, offset, 0x40);
+    }
+    decode_tabulated_cylinder_second_coordinate(data, offset, cache)
+}
+
 /// Decode one scalar in the positive seven-byte DICT lane.
 ///
 /// The enclosing record grammar must establish this lane. Several prefix
@@ -490,6 +505,22 @@ mod tests {
             decode_in_surface_row_lane(&[0xdf, 0x19, 0x4c, 0x93, 0x0f, 0x96, 0xe8], 0, &cache),
             Some((
                 f64::from_be_bytes([0x40, 0x11, 0x19, 0x4c, 0x93, 0x0f, 0x96, 0xe8]),
+                7
+            ))
+        );
+    }
+
+    #[test]
+    fn tabulated_cylinder_frame_decodes_positive_4a() {
+        let cache = ScalarCache::default();
+        assert_eq!(
+            decode_tabulated_cylinder_frame_coordinate(
+                &[0x4a, 0x13, 0x1f, 0x1c, 0x0b, 0, 0],
+                0,
+                &cache
+            ),
+            Some((
+                f64::from_be_bytes([0x40, 0x13, 0x1f, 0x1c, 0x0b, 0, 0, 0]),
                 7
             ))
         );

@@ -3451,20 +3451,45 @@ fn placed_tabulated_cylinder_directrix(
         .iter()
         .copied()
         .collect::<Option<Vec<_>>>()?;
-    let [_, frame] = parameters.scalar_frames.as_slice() else {
-        return None;
-    };
     let cache = crate::scalar::ScalarCache::default();
-    let values = frame
-        .slots
-        .iter()
-        .map(|slot| {
-            crate::scalar::decode_tabulated_cylinder_second_coordinate(&slot.raw, 0, &cache)
-                .filter(|(_, end)| *end == slot.raw.len())
-                .map(|(value, _)| value)
-                .or(slot.value)
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let values = (|| {
+        let marker = parameters
+            .body
+            .windows(3)
+            .position(|window| window == [0x00, 0x0c, 0x9a])?;
+        let mut cursor = marker + 3;
+        let mut values = Vec::with_capacity(6);
+        let mut heads = Vec::with_capacity(6);
+        for _ in 0..6 {
+            heads.push(*parameters.body.get(cursor)?);
+            let (value, end) = crate::scalar::decode_tabulated_cylinder_frame_coordinate(
+                &parameters.body,
+                cursor,
+                &cache,
+            )?;
+            value.is_finite().then_some(())?;
+            values.push(value);
+            cursor = end;
+        }
+        let resistor_layout = matches!(heads.as_slice(), [_, 0x46, 0x2f, _, 0x46, 0x2e]);
+        let thyrister_layout = matches!(heads.as_slice(), [first, 0x42, z0, second, 0x18, z1]
+            if matches!(first, 0x46 | 0x4a | 0xd1 | 0xd3 | 0xde | 0xdf)
+                && matches!(second, 0x46 | 0x4a | 0xd1 | 0xd3 | 0xde | 0xdf)
+                && matches!(z0, 0x7f..=0x86)
+                && matches!(z1, 0x7f..=0x86));
+        (resistor_layout || thyrister_layout).then_some(())?;
+        Some(values)
+    })()
+    .or_else(|| {
+        let [_, frame] = parameters.scalar_frames.as_slice() else {
+            return None;
+        };
+        frame
+            .slots
+            .iter()
+            .map(|slot| slot.value)
+            .collect::<Option<Vec<_>>>()
+    })?;
     let [a0, a1, a2, b0, b1, b2] = values.as_slice() else {
         return None;
     };
