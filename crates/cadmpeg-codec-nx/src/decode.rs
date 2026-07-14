@@ -3257,6 +3257,7 @@ fn attach_native_object_model(
             extrude_construction_profiles: &feature_extrude_construction_profiles,
             operation_body_operands: &feature_operation_body_operands,
             sketch_construction_inputs: &feature_sketch_construction_inputs,
+            sketch_coordinate_pairs: &feature_sketch_payload_coordinate_pairs,
             block_constructions: &feature_block_constructions,
             extrude_32_constructions: &feature_extrude_32_constructions,
             extrude_payload_headers: &feature_extrude_payload_headers,
@@ -3276,7 +3277,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(97);
+    namespace.version = namespace.version.max(98);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3621,6 +3622,7 @@ struct FeatureOperationSources<'a> {
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
     operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
     sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
+    sketch_coordinate_pairs: &'a [crate::native::FeatureSketchPayloadCoordinatePair],
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
@@ -3656,6 +3658,7 @@ fn attach_feature_operations(
         extrude_construction_profiles,
         operation_body_operands,
         sketch_construction_inputs,
+        sketch_coordinate_pairs,
         block_constructions,
         extrude_32_constructions,
         extrude_payload_headers,
@@ -3772,6 +3775,14 @@ fn attach_feature_operations(
         .iter()
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
         .collect::<BTreeMap<_, _>>();
+    let mut sketch_coordinate_pairs_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureSketchPayloadCoordinatePair>>::new();
+    for pair in sketch_coordinate_pairs {
+        sketch_coordinate_pairs_by_operation
+            .entry(pair.operation_label.as_str())
+            .or_default()
+            .push(pair);
+    }
     let block_constructions_by_operation = block_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
@@ -3937,6 +3948,16 @@ fn attach_feature_operations(
         }
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
             source_properties.insert("sketch_construction_inputs".to_string(), inputs.id.clone());
+        }
+        for pair in sketch_coordinate_pairs_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("sketch_coordinate_pair.{}", pair.ordinal),
+                pair.id.clone(),
+            );
         }
         if let Some(construction) = block_constructions_by_operation.get(label.id.as_str()) {
             source_properties.insert("block_construction".to_string(), construction.id.clone());
