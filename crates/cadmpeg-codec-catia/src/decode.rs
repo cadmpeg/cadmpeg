@@ -4388,7 +4388,7 @@ fn attach_standard_topology(
         propagated_endpoint_pairs,
         mesh_propagated_endpoint_pairs,
     );
-    let constrained_endpoint_options = endpoint_options.as_ref().map(|options| {
+    let mut constrained_endpoint_options = endpoint_options.as_ref().map(|options| {
         options
             .iter()
             .enumerate()
@@ -4400,6 +4400,14 @@ fn attach_standard_topology(
             })
             .collect::<Vec<_>>()
     });
+    if let (Some(options), Some(ports)) = (
+        constrained_endpoint_options.as_mut(),
+        topology::standard_mesh_edge_ports(brep),
+    ) {
+        if let Some(pruned) = topology::prune_edge_candidates_by_port_domains(&ports, options) {
+            *options = pruned;
+        }
+    }
     let resolved_endpoint_pairs = propagated_endpoint_pairs
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<[usize; 2]>>>());
     if let Some(pairs) = &resolved_endpoint_pairs {
@@ -4459,14 +4467,23 @@ fn attach_standard_topology(
     }) {
         bound
     } else if let Some(topology) = constrained_endpoint_options.as_ref().and_then(|options| {
-        const MAX_INCIDENCE_SEARCH_WORK: usize = 1_000_000;
+        const MAX_INCIDENCE_SEARCH_WORK: usize = 10_000_000;
 
         let choice_count = options.iter().map(Vec::len).sum::<usize>();
         options
             .len()
             .checked_mul(choice_count)
             .filter(|work| *work <= MAX_INCIDENCE_SEARCH_WORK)?;
-        topology::parse_standard_endpoint_candidates(brep, &edge_faces, options)
+        topology::standard_mesh_edge_ports(brep)
+            .and_then(|ports| {
+                topology::parse_standard_port_endpoint_candidates(
+                    brep,
+                    &edge_faces,
+                    options,
+                    &ports,
+                )
+            })
+            .or_else(|| topology::parse_standard_endpoint_candidates(brep, &edge_faces, options))
     }) {
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)

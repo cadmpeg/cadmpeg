@@ -489,6 +489,69 @@ pub fn parse_standard_endpoints(
     )
 }
 
+/// Intersect every endpoint port's geometric domains and remove edge endpoint
+/// pairs that cannot satisfy either orientation of the resulting port domains.
+#[must_use]
+pub fn prune_edge_candidates_by_port_domains(
+    edge_ports: &[[u32; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    if edge_ports.len() != edge_candidates.len() || edge_candidates.iter().any(Vec::is_empty) {
+        return None;
+    }
+    let mut vertex_by_port = HashMap::new();
+    for port in edge_ports.iter().flatten() {
+        let next = vertex_by_port.len();
+        vertex_by_port.entry(*port).or_insert(next);
+    }
+    let all_points = edge_candidates
+        .iter()
+        .flatten()
+        .flatten()
+        .copied()
+        .collect::<HashSet<_>>();
+    let mut domains = vec![all_points; vertex_by_port.len()];
+    for (ports, candidates) in edge_ports.iter().zip(edge_candidates) {
+        let endpoint_domain = candidates.iter().flatten().copied().collect::<HashSet<_>>();
+        for port in ports {
+            let vertex = vertex_by_port[port];
+            domains[vertex].retain(|point| endpoint_domain.contains(point));
+            if domains[vertex].is_empty() {
+                return None;
+            }
+        }
+    }
+    edge_ports
+        .iter()
+        .zip(edge_candidates)
+        .map(|(ports, candidates)| {
+            let left = &domains[vertex_by_port[&ports[0]]];
+            let right = &domains[vertex_by_port[&ports[1]]];
+            let mut filtered = if ports[0] == ports[1] {
+                left.intersection(right)
+                    .copied()
+                    .map(|point| [point, point])
+                    .collect::<Vec<_>>()
+            } else {
+                candidates
+                    .iter()
+                    .copied()
+                    .filter(|pair| {
+                        (left.contains(&pair[0]) && right.contains(&pair[1]))
+                            || (left.contains(&pair[1]) && right.contains(&pair[0]))
+                    })
+                    .collect::<Vec<_>>()
+            };
+            for pair in &mut filtered {
+                pair.sort_unstable();
+            }
+            filtered.sort_unstable();
+            filtered.dedup();
+            (!filtered.is_empty()).then_some(filtered)
+        })
+        .collect()
+}
+
 /// Reconstruct standard topology while resolving edges that have multiple
 /// geometrically valid endpoint pairs. Candidate pairs and edge rows use their
 /// serialized order as the stable gauge when equivalent assignments permute
@@ -520,6 +583,41 @@ pub fn parse_standard_endpoint_candidates(
         &vertex_points,
         edge_faces,
         edge_candidates,
+        None,
+        face_count,
+    )
+}
+
+/// Reconstruct standard topology from geometric endpoint candidates while
+/// enforcing the serialized endpoint-port equality quotient during search.
+#[must_use]
+pub fn parse_standard_port_endpoint_candidates(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    edge_ports: &[[u32; 2]],
+) -> Option<StandardTopology> {
+    let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
+    let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    if edge_rows.len() != edge_faces.len()
+        || edge_rows.len() != edge_candidates.len()
+        || edge_rows.len() != edge_ports.len()
+        || edge_candidates.iter().any(Vec::is_empty)
+        || edge_candidates
+            .iter()
+            .flatten()
+            .flatten()
+            .any(|point| *point >= vertex_points.len())
+    {
+        return None;
+    }
+    reconstruct_incidence_candidates(
+        &edge_rows,
+        &vertex_points,
+        edge_faces,
+        edge_candidates,
+        Some(edge_ports),
         face_count,
     )
 }
@@ -531,6 +629,8 @@ struct IncidenceCandidateSearch<'a> {
     edge_rows: &'a [EdgeRow],
     vertex_points: &'a [[f64; 3]],
     face_count: usize,
+    edge_ports: Option<&'a [[u32; 2]]>,
+    port_points: HashMap<u32, usize>,
     assignment: Vec<Option<[usize; 2]>>,
     degrees: Vec<Vec<u8>>,
     solution: Option<StandardTopology>,
@@ -540,13 +640,35 @@ struct IncidenceCandidateSearch<'a> {
 }
 
 impl IncidenceCandidateSearch<'_> {
+    fn candidate_orientations(&self, edge: usize, pair: [usize; 2]) -> Vec<[usize; 2]> {
+        let Some(ports) = self.edge_ports else {
+            return vec![pair];
+        };
+        let mut oriented = vec![pair];
+        if pair[0] != pair[1] {
+            oriented.push([pair[1], pair[0]]);
+        }
+        oriented.retain(|points| {
+            ports[edge].iter().zip(points).all(|(&port, point)| {
+                self.port_points
+                    .get(&port)
+                    .is_none_or(|stored| *stored == *point)
+            })
+        });
+        oriented
+    }
+
     fn candidate_fits(&self, edge: usize, pair: [usize; 2]) -> bool {
         let mut faces = self.edge_faces[edge].to_vec();
         faces.sort_unstable();
         faces.dedup();
-        faces
-            .iter()
-            .all(|&face| pair.iter().all(|&point| self.degrees[face][point] < 2))
+        !self.candidate_orientations(edge, pair).is_empty()
+            && faces.iter().all(|&face| {
+                pair.iter().enumerate().all(|(rank, &point)| {
+                    let multiplicity = 1 + usize::from(rank == 0 && pair[0] == pair[1]);
+                    usize::from(self.degrees[face][point]) + multiplicity <= 2
+                })
+            })
     }
 
     fn feasible(&self) -> bool {
@@ -575,10 +697,16 @@ impl IncidenceCandidateSearch<'_> {
         // propagation. Keep it bounded so unresolved geometric ambiguity
         // declines atomically instead of making container decode unbounded.
         const MAX_STATES: usize = 1_024;
+        const MAX_PORT_STATES: usize = 4_096;
         if self.ambiguous || self.exhausted {
             return;
         }
-        if self.states >= MAX_STATES {
+        let max_states = if self.edge_ports.is_some() {
+            MAX_PORT_STATES
+        } else {
+            MAX_STATES
+        };
+        if self.states >= max_states {
             self.exhausted = true;
             return;
         }
@@ -621,22 +749,39 @@ impl IncidenceCandidateSearch<'_> {
             if !self.candidate_fits(edge, pair) {
                 continue;
             }
-            let mut faces = self.edge_faces[edge].to_vec();
-            faces.sort_unstable();
-            faces.dedup();
-            for &face in &faces {
-                for &point in &pair {
-                    self.degrees[face][point] += 1;
+            for oriented in self.candidate_orientations(edge, pair) {
+                let mut inserted_ports = Vec::new();
+                if let Some(ports) = self.edge_ports {
+                    for (&port, &point) in ports[edge].iter().zip(&oriented) {
+                        if let std::collections::hash_map::Entry::Vacant(entry) =
+                            self.port_points.entry(port)
+                        {
+                            entry.insert(point);
+                            inserted_ports.push(port);
+                        }
+                    }
                 }
-            }
-            self.assignment[edge] = Some(pair);
-            if self.feasible() {
-                self.search();
-            }
-            self.assignment[edge] = None;
-            for &face in &faces {
-                for &point in &pair {
-                    self.degrees[face][point] -= 1;
+                let mut faces = self.edge_faces[edge].to_vec();
+                faces.sort_unstable();
+                faces.dedup();
+                for &face in &faces {
+                    for &point in &oriented {
+                        self.degrees[face][point] += 1;
+                    }
+                }
+                self.assignment[edge] = Some(oriented);
+                let feasible = self.feasible();
+                if feasible {
+                    self.search();
+                }
+                self.assignment[edge] = None;
+                for &face in &faces {
+                    for &point in &oriented {
+                        self.degrees[face][point] -= 1;
+                    }
+                }
+                for port in inserted_ports {
+                    self.port_points.remove(&port);
                 }
             }
         }
@@ -648,6 +793,7 @@ fn reconstruct_incidence_candidates(
     vertex_points: &[[f64; 3]],
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
+    edge_ports: Option<&[[u32; 2]]>,
     face_count: usize,
 ) -> Option<StandardTopology> {
     let mut choices = edge_candidates.to_vec();
@@ -673,6 +819,8 @@ fn reconstruct_incidence_candidates(
         edge_rows,
         vertex_points,
         face_count,
+        edge_ports,
+        port_points: HashMap::new(),
         assignment: vec![None; choices.len()],
         degrees: vec![vec![0; vertex_points.len()]; face_count],
         solution: None,
@@ -681,6 +829,9 @@ fn reconstruct_incidence_candidates(
         states: 0,
     };
     for edge in 0..choices.len() {
+        if edge_ports.is_some() {
+            continue;
+        }
         let [pair] = choices[edge].as_slice() else {
             continue;
         };
@@ -2357,10 +2508,12 @@ fn incidence_cycles(
         return None;
     }
     let mut at_vertex = HashMap::<usize, Vec<usize>>::new();
+    let mut cycles = Vec::new();
     for &edge in incident {
         let [start, end] = edge_points[edge];
         if start == end {
-            return None;
+            cycles.push(vec![(edge, false)]);
+            continue;
         }
         at_vertex.entry(start).or_default().push(edge);
         at_vertex.entry(end).or_default().push(edge);
@@ -2368,8 +2521,11 @@ fn incidence_cycles(
     if at_vertex.values().any(|edges| edges.len() != 2) {
         return None;
     }
-    let mut unseen: HashSet<usize> = incident.iter().copied().collect();
-    let mut cycles = Vec::new();
+    let mut unseen: HashSet<usize> = incident
+        .iter()
+        .copied()
+        .filter(|edge| edge_points[*edge][0] != edge_points[*edge][1])
+        .collect();
     while let Some(&first) = unseen.iter().min() {
         let start_vertex = edge_points[first][0];
         let mut vertex = start_vertex;
@@ -3863,9 +4019,10 @@ mod motif_tests {
 
     use super::{
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments, motif_port_points,
-        parse_trim_chain, propagate_edge_port_points, reconstruct_incidence,
-        reconstruct_incidence_candidates, unique_coordinate_bijection, EdgeBoundaryLayout, EdgeRow,
-        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient, TrimRecord, UnionFind,
+        parse_trim_chain, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
+        reconstruct_incidence, reconstruct_incidence_candidates, unique_coordinate_bijection,
+        EdgeBoundaryLayout, EdgeRow, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
+        MeshQuotient, TrimRecord, UnionFind,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -3982,7 +4139,7 @@ mod motif_tests {
             vec![[2, 3]],
         ];
         let topology =
-            reconstruct_incidence_candidates(&rows, &points, &edge_faces, &candidates, 4)
+            reconstruct_incidence_candidates(&rows, &points, &edge_faces, &candidates, None, 4)
                 .expect("unique face-closing endpoint assignment");
         assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
     }
@@ -4173,6 +4330,40 @@ mod motif_tests {
         assert_eq!(
             propagate_edge_port_points(&ports, &pairs),
             Some(vec![Some([0, 1]), Some([1, 2]), Some([2, 3]), Some([3, 0]),])
+        );
+    }
+
+    #[test]
+    fn equal_endpoint_ports_produce_closed_edge_candidates() {
+        let ports = [[10, 10], [10, 11]];
+        let candidates = [vec![[0, 1], [0, 2]], vec![[1, 3], [2, 4]]];
+        assert_eq!(
+            prune_edge_candidates_by_port_domains(&ports, &candidates),
+            Some(vec![vec![[1, 1], [2, 2]], vec![[1, 3], [2, 4]]])
+        );
+    }
+
+    #[test]
+    fn closed_edge_is_a_single_coedge_boundary_on_each_incident_face() {
+        let topology = reconstruct_incidence(
+            vec![EdgeRow {
+                kind: 0,
+                handles: vec![7, 7],
+                boundary_layout: EdgeBoundaryLayout::CompleteBoundaryRun,
+            }],
+            vec![[1.0, 0.0, 0.0]],
+            &[[0, 1]],
+            &[[0, 0]],
+            2,
+        )
+        .expect("closed radial edge");
+        assert!(topology
+            .faces()
+            .iter()
+            .all(|face| face.boundaries.len() == 1 && face.boundaries[0].coedges.len() == 1));
+        assert_ne!(
+            topology.faces()[0].boundaries[0].coedges[0].reversed,
+            topology.faces()[1].boundaries[0].coedges[0].reversed
         );
     }
 
