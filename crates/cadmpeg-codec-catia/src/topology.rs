@@ -2605,9 +2605,28 @@ struct MeshSelectionSearch<'a> {
     solution: Option<(StandardTopology, Vec<usize>)>,
 }
 
+fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
+    for assignments in faces {
+        let mut seen = HashSet::new();
+        assignments.retain(|assignment| {
+            let signature = assignment
+                .boundaries
+                .iter()
+                .map(|boundary| {
+                    boundary
+                        .iter()
+                        .map(|use_| (use_.edge, use_.reversed))
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>();
+            seen.insert(signature)
+        });
+    }
+}
+
 impl MeshSelectionSearch<'_> {
     fn search(&mut self, quotient: &MeshQuotient) {
-        const MAX_SELECTION_STATES: usize = 64;
+        const MAX_SELECTION_STATES: usize = 512;
 
         if self.solution.is_some() || self.states >= MAX_SELECTION_STATES {
             return;
@@ -2649,7 +2668,7 @@ impl MeshSelectionSearch<'_> {
                             || measured.domains[right].len() < self.vertex_points.len()
                     })
                     .count();
-                Some((usize::MAX - constrained, work, face))
+                Some((work, usize::MAX - constrained, face))
             })
             .min();
         let Some((_, _, face)) = next else {
@@ -2761,10 +2780,11 @@ pub fn parse_standard_mesh_endpoint_candidates(
         domains.push(domain.clone());
         domains.push(domain);
     }
-    let assignments = standard_mesh_boundary_assignments(bytes, edge_faces)?;
+    let mut assignments = standard_mesh_boundary_assignments(bytes, edge_faces)?;
     if assignments.len() != face_count {
         return None;
     }
+    deduplicate_mesh_quotient_assignments(&mut assignments);
     let face_work = assignments
         .iter()
         .map(|assignments| Some(assignments.len()))
@@ -3363,9 +3383,10 @@ impl UnionFind {
 #[cfg(test)]
 mod motif_tests {
     use super::{
-        bind_edge_port_candidates, motif_port_points, parse_trim_chain, propagate_edge_port_points,
-        reconstruct_incidence, reconstruct_incidence_candidates, EdgeBoundaryLayout, EdgeRow,
-        TrimRecord,
+        bind_edge_port_candidates, deduplicate_mesh_quotient_assignments, motif_port_points,
+        parse_trim_chain, propagate_edge_port_points, reconstruct_incidence,
+        reconstruct_incidence_candidates, EdgeBoundaryLayout, EdgeRow, MeshBoundaryEdgeCandidate,
+        MeshFaceBoundaryAssignment, TrimRecord,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -3485,6 +3506,31 @@ mod motif_tests {
             reconstruct_incidence_candidates(&rows, &points, &edge_faces, &candidates, 4)
                 .expect("unique face-closing endpoint assignment");
         assert_eq!(topology.edge_vertices().expect("edge vertices")[0], [0, 1]);
+    }
+
+    #[test]
+    fn quotient_assignments_ignore_span_allocation_with_identical_edge_order() {
+        let use_ = |edge, start, end| MeshBoundaryEdgeCandidate {
+            edge,
+            start,
+            end,
+            reversed: None,
+        };
+        let mut faces = vec![vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0, 0, 1), use_(1, 1, 4)]],
+            },
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0, 0, 3), use_(1, 3, 4)]],
+            },
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(1, 0, 1), use_(0, 1, 4)]],
+            },
+        ]];
+        deduplicate_mesh_quotient_assignments(&mut faces);
+        assert_eq!(faces[0].len(), 2);
+        assert_eq!(faces[0][0].boundaries[0][0].edge, 0);
+        assert_eq!(faces[0][1].boundaries[0][0].edge, 1);
     }
 
     #[test]
