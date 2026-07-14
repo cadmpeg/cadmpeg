@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 63);
+    assert_eq!(namespace.version, 64);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -719,6 +719,26 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     let mut malformed = references;
     malformed[0].ordinal = 2;
     assert!(crate::native::feature_sketch_construction_inputs(&sketches, &malformed).is_empty());
+}
+
+#[test]
+fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
+    let ids = vec!["block#2".to_string(), "block#3".to_string()];
+    let blocks = std::collections::BTreeMap::from([
+        ("block#2".to_string(), (&[0x30, 0x43][..], 120_u64)),
+        (
+            "block#3".to_string(),
+            (&[0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72][..], 900_u64),
+        ),
+    ]);
+    let joined = crate::native::join_data_block_bytes(&ids, &blocks).unwrap();
+    assert_eq!(joined.0, [0x30, 0x43, 0x0c, 0xcc, 0xcc, 0xcc, 0xcd, 0x72]);
+    assert_eq!(joined.1, [0, 2]);
+    assert_eq!(joined.2, [2, 6]);
+    assert_eq!(joined.3, [120, 900]);
+
+    let missing = vec!["block#2".to_string(), "missing".to_string()];
+    assert!(crate::native::join_data_block_bytes(&missing, &blocks).is_none());
 }
 
 #[test]
@@ -4815,7 +4835,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 63);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 64);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

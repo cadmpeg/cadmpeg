@@ -395,6 +395,29 @@ pub struct FeatureSketchConstructionInputs {
     pub terminal_data_block: String,
 }
 
+/// Exact logical sketch payload reconstructed from its ordered store blocks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Complete construction-input record defining block order.
+    pub construction_inputs: String,
+    /// Member blocks followed by the separated terminal block.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact concatenated payload bytes.
+    pub sha256: String,
+    /// Starting payload offset of each block in concatenation order.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact serialized length of each source block.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute file offset of each source block.
+    pub block_source_offsets: Vec<u64>,
+}
+
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchReference {
@@ -1327,6 +1350,92 @@ pub fn feature_sketch_construction_inputs(
         });
     }
     inputs
+}
+
+/// Reconstruct exact sketch payloads across offset-store block boundaries.
+pub fn feature_sketch_construction_payloads(
+    container: &Container,
+    constructions: &[FeatureSketchConstructionInputs],
+) -> Vec<FeatureSketchConstructionPayload> {
+    let mut blocks = BTreeMap::<String, (&[u8], u64)>::new();
+    for (section_ordinal, (entry, section)) in
+        container.indexed_om_sections().into_iter().enumerate()
+    {
+        if section
+            .records
+            .first()
+            .is_none_or(|record| record.object_id.is_some())
+        {
+            continue;
+        }
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (record_ordinal, block) in section.records.into_iter().enumerate() {
+            blocks.insert(
+                format!(
+                    "nx:om-data-blocks-{section_ordinal}:block#{}",
+                    record_ordinal + 1
+                ),
+                (block.bytes, entry_offset + block.offset as u64),
+            );
+        }
+    }
+
+    constructions
+        .iter()
+        .filter_map(|construction| {
+            let mut data_blocks = construction.member_data_blocks.clone();
+            data_blocks.push(construction.terminal_data_block.clone());
+            let (payload, block_payload_offsets, block_byte_lengths, block_source_offsets) =
+                join_data_block_bytes(&data_blocks, &blocks)?;
+            Some(FeatureSketchConstructionPayload {
+                id: construction.id.replacen(
+                    "sketch-construction-inputs",
+                    "sketch-construction-payload",
+                    1,
+                ),
+                operation_label: construction.operation_label.clone(),
+                construction_inputs: construction.id.clone(),
+                data_blocks,
+                byte_len: payload.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&payload),
+                block_payload_offsets,
+                block_byte_lengths,
+                block_source_offsets,
+            })
+        })
+        .collect()
+}
+
+pub(crate) type JoinedDataBlockBytes = (Vec<u8>, Vec<u64>, Vec<u64>, Vec<u64>);
+
+pub(crate) fn join_data_block_bytes(
+    ids: &[String],
+    blocks: &BTreeMap<String, (&[u8], u64)>,
+) -> Option<JoinedDataBlockBytes> {
+    let source_blocks = ids
+        .iter()
+        .map(|id| blocks.get(id).copied())
+        .collect::<Option<Vec<_>>>()?;
+    let byte_len = source_blocks
+        .iter()
+        .map(|(bytes, _)| bytes.len())
+        .sum::<usize>();
+    let mut payload = Vec::with_capacity(byte_len);
+    let mut block_payload_offsets = Vec::with_capacity(source_blocks.len());
+    let mut block_byte_lengths = Vec::with_capacity(source_blocks.len());
+    let mut block_source_offsets = Vec::with_capacity(source_blocks.len());
+    for (bytes, source_offset) in source_blocks {
+        block_payload_offsets.push(payload.len() as u64);
+        block_byte_lengths.push(bytes.len() as u64);
+        block_source_offsets.push(source_offset);
+        payload.extend_from_slice(bytes);
+    }
+    Some((
+        payload,
+        block_payload_offsets,
+        block_byte_lengths,
+        block_source_offsets,
+    ))
 }
 
 /// Decode and resolve the ordered counted-reference field in sketch payloads.
