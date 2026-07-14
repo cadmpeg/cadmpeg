@@ -587,6 +587,8 @@ pub struct FeatureOperationBodyReferenceLane {
     pub encoding: FeatureOperationBodyReferenceLaneEncoding,
     /// Ordered decoded indices.
     pub object_indices: Vec<u32>,
+    /// Unique offset-only data blocks addressed by the ordered indices.
+    pub data_blocks: Vec<Option<String>>,
     /// Absolute file offsets of the encoded index markers.
     pub source_offsets: Vec<u64>,
 }
@@ -1710,6 +1712,7 @@ pub fn feature_operation_body_11_continuations(
 pub fn feature_operation_body_reference_lanes(
     container: &Container,
 ) -> Vec<FeatureOperationBodyReferenceLane> {
+    let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut lanes = Vec::new();
     for link in segment_om_links(container)
@@ -1738,6 +1741,15 @@ pub fn feature_operation_body_reference_lanes(
                         FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex
                     }
                 };
+                let object_indices = lane
+                    .values
+                    .iter()
+                    .map(|value| value.object_index)
+                    .collect::<Vec<_>>();
+                let data_blocks = object_indices
+                    .iter()
+                    .map(|index| unique_offset_data_block(&indexed, *index))
+                    .collect();
                 lanes.push(FeatureOperationBodyReferenceLane {
                     id: format!(
                         "nx:feature-history:operation-body-reference-lane#{section_key}-{operation_ordinal}-{}",
@@ -1750,7 +1762,8 @@ pub fn feature_operation_body_reference_lanes(
                     body_object_index: lane.body_object_index,
                     branch: lane.branch,
                     encoding,
-                    object_indices: lane.values.iter().map(|value| value.object_index).collect(),
+                    object_indices,
+                    data_blocks,
                     source_offsets: lane
                         .values
                         .iter()
@@ -1809,6 +1822,13 @@ pub fn feature_extrude_construction_profiles(
         else {
             continue;
         };
+        let Some(lane_data_blocks) = lane.data_blocks.iter().cloned().collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        if lane_data_blocks != data_blocks {
+            continue;
+        }
         profiles.push(FeatureExtrudeConstructionProfile {
             id: operation_label.replacen("operation-label", "extrude-construction-profile", 1),
             operation_label: operation_label.to_string(),

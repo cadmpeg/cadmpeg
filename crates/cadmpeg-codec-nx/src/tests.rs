@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 56);
+    assert_eq!(namespace.version, 57);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1792,6 +1792,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         branch: 0x11,
         encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
         object_indices: vec![100, 101],
+        data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
         source_offsets: vec![20, 21],
     };
     let profiles = crate::native::feature_extrude_construction_profiles(
@@ -1807,6 +1808,22 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
     mismatched.object_indices[1] = 102;
     assert!(
         crate::native::feature_extrude_construction_profiles(&references, &[mismatched]).is_empty()
+    );
+
+    let mut unresolved = FeatureOperationBodyReferenceLane {
+        id: "lane".to_string(),
+        operation_label: "operation".to_string(),
+        body_reference_ordinal: 0,
+        body_object_index: 42,
+        branch: 0x11,
+        encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
+        object_indices: vec![100, 101],
+        data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
+        source_offsets: vec![20, 21],
+    };
+    unresolved.data_blocks[1] = None;
+    assert!(
+        crate::native::feature_extrude_construction_profiles(&references, &[unresolved]).is_empty()
     );
 }
 
@@ -4731,7 +4748,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 56);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 57);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
