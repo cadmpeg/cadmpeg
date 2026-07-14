@@ -591,6 +591,8 @@ impl SldprtNative {
                             offset,
                         )
                     }) != Some(record.local_body_ids.clone())
+                    || crate::resolved_features::compact_body_state_ids_for_selection(lane, record)
+                        != record.body_state_ids
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input body selection {} has inconsistent ownership",

@@ -15909,6 +15909,19 @@ fn decode_and_validate_compact_delete_body_selection() {
         .to_string()
         .contains("changes a compact body selection"));
 
+    native.feature_input_lanes[0].body_selections[0]
+        .body_state_ids
+        .push(287);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    let error = native.store(&mut namespace).unwrap_err();
+    assert!(
+        error.to_string().contains("body selection")
+            && error.to_string().contains("inconsistent ownership")
+    );
+    native.feature_input_lanes[0].body_selections[0]
+        .body_state_ids
+        .clear();
+
     native.feature_input_lanes[0].body_selections[0].local_body_ids[0] = 288;
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     let error = native.store(&mut namespace).unwrap_err();

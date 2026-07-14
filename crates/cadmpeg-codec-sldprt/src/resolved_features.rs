@@ -1314,26 +1314,7 @@ fn compact_body_selections(
         .id
         .rsplit_once('#')
         .map_or(lane.id.as_str(), |(_, key)| key);
-    let mut state_classes = lane
-        .classes
-        .iter()
-        .filter(|class| class.name == "moDeleteBodyData_c");
-    let state_token = state_classes.next().and_then(|class| {
-        state_classes
-            .next()
-            .is_none()
-            .then_some(class)
-            .and_then(|class| {
-                let offset = usize::try_from(class.offset).ok()?;
-                u16::from_le_bytes(
-                    lane.native_payload
-                        .get(offset + 8 + class.name.len()..offset + 10 + class.name.len())?
-                        .try_into()
-                        .ok()?,
-                )
-                .into()
-            })
-    });
+    let state_token = compact_body_state_token(lane);
     let mut result = Vec::new();
     for (object_index, &(name, feature)) in objects.iter().enumerate() {
         if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
@@ -1369,6 +1350,45 @@ fn compact_body_selections(
         });
     }
     result
+}
+
+fn compact_body_state_token(lane: &FeatureInputLane) -> Option<u16> {
+    let mut classes = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moDeleteBodyData_c");
+    let class = classes.next()?;
+    if classes.next().is_some() {
+        return None;
+    }
+    let offset = usize::try_from(class.offset).ok()?;
+    Some(u16::from_le_bytes(
+        lane.native_payload
+            .get(offset + 8 + class.name.len()..offset + 10 + class.name.len())?
+            .try_into()
+            .ok()?,
+    ))
+}
+
+pub(crate) fn compact_body_state_ids_for_selection(
+    lane: &FeatureInputLane,
+    selection: &FeatureInputBodySelection,
+) -> Vec<u32> {
+    let Some(token) = compact_body_state_token(lane) else {
+        return Vec::new();
+    };
+    let Some(start) = lane
+        .names
+        .iter()
+        .find(|name| name.id == selection.object_name_ref)
+        .and_then(|name| usize::try_from(name.offset).ok())
+    else {
+        return Vec::new();
+    };
+    let Some(end) = usize::try_from(selection.offset).ok() else {
+        return Vec::new();
+    };
+    compact_body_state_ids(&lane.native_payload, start, end, token)
 }
 
 fn compact_body_state_ids(payload: &[u8], start: usize, end: usize, token: u16) -> Vec<u32> {
