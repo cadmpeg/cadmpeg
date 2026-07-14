@@ -1873,6 +1873,48 @@ pub fn b2_offset_supports(data: &[u8]) -> Vec<B2OffsetSupport> {
         .collect()
 }
 
+/// Bind each offset constructor to the unique consolidated NURBS carrier whose
+/// parameter domain contains the offset box and whose V-knot lane contains both
+/// serialized V limits.
+#[must_use]
+pub fn offset_support_carriers(
+    offsets: &[B2OffsetSupport],
+    carriers: &[A8Surface],
+) -> Vec<Option<usize>> {
+    const PARAMETER_TOLERANCE: f64 = 1e-3;
+    offsets
+        .iter()
+        .map(|offset| {
+            let [u0, v0, u1, v1] = offset.domain;
+            let candidates = carriers
+                .iter()
+                .enumerate()
+                .filter_map(|(index, carrier)| {
+                    let SurfaceGeometry::Nurbs(surface) = &carrier.geometry else {
+                        return None;
+                    };
+                    let u_min = *surface.u_knots.first()?;
+                    let u_max = *surface.u_knots.last()?;
+                    let v_min = *surface.v_knots.first()?;
+                    let v_max = *surface.v_knots.last()?;
+                    let contains = u0 >= u_min - PARAMETER_TOLERANCE
+                        && u1 <= u_max + PARAMETER_TOLERANCE
+                        && v0 >= v_min - PARAMETER_TOLERANCE
+                        && v1 <= v_max + PARAMETER_TOLERANCE;
+                    let has_v_limit = |limit: f64| {
+                        surface
+                            .v_knots
+                            .iter()
+                            .any(|knot| (*knot - limit).abs() <= PARAMETER_TOLERANCE)
+                    };
+                    (contains && has_v_limit(v0) && has_v_limit(v1)).then_some(index)
+                })
+                .collect::<Vec<_>>();
+            <[usize; 1]>::try_from(candidates).ok().map(|[index]| index)
+        })
+        .collect()
+}
+
 /// Decode framed `a5 03 20` consolidated UV jets.
 #[must_use]
 pub fn a5_pcurves(data: &[u8]) -> Vec<A5Pcurve> {

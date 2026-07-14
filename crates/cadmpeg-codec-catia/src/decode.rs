@@ -14,12 +14,13 @@
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition,
+    Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, RegionId, ShellId,
-    SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralSurfaceId,
+    RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
@@ -1956,9 +1957,11 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
 fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
     let mut surfaces = geometry::a8_surfaces(data);
     surfaces.extend(geometry::a5_surfaces(data));
-    for surface in surfaces {
+    let mut carrier_ids = Vec::with_capacity(surfaces.len());
+    for surface in &surfaces {
         let index = ir.model.surfaces.len();
         let id = SurfaceId(format!("catia:freeform:surf#{index}"));
+        carrier_ids.push(id.clone());
         annotate(
             annotations,
             &id,
@@ -1969,8 +1972,57 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
         );
         ir.model.surfaces.push(Surface {
             id,
-            geometry: surface.geometry,
+            geometry: surface.geometry.clone(),
             source_object: None,
+        });
+    }
+
+    let offsets = geometry::b2_offset_supports(data);
+    let bindings = geometry::offset_support_carriers(&offsets, &surfaces);
+    for (offset, carrier) in offsets
+        .iter()
+        .zip(bindings)
+        .filter_map(|(offset, carrier)| Some((offset, carrier?)))
+    {
+        let surface_index = ir.model.surfaces.len();
+        let surface_id = SurfaceId(format!("catia:offset:surf#{surface_index}"));
+        annotate(
+            annotations,
+            &surface_id,
+            "consolidated_b2_03_31_cache",
+            offset.pos as u64,
+            format!("support_ref:{:08x}", offset.support_id),
+            Exactness::Unknown,
+        );
+        ir.model.surfaces.push(Surface {
+            id: surface_id.clone(),
+            geometry: SurfaceGeometry::Unknown { record: None },
+            source_object: None,
+        });
+
+        let procedural_id = ProceduralSurfaceId(format!(
+            "catia:offset:construction#{}",
+            ir.model.procedural_surfaces.len()
+        ));
+        annotate(
+            annotations,
+            &procedural_id,
+            "consolidated_b2_03_31",
+            offset.pos as u64,
+            format!("support_ref:{:08x}", offset.support_id),
+            Exactness::ByteExact,
+        );
+        ir.model.procedural_surfaces.push(ProceduralSurface {
+            id: procedural_id,
+            surface: surface_id,
+            definition: ProceduralSurfaceDefinition::Offset {
+                support: carrier_ids[carrier].clone(),
+                distance: offset.distance,
+                u_sense: 1,
+                v_sense: 1,
+                extension_flags: Vec::new(),
+            },
+            cache_fit_tolerance: None,
         });
     }
 }

@@ -954,8 +954,12 @@ fn a5_cone_bound_edge_stream() -> Vec<u8> {
 }
 
 fn b2_offset_support_stream() -> Vec<u8> {
+    b2_offset_support_stream_for([0.0, -1.0, 4.0, 3.0])
+}
+
+fn b2_offset_support_stream_for(domain: [f64; 4]) -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x31, 0x2b, 0x05, 0x08, 0x34, 0x12];
-    for value in [2.5f64, 0.0, -1.0, 4.0, 3.0] {
+    for value in [2.5f64, domain[0], domain[1], domain[2], domain[3]] {
         record.extend_from_slice(&le_f64(value));
     }
     record
@@ -2770,6 +2774,85 @@ fn b2_offset_support_parser_reads_carrier_distance_and_domain() {
     assert_eq!(offsets[0].support_id, 0x1234);
     assert_eq!(offsets[0].distance, 2.5);
     assert_eq!(offsets[0].domain, [0.0, -1.0, 4.0, 3.0]);
+}
+
+#[test]
+fn offset_support_binds_by_native_domain_knot_limits() {
+    let mut carriers = crate::geometry::a5_surfaces(&a5_surface_stream());
+    let mut decoy = carriers[0].clone();
+    let SurfaceGeometry::Nurbs(surface) = &mut decoy.geometry else {
+        panic!("NURBS fixture");
+    };
+    for knot in &mut surface.v_knots {
+        *knot += 10.0;
+    }
+    carriers.push(decoy);
+    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
+        panic!("NURBS fixture");
+    };
+    let offset = crate::geometry::B2OffsetSupport {
+        pos: 0,
+        support_id: 7,
+        distance: 2.0,
+        domain: [
+            surface.u_knots[0],
+            surface.v_knots[0],
+            *surface.u_knots.last().unwrap(),
+            *surface.v_knots.last().unwrap(),
+        ],
+    };
+
+    assert_eq!(
+        crate::geometry::offset_support_carriers(&[offset], &carriers),
+        [Some(0)]
+    );
+}
+
+#[test]
+fn decode_standard_transfers_exact_offset_construction() {
+    let surface_bytes = a5_surface_stream();
+    let carriers = crate::geometry::a5_surfaces(&surface_bytes);
+    let SurfaceGeometry::Nurbs(surface) = &carriers[0].geometry else {
+        panic!("NURBS fixture");
+    };
+    let domain = [
+        surface.u_knots[0],
+        surface.v_knots[0],
+        *surface.u_knots.last().unwrap(),
+        *surface.v_knots.last().unwrap(),
+    ];
+    let mut payload = surface_bytes;
+    payload.extend_from_slice(&b2_offset_support_stream_for(domain));
+    let mut file = standard_catpart();
+    file.splice(16..16, payload);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("standard decode");
+    let [procedural] = decoded.ir.model.procedural_surfaces.as_slice() else {
+        panic!("one offset construction");
+    };
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
+        support,
+        distance,
+        u_sense,
+        v_sense,
+        extension_flags,
+    } = &procedural.definition
+    else {
+        panic!("offset construction");
+    };
+    assert!(decoded
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id == *support));
+    assert_eq!(*distance, 2.5);
+    assert_eq!([*u_sense, *v_sense], [1, 1]);
+    assert!(extension_flags.is_empty());
 }
 
 #[test]
