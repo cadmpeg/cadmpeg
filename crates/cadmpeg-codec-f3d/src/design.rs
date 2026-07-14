@@ -1509,7 +1509,54 @@ fn point_on_sketch_entity(
         SketchGeometry::Circle { center, radius } => {
             (point_distance(point, *center) - radius.0).abs() <= tolerance
         }
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let radial_error = (point_distance(point, *center) - radius.0).abs();
+            if radial_error > tolerance {
+                return false;
+            }
+            let angle = (point.v - center.v).atan2(point.u - center.u);
+            angle_in_sweep(angle, start_angle.0, end_angle.0, tolerance / radius.0)
+        }
+        SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            periodic,
+            ..
+        } if !periodic
+            && usize::try_from(*degree).ok().is_some_and(|degree| {
+                knots.len() > control_points.len() + degree
+                    && knots[..=degree].iter().all(|knot| *knot == knots[degree])
+                    && knots[control_points.len()..]
+                        .iter()
+                        .all(|knot| *knot == knots[control_points.len()])
+            }) =>
+        {
+            control_points
+                .first()
+                .is_some_and(|endpoint| point_distance(point, *endpoint) <= tolerance)
+                || control_points
+                    .last()
+                    .is_some_and(|endpoint| point_distance(point, *endpoint) <= tolerance)
+        }
         _ => false,
+    }
+}
+
+fn angle_in_sweep(angle: f64, start: f64, end: f64, tolerance: f64) -> bool {
+    let sweep = end - start;
+    if sweep.abs() >= std::f64::consts::TAU - tolerance {
+        return true;
+    }
+    if sweep >= 0.0 {
+        (angle - start).rem_euclid(std::f64::consts::TAU) <= sweep + tolerance
+    } else {
+        (start - angle).rem_euclid(std::f64::consts::TAU) <= -sweep + tolerance
     }
 }
 
@@ -8209,10 +8256,11 @@ mod relation_tests {
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
         parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
         parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, profiles_containing_points,
-        project_dimension_constraints, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design, remove_dimension_frame_relations,
-        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
+        parse_sketch_placement_candidates, parse_sketch_relation, point_on_sketch_entity,
+        profiles_containing_points, project_dimension_constraints, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
+        two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -8275,6 +8323,54 @@ mod relation_tests {
             profiles_containing_points(&sketch, &[entity], &[point], 1.0e-6),
             Some(vec![0, 1])
         );
+    }
+
+    #[test]
+    fn historical_point_membership_respects_arc_domain_and_nurbs_endpoints() {
+        let sketch = SketchId("sketch".into());
+        let entity = |geometry| SketchEntity {
+            id: SketchEntityId("curve".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let arc = entity(SketchGeometry::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: Length(2.0),
+            start_angle: cadmpeg_ir::features::Angle(0.0),
+            end_angle: cadmpeg_ir::features::Angle(std::f64::consts::FRAC_PI_2),
+        });
+        assert!(point_on_sketch_entity(Point2::new(0.0, 2.0), &arc, 1.0e-6));
+        assert!(!point_on_sketch_entity(
+            Point2::new(-2.0, 0.0),
+            &arc,
+            1.0e-6
+        ));
+
+        let nurbs = entity(SketchGeometry::Nurbs {
+            degree: 2,
+            knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            control_points: vec![
+                Point2::new(1.0, 2.0),
+                Point2::new(2.0, 4.0),
+                Point2::new(3.0, 2.0),
+            ],
+            weights: Some(vec![1.0, 0.5, 1.0]),
+            periodic: false,
+        });
+        assert!(point_on_sketch_entity(
+            Point2::new(3.0, 2.0),
+            &nurbs,
+            1.0e-6
+        ));
+        assert!(!point_on_sketch_entity(
+            Point2::new(2.0, 4.0),
+            &nurbs,
+            1.0e-6
+        ));
     }
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {
