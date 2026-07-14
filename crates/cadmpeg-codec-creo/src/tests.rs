@@ -497,6 +497,20 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
             .len(),
         1
     );
+    let row = &result.ir.native.namespace("creo").unwrap().arenas["surface_rows"][0];
+    assert_eq!(row.fields["surface_id"], 7);
+    assert_eq!(row.fields["type_byte"], 0x26);
+    assert_eq!(row.fields["surface_family"], "torus_or_sphere");
+    assert_eq!(row.fields["feature_id"], 4);
+    assert_eq!(row.fields["reversed"], false);
+    assert_eq!(row.fields["boundary_type"], 0);
+    assert_eq!(row.fields["next_surface"], 0);
+    assert_eq!(
+        result.ir.annotations.provenance["creo:visibgeom:surface_row#7"]
+            .tag
+            .as_deref(),
+        Some("surface_namespace_row")
+    );
 }
 
 #[test]
@@ -2767,12 +2781,30 @@ fn scan_discovers_curve_halfedge_topology() {
     let mut payload = visibgeom_payload(0, 1);
     payload
         .extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.curve_topology_rows.len(), 1);
     assert_eq!(scan.curve_topology_rows[0].faces, [10, 11]);
     assert_eq!(scan.curve_topology_rows[0].next_edges, [7, 7]);
     assert_eq!(scan.half_edges.len(), 2);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let row = &result.ir.native.namespace("creo").unwrap().arenas["curve_topology_rows"][0];
+    assert_eq!(row.fields["curve_id"], 7);
+    assert_eq!(row.fields["type_byte"], 8);
+    assert_eq!(row.fields["feature_id"], 4);
+    assert_eq!(row.fields["directions"][0], 1);
+    assert_eq!(row.fields["directions"][1], 0xf6);
+    assert_eq!(row.fields["faces"][0], 10);
+    assert_eq!(row.fields["faces"][1], 11);
+    assert_eq!(row.fields["next_edges"][0], 7);
+    assert_eq!(row.fields["next_edges"][1], 7);
+    assert_eq!(
+        result.ir.annotations.provenance["creo:visibgeom:curve_topology#7"]
+            .tag
+            .as_deref(),
+        Some("curve_topology_row")
+    );
 }
 
 #[test]
@@ -2799,7 +2831,8 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     payload.extend_from_slice(&[0x0f, 0xe4, 0xf7, 0x81, 0x00]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0xff]);
     payload.extend_from_slice(b"\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.curve_parameters.len(), 1);
     let parameters = &scan.curve_parameters[0];
@@ -2809,6 +2842,24 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(parameters.skipped_references, vec![256]);
     assert_eq!(parameters.suffix, crate::curve::CurveSuffixStatus::Unique);
     assert_eq!(parameters.body.last(), Some(&0xff));
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["curve_parameters"][0];
+    assert_eq!(record.fields["curve_id"], 7);
+    assert_eq!(record.fields["type_byte"], 8);
+    assert_eq!(
+        record.fields["body"].as_array().unwrap().len(),
+        parameters.body.len()
+    );
+    assert_eq!(record.fields["scalar_values"][2], 3.0);
+    assert_eq!(record.fields["skipped_references"][0], 256);
+    assert_eq!(record.fields["suffix"], "unique");
+    assert!(record.fields["suffix_candidate_count"].is_null());
+    assert_eq!(
+        result.ir.annotations.provenance["creo:visibgeom:curve_parameter#7"]
+            .tag
+            .as_deref(),
+        Some("curve_parameter_record")
+    );
 }
 
 #[test]

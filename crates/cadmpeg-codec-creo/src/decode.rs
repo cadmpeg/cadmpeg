@@ -370,6 +370,49 @@ struct CreoSurfaceParameterRecord {
 }
 
 #[derive(Serialize)]
+struct CreoSurfaceRowRecord {
+    id: String,
+    surface_id: u32,
+    type_byte: u8,
+    surface_family: &'static str,
+    feature_id: u32,
+    reversed: bool,
+    boundary_type: u8,
+    next_surface: u32,
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoCurveParameterRecord {
+    id: String,
+    curve_id: u32,
+    type_byte: u8,
+    body: Vec<u8>,
+    scalar_values: Vec<f64>,
+    skipped_references: Vec<u32>,
+    suffix: &'static str,
+    suffix_candidate_count: Option<usize>,
+    offset: usize,
+    body_offset: usize,
+    suffix_offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
+struct CreoCurveTopologyRowRecord {
+    id: String,
+    curve_id: u32,
+    type_byte: u8,
+    feature_id: u32,
+    directions: [u8; 2],
+    faces: [u32; 2],
+    next_edges: [u32; 2],
+    offset: usize,
+    source_section: String,
+}
+
+#[derive(Serialize)]
 struct CreoSurfaceParameterScalarFrame {
     offset: usize,
     slots: Vec<CreoSurfaceParameterSlot>,
@@ -390,6 +433,89 @@ struct CreoSurfaceParameterSlot {
     length: usize,
 }
 
+fn source_section(scan: &ContainerScan, offset: usize) -> String {
+    scan.sections
+        .iter()
+        .find(|section| offset >= section.offset && offset < section.offset + section.length)
+        .map_or("unknown", |section| section.name.as_str())
+        .to_string()
+}
+
+fn surface_family(kind: crate::surface::SurfaceKind) -> &'static str {
+    match kind {
+        crate::surface::SurfaceKind::Plane => "plane",
+        crate::surface::SurfaceKind::Cylinder => "cylinder",
+        crate::surface::SurfaceKind::Cone => "cone",
+        crate::surface::SurfaceKind::TorusOrSphere => "torus_or_sphere",
+        crate::surface::SurfaceKind::Spline => "spline",
+        crate::surface::SurfaceKind::Fillet => "fillet",
+        crate::surface::SurfaceKind::Extrusion => "extrusion",
+    }
+}
+
+fn surface_row_records(scan: &ContainerScan) -> Vec<CreoSurfaceRowRecord> {
+    scan.surface_rows
+        .iter()
+        .map(|row| CreoSurfaceRowRecord {
+            id: format!("creo:visibgeom:surface_row#{}", row.id),
+            surface_id: row.id,
+            type_byte: row.type_byte,
+            surface_family: surface_family(row.kind),
+            feature_id: row.feature_id,
+            reversed: row.reversed,
+            boundary_type: row.boundary_type,
+            next_surface: row.next_surface,
+            offset: row.offset,
+            source_section: source_section(scan, row.offset),
+        })
+        .collect()
+}
+
+fn curve_parameter_records(scan: &ContainerScan) -> Vec<CreoCurveParameterRecord> {
+    scan.curve_parameters
+        .iter()
+        .map(|record| {
+            let (suffix, suffix_candidate_count) = match record.suffix {
+                crate::curve::CurveSuffixStatus::Unique => ("unique", None),
+                crate::curve::CurveSuffixStatus::Ambiguous { candidate_count } => {
+                    ("ambiguous", Some(candidate_count))
+                }
+            };
+            CreoCurveParameterRecord {
+                id: format!("creo:visibgeom:curve_parameter#{}", record.curve_id),
+                curve_id: record.curve_id,
+                type_byte: record.type_byte,
+                body: record.body.clone(),
+                scalar_values: record.scalar_values.clone(),
+                skipped_references: record.skipped_references.clone(),
+                suffix,
+                suffix_candidate_count,
+                offset: record.offset,
+                body_offset: record.body_offset,
+                suffix_offset: record.suffix_offset,
+                source_section: source_section(scan, record.offset),
+            }
+        })
+        .collect()
+}
+
+fn curve_topology_row_records(scan: &ContainerScan) -> Vec<CreoCurveTopologyRowRecord> {
+    scan.curve_topology_rows
+        .iter()
+        .map(|row| CreoCurveTopologyRowRecord {
+            id: format!("creo:visibgeom:curve_topology#{}", row.id),
+            curve_id: row.id,
+            type_byte: row.type_byte,
+            feature_id: row.feature_id,
+            directions: row.directions,
+            faces: row.faces,
+            next_edges: row.next_edges,
+            offset: row.offset,
+            source_section: source_section(scan, row.offset),
+        })
+        .collect()
+}
+
 fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRecord> {
     scan.surface_parameters
         .iter()
@@ -398,30 +524,14 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
                 .surface_rows
                 .iter()
                 .find(|row| row.id == record.surface_id)?;
-            let surface_family = match row.kind {
-                crate::surface::SurfaceKind::Plane => "plane",
-                crate::surface::SurfaceKind::Cylinder => "cylinder",
-                crate::surface::SurfaceKind::Cone => "cone",
-                crate::surface::SurfaceKind::TorusOrSphere => "torus_or_sphere",
-                crate::surface::SurfaceKind::Spline => "spline",
-                crate::surface::SurfaceKind::Fillet => "fillet",
-                crate::surface::SurfaceKind::Extrusion => "extrusion",
-            };
+            let surface_family = surface_family(row.kind);
             let boundary = match record.boundary {
                 crate::surface::SurfaceBodyBoundary::CompoundClose => "compound_close",
                 crate::surface::SurfaceBodyBoundary::NextRow => "next_row",
                 crate::surface::SurfaceBodyBoundary::NamedRecord => "named_record",
                 crate::surface::SurfaceBodyBoundary::SectionEnd => "section_end",
             };
-            let source_section = scan
-                .sections
-                .iter()
-                .find(|section| {
-                    record.body_offset >= section.offset
-                        && record.body_offset < section.offset + section.length
-                })
-                .map_or("unknown", |section| section.name.as_str())
-                .to_string();
+            let source_section = source_section(scan, record.body_offset);
             Some(CreoSurfaceParameterRecord {
                 id: format!("creo:visibgeom:surface_parameter#{}", record.surface_id),
                 surface_id: record.surface_id,
@@ -14167,6 +14277,54 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     reconcile_feature_links(scan, &mut ir);
     transfer_curve_expression_features(scan, &mut ir, &mut annotations);
     transfer_feature_dimensions(scan, &mut ir, &mut annotations);
+    let surface_rows = surface_row_records(scan);
+    if !surface_rows.is_empty() {
+        for record in &surface_rows {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "surface_namespace_row",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("surface_rows", &surface_rows)?;
+    }
+    let curve_parameters = curve_parameter_records(scan);
+    if !curve_parameters.is_empty() {
+        for record in &curve_parameters {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "curve_parameter_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("curve_parameters", &curve_parameters)?;
+    }
+    let curve_topology_rows = curve_topology_row_records(scan);
+    if !curve_topology_rows.is_empty() {
+        for record in &curve_topology_rows {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "curve_topology_row",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("curve_topology_rows", &curve_topology_rows)?;
+    }
     let surface_parameters = surface_parameter_records(scan);
     if !surface_parameters.is_empty() {
         for record in &surface_parameters {
