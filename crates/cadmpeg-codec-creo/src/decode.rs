@@ -2536,6 +2536,12 @@ fn feature_source_properties(scan: &ContainerScan, feature_id: u32) -> BTreeMap<
         .iter()
         .find(|row| row.feature_id == feature_id)
         .and_then(|row| row.root_schema_class)
+        .or_else(|| {
+            scan.feature_operations
+                .iter()
+                .find(|operation| operation.feature_id == feature_id)
+                .and_then(|operation| operation.root_schema_class)
+        })
     {
         properties.insert(
             "featdefs_schema_class".to_string(),
@@ -2557,6 +2563,12 @@ fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Ve
                 )
         })
         .flat_map(|record| &record.ids)
+        .chain(
+            scan.feature_operations
+                .iter()
+                .filter(|operation| operation.feature_id == feature_id)
+                .filter_map(|operation| operation.parent_feature_id.as_ref()),
+        )
         .filter_map(|dependency| {
             let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
             ir.model

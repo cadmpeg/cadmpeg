@@ -31,11 +31,22 @@ pub struct FeatureOperation {
     pub status_prefix: Option<u8>,
     /// Procedural recipe name stored in the same current-state record.
     pub recipe: Option<FeatureRecipeKind>,
+    /// Root feature-definition schema class from a DEPDB recipe prefix.
+    pub root_schema_class: Option<u32>,
+    /// Previous or parent feature identifier from a DEPDB recipe prefix.
+    pub parent_feature_id: Option<u32>,
     /// Byte offset of the operation name in the original stream.
     pub offset: usize,
 }
 
-fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeKind> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FeatureRecipeBinding {
+    kind: FeatureRecipeKind,
+    root_schema_class: u32,
+    parent_feature_id: u32,
+}
+
+fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
     const RECIPES: &[(&[u8], FeatureRecipeKind)] = &[
         (b"protextrude\0", FeatureRecipeKind::Extrude),
         (b"protrevolve\0", FeatureRecipeKind::Revolve),
@@ -57,7 +68,7 @@ fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeKind> {
         {
             continue;
         }
-        let (_, display_start) = psb::compact_int(payload, after_schema + 1);
+        let (parent_feature_id, display_start) = psb::compact_int(payload, after_schema + 1);
         let Some(display_end) = payload
             .get(display_start..display_start.saturating_add(96).min(payload.len()))
             .and_then(|bytes| bytes.iter().position(|byte| *byte == 0))
@@ -75,7 +86,14 @@ fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeKind> {
             .iter()
             .find(|(name, _)| payload.get(recipe_start..recipe_start + name.len()) == Some(*name))
         {
-            bindings.insert(feature_id, *kind);
+            bindings.insert(
+                feature_id,
+                FeatureRecipeBinding {
+                    kind: *kind,
+                    root_schema_class: schema_class,
+                    parent_feature_id,
+                },
+            );
         }
     }
     bindings
@@ -131,7 +149,8 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
             .rposition(|byte| *byte == 0xe3)
             .map_or(0, |position| position + 1);
         let record = &payload[record_start..offset];
-        let recipe = bound_recipes.get(&feature_id).copied().or_else(|| {
+        let bound_recipe = bound_recipes.get(&feature_id).copied();
+        let recipe = bound_recipe.map(|binding| binding.kind).or_else(|| {
             if record
                 .windows(b"protextrude\0".len())
                 .any(|window| window == b"protextrude\0")
@@ -151,6 +170,8 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
             kind: String::from_utf8_lossy(family).into_owned(),
             status_prefix,
             recipe,
+            root_schema_class: bound_recipe.map(|binding| binding.root_schema_class),
+            parent_feature_id: bound_recipe.map(|binding| binding.parent_feature_id),
             offset,
         });
     }
@@ -3759,18 +3780,15 @@ mod tests {
             \xe3Body ID 8053\0\xe3\
             \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0";
 
-        assert_eq!(
-            recipe_bindings(payload),
-            BTreeMap::from([
-                (247, FeatureRecipeKind::Revolve),
-                (8053, FeatureRecipeKind::Extrude),
-            ])
-        );
         let operations = operations(payload);
         assert_eq!(operations.len(), 2);
         assert_eq!(operations[0].feature_id, 247);
         assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Revolve));
+        assert_eq!(operations[0].root_schema_class, Some(917));
+        assert_eq!(operations[0].parent_feature_id, Some(32));
         assert_eq!(operations[1].feature_id, 8053);
         assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Extrude));
+        assert_eq!(operations[1].root_schema_class, Some(917));
+        assert_eq!(operations[1].parent_feature_id, Some(8051));
     }
 }
