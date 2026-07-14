@@ -1046,6 +1046,60 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
 }
 
 #[test]
+fn step_color_assets_round_trip_names_and_tessellation_targets_strictly() {
+    let cases: [(&[u8], StepSchema, &[&str]); 2] = [
+        (
+            include_bytes!("../tests/fixtures/ap214_sheet.p21"),
+            StepSchema::Ap214,
+            &["override red", "blue green"],
+        ),
+        (
+            include_bytes!("../tests/fixtures/ap242_tessellation.p21"),
+            StepSchema::Ap242Edition3,
+            &["mesh green"],
+        ),
+    ];
+    for (source, schema, expected_names) in cases {
+        let ir = StepCodec::default()
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("decode styled STEP")
+            .ir;
+        let mut bytes = Vec::new();
+        write_step(
+            &ir,
+            &mut bytes,
+            &StepWriteOptions {
+                schema,
+                unsupported: StepUnsupportedPolicy::Reject,
+                ..StepWriteOptions::default()
+            },
+        )
+        .expect("strict styled STEP write");
+        let decoded = StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode written styled STEP");
+        let names = decoded
+            .ir
+            .model
+            .appearances
+            .iter()
+            .filter_map(|appearance| appearance.name.as_deref())
+            .collect::<std::collections::BTreeSet<_>>();
+        for expected in expected_names {
+            assert!(names.contains(expected), "missing color name {expected}");
+        }
+        if expected_names == ["mesh green"] {
+            assert!(decoded.ir.model.appearance_bindings.iter().any(|binding| {
+                matches!(
+                    binding.target,
+                    cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
+                )
+            }));
+        }
+    }
+}
+
+#[test]
 fn writer_round_trips_product_body_ownership() {
     let mut ir = unit_cube();
     let product = cadmpeg_ir::ids::ProductId("product-0".into());

@@ -56,6 +56,7 @@ mod writer;
 use std::collections::{BTreeSet, HashMap};
 use std::io::Write;
 
+use cadmpeg_ir::appearance::Appearance;
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions, DecodeResult,
     Encoder, ReadSeek,
@@ -289,6 +290,13 @@ fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::
     Ok(())
 }
 
+#[derive(Clone, Copy)]
+struct ColorSpec<'a> {
+    color: cadmpeg_ir::topology::Color,
+    appearance: Option<&'a Appearance>,
+    binding_id: Option<&'a str>,
+}
+
 /// Builds the DATA instance graph and accumulates export losses.
 struct Builder<'a> {
     ir: &'a CadIr,
@@ -336,6 +344,8 @@ struct Builder<'a> {
     body_step_refs: HashMap<String, Ref>,
     /// Emitted representation item for each body.
     body_shape_refs: HashMap<String, Ref>,
+    tessellation_step_refs: HashMap<String, Ref>,
+    written_appearance_bindings: BTreeSet<String>,
     /// Display colors that could not be attached to an emitted STEP item.
     unstyled_colors: usize,
     unsupported_standalone_geometry: usize,
@@ -419,6 +429,8 @@ impl<'a> Builder<'a> {
             face_step_refs: HashMap::new(),
             body_step_refs: HashMap::new(),
             body_shape_refs: HashMap::new(),
+            tessellation_step_refs: HashMap::new(),
+            written_appearance_bindings: BTreeSet::new(),
             unstyled_colors: 0,
             unsupported_standalone_geometry: 0,
             written_pmi: 0,
@@ -480,8 +492,8 @@ impl<'a> Builder<'a> {
         }
 
         self.emit_visibility();
-        self.emit_presentation(context);
         self.emit_tessellations(context);
+        self.emit_presentation(context);
         self.emit_layers();
         self.emit_pmi(context);
         self.note_unrepresented();
@@ -499,31 +511,34 @@ impl<'a> Builder<'a> {
     /// geometric context.
     fn emit_presentation(&mut self, context: Ref) {
         use cadmpeg_ir::appearance::AppearanceTarget;
-        use cadmpeg_ir::topology::Color;
 
         let ir = self.ir;
-        let appearances: HashMap<&str, Option<Color>> = ir
+        let appearances: HashMap<&str, &Appearance> = ir
             .model
             .appearances
             .iter()
-            .map(|appearance| (appearance.id.as_str(), appearance.base_color))
+            .map(|appearance| (appearance.id.as_str(), appearance))
             .collect();
-        let mut body_colors: HashMap<&str, Color> = HashMap::new();
-        let mut face_colors: HashMap<&str, Color> = HashMap::new();
+        let mut body_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
+        let mut face_colors: HashMap<&str, ColorSpec<'_>> = HashMap::new();
         for binding in &ir.model.appearance_bindings {
-            let Some(color) = appearances
-                .get(binding.appearance.as_str())
-                .copied()
-                .flatten()
-            else {
+            let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
                 continue;
+            };
+            let Some(color) = appearance.base_color else {
+                continue;
+            };
+            let spec = ColorSpec {
+                color,
+                appearance: Some(appearance),
+                binding_id: Some(&binding.id),
             };
             match &binding.target {
                 AppearanceTarget::Body(id) => {
-                    body_colors.entry(id.as_str()).or_insert(color);
+                    body_colors.entry(id.as_str()).or_insert(spec);
                 }
                 AppearanceTarget::Face(id) => {
-                    face_colors.entry(id.as_str()).or_insert(color);
+                    face_colors.entry(id.as_str()).or_insert(spec);
                 }
                 AppearanceTarget::Surface(_)
                 | AppearanceTarget::Curve(_)
@@ -535,12 +550,20 @@ impl<'a> Builder<'a> {
         }
         for body in &ir.model.bodies {
             if let Some(color) = body.color {
-                body_colors.insert(body.id.as_str(), color);
+                body_colors.entry(body.id.as_str()).or_insert(ColorSpec {
+                    color,
+                    appearance: None,
+                    binding_id: None,
+                });
             }
         }
         for face in &ir.model.faces {
             if let Some(color) = face.color {
-                face_colors.insert(face.id.as_str(), color);
+                face_colors.entry(face.id.as_str()).or_insert(ColorSpec {
+                    color,
+                    appearance: None,
+                    binding_id: None,
+                });
             }
         }
 
@@ -585,7 +608,7 @@ impl<'a> Builder<'a> {
             let own = face_colors.get(face_id.as_str()).copied();
             let body = face_body.get(face_id.as_str()).copied();
             let inherited = body.and_then(|b| body_colors.get(b).copied());
-            let Some(color) = own.or(inherited) else {
+            let Some(spec) = own.or(inherited) else {
                 continue;
             };
             // The body color is only counted as represented when a face without
@@ -595,7 +618,15 @@ impl<'a> Builder<'a> {
                     styled_bodies.insert(b);
                 }
             }
-            let style = self.surface_style(color, &mut style_refs);
+            if let Some(binding_id) = spec.binding_id {
+                self.written_appearance_bindings
+                    .insert(binding_id.to_string());
+            }
+            let name = spec
+                .appearance
+                .and_then(|appearance| appearance.name.as_deref())
+                .unwrap_or("");
+            let style = self.surface_style(spec.color, name, &mut style_refs);
             styled.push(
                 self.emitter
                     .emit("STYLED_ITEM", &format!("'color',({style}),{face}")),
@@ -604,35 +635,42 @@ impl<'a> Builder<'a> {
         let bindings = ir.model.appearance_bindings.clone();
         let mut direct_unstyled = 0usize;
         for binding in bindings {
-            let Some(color) = appearances
-                .get(binding.appearance.as_str())
-                .copied()
-                .flatten()
-            else {
+            if self.written_appearance_bindings.contains(&binding.id) {
+                continue;
+            }
+            let Some(appearance) = appearances.get(binding.appearance.as_str()).copied() else {
+                continue;
+            };
+            let Some(color) = appearance.base_color else {
                 continue;
             };
             let (target, style_kind) = match &binding.target {
+                AppearanceTarget::Face(id) => {
+                    (self.face_step_refs.get(id.as_str()).copied(), "surface")
+                }
                 AppearanceTarget::Surface(id) => {
                     (self.surface_refs.get(id.as_str()).copied(), "surface")
                 }
                 AppearanceTarget::Curve(id) => (self.curve_refs.get(id.as_str()).copied(), "curve"),
                 AppearanceTarget::Edge(id) => (self.edge_refs.get(id.as_str()).copied(), "curve"),
                 AppearanceTarget::Point(id) => (self.point_refs.get(id.as_str()).copied(), "point"),
-                AppearanceTarget::Body(_)
-                | AppearanceTarget::Face(_)
-                | AppearanceTarget::Tessellation(_)
-                | AppearanceTarget::Source { .. } => continue,
+                AppearanceTarget::Tessellation(id) => {
+                    (self.tessellation_step_refs.get(id).copied(), "surface")
+                }
+                AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
                 direct_unstyled += 1;
                 continue;
             };
+            let name = appearance.name.as_deref().unwrap_or("");
             let style = match style_kind {
-                "surface" => self.surface_style(color, &mut style_refs),
-                "curve" => self.curve_style(color, &mut style_refs),
-                "point" => self.point_style(color, &mut style_refs),
+                "surface" => self.surface_style(color, name, &mut style_refs),
+                "curve" => self.curve_style(color, name, &mut style_refs),
+                "point" => self.point_style(color, name, &mut style_refs),
                 _ => unreachable!(),
             };
+            self.written_appearance_bindings.insert(binding.id.clone());
             styled.push(
                 self.emitter
                     .emit("STYLED_ITEM", &format!("'color',({style}),{target}")),
@@ -665,6 +703,7 @@ impl<'a> Builder<'a> {
     fn surface_style(
         &mut self,
         color: cadmpeg_ir::topology::Color,
+        name: &str,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -673,10 +712,13 @@ impl<'a> Builder<'a> {
             real(f64::from(color.g)),
             real(f64::from(color.b))
         );
-        if let Some(style) = cache.get(&rgb) {
+        let key = format!("surface:{name}:{rgb}");
+        if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self.emitter.emit("COLOUR_RGB", &format!("'',{rgb}"));
+        let colour = self
+            .emitter
+            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
         let fill_colour = self
             .emitter
             .emit("FILL_AREA_STYLE_COLOUR", &format!("'',{colour}"));
@@ -695,13 +737,14 @@ impl<'a> Builder<'a> {
         let assignment = self
             .emitter
             .emit("PRESENTATION_STYLE_ASSIGNMENT", &format!("({usage})"));
-        cache.insert(rgb, assignment);
+        cache.insert(key, assignment);
         assignment
     }
 
     fn curve_style(
         &mut self,
         color: cadmpeg_ir::topology::Color,
+        name: &str,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -710,11 +753,13 @@ impl<'a> Builder<'a> {
             real(f64::from(color.g)),
             real(f64::from(color.b))
         );
-        let key = format!("curve:{rgb}");
+        let key = format!("curve:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self.emitter.emit("COLOUR_RGB", &format!("'',{rgb}"));
+        let colour = self
+            .emitter
+            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
         let font = self
             .emitter
             .emit("DRAUGHTING_PRE_DEFINED_CURVE_FONT", &string("continuous"));
@@ -732,6 +777,7 @@ impl<'a> Builder<'a> {
     fn point_style(
         &mut self,
         color: cadmpeg_ir::topology::Color,
+        name: &str,
         cache: &mut HashMap<String, Ref>,
     ) -> Ref {
         let rgb = format!(
@@ -740,11 +786,13 @@ impl<'a> Builder<'a> {
             real(f64::from(color.g)),
             real(f64::from(color.b))
         );
-        let key = format!("point:{rgb}");
+        let key = format!("point:{name}:{rgb}");
         if let Some(style) = cache.get(&key) {
             return *style;
         }
-        let colour = self.emitter.emit("COLOUR_RGB", &format!("'',{rgb}"));
+        let colour = self
+            .emitter
+            .emit("COLOUR_RGB", &format!("{},{rgb}", string(name)));
         let point = self.emitter.emit(
             "POINT_STYLE",
             &format!("'',.DOT.,POSITIVE_LENGTH_MEASURE(1.),{colour}"),
@@ -1419,6 +1467,7 @@ impl<'a> Builder<'a> {
                     )
                 })
                 .unwrap_or(item);
+            self.tessellation_step_refs.insert(mesh.id.clone(), item);
             representation_items.push(item);
         }
         if !representation_items.is_empty() {
@@ -2372,14 +2421,59 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.ir.model.appearances.is_empty() {
+        let lossy_appearances = self
+            .ir
+            .model
+            .appearances
+            .iter()
+            .filter(|appearance| {
+                let bindings = self
+                    .ir
+                    .model
+                    .appearance_bindings
+                    .iter()
+                    .filter(|binding| binding.appearance == appearance.id)
+                    .collect::<Vec<_>>();
+                appearance.asset_guid.is_some()
+                    || appearance.visual_guid.is_some()
+                    || appearance.physical_token.is_some()
+                    || appearance
+                        .schema
+                        .as_deref()
+                        .is_some_and(|schema| schema != "step_surface_style")
+                    || appearance.category.is_some()
+                    || !appearance.properties.is_empty()
+                    || appearance.base_color.is_none_or(|color| color.a != 1.0)
+                    || bindings.is_empty()
+                    || bindings
+                        .iter()
+                        .any(|binding| !self.written_appearance_bindings.contains(&binding.id))
+            })
+            .count();
+        if lossy_appearances > 0 {
             self.loss(
                 LossCategory::Material,
                 Severity::Info,
                 format!(
                     "{} appearance asset(s) were reduced to STYLED_ITEM base colors; \
                      schemas, textures, and shader properties were not written to STEP",
-                    self.ir.model.appearances.len()
+                    lossy_appearances
+                ),
+            );
+        }
+        let lossy_binding_metadata = self
+            .ir
+            .model
+            .appearance_bindings
+            .iter()
+            .filter(|binding| binding.object_type.is_some() || !binding.channels.is_empty())
+            .count();
+        if lossy_binding_metadata > 0 {
+            self.loss(
+                LossCategory::Metadata,
+                Severity::Info,
+                format!(
+                    "{lossy_binding_metadata} appearance binding(s) carry source object or channel metadata not represented in STEP"
                 ),
             );
         }
