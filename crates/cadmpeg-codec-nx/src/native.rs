@@ -444,6 +444,12 @@ pub struct FeatureDatumPlaneHeader {
     /// Canonical object index for the count-two `1b`/`23` branch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_index: Option<u32>,
+    /// Uniquely resolved same-store block addressed by the descriptor index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub descriptor_data_block: Option<String>,
+    /// Uniquely resolved same-store block addressed by the canonical object index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_data_block: Option<String>,
     /// Absolute offset of the compact descriptor index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub descriptor_source_offset: Option<u64>,
@@ -1648,7 +1654,9 @@ pub fn feature_datum_csys_constructions(
 
 /// Decode common datum-plane payload headers from feature-history records.
 pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPlaneHeader> {
+    let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
+    let inputs = feature_input_blocks(container);
     let mut headers = Vec::new();
     for link in segment_om_links(container)
         .into_iter()
@@ -1671,18 +1679,44 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                 continue;
             };
             let branch = crate::om::datum_plane_single_reference_branch(record);
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+            let input_prefixes = inputs
+                .iter()
+                .filter(|input| input.operation_label == operation_label)
+                .filter_map(|input| {
+                    input
+                        .data_block
+                        .rsplit_once(":block#")
+                        .map(|(prefix, _)| prefix)
+                })
+                .collect::<BTreeSet<_>>();
+            let resolved = branch.and_then(|branch| {
+                if input_prefixes.len() != 1 {
+                    return None;
+                }
+                let input_prefix = *input_prefixes.iter().next()?;
+                let descriptor = unique_offset_data_block(&indexed, branch.descriptor_index)?;
+                let object = unique_offset_data_block(&indexed, branch.object_index)?;
+                let same_store = |block: &str| {
+                    block
+                        .rsplit_once(":block#")
+                        .is_some_and(|(prefix, _)| prefix == input_prefix)
+                };
+                (same_store(&descriptor) && same_store(&object)).then_some((descriptor, object))
+            });
             headers.push(FeatureDatumPlaneHeader {
                 id: format!(
                     "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal}"
                 ),
-                operation_label: format!(
-                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
-                ),
+                operation_label,
                 control: header.control,
                 declared_count: header.declared_count,
                 branch_tag: header.branch_tag,
                 descriptor_index: branch.map(|branch| branch.descriptor_index),
                 object_index: branch.map(|branch| branch.object_index),
+                descriptor_data_block: resolved.as_ref().map(|(block, _)| block.clone()),
+                object_data_block: resolved.as_ref().map(|(_, block)| block.clone()),
                 descriptor_source_offset: branch
                     .map(|branch| entry_offset + branch.descriptor_offset as u64),
                 object_source_offset: branch
