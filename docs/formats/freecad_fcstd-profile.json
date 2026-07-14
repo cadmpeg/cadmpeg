@@ -1,7 +1,7 @@
 {
   "profile_version": 1,
   "format": "fcstd",
-  "manifest_sha256": "b1d7c5939ba724dbfedd8d19960ead236fb20f92de5a5a147b2832093d2d694a",
+  "manifest_sha256": "8283979808ad4e25bbe4f2370de954e432b6c6d803efb3ddcabfcd6612cccfaf",
   "manifest_verified": true,
   "envelope": {
     "container": "ZIP-packaged FCStd",
@@ -311,6 +311,69 @@
       }
     },
     {
+      "filename": "gui_appearance.FCStd",
+      "sha256": "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2",
+      "canonical_cadir_sha256": "0550a7a48867ca779a0bc19ba3e827b4d2c521e7922fefbf713528b4408ca2f6",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 25,
+        "appearances": 2,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 1,
+        "coedges": 30,
+        "components": 0,
+        "configurations": 0,
+        "curves": 15,
+        "drawings": 0,
+        "edges": 15,
+        "faces": 8,
+        "features": 1,
+        "loops": 9,
+        "native.fcstd.applications": 2,
+        "native.fcstd.attachments": 1,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 1,
+        "native.fcstd.design_census": 1,
+        "native.fcstd.document": 1,
+        "native.fcstd.entries": 7,
+        "native.fcstd.gui_documents": 1,
+        "native.fcstd.gui_properties": 29,
+        "native.fcstd.gui_view_providers": 2,
+        "native.fcstd.logical_ledger": 141,
+        "native.fcstd.objects": 2,
+        "native.fcstd.physical_ledger": 50,
+        "native.fcstd.properties": 36,
+        "native.fcstd.shape_payloads": 1,
+        "native.fcstd.string_tables": 1,
+        "native.fcstd.unknowns": 1,
+        "occurrences": 0,
+        "parameters": 0,
+        "pcurves": 29,
+        "points": 10,
+        "presentation_documents": 1,
+        "procedural_curves": 0,
+        "procedural_surfaces": 0,
+        "regions": 1,
+        "semantic_annotations": 0,
+        "shells": 1,
+        "sketch_constraints": 0,
+        "sketch_entities": 0,
+        "sketches": 0,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 9,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 10,
+        "view_presentations": 2
+      }
+    },
+    {
       "filename": "techdraw_annotations.FCStd",
       "sha256": "2f2bb12a65d3e354dc5ae98bc66e8f92e9dc46108bb8460ce4f416a613376fb2",
       "canonical_cadir_sha256": "e57f9ee2f0fa1ae128b078b177133729700d061d219a4c2f6dc2ffb79b7731d6",
@@ -459,15 +522,21 @@
       "element_maps",
       "entries",
       "extensions",
+      "gui_documents",
+      "gui_properties",
+      "gui_view_providers",
       "logical_ledger",
       "objects",
       "physical_ledger",
       "product_nodes",
       "properties",
       "shape_payloads",
-      "string_tables"
+      "string_tables",
+      "unknowns"
     ],
     "neutral_arenas": [
+      "appearance_bindings",
+      "appearances",
       "bodies",
       "coedges",
       "components",
@@ -481,6 +550,7 @@
       "parameters",
       "pcurves",
       "points",
+      "presentation_documents",
       "procedural_curves",
       "procedural_surfaces",
       "regions",
@@ -492,7 +562,8 @@
       "spreadsheets",
       "surfaces",
       "tessellations",
-      "vertices"
+      "vertices",
+      "view_presentations"
     ]
   },
   "gates": [
@@ -521,13 +592,13 @@
         {
           "id": "application_graph",
           "passed": true,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "objects and properties arenas"
         },
         {
           "id": "asset_inventory",
           "passed": true,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "entries arena"
         }
       ]
@@ -551,7 +622,7 @@
         {
           "id": "application_geometry",
           "passed": true,
-          "observed": "tessellations=1, points=179",
+          "observed": "tessellations=1, points=189",
           "required": "mesh tessellation and point data"
         }
       ]
@@ -569,7 +640,7 @@
         {
           "id": "persistent_names",
           "passed": true,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "element_maps arena"
         }
       ]
@@ -581,7 +652,7 @@
         {
           "id": "design_records",
           "passed": true,
-          "observed": "features=26, sketches=3, constraints=9, parameters=19",
+          "observed": "features=27, sketches=3, constraints=9, parameters=19",
           "required": "nonempty feature, sketch, constraint, and parameter graphs"
         },
         {
@@ -594,12 +665,12 @@
     },
     {
       "level": "L5",
-      "passed": false,
+      "passed": true,
       "assertions": [
         {
           "id": "appearance_coverage",
-          "passed": false,
-          "observed": "0",
+          "passed": true,
+          "observed": "25",
           "required": "object and subshape appearance bindings"
         }
       ]
@@ -640,8 +711,8 @@
         },
         {
           "id": "gui_state",
-          "passed": false,
-          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\"}",
+          "passed": true,
+          "observed": "{\"annotations\", \"applications\", \"attachments\", \"byte_coverage\", \"carrier_census\", \"design_census\", \"document\", \"drawings\", \"element_maps\", \"entries\", \"extensions\", \"gui_documents\", \"gui_properties\", \"gui_view_providers\", \"logical_ledger\", \"objects\", \"physical_ledger\", \"product_nodes\", \"properties\", \"shape_payloads\", \"string_tables\", \"unknowns\"}",
           "required": "GUI document state"
         },
         {
@@ -653,5 +724,5 @@
       ]
     }
   ],
-  "highest_passing_gate": "L4"
+  "highest_passing_gate": "L5"
 }

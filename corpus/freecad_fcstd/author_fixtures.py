@@ -10,6 +10,7 @@ import os
 import re
 import struct
 import zipfile
+import zlib
 
 import FreeCAD as App
 import Mesh
@@ -88,6 +89,30 @@ def normalize_fcstd(target):
                     + match.group(2),
                     data,
                 )
+            if source_info.filename == "GuiDocument.xml":
+                next_tree_rank = iter(range(1, 1000000))
+                data = re.sub(
+                    rb' treeRank="[0-9]+"',
+                    lambda _: f' treeRank="{next(next_tree_rank)}"'.encode(),
+                    data,
+                )
+                data = re.sub(
+                    rb'<Camera settings="[^"]*"/>',
+                    (
+                        b'<Camera settings="OrthographicCamera {&#10;'
+                        b'  viewportMapping ADJUST_CAMERA&#10;'
+                        b'  position 17.311642 -2.3116379 17.811638&#10;'
+                        b'  orientation 0.74290609 0.30772209 0.59447283  1.2171158&#10;'
+                        b'  nearDistance 0&#10;'
+                        b'  farDistance 28.79236&#10;'
+                        b'  aspectRatio 1&#10;'
+                        b'  focalDistance 14.39618&#10;'
+                        b'  height 32.432148&#10;&#10;}&#10;"/>'
+                    ),
+                    data,
+                )
+            if source_info.filename == "thumbnails/Thumbnail.png":
+                data = canonical_thumbnail()
             if source_info.filename == "Document.xml" or source_info.filename.endswith(
                 ".txt"
             ):
@@ -108,6 +133,46 @@ def normalize_fcstd(target):
             info.external_attr = 0o100644 << 16
             output.writestr(info, data)
     normalized.replace(target)
+
+
+def canonical_thumbnail():
+    """Return an original deterministic PNG illustrating the appearance fixture."""
+    width = 256
+    height = 256
+    rows = []
+    for y in range(height):
+        row = bytearray([0])
+        for x in range(width):
+            background = (244, 247, 250)
+            body = 48 <= x < 208 and 74 <= y < 184
+            top = 72 <= x < 184 and 48 <= y < 78
+            accent = (x - 148) ** 2 + (y - 76) ** 2 < 30**2
+            if accent:
+                color = (230, 112, 65)
+            elif top:
+                color = (85, 156, 218)
+            elif body:
+                color = (59, 132, 196)
+            else:
+                color = background
+            row.extend(color)
+        rows.append(bytes(row))
+    raw = b"".join(rows)
+
+    def chunk(kind, payload):
+        return (
+            struct.pack(">I", len(payload))
+            + kind
+            + payload
+            + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
+        )
+
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
 
 
 def metadata(document, purpose):
@@ -422,11 +487,12 @@ def techdraw_document():
     App.closeDocument(document.Name)
 
 
-core_document()
-application_document()
-geometry_topology_document()
-binary_shape_document()
-design_history_document()
-techdraw_document()
-for temporary_asset in OUTPUT.glob("cc0_*"):
-    temporary_asset.unlink()
+if __name__ == "__main__":
+    core_document()
+    application_document()
+    geometry_topology_document()
+    binary_shape_document()
+    design_history_document()
+    techdraw_document()
+    for temporary_asset in OUTPUT.glob("cc0_*"):
+        temporary_asset.unlink()
