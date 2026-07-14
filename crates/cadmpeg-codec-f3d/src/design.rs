@@ -1315,6 +1315,7 @@ pub fn project_dimension_constraints(
     let exact_definition = |scope: &str,
                             source_kind: &str,
                             indices: &[u32],
+                            evaluated_value: f64,
                             parameter: cadmpeg_ir::features::ParameterId|
      -> Option<Definition> {
         let entities = indices
@@ -1339,6 +1340,15 @@ pub fn project_dimension_constraints(
                 parameter,
             });
         }
+        if source_kind.starts_with("Angular Dimension") && entities.len() == 2 {
+            let (first, second) =
+                indirect_angular_lines(scope, &entities, evaluated_value, &projected)?;
+            return Some(Definition::Angle {
+                first,
+                second,
+                parameter,
+            });
+        }
         None
     };
     let exact_pair_companions = pairs
@@ -1350,8 +1360,14 @@ pub fn project_dimension_constraints(
                 pair.first_geometry_record_index,
                 pair.second_geometry_record_index,
             ];
-            exact_definition(scope, &parameter.source_kind, &indices, parameter_id)
-                .map(|_| (scope.to_owned(), pair.companion_record_index))
+            exact_definition(
+                scope,
+                &parameter.source_kind,
+                &indices,
+                parameter.evaluated_value,
+                parameter_id,
+            )
+            .map(|_| (scope.to_owned(), pair.companion_record_index))
         })
         .collect::<HashSet<_>>();
 
@@ -1369,6 +1385,7 @@ pub fn project_dimension_constraints(
                 scope,
                 &parameter.source_kind,
                 &indices,
+                parameter.evaluated_value,
                 parameter_id.clone(),
             )
             .unwrap_or_else(|| {
@@ -1397,6 +1414,7 @@ pub fn project_dimension_constraints(
                 scope,
                 &parameter.source_kind,
                 &indices,
+                parameter.evaluated_value,
                 parameter_id.clone(),
             )
             .unwrap_or_else(|| {
@@ -1727,6 +1745,106 @@ fn exact_atomic_constraint(
         }),
         _ => None,
     }
+}
+
+fn indirect_angular_lines(
+    scope: &str,
+    operands: &[&cadmpeg_ir::sketches::SketchEntity],
+    evaluated_value: f64,
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+) -> Option<(
+    cadmpeg_ir::sketches::SketchEntityId,
+    cadmpeg_ir::sketches::SketchEntityId,
+)> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let (point_ordinal, point, explicit_line) = match operands {
+        [point, line]
+            if matches!(point.geometry, SketchGeometry::Point { .. })
+                && matches!(line.geometry, SketchGeometry::Line { .. }) =>
+        {
+            (0, *point, *line)
+        }
+        [line, point]
+            if matches!(line.geometry, SketchGeometry::Line { .. })
+                && matches!(point.geometry, SketchGeometry::Point { .. }) =>
+        {
+            (1, *point, *line)
+        }
+        _ => return None,
+    };
+    let SketchGeometry::Point { position } = &point.geometry else {
+        unreachable!("point operand matched above")
+    };
+    if !evaluated_value.is_finite() || !(0.0..=std::f64::consts::PI).contains(&evaluated_value) {
+        return None;
+    }
+    let mut candidates = projected
+        .iter()
+        .filter(|((candidate_scope, _), candidate)| {
+            *candidate_scope == scope
+                && candidate.sketch == explicit_line.sketch
+                && candidate.id != explicit_line.id
+        })
+        .filter_map(|(_, candidate)| {
+            let SketchGeometry::Line { start, end } = &candidate.geometry else {
+                return None;
+            };
+            (sketch_points_close(*position, *start) || sketch_points_close(*position, *end))
+                .then_some(*candidate)
+        })
+        .filter(|candidate| {
+            line_angle_matches(
+                &explicit_line.geometry,
+                &candidate.geometry,
+                evaluated_value,
+            )
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| left.id.0.cmp(&right.id.0));
+    candidates.dedup_by(|left, right| left.id == right.id);
+    let candidate = (candidates.len() == 1).then(|| candidates.remove(0))?;
+    Some(if point_ordinal == 0 {
+        (candidate.id.clone(), explicit_line.id.clone())
+    } else {
+        (explicit_line.id.clone(), candidate.id.clone())
+    })
+}
+
+fn line_angle_matches(
+    first: &cadmpeg_ir::sketches::SketchGeometry,
+    second: &cadmpeg_ir::sketches::SketchGeometry,
+    expected: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let SketchGeometry::Line {
+        start: first_start,
+        end: first_end,
+    } = first
+    else {
+        return false;
+    };
+    let SketchGeometry::Line {
+        start: second_start,
+        end: second_end,
+    } = second
+    else {
+        return false;
+    };
+    let first_du = first_end.u - first_start.u;
+    let first_dv = first_end.v - first_start.v;
+    let second_du = second_end.u - second_start.u;
+    let second_dv = second_end.v - second_start.v;
+    let denominator = first_du.hypot(first_dv) * second_du.hypot(second_dv);
+    if denominator <= 1.0e-18 {
+        return false;
+    }
+    let cosine = ((first_du * second_du + first_dv * second_dv) / denominator).clamp(-1.0, 1.0);
+    let angle = cosine.acos();
+    let supplementary = std::f64::consts::PI - angle;
+    let scale = 1.0 + expected.abs();
+    (angle - expected).abs() <= scale * 1.0e-9 || (supplementary - expected).abs() <= scale * 1.0e-9
 }
 
 fn exact_offset_constraint(
@@ -6129,15 +6247,16 @@ mod relation_tests {
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_sketch_graph, companion_owned_interval,
         decode_fillet_radius_groups, exact_atomic_constraint, exact_offset_constraint,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix, neutral_sketch_id,
-        next_indexed_record_offset, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, remove_dimension_frame_relations,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indirect_angular_lines, neutral_sketch_id, next_indexed_record_offset,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7533,6 +7652,69 @@ mod relation_tests {
         assert_eq!(pairs[1].source, source_vertical.id);
         assert_eq!(pairs[1].result, result_vertical.id);
         assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
+    }
+
+    #[test]
+    fn angular_point_operand_selects_unique_incident_line_by_value() {
+        let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let point = entity(
+            "generated:point#vertex",
+            SketchGeometry::Point {
+                position: Point2::new(0.0, 0.0),
+            },
+        );
+        let explicit = entity(
+            "generated:line#explicit",
+            SketchGeometry::Line {
+                start: Point2::new(2.0, -2.0),
+                end: Point2::new(2.0, 2.0),
+            },
+        );
+        let diagonal = entity(
+            "generated:line#diagonal",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(2.0, 2.0),
+            },
+        );
+        let horizontal = entity(
+            "generated:line#horizontal",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(2.0, 0.0),
+            },
+        );
+        let projected = HashMap::from([
+            (("native", 1), &point),
+            (("native", 2), &explicit),
+            (("native", 3), &diagonal),
+            (("native", 4), &horizontal),
+        ]);
+
+        let lines = indirect_angular_lines(
+            "native",
+            &[&point, &explicit],
+            std::f64::consts::FRAC_PI_4,
+            &projected,
+        )
+        .unwrap();
+        assert_eq!(lines, (diagonal.id.clone(), explicit.id.clone()));
+        let supplementary = indirect_angular_lines(
+            "native",
+            &[&point, &explicit],
+            3.0 * std::f64::consts::FRAC_PI_4,
+            &projected,
+        )
+        .unwrap();
+        assert_eq!(supplementary, lines);
     }
 
     #[test]
