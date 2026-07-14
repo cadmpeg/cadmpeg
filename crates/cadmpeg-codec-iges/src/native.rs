@@ -2881,12 +2881,10 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let view_count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let entity_count = record
-                .and_then(|record| record.integer(2))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(2))
                 .unwrap_or_default();
             let width = if entry.form == 3 { 1 } else { 5 };
             NativeViewVisibility {
@@ -2933,8 +2931,7 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let value = |index| {
                 record
@@ -2969,14 +2966,12 @@ pub(crate) fn store(
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let view_count = record
-                .and_then(|record| record.integer(1))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(1))
                 .unwrap_or_default();
             let width = if entry.form == 0 { 3 } else { 4 };
             let annotation_count_index = 2 + view_count * width;
             let annotation_count = record
-                .and_then(|record| record.integer(annotation_count_index))
-                .and_then(|value| usize::try_from(value).ok())
+                .and_then(|record| record.count(annotation_count_index))
                 .unwrap_or_default();
             let trailing = record.and_then(|record| trailing_pointer_groups(record, &entries));
             let property = |form| {

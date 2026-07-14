@@ -84,9 +84,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let view_count = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok());
+        let view_count = record.count(1);
         let width = if entry.form == 0 { 3 } else { 4 };
         let views_valid = view_count.is_some_and(|count| {
             (0..count).all(|index| {
@@ -106,9 +104,7 @@ pub(super) fn project(
             })
         });
         let annotation_count_index = 2 + view_count.unwrap_or_default() * width;
-        let annotation_count = record
-            .integer(annotation_count_index)
-            .and_then(|value| usize::try_from(value).ok());
+        let annotation_count = record.count(annotation_count_index);
         let annotations_valid = annotation_count.is_some_and(|count| {
             (0..count).all(|index| {
                 record
@@ -234,10 +230,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let count = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0);
+        let count = record.count(1).filter(|count| *count > 0);
         let mut last_view = None;
         let mut closed_views = BTreeSet::new();
         let mut last_breakpoint = None;
@@ -330,13 +323,8 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let view_count = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0);
-        let entity_count = record
-            .integer(2)
-            .and_then(|value| usize::try_from(value).ok());
+        let view_count = record.count(1).filter(|count| *count > 0);
+        let entity_count = record.count(2);
         let block_width = if entry.form == 3 { 1 } else { 5 };
         let views_valid = view_count.is_some_and(|count| {
             (0..count).all(|index| {
