@@ -400,6 +400,24 @@ struct NativeView {
     depth_range: Option<[Option<f64>; 2]>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeViewDisplay {
+    view: Option<String>,
+    line_font: Option<i64>,
+    line_font_definition: Option<String>,
+    color: Option<i64>,
+    line_weight: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeViewVisibility {
+    id: String,
+    source_entity: String,
+    form: i64,
+    displays: Vec<NativeViewDisplay>,
+    entities: Vec<Option<String>>,
+}
+
 #[derive(Clone)]
 struct OccurrenceDefinition {
     members: Vec<u32>,
@@ -1639,6 +1657,58 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let view_visibility = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let view_count = record
+                .and_then(|record| record.integer(1))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let entity_count = record
+                .and_then(|record| record.integer(2))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let width = if entry.form == 3 { 1 } else { 5 };
+            NativeViewVisibility {
+                id: format!("iges:presentation:view-visibility#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                displays: (0..view_count)
+                    .map(|index| {
+                        let start = 3 + index * width;
+                        NativeViewDisplay {
+                            view: record
+                                .and_then(|record| record.integer(start))
+                                .map(|sequence| format!("iges:presentation:view#D{sequence}")),
+                            line_font: (entry.form == 4)
+                                .then(|| record.and_then(|record| record.integer(start + 1)))
+                                .flatten(),
+                            line_font_definition: (entry.form == 4)
+                                .then(|| record.and_then(|record| record.integer(start + 2)))
+                                .flatten()
+                                .filter(|sequence| *sequence != 0)
+                                .map(|sequence| format!("iges:presentation:line-font#D{sequence}")),
+                            color: (entry.form == 4)
+                                .then(|| record.and_then(|record| record.integer(start + 3)))
+                                .flatten(),
+                            line_weight: (entry.form == 4)
+                                .then(|| record.and_then(|record| record.integer(start + 4)))
+                                .flatten(),
+                        }
+                    })
+                    .collect(),
+                entities: (0..entity_count)
+                    .map(|index| {
+                        record
+                            .and_then(|record| record.integer(3 + view_count * width + index))
+                            .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    })
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
     let occurrence_definitions = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 308 | 320) && entry.form == 0)
@@ -1763,6 +1833,7 @@ pub(crate) fn store(
     namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
     namespace.set_arena("product_properties", &product_properties)?;
     namespace.set_arena("views", &views)?;
+    namespace.set_arena("view_visibility", &view_visibility)?;
     namespace.set_arena("product_occurrences", &product_occurrences)?;
     Ok(())
 }

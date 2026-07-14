@@ -4,7 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::ParameterRecord;
+use crate::parameter::{trailing_pointer_groups, ParameterRecord};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -133,6 +133,91 @@ pub(super) fn project(
             losses.push(entity_loss(
                 entry,
                 "view number, projection, transform, scale, or clipping fields are invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 402 && matches!(entry.form, 3 | 4))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let view_count = record
+            .integer(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0);
+        let entity_count = record
+            .integer(2)
+            .and_then(|value| usize::try_from(value).ok());
+        let block_width = if entry.form == 3 { 1 } else { 5 };
+        let views_valid = view_count.is_some_and(|count| {
+            (0..count).all(|index| {
+                let start = 3 + index * block_width;
+                record
+                    .integer(start)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .and_then(|sequence| entries.get(&sequence).copied())
+                    .is_some_and(|view| {
+                        view.entity_type == 410
+                            && records.get(&view.sequence).is_some_and(|view_record| {
+                                trailing_pointer_groups(view_record, &entries).is_some_and(
+                                    |groups| groups.associations.contains(&entry.sequence),
+                                )
+                            })
+                    })
+                    && (entry.form == 3 || {
+                        let line_font = record.integer(start + 1);
+                        let definition = record.integer(start + 2);
+                        let color = record.integer(start + 3);
+                        let weight = record.integer(start + 4);
+                        line_font.is_some_and(|value| matches!(value, 0..=5))
+                            && definition.is_some_and(|value| {
+                                if line_font == Some(0) {
+                                    u32::try_from(value).ok().is_some_and(|sequence| {
+                                        entries
+                                            .get(&sequence)
+                                            .is_some_and(|target| target.entity_type == 304)
+                                    })
+                                } else {
+                                    value == 0
+                                }
+                            })
+                            && color.is_some_and(|value| {
+                                matches!(value, 0..=8)
+                                    || value
+                                        .checked_neg()
+                                        .and_then(|value| {
+                                            u32::try_from(value).ok().filter(|sequence| {
+                                                entries
+                                                    .get(sequence)
+                                                    .is_some_and(|target| target.entity_type == 314)
+                                            })
+                                        })
+                                        .is_some()
+                            })
+                            && weight.is_some_and(|value| value >= 0)
+                    })
+            })
+        });
+        let entities_valid = view_count.zip(entity_count).is_some_and(|(views, count)| {
+            (0..count).all(|index| {
+                record
+                    .integer(3 + views * block_width + index)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .filter(|sequence| sequence % 2 == 1)
+                    .is_some_and(|sequence| entries.contains_key(&sequence))
+            })
+        });
+        if views_valid && entities_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "view-visibility blocks, display overrides, entities, or back pointers are invalid",
             ));
         }
     }

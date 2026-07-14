@@ -2426,6 +2426,39 @@ fn view_forms_file() -> Vec<u8> {
     ])
 }
 
+fn view_visibility_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW1".into(),
+            status: "00000000",
+            parameters: "410,1,1,0,0,0,0,0,0,1,3,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 3,
+            label: "VISIBLE".into(),
+            status: "00000000",
+            parameters: "402,1,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 410,
+            form: 0,
+            label: "VIEW2".into(),
+            status: "00000000",
+            parameters: "410,2,1,0,0,0,0,0,0,1,7,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 402,
+            form: 4,
+            label: "DISPLAY".into(),
+            status: "00000000",
+            parameters: "402,1,0,5,1,0,2,3;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3748,6 +3781,33 @@ fn decode_types_orthographic_and_perspective_views() {
     assert_eq!(views[1].fields["center_of_projection"][2], 10.0);
     assert_eq!(views[1].fields["clipping_window"][0], -2.0);
     assert_eq!(views[1].fields["depth_clipping"], 3);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_view_visibility_and_display_overrides() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(view_visibility_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let visibility = &result.ir.native.namespace("iges").unwrap().arenas["view_visibility"];
+    assert_eq!(visibility.len(), 2);
+    assert_eq!(visibility[0].fields["form"], 3);
+    assert_eq!(
+        visibility[0].fields["displays"][0]["view"],
+        "iges:presentation:view#D1"
+    );
+    assert!(visibility[0].fields["displays"][0]["line_font"].is_null());
+    assert_eq!(visibility[1].fields["form"], 4);
+    assert_eq!(visibility[1].fields["displays"][0]["line_font"], 1);
+    assert_eq!(visibility[1].fields["displays"][0]["color"], 2);
+    assert_eq!(visibility[1].fields["displays"][0]["line_weight"], 3);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
