@@ -3317,12 +3317,13 @@ impl MeshSelectionSearch<'_> {
                             .collect::<Option<Vec<_>>>()?,
                     )
                     .ok()?;
-                    if points[0] == points[1]
-                        || (!self.edge_candidates[edge].is_empty()
-                            && !self.edge_candidates[edge]
-                                .iter()
-                                .any(|candidate| same_unordered_pair(*candidate, points)))
-                    {
+                    let closed_ports =
+                        quotient.union.find(edge * 2) == quotient.union.find(edge * 2 + 1);
+                    if !mesh_edge_points_compatible(
+                        closed_ports,
+                        &self.edge_candidates[edge],
+                        points,
+                    ) {
                         return None;
                     }
                 }
@@ -3360,6 +3361,18 @@ impl MeshSelectionSearch<'_> {
             }
         }
     }
+}
+
+fn mesh_edge_points_compatible(
+    closed_ports: bool,
+    candidates: &[[usize; 2]],
+    points: [usize; 2],
+) -> bool {
+    (points[0] != points[1] || closed_ports)
+        && (candidates.is_empty()
+            || candidates
+                .iter()
+                .any(|candidate| same_unordered_pair(*candidate, points)))
 }
 
 /// Resolve standard trim assignments through their abstract physical-port
@@ -4027,11 +4040,11 @@ mod motif_tests {
     use std::collections::HashSet;
 
     use super::{
-        bind_edge_port_candidates, deduplicate_mesh_quotient_assignments, motif_port_points,
-        parse_trim_chain, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
-        reconstruct_incidence, reconstruct_incidence_candidates, unique_coordinate_bijection,
-        EdgeBoundaryLayout, EdgeRow, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment,
-        MeshQuotient, TrimRecord, UnionFind,
+        bind_edge_port_candidates, deduplicate_mesh_quotient_assignments,
+        mesh_edge_points_compatible, motif_port_points, parse_trim_chain,
+        propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
+        reconstruct_incidence_candidates, unique_coordinate_bijection, EdgeBoundaryLayout, EdgeRow,
+        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient, TrimRecord, UnionFind,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -4350,6 +4363,13 @@ mod motif_tests {
             prune_edge_candidates_by_port_domains(&ports, &candidates),
             Some(vec![vec![[1, 1], [2, 2]], vec![[1, 3], [2, 4]]])
         );
+    }
+
+    #[test]
+    fn mesh_endpoint_validation_accepts_equal_points_only_for_closed_ports() {
+        assert!(mesh_edge_points_compatible(true, &[[2, 2]], [2, 2]));
+        assert!(!mesh_edge_points_compatible(false, &[[2, 2]], [2, 2]));
+        assert!(!mesh_edge_points_compatible(true, &[[1, 1]], [2, 2]));
     }
 
     #[test]
