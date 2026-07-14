@@ -641,6 +641,15 @@ fn decode_builds_a_valid_connected_sheet_brep() {
         .iter()
         .all(|coedge| coedge.sense == Sense::Forward));
     assert_eq!(result.ir.model.faces[0].sense, Sense::Reversed);
+    assert!(result
+        .ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Edge(_)
+        )));
     assert_eq!(
         result.ir.model.faces[0].color,
         Some(cadmpeg_ir::topology::Color {
@@ -843,8 +852,18 @@ fn decode_transfers_ap242_one_based_tessellation_indices() {
         .find(|mesh| mesh.id.ends_with("#7"))
         .unwrap();
     assert_eq!(complex.triangles, [[0, 1, 2], [2, 1, 3], [0, 1, 3]]);
+    assert_eq!(complex.vertices[0], Point3::new(10.0, 10.0, 0.0));
     assert_eq!(complex.normals.len(), 4);
-    assert_eq!(complex.normals[0].z, -1.0);
+    assert_eq!(complex.normals[0].x, 1.0);
+    assert!(result
+        .ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Tessellation(_)
+        )));
     assert!(result
         .report
         .notes

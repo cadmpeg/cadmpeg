@@ -24,6 +24,7 @@ pub(super) struct IdSets {
     curves: HashSet<String>,
     pcurves: HashSet<String>,
     appearances: HashSet<String>,
+    tessellations: HashSet<String>,
     unknowns: HashSet<String>,
 }
 
@@ -47,6 +48,12 @@ impl IdSets {
                 .appearances
                 .iter()
                 .map(|e| e.id.0.clone())
+                .collect(),
+            tessellations: ir
+                .model
+                .tessellations
+                .iter()
+                .map(|e| e.id.clone())
                 .collect(),
             unknowns: ir
                 .all_native_unknowns()
@@ -224,6 +231,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             AppearanceTarget::Face(face) if !ids.faces.contains(&face.0) => {
                 ref_error(findings, &owner, "face", &face.0);
             }
+            AppearanceTarget::Edge(edge) if !ids.edges.contains(&edge.0) => {
+                ref_error(findings, &owner, "edge", &edge.0);
+            }
             AppearanceTarget::Surface(surface) if !ids.surfaces.contains(&surface.0) => {
                 ref_error(findings, &owner, "surface", &surface.0);
             }
@@ -232,6 +242,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             AppearanceTarget::Point(point) if !ids.points.contains(&point.0) => {
                 ref_error(findings, &owner, "point", &point.0);
+            }
+            AppearanceTarget::Tessellation(tessellation)
+                if !ids.tessellations.contains(tessellation) =>
+            {
+                ref_error(findings, &owner, "tessellation", tessellation);
             }
             _ => {}
         }

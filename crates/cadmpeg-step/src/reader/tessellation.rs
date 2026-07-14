@@ -118,69 +118,75 @@ pub(super) fn decode(
             ));
             continue;
         };
-        if triangles
-            .iter()
-            .flatten()
-            .any(|index| *index == 0 || *index as usize > vertices.len())
-        {
-            warnings.push(format!(
-                "{} #{id} has an out-of-range one-based coordinate index",
-                record.simple_name().expect("matched simple name")
-            ));
-            continue;
-        }
-        let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
-        let local_index = coordinate_indices
-            .iter()
-            .enumerate()
-            .map(|(local, global)| (*global, local as u32))
-            .collect::<BTreeMap<_, _>>();
-        let local_vertices = coordinate_indices
-            .iter()
-            .map(|index| vertices[*index as usize - 1])
-            .collect::<Vec<_>>();
-        let local_triangles = triangles
-            .iter()
-            .map(|triangle| triangle.map(|index| local_index[&index]))
-            .collect::<Vec<_>>();
-        let source_normals = normal_rows(record.parameter(3)).unwrap_or_default();
         let pnindex_parameter = match record.simple_name() {
             Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE") => 5,
             _ => 4,
         };
         let pnindex = index_list(record.parameter(pnindex_parameter)).unwrap_or_default();
+        let (local_vertices, local_triangles, coordinate_indices) = if pnindex.is_empty() {
+            if triangles
+                .iter()
+                .flatten()
+                .any(|index| *index == 0 || *index as usize > vertices.len())
+            {
+                warnings.push(format!(
+                    "{} #{id} has an out-of-range one-based coordinate index",
+                    record.simple_name().expect("matched simple name")
+                ));
+                continue;
+            }
+            let coordinate_indices = triangles.iter().flatten().copied().collect::<BTreeSet<_>>();
+            let local_index = coordinate_indices
+                .iter()
+                .enumerate()
+                .map(|(local, global)| (*global, local as u32))
+                .collect::<BTreeMap<_, _>>();
+            let local_vertices = coordinate_indices
+                .iter()
+                .map(|index| vertices[*index as usize - 1])
+                .collect::<Vec<_>>();
+            let local_triangles = triangles
+                .iter()
+                .map(|triangle| triangle.map(|index| local_index[&index]))
+                .collect::<Vec<_>>();
+            (local_vertices, local_triangles, Some(coordinate_indices))
+        } else {
+            if pnindex
+                .iter()
+                .any(|index| *index == 0 || *index as usize > vertices.len())
+                || triangles
+                    .iter()
+                    .flatten()
+                    .any(|index| *index == 0 || *index as usize > pnindex.len())
+            {
+                warnings.push(format!(
+                    "{} #{id} has an out-of-range one-based tessellation index",
+                    record.simple_name().expect("matched simple name")
+                ));
+                continue;
+            }
+            (
+                pnindex
+                    .iter()
+                    .map(|index| vertices[*index as usize - 1])
+                    .collect(),
+                triangles
+                    .iter()
+                    .map(|triangle| triangle.map(|index| index - 1))
+                    .collect(),
+                None,
+            )
+        };
+        let source_normals = normal_rows(record.parameter(3)).unwrap_or_default();
         let normals = match source_normals.len() {
             0 => Vec::new(),
             1 => vec![source_normals[0]; local_vertices.len()],
+            count if count == local_vertices.len() => source_normals,
             count if pnindex.is_empty() && count == vertices.len() => coordinate_indices
+                .expect("coordinate indices exist without pnindex")
                 .iter()
                 .map(|index| source_normals[*index as usize - 1])
                 .collect(),
-            count
-                if pnindex.len() == count
-                    && pnindex
-                        .iter()
-                        .all(|index| *index > 0 && *index as usize <= vertices.len()) =>
-            {
-                let by_coordinate = pnindex
-                    .iter()
-                    .copied()
-                    .zip(source_normals.iter().copied())
-                    .collect::<BTreeMap<_, _>>();
-                let local = coordinate_indices
-                    .iter()
-                    .filter_map(|index| by_coordinate.get(index).copied())
-                    .collect::<Vec<_>>();
-                if local.len() == local_vertices.len() {
-                    local
-                } else {
-                    warnings.push(format!(
-                        "{} #{id} has no normal for every referenced coordinate",
-                        record.simple_name().expect("matched simple name")
-                    ));
-                    Vec::new()
-                }
-            }
             count => {
                 warnings.push(format!(
                     "{} #{id} carries {count} normals for {} coordinates",

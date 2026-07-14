@@ -10,10 +10,10 @@ authored against `docs/formats/step.md`.
 | `complex_instance.p21` | external-mapped complex instance with sibling-supplied attributes |
 | `strings.p21` | apostrophe, reverse-solidus, X, X2, X4, S, and page-selection string escapes |
 | `ap242_geometry.p21` | millimetre unit context, analytic carriers, unknown-periodicity NURBS, parameter and Cartesian trims, trimmed composite, geometry styles, and null style |
-| `ap214_sheet.p21` | connected triangular sheet B-rep with oriented edge uses and a planar face |
+| `ap214_sheet.p21` | connected triangular sheet B-rep with oriented edge uses and face/edge styles |
 | `ap203_sheet.p21` | CONFIG_CONTROL_DESIGN connected triangular sheet B-rep with millimetre units |
 | `ap242_assembly.p21` | product-definition tree, NAUO identity, and item-defined occurrence placement |
-| `ap242_tessellation.p21` | exact/tessellated body linkage, one-based indices, and area/volume/centroid validation properties |
+| `ap242_tessellation.p21` | exact/tessellated body linkage, one-based indices, tessellation style, and area/volume/centroid validation properties |
 | `ap242_semantic_pmi.p21` | datum, datum system, dimensional size with plus/minus limits, and complex-instance geometric-tolerance magnitude |
 | `ap242_conversion_units.p21` | conversion-based length unit chain and representation uncertainty |
 | `ap242_presentation_pmi.p21` | drafting model, annotation plane, placed text literal, and annotation occurrence |
