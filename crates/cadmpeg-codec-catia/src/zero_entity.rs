@@ -1038,11 +1038,38 @@ fn parse_carrier_runs(
             let record = &records[position];
             let slot = token_u32(&record.bytes, 12)?;
             let uv_endpoints = support_uv_endpoints(record);
+            let expanded;
+            let pcurve_record = if let Some(expected_len) = support_logical_len(record.tag) {
+                let end = records
+                    .get(position + 1)
+                    .map_or(bytes.len(), |next| next.offset);
+                if end.checked_sub(record.offset) != Some(expected_len) {
+                    return None;
+                }
+                expanded = ZeroEntityRecord {
+                    ordinal: record.ordinal,
+                    offset: record.offset,
+                    tag: record.tag,
+                    bytes: bytes.get(record.offset..end)?.to_vec(),
+                };
+                &expanded
+            } else {
+                record
+            };
             let pcurve = geometry
                 .as_ref()
-                .and_then(|geometry| support_pcurve(record, geometry));
-            let lifted_endpoints = uv_endpoints
-                .and_then(|uv| geometry.as_ref().and_then(|value| lift_geometry(value, uv)));
+                .and_then(|geometry| support_pcurve(pcurve_record, geometry));
+            let lifted_endpoints = pcurve
+                .as_ref()
+                .and_then(|pcurve| {
+                    geometry
+                        .as_ref()
+                        .and_then(|surface| lift_pcurve_endpoints(pcurve, surface))
+                })
+                .or_else(|| {
+                    uv_endpoints
+                        .and_then(|uv| geometry.as_ref().and_then(|value| lift_geometry(value, uv)))
+                });
             supports.push(ZeroSupport {
                 record_ordinal: record.ordinal,
                 owner_carrier_ordinal: records[carrier].ordinal,
@@ -1111,9 +1138,27 @@ fn support_uv_endpoints(record: &ZeroEntityRecord) -> Option<[[f64; 2]; 2]> {
 
 fn support_pcurve(record: &ZeroEntityRecord, carrier: &SurfaceGeometry) -> Option<PcurveGeometry> {
     let (knot_offsets, multiplicity_offsets, pole_offset, rational) = match record.tag {
+        [0x21, 0x45] => (
+            &[67, 75, 83, 91, 99, 107][..],
+            &[115, 120, 125, 130, 135, 140][..],
+            145,
+            false,
+        ),
         [0x21, 0x71] => (&[67, 75][..], &[83, 88][..], 93, false),
+        [0x21, 0x72] => (
+            &[67, 75, 83, 91, 99, 107, 115][..],
+            &[123, 128, 133, 138, 143, 148, 153][..],
+            158,
+            false,
+        ),
         [0x21, 0x91] => (&[67, 75][..], &[83, 88][..], 93, false),
         [0x21, 0x99] => (&[67, 75][..], &[83, 88][..], 93, true),
+        [0x21, 0x9f] => (
+            &[67, 75, 83, 91, 99, 107, 115, 123][..],
+            &[131, 136, 141, 146, 151, 156, 161, 166][..],
+            171,
+            false,
+        ),
         [0x21, 0xd6] => (&[67, 75, 83][..], &[91, 96, 101][..], 106, true),
         [0x21, 0xe8] => (
             &[67, 75, 83, 91, 99][..],
@@ -1152,21 +1197,25 @@ fn support_pcurve(record: &ZeroEntityRecord, carrier: &SurfaceGeometry) -> Optio
         let [u, v] = neutral_uv(native, carrier)?;
         control_points.push(Point2::new(u, v));
     }
-    let endpoints = support_uv_endpoints(record)?
-        .map(|point| neutral_uv(point, carrier))
-        .into_iter()
-        .collect::<Option<Vec<_>>>()?;
-    let first = control_points.first()?;
-    let last = control_points.last()?;
-    if (first.u - endpoints[0][0])
-        .abs()
-        .max((first.v - endpoints[0][1]).abs())
-        > 1e-9
-        || (last.u - endpoints[1][0])
+    if let Some(endpoints) = support_uv_endpoints(record) {
+        let endpoints = endpoints
+            .map(|point| neutral_uv(point, carrier))
+            .into_iter()
+            .collect::<Option<Vec<_>>>()?;
+        let first = control_points.first()?;
+        let last = control_points.last()?;
+        if (first.u - endpoints[0][0])
             .abs()
-            .max((last.v - endpoints[1][1]).abs())
+            .max((first.v - endpoints[0][1]).abs())
             > 1e-9
-    {
+            || (last.u - endpoints[1][0])
+                .abs()
+                .max((last.v - endpoints[1][1]).abs())
+                > 1e-9
+        {
+            return None;
+        }
+    } else if support_logical_len(record.tag).is_none() {
         return None;
     }
     let weights = if rational {
@@ -1199,6 +1248,30 @@ fn support_pcurve(record: &ZeroEntityRecord, carrier: &SurfaceGeometry) -> Optio
     })
 }
 
+fn lift_pcurve_endpoints(
+    pcurve: &PcurveGeometry,
+    carrier: &SurfaceGeometry,
+) -> Option<[[f64; 3]; 2]> {
+    let PcurveGeometry::Nurbs { degree, knots, .. } = pcurve else {
+        return None;
+    };
+    let degree = usize::try_from(*degree).ok()?;
+    let range = [
+        *knots.get(degree)?,
+        *knots.get(knots.len().checked_sub(degree + 1)?)?,
+    ];
+    range
+        .map(|parameter| {
+            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, parameter)?;
+            let point = cadmpeg_ir::eval::surface_point(carrier, uv.u, uv.v)?;
+            Some([point.x, point.y, point.z])
+        })
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()
+}
+
 fn neutral_uv(native: [f64; 2], carrier: &SurfaceGeometry) -> Option<[f64; 2]> {
     Some(match carrier {
         SurfaceGeometry::Cylinder { radius, .. } => [native[0] / radius, native[1]],
@@ -1225,6 +1298,15 @@ fn token_u32(bytes: &[u8], offset: usize) -> Option<u32> {
     u32_at(bytes, offset + 1)
 }
 
+fn support_logical_len(tag: [u8; 2]) -> Option<usize> {
+    match tag {
+        [0x21, 0x45] => Some(337),
+        [0x21, 0x72] => Some(382),
+        [0x21, 0x9f] => Some(427),
+        _ => None,
+    }
+}
+
 fn walk_records(bytes: &[u8]) -> Vec<ZeroEntityRecord> {
     let mut records = Vec::new();
     let mut position = 0;
@@ -1240,13 +1322,20 @@ fn walk_records(bytes: &[u8]) -> Vec<ZeroEntityRecord> {
         if end > bytes.len() {
             break;
         }
+        let tag = [bytes[position + 2], bytes[position + 3]];
+        let logical_end = support_logical_len(tag)
+            .and_then(|length| position.checked_add(length))
+            .unwrap_or(end);
+        if logical_end > bytes.len() {
+            break;
+        }
         records.push(ZeroEntityRecord {
             ordinal: records.len(),
             offset: position,
-            tag: [bytes[position + 2], bytes[position + 3]],
+            tag,
             bytes: bytes[position..end].to_vec(),
         });
-        position = end;
+        position = logical_end;
     }
     records
 }
@@ -1480,6 +1569,58 @@ mod occurrence_tests {
         assert_eq!(knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
         assert_eq!(control_points.len(), 3);
         assert_eq!(weights, Some(vec![1.0, 0.5, 1.0]));
+        assert!(!periodic);
+    }
+
+    #[test]
+    fn extended_support_owns_continuation_and_decodes_inline_poles() {
+        let mut bytes = vec![0; 341];
+        bytes[..4].copy_from_slice(&[0xa9, 0x03, 0x21, 0x45]);
+        for (index, value) in [0.0f64, 1.0, 2.0, 3.0, 4.0, 5.0].into_iter().enumerate() {
+            let offset = 67 + 8 * index;
+            bytes[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        for (index, multiplicity) in [4u32, 2, 2, 2, 2, 4].into_iter().enumerate() {
+            let offset = 115 + 5 * index;
+            bytes[offset] = 0x10;
+            bytes[offset + 1..offset + 5].copy_from_slice(&multiplicity.to_le_bytes());
+        }
+        for index in 0..12 {
+            let offset = 145 + 16 * index;
+            bytes[offset..offset + 8].copy_from_slice(&(index as f64).to_le_bytes());
+            bytes[offset + 8..offset + 16].copy_from_slice(&(2.0 * index as f64).to_le_bytes());
+        }
+        bytes[337..341].copy_from_slice(&[0xa9, 0x03, 0x5d, 0x06]);
+
+        let records = walk_records(&bytes);
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].bytes.len(), 81);
+
+        let record = ZeroEntityRecord {
+            bytes: bytes[..337].to_vec(),
+            ..records[0].clone()
+        };
+        let carrier = SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let Some(PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        }) = support_pcurve(&record, &carrier)
+        else {
+            panic!("expected extended support pcurve");
+        };
+        assert_eq!(degree, 3);
+        assert_eq!(knots.len(), 16);
+        assert_eq!(control_points.len(), 12);
+        assert_eq!(control_points[0], Point2::new(0.0, 0.0));
+        assert_eq!(control_points[11], Point2::new(11.0, 22.0));
+        assert_eq!(weights, None);
         assert!(!periodic);
     }
 

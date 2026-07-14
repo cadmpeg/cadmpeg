@@ -474,13 +474,16 @@ Inline support pcurves share a clamped NURBS grammar. Distinct f64 knots are fol
 
 | Tag | Distinct knots | Multiplicities | Pole start | Degree/control count | Weights |
 | --- | --- | --- | --- | --- | --- |
+| `2145` | `+67..+107`, stride 8 | `+115..+140`, stride 5 | `+145` | 3 / 12 | none |
 | `2171` | `+67,+75` | `+83,+88` | `+93` | 1 / 2 | none |
+| `2172` | `+67..+115`, stride 8 | `+123..+153`, stride 5 | `+158` | 3 / 14 | none |
 | `2191` | `+67,+75` | `+83,+88` | `+93` | 3 / 4 | none |
 | `2199` | `+67,+75` | `+83,+88` | `+93` | 2 / 3 | three f64 values after the poles |
+| `219f` | `+67..+123`, stride 8 | `+131..+166`, stride 5 | `+171` | 3 / 16 | none |
 | `21d6` | `+67,+75,+83` | `+91,+96,+101` | `+106` | 2 / 5 | five f64 values after the poles |
 | `21e8` | `+67,+75,+83,+91,+99` | `+107,+112,+117,+122,+127` | `+132` | 3 / 7 | none |
 
-The pole coordinates use the carrier's native parameter units. Neutral IR conversion is `(u/r,v)` for cylinders, `(u,v cos α)` for cones, `(u/R,v/r)` for tori, and identity for planes and NURBS surfaces. The first and last neutral poles equal the support endpoint pair. `2118` is degenerate and has no pcurve payload. `2145`, `2172`, and `219f` carry referenced rather than inline poles.
+The pole coordinates use the carrier's native parameter units. Neutral IR conversion is `(u/r,v)` for cylinders, `(u,v cos α)` for cones, `(u/R,v/r)` for tori, and identity for planes and NURBS surfaces. The first and last neutral poles equal the support endpoint pair. `2118` is degenerate and has no pcurve payload. The `2145`, `2172`, and `219f` logical records own the 256 bytes following their nominal frames. Their logical lengths are respectively 337, 382, and 427 bytes; the continuation contains the remainder of the inline row-major f64 `(u,v)` pole array.
 
 ---
 
