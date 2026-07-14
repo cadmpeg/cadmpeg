@@ -597,6 +597,25 @@ pub struct FeatureBlockConstructionReference {
     pub source_offset: u64,
 }
 
+/// Completely resolved construction-reference field of one `BLOCK` feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBlockConstruction {
+    /// Globally unique construction identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Payload control byte preceding the construction field.
+    pub control: u8,
+    /// Eighteen ordered references preceding the separator.
+    pub member_references: Vec<String>,
+    /// Eighteen uniquely resolved member blocks.
+    pub member_data_blocks: Vec<String>,
+    /// Reference following the separator.
+    pub terminal_reference: String,
+    /// Uniquely resolved terminal block.
+    pub terminal_data_block: String,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1744,6 +1763,56 @@ pub fn feature_block_construction_references(
         }
     }
     references
+}
+
+/// Join complete, uniquely resolved `BLOCK` construction-reference fields.
+pub fn feature_block_constructions(
+    references: &[FeatureBlockConstructionReference],
+) -> Vec<FeatureBlockConstruction> {
+    let mut by_operation = BTreeMap::<&str, Vec<&FeatureBlockConstructionReference>>::new();
+    for reference in references {
+        by_operation
+            .entry(reference.operation_label.as_str())
+            .or_default()
+            .push(reference);
+    }
+    let mut constructions = Vec::new();
+    for (operation_label, mut field) in by_operation {
+        field.sort_by_key(|reference| reference.ordinal);
+        if field.len() != 19
+            || field.iter().enumerate().any(|(ordinal, reference)| {
+                reference.ordinal != ordinal as u32
+                    || reference.control != field[0].control
+                    || reference.terminal != (ordinal == 18)
+            })
+        {
+            continue;
+        }
+        let (terminal, members) = field.split_last().expect("nineteen references");
+        let Some(member_data_blocks) = members
+            .iter()
+            .map(|reference| reference.data_block.clone())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some(terminal_data_block) = terminal.data_block.clone() else {
+            continue;
+        };
+        constructions.push(FeatureBlockConstruction {
+            id: operation_label.replacen("operation-label", "block-construction", 1),
+            operation_label: operation_label.to_string(),
+            control: field[0].control,
+            member_references: members
+                .iter()
+                .map(|reference| reference.id.clone())
+                .collect(),
+            member_data_blocks,
+            terminal_reference: terminal.id.clone(),
+            terminal_data_block,
+        });
+    }
+    constructions
 }
 
 fn unique_offset_data_block(

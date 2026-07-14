@@ -2800,6 +2800,8 @@ fn attach_native_object_model(
         crate::native::feature_extrude_payload_32_branches(&scan.container);
     let feature_block_construction_references =
         crate::native::feature_block_construction_references(&scan.container);
+    let feature_block_constructions =
+        crate::native::feature_block_constructions(&feature_block_construction_references);
     let feature_sketch_records = crate::native::feature_sketch_records(
         &feature_operation_labels,
         &feature_operation_records,
@@ -2853,6 +2855,7 @@ fn attach_native_object_model(
         && feature_extrude_construction_profiles.is_empty()
         && feature_extrude_payload_32_branches.is_empty()
         && feature_block_construction_references.is_empty()
+        && feature_block_constructions.is_empty()
         && feature_sketch_records.is_empty()
         && feature_sketch_construction_inputs.is_empty()
         && feature_boolean_operations.is_empty()
@@ -3095,6 +3098,7 @@ fn attach_native_object_model(
             extrude_construction_profiles: &feature_extrude_construction_profiles,
             operation_body_operands: &feature_operation_body_operands,
             sketch_construction_inputs: &feature_sketch_construction_inputs,
+            block_constructions: &feature_block_constructions,
             parameter_bindings: &feature_parameter_bindings,
             expressions: &expressions,
             operation_records: &feature_operation_records,
@@ -3108,7 +3112,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(50);
+    namespace.version = namespace.version.max(51);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3220,6 +3224,9 @@ fn attach_native_object_model(
             &feature_block_construction_references,
         )?;
     }
+    if !feature_block_constructions.is_empty() {
+        namespace.set_arena("feature_block_constructions", &feature_block_constructions)?;
+    }
     if !feature_sketch_records.is_empty() {
         namespace.set_arena("feature_sketch_records", &feature_sketch_records)?;
     }
@@ -3295,6 +3302,7 @@ struct FeatureOperationSources<'a> {
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
     operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
     sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
+    block_constructions: &'a [crate::native::FeatureBlockConstruction],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
@@ -3318,6 +3326,7 @@ fn attach_feature_operations(
         extrude_construction_profiles,
         operation_body_operands,
         sketch_construction_inputs,
+        block_constructions,
         parameter_bindings,
         expressions,
         operation_records,
@@ -3390,6 +3399,10 @@ fn attach_feature_operations(
     let sketch_construction_inputs_by_operation = sketch_construction_inputs
         .iter()
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
+        .collect::<BTreeMap<_, _>>();
+    let block_constructions_by_operation = block_constructions
+        .iter()
+        .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
@@ -3489,6 +3502,9 @@ fn attach_feature_operations(
         }
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
             source_properties.insert("sketch_construction_inputs".to_string(), inputs.id.clone());
+        }
+        if let Some(construction) = block_constructions_by_operation.get(label.id.as_str()) {
+            source_properties.insert("block_construction".to_string(), construction.id.clone());
         }
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(
