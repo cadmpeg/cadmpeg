@@ -2768,8 +2768,17 @@ fn attach_native_object_model(
     let parasolid_attribute_definitions =
         crate::native::parasolid_attribute_definitions(&scan.streams);
     let parasolid_entity_51_records = crate::native::parasolid_entity_51_records(&scan.streams);
+    let parasolid_entity_52_integer_records =
+        crate::native::parasolid_entity_52_integer_records(&scan.streams);
+    let parasolid_entity_53_double_records =
+        crate::native::parasolid_entity_53_double_records(&scan.streams);
     let parasolid_entity_54_string_records =
         crate::native::parasolid_entity_54_string_records(&scan.streams);
+    let parasolid_entity_51_numeric_uses = crate::native::parasolid_entity_51_numeric_uses(
+        &parasolid_entity_51_records,
+        &parasolid_entity_52_integer_records,
+        &parasolid_entity_53_double_records,
+    );
     let parasolid_entity_51_string_uses = crate::native::parasolid_entity_51_string_uses(
         &parasolid_entity_51_records,
         &parasolid_entity_54_string_records,
@@ -2988,7 +2997,10 @@ fn attach_native_object_model(
         && segment_body_lineage_statuses.is_empty()
         && parasolid_attribute_definitions.is_empty()
         && parasolid_entity_51_records.is_empty()
+        && parasolid_entity_52_integer_records.is_empty()
+        && parasolid_entity_53_double_records.is_empty()
         && parasolid_entity_54_string_records.is_empty()
+        && parasolid_entity_51_numeric_uses.is_empty()
         && parasolid_entity_51_string_uses.is_empty()
         && parasolid_topology_attribute_list_references.is_empty()
         && om_record_areas.is_empty()
@@ -3098,6 +3110,20 @@ fn attach_native_object_model(
             .tag("ENTITY_51");
         annotations.exactness(&record.id, Exactness::ByteExact);
     }
+    for record in &parasolid_entity_52_integer_records {
+        let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
+        annotations
+            .note(&record.id, source_stream, record.inflated_offset)
+            .tag("ENTITY_52_INTEGERS");
+        annotations.exactness(&record.id, Exactness::ByteExact);
+    }
+    for record in &parasolid_entity_53_double_records {
+        let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
+        annotations
+            .note(&record.id, source_stream, record.inflated_offset)
+            .tag("ENTITY_53_DOUBLES");
+        annotations.exactness(&record.id, Exactness::ByteExact);
+    }
     for record in &parasolid_entity_54_string_records {
         let source_stream = annotations.stream(format!("nx:s{}", record.stream_ordinal));
         annotations
@@ -3111,6 +3137,13 @@ fn attach_native_object_model(
             .note(&block_use.id, source_stream, block_use.inflated_offset)
             .tag("ENTITY_51_STRING_USE");
         annotations.exactness(&block_use.id, Exactness::ByteExact);
+    }
+    for value_use in &parasolid_entity_51_numeric_uses {
+        let source_stream = annotations.stream(format!("nx:s{}", value_use.stream_ordinal));
+        annotations
+            .note(&value_use.id, source_stream, value_use.inflated_offset)
+            .tag("ENTITY_51_NUMERIC_USE");
+        annotations.exactness(&value_use.id, Exactness::ByteExact);
     }
     for reference in &parasolid_topology_attribute_list_references {
         let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
@@ -3427,7 +3460,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(123);
+    namespace.version = namespace.version.max(124);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3452,6 +3485,18 @@ fn attach_native_object_model(
     if !parasolid_entity_51_records.is_empty() {
         namespace.set_arena("parasolid_entity_51_records", &parasolid_entity_51_records)?;
     }
+    if !parasolid_entity_52_integer_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_entity_52_integer_records",
+            &parasolid_entity_52_integer_records,
+        )?;
+    }
+    if !parasolid_entity_53_double_records.is_empty() {
+        namespace.set_arena(
+            "parasolid_entity_53_double_records",
+            &parasolid_entity_53_double_records,
+        )?;
+    }
     if !parasolid_entity_54_string_records.is_empty() {
         namespace.set_arena(
             "parasolid_entity_54_string_records",
@@ -3462,6 +3507,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_entity_51_string_uses",
             &parasolid_entity_51_string_uses,
+        )?;
+    }
+    if !parasolid_entity_51_numeric_uses.is_empty() {
+        namespace.set_arena(
+            "parasolid_entity_51_numeric_uses",
+            &parasolid_entity_51_numeric_uses,
         )?;
     }
     if !parasolid_topology_attribute_list_references.is_empty() {

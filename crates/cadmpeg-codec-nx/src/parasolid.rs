@@ -108,6 +108,122 @@ pub struct Entity54StringRecord<'a> {
     pub value: &'a str,
 }
 
+/// One counted type-82 unsigned-integer value record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Entity52IntegerRecord {
+    /// Inflated-stream offset of the `00 52` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered big-endian unsigned values.
+    pub values: Vec<u32>,
+}
+
+/// One counted type-83 binary64 value record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Entity53DoubleRecord {
+    /// Inflated-stream offset of the `00 53` tag.
+    pub offset: usize,
+    /// Exact framed record length.
+    pub byte_len: usize,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered finite big-endian binary64 values.
+    pub values: Vec<f64>,
+}
+
+/// Decode counted type-82 unsigned-integer records.
+pub fn entity_52_integer_records(bytes: &[u8]) -> Vec<Entity52IntegerRecord> {
+    counted_value_records(bytes, 0x52, 4, |value| {
+        Some(u32::from_be_bytes(value.try_into().ok()?))
+    })
+    .into_iter()
+    .map(|record| Entity52IntegerRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        values: record.values,
+    })
+    .collect()
+}
+
+/// Decode counted type-83 finite binary64 records.
+pub fn entity_53_double_records(bytes: &[u8]) -> Vec<Entity53DoubleRecord> {
+    counted_value_records(bytes, 0x53, 8, |value| {
+        let value = f64::from_be_bytes(value.try_into().ok()?);
+        value.is_finite().then_some(value)
+    })
+    .into_iter()
+    .map(|record| Entity53DoubleRecord {
+        offset: record.offset,
+        byte_len: record.byte_len,
+        xmt: record.xmt,
+        values: record.values,
+    })
+    .collect()
+}
+
+struct CountedValueRecord<T> {
+    offset: usize,
+    byte_len: usize,
+    xmt: u32,
+    values: Vec<T>,
+}
+
+fn counted_value_records<T>(
+    bytes: &[u8],
+    tag: u8,
+    value_width: usize,
+    decode: impl Fn(&[u8]) -> Option<T>,
+) -> Vec<CountedValueRecord<T>> {
+    let mut records = Vec::new();
+    for offset in 0..bytes.len().saturating_sub(10) {
+        if bytes.get(offset..offset + 2) != Some(&[0, tag]) {
+            continue;
+        }
+        let mut at = offset + 2;
+        if bytes.get(at) == Some(&0xff) {
+            at += 1;
+        }
+        let Some(count) = bytes
+            .get(at..at + 4)
+            .map(|value| u32::from_be_bytes(value.try_into().expect("four bytes")) as usize)
+            .filter(|count| *count > 0)
+        else {
+            continue;
+        };
+        at += 4;
+        let Some(xmt) = read_xmt(bytes, &mut at).filter(|xmt| *xmt > 1) else {
+            continue;
+        };
+        let Some(values_end) = count
+            .checked_mul(value_width)
+            .and_then(|length| at.checked_add(length))
+        else {
+            continue;
+        };
+        let Some(value_bytes) = bytes.get(at..values_end) else {
+            continue;
+        };
+        let Some(values) = value_bytes
+            .chunks_exact(value_width)
+            .map(&decode)
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        records.push(CountedValueRecord {
+            offset,
+            byte_len: values_end - offset,
+            xmt,
+            values,
+        });
+    }
+    records
+}
+
 /// Decode self-framed printable type-84 string records.
 pub fn entity_54_string_records(bytes: &[u8]) -> Vec<Entity54StringRecord<'_>> {
     let mut records = Vec::new();

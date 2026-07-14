@@ -776,6 +776,14 @@ is printable ASCII. The terminator is outside the declared text length. A
 type-81 reference slot addresses the value only when exactly one type-84 record
 in the same stream has the referenced xmt; reference order is retained.
 
+A type-82 unsigned-integer value record is `00 52 [ff], count:u32 BE, xmt,
+value[count]:u32 BE`. A type-83 numeric value record is `00 53 [ff], count:u32
+BE, xmt, value[count]:f64 BE`. Counts are nonzero, XMT identities are non-null,
+and every type-83 value is finite. Each record ends after its final value and
+has no terminator. A type-81 reference slot resolves a numeric value record only
+when exactly one type-82 or type-83 record in the same stream has the referenced
+xmt; reference order and the value lane order are retained.
+
 `hostglobalvariables` stores numeric expressions as independently length-framed ASCII records:
 
 ```text

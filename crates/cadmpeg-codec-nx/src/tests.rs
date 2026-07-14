@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 123);
+    assert_eq!(namespace.version, 124);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3570,6 +3570,43 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
 }
 
 #[test]
+fn parasolid_entity_52_integers_require_complete_counted_values() {
+    let mut bytes = vec![0xaa, 0x00, 0x52];
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&17u16.to_be_bytes());
+    bytes.extend_from_slice(&3u32.to_be_bytes());
+    bytes.extend_from_slice(&u32::MAX.to_be_bytes());
+
+    let records = crate::parasolid::entity_52_integer_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(records[0].xmt, 17);
+    assert_eq!(records[0].values, [3, u32::MAX]);
+    assert_eq!(records[0].byte_len, 16);
+    assert!(crate::parasolid::entity_52_integer_records(&bytes[..bytes.len() - 1]).is_empty());
+}
+
+#[test]
+fn parasolid_entity_53_doubles_require_complete_finite_values() {
+    let mut bytes = vec![0xaa, 0x00, 0x53, 0xff];
+    bytes.extend_from_slice(&2u32.to_be_bytes());
+    bytes.extend_from_slice(&18u16.to_be_bytes());
+    bytes.extend_from_slice(&0.001f64.to_be_bytes());
+    bytes.extend_from_slice(&0.25f64.to_be_bytes());
+
+    let records = crate::parasolid::entity_53_double_records(&bytes);
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].offset, 1);
+    assert_eq!(records[0].xmt, 18);
+    assert_eq!(records[0].values, [0.001, 0.25]);
+    assert_eq!(records[0].byte_len, 25);
+
+    let last = bytes.len() - 8;
+    bytes[last..].copy_from_slice(&f64::NAN.to_be_bytes());
+    assert!(crate::parasolid::entity_53_double_records(&bytes).is_empty());
+}
+
+#[test]
 fn topology_attribute_class_uses_resolve_one_based_stream_catalog_indices() {
     use crate::native::{
         ParasolidAttributeDefinition, ParasolidEntity51Record,
@@ -5923,7 +5960,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 123);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 124);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

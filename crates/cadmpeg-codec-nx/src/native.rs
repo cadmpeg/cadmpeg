@@ -205,6 +205,71 @@ pub struct ParasolidEntity54StringRecord {
     pub inflated_offset: u64,
 }
 
+/// Counted Parasolid type-82 unsigned-integer record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity52IntegerRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered big-endian unsigned values.
+    pub values: Vec<u32>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Counted Parasolid type-83 finite binary64 record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidEntity53DoubleRecord {
+    /// Globally unique record identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Stream-local record identity.
+    pub xmt: u32,
+    /// Ordered finite big-endian binary64 values.
+    pub values: Vec<f64>,
+    /// Exact framed record length.
+    pub byte_len: u64,
+    /// Offset of the record tag in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Numeric value-record family referenced by a type-81 record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidEntity51NumericKind {
+    /// Type-82 unsigned-integer lane.
+    UnsignedIntegers,
+    /// Type-83 binary64 lane.
+    Doubles,
+}
+
+/// Exact type-81 reference to one uniquely resolved numeric value record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ParasolidEntity51NumericUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Zero-based inflated Parasolid stream ordinal.
+    pub stream_ordinal: u32,
+    /// Owning type-81 record.
+    pub entity_51_record: String,
+    /// Zero-based position in the type-81 reference lane.
+    pub reference_ordinal: u32,
+    /// Stream-local referenced xmt.
+    pub referenced_xmt: u32,
+    /// Numeric record family.
+    pub kind: ParasolidEntity51NumericKind,
+    /// Uniquely resolved numeric record.
+    pub value_record: String,
+    /// Offset of the owning type-81 record in the inflated stream.
+    pub inflated_offset: u64,
+}
+
 /// Exact type-81 reference to a uniquely resolved type-84 string record.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidEntity51StringUse {
@@ -4539,6 +4604,109 @@ pub fn parasolid_entity_54_string_records(
         .collect::<Vec<_>>();
     records.sort_by(|first, second| first.id.cmp(&second.id));
     records
+}
+
+/// Decode every counted type-82 unsigned-integer record.
+pub fn parasolid_entity_52_integer_records(
+    streams: &[Stream],
+) -> Vec<ParasolidEntity52IntegerRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::entity_52_integer_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidEntity52IntegerRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:entity-52-integers#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    values: record.values,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Decode every counted type-83 finite binary64 record.
+pub fn parasolid_entity_53_double_records(
+    streams: &[Stream],
+) -> Vec<ParasolidEntity53DoubleRecord> {
+    let mut records = streams
+        .iter()
+        .enumerate()
+        .filter(|(_, stream)| stream.kind.is_parasolid())
+        .flat_map(|(stream_ordinal, stream)| {
+            crate::parasolid::entity_53_double_records(&stream.inflated)
+                .into_iter()
+                .map(move |record| ParasolidEntity53DoubleRecord {
+                    id: format!(
+                        "nx:s{stream_ordinal}:entity-53-doubles#{}-{}",
+                        record.xmt, record.offset
+                    ),
+                    stream_ordinal: stream_ordinal as u32,
+                    xmt: record.xmt,
+                    values: record.values,
+                    byte_len: record.byte_len as u64,
+                    inflated_offset: record.offset as u64,
+                })
+        })
+        .collect::<Vec<_>>();
+    records.sort_by(|first, second| first.id.cmp(&second.id));
+    records
+}
+
+/// Join type-81 reference slots to unique same-stream numeric value records.
+pub fn parasolid_entity_51_numeric_uses(
+    entities: &[ParasolidEntity51Record],
+    integers: &[ParasolidEntity52IntegerRecord],
+    doubles: &[ParasolidEntity53DoubleRecord],
+) -> Vec<ParasolidEntity51NumericUse> {
+    let mut values = BTreeMap::<(u32, u32), Vec<(ParasolidEntity51NumericKind, &str)>>::new();
+    for record in integers {
+        values
+            .entry((record.stream_ordinal, record.xmt))
+            .or_default()
+            .push((ParasolidEntity51NumericKind::UnsignedIntegers, &record.id));
+    }
+    for record in doubles {
+        values
+            .entry((record.stream_ordinal, record.xmt))
+            .or_default()
+            .push((ParasolidEntity51NumericKind::Doubles, &record.id));
+    }
+    let mut uses = Vec::new();
+    for entity in entities {
+        for (reference_ordinal, referenced_xmt) in entity.references.iter().copied().enumerate() {
+            let Some([(kind, value_record)]) = values
+                .get(&(entity.stream_ordinal, referenced_xmt))
+                .map(Vec::as_slice)
+            else {
+                continue;
+            };
+            uses.push(ParasolidEntity51NumericUse {
+                id: format!(
+                    "nx:s{}:entity-51-numeric-use#{}-{}-{reference_ordinal}",
+                    entity.stream_ordinal, entity.xmt, entity.inflated_offset
+                ),
+                stream_ordinal: entity.stream_ordinal,
+                entity_51_record: entity.id.clone(),
+                reference_ordinal: reference_ordinal as u32,
+                referenced_xmt,
+                kind: *kind,
+                value_record: (*value_record).to_string(),
+                inflated_offset: entity.inflated_offset,
+            });
+        }
+    }
+    uses.sort_by(|first, second| first.id.cmp(&second.id));
+    uses
 }
 
 /// Join type-81 reference slots to unique same-stream type-84 strings.
