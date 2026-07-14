@@ -1438,14 +1438,15 @@ fn incidence_cycles(
     Some(cycles)
 }
 
-/// Parses the FBB-only spine. Its edge rows and trim handles are `u24be`; the
+/// Parses the FBB-only spine. Its edge rows and trim handles use one selected
+/// big-endian width; the
 /// following counted `05 08 01` table supplies vertex coordinates.
 #[must_use]
 pub fn parse_fbb(bytes: &[u8]) -> Option<StandardTopology> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
-    let (edge_rows, _) = parse_fbb_edge_tables(bytes, after_faces)?;
-    let vertex_points = standard_vertex_points(bytes)?;
-    let trims = parse_trim_chain(bytes, face_start, face_count, 3)?;
+    let (edge_rows, vertex_header, handle_width) = parse_fbb_edge_tables(bytes, after_faces)?;
+    let vertex_points = parse_vertex_table(bytes, vertex_header)?;
+    let trims = parse_trim_chain(bytes, face_start, face_count, handle_width)?;
     reconstruct(edge_rows, vertex_points, &trims)
 }
 
@@ -1499,7 +1500,17 @@ fn reconstruct(
     })
 }
 
-fn parse_fbb_edge_tables(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRow>, usize)> {
+fn parse_fbb_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usize, usize)> {
+    [3, 2]
+        .into_iter()
+        .find_map(|handle_width| parse_fbb_edge_tables_width(bytes, position, handle_width))
+}
+
+fn parse_fbb_edge_tables_width(
+    bytes: &[u8],
+    mut position: usize,
+    handle_width: usize,
+) -> Option<(Vec<EdgeRow>, usize, usize)> {
     let mut rows = Vec::new();
     let mut table_count = 0;
     loop {
@@ -1523,13 +1534,11 @@ fn parse_fbb_edge_tables(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeR
             }
             let mut handles = Vec::with_capacity(arity);
             for _ in 0..arity {
-                handles.push(u32::from_be_bytes([
-                    0,
-                    *bytes.get(position)?,
-                    *bytes.get(position + 1)?,
-                    *bytes.get(position + 2)?,
-                ]));
-                position += 3;
+                let mut encoded = [0u8; 4];
+                encoded[4 - handle_width..]
+                    .copy_from_slice(bytes.get(position..position + handle_width)?);
+                handles.push(u32::from_be_bytes(encoded));
+                position += handle_width;
             }
             rows.push(EdgeRow {
                 kind,
@@ -1547,7 +1556,7 @@ fn parse_fbb_edge_tables(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeR
             break;
         }
     }
-    (table_count == 2).then_some((rows, position))
+    (table_count == 2).then_some((rows, position, handle_width))
 }
 
 fn largest_fbb_run(bytes: &[u8]) -> Option<(usize, usize, usize)> {
@@ -1587,7 +1596,8 @@ fn parse_edge_tables(bytes: &[u8], position: usize) -> Option<(Vec<EdgeRow>, usi
         return Some(result);
     }
     parse_fbb_edge_tables(bytes, position)
-        .filter(|(_, vertex_header)| parse_vertex_table(bytes, *vertex_header).is_some())
+        .filter(|(_, vertex_header, _)| parse_vertex_table(bytes, *vertex_header).is_some())
+        .map(|(rows, vertex_header, _)| (rows, vertex_header))
 }
 
 fn parse_edge_tables_at(bytes: &[u8], mut position: usize) -> Option<(Vec<EdgeRow>, usize)> {

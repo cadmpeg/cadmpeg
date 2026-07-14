@@ -13,7 +13,7 @@ A file stores its geometry in one of six families; the family determines the rec
 | Variant                          | Detection                                                                                                            | Geometry source                                                                               |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | **Standard nested `V5_CFV2`**    | Outer file contains a nested `V5_CFV2` container, no coherent overriding E5 stream                                   | Inner-body BREP spine, trim mesh records, `00 33 <kind>` surface markers, `05 08 01` vertices |
-| **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows are `u24be`, trim `H` handles are `u24be` |
+| **FBB-only partial spine**       | Nested `V5_CFV2` with contiguous FBB face rows + `05 08 01` vertices but no standard edge-row table                  | FBB face group + vertex records; post-FBB edge rows and trim `H` handles share a selected `u16be` or `u24be` width |
 | **E5 `0D 03` stream**            | Coherent walked E5 record stream in the preamble or a FINJPL segment                                                 | Native E5 records: faces, loops, edge-uses, p-curves, curve supports, surface carriers        |
 | **Zero-entity `a9 03`**          | No nested inner `V5_CFV2`; outer preamble carries `a9 03 XX YY` record families                                      | Outer-preamble `a9 03` records                                                                |
 | **Float-packed inner-no-FBB**    | Nested `V5_CFV2` with no `30 04 04 ff` FBB spine, large vertex/object-graph/float populations                        | Object-stream (`b5 03` / `a8 03`) records; surface-kind markers only for the pure marker case |
@@ -154,7 +154,7 @@ vertex_table := count_header(kind=0x06) vertex_record{count}
 vertex_record:= 05 08 01 <x_f32le> <y_f32le> <z_f32le>
 ```
 
-Spine invariants: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are big-endian handles in the selected `u16` or `u24` width family; a `u16` row's first and last handles are graph endpoint ports, while a `u24` row's first and last handles are the endpoints of its complete trim-boundary run; the counted `01 06` table is the vertex coordinate source; body count = number of contiguous FBB runs. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
+Spine invariants: the face population is the largest contiguous stride-8 `30 04 04 ff` run; edge-row payloads are big-endian handles. A standard-spine row's first and last handles are graph endpoint ports. An FBB-only row uses its family's selected `u16` or `u24` width and its first and last handles are the endpoints of its complete trim-boundary run. The counted `01 06` table is the vertex coordinate source; body count = number of contiguous FBB runs. Only the declared `05 08 01` rows in that table are vertices; identical signatures outside the counted table are payload bytes. The FBB row payload is constant across the run, such as `ffffd2d2`, and carries no per-face tag.
 
 ### 5.3 Trim records (indexed triangle-mesh packets)
 
@@ -177,25 +177,25 @@ K[0 : B+C]  each count()
 H[0 : N]    handles, BIG-ENDIAN, width family-dependent
 ```
 
-Invariant `N == 3*A + sum(K)`. Handle **width is family-dependent** and is the only varying part: standard meshing uses `u16be`; FBB-spline meshing uses `u24be`. Under the correct width, packets chain end-to-end with zero leftover and land exactly on the FBB spine offset, one packet per face; a wrong width desyncs at the first packet.
+Invariant `N == 3*A + sum(K)`. Handle **width is family-dependent** and is the only varying part: standard meshing uses `u16be`; FBB-only meshing uses the width selected by its post-FBB edge tables. Under the correct width, packets chain end-to-end with zero leftover and land exactly on the FBB spine offset, one packet per face; a wrong width desyncs at the first packet.
 
 The trim handle lane is ordered as the `A` independent-triangle triples, then the `B` triangle-strip lists in `K[0:B]` order, then the `C` triangle-fan lists in `K[B:B+C]` order.
 
 For kinds `49`, `4a`, `4b`, `4c`, `4e`, and `4f`, the optional vector is the plane normal. The planar trim packets and `00 33 32` plane bounds records bind positionally in their respective record orders. The plane origin is the bounds record's bounding-sphere center.
 
-Triangle expansion: independent `(H[3i],H[3i+1],H[3i+2])`; strips alternate winding by parity; fans pivot on `q[0]`. Boundary extraction emits directed edges per oriented triangle. A directed edge whose reverse is absent is a boundary segment; multiplicity-one segments form the exact ordered closed boundary cycles. **Loop count = boundary-cycle count**, with one outer cycle and one cycle per hole. Inner-hole loops require edge-row endpoint ports at their native width: FBB-spline `u24be`, standard `u16be`.
+Triangle expansion: independent `(H[3i],H[3i+1],H[3i+2])`; strips alternate winding by parity; fans pivot on `q[0]`. Boundary extraction emits directed edges per oriented triangle. A directed edge whose reverse is absent is a boundary segment; multiplicity-one segments form the exact ordered closed boundary cycles. **Loop count = boundary-cycle count**, with one outer cycle and one cycle per hole. Inner-hole loops require edge-row endpoint ports at their family-selected width.
 
 **`0x42 B=2` packed strip lengths:** a `0x42` packet with plain `B`=2 packs its two strip lengths as two `u8` bytes `K0,K1` (`K0+K1==N`) in place of the usual `count()` list. At `u24be` a naive read of those two bytes as a handle over-consumes one byte and desyncs; read them as two `u8`.
 
 ### 5.4 Physical-edge identity and port→vertex collapse
 
-Standard `u16be` edge rows are handle sequences `E = [p0, interior…, p1]` whose endpoint ports `p0,p1` are outside the trim-handle namespace. Match the interior forward or reversed against a contiguous boundary run; the two flanking cycle handles are corner tokens `c0,c1`. FBB `u24be` rows instead contain the complete trim-boundary run, including its endpoint handles; an arity-two row directly covers one boundary segment. Logical vertices are the connected components of a **union-find** over (edge ports ∪ face-local corner tokens): `union(Port(edge,0),c0); union(Port(edge,1),c1)` on a forward match (swapped on reverse). For a complete `u24be` run, its first and last boundary handles are its corner tokens. Edge orientation comes from the recovered boundary path, not from a stored sense bit, and **not** from the order of the two `0x60` face refs.
+Standard `u16be` edge rows are handle sequences `E = [p0, interior…, p1]` whose endpoint ports `p0,p1` are outside the trim-handle namespace. Match the interior forward or reversed against a contiguous boundary run; the two flanking cycle handles are corner tokens `c0,c1`. FBB-only rows instead contain the complete same-width trim-boundary run, including its endpoint handles; an arity-two row directly covers one boundary segment. Logical vertices are the connected components of a **union-find** over (edge ports ∪ face-local corner tokens): `union(Port(edge,0),c0); union(Port(edge,1),c1)` on a forward match (swapped on reverse). For a complete FBB-only run, its first and last boundary handles are its corner tokens. Edge orientation comes from the recovered boundary path, not from a stored sense bit, and **not** from the order of the two `0x60` face refs.
 
 Every matched occurrence is represented by `(edge row, face, boundary cycle, first segment, segment count, reversal)`. A standard row with `m` interior handles covers `m+1` boundary segments beginning at the segment before the interior match. A complete FBB row with `n` handles covers `n−1` boundary segments beginning at its first matched handle.
 
 A standard `u16be` edge row with no interior handles does not match every boundary position. After all non-empty interiors are matched, maximal uncovered boundary-segment runs are retained separately from the incident edge rows having no occurrence on that face. Assigning those rows to an uncovered run requires additional endpoint or carrier constraints; empty-interior matching alone establishes no position, order, or orientation.
 
-The standard `u16be` endpoint ports form a larger namespace than the vertex table; a port handle is not a vertex index. Port-handle identity is scoped to its `01 01` or `01 02` edge table. Equal handles in one table name the same port; equal numeric handles across the two tables do not establish identity. Boundary-run corner unions bridge the two table-local namespaces. FBB `u24be` handles instead share the mesh-boundary namespace used by the trim packets; cross-face logical-vertex collapse is applied after complete-run identity is established.
+The standard `u16be` endpoint ports form a larger namespace than the vertex table; a port handle is not a vertex index. Port-handle identity is scoped to its `01 01` or `01 02` edge table. Equal handles in one table name the same port; equal numeric handles across the two tables do not establish identity. Boundary-run corner unions bridge the two table-local namespaces. FBB-only handles instead share the same-width mesh-boundary namespace used by the trim packets; cross-face logical-vertex collapse is applied after complete-run identity is established.
 
 The endpoint components induced by exact face-local run matches are provisional. Distinct occurrence components map to one logical vertex when their physical edge endpoints carry the same native endpoint identity, even when adjacent faces use different trim handles. Native endpoint identities are global within the topology; each edge's ordered identity pair is in physical edge-row direction and replaces its provisional corner pair. Coordinate-row indices therefore cannot be assigned directly from component ordinals; the native-identity quotient precedes coordinate binding.
 
@@ -523,17 +523,17 @@ For plane-carrier `0xa0` cases, evaluating the UV jet on its `0xc8` plane produc
 
 ## 10. FBB-only partial-spine variant
 
-A nested-`V5_CFV2` file with a valid FBB face group and `05 08 01` vertices whose post-FBB edge tables use `u24be` handles (vs the standard family's `u16be`) across **two** edge tables (`kind=0x01` then `kind=0x02`) separated by the delimiter.
+A nested-`V5_CFV2` file with a valid FBB face group and `05 08 01` vertices whose post-FBB edge tables and trim packets use one common selected handle width `W∈{2,3}` across **two** edge tables (`kind=0x01` then `kind=0x02`) separated by the delimiter. The table walk selects the width that lands exactly on both delimiters and the counted vertex table.
 
 ```text
 edge_table := 01 <kind∈{0x01,0x02}> count(row_count) edge_row{row_count}
-edge_row   := 02 count(arity) <arity × handle:u24be>
+edge_row   := 02 count(arity) <arity × handle:u(8W)be>
 post_fbb   := edge_table(kind=0x01) delimiter edge_table(kind=0x02) delimiter vertex_table
 ```
 
-The two tables end at the vertex table. Their combined row count equals the `0x60` curve-support count. The `u24be` width preserves record boundaries. The concatenation binds in row order to the `0x60` table: where `0x60_row[i]` is a line, `FBB edge_row[i].arity == 2`. The table split carries no line-versus-curve meaning. The bound `0x60` row provides edge kind, adjacent faces, circle center, and radius. Surface intersection resolves endpoints between analytic faces.
+The two tables end at the vertex table. Their combined row count equals the `0x60` curve-support count. The selected width preserves record boundaries. The concatenation binds in row order to the `0x60` table: where `0x60_row[i]` is a line, `FBB edge_row[i].arity == 2`. The table split carries no line-versus-curve meaning. The bound `0x60` row provides edge kind, adjacent faces, circle center, and radius. Surface intersection resolves endpoints between analytic faces.
 
-Each FBB-only `u24be` edge-row handle is a trim-mesh boundary-vertex handle. Each row matches a contiguous forward or reversed recovered trim-boundary run, and its analytic curve comes from the positionally bound `0x60` row. Endpoint-port to logical-vertex collapse remains separate.
+Each FBB-only edge-row handle is a same-width trim-mesh boundary-vertex handle. Each row matches a contiguous forward or reversed recovered trim-boundary run, and its analytic curve comes from the positionally bound `0x60` row. Endpoint-port to logical-vertex collapse remains separate.
 
 ---
 
