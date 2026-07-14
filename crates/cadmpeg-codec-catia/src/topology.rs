@@ -3658,6 +3658,79 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 }
 
 impl MeshSelectionSearch<'_> {
+    fn selected_orientable(&self) -> bool {
+        let mut constraints = Vec::<Vec<(usize, bool)>>::new();
+        let mut edge_uses = HashMap::<usize, Vec<(usize, bool)>>::new();
+        for (face, selected) in self.selected.iter().enumerate() {
+            let Some((assignment_index, directions)) = selected else {
+                continue;
+            };
+            let Some(assignment) = self.assignments[face].get(*assignment_index) else {
+                return false;
+            };
+            if assignment.boundaries.len() != directions.len() {
+                return false;
+            }
+            for (boundary, directions) in assignment.boundaries.iter().zip(directions) {
+                if boundary.len() != directions.len() {
+                    return false;
+                }
+                let node = constraints.len();
+                constraints.push(Vec::new());
+                for (use_, &direction) in boundary.iter().zip(directions) {
+                    let reversed = use_.reversed.unwrap_or(direction);
+                    if use_.reversed.is_some() && reversed != direction {
+                        return false;
+                    }
+                    let uses = edge_uses.entry(use_.edge).or_default();
+                    if uses.len() == 2 {
+                        return false;
+                    }
+                    uses.push((node, reversed));
+                }
+            }
+        }
+        for uses in edge_uses.values() {
+            let [(left_node, left_reversed), (right_node, right_reversed)] = uses.as_slice() else {
+                continue;
+            };
+            let parity = left_reversed == right_reversed;
+            if left_node == right_node {
+                if parity {
+                    return false;
+                }
+            } else {
+                constraints[*left_node].push((*right_node, parity));
+                constraints[*right_node].push((*left_node, parity));
+            }
+        }
+        let mut flips = vec![None; constraints.len()];
+        for root in 0..constraints.len() {
+            if flips[root].is_some() {
+                continue;
+            }
+            flips[root] = Some(false);
+            let mut stack = vec![root];
+            while let Some(node) = stack.pop() {
+                let Some(flip) = flips[node] else {
+                    return false;
+                };
+                for &(neighbor, parity) in &constraints[node] {
+                    let required = flip ^ parity;
+                    match flips[neighbor] {
+                        Some(existing) if existing != required => return false,
+                        Some(_) => {}
+                        None => {
+                            flips[neighbor] = Some(required);
+                            stack.push(neighbor);
+                        }
+                    }
+                }
+            }
+        }
+        true
+    }
+
     fn search(&mut self, quotient: &MeshQuotient) {
         const MAX_SELECTION_STATES: usize = 512;
 
@@ -3753,7 +3826,22 @@ impl MeshSelectionSearch<'_> {
                 &selected_assignments,
                 &directions,
             )
-            .and_then(|topology| {
+            .and_then(|mut topology| {
+                let mut use_counts = vec![0usize; topology.edge_rows.len()];
+                for coedge in topology
+                    .faces
+                    .iter()
+                    .flat_map(|face| &face.boundaries)
+                    .flat_map(|boundary| &boundary.coedges)
+                {
+                    use_counts[coedge.edge_row] += 1;
+                }
+                if use_counts.iter().any(|count| *count > 2) {
+                    return None;
+                }
+                if use_counts.iter().all(|count| *count == 2) {
+                    orient_face_cycles(&mut topology.faces)?;
+                }
                 let edge_vertices = topology.edge_vertices()?;
                 let mut point_assignment = vec![None; topology.logical_vertex_count];
                 for (edge, vertices) in edge_vertices.into_iter().enumerate() {
@@ -3809,7 +3897,9 @@ impl MeshSelectionSearch<'_> {
                 quotient.assignment_options(assignment, self.edge_candidates)
             {
                 self.selected[face] = Some((assignment_index, directions));
-                self.search(&next_quotient);
+                if self.selected_orientable() {
+                    self.search(&next_quotient);
+                }
                 self.selected[face] = None;
                 if self.ambiguous || self.exhausted {
                     return;
@@ -4512,7 +4602,8 @@ mod motif_tests {
         mesh_edge_points_compatible, motif_port_points, parse_trim_chain,
         propagate_edge_port_points, prune_edge_candidates_by_port_domains, reconstruct_incidence,
         reconstruct_incidence_candidates, unique_coordinate_bijection, EdgeBoundaryLayout, EdgeRow,
-        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient, TrimRecord, UnionFind,
+        MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch,
+        TrimRecord, UnionFind,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -4879,6 +4970,47 @@ mod motif_tests {
         assert!(uses
             .iter()
             .all(|senses| senses == &[false, true] || senses == &[true, false]));
+    }
+
+    #[test]
+    fn mesh_selection_rejects_an_odd_boundary_orientation_cycle() {
+        let use_ = |edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 1,
+            reversed: None,
+        };
+        let assignments = vec![
+            vec![MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0), use_(2)]],
+            }],
+            vec![MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0), use_(1)]],
+            }],
+            vec![MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(1), use_(2)]],
+            }],
+        ];
+        let mut search = MeshSelectionSearch {
+            assignments: &assignments,
+            face_work: vec![Some(1); 3],
+            edge_candidates: &[],
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: vec![
+                Some((0, vec![vec![false, false]])),
+                Some((0, vec![vec![false, false]])),
+                Some((0, vec![vec![false, false]])),
+            ],
+            states: 0,
+            solution: None,
+            ambiguous: false,
+            exhausted: false,
+        };
+
+        assert!(!search.selected_orientable());
+        search.selected[2] = Some((0, vec![vec![false, true]]));
+        assert!(search.selected_orientable());
     }
 
     #[test]
