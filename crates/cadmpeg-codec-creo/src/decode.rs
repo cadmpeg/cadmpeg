@@ -1913,11 +1913,12 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
             row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
         })
         .map(|row| row.id)
-        .collect::<BTreeSet<_>>();
+        .collect::<Vec<_>>();
+    let id_set = ids.iter().copied().collect::<BTreeSet<_>>();
     let outlines = scan
         .outline_planes
         .iter()
-        .filter(|plane| ids.contains(&plane.surface_id))
+        .filter(|plane| id_set.contains(&plane.surface_id))
         .map(|plane| (plane.surface_id, (plane.origin, plane.normal)))
         .collect::<BTreeMap<_, _>>();
     ids.into_iter()
@@ -1928,6 +1929,24 @@ fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 
                     .find(|frame| frame.surface_id == id)
                     .and_then(|frame| Some((frame.origin?, frame.normal?)))
             })
+        })
+        .collect()
+}
+
+fn feature_outline_plane_equations(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Vec<([f64; 3], [f64; 3])> {
+    scan.surface_rows
+        .iter()
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+        })
+        .filter_map(|row| {
+            scan.outline_planes
+                .iter()
+                .find(|plane| plane.surface_id == row.id)
+                .map(|plane| (plane.origin, plane.normal))
         })
         .collect()
 }
@@ -5727,10 +5746,19 @@ fn schema_feature_definition(
     kind: &str,
 ) -> IrFeatureDefinition {
     if schema_class == 911 {
+        let (direction, extent) = hole_extent_and_direction(feature_outline_plane_equations(
+            scan, feature_id,
+        ))
+        .map_or((None, None), |(direction, extent)| {
+            (
+                Some(Vector3::new(direction[0], direction[1], direction[2])),
+                Some(extent),
+            )
+        });
         return IrFeatureDefinition::Hole {
             face: None,
             position: None,
-            direction: None,
+            direction,
             kind: HoleKind::Unresolved {
                 form: None,
                 counterbore_diameter: None,
@@ -5739,7 +5767,7 @@ fn schema_feature_definition(
                 countersink_angle: None,
             },
             diameter: None,
-            extent: None,
+            extent,
         };
     }
     if schema_class == 913 {
@@ -5892,6 +5920,46 @@ fn retain_native_feature_parameters(
 struct ExtrusionSpan {
     lower: f64,
     upper: f64,
+}
+
+fn hole_extent_and_direction(
+    planes: impl IntoIterator<Item = ([f64; 3], [f64; 3])>,
+) -> Option<([f64; 3], Extent)> {
+    let planes = planes.into_iter().collect::<Vec<_>>();
+    let [(first_origin, first_normal), (second_origin, second_normal)] = planes.as_slice() else {
+        return None;
+    };
+    let first_normal = normalized(*first_normal)?;
+    let second_normal = normalized(*second_normal)?;
+    let alignment = first_normal
+        .iter()
+        .zip(second_normal)
+        .map(|(first, second)| first * second)
+        .sum::<f64>()
+        .abs();
+    if (alignment - 1.0).abs() > 1e-9 {
+        return None;
+    }
+    let signed_length = second_origin
+        .iter()
+        .zip(first_origin)
+        .zip(first_normal)
+        .map(|((second, first), axis)| (second - first) * axis)
+        .sum::<f64>();
+    let scale = second_origin
+        .iter()
+        .chain(first_origin)
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    if signed_length.abs() <= 1e-9 * scale {
+        return None;
+    }
+    Some((
+        first_normal.map(|value| value * signed_length.signum()),
+        Extent::Blind {
+            length: Length(signed_length.abs()),
+        },
+    ))
 }
 
 fn extrusion_span(
@@ -6495,6 +6563,41 @@ mod resolved_sketch_tests {
                 },
                 [0.0, -1.0, 0.0]
             ))
+        );
+    }
+
+    #[test]
+    fn ordered_hole_cap_planes_define_blind_direction_and_depth() {
+        assert_eq!(
+            hole_extent_and_direction([
+                ([2.0, -21.0, -0.75], [1.0, 0.0, 0.0]),
+                ([5.0, -22.5, 0.75], [-1.0, 0.0, 0.0]),
+            ]),
+            Some((
+                [1.0, 0.0, 0.0],
+                Extent::Blind {
+                    length: Length(3.0),
+                },
+            ))
+        );
+        assert_eq!(
+            hole_extent_and_direction([
+                ([0.0, 0.5, 0.0], [0.0, 1.0, 0.0]),
+                ([0.0, -0.5, 0.0], [0.0, 1.0, 0.0]),
+            ]),
+            Some((
+                [-0.0, -1.0, -0.0],
+                Extent::Blind {
+                    length: Length(1.0),
+                },
+            ))
+        );
+        assert_eq!(
+            hole_extent_and_direction([
+                ([0.0; 3], [1.0, 0.0, 0.0]),
+                ([1.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            ]),
+            None
         );
     }
 

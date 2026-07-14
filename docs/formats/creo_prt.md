@@ -517,6 +517,12 @@ two positions.
 
 The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, and class 923 is a datum-plane definition. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 
+When a class-911 hole owns exactly two complete outline-backed plane rows, their
+stored order is the entry and termination order. The planes are parallel.
+Projecting the second origin minus the first origin onto the first unit normal
+gives the signed blind depth; its magnitude is the hole depth and its sign
+orients the hole axis from the entry plane toward the termination plane.
+
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
