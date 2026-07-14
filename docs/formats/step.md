@@ -166,6 +166,12 @@ basis curve's parameterization. Composite-curve segments retain order,
 same-sense, transition continuity, and their referenced trimmed or composite
 carrier identities.
 
+A `CURVE_BOUNDED_SURFACE` boundary is a `BOUNDARY_CURVE` or degenerate pcurve.
+Every `BOUNDARY_CURVE` is a closed composite curve on the bounded surface; its
+segments reference bounded surface curves, bounded pcurves, or nested composite
+curves on that surface. A plain three-dimensional composite curve does not
+satisfy the boundary type or surface-association invariant.
+
 Topology orientation composes at each relation: face bound orientation,
 oriented-edge orientation, edge-curve `same_sense`, face `same_sense`, and
 oriented-shell orientation. Reversing a relation reverses use, not the shared
@@ -184,6 +190,11 @@ Product shape binds through `PRODUCT_DEFINITION_SHAPE` and
 product-definition relationship into model space. Mapped representations and
 context-dependent relationships that identify the same placement do not cause
 double application.
+
+A shape representation contains at least one representation item. The two
+items of an `ITEM_DEFINED_TRANSFORMATION` belong respectively to the two
+representations connected by its representation relationship; an occurrence
+placement is not an unowned auxiliary item.
 
 Exact and tessellated representations of the same product remain linked.
 Tessellated indices are one-based. PNINDEX is the local-point to shared-coordinate

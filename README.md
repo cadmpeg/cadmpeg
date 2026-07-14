@@ -73,8 +73,9 @@ The repository contains six native-format codecs:
 - **Siemens NX `.prt` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology.
 - **CATIA V5 `.CATPart` — [L2](docs/format-support.md#support-ladder):** exact carriers with conditional topology on the standard-nested layout; other layouts at L1.
 - **Creo `.prt` — [L1](docs/format-support.md#support-ladder):** container mastered; no placed model geometry.
+- **STEP Part 21 AP203/AP214/AP242 — [L9](docs/format-support.md#support-ladder):** full-document read and semantic clear-text write with target-schema selection and strict fidelity checks.
 
-The pure-Rust STEP AP214 writer exports supported analytic and B-spline B-rep geometry and reports loss.
+The pure-Rust STEP writer re-decodes generated files and can reject every reported semantic loss before writing.
 
 [Format support profiles](docs/format-support.md) detail current capabilities. [`docs/formats/`](docs/formats/) defines byte semantics and tracks unresolved fields and structures.
 

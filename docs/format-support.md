@@ -44,8 +44,8 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Creo Parametric `.prt`                     | **L1 claimed** | derived datum planes, prototype geometry census                                                       |
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
-| STEP Part 21 AP242 editions 1–3            | **L8 tested**  | AP214 B-rep export with explicit loss reporting                                                        |
-| STEP Part 21 AP203 editions 1–2 and AP214  | **L8 tested**  | AP214 B-rep export with explicit loss reporting                                                        |
+| STEP Part 21 AP242 editions 1–3            | **L9 tested**  |                                                                                                         |
+| STEP Part 21 AP203 editions 1–2 and AP214  | **L9 tested**  |                                                                                                         |
 
 Each current score applies to the envelope described in its profile.
 
@@ -68,7 +68,7 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
-- **STEP Part 21 (L8 tested):** AP242 editions 1–3 and AP203/AP214 clear-text exchanges transfer exact geometry, connected topology, products, tessellation, presentation, PMI, and named opaque application records with complete byte accounting. Read plus partial AP214 export.
+- **STEP Part 21 (L9 tested):** AP242 editions 1–3 and AP203/AP214 clear-text exchanges transfer exact geometry, connected topology, products, tessellation, presentation, PMI, and named opaque application records with complete byte accounting. Semantic writing supports all six target schemas, source-less documents, typed edits, strict atomic refusal, and independently checked round trips.
 
 ## Rhino `.3dm`
 
@@ -226,7 +226,7 @@ See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-ite
 
 **Model:** ISO 10303-21 clear-text exchange with AP203, AP214, or AP242 application data
 
-**Ladder: L8 tested for AP242 editions 1–3 and AP203 editions 1–2/AP214.** Part 28 XML, Part 26 binary/HDF5, AP242 BO-Model sidecars, and ZIP packaging are outside the declared bands. AP203/AP214 gates for constructs their schemas cannot carry are inapplicable. Part 21 exchange documents do not carry originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate gate are inapplicable.
+**Ladder: L9 tested for AP242 editions 1–3 and AP203 editions 1–2/AP214.** Part 28 XML, Part 26 binary/HDF5, AP242 BO-Model sidecars, and ZIP packaging are outside the declared bands. AP203/AP214 gates for constructs their schemas cannot carry are inapplicable. Part 21 exchange documents do not carry originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate gate are inapplicable.
 
 ### Read profile
 
@@ -243,9 +243,10 @@ The evidence tier is tested. Proven status additionally requires accepted public
 
 ### Write and round trip
 
-- **Native write: Partial AP214 translation.** Planes, cylinders, cones, spheres, tori, lines, circles, ellipses, polylines represented as NURBS, composite curves, rational/non-rational B-splines, connected B-rep, singular vertex loops, and per-face colors emit as clear text. Unknown surfaces, curveless edges, non-identity body transforms, tessellation, product structure, PMI, source attributes, and opaque application records produce explicit losses or remain unsupported.
-- **Procedural geometry: Solved carriers only.** Source-native procedural definitions reduce to their analytic or NURBS carriers with an informational loss.
-- **Round trip: Partial.** Generated geometry/topology/style fixtures re-decode to validated semantic IR. General unchanged-source replay and target-schema selection are not implemented.
+- **Native write: Semantic.** The writer selects AP203 edition 1 or 2, AP214, or AP242 edition 1, 2, or 3 and declares the exact target schema. It emits source-less documents and typed edits for analytic and NURBS geometry, connected solid/sheet/wire topology, pcurves, singular loops, rigid body placements, product occurrences, tessellation, visibility, layers, named colors, and semantic or presentation PMI where the selected application protocol carries them.
+- **Procedural geometry: Native where modeled.** Trimmed and spatial-offset curves, linear sweeps, axis revolutions, parallel offsets, and degenerate tori emit as their native STEP entities. Other definitions emit their solved carrier with a machine-readable loss. Curve-bounded surfaces lack the boundary-curve surface association required for valid native regeneration and therefore reduce in report mode or fail strict mode.
+- **Fidelity policy: Explicit and atomic.** Report mode writes the representable subset and returns every unsupported semantic fact. Strict mode rejects before writing any byte. Retained opaque records and opaque presentation targets take the refusal path; they are never silently discarded. AP-specific tessellation and PMI compatibility is checked against the selected target.
+- **Round trip: Tested.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) checks accept and transfer generated shape files across all six targets. The evidence remains tested rather than proven until the public-corpus and sustained-fuzz gates pass.
 
 ## Maintaining these profiles
 
