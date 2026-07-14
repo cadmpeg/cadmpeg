@@ -1034,6 +1034,13 @@ pub enum BodySelection {
         /// Format-native persistent selection reference.
         native: String,
     },
+    /// Persistent bodies in the consuming feature's regeneration input state.
+    Local {
+        /// Ordered feature-input-local body identities.
+        bodies: Vec<String>,
+        /// Format-native persistent selection reference.
+        native: String,
+    },
     /// Format-native selection expression.
     Native(String),
 }

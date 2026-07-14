@@ -2602,6 +2602,10 @@ fn body_selections_round_trip_through_json() {
             }],
             native: "persistent:4:6,0,7,1,5".into(),
         },
+        BodySelection::Local {
+            bodies: vec!["287".into(), "115".into()],
+            native: "feature-input:287,115".into(),
+        },
         BodySelection::Native("body:17,body:18".into()),
     ];
     let json = serde_json::to_string(&selections).unwrap();

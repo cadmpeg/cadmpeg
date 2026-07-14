@@ -2163,6 +2163,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         );
                     }
                 }
+                BodySelection::Local { bodies, native } => {
+                    if bodies.is_empty()
+                        || native.trim().is_empty()
+                        || bodies.iter().any(|body| body.trim().is_empty())
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "local body selection is invalid",
+                        );
+                    }
+                }
                 BodySelection::Unresolved | BodySelection::Native(_) => {}
             }
         }

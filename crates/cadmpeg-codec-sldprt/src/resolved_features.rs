@@ -5014,9 +5014,14 @@ pub(crate) fn project_compact_body_selections(
             continue;
         };
         if matches!(bodies, cadmpeg_ir::features::BodySelection::Unresolved) {
-            *bodies = cadmpeg_ir::features::BodySelection::Native(compact_body_selection_value(
-                &selection.local_body_ids,
-            ));
+            *bodies = cadmpeg_ir::features::BodySelection::Local {
+                bodies: selection
+                    .local_body_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect(),
+                native: compact_body_selection_value(&selection.local_body_ids),
+            };
         }
         if matches!(mode, cadmpeg_ir::features::BodyRetentionMode::Unresolved) {
             if let Some(native_mode) = selection.mode {

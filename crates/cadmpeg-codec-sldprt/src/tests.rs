@@ -15967,9 +15967,10 @@ fn decode_and_validate_compact_delete_body_selection() {
     assert!(matches!(
         &delete_feature.definition,
         cadmpeg_ir::features::FeatureDefinition::DeleteBody { bodies, mode }
-            if bodies == &cadmpeg_ir::features::BodySelection::Native(
-                "sldprt:feature-input:body-ids:287,115".into()
-            ) && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
+            if bodies == &cadmpeg_ir::features::BodySelection::Local {
+                bodies: vec!["287".into(), "115".into()],
+                native: "sldprt:feature-input:body-ids:287,115".into(),
+            } && *mode == cadmpeg_ir::features::BodyRetentionMode::DeleteSelected
     ));
     SldprtCodec
         .write_preserved(&decoded.ir, &mut Vec::new())
@@ -16035,9 +16036,10 @@ fn decode_and_validate_compact_delete_body_selection() {
         else {
             unreachable!("typed delete-body feature");
         };
-        *bodies = cadmpeg_ir::features::BodySelection::Native(
-            "sldprt:feature-input:body-ids:287,115".into(),
-        );
+        *bodies = cadmpeg_ir::features::BodySelection::Local {
+            bodies: vec!["287".into(), "115".into()],
+            native: "sldprt:feature-input:body-ids:287,115".into(),
+        };
         *mode = cadmpeg_ir::features::BodyRetentionMode::KeepSelected;
     }
     let error = SldprtCodec

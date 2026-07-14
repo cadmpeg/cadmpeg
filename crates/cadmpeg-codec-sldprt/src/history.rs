@@ -3039,6 +3039,7 @@ fn body_selection_value(selection: &BodySelection) -> Option<String> {
         BodySelection::Native(native)
         | BodySelection::Resolved { native, .. }
         | BodySelection::Generated { native, .. }
+        | BodySelection::Local { native, .. }
             if !native.trim().is_empty() =>
         {
             Some(native.clone())
@@ -3405,9 +3406,16 @@ fn validate_compact_body_selection_edits(
         let FeatureDefinition::DeleteBody { bodies, mode } = &feature.definition else {
             continue;
         };
-        let expected = BodySelection::Native(
-            crate::resolved_features::compact_body_selection_value(&selection.local_body_ids),
-        );
+        let expected = BodySelection::Local {
+            bodies: selection
+                .local_body_ids
+                .iter()
+                .map(u32::to_string)
+                .collect(),
+            native: crate::resolved_features::compact_body_selection_value(
+                &selection.local_body_ids,
+            ),
+        };
         if bodies != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact body selection",

@@ -30,7 +30,7 @@
 - Compact extrusion end-spec termination codes other than blind `0`, through-all `1`, and to-face `4` are unresolved. Reconciliation between generated feature-local faces selected by `moSingleFaceRef_w` paths and faces that survive in the final B-rep is unresolved.
 - Compact extrusion Boolean operation values other than inline `00` join and `02` cut are unresolved. Sparse objects without the inline operation remain unresolved outside the `moExtrusion_c` join form `1`, `moICE_c` join form `3`, and `moICE_c` cut forms `1`, `2`, `10`, and `11`.
 - Reconciliation between generated feature-local bodies selected by compact `moCombineBodies_c` target and tool paths and bodies that survive in the final B-rep is unresolved.
-- The mapping from compact `moDeleteBody_c` feature-local body identifiers to B-rep bodies is unresolved.
+- Reconciliation between compact `moDeleteBody_c` regeneration-input-local body identities and bodies that survive in the final B-rep is unresolved.
 - Reconciliation between generated feature-local edges selected by entry-form `moCompEdge_c` paths and edges that survive in the final B-rep is unresolved. Compact-ID edge vectors remain unresolved.
 - Reconciliation between generated feature-local faces selected by `moCompSurfaceBody_c` paths and faces that survive in the final B-rep is unresolved.
 - General-curve-reference forms without a component-profile source record or an immediately preceding uniquely resolved profile feature remain unmapped to sketch or B-rep geometry. Composite sweep-profile forms not carried by a unique enclosed planar profile stream or an immediately following uniquely resolved profile feature and compact Boolean operation codes other than join code `15` are unresolved.
