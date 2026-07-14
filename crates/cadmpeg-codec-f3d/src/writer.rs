@@ -6040,7 +6040,7 @@ fn native_procedural_surface(
             native_position.ok_or_else(|| {
                 CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
             })?,
-            solved_cache,
+            Some(solved_cache),
         )?,
         ProceduralSurfaceDefinition::Blend {
             supports,
@@ -6741,6 +6741,29 @@ fn native_cacheless_procedural_surface(
             surface.id
         )));
     }
+    if let ProceduralSurfaceDefinition::Extrusion {
+        directrix,
+        parameter_interval,
+        direction,
+        native_position,
+    } = &procedural.definition
+    {
+        encode_native_extrusion(
+            bytes,
+            target,
+            procedural,
+            directrix,
+            parameter_interval.ok_or_else(|| {
+                CodecError::Malformed("source-less F3D extrusion lacks its native interval".into())
+            })?,
+            *direction,
+            native_position.ok_or_else(|| {
+                CodecError::Malformed("source-less F3D extrusion lacks its native position".into())
+            })?,
+            None,
+        )?;
+        return Ok(true);
+    }
     if let ProceduralSurfaceDefinition::Helix { construction } = &procedural.definition {
         use cadmpeg_ir::geometry::HelixSurfaceProfile;
         native_surface_base(bytes, "spline")?;
@@ -7412,7 +7435,7 @@ fn encode_native_extrusion(
     parameter_interval: [f64; 2],
     direction: Vector3,
     native_position: cadmpeg_ir::math::Point3,
-    solved_cache: &NurbsSurface,
+    solved_cache: Option<&NurbsSurface>,
 ) -> Result<(), CodecError> {
     let directrix = target
         .model
@@ -7461,9 +7484,15 @@ fn encode_native_extrusion(
         ],
     );
     native_nurbs_curve(bytes, &directrix_cache)?;
-    native_nurbs_surface(bytes, solved_cache)?;
-    if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
-        native_f64(bytes, cache_fit_tolerance / 10.0);
+    if let Some(solved_cache) = solved_cache {
+        native_nurbs_surface(bytes, solved_cache)?;
+        if let Some(cache_fit_tolerance) = procedural.cache_fit_tolerance {
+            native_f64(bytes, cache_fit_tolerance / 10.0);
+        }
+    } else if procedural.cache_fit_tolerance.is_some() {
+        return Err(CodecError::Malformed(
+            "cache-less F3D extrusion cannot carry a cache-fit tolerance".into(),
+        ));
     }
     bytes.push(0x10);
     Ok(())

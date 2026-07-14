@@ -540,7 +540,7 @@ cyl_spl_sur :=
   POSITION
   curve-cache
   [ surface-cache
-    DOUBLE cache_fit_tolerance ]
+    [ DOUBLE cache_fit_tolerance ] ]
   0x10
 ```
 

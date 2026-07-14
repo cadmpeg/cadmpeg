@@ -6192,6 +6192,53 @@ fn generated_cacheless_translational_extrusion_retains_exact_construction() {
             .map(|surface| &surface.geometry),
         Some(SurfaceGeometry::Unknown { .. })
     ));
+
+    let expected_definition = procedural.definition.clone();
+    let surface_id = procedural.surface.clone();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    source_less
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .expect("cache-less extrusion carrier")
+        .geometry = SurfaceGeometry::Unknown { record: None };
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("source-less cache-less extrusion encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("source-less cache-less extrusion round trip");
+    assert_eq!(round_trip.ir.model.procedural_surfaces.len(), 1);
+    assert_eq!(
+        round_trip.ir.model.procedural_surfaces[0].definition,
+        expected_definition
+    );
+    assert_eq!(
+        round_trip.ir.model.procedural_surfaces[0].cache_fit_tolerance,
+        None
+    );
+    assert!(matches!(
+        round_trip
+            .ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == round_trip.ir.model.procedural_surfaces[0].surface)
+            .map(|surface| &surface.geometry),
+        Some(SurfaceGeometry::Unknown { .. })
+    ));
+
+    source_less.model.procedural_surfaces[0].cache_fit_tolerance = Some(0.01);
+    let error = F3dCodec
+        .encode(&source_less, &mut Vec::new())
+        .expect_err("cache-less extrusion tolerance must be rejected");
+    assert!(error
+        .to_string()
+        .contains("cache-less F3D extrusion cannot carry a cache-fit tolerance"));
 }
 
 #[test]
