@@ -85,7 +85,10 @@ pub fn decode(
 }
 
 fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
-    use cadmpeg_ir::features::{BodyRetentionMode, FeatureDefinition};
+    use cadmpeg_ir::features::{
+        BodyRetentionMode, BodySelection, BooleanOp, ChamferSpec, EdgeSelection, Extent,
+        FaceSelection, FeatureDefinition, PathRef, PatternKind, ProfileRef, RadiusSpec,
+    };
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
 
     let native_constraints = ir
@@ -122,6 +125,91 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             severity: Severity::Warning,
             message: format!(
                 "{native_features} feature(s) retain their native kind without a complete neutral operation definition."
+            ),
+            provenance: None,
+        });
+    }
+
+    let native_edge_selection = |selection: &EdgeSelection| {
+        matches!(
+            selection,
+            EdgeSelection::Unresolved | EdgeSelection::Native(_)
+        )
+    };
+    let native_face_selection = |selection: &FaceSelection| {
+        matches!(
+            selection,
+            FaceSelection::Unresolved | FaceSelection::Native(_)
+        )
+    };
+    let native_body_selection = |selection: &BodySelection| {
+        matches!(
+            selection,
+            BodySelection::Unresolved | BodySelection::Native(_)
+        )
+    };
+    let incomplete_typed_features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| match &feature.definition {
+            FeatureDefinition::Extrude {
+                profile,
+                extent,
+                op,
+                ..
+            } => {
+                matches!(profile, ProfileRef::Unresolved(_) | ProfileRef::Native(_))
+                    || matches!(extent, Extent::Unresolved)
+                    || matches!(extent, Extent::ToFace { face } if native_face_selection(face))
+                    || *op == BooleanOp::Unresolved
+            }
+            FeatureDefinition::Sweep {
+                profile,
+                path,
+                mode,
+                ..
+            } => {
+                profile.as_ref().is_none_or(|profile| {
+                    matches!(profile, ProfileRef::Unresolved(_) | ProfileRef::Native(_))
+                }) || path.as_ref().is_none_or(|path| matches!(path, PathRef::Native(_)))
+                    || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
+                    || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
+            }
+            FeatureDefinition::Fillet { edges, radius } => {
+                native_edge_selection(edges) || matches!(radius, RadiusSpec::Unresolved { .. })
+            }
+            FeatureDefinition::Chamfer { edges, spec } => {
+                native_edge_selection(edges) || matches!(spec, ChamferSpec::Unresolved { .. })
+            }
+            FeatureDefinition::Thicken {
+                faces,
+                thickness,
+                side,
+            } => native_face_selection(faces) || thickness.is_none() || side.is_none(),
+            FeatureDefinition::Combine { target, tools, op } => {
+                native_body_selection(target)
+                    || native_body_selection(tools)
+                    || *op == BooleanOp::Unresolved
+            }
+            FeatureDefinition::DeleteBody { bodies, mode } => {
+                native_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
+            }
+            FeatureDefinition::Pattern { seeds, pattern } => {
+                seeds.is_empty()
+                    || matches!(pattern, PatternKind::Unresolved { .. })
+                    || matches!(pattern, PatternKind::Linear { direction: None, .. })
+                    || matches!(pattern, PatternKind::CurveDriven { path: None, .. })
+            }
+            _ => false,
+        })
+        .count();
+    if incomplete_typed_features > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_typed_features} typed feature(s) retain native or unresolved required operation operands."
             ),
             provenance: None,
         });
@@ -1383,5 +1471,53 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         geometry_transferred: false,
         losses,
         notes: summary.notes,
+    }
+}
+
+#[cfg(test)]
+mod design_loss_tests {
+    use super::append_design_losses;
+    use cadmpeg_ir::features::{BodySelection, BooleanOp, Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::report::DecodeReport;
+    use cadmpeg_ir::units::Units;
+    use cadmpeg_ir::CadIr;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn typed_native_operands_are_reported_as_design_losses() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(Feature {
+            id: FeatureId("combine".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Combine {
+                target: BodySelection::Native("target".into()),
+                tools: BodySelection::Native("tools".into()),
+                op: BooleanOp::Unresolved,
+            },
+            native_ref: None,
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 typed feature(s) retain native or unresolved required operation operands."
+        }));
     }
 }
