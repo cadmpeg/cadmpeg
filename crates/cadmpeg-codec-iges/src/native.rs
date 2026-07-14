@@ -507,6 +507,16 @@ enum NativeAnnotation {
         strings: Vec<NativeNewTextRun>,
         transformation: Option<String>,
     },
+    Leader {
+        id: String,
+        source_entity: String,
+        form: i64,
+        declared_segment_count: Option<i64>,
+        arrowhead_size: [Option<f64>; 2],
+        arrowhead: [Option<f64>; 3],
+        segment_tails: Vec<[Option<f64>; 3]>,
+        transformation: Option<String>,
+    },
 }
 
 #[derive(Clone)]
@@ -1949,7 +1959,10 @@ pub(crate) fn store(
     };
     let annotations = directory
         .iter()
-        .filter(|entry| matches!(entry.entity_type, 212 | 213) && entry.form == 0)
+        .filter(|entry| {
+            (matches!(entry.entity_type, 212 | 213) && entry.form == 0)
+                || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
+        })
         .map(|entry| {
             let record = by_directory.get(&entry.sequence).copied();
             let transformation = (entry.transform > 0)
@@ -1968,7 +1981,7 @@ pub(crate) fn store(
                         .collect(),
                     transformation,
                 }
-            } else {
+            } else if entry.entity_type == 213 {
                 let count = record
                     .and_then(|record| record.integer(12))
                     .and_then(|value| usize::try_from(value).ok())
@@ -2037,6 +2050,37 @@ pub(crate) fn store(
                                     ],
                                 },
                             }
+                        })
+                        .collect(),
+                    transformation,
+                }
+            } else {
+                let count = record
+                    .and_then(|record| record.integer(1))
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or_default();
+                let z = record.and_then(|record| record.number(4));
+                NativeAnnotation::Leader {
+                    id: format!("iges:presentation:annotation#D{}", entry.sequence),
+                    source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                    form: entry.form,
+                    declared_segment_count: record.and_then(|record| record.integer(1)),
+                    arrowhead_size: [
+                        record.and_then(|record| record.number(2)),
+                        record.and_then(|record| record.number(3)),
+                    ],
+                    arrowhead: [
+                        record.and_then(|record| record.number(5)),
+                        record.and_then(|record| record.number(6)),
+                        z,
+                    ],
+                    segment_tails: (0..count)
+                        .map(|index| {
+                            [
+                                record.and_then(|record| record.number(7 + index * 2)),
+                                record.and_then(|record| record.number(8 + index * 2)),
+                                z,
+                            ]
                         })
                         .collect(),
                     transformation,

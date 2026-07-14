@@ -141,6 +141,36 @@ fn new_general_note_valid(
         })
 }
 
+fn leader_valid(
+    entry: &DirectoryEntry,
+    record: &ParameterRecord,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    let Some(count) = record
+        .integer(1)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|count| *count > 0)
+    else {
+        return false;
+    };
+    let dimensions_valid = record
+        .number(2)
+        .zip(record.number(3))
+        .is_some_and(|(height, width)| {
+            height.is_finite()
+                && width.is_finite()
+                && match entry.form {
+                    4 => height == 0.0 && width == 0.0,
+                    5 | 6 | 12 => height > 0.0 && height == width,
+                    1..=3 | 7..=11 => height > 0.0 && width > 0.0,
+                    _ => false,
+                }
+        });
+    exact_parameter_count(record, 7 + count * 2, entries)
+        && dimensions_valid
+        && (4..=6 + count * 2).all(|index| finite(record, index))
+}
+
 pub(super) fn project(
     _ir: &mut CadIr,
     directory: &[DirectoryEntry],
@@ -159,10 +189,10 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
 
-    for entry in directory
-        .iter()
-        .filter(|entry| matches!(entry.entity_type, 212 | 213) && entry.form == 0)
-    {
+    for entry in directory.iter().filter(|entry| {
+        (matches!(entry.entity_type, 212 | 213) && entry.form == 0)
+            || (entry.entity_type == 214 && matches!(entry.form, 1..=12))
+    }) {
         handled.insert(entry.sequence);
         let valid = records.get(&entry.sequence).is_some_and(|record| {
             let transform_valid = global.length_factor_mm().is_some_and(|factor| {
@@ -177,10 +207,11 @@ pub(super) fn project(
             });
             entry.status.use_flag == 1
                 && transform_valid
-                && if entry.entity_type == 212 {
-                    general_note_valid(record, &entries)
-                } else {
-                    new_general_note_valid(record, &entries)
+                && match entry.entity_type {
+                    212 => general_note_valid(record, &entries),
+                    213 => new_general_note_valid(record, &entries),
+                    214 => leader_valid(entry, record, &entries),
+                    _ => false,
                 }
         });
         if valid {

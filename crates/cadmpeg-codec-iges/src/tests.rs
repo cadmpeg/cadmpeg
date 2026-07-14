@@ -2544,6 +2544,26 @@ fn text_annotation_file() -> Vec<u8> {
     ])
 }
 
+fn leader_forms_file() -> Vec<u8> {
+    let entities = (1..=12)
+        .map(|form| {
+            let (height, width) = match form {
+                4 => (0, 0),
+                5 | 6 | 12 => (2, 2),
+                _ => (2, 1),
+            };
+            OwnedTestEntity {
+                entity_type: 214,
+                form,
+                label: format!("LEAD{form}"),
+                status: "00000100",
+                parameters: format!("214,2,{height},{width},3,0,0,5,0,5,4;"),
+            }
+        })
+        .collect::<Vec<_>>();
+    owned_test_file(&entities)
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3973,6 +3993,47 @@ fn decode_preserves_general_note_text_runs_and_new_note_control_codes() {
     assert_eq!(annotations[1].fields["justification"], 2);
     assert_eq!(annotations[1].fields["strings"][0]["control_codes"][0], 84);
     assert_eq!(annotations[1].fields["strings"][0]["text"]["text"][3], 33);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_every_leader_arrow_form_and_segment_chain() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(leader_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let annotations = &result.ir.native.namespace("iges").unwrap().arenas["annotations"];
+    assert_eq!(annotations.len(), 12);
+    let mut forms = Vec::new();
+    for annotation in annotations {
+        assert_eq!(annotation.fields["kind"], "leader");
+        forms.push(annotation.fields["form"].as_i64().unwrap());
+        assert_eq!(annotation.fields["arrowhead"][2], 3.0);
+        assert_eq!(
+            annotation.fields["segment_tails"].as_array().unwrap().len(),
+            2
+        );
+        assert_eq!(annotation.fields["segment_tails"][1][1], 4.0);
+    }
+    forms.sort_unstable();
+    assert_eq!(forms, (1..=12).collect::<Vec<_>>());
+    let no_arrow = annotations
+        .iter()
+        .find(|annotation| annotation.fields["form"] == 4)
+        .unwrap();
+    assert_eq!(no_arrow.fields["arrowhead_size"][0], 0.0);
+    let circle = annotations
+        .iter()
+        .find(|annotation| annotation.fields["form"] == 5)
+        .unwrap();
+    assert_eq!(circle.fields["arrowhead_size"][0], 2.0);
+    assert_eq!(circle.fields["arrowhead_size"][1], 2.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
