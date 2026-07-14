@@ -1756,15 +1756,32 @@ pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11Support
                 let parameters = match &surface.geometry {
                     SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, *point, seed),
                     SurfaceGeometry::Procedural { .. } => {
-                        offset_surface_parameters(ir, surface_id, *point, seed).or_else(|| {
-                            blend_surface_parameters_for_fit(
-                                ir,
-                                surface_id,
-                                *point,
-                                seed,
-                                *fit_tolerance,
-                            )
-                        })
+                        let other_side = &context.sides[1 - side];
+                        other_side
+                            .surface
+                            .as_ref()
+                            .zip(other_side.pcurve.as_ref())
+                            .and_then(|(other_surface, other_pcurve)| {
+                                blend_boundary_parameter_from_support_pcurve(
+                                    ir,
+                                    surface_id,
+                                    other_surface,
+                                    other_pcurve,
+                                    parameters[point_index],
+                                    *point,
+                                    *fit_tolerance,
+                                )
+                            })
+                            .or_else(|| offset_surface_parameters(ir, surface_id, *point, seed))
+                            .or_else(|| {
+                                blend_surface_parameters_for_fit(
+                                    ir,
+                                    surface_id,
+                                    *point,
+                                    seed,
+                                    *fit_tolerance,
+                                )
+                            })
                     }
                     geometry => analytic_surface_parameters(geometry, *point),
                 };
@@ -2097,6 +2114,21 @@ fn blend_surface_parameters_inner(
     (depth < 32).then_some(())?;
     let (_, spine, _, _) = blend_surface_definition(ir, surface)?;
     let u = closest_spine_parameter(ir, &spine, point, seed.map(|seed| seed.u))?;
+    if let Some(fit_tolerance) = fit_tolerance {
+        let boundary_parameters = [0usize, 1usize].map(|boundary| {
+            blend_boundary_parameter(ir, surface, point, boundary, depth + 1).filter(|parameter| {
+                blend_boundary_point(ir, surface, *parameter, boundary, depth + 1)
+                    .is_some_and(|candidate| point_distance(candidate, point) <= fit_tolerance)
+            })
+        });
+        if let Some((parameter, boundary)) = match boundary_parameters {
+            [Some(parameter), None] => Some((parameter, 0usize)),
+            [None, Some(parameter)] => Some((parameter, 1usize)),
+            _ => None,
+        } {
+            return Some(Point2::new(parameter, boundary as f64));
+        }
+    }
     let (center, tangent, first, second, _) = blend_surface_frame(ir, surface, u, depth + 1)?;
     let radial = unit_vector(Vector3::new(
         point.x - center.x,
@@ -2260,6 +2292,12 @@ fn blend_surface_point_inner(
     depth: usize,
 ) -> Option<Point3> {
     (depth < 32).then_some(())?;
+    if v.to_bits() == 0.0f64.to_bits() {
+        return blend_boundary_point(ir, surface, u, 0, depth + 1);
+    }
+    if v.to_bits() == 1.0f64.to_bits() {
+        return blend_boundary_point(ir, surface, u, 1, depth + 1);
+    }
     let (center, tangent, first, second, radius) = blend_surface_frame(ir, surface, u, depth + 1)?;
     let alpha = signed_angle(first, second, tangent);
     let radial = rodrigues_rotate(first, tangent, v * alpha);
@@ -2280,9 +2318,239 @@ fn blend_surface_frame(
     let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
     let center = model_curve_point(ir, &spine, u)?;
     let tangent = model_curve_tangent(ir, &spine, u)?;
-    let first = surface_contact_direction(ir, &supports[0], center, depth + 1)?;
-    let second = surface_contact_direction(ir, &supports[1], center, depth + 1)?;
+    let first = spine_contact_direction(ir, &supports[0], &spine, u, center, radius, depth + 1)
+        .or_else(|| surface_contact_direction(ir, &supports[0], center, depth + 1))?;
+    let second = spine_contact_direction(ir, &supports[1], &spine, u, center, radius, depth + 1)
+        .or_else(|| surface_contact_direction(ir, &supports[1], center, depth + 1))?;
     Some((center, tangent, first, second, radius))
+}
+
+fn spine_contact_direction(
+    ir: &CadIr,
+    support: &SurfaceId,
+    spine: &CurveId,
+    parameter: f64,
+    center: Point3,
+    radius: f64,
+    depth: usize,
+) -> Option<Vector3> {
+    let contact = spine_contact_point(ir, support, spine, parameter, radius, depth + 1)?;
+    unit_vector(Vector3::new(
+        contact.x - center.x,
+        contact.y - center.y,
+        contact.z - center.z,
+    ))
+}
+
+fn blend_boundary_point(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    parameter: f64,
+    boundary: usize,
+    depth: usize,
+) -> Option<Point3> {
+    (depth < 32).then_some(())?;
+    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
+    spine_contact_point(
+        ir,
+        supports.get(boundary)?,
+        &spine,
+        parameter,
+        radius,
+        depth + 1,
+    )
+}
+
+fn blend_boundary_parameter(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    boundary: usize,
+    depth: usize,
+) -> Option<f64> {
+    (depth < 32).then_some(())?;
+    let (supports, spine, radius, _) = blend_surface_definition(ir, surface)?;
+    let support = supports.get(boundary)?;
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == support)?;
+    let uv = match &carrier.geometry {
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, None),
+        SurfaceGeometry::Procedural { .. } => offset_surface_parameters(ir, support, point, None),
+        geometry => analytic_surface_parameters(geometry, point),
+    }?;
+    let pcurve = spine_contact_pcurve(ir, support, &spine, radius, depth + 1)?;
+    closest_linear_pcurve_parameter(pcurve, uv)
+}
+
+fn blend_boundary_parameter_from_support_pcurve(
+    ir: &CadIr,
+    blend: &SurfaceId,
+    support: &SurfaceId,
+    support_pcurve: &PcurveGeometry,
+    curve_parameter: f64,
+    point: Point3,
+    fit_tolerance: f64,
+) -> Option<Point2> {
+    let (supports, spine, radius, _) = blend_surface_definition(ir, blend)?;
+    let boundary = supports
+        .iter()
+        .position(|candidate| parameterization_equivalent_surfaces(ir, candidate, support))?;
+    if supports
+        .iter()
+        .filter(|candidate| parameterization_equivalent_surfaces(ir, candidate, support))
+        .count()
+        != 1
+    {
+        return None;
+    }
+    let support_uv = pcurve_uv(support_pcurve, curve_parameter)?;
+    let contact_pcurve = spine_contact_pcurve(ir, support, &spine, radius, 0)?;
+    let parameter = closest_linear_pcurve_parameter(contact_pcurve, support_uv)?;
+    blend_boundary_point(ir, blend, parameter, boundary, 0)
+        .filter(|candidate| point_distance(*candidate, point) <= fit_tolerance)
+        .map(|_| Point2::new(parameter, boundary as f64))
+}
+
+pub(crate) fn closest_linear_pcurve_parameter(
+    pcurve: &PcurveGeometry,
+    point: Point2,
+) -> Option<f64> {
+    let PcurveGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        ..
+    } = pcurve
+    else {
+        return None;
+    };
+    if *degree != 1 || weights.is_some() || knots.len() != control_points.len() + 2 {
+        return None;
+    }
+    let mut candidates = control_points
+        .windows(2)
+        .enumerate()
+        .filter_map(|(index, segment)| {
+            let start = segment[0];
+            let end = segment[1];
+            let direction = Point2::new(end.u - start.u, end.v - start.v);
+            let squared_length = direction.u * direction.u + direction.v * direction.v;
+            if !squared_length.is_finite() || squared_length == 0.0 {
+                return None;
+            }
+            let fraction = (((point.u - start.u) * direction.u
+                + (point.v - start.v) * direction.v)
+                / squared_length)
+                .clamp(0.0, 1.0);
+            let span_start = *knots.get(index + 1)?;
+            let span_end = *knots.get(index + 2)?;
+            if !span_start.is_finite() || !span_end.is_finite() || span_start >= span_end {
+                return None;
+            }
+            let projected = Point2::new(
+                start.u + fraction * direction.u,
+                start.v + fraction * direction.v,
+            );
+            let squared_distance =
+                (projected.u - point.u).powi(2) + (projected.v - point.v).powi(2);
+            Some((
+                span_start + fraction * (span_end - span_start),
+                squared_distance,
+            ))
+        });
+    let first = candidates.next()?;
+    let best = candidates.fold(first, |best, candidate| {
+        if candidate.1 < best.1 {
+            candidate
+        } else {
+            best
+        }
+    });
+    Some(best.0)
+}
+
+fn spine_contact_point(
+    ir: &CadIr,
+    support: &SurfaceId,
+    spine: &CurveId,
+    parameter: f64,
+    radius: f64,
+    depth: usize,
+) -> Option<Point3> {
+    (depth < 32).then_some(())?;
+    let pcurve = spine_contact_pcurve(ir, support, spine, radius, depth + 1)?;
+    let uv = pcurve_uv(pcurve, parameter)?;
+    decoded_surface_point_inner(ir, support, uv.u, uv.v, depth + 1)
+}
+
+fn spine_contact_pcurve<'a>(
+    ir: &'a CadIr,
+    support: &SurfaceId,
+    spine: &CurveId,
+    radius: f64,
+    depth: usize,
+) -> Option<&'a PcurveGeometry> {
+    (depth < 32).then_some(())?;
+    let (support_base, support_offset) = surface_offset_lineage(ir, support, depth + 1)?;
+    let procedural = ir.model.procedural_curves.iter().find(|candidate| {
+        candidate.curve == *spine
+            && matches!(
+                candidate.definition,
+                ProceduralCurveDefinition::Intersection { .. }
+            )
+    })?;
+    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        unreachable!("definition selected above");
+    };
+    let candidates = context.sides.iter().filter_map(|side| {
+        let side_surface = side.surface.as_ref()?;
+        let pcurve = side.pcurve.as_ref()?;
+        let (side_base, side_offset) = surface_offset_lineage(ir, side_surface, depth + 1)?;
+        if side_base != support_base
+            || (side_offset - support_offset).abs().to_bits() != radius.to_bits()
+        {
+            return None;
+        }
+        Some(pcurve)
+    });
+    let candidates = candidates.collect::<Vec<_>>();
+    let [pcurve] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*pcurve)
+}
+
+fn surface_offset_lineage(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    depth: usize,
+) -> Option<(SurfaceId, f64)> {
+    (depth < 32).then_some(())?;
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
+        return Some((surface.clone(), 0.0));
+    };
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| candidate.id == *construction && candidate.surface == *surface)?;
+    let ProceduralSurfaceDefinition::Offset {
+        support, distance, ..
+    } = &procedural.definition
+    else {
+        return Some((surface.clone(), 0.0));
+    };
+    let (base, accumulated) = surface_offset_lineage(ir, support, depth + 1)?;
+    Some((base, accumulated + distance))
 }
 
 fn blend_surface_definition(

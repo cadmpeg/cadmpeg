@@ -8882,6 +8882,40 @@ fn nurbs_curve_closest_parameter_does_not_trust_a_remote_seed() {
 }
 
 #[test]
+fn linear_spine_contact_pcurve_inverts_support_parameters_across_spans() {
+    let pcurve = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![2.0, 2.0, 5.0, 9.0, 9.0],
+        control_points: vec![
+            Point2::new(-1.0, 3.0),
+            Point2::new(2.0, 6.0),
+            Point2::new(6.0, 4.0),
+        ],
+        weights: None,
+        periodic: false,
+    };
+
+    let first =
+        crate::decode::closest_linear_pcurve_parameter(&pcurve, Point2::new(0.5, 4.5)).unwrap();
+    let second =
+        crate::decode::closest_linear_pcurve_parameter(&pcurve, Point2::new(5.0, 4.5)).unwrap();
+
+    assert!((first - 3.5).abs() < 1.0e-12);
+    assert!((second - 8.0).abs() < 1.0e-12);
+
+    let rational = PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+        weights: Some(vec![1.0, 2.0]),
+        periodic: false,
+    };
+    assert!(
+        crate::decode::closest_linear_pcurve_parameter(&rational, Point2::new(0.5, 0.0)).is_none()
+    );
+}
+
+#[test]
 fn rolling_ball_blend_parameters_invert_the_canal_surface_law() {
     use cadmpeg_ir::geometry::{BlendSupport, Curve, ProceduralSurface, Surface};
     use cadmpeg_ir::ids::{CurveId, ProceduralSurfaceId, SurfaceId};
