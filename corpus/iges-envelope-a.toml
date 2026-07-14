@@ -763,12 +763,12 @@ assertions = ["definition-link", "field-values", "byte-coverage"]
 [[entity]]
 type = 430
 name = "solid-instance"
-forms = [0]
+forms = [0, 1]
 domain = "product"
 decoder = "entities::structure::decode_solid_instance"
 destination = "native.iges.product"
 fixture_classes = ["solid-instances"]
-assertions = ["definition-link", "placement", "identity", "byte-coverage"]
+assertions = ["definition-link", "form-target-domain", "placement", "identity", "byte-coverage"]
 
 [[entity]]
 type = 502

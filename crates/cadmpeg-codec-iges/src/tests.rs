@@ -91,11 +91,11 @@ fn envelope_admission_exactly_matches_the_machine_matrix() {
 }
 
 #[test]
-fn decode_names_forms_outside_the_closed_envelope_even_when_a_decoder_accepts_them() {
+fn decode_names_forms_outside_the_closed_envelope() {
     let bytes = owned_test_file(&[OwnedTestEntity {
         entity_type: 430,
-        form: 1,
-        label: "BREPINST".into(),
+        form: 2,
+        label: "BADFORM".into(),
         status: "00000000",
         parameters: "430,0;".into(),
     }]);
@@ -104,7 +104,7 @@ fn decode_names_forms_outside_the_closed_envelope_even_when_a_decoder_accepts_th
         .unwrap();
     assert!(result.report.losses.iter().any(|loss| {
         loss.message
-            == "IGES entity type 430 form 1 is outside the Fixed ASCII mechanical/document envelope"
+            == "IGES entity type 430 form 2 is outside the Fixed ASCII mechanical/document envelope"
     }));
 }
 
@@ -1739,6 +1739,7 @@ fn explicit_tetrahedron_solid_file_extended(
             (158, 0, "SPHERE", "00000000", "158,1,2,2,2;"),
             (180, 1, "MIXED", "00000000", "180,3,-55,-57,1;"),
             (184, 1, "ASSEMBLY", "00000200", "184,2,55,57,0,0;"),
+            (430, 1, "BREPINST", "00000000", "430,55;"),
         ]);
     }
     let mut bytes = fixed_ascii_with_global(global);
@@ -4520,6 +4521,12 @@ fn decode_types_form_one_boolean_tree_with_brep_operand() {
         assembly.fields["items"][0]["item"],
         "iges:entity:directory#55"
     );
+    let instance = result.ir.native.namespace("iges").unwrap().arenas["solid_instances"]
+        .iter()
+        .find(|instance| instance.id == "iges:product:solid-instance#D63")
+        .unwrap();
+    assert_eq!(instance.fields["form"], 1);
+    assert_eq!(instance.fields["solid"], "iges:entity:directory#55");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
