@@ -362,6 +362,19 @@ pub struct FeatureExtrudeProfileReference {
     pub source_offset: u64,
 }
 
+/// Fixed shifted-IEEE scalar header from a bounded extrusion payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureExtrudePayloadHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Owning `EXTRUDE` operation label.
+    pub operation_label: String,
+    /// Ordered finite scalar values.
+    pub scalars: [f64; 2],
+    /// Absolute file offset of the first shifted-IEEE scalar.
+    pub source_offset: u64,
+}
+
 /// Feature-history Boolean operation kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -932,6 +945,45 @@ pub fn feature_extrude_profile_references(
         }
     }
     references
+}
+
+/// Decode fixed scalar headers from bounded extrusion payloads.
+pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtrudePayloadHeader> {
+    let sections = container.om_sections();
+    let mut headers = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(header) = crate::om::extrude_payload_header(record) else {
+                continue;
+            };
+            headers.push(FeatureExtrudePayloadHeader {
+                id: format!(
+                    "nx:feature-history:extrude-payload-header#{section_key}-{operation_ordinal}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                ),
+                scalars: header.scalars,
+                source_offset: entry_offset + header.offset as u64,
+            });
+        }
+    }
+    headers
 }
 
 fn unique_offset_data_block(

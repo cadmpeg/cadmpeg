@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 37);
+    assert_eq!(namespace.version, 38);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1278,6 +1278,40 @@ fn om_extrude_profile_references_require_matching_witness_field() {
                 value: "SKETCH",
                 ..label
             },
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_extrude_header_decodes_shifted_ieee_scalars() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "EXTRUDE",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload =
+        b"\x0f\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x2f\xa3\x74\xbc\x6a\x7e\xf9\xdb";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let header = crate::om::extrude_payload_header(record).unwrap();
+    assert_eq!(header.offset, 205);
+    assert_eq!(header.scalars, [0.04, 0.038]);
+
+    let mut invalid = payload.to_vec();
+    invalid[5] = 0xf0;
+    assert!(
+        crate::om::extrude_payload_header(crate::om::OperationRecord {
+            payload: &invalid,
+            bytes: &invalid,
             ..record
         })
         .is_none()
@@ -3970,7 +4004,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 37);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 38);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

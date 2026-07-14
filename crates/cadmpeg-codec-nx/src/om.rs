@@ -272,6 +272,15 @@ pub struct ExtrudeProfileReferenceField {
     pub witnessed: bool,
 }
 
+/// Fixed scalar header in one bounded extrusion payload.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExtrudePayloadHeader {
+    /// Absolute offset of the first shifted-IEEE scalar.
+    pub offset: usize,
+    /// Ordered finite scalar values.
+    pub scalars: [f64; 2],
+}
+
 /// Self-framed NX parameter name in one bounded expression declaration record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExpressionDeclarationName<'a> {
@@ -699,6 +708,30 @@ pub fn extrude_profile_references(
         return None;
     };
     Some(references.clone())
+}
+
+/// Decode the fixed two-scalar header in a bounded `EXTRUDE` payload.
+pub fn extrude_payload_header(record: OperationRecord<'_>) -> Option<ExtrudePayloadHeader> {
+    if record.label.value != "EXTRUDE"
+        || record.payload.get(..5) != Some(&[0x0f, 0x00, 0x00, 0x01, 0x00])
+    {
+        return None;
+    }
+    Some(ExtrudePayloadHeader {
+        offset: record.payload_offset + 5,
+        scalars: [
+            shifted_ieee_f64(record.payload.get(5..13)?)?,
+            shifted_ieee_f64(record.payload.get(13..21)?)?,
+        ],
+    })
+}
+
+fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
+    let encoded: [u8; 8] = bytes.try_into().ok()?;
+    let mut raw = encoded;
+    raw[0] = raw[0].checked_add(0x10)?;
+    let value = f64::from_be_bytes(raw);
+    value.is_finite().then_some(value)
 }
 
 fn extrude_profile_reference_field(
