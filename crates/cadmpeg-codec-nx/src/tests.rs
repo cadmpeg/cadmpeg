@@ -304,6 +304,20 @@ fn size_framed_om_section() -> Vec<u8> {
     bytes
 }
 
+fn size_framed_om_section_with_record_area() -> Vec<u8> {
+    let mut bytes = size_framed_om_section();
+    let record_area = bytes.len() + 20;
+    bytes.extend_from_slice(&(record_area as u32).to_le_bytes());
+    bytes.resize(record_area, 0);
+    bytes.extend_from_slice(&13u32.to_le_bytes());
+    bytes.extend_from_slice(&14u32.to_le_bytes());
+    bytes.extend_from_slice(&44u32.to_le_bytes());
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0feature-records");
+    let payload_len = (bytes.len() - 16) as u32;
+    bytes[8..12].copy_from_slice(&payload_len.to_be_bytes());
+    bytes
+}
+
 #[test]
 fn om_index_pairs_object_ids_with_bounded_entity_records() {
     let bytes = indexed_om_section();
@@ -472,10 +486,25 @@ fn om_size_frame_bounds_its_type_declarations() {
     assert_eq!(sections[0].fields.len(), 2);
     assert_eq!(sections[0].fields[0].name, "m_target");
     assert_eq!(sections[0].fields[1].trailing_code, 0x81);
+    assert_eq!(sections[0].record_area, None);
 
     let mut truncated = bytes;
     truncated.pop();
     assert!(crate::om::sections(&truncated).is_empty());
+}
+
+#[test]
+fn om_size_frame_uses_validated_internal_record_area_pointer() {
+    let bytes = size_framed_om_section_with_record_area();
+    let section = crate::om::sections(&bytes).remove(0);
+    let offset = section.record_area_offset.expect("record area");
+    assert_eq!(offset, size_framed_om_section().len() + 20);
+    assert_eq!(section.record_area.unwrap(), &bytes[offset..]);
+    assert_eq!(&bytes[offset + 12..offset + 15], &[0x05, 0x01, 0x0e]);
+
+    let mut invalid = bytes;
+    invalid[offset + 12] = 1;
+    assert_eq!(crate::om::sections(&invalid)[0].record_area, None);
 }
 
 #[test]

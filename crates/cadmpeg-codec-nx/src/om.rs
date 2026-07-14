@@ -178,6 +178,10 @@ pub struct Section<'a> {
     pub types: Vec<TypeDefinition<'a>>,
     /// Member declarations in the section's field registry.
     pub fields: Vec<FieldDefinition<'a>>,
+    /// Absolute offset of the section's internally pointed record area.
+    pub record_area_offset: Option<usize>,
+    /// Exact record-area bytes, including its 12-byte control prefix.
+    pub record_area: Option<&'a [u8]>,
 }
 
 impl<'a> IndexedSection<'a> {
@@ -480,15 +484,62 @@ pub fn sections(bytes: &[u8]) -> Vec<Section<'_>> {
         let field_start = types.last().map_or(offset + 16, |definition| {
             definition.offset + definition.name.len() + 2
         });
+        let fields = field_definitions(bytes, field_start, end);
+        let schema_end = fields.last().map_or(field_start, |definition| {
+            definition.offset + definition.name.len() + 2
+        });
+        let record_area_offset = section_record_area_offset(bytes, offset, schema_end, end);
         out.push(Section {
             offset,
             byte_len: end - offset,
             types,
-            fields: field_definitions(bytes, field_start, end),
+            fields,
+            record_area_offset,
+            record_area: record_area_offset.map(|start| &bytes[start..end]),
         });
         at = end;
     }
     out
+}
+
+fn section_record_area_offset(
+    bytes: &[u8],
+    section_offset: usize,
+    schema_end: usize,
+    section_end: usize,
+) -> Option<usize> {
+    let search_end = schema_end.saturating_add(4096).min(section_end);
+    let mut matches = (schema_end..search_end.saturating_sub(3)).filter_map(|at| {
+        let relative = usize::try_from(u32_at(bytes, at)?).ok()?;
+        let target = section_offset.checked_add(relative)?;
+        (target >= at + 4 && target + 15 <= section_end).then_some(())?;
+        is_product_record(bytes.get(target + 12..section_end)?).then_some(target)
+    });
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
+}
+
+fn is_product_record(bytes: &[u8]) -> bool {
+    if !matches!(bytes.get(..2), Some([0x04 | 0x05, 0x01])) {
+        return false;
+    }
+    let Some(length) = bytes
+        .get(2)
+        .copied()
+        .map(usize::from)
+        .and_then(|declared| declared.checked_sub(2))
+    else {
+        return false;
+    };
+    let Some(end) = 3usize.checked_add(length) else {
+        return false;
+    };
+    bytes.get(3..end).is_some_and(|text| {
+        text.starts_with(b"NX ")
+            && text
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
+    }) && bytes.get(end) == Some(&0)
 }
 
 /// Locate validated NX OM entity-index/object-id-table pairs.

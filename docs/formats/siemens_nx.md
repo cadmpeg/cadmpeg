@@ -75,6 +75,11 @@ history, `UGS::EXP_expression` marks expressions, and
 `UGS::OM::SaveAuditTrail` marks audit data when no preceding specialized marker
 applies.
 
+A size-framed OM section's schema trailer can contain a little-endian
+section-relative record-area offset. The target begins with three `u32 LE`
+control words followed by `04|05 01 text_length:u8 "NX " product_text 00`.
+The pointed record area extends to the size-framed section boundary.
+
 ### 2.1 Stream inventory
 
 | Stream                       | Role                                                                           |
