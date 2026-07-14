@@ -3269,6 +3269,11 @@ fn project_features_with_native_inputs(
         &mut features,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::project_adjacent_extrusion_profiles(
+        &mut features,
+        &histories,
+        &native.feature_input_lanes,
+    );
     features
 }
 

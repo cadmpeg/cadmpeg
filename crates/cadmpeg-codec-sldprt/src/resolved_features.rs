@@ -2154,6 +2154,63 @@ pub(crate) fn project_compact_edge_selections(
     }
 }
 
+pub(crate) fn project_adjacent_extrusion_profiles(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let neutral_indices = features
+        .iter()
+        .enumerate()
+        .filter_map(|(index, feature)| Some((feature.native_ref.clone()?, index)))
+        .collect::<HashMap<_, _>>();
+    for lane in lanes {
+        let mut objects = native_features
+            .values()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?, *feature)))
+            .collect::<Vec<_>>();
+        objects.sort_by_key(|(name, _)| name.offset);
+        for pair in objects.windows(2) {
+            let [(_, profile), (_, extrusion)] = pair else {
+                continue;
+            };
+            if native_object_class(profile.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::ProfileFeature
+                || native_object_class(extrusion.input_class.as_deref().unwrap_or_default()).kind
+                    != NativeClassKind::Extrusion
+            {
+                continue;
+            }
+            let Some(&index) = neutral_indices.get(&extrusion.id) else {
+                continue;
+            };
+            let FeatureDefinition::Extrude {
+                profile: neutral_profile,
+                ..
+            } = &mut features[index].definition
+            else {
+                continue;
+            };
+            if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Unresolved(owner) if owner == &extrusion.id)
+            {
+                continue;
+            }
+            *neutral_profile = cadmpeg_ir::features::ProfileRef::Native(profile.id.clone());
+            if let Some(&profile_index) = neutral_indices.get(&profile.id) {
+                let dependency = features[profile_index].id.clone();
+                if !features[index].dependencies.contains(&dependency) {
+                    features[index].dependencies.push(dependency);
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn compact_edge_selection_value(local_edge_ids: &[u32]) -> String {
     let mut value = String::from("sldprt:feature-input:edge-ids:");
     for (index, edge_id) in local_edge_ids.iter().enumerate() {
