@@ -1327,6 +1327,50 @@ mod chart_tests {
     }
 
     #[test]
+    fn e5_plane_jet_boundary_lifts_control_net_affinely() {
+        let surface = SurfaceGeometry::Plane {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        };
+        let points = vec![[0.0, 0.0], [1.0, 2.0]];
+        let first = vec![[1.0, 2.0], [1.0, 2.0]];
+        let second = vec![[0.0, 0.0], [0.0, 0.0]];
+        let native = crate::e5::E5Pcurve::Jet {
+            surface: 0,
+            degree: 5,
+            knots: vec![0.0, 1.0],
+            multiplicities: vec![6, 6],
+            points: points.clone(),
+            first_derivatives: first.clone(),
+            second_derivatives: second.clone(),
+            range: [0.0, 1.0],
+        };
+        let pcurve =
+            quintic_jet_pcurve(5, &[0.0, 1.0], &points, &first, &second).expect("quintic pcurve");
+        let (curve, range) = e5_boundary_curve(
+            &surface,
+            &native,
+            &pcurve,
+            [0.0, 1.0],
+            [Point3::new(1.0, 2.0, 3.0), Point3::new(2.0, 4.0, 3.0)],
+        )
+        .expect("plane jet curve");
+        assert_eq!(range, [0.0, 1.0]);
+        let CurveGeometry::Nurbs(nurbs) = curve else {
+            panic!("expected NURBS curve");
+        };
+        assert_eq!(
+            nurbs.control_points.first(),
+            Some(&Point3::new(1.0, 2.0, 3.0))
+        );
+        assert_eq!(
+            nurbs.control_points.last(),
+            Some(&Point3::new(2.0, 4.0, 3.0))
+        );
+    }
+
+    #[test]
     fn witnessed_cylinder_circle_edge_uses_complementary_angular_range() {
         let mut ir = CadIr::empty(Units::default());
         let surface_id = SurfaceId("cylinder".to_string());
@@ -2317,6 +2361,43 @@ fn e5_boundary_curve(
             canonical_periodic_range(range)?,
         ));
     }
+    if let (
+        SurfaceGeometry::Plane {
+            origin,
+            normal,
+            u_axis,
+        },
+        crate::e5::E5Pcurve::Jet { .. },
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        },
+    ) = (surface, native_pcurve, pcurve)
+    {
+        let v_axis = cross_vector(*normal, *u_axis);
+        return Some((
+            CurveGeometry::Nurbs(NurbsCurve {
+                degree: *degree,
+                knots: knots.clone(),
+                control_points: control_points
+                    .iter()
+                    .map(|point| {
+                        add_scaled_point(
+                            add_scaled_point(*origin, *u_axis, point.u),
+                            v_axis,
+                            point.v,
+                        )
+                    })
+                    .collect(),
+                weights: weights.clone(),
+                periodic: *periodic,
+            }),
+            range,
+        ));
+    }
     let PcurveGeometry::Line { origin, direction } = pcurve else {
         return None;
     };
@@ -2426,6 +2507,34 @@ fn reverse_e5_boundary_curve(
                     radius: *radius,
                 },
                 [0.0, sweep],
+            ))
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            let first = *nurbs.knots.first()?;
+            let last = *nurbs.knots.last()?;
+            let mut knots = nurbs
+                .knots
+                .iter()
+                .rev()
+                .map(|knot| first + last - knot)
+                .collect::<Vec<_>>();
+            for knot in &mut knots {
+                if knot.abs() <= 1e-15 {
+                    *knot = 0.0;
+                }
+            }
+            Some((
+                CurveGeometry::Nurbs(NurbsCurve {
+                    degree: nurbs.degree,
+                    knots,
+                    control_points: nurbs.control_points.iter().rev().copied().collect(),
+                    weights: nurbs
+                        .weights
+                        .as_ref()
+                        .map(|weights| weights.iter().rev().copied().collect()),
+                    periodic: nurbs.periodic,
+                }),
+                range,
             ))
         }
         _ => None,
