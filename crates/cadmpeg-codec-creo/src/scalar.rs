@@ -139,26 +139,6 @@ pub fn decode_in_surface_row_lane(
     decode_in_row_lane(data, offset, cache)
 }
 
-/// Decode one scalar in a positional torus/sphere surface-row lane.
-///
-/// This lane stores negative world coordinates as `2d <tail6>` with an
-/// implicit zero low byte. Other surface-row scalar forms retain their normal
-/// lengths.
-pub fn decode_in_torus_row_lane(
-    data: &[u8],
-    offset: usize,
-    cache: &ScalarCache,
-) -> Option<(f64, usize)> {
-    if data.get(offset) == Some(&0x2d) {
-        let tail = data.get(offset + 1..offset + 7)?;
-        let mut raw = [0; 8];
-        raw[0] = 0xc0;
-        raw[1..7].copy_from_slice(tail);
-        return Some((f64::from_be_bytes(raw), offset + 7));
-    }
-    decode_in_surface_row_lane(data, offset, cache)
-}
-
 /// Decode one scalar in the positive seven-byte DICT lane.
 ///
 /// The enclosing record grammar must establish this lane. Several prefix
@@ -358,25 +338,6 @@ mod tests {
             ))
         );
         assert_eq!(decode_in_surface_row_lane(&data, 7, &cache), Some((1.0, 8)));
-    }
-
-    #[test]
-    fn torus_row_lane_decodes_seven_byte_negative_world_form() {
-        let data = [0x2d, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xf8, 0xe4];
-        let cache = ScalarCache::default();
-
-        assert_eq!(
-            decode_in_torus_row_lane(&data, 0, &cache),
-            Some((
-                f64::from_be_bytes([0xc0, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xf8, 0]),
-                7,
-            ))
-        );
-        assert_eq!(decode_in_torus_row_lane(&data, 7, &cache), Some((1.0, 8)));
-        assert_eq!(
-            decode_in_surface_row_lane(&data, 0, &cache).map(|(_, end)| end),
-            Some(8)
-        );
     }
 
     #[test]

@@ -626,16 +626,12 @@ fn positional_body_start(payload: &[u8], row: &SurfaceRow) -> Option<usize> {
 }
 
 fn decode_row_scalar(
-    kind: SurfaceKind,
+    _kind: SurfaceKind,
     body: &[u8],
     offset: usize,
     cache: &scalar::ScalarCache,
 ) -> Option<(f64, usize)> {
-    if kind == SurfaceKind::TorusOrSphere {
-        scalar::decode_in_torus_row_lane(body, offset, cache)
-    } else {
-        scalar::decode_in_surface_row_lane(body, offset, cache)
-    }
+    scalar::decode_in_surface_row_lane(body, offset, cache)
 }
 
 fn scalar_tokens(

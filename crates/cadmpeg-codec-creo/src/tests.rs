@@ -302,7 +302,33 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
     assert_eq!(scan.surface_parameters[1].surface_id, 8);
     assert_eq!(scan.surface_parameters[1].scalar_values, vec![3.0]);
     assert_eq!(
+        scan.surface_parameters[1]
+            .scalar_tokens
+            .iter()
+            .map(|token| (token.offset, token.length))
+            .collect::<Vec<_>>(),
+        [(0, 8)]
+    );
+    assert_eq!(
         scan.surface_parameters[1].boundary,
+        crate::surface::SurfaceBodyBoundary::NamedRecord
+    );
+}
+
+#[test]
+fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
+    let mut payload = visibgeom_payload(1, 0);
+    let scalar = [0x2d, 0x31, 0xa6, 0x66, 0x66, 0x66, 0x66, 0x66];
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&scalar);
+    payload.extend_from_slice(b"\xe0\x01next_record\0");
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surface_parameters.len(), 1);
+    assert_eq!(scan.surface_parameters[0].body, scalar);
+    assert_eq!(scan.surface_parameters[0].scalar_tokens[0].length, 8);
+    assert_eq!(
+        scan.surface_parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::NamedRecord
     );
 }
@@ -325,34 +351,6 @@ fn surface_parameter_body_ignores_compound_close_inside_scalar() {
     assert_eq!(
         scan.surface_parameters[0].boundary,
         crate::surface::SurfaceBodyBoundary::CompoundClose
-    );
-}
-
-#[test]
-fn surface_parameter_body_uses_torus_negative_world_lane() {
-    let mut payload = visibgeom_payload(1, 0);
-    let body = [0x2d, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xf8, 0xe4];
-    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
-    payload.extend_from_slice(&body);
-    payload.push(0xe3);
-    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
-
-    assert_eq!(scan.surface_parameters.len(), 1);
-    assert_eq!(scan.surface_parameters[0].body, body);
-    assert_eq!(
-        scan.surface_parameters[0].scalar_values,
-        [
-            f64::from_be_bytes([0xc0, 0x1b, 0xff, 0xff, 0xff, 0xff, 0xf8, 0]),
-            1.0,
-        ]
-    );
-    assert_eq!(
-        scan.surface_parameters[0]
-            .scalar_tokens
-            .iter()
-            .map(|token| (token.offset, token.length))
-            .collect::<Vec<_>>(),
-        [(0, 7), (7, 1)]
     );
 }
 

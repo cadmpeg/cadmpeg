@@ -147,7 +147,7 @@ Each record grammar defines the DICT lane for its scalar slots. A decoder must n
 
 #### World-coordinate tokens
 
-World-coordinate tokens normally occupy eight bytes. Their final seven bytes hold the IEEE mantissa and low exponent. In the positional-outline/world lane, `46` denotes a positive token and `2d` denotes a negative token; `2d` consumes the complete eight-byte token in that lane. A type-`26` torus/sphere positional row instead stores negative world coordinates as `2d <tail6>`, reconstructed as `C0 <tail6> 00`; the next source byte begins the following row field.
+World-coordinate tokens normally occupy eight bytes. Their final seven bytes hold the IEEE mantissa and low exponent. In the positional-outline/world lane, `46` denotes a positive token and `2d` denotes a negative token; `2d` consumes the complete eight-byte token in that lane. A field-specific compact world lane stores a negative coordinate as `2d <tail6>`, reconstructed as `C0 <tail6> 00`. The enclosing field frame distinguishes the seven-byte and eight-byte forms; the surface family does not.
 
 #### Constants and cache references
 
