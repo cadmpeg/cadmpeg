@@ -2238,11 +2238,13 @@ fn encoder_writes_source_less_native_features() {
             }],
         },
         FeatureDefinition::Chamfer {
-            edges: EdgeSelection::Native("edge-c".into()),
-            spec: ChamferSpec::TwoDistances {
-                first: Length(1.0),
-                second: Length(2.0),
-            },
+            groups: vec![cadmpeg_ir::features::ChamferGroup {
+                edges: EdgeSelection::Native("edge-c".into()),
+                spec: ChamferSpec::TwoDistances {
+                    first: Length(1.0),
+                    second: Length(2.0),
+                },
+            }],
         },
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Resolved {
@@ -2753,12 +2755,13 @@ fn decode_retains_nonpositive_feature_dimensions_as_native() {
     ));
     assert!(matches!(
         decoded.ir.model.features[5].definition,
-        FeatureDefinition::Chamfer {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::Distance),
-            },
-            ..
-        }
+        FeatureDefinition::Chamfer { ref groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::ChamferForm::Distance),
+                },
+                ..
+            }])
     ));
 }
 
@@ -2819,12 +2822,13 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
     ));
     assert!(matches!(
         decoded.ir.model.features[3].definition,
-        FeatureDefinition::Chamfer {
-            spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
-                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
-            },
-            ..
-        }
+        FeatureDefinition::Chamfer { ref groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: cadmpeg_ir::features::ChamferSpec::Unresolved {
+                    form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
+                },
+                ..
+            }])
     ));
     for index in [2, 5] {
         assert!(matches!(
@@ -7334,12 +7338,11 @@ fn decode_dispatches_typed_features_by_xml_family() {
     );
     assert!(matches!(
         decoded.ir.model.features[3].definition,
-        FeatureDefinition::Chamfer {
-            spec: ChamferSpec::Distance {
-                distance: Length(3.0),
-            },
-            ..
-        }
+        FeatureDefinition::Chamfer { ref groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: ChamferSpec::Distance { distance: Length(3.0) },
+                ..
+            }])
     ));
     assert!(matches!(
         decoded.ir.model.features[4].definition,
@@ -7588,12 +7591,13 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
     ));
     assert!(matches!(
         decoded.ir.model.features[1].definition,
-        FeatureDefinition::Chamfer {
-            spec: ChamferSpec::Unresolved {
-                form: Some(ChamferForm::Distance),
-            },
-            ..
-        }
+        FeatureDefinition::Chamfer { ref groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: ChamferSpec::Unresolved {
+                    form: Some(ChamferForm::Distance),
+                },
+                ..
+            }])
     ));
 
     let mut detached = decoded.ir.clone();
@@ -7722,14 +7726,15 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             }])
     ));
     assert!(matches!(
-        decoded.ir.model.features[1].definition,
-        FeatureDefinition::Chamfer {
-            edges: EdgeSelection::Unresolved,
-            spec: ChamferSpec::DistanceAngle {
-                distance: Length(0.3),
-                angle: Angle(angle),
-            }
-        } if (angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+        &decoded.ir.model.features[1].definition,
+        FeatureDefinition::Chamfer { groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                edges: EdgeSelection::Unresolved,
+                spec: ChamferSpec::DistanceAngle {
+                    distance: Length(0.3),
+                    angle: Angle(angle),
+                },
+            }] if (*angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12)
     ));
     assert_eq!(
         decoded.ir.model.parameters[1].value,
@@ -7742,11 +7747,10 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
     groups[0].radius = RadiusSpec::Constant {
         radius: Length(2.5),
     };
-    let FeatureDefinition::Chamfer { spec, .. } = &mut decoded.ir.model.features[1].definition
-    else {
+    let FeatureDefinition::Chamfer { groups } = &mut decoded.ir.model.features[1].definition else {
         panic!("typed positional chamfer");
     };
-    *spec = ChamferSpec::DistanceAngle {
+    groups[0].spec = ChamferSpec::DistanceAngle {
         distance: Length(0.6),
         angle: Angle(30.0_f64.to_radians()),
     };
@@ -7775,14 +7779,15 @@ fn semantic_writer_round_trips_positional_fillet_and_localized_chamfer_dimension
             }])
     ));
     assert!(matches!(
-        regenerated.ir.model.features[1].definition,
-        FeatureDefinition::Chamfer {
-            spec: ChamferSpec::DistanceAngle {
-                distance: Length(0.6),
-                angle: Angle(angle),
-            },
-            ..
-        } if (angle - 30.0_f64.to_radians()).abs() < 1e-12
+        &regenerated.ir.model.features[1].definition,
+        FeatureDefinition::Chamfer { groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: ChamferSpec::DistanceAngle {
+                    distance: Length(0.6),
+                    angle: Angle(angle),
+                },
+                ..
+            }] if (*angle - 30.0_f64.to_radians()).abs() < 1e-12)
     ));
 }
 
@@ -7879,32 +7884,33 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .unwrap();
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
-        FeatureDefinition::Chamfer {
-            edges: EdgeSelection::Native(edges),
-            spec: ChamferSpec::Distance {
-                distance: Length(2.0),
-            },
-        } if edges == "edge:1"
+        FeatureDefinition::Chamfer { groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                edges: EdgeSelection::Native(edges),
+                spec: ChamferSpec::Distance { distance: Length(2.0) },
+            }] if edges == "edge:1")
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
-        FeatureDefinition::Chamfer {
-            spec: ChamferSpec::TwoDistances {
-                first: Length(3.0),
-                second: Length(6.35),
-            },
-            ..
-        }
+        FeatureDefinition::Chamfer { groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: ChamferSpec::TwoDistances {
+                    first: Length(3.0),
+                    second: Length(6.35),
+                },
+                ..
+            }])
     ));
     assert!(matches!(
         &decoded.ir.model.features[2].definition,
-        FeatureDefinition::Chamfer {
-            spec: ChamferSpec::DistanceAngle {
-                distance: Length(4.0),
-                angle,
-            },
-            ..
-        } if (angle.0 - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+        FeatureDefinition::Chamfer { groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                spec: ChamferSpec::DistanceAngle {
+                    distance: Length(4.0),
+                    angle,
+                },
+                ..
+            }] if (angle.0 - std::f64::consts::FRAC_PI_4).abs() < 1e-12)
     ));
 
     let replacements = [
@@ -7928,11 +7934,12 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
         .zip(replacements)
         .enumerate()
     {
-        let FeatureDefinition::Chamfer { edges, spec } = &mut feature.definition else {
+        let FeatureDefinition::Chamfer { groups } = &mut feature.definition else {
             panic!("typed chamfer feature");
         };
-        *spec = replacement;
-        *edges = EdgeSelection::Native(format!("edge:{}", index + 4));
+        assert_eq!(groups.len(), 1);
+        groups[0].spec = replacement;
+        groups[0].edges = EdgeSelection::Native(format!("edge:{}", index + 4));
     }
 
     let mut encoded = Vec::new();
@@ -8487,10 +8494,11 @@ fn semantic_writer_preserves_absent_feature_selections() {
         .unwrap();
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
-        FeatureDefinition::Chamfer {
-            edges: EdgeSelection::Unresolved,
-            ..
-        }
+        FeatureDefinition::Chamfer { ref groups }
+            if matches!(groups.as_slice(), [cadmpeg_ir::features::ChamferGroup {
+                edges: EdgeSelection::Unresolved,
+                ..
+            }])
     ));
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
@@ -8508,11 +8516,10 @@ fn semantic_writer_preserves_absent_feature_selections() {
         }
     ));
 
-    let FeatureDefinition::Chamfer { spec, .. } = &mut decoded.ir.model.features[0].definition
-    else {
+    let FeatureDefinition::Chamfer { groups } = &mut decoded.ir.model.features[0].definition else {
         panic!("typed chamfer");
     };
-    *spec = ChamferSpec::Distance {
+    groups[0].spec = ChamferSpec::Distance {
         distance: Length(2.5),
     };
     let FeatureDefinition::Shell { thickness, .. } = &mut decoded.ir.model.features[1].definition

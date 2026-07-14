@@ -7,14 +7,14 @@ use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, His
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
-    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
-    ExtrudeStart, FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, FilletGroup, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode,
-    TrimRegion, VariableRadius, WrapMode,
+    Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferGroup,
+    ChamferSpec, ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay,
+    EdgeSelection, Extent, ExtrudeStart, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
+    FeatureSourceContent, FeatureTreeNodeRole, FilletGroup, FlexForm, FlexMode, HoleForm, HoleKind,
+    Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm,
+    RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide,
+    RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension,
+    SweepMode, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -819,8 +819,10 @@ pub fn bind_topology_selections(
                     resolve_edge_selection(&mut group.edges, &edge_ids);
                 }
             }
-            FeatureDefinition::Chamfer { edges, .. } => {
-                resolve_edge_selection(edges, &edge_ids);
+            FeatureDefinition::Chamfer { groups } => {
+                for group in groups {
+                    resolve_edge_selection(&mut group.edges, &edge_ids);
+                }
             }
             FeatureDefinition::Shell { removed_faces, .. } => {
                 resolve_face_selection(removed_faces, &face_ids);
@@ -2625,12 +2627,14 @@ fn project_chamfer(feature: &Feature) -> FeatureDefinition {
         },
     });
     FeatureDefinition::Chamfer {
-        edges: feature
-            .properties
-            .get("Edges")
-            .cloned()
-            .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-        spec,
+        groups: vec![ChamferGroup {
+            edges: feature
+                .properties
+                .get("Edges")
+                .cloned()
+                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+            spec,
+        }],
     }
 }
 
@@ -2946,11 +2950,12 @@ fn parse_neutral_parameter_literal(
                 | FeatureDefinition::DatumOffsetPlane { .. }
         ),
         "D2" => matches!(
-            feature.definition,
-            FeatureDefinition::Chamfer {
-                spec: ChamferSpec::TwoDistances { .. },
-                ..
-            }
+            &feature.definition,
+            FeatureDefinition::Chamfer { groups }
+                if matches!(groups.as_slice(), [ChamferGroup {
+                    spec: ChamferSpec::TwoDistances { .. },
+                    ..
+                }])
         ),
         "D3" => matches!(
             feature.definition,
@@ -4825,7 +4830,15 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Chamfer { edges, spec } => {
+            FeatureDefinition::Chamfer { groups } => {
+                let [group] = groups.as_slice() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has multiple chamfer groups",
+                        feature.id
+                    )));
+                };
+                let edges = &group.edges;
+                let spec = &group.spec;
                 let selection = edge_selection_value(edges);
                 if selection.is_none()
                     && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())

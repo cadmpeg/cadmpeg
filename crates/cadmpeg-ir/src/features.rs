@@ -448,10 +448,8 @@ pub enum FeatureDefinition {
     },
     /// Edge chamfer.
     Chamfer {
-        /// Edges the chamfer is applied to.
-        edges: EdgeSelection,
-        /// Dimensional definition of the chamfer.
-        spec: ChamferSpec,
+        /// Ordered edge groups and their dimensional specifications.
+        groups: Vec<ChamferGroup>,
     },
     /// Thin-wall shell operation.
     Shell {
@@ -1195,6 +1193,15 @@ pub struct FilletGroup {
     /// Dimensionless tangency weight, when specified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tangency_weight: Option<f64>,
+}
+
+/// One independently dimensioned group of chamfered edges.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ChamferGroup {
+    /// Edges sharing this dimensional specification.
+    pub edges: EdgeSelection,
+    /// Dimensional definition applied to the edges.
+    pub spec: ChamferSpec,
 }
 
 /// Structural form of a fillet radius law.

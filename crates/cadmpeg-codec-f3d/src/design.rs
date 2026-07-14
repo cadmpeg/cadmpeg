@@ -239,9 +239,9 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
     use cadmpeg_ir::features::{
-        Angle, ChamferForm, ChamferSpec, DesignParameter as NeutralParameter, DimensionDisplay,
-        EdgeSelection, Feature, FeatureDefinition, FilletGroup, Length, ParameterId,
-        ParameterValue, ProfileRef, RadiusForm, RadiusSpec, SketchSpace,
+        Angle, ChamferForm, ChamferGroup, ChamferSpec, DesignParameter as NeutralParameter,
+        DimensionDisplay, EdgeSelection, Feature, FeatureDefinition, FilletGroup, Length,
+        ParameterId, ParameterValue, ProfileRef, RadiusForm, RadiusSpec, SketchSpace,
     };
     use std::collections::BTreeMap;
 
@@ -454,10 +454,12 @@ pub fn project_parameter_design(
                     EdgeSelection::Native(scope.id.clone())
                 };
                 FeatureDefinition::Chamfer {
-                    edges,
-                    spec: spec
-                        .filter(valid_chamfer_spec)
-                        .unwrap_or(ChamferSpec::Unresolved { form }),
+                    groups: vec![ChamferGroup {
+                        edges,
+                        spec: spec
+                            .filter(valid_chamfer_spec)
+                            .unwrap_or(ChamferSpec::Unresolved { form }),
+                    }],
                 }
             } else {
                 let mut properties = BTreeMap::new();
@@ -9180,7 +9182,7 @@ mod relation_tests {
 
     #[test]
     fn edge_treatments_project_typed_dimensions_and_native_selections() {
-        use cadmpeg_ir::features::{ChamferSpec, EdgeSelection, RadiusSpec};
+        use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection, RadiusSpec};
 
         let parameter = |owner_record_index,
                          record_index,
@@ -9284,10 +9286,11 @@ mod relation_tests {
             .expect("typed chamfer");
         assert!(matches!(
             &chamfer.definition,
-            FeatureDefinition::Chamfer {
-                edges: EdgeSelection::Native(selection),
-                spec: ChamferSpec::TwoDistances { first, second },
-            } if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0
+            FeatureDefinition::Chamfer { groups }
+                if matches!(groups.as_slice(), [ChamferGroup {
+                    edges: EdgeSelection::Native(selection),
+                    spec: ChamferSpec::TwoDistances { first, second },
+                }] if selection == &scopes[1].id && first.0 == 1.0 && second.0 == 2.0)
         ));
     }
 

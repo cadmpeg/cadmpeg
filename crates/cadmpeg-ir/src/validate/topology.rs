@@ -1497,21 +1497,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "fillet radius is invalid");
                 }
             }
-            FeatureDefinition::Chamfer { edges, spec } => {
-                edge_selections.push(edges);
-                let valid = match spec {
-                    ChamferSpec::Unresolved { .. } => true,
-                    ChamferSpec::Distance { distance } => positive_feature_length(*distance),
-                    ChamferSpec::TwoDistances { first, second } => {
-                        positive_feature_length(*first) && positive_feature_length(*second)
-                    }
-                    ChamferSpec::DistanceAngle { distance, angle } => {
-                        positive_feature_length(*distance)
-                            && angle.0.is_finite()
-                            && angle.0 > 0.0
-                            && angle.0 < std::f64::consts::PI
-                    }
-                };
+            FeatureDefinition::Chamfer { groups } => {
+                let valid = !groups.is_empty()
+                    && groups.iter().all(|group| {
+                        edge_selections.push(&group.edges);
+                        match group.spec {
+                            ChamferSpec::Unresolved { .. } => true,
+                            ChamferSpec::Distance { distance } => positive_feature_length(distance),
+                            ChamferSpec::TwoDistances { first, second } => {
+                                positive_feature_length(first) && positive_feature_length(second)
+                            }
+                            ChamferSpec::DistanceAngle { distance, angle } => {
+                                positive_feature_length(distance)
+                                    && angle.0.is_finite()
+                                    && angle.0 > 0.0
+                                    && angle.0 < std::f64::consts::PI
+                            }
+                        }
+                    });
                 if !valid {
                     feature_geometry_error(findings, feature, "chamfer dimensions are invalid");
                 }
