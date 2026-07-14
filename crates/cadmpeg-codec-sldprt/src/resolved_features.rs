@@ -3151,7 +3151,60 @@ pub(crate) fn project_dimensioned_sketch_geometry(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
-    let transforms = marker_transforms_by_feature(features, entities, lanes);
+    let transforms = marker_transform_candidates_by_feature(features, entities, lanes)
+        .into_iter()
+        .filter_map(|(feature, candidates)| {
+            let circles = lanes
+                .iter()
+                .flat_map(|lane| &lane.relation_instances)
+                .filter(|relation| {
+                    relation.feature_ref == feature
+                        && relation.family == FeatureInputRelationFamily::CircleDiameter
+                })
+                .filter_map(|relation| {
+                    let [operand] = relation.operands.as_slice() else {
+                        return None;
+                    };
+                    let marker = operand
+                        .entity_ref
+                        .as_deref()
+                        .and_then(|id| markers_by_id.get(id).copied())?;
+                    if !matches!(
+                        marker.kind,
+                        SketchInputKind::Point
+                            | SketchInputKind::ConstrainedPoint
+                            | SketchInputKind::LineOrCircle
+                    ) {
+                        return None;
+                    }
+                    let [u, v] = marker.coordinates_m?;
+                    let parameter = relation
+                        .parameter_scalar_ref
+                        .as_deref()
+                        .and_then(|id| parameters_by_scalar.get(id).copied())?;
+                    let cadmpeg_ir::features::ParameterValue::Length(value) =
+                        parameter.value.as_ref()?
+                    else {
+                        return None;
+                    };
+                    let radius = match parameter.display {
+                        Some(cadmpeg_ir::features::DimensionDisplay::Radius) => value.0,
+                        Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => value.0 * 0.5,
+                        None => return None,
+                    };
+                    if !(radius.is_finite() && radius > 0.0) {
+                        return None;
+                    }
+                    Some((
+                        quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM),
+                        (radius / QUANTUM).round() as i64,
+                    ))
+                })
+                .collect::<Vec<_>>();
+            dimensioned_circle_transform(&candidates, &circles)
+                .map(|transform| (feature, transform))
+        })
+        .collect::<HashMap<_, _>>();
     for lane in lanes {
         let lane_key = lane
             .id
@@ -3899,6 +3952,22 @@ fn marker_transforms_by_feature(
     sketch_entities: &[SketchEntity],
     lanes: &[FeatureInputLane],
 ) -> HashMap<String, MarkerTransform> {
+    marker_transform_candidates_by_feature(features, sketch_entities, lanes)
+        .into_iter()
+        .filter_map(|(feature, candidates)| {
+            let [transform] = candidates.as_slice() else {
+                return None;
+            };
+            Some((feature, *transform))
+        })
+        .collect()
+}
+
+fn marker_transform_candidates_by_feature(
+    features: &[cadmpeg_ir::features::Feature],
+    sketch_entities: &[SketchEntity],
+    lanes: &[FeatureInputLane],
+) -> HashMap<String, Vec<MarkerTransform>> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const QUANTUM: f64 = 1.0e-8;
 
@@ -3986,10 +4055,15 @@ fn marker_transforms_by_feature(
                 }
                 points
             };
-            let transform = unique_compatible_marker_transform(&compatible(true))
-                .or_else(|| unique_compatible_marker_transform(&compatible(false)));
-            if let Some(transform) = transform {
-                result.insert(feature.to_string(), transform);
+            let primary = compatible_marker_transform_candidates(&compatible(true));
+            let fallback = compatible_marker_transform_candidates(&compatible(false));
+            let candidates = if primary.len() == 1 || fallback.is_empty() {
+                primary
+            } else {
+                fallback
+            };
+            if !candidates.is_empty() {
+                result.insert(feature.to_string(), candidates);
             }
         }
     }
@@ -4064,6 +4138,39 @@ impl MarkerTransform {
     }
 }
 
+fn dimensioned_circle_transform(
+    candidates: &[MarkerTransform],
+    circles: &[((i64, i64), i64)],
+) -> Option<MarkerTransform> {
+    let signature = |transform: MarkerTransform| {
+        let mut transformed = circles
+            .iter()
+            .filter_map(|(center, radius)| {
+                let center = transform.apply(*center)?;
+                Some((center.0, center.1, *radius))
+            })
+            .collect::<Vec<_>>();
+        transformed.sort_unstable();
+        (transformed.len() == circles.len() && !transformed.is_empty()).then_some(transformed)
+    };
+    let first_signature = signature(*candidates.first()?)?;
+    if candidates
+        .iter()
+        .skip(1)
+        .any(|transform| signature(*transform).as_ref() != Some(&first_signature))
+    {
+        return None;
+    }
+    candidates.iter().copied().min_by_key(|transform| {
+        (
+            transform.swap,
+            transform.u_sign,
+            transform.v_sign,
+            transform.translation,
+        )
+    })
+}
+
 #[cfg(test)]
 fn unique_marker_transform(
     marker_points: &HashSet<(i64, i64)>,
@@ -4133,15 +4240,27 @@ fn unique_marker_transform(
         return Some(*transform);
     }
     let mut zero_translation = candidates
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|transform| transform.translation == (0, 0));
     let first = zero_translation.next()?;
     zero_translation.next().is_none().then_some(first)
 }
 
+#[cfg(test)]
 fn unique_compatible_marker_transform(
     compatible_locus_points: &HashMap<(i64, i64), HashSet<(i64, i64)>>,
 ) -> Option<MarkerTransform> {
+    let candidates = compatible_marker_transform_candidates(compatible_locus_points);
+    let [transform] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*transform)
+}
+
+fn compatible_marker_transform_candidates(
+    compatible_locus_points: &HashMap<(i64, i64), HashSet<(i64, i64)>>,
+) -> Vec<MarkerTransform> {
     let score = |axes: MarkerTransform| {
         let mut translations = HashMap::<(i64, i64), usize>::new();
         for (marker, loci) in compatible_locus_points {
@@ -4168,7 +4287,7 @@ fn unique_compatible_marker_transform(
         translation: (0, 0),
     };
     if let Some(transform) = unique_scored_transform(identity, score(identity)) {
-        return Some(transform);
+        return vec![transform];
     }
     let mut scored = Vec::new();
     for swap in [false, true] {
@@ -4195,23 +4314,30 @@ fn unique_compatible_marker_transform(
             }
         }
     }
-    let maximum = scored
+    let Some(maximum) = scored
         .iter()
         .map(|(_, count)| *count)
         .max()
-        .filter(|count| *count >= 2)?;
+        .filter(|count| *count >= 2)
+    else {
+        return Vec::new();
+    };
     let candidates = scored
         .into_iter()
         .filter_map(|(transform, count)| (count == maximum).then_some(transform))
         .collect::<Vec<_>>();
     if let [transform] = candidates.as_slice() {
-        return Some(*transform);
+        return vec![*transform];
     }
     let mut zero_translation = candidates
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|transform| transform.translation == (0, 0));
-    let first = zero_translation.next()?;
-    zero_translation.next().is_none().then_some(first)
+    let first = zero_translation.next();
+    if first.is_some() && zero_translation.next().is_none() {
+        return first.into_iter().collect();
+    }
+    candidates
 }
 
 fn unique_scored_transform(
@@ -4371,9 +4497,10 @@ fn marker_entities(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        marker_entities, profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        typed_marker_relation_definition, typed_relation_definition,
-        unique_compatible_marker_transform, unique_marker_transform, MarkerTransform,
+        dimensioned_circle_transform, marker_entities, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, typed_marker_relation_definition,
+        typed_relation_definition, unique_compatible_marker_transform, unique_marker_transform,
+        MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
@@ -4993,6 +5120,28 @@ mod profile_join_tests {
         assert_eq!(transform.u_sign, 1);
         assert_eq!(transform.v_sign, 1);
         assert_eq!(transform.translation, (10, 20));
+    }
+
+    #[test]
+    fn symmetric_frames_require_the_same_dimensioned_circle_set() {
+        let identity = MarkerTransform {
+            swap: false,
+            u_sign: 1,
+            v_sign: 1,
+            translation: (0, 0),
+        };
+        let swap = MarkerTransform {
+            swap: true,
+            ..identity
+        };
+        assert_eq!(
+            dimensioned_circle_transform(&[swap, identity], &[((10, 20), 5), ((20, 10), 5)]),
+            Some(identity)
+        );
+        assert_eq!(
+            dimensioned_circle_transform(&[identity, swap], &[((10, 20), 5), ((20, 10), 7)]),
+            None
+        );
     }
 }
 
