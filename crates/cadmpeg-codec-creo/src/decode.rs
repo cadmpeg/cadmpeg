@@ -6206,6 +6206,14 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "sphere_intersection_circle"))
                 if center.x == 2.0 && (radius - 5.0_f64.sqrt()).abs() < 1e-12
         ));
+        assert!(matches!(
+            carrier_intersection_curve(cylinder, sphere),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_sphere_circle"))
+                if center == Point3::new(0.0, 0.0, 0.0) && radius == 2.0
+        ));
+        assert!(
+            carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 1.0), sphere,).is_none()
+        );
 
         let cone = CarrierEquation::Cone(ConeEquation {
             origin: [0.0, 0.0, 0.0],
@@ -7863,12 +7871,36 @@ fn carrier_intersection_curve(
                 "sphere_intersection_circle",
             ))
         }
-        (CarrierEquation::Cylinder(_) | CarrierEquation::Cone(_), CarrierEquation::Sphere(_))
-        | (CarrierEquation::Sphere(_) | CarrierEquation::Cone(_), CarrierEquation::Cylinder(_))
-        | (
-            CarrierEquation::Cylinder(_) | CarrierEquation::Sphere(_) | CarrierEquation::Cone(_),
+        (CarrierEquation::Cylinder(cylinder), CarrierEquation::Sphere(sphere))
+        | (CarrierEquation::Sphere(sphere), CarrierEquation::Cylinder(cylinder)) => {
+            let axis = normalized(cylinder.axis)?;
+            let relative: [f64; 3] =
+                std::array::from_fn(|index| sphere.center[index] - cylinder.origin[index]);
+            let axial = dot(relative, axis);
+            let transverse: [f64; 3] =
+                std::array::from_fn(|index| relative[index] - axial * axis[index]);
+            let scale = sphere.radius.max(cylinder.radius).max(1.0);
+            if dot(transverse, transverse).sqrt() > 1e-9 * scale
+                || (sphere.radius - cylinder.radius).abs() > 1e-9 * scale
+            {
+                return None;
+            }
+            let reference = normalized(cylinder.ref_direction)?;
+            Some((
+                CurveGeometry::Circle {
+                    center: Point3::new(sphere.center[0], sphere.center[1], sphere.center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius: cylinder.radius,
+                },
+                "coaxial_cylinder_sphere_circle",
+            ))
+        }
+        (
             CarrierEquation::Cone(_),
+            CarrierEquation::Sphere(_) | CarrierEquation::Cylinder(_) | CarrierEquation::Cone(_),
         )
+        | (CarrierEquation::Sphere(_) | CarrierEquation::Cylinder(_), CarrierEquation::Cone(_))
         | (CarrierEquation::Torus(_), _)
         | (_, CarrierEquation::Torus(_)) => None,
     }
