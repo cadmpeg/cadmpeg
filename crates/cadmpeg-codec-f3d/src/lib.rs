@@ -1158,6 +1158,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
+        let expected_faces = recipe
+            .map(|recipe| i64::from(recipe.record_index))
+            .filter(|value| *value >= 0)
+            .map(|design_reference| {
+                design::edge_operand_candidate_faces(
+                    design_reference,
+                    &native.persistent_subentity_tags,
+                )
+            });
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -1185,6 +1194,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && recipe.byte_offset > operand.recipe_record_byte_offset
                     && recipe.byte_offset < operand.next_byte_offset
             })
+            && expected_faces.as_ref() == Some(&operand.candidate_faces)
             && edge_operand_slots.insert((
                 native_stream,
                 operand.scope_record_index,

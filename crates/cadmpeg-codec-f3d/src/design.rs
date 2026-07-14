@@ -5772,6 +5772,47 @@ pub fn bind_face_operand_candidates(
     }
 }
 
+/// Join each edge recipe's persistent Design reference to active solved faces.
+pub fn bind_edge_operand_candidates(
+    operands: &mut [DesignEdgeOperand],
+    recipes: &[ConstructionRecipe],
+    tags: &[PersistentSubentityTag],
+) {
+    let recipes = recipes
+        .iter()
+        .map(|recipe| (recipe.id.as_str(), recipe))
+        .collect::<HashMap<_, _>>();
+    for operand in operands {
+        let Some(design_reference) = recipes
+            .get(operand.recipe_id.as_str())
+            .map(|recipe| i64::from(recipe.record_index))
+            .filter(|value| *value >= 0)
+        else {
+            continue;
+        };
+        operand.candidate_faces = edge_operand_candidate_faces(design_reference, tags);
+    }
+}
+
+pub(crate) fn edge_operand_candidate_faces(
+    design_reference: i64,
+    tags: &[PersistentSubentityTag],
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut faces = tags
+        .iter()
+        .filter(|tag| tag.design_references.contains(&design_reference))
+        .filter_map(|tag| match &tag.target {
+            AttributeTarget::Face(id) => Some(id.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.dedup();
+    faces
+}
+
 /// Resolve the unique sketch-profile frame named by every Extrude scope.
 pub fn bind_extrude_profiles(
     scan: &ContainerScan,
@@ -6707,6 +6748,7 @@ fn parse_edge_operand(
         recipe_id: recipe.id.clone(),
         recipe_program_offset: u64::try_from(recipe_program_at).ok()?,
         recipe_program,
+        candidate_faces: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -9069,16 +9111,16 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
-        bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
-        bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
-        closed_sketch_profiles, companion_owned_interval, contiguous_i32_program,
-        decode_fillet_radius_groups, design_parameter_prefix, dimension_recipe_prefix,
-        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
-        next_indexed_record_offset, null_locus_dimension_definition,
+        assign_extrude_face_roles, bind_dimension_loci, bind_edge_operand_candidates,
+        bind_extrude_selection_geometry, bind_extrude_selection_identities,
+        bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
+        bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
+        contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
+        dimension_recipe_prefix, directional_point_dimension, exact_atomic_constraint,
+        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_sketch_entity_id,
+        neutral_sketch_id, next_indexed_record_offset, null_locus_dimension_definition,
         parse_construction_operand_group, parse_construction_operand_identity,
         parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -10927,17 +10969,37 @@ mod relation_tests {
             record_index: 303,
         };
 
-        let operand = parse_edge_operand(&bytes, &scope, 0, &record, std::slice::from_ref(&recipe))
-            .expect("edge recipe operand");
-        assert_eq!(operand.record_index, 100);
-        assert_eq!(operand.paired_byte_offset, paired_at);
-        assert_eq!(operand.recipe_record_index, 103);
-        assert_eq!(operand.recipe_record_byte_offset, recipe_record_at);
-        assert_eq!(operand.recipe_id, recipe.id);
-        assert_eq!(operand.recipe_program_offset, recipe_name_at as u64 + 16);
-        assert_eq!(operand.recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
-        assert_eq!(operand.next_record_index, 104);
-        assert_eq!(operand.next_byte_offset, next_at);
+        let mut edge_operand =
+            parse_edge_operand(&bytes, &scope, 0, &record, std::slice::from_ref(&recipe))
+                .expect("edge recipe operand");
+        assert_eq!(edge_operand.record_index, 100);
+        assert_eq!(edge_operand.paired_byte_offset, paired_at);
+        assert_eq!(edge_operand.recipe_record_index, 103);
+        assert_eq!(edge_operand.recipe_record_byte_offset, recipe_record_at);
+        assert_eq!(edge_operand.recipe_id, recipe.id);
+        assert_eq!(
+            edge_operand.recipe_program_offset,
+            recipe_name_at as u64 + 16
+        );
+        assert_eq!(edge_operand.recipe_program, [-1, -1, 2, 0, -1, 1, -1, 7]);
+        assert_eq!(edge_operand.next_record_index, 104);
+        assert_eq!(edge_operand.next_byte_offset, next_at);
+        bind_edge_operand_candidates(
+            std::slice::from_mut(&mut edge_operand),
+            std::slice::from_ref(&recipe),
+            &[PersistentSubentityTag {
+                id: "f3d:asm:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
+            }],
+        );
+        assert_eq!(
+            edge_operand.candidate_faces,
+            [FaceId("f3d:brep:entity#50".into())]
+        );
 
         let mut face_bytes = Vec::new();
         header(&mut face_bytes, *b"306", 100);

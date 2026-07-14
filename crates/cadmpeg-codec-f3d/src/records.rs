@@ -1046,6 +1046,9 @@ pub struct DesignEdgeOperand {
     pub recipe_program_offset: u64,
     /// Complete post-name i32 program ending at the next indexed record.
     pub recipe_program: Vec<i32>,
+    /// Active solved faces carrying the recipe's persistent Design reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_faces: Vec<FaceId>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.

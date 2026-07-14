@@ -1252,6 +1252,11 @@ fn extend_related_design_records(
         &native.design_record_headers,
         &native.construction_recipes,
     )?;
+    crate::design::bind_edge_operand_candidates(
+        &mut native.design_edge_operands,
+        &native.construction_recipes,
+        &native.persistent_subentity_tags,
+    );
     native.design_face_operands = crate::design::decode_face_operands(
         scan,
         &native.design_parameter_scopes,
