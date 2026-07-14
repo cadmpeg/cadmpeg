@@ -1562,8 +1562,8 @@ fn point_on_sketch_entity(
             degree,
             knots,
             control_points,
+            weights,
             periodic,
-            ..
         } if !periodic
             && usize::try_from(*degree).ok().is_some_and(|degree| {
                 knots.len() > control_points.len() + degree
@@ -1573,12 +1573,15 @@ fn point_on_sketch_entity(
                         .all(|knot| *knot == knots[control_points.len()])
             }) =>
         {
-            control_points
-                .first()
-                .is_some_and(|endpoint| point_distance(point, *endpoint) <= tolerance)
-                || control_points
-                    .last()
-                    .is_some_and(|endpoint| point_distance(point, *endpoint) <= tolerance)
+            cadmpeg_ir::eval::nurbs_pcurve_contains_point(
+                *degree,
+                knots,
+                control_points,
+                weights.as_deref(),
+                point,
+                tolerance,
+            )
+            .unwrap_or(false)
         }
         _ => false,
     }
@@ -8452,6 +8455,25 @@ mod relation_tests {
             &nurbs,
             1.0e-6
         ));
+        let SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            ..
+        } = &nurbs.geometry
+        else {
+            unreachable!()
+        };
+        let interior = cadmpeg_ir::eval::nurbs_pcurve_uv(
+            *degree,
+            knots,
+            control_points,
+            weights.as_deref(),
+            0.375,
+        )
+        .unwrap();
+        assert!(point_on_sketch_entity(interior, &nurbs, 1.0e-9));
     }
 
     fn lp_utf16(out: &mut Vec<u8>, value: &str) {

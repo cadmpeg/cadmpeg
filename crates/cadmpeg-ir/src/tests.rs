@@ -1925,6 +1925,44 @@ fn rational_quadratic_arc_evaluates_on_the_circle() {
 }
 
 #[test]
+fn rational_pcurve_membership_finds_interior_points_without_sampling() {
+    use crate::math::Point2;
+
+    let weight = 0.5_f64.sqrt();
+    let knots = [0.0, 0.0, 0.0, 1.0, 1.0, 1.0];
+    let controls = [
+        Point2::new(5.0, 0.0),
+        Point2::new(5.0, 5.0),
+        Point2::new(0.0, 5.0),
+    ];
+    let weights = [1.0, weight, 1.0];
+    let interior =
+        crate::eval::nurbs_pcurve_uv(2, &knots, &controls, Some(&weights), 0.375).unwrap();
+    assert_eq!(
+        crate::eval::nurbs_pcurve_contains_point(
+            2,
+            &knots,
+            &controls,
+            Some(&weights),
+            interior,
+            1.0e-9,
+        ),
+        Some(true)
+    );
+    assert_eq!(
+        crate::eval::nurbs_pcurve_contains_point(
+            2,
+            &knots,
+            &controls,
+            Some(&weights),
+            Point2::new(4.0, 4.0),
+            1.0e-6,
+        ),
+        Some(false)
+    );
+}
+
+#[test]
 fn edge_endpoint_mismatch_is_flagged() {
     let mut ir = unit_cube();
     let report = validate(&ir, Vec::new());

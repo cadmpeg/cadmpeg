@@ -140,6 +140,119 @@ pub fn nurbs_pcurve_uv(
     (weight_sum != 0.0).then(|| Point2::new(u / weight_sum, v / weight_sum))
 }
 
+/// Return whether a point lies within `tolerance` of a nonperiodic NURBS
+/// pcurve, using evaluated witnesses and Lipschitz-bounded interval rejection.
+///
+/// Positive rational weights make both the homogeneous curve and its
+/// derivative convex combinations of their control polygons. Their norms
+/// therefore bound Euclidean curve speed after the quotient rule. The search
+/// accepts only an evaluated curve point within tolerance; intervals whose
+/// midpoint distance minus the maximum possible travel exceeds tolerance are
+/// discarded. `None` denotes invalid input or exhaustion of the bounded search.
+pub fn nurbs_pcurve_contains_point(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+    point: Point2,
+    tolerance: f64,
+) -> Option<bool> {
+    const MAX_INTERVALS: usize = 100_000;
+
+    let degree_usize = usize::try_from(degree).ok()?;
+    let count = control_points.len();
+    if degree_usize == 0
+        || count <= degree_usize
+        || knots.len() < count.checked_add(degree_usize)?.checked_add(1)?
+        || !tolerance.is_finite()
+        || tolerance < 0.0
+        || !point.u.is_finite()
+        || !point.v.is_finite()
+    {
+        return None;
+    }
+    let owned_weights;
+    let weights = match weights {
+        Some(weights) if weights.len() == count => weights,
+        Some(_) => return None,
+        None => {
+            owned_weights = vec![1.0; count];
+            &owned_weights
+        }
+    };
+    if control_points.iter().zip(weights).any(|(control, weight)| {
+        !control.u.is_finite() || !control.v.is_finite() || !weight.is_finite() || *weight <= 0.0
+    }) || knots.iter().any(|knot| !knot.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
+
+    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
+    let maximum_weighted_radius = control_points
+        .iter()
+        .zip(weights)
+        .map(|(control, weight)| weight * (control.u - point.u).hypot(control.v - point.v))
+        .fold(0.0_f64, f64::max);
+    let mut maximum_numerator_speed = 0.0_f64;
+    let mut maximum_weight_speed = 0.0_f64;
+    for index in 0..count - 1 {
+        let denominator = knots[index + degree_usize + 1] - knots[index + 1];
+        if denominator == 0.0 {
+            continue;
+        }
+        let factor = f64::from(degree) / denominator;
+        let first_u = weights[index] * (control_points[index].u - point.u);
+        let first_v = weights[index] * (control_points[index].v - point.v);
+        let second_u = weights[index + 1] * (control_points[index + 1].u - point.u);
+        let second_v = weights[index + 1] * (control_points[index + 1].v - point.v);
+        maximum_numerator_speed =
+            maximum_numerator_speed.max(factor * (second_u - first_u).hypot(second_v - first_v));
+        maximum_weight_speed =
+            maximum_weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
+    }
+    let speed_bound = maximum_numerator_speed / minimum_weight
+        + maximum_weighted_radius * maximum_weight_speed / minimum_weight.powi(2);
+    if !speed_bound.is_finite() {
+        return None;
+    }
+
+    let domain = [knots[degree_usize], knots[count]];
+    if domain[0] > domain[1] {
+        return None;
+    }
+    let mut intervals = knots[degree_usize..=count]
+        .windows(2)
+        .filter_map(|pair| (pair[0] < pair[1]).then_some([pair[0], pair[1]]))
+        .collect::<Vec<_>>();
+    if intervals.is_empty() {
+        intervals.push(domain);
+    }
+    let mut examined = 0usize;
+    while let Some([start, end]) = intervals.pop() {
+        examined += 1;
+        if examined > MAX_INTERVALS {
+            return None;
+        }
+        let middle = start + (end - start) * 0.5;
+        let curve_point = nurbs_pcurve_uv(degree, knots, control_points, Some(weights), middle)?;
+        let distance = (curve_point.u - point.u).hypot(curve_point.v - point.v);
+        if distance <= tolerance {
+            return Some(true);
+        }
+        let travel_bound = speed_bound * (end - start) * 0.5;
+        if distance - travel_bound > tolerance {
+            continue;
+        }
+        if middle == start || middle == end {
+            continue;
+        }
+        intervals.push([start, middle]);
+        intervals.push([middle, end]);
+    }
+    Some(false)
+}
+
 /// Evaluate a tensor-product NURBS surface at `(u, v)`.
 pub fn nurbs_surface_point(surface: &NurbsSurface, u_at: f64, v_at: f64) -> Option<Point3> {
     let u_degree = usize::try_from(surface.u_degree).ok()?;
