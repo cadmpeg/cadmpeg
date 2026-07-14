@@ -359,6 +359,9 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             if origin.x == 1.0 && origin.y == 2.0 && origin.z == 3.0
                 && direction.x == 0.0 && direction.y == 0.0 && direction.z == 1.0
     )));
+    assert!(!result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #51")));
     assert!(result
         .ir
         .model

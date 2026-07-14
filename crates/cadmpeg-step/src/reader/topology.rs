@@ -58,6 +58,9 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
             continue;
         }
         let Some(mut built) = build_geometric_set(id, record, exchange, ir) else {
+            if mark_standalone_geometric_set(id, record, exchange, ir, &mut result.typed_records) {
+                continue;
+            }
             result.warnings.push(format!(
                 "GEOMETRICALLY_BOUNDED_SURFACE_SHAPE_REPRESENTATION #{id} has no decoded bounded surfaces"
             ));
@@ -82,6 +85,54 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> TopologyResult {
         }
     }
     result
+}
+
+fn mark_standalone_geometric_set(
+    id: u64,
+    representation: &RawRecord,
+    exchange: &Exchange,
+    ir: &CadIr,
+    typed: &mut BTreeSet<u64>,
+) -> bool {
+    let Some(set_ids) = representation.parameter(1).and_then(refs) else {
+        return false;
+    };
+    let mut decoded = false;
+    for set_id in set_ids {
+        let Some(set) = exchange.records.get(&set_id) else {
+            continue;
+        };
+        if !matches!(
+            set.simple_name(),
+            Some("GEOMETRIC_SET" | "GEOMETRIC_CURVE_SET")
+        ) {
+            continue;
+        }
+        let Some(items) = set.parameter(1).and_then(refs) else {
+            continue;
+        };
+        let has_decoded_member = items.into_iter().any(|item| {
+            let point = format!("step:data:point#{item}");
+            let curve = format!("step:data:curve#{item}");
+            ir.model
+                .points
+                .iter()
+                .any(|value| value.id.as_str() == point)
+                || ir
+                    .model
+                    .curves
+                    .iter()
+                    .any(|value| value.id.as_str() == curve)
+        });
+        if has_decoded_member {
+            typed.insert(set_id);
+            decoded = true;
+        }
+    }
+    if decoded {
+        typed.insert(id);
+    }
+    decoded
 }
 
 fn build_geometric_set(
