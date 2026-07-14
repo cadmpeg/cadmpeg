@@ -6,11 +6,11 @@
 //! semantics.
 
 use crate::history_records::{
-    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmHistory,
-    AsmHistoryRecord,
+    AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
+    AsmHistory, AsmHistoryRecord,
 };
 use cadmpeg_ir::le::int_at;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
@@ -156,9 +156,11 @@ pub(crate) fn decode(bytes: &[u8], stream: &str, width: usize) -> Option<AsmHist
             owner_ref,
             bulletin_boards,
             records,
+            entity_versions: Vec::new(),
         });
     }
     bind_snapshot_revision_ids(&mut states);
+    bind_historical_entity_versions(&mut states);
     if states.is_empty() {
         return None;
     }
@@ -196,6 +198,103 @@ fn bind_snapshot_revision_ids(states: &mut [AsmDeltaState]) {
     }
     for (record, revision_id) in snapshot_records.into_iter().zip(old_references) {
         record.revision_id = Some(revision_id);
+    }
+}
+
+fn bind_historical_entity_versions(states: &mut [AsmDeltaState]) {
+    let mut archived = states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter_map(|record| record.revision_id)
+        .collect::<Vec<_>>();
+    archived.sort_unstable();
+    let Some(&active_count) = archived.first() else {
+        return;
+    };
+    if active_count <= 0
+        || archived
+            .iter()
+            .copied()
+            .ne(active_count..active_count + archived.len() as i64)
+    {
+        return;
+    }
+    let by_node = states
+        .iter()
+        .enumerate()
+        .map(|(ordinal, state)| (state.node_index, ordinal))
+        .collect::<HashMap<_, _>>();
+    if by_node.len() != states.len() {
+        return;
+    }
+    let heads = states
+        .iter()
+        .enumerate()
+        .filter(|(_, state)| state.previous_ref.is_none())
+        .map(|(ordinal, _)| ordinal)
+        .collect::<Vec<_>>();
+    let [mut ordinal] = heads.as_slice() else {
+        return;
+    };
+    let mut versions = (0..active_count)
+        .map(|id| (id, id))
+        .collect::<BTreeMap<_, _>>();
+    let mut projected = HashMap::new();
+    let mut visited = HashSet::new();
+    loop {
+        let state = &states[ordinal];
+        if !visited.insert(state.node_index) {
+            return;
+        }
+        projected.insert(
+            state.node_index,
+            versions
+                .iter()
+                .map(|(&entity_ref, &record_ref)| AsmEntityVersion {
+                    entity_ref,
+                    record_ref,
+                })
+                .collect::<Vec<_>>(),
+        );
+        for change in state
+            .bulletin_boards
+            .iter()
+            .flat_map(|board| &board.changes)
+        {
+            match (change.old_ref, change.new_ref) {
+                (Some(old), Some(new)) => {
+                    if !versions.contains_key(&new) || archived.binary_search(&old).is_err() {
+                        return;
+                    }
+                    versions.insert(new, old);
+                }
+                (None, Some(new)) => {
+                    if versions.remove(&new).is_none() {
+                        return;
+                    }
+                }
+                (Some(old), None) => {
+                    if versions.contains_key(&old) || archived.binary_search(&old).is_err() {
+                        return;
+                    }
+                    versions.insert(old, old);
+                }
+                (None, None) => return,
+            }
+        }
+        let Some(next) = state.next_ref else {
+            break;
+        };
+        let Some(&next_ordinal) = by_node.get(&next) else {
+            return;
+        };
+        ordinal = next_ordinal;
+    }
+    if visited.len() != states.len() || versions != BTreeMap::from([(0, 0)]) {
+        return;
+    }
+    for state in states {
+        state.entity_versions = projected.remove(&state.node_index).unwrap_or_default();
     }
 }
 
@@ -338,4 +437,97 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
     let value = int_at(bytes, *position + 1, width)?;
     *position += 1 + width;
     Some(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reverse_history_builds_complete_entity_version_maps() {
+        let state = |node_index, previous_ref, next_ref, old_ref, new_ref| {
+            let board_id = format!("board-{node_index}");
+            AsmDeltaState {
+                id: format!("state-{node_index}"),
+                parent: "history".into(),
+                byte_offset: node_index as u64,
+                state_id: 10 - node_index,
+                version_flag: 1,
+                state_flag: 0,
+                previous_ref,
+                next_ref,
+                node_index,
+                partner_ref: None,
+                owner_ref: 0,
+                bulletin_boards: vec![AsmBulletinBoard {
+                    id: board_id.clone(),
+                    parent: format!("state-{node_index}"),
+                    byte_offset: node_index as u64,
+                    owner_ref: 0,
+                    number: 2,
+                    changes: vec![AsmEntityChange {
+                        id: format!("change-{node_index}"),
+                        parent: board_id,
+                        byte_offset: node_index as u64,
+                        kind: match (old_ref, new_ref) {
+                            (Some(_), Some(_)) => AsmEntityChangeKind::Update,
+                            (None, Some(_)) => AsmEntityChangeKind::Insert,
+                            (Some(_), None) => AsmEntityChangeKind::Delete,
+                            (None, None) => unreachable!(),
+                        },
+                        old_ref,
+                        new_ref,
+                    }],
+                }],
+                records: Vec::new(),
+                entity_versions: Vec::new(),
+            }
+        };
+        let mut states = vec![
+            state(0, None, Some(1), Some(3), Some(1)),
+            state(1, Some(0), Some(2), Some(4), Some(1)),
+            state(2, Some(1), Some(3), None, Some(2)),
+            state(3, Some(2), None, None, Some(1)),
+        ];
+        states[0].records = [3, 4]
+            .map(|revision_id| AsmHistoryRecord {
+                id: format!("record-{revision_id}"),
+                parent: states[0].id.clone(),
+                revision_id: Some(revision_id),
+                index: revision_id as u64 - 3,
+                byte_offset: 0,
+                name: "edge".into(),
+                entity_references: Vec::new(),
+                raw_bytes: vec![0x11],
+            })
+            .into();
+
+        bind_historical_entity_versions(&mut states);
+
+        assert_eq!(
+            states
+                .iter()
+                .map(|state| state.entity_versions.len())
+                .collect::<Vec<_>>(),
+            [3, 3, 3, 2]
+        );
+        assert_eq!(
+            states[1].entity_versions,
+            [
+                AsmEntityVersion {
+                    entity_ref: 0,
+                    record_ref: 0,
+                },
+                AsmEntityVersion {
+                    entity_ref: 1,
+                    record_ref: 3,
+                },
+                AsmEntityVersion {
+                    entity_ref: 2,
+                    record_ref: 2,
+                },
+            ]
+        );
+        assert_eq!(states[2].entity_versions[1].record_ref, 4);
+    }
 }

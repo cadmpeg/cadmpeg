@@ -36,6 +36,17 @@ pub(crate) struct AsmDeltaState {
     pub bulletin_boards: Vec<AsmBulletinBoard>,
     #[serde(default)]
     pub records: Vec<AsmHistoryRecord>,
+    /// Complete entity-slot to record-revision map at this state. Empty when
+    /// the history does not form a complete reversible chain.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entity_versions: Vec<AsmEntityVersion>,
+}
+
+/// Record revision occupying one stable entity slot at an ASM history state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmEntityVersion {
+    pub entity_ref: i64,
+    pub record_ref: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
