@@ -90,6 +90,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             Ok(records) => records,
             Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
         };
+    let gui_documents = match namespace.arena_as::<native::GuiDocumentRecord>("gui_documents") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
     let gui_properties = match namespace.arena_as::<native::GuiPropertyRecord>("gui_properties") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
@@ -264,6 +268,33 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|provider| provider.id.as_str())
         .collect::<HashSet<_>>();
+    let has_gui_entry = entry_names.contains("GuiDocument.xml");
+    if gui_documents.len() != usize::from(has_gui_entry) {
+        findings.push(finding(
+            Check::Counts,
+            "FCStd GUI document record does not match GuiDocument.xml presence",
+            None,
+        ));
+    }
+    for document in &gui_documents {
+        if document.states.iter().enumerate().any(|(order, state)| {
+            state.order != order
+                || state.byte_start >= state.byte_end
+                || state
+                    .side_entries
+                    .iter()
+                    .any(|entry| !entry_names.contains(entry.as_str()))
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "{} has invalid GUI state order, span, or asset",
+                    document.id
+                ),
+                Some(document.id.clone()),
+            ));
+        }
+    }
     for provider in &gui_providers {
         if provider
             .object
@@ -597,6 +628,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     let mut entry_lengths = HashMap::new();
+    let asset_owner_ids = property_ids
+        .iter()
+        .copied()
+        .chain(gui_properties.iter().map(|property| property.id.as_str()))
+        .chain(
+            gui_documents
+                .iter()
+                .flat_map(|document| document.states.iter().map(|state| state.id.as_str())),
+        )
+        .collect::<HashSet<_>>();
     for entry in &entries {
         entry_lengths.insert(entry.name.as_str(), entry.byte_len);
         if entry.byte_len != entry.data.len() as u64 || entry.sha256 != sha256_hex(&entry.data) {
@@ -607,10 +648,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ));
         }
         for owner in &entry.referenced_by {
-            if !property_ids.contains(owner.as_str()) {
+            if !asset_owner_ids.contains(owner.as_str()) {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
-                    format!("{} has missing referencing property {owner}", entry.id),
+                    format!("{} has missing referencing record {owner}", entry.id),
                     Some(entry.id.clone()),
                 ));
             }
@@ -829,7 +870,7 @@ impl Codec for FcstdCodec {
                     }
                 }
             }
-            let entry_records = scan
+            let mut entry_records = scan
                 .entries
                 .iter()
                 .map(|entry| {
@@ -922,6 +963,37 @@ impl Codec for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
+            for (entry_name, owner) in gui_graph
+                .properties
+                .iter()
+                .flat_map(|property| {
+                    property
+                        .side_entries
+                        .iter()
+                        .map(move |entry| (entry.as_str(), property.id.as_str()))
+                })
+                .chain(gui_graph.documents.iter().flat_map(|document| {
+                    document.states.iter().flat_map(|state| {
+                        state
+                            .side_entries
+                            .iter()
+                            .map(move |entry| (entry.as_str(), state.id.as_str()))
+                    })
+                }))
+            {
+                if let Some(entry) = entry_records
+                    .iter_mut()
+                    .find(|entry| entry.name == entry_name)
+                {
+                    entry.referenced_by.push(owner.to_owned());
+                }
+            }
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("entries", &entry_records)?;
+            ir.native
+                .namespace_mut("fcstd")
+                .set_arena("gui_documents", &gui_graph.documents)?;
             ir.native
                 .namespace_mut("fcstd")
                 .set_arena("gui_view_providers", &gui_graph.providers)?;

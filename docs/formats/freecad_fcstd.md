@@ -231,3 +231,10 @@ and subelement references grouped by source property, exact parameter records, a
 assets. Drawing records independently retain every link-valued relationship, including projection
 and section parents rather than only page membership and model sources. Validation requires exact
 annotation-object coverage and resolves both annotation and drawing relationships.
+
+Native namespace version 10 adds a `gui_documents` arena. A GUI archive has exactly one document
+record; a headless archive has none. The record retains the GUI schema and root attributes plus
+every document-level element outside `ViewProviderData` in source order. These named state records
+cover cameras, active views, clipping or section state, and future GUI state without treating it as
+an application-object property. Each retains its exact XML span, ordered descendant values, and
+display-asset references.

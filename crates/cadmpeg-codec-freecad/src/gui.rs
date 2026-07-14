@@ -11,12 +11,13 @@ use cadmpeg_ir::topology::Color;
 
 use crate::brep::ShapePayloadRecord;
 use crate::native::{
-    ElementMapRecord, GuiPropertyRecord, GuiViewProviderRecord, ObjectRecord, PropertyRecord,
-    ValueRecord,
+    ElementMapRecord, GuiDocumentRecord, GuiPropertyRecord, GuiStateRecord, GuiViewProviderRecord,
+    ObjectRecord, PropertyRecord, ValueRecord,
 };
 
 #[derive(Default)]
 pub(crate) struct Graph {
+    pub(crate) documents: Vec<GuiDocumentRecord>,
     pub(crate) providers: Vec<GuiViewProviderRecord>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
 }
@@ -34,6 +35,25 @@ pub(crate) fn transfer(
         .map_err(|_| CodecError::Malformed("GuiDocument.xml is not UTF-8".into()))?;
     let xml = roxmltree::Document::parse(text)
         .map_err(|error| CodecError::Malformed(format!("invalid GuiDocument.xml: {error}")))?;
+    let root = xml.root_element();
+    let states = root
+        .children()
+        .filter(roxmltree::Node::is_element)
+        .filter(|node| !node.has_tag_name("ViewProviderData"))
+        .enumerate()
+        .map(|(order, node)| gui_state(text, order, node))
+        .collect::<Vec<_>>();
+    let document = GuiDocumentRecord {
+        id: "fcstd:gui:document#0".into(),
+        schema_version: root
+            .attribute("SchemaVersion")
+            .and_then(|value| value.parse().ok()),
+        attributes: root
+            .attributes()
+            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+            .collect(),
+        states,
+    };
     let objects_by_name = objects
         .iter()
         .map(|object| (object.name.as_str(), object.id.as_str()))
@@ -211,9 +231,55 @@ pub(crate) fn transfer(
         }
     }
     Ok(Graph {
+        documents: vec![document],
         providers: native_providers,
         properties: native_properties,
     })
+}
+
+fn gui_state(text: &str, order: usize, node: roxmltree::Node<'_, '_>) -> GuiStateRecord {
+    let values = node
+        .descendants()
+        .filter(|value| value.is_element() && *value != node)
+        .enumerate()
+        .map(|(value_order, value)| ValueRecord {
+            tag: value.tag_name().name().to_owned(),
+            order: value_order,
+            attributes: value
+                .attributes()
+                .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+                .collect(),
+            text: value.text().map(str::to_owned),
+            raw_xml: text[value.range()].to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let side_entries = node
+        .descendants()
+        .filter(roxmltree::Node::is_element)
+        .flat_map(|element| {
+            element
+                .attributes()
+                .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+                .collect::<Vec<_>>()
+        })
+        .filter(|(name, _)| matches!(name.as_str(), "file" | "File"))
+        .map(|(_, value)| value)
+        .filter(|value| !value.is_empty())
+        .collect();
+    GuiStateRecord {
+        id: format!("fcstd:gui:state:{}#{order}", node.tag_name().name()),
+        kind: node.tag_name().name().to_owned(),
+        order,
+        attributes: node
+            .attributes()
+            .map(|attribute| (attribute.name().to_owned(), attribute.value().to_owned()))
+            .collect(),
+        values,
+        side_entries,
+        raw_xml: text[node.range()].to_owned(),
+        byte_start: node.range().start as u64,
+        byte_end: node.range().end as u64,
+    }
 }
 
 fn append_native_provider(

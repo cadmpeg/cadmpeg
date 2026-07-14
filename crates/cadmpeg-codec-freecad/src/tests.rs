@@ -342,6 +342,54 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
 }
 
 #[test]
+fn retains_ordered_document_level_gui_state() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="1"><Object type="App::Feature" name="Model" id="1"/></Objects>
+<ObjectData Count="1"><Object name="Model"><Properties Count="0"/></Object></ObjectData>
+</Document>"#;
+    let gui = br#"<Document SchemaVersion="1" active="Perspective">
+ <Camera orientation="0 0 0 1"><Position x="1" y="2" z="3"/></Camera>
+ <ActiveView name="Perspective"/>
+ <ClipPlane enabled="true" file="section.bin"/>
+ <ViewProviderData Count="0"/>
+</Document>"#;
+    let bytes = archive_entries(&[
+        ("Document.xml", document.as_bytes()),
+        ("GuiDocument.xml", gui),
+        ("section.bin", b"section-state"),
+    ]);
+    let result = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("GUI state");
+    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let documents = namespace
+        .arena_as::<crate::native::GuiDocumentRecord>("gui_documents")
+        .expect("GUI documents");
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].schema_version, Some(1));
+    assert_eq!(documents[0].attributes["active"], "Perspective");
+    assert_eq!(
+        documents[0]
+            .states
+            .iter()
+            .map(|state| state.kind.as_str())
+            .collect::<Vec<_>>(),
+        ["Camera", "ActiveView", "ClipPlane"]
+    );
+    assert_eq!(documents[0].states[0].values[0].tag, "Position");
+    assert_eq!(documents[0].states[2].side_entries, ["section.bin"]);
+    let entries = namespace
+        .arena_as::<crate::native::EntryRecord>("entries")
+        .expect("entries");
+    let section = entries
+        .iter()
+        .find(|entry| entry.name == "section.bin")
+        .expect("section asset");
+    assert_eq!(section.referenced_by, [documents[0].states[2].id.clone()]);
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn recovers_techdraw_page_template_and_view_graph() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -870,7 +918,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 9);
+    assert_eq!(namespace.version, 10);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");

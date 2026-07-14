@@ -5,7 +5,43 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 9;
+pub const VERSION: u32 = 10;
+
+/// Document-level GUI state outside application-object view providers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuiDocumentRecord {
+    /// Stable GUI document identity.
+    pub id: String,
+    /// Persisted GUI schema version when declared.
+    pub schema_version: Option<u32>,
+    /// Exact root attributes.
+    pub attributes: BTreeMap<String, String>,
+    /// Ordered camera, active-view, clipping, and other document state.
+    pub states: Vec<GuiStateRecord>,
+}
+
+/// One ordered document-level GUI state element.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GuiStateRecord {
+    /// Stable state identity.
+    pub id: String,
+    /// Persisted XML element name.
+    pub kind: String,
+    /// Source order among document-level state elements.
+    pub order: usize,
+    /// Exact element attributes.
+    pub attributes: BTreeMap<String, String>,
+    /// Ordered descendant value elements.
+    pub values: Vec<ValueRecord>,
+    /// Referenced display assets.
+    pub side_entries: Vec<String>,
+    /// Exact state XML.
+    pub raw_xml: String,
+    /// Inclusive byte offset in `GuiDocument.xml`.
+    pub byte_start: u64,
+    /// Exclusive byte offset in `GuiDocument.xml`.
+    pub byte_end: u64,
+}
 
 /// One semantic annotation object kept distinct from drawing presentation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
