@@ -633,7 +633,7 @@ impl<'a> Builder<'a> {
             loops,
             name: None,
             color: None,
-            tolerance: Some(tolerance),
+            tolerance: positive_tolerance(tolerance),
         });
         Ok(Some(face_id))
     }
@@ -716,7 +716,7 @@ impl<'a> Builder<'a> {
             start,
             end,
             param_range,
-            tolerance: Some(tolerance),
+            tolerance: positive_tolerance(tolerance),
         });
         self.edges.insert(key, id.clone());
         Ok(id)
@@ -862,7 +862,7 @@ impl<'a> Builder<'a> {
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
             point: point_id,
-            tolerance: Some(tolerance * similarity(transform)?.scale),
+            tolerance: positive_tolerance(tolerance * similarity(transform)?.scale),
         });
         self.vertices.insert(key, vertex_id.clone());
         Ok(vertex_id)
@@ -992,6 +992,10 @@ impl<'a> Builder<'a> {
     fn topology_label(&self, shape: usize, local: Transform) -> String {
         occurrence_label(shape, multiply(self.body_scope, local))
     }
+}
+
+fn positive_tolerance(value: f64) -> Option<f64> {
+    (value.is_finite() && value > 0.0).then_some(value)
 }
 
 pub(crate) fn pcurve_geometry(curve: &TextCurve2d) -> PcurveGeometry {

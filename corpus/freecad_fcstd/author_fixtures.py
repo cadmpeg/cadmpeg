@@ -37,6 +37,31 @@ def normalize_fcstd(target):
         normalized, "w", compression=zipfile.ZIP_DEFLATED
     ) as output:
         output.comment = b"cadmpeg CC0 FCStd fixture"
+        persistent_ids = {}
+        history_tags = {}
+        element_map_child_ids = {}
+
+        def stable_persistent_id(match):
+            source_id = match.group(1)
+            target_id = persistent_ids.setdefault(
+                source_id, f"{len(persistent_ids) + 1:x}".encode()
+            )
+            return b":H" + target_id
+
+        def stable_history_tag(match):
+            source_tag = match.group(2)
+            target_tag = history_tags.setdefault(
+                source_tag, f"{len(history_tags) + 1:x}".encode()
+            )
+            return match.group(1) + b":" + target_tag
+
+        def stable_element_map_child_id(match):
+            source_id = match.group(2)
+            target_id = element_map_child_ids.setdefault(
+                source_id, str(len(element_map_child_ids) + 1).encode()
+            )
+            return match.group(1) + target_id + match.group(3)
+
         for source_info in archive.infolist():
             data = archive.read(source_info.filename)
             if source_info.filename == "Document.xml":
@@ -63,31 +88,21 @@ def normalize_fcstd(target):
                     + match.group(2),
                     data,
                 )
-            elif source_info.filename.endswith(".Map.txt"):
-                persistent_ids = {}
-
-                def stable_persistent_id(match):
-                    source_id = match.group(1)
-                    target_id = persistent_ids.setdefault(
-                        source_id, f"{len(persistent_ids) + 1:x}".encode()
-                    )
-                    return b":H" + target_id
-
-                data = re.sub(rb":H([0-9a-fA-F]+)", stable_persistent_id, data)
-                history_tags = {}
-
-                def stable_history_tag(match):
-                    source_tag = match.group(2)
-                    target_tag = history_tags.setdefault(
-                        source_tag, f"{len(history_tags) + 1:x}".encode()
-                    )
-                    return match.group(1) + b":" + target_tag
-
+            if source_info.filename == "Document.xml" or source_info.filename.endswith(
+                ".txt"
+            ):
+                data = re.sub(rb":H(-?[0-9a-fA-F]+)", stable_persistent_id, data)
                 data = re.sub(
                     rb"(:H[0-9a-fA-F]+):([0-9a-fA-F]+)",
                     stable_history_tag,
                     data,
                 )
+                if source_info.filename.endswith(".Map.txt"):
+                    data = re.sub(
+                        rb"(?m)^(\d+ \d+ \d+ )(\d+)( \d+ ;:H)",
+                        stable_element_map_child_id,
+                        data,
+                    )
             info = zipfile.ZipInfo(source_info.filename, (1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
@@ -332,6 +347,45 @@ def binary_shape_document():
     App.closeDocument(document.Name)
 
 
+def design_history_document():
+    document = App.newDocument("DesignHistory")
+    metadata(document, "Parametric PartDesign additive, subtractive, and dress-up history")
+    body = document.addObject("PartDesign::Body", "Body")
+
+    pad_sketch = body.newObject("Sketcher::SketchObject", "PadSketch")
+    pad_points = [(0, 0), (24, 0), (24, 16), (0, 16)]
+    for index, point in enumerate(pad_points):
+        next_point = pad_points[(index + 1) % len(pad_points)]
+        pad_sketch.addGeometry(
+            Part.LineSegment(App.Vector(*point, 0), App.Vector(*next_point, 0)), False
+        )
+    pad_sketch.addConstraint(Sketcher.Constraint("Horizontal", 0))
+    pad_sketch.addConstraint(Sketcher.Constraint("Vertical", 1))
+    pad_sketch.addConstraint(Sketcher.Constraint("Distance", 0, 24.0))
+    pad_sketch.addConstraint(Sketcher.Constraint("Distance", 1, 16.0))
+    pad = body.newObject("PartDesign::Pad", "Pad")
+    pad.Profile = pad_sketch
+    pad.Length = 10
+    document.recompute()
+
+    pocket_sketch = body.newObject("Sketcher::SketchObject", "PocketSketch")
+    pocket_sketch.Placement.Base = App.Vector(0, 0, 10)
+    pocket_sketch.addGeometry(Part.Circle(App.Vector(12, 8, 0), App.Vector(0, 0, 1), 3), False)
+    pocket_sketch.addConstraint(Sketcher.Constraint("Diameter", 0, 6.0))
+    pocket = body.newObject("PartDesign::Pocket", "Pocket")
+    pocket.Profile = pocket_sketch
+    pocket.Length = 6
+    document.recompute()
+
+    fillet = body.newObject("PartDesign::Fillet", "Fillet")
+    fillet.Base = (pocket, ["Edge1"])
+    fillet.Radius = 1
+    document.recompute()
+
+    save(document, "design_history.FCStd")
+    App.closeDocument(document.Name)
+
+
 def techdraw_document():
     document = App.newDocument("DrawingAnnotations")
     metadata(document, "TechDraw page, view, dimension-like note, symbol, and template")
@@ -372,6 +426,7 @@ core_document()
 application_document()
 geometry_topology_document()
 binary_shape_document()
+design_history_document()
 techdraw_document()
 for temporary_asset in OUTPUT.glob("cc0_*"):
     temporary_asset.unlink()

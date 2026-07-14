@@ -2335,9 +2335,23 @@ fn extrusion_definition(
         _ => return None,
     };
     let use_custom = bool_property(properties, "UseCustomVector").unwrap_or(false);
-    let reference_axis =
-        property(properties, "ReferenceAxis").filter(|property| !property.links.is_empty());
-    if reference_axis.is_some_and(|property| property.links.len() != 1) {
+    let is_nonempty_link = |link: &crate::native::LinkTarget| {
+        link.document.is_some()
+            || link
+                .object
+                .as_deref()
+                .is_some_and(|object| !object.is_empty())
+    };
+    let reference_axis = property(properties, "ReferenceAxis")
+        .filter(|property| property.links.iter().any(is_nonempty_link));
+    if reference_axis.is_some_and(|property| {
+        property
+            .links
+            .iter()
+            .filter(|link| is_nonempty_link(link))
+            .count()
+            != 1
+    }) {
         return None;
     }
     let (mut direction, direction_source) = if use_custom {

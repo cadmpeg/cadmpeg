@@ -700,7 +700,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
         for name in map
             .maps
-            .iter()
+            .last()
+            .into_iter()
             .flat_map(|node| &node.groups)
             .flat_map(|group| &group.names)
             .flatten()

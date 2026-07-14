@@ -10,5 +10,6 @@ revolutions, dress-ups,
 analytic primitives, booleans, lofts, sweeps, thickness, draft, branch-complete holes, and
 datum-resolved linear, polar, or mirror patterns.
 Pattern configurations requiring nonuniform spacing or multiple linear directions remain linked
-native records until the neutral IR can express their complete transform sequence. This evolving
-subset does not yet constitute an L8 support claim.
+native records until the neutral IR can express their complete transform sequence. The manifested
+public corpus currently establishes L4 tested; the generated support profile records each higher
+gate independently and prevents higher-level extras from inflating the cumulative score.

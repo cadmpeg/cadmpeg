@@ -58,6 +58,7 @@ struct Observed {
     surfaces: BTreeSet<String>,
     topology: BTreeSet<String>,
     feature_definitions: BTreeSet<String>,
+    feature_operations: BTreeSet<String>,
     application_types: BTreeSet<String>,
     native_arenas: BTreeSet<String>,
     neutral_arenas: BTreeSet<String>,
@@ -289,6 +290,9 @@ fn collect_native_observations(ir: &CadIr, observed: &mut Observed) {
     for feature in &ir.model.features {
         if let Ok(Value::Object(definition)) = serde_json::to_value(&feature.definition) {
             insert_string(&definition, "definition", &mut observed.feature_definitions);
+            if let Some(Value::Object(operation)) = definition.get("operation") {
+                insert_string(operation, "definition", &mut observed.feature_operations);
+            }
         }
     }
 }
@@ -454,9 +458,10 @@ fn gates(
                 ),
                 assertion(
                     "operation_semantics",
-                    observed.feature_definitions.contains("extrusion")
-                        && observed.feature_definitions.contains("post_process"),
-                    format!("{:?}", observed.feature_definitions),
+                    observed.feature_operations.contains("extrude")
+                        && (observed.feature_operations.contains("fillet")
+                            || observed.feature_operations.contains("combine")),
+                    format!("{:?}", observed.feature_operations),
                     "extrusion plus subtractive or dress-up operation",
                 ),
             ],

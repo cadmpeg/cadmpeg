@@ -1,7 +1,7 @@
 {
   "profile_version": 1,
   "format": "fcstd",
-  "manifest_sha256": "63507efea77b43d308adac9b2511d2c38e14d17de4c848ce44f0f80f3745c8a4",
+  "manifest_sha256": "b1d7c5939ba724dbfedd8d19960ead236fb20f92de5a5a147b2832093d2d694a",
   "manifest_verified": true,
   "envelope": {
     "container": "ZIP-packaged FCStd",
@@ -190,9 +190,70 @@
       }
     },
     {
+      "filename": "design_history.FCStd",
+      "sha256": "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7",
+      "canonical_cadir_sha256": "0baea82a1c75a5ec0ff03347548632631c25dfebc3d29815bb705efa3d75ab4d",
+      "deterministic": true,
+      "blocking_losses": 0,
+      "neutral_errors": 0,
+      "native_errors": 0,
+      "exact_byte_coverage": true,
+      "entity_counts": {
+        "appearance_bindings": 0,
+        "appearances": 0,
+        "assembly_joints": 0,
+        "attributes": 0,
+        "bodies": 8,
+        "coedges": 156,
+        "components": 0,
+        "configurations": 0,
+        "curves": 96,
+        "drawings": 0,
+        "edges": 83,
+        "faces": 41,
+        "features": 6,
+        "loops": 44,
+        "native.fcstd.applications": 15,
+        "native.fcstd.attachments": 14,
+        "native.fcstd.byte_coverage": 1,
+        "native.fcstd.carrier_census": 8,
+        "native.fcstd.design_census": 6,
+        "native.fcstd.document": 1,
+        "native.fcstd.element_maps": 8,
+        "native.fcstd.entries": 24,
+        "native.fcstd.extensions": 10,
+        "native.fcstd.logical_ledger": 504,
+        "native.fcstd.objects": 15,
+        "native.fcstd.physical_ledger": 169,
+        "native.fcstd.properties": 243,
+        "native.fcstd.shape_payloads": 14,
+        "native.fcstd.string_tables": 1,
+        "occurrences": 0,
+        "parameters": 8,
+        "pcurves": 28,
+        "points": 57,
+        "presentation_documents": 0,
+        "procedural_curves": 4,
+        "procedural_surfaces": 0,
+        "regions": 8,
+        "semantic_annotations": 0,
+        "shells": 8,
+        "sketch_constraints": 5,
+        "sketch_entities": 5,
+        "sketches": 2,
+        "spreadsheets": 0,
+        "subds": 0,
+        "surfaces": 45,
+        "surfaces_unknown_geometry": 0,
+        "tessellations": 0,
+        "vertices": 57,
+        "view_presentations": 0
+      }
+    },
+    {
       "filename": "geometry_topology.FCStd",
-      "sha256": "c336342e2f3f3556c35a76aed5ce6cecb0d5e9023828c29aad83a24d071bf7f0",
-      "canonical_cadir_sha256": "cefa13e67e84753e8c1d3185ecc7db009080ddecb2990000843ae6a491d01c1e",
+      "sha256": "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59",
+      "canonical_cadir_sha256": "071ed1629733fbe3e998f697771cd777487f36c2c211c4e02b3c5d89ed966ad5",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -326,7 +387,8 @@
       "circle",
       "ellipse",
       "line",
-      "nurbs"
+      "nurbs",
+      "trimmed"
     ],
     "surfaces": [
       "cone",
@@ -353,6 +415,11 @@
       "stored_geometry",
       "tree_node"
     ],
+    "feature_operations": [
+      "combine",
+      "extrude",
+      "fillet"
+    ],
     "application_types": [
       "App::FeaturePython",
       "App::Line",
@@ -366,7 +433,11 @@
       "Part::Cut",
       "Part::Cylinder",
       "Part::Feature",
+      "PartDesign::Body",
       "PartDesign::Feature",
+      "PartDesign::Fillet",
+      "PartDesign::Pad",
+      "PartDesign::Pocket",
       "Points::Feature",
       "Sketcher::SketchObject",
       "Spreadsheet::Sheet",
@@ -410,6 +481,7 @@
       "parameters",
       "pcurves",
       "points",
+      "procedural_curves",
       "procedural_surfaces",
       "regions",
       "semantic_annotations",
@@ -479,7 +551,7 @@
         {
           "id": "application_geometry",
           "passed": true,
-          "observed": "tessellations=1, points=122",
+          "observed": "tessellations=1, points=179",
           "required": "mesh tessellation and point data"
         }
       ]
@@ -504,18 +576,18 @@
     },
     {
       "level": "L4",
-      "passed": false,
+      "passed": true,
       "assertions": [
         {
           "id": "design_records",
           "passed": true,
-          "observed": "features=20, sketches=1, constraints=4, parameters=11",
+          "observed": "features=26, sketches=3, constraints=9, parameters=19",
           "required": "nonempty feature, sketch, constraint, and parameter graphs"
         },
         {
           "id": "operation_semantics",
-          "passed": false,
-          "observed": "{\"post_process\", \"primitive\", \"sketch\", \"stored_geometry\", \"tree_node\"}",
+          "passed": true,
+          "observed": "{\"combine\", \"extrude\", \"fillet\"}",
           "required": "extrusion plus subtractive or dress-up operation"
         }
       ]
@@ -575,11 +647,11 @@
         {
           "id": "application_retention",
           "passed": true,
-          "observed": "application types={\"App::FeaturePython\", \"App::Line\", \"App::Link\", \"App::Origin\", \"App::Part\", \"App::Plane\", \"App::Point\", \"Mesh::Feature\", \"Part::Box\", \"Part::Cut\", \"Part::Cylinder\", \"Part::Feature\", \"PartDesign::Feature\", \"Points::Feature\", \"Sketcher::SketchObject\", \"Spreadsheet::Sheet\", \"TechDraw::DrawPage\", \"TechDraw::DrawSVGTemplate\", \"TechDraw::DrawViewAnnotation\", \"TechDraw::DrawViewPart\", \"TechDraw::DrawViewSymbol\"}, exact=true",
+          "observed": "application types={\"App::FeaturePython\", \"App::Line\", \"App::Link\", \"App::Origin\", \"App::Part\", \"App::Plane\", \"App::Point\", \"Mesh::Feature\", \"Part::Box\", \"Part::Cut\", \"Part::Cylinder\", \"Part::Feature\", \"PartDesign::Body\", \"PartDesign::Feature\", \"PartDesign::Fillet\", \"PartDesign::Pad\", \"PartDesign::Pocket\", \"Points::Feature\", \"Sketcher::SketchObject\", \"Spreadsheet::Sheet\", \"TechDraw::DrawPage\", \"TechDraw::DrawSVGTemplate\", \"TechDraw::DrawViewAnnotation\", \"TechDraw::DrawViewPart\", \"TechDraw::DrawViewSymbol\"}, exact=true",
           "required": "application records and exact byte coverage"
         }
       ]
     }
   ],
-  "highest_passing_gate": "L3"
+  "highest_passing_gate": "L4"
 }

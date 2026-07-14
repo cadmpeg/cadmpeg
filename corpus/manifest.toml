@@ -42,7 +42,7 @@ authoring_app = "FreeCAD"
 authoring_app_version = "1.1.1 revision 20260414"
 generator = "freecad_fcstd/author_fixtures.py"
 license = "CC0-1.0"
-sha256 = "c336342e2f3f3556c35a76aed5ce6cecb0d5e9023828c29aad83a24d071bf7f0"
+sha256 = "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59"
 notes = "Deterministic text B-rep carrier and connected-topology matrix: free curves, freeform surface, solid, void, seam, degenerate, sheet, wire, compound, multi-shell, sweep, and revolution."
 
 [[file]]
@@ -55,3 +55,14 @@ generator = "freecad_fcstd/author_fixtures.py"
 license = "CC0-1.0"
 sha256 = "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e"
 notes = "Deterministically packaged binary exact-shape payload exported by FreeCAD from a blank document."
+
+[[file]]
+filename = "freecad_fcstd/fixtures/design_history.FCStd"
+format = "fcstd"
+author = "cadmpeg project contributors"
+authoring_app = "FreeCAD"
+authoring_app_version = "1.1.1 revision 20260414"
+generator = "freecad_fcstd/author_fixtures.py"
+license = "CC0-1.0"
+sha256 = "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7"
+notes = "Deterministic PartDesign Body with constrained sketches, additive Pad, subtractive Pocket, and edge Fillet history."

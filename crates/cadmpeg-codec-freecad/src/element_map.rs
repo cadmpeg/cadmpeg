@@ -55,7 +55,6 @@ pub(crate) fn parse(
         } else {
             node
         };
-        let declared_count = parse_count(data_node, "StringHasher")?;
         let source_entry = data_node.attribute("file").filter(|name| !name.is_empty());
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
@@ -63,6 +62,20 @@ pub(crate) fn parse(
             })?
         } else {
             node_text_bytes(text, data_node)
+        };
+        let declared_count = if source_entry.is_some() {
+            let header_count = string_table_header_count(bytes)?;
+            if !new_layout {
+                let xml_count = parse_count(data_node, "StringHasher")?;
+                if xml_count != header_count {
+                    return Err(CodecError::Malformed(
+                        "string-table XML and side-entry counts disagree".into(),
+                    ));
+                }
+            }
+            header_count
+        } else {
+            parse_count(data_node, "StringHasher")?
         };
         let entries = parse_string_table(bytes, declared_count, source_entry.is_some())?;
         tables.push(StringTableRecord {
@@ -146,6 +159,27 @@ pub(crate) fn parse(
         });
     }
     Ok((tables, maps))
+}
+
+fn string_table_header_count(bytes: &[u8]) -> Result<usize, CodecError> {
+    let text = std::str::from_utf8(bytes)
+        .map_err(|_| CodecError::Malformed("string table is not UTF-8".into()))?;
+    let mut tokens = text.split_ascii_whitespace();
+    if tokens.next() != Some("StringTableStart") || tokens.next() != Some("v1") {
+        return Err(CodecError::Malformed(
+            "string-table side entry has invalid header".into(),
+        ));
+    }
+    let count = tokens
+        .next()
+        .ok_or_else(|| CodecError::Malformed("string-table side entry has no count".into()))?;
+    let count = parse_usize(count, "string-table header count")?;
+    if count > MAX_TABLE_ENTRIES {
+        return Err(CodecError::Malformed(format!(
+            "string-table entry count exceeds {MAX_TABLE_ENTRIES}"
+        )));
+    }
+    Ok(count)
 }
 
 /// Connect transient indexed-name positions to every neutral placed occurrence.
