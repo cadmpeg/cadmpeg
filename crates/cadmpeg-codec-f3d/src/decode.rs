@@ -179,6 +179,7 @@ pub fn decode(
                 &native.design_sketch_placements,
                 &native.sketch_points,
                 &native.sketch_curve_identities,
+                ir.tolerances.linear,
             );
             ir.model.sketch_constraints = crate::design::project_sketch_constraints(
                 &native.design_sketch_placements,
@@ -360,6 +361,7 @@ pub fn decode(
         &native.design_sketch_placements,
         &native.sketch_points,
         &native.sketch_curve_identities,
+        ir.tolerances.linear,
     );
     ir.model.sketch_constraints = crate::design::project_sketch_constraints(
         &native.design_sketch_placements,

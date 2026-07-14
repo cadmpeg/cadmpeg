@@ -1033,6 +1033,7 @@ pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
+    linear_tolerance: f64,
 ) -> (
     Vec<cadmpeg_ir::sketches::Sketch>,
     Vec<cadmpeg_ir::sketches::SketchEntity>,
@@ -1169,7 +1170,346 @@ pub fn project_sketch_design(
         })
     }));
     entities.sort_by_key(|entity| entity.id.clone());
+    for sketch in &mut sketches {
+        sketch.profiles = closed_sketch_profiles(&sketch.id, &entities, linear_tolerance);
+    }
     (sketches, entities)
+}
+
+fn closed_sketch_profiles(
+    sketch: &cadmpeg_ir::sketches::SketchId,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    linear_tolerance: f64,
+) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+    use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometry};
+
+    if !linear_tolerance.is_finite() || linear_tolerance <= 0.0 {
+        return Vec::new();
+    }
+    let mut profiles = entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch && !entity.construction)
+        .filter(|entity| {
+            matches!(
+                entity.geometry,
+                SketchGeometry::Circle { .. }
+                    | SketchGeometry::Ellipse {
+                        start_angle: None,
+                        end_angle: None,
+                        ..
+                    }
+            )
+        })
+        .map(|entity| {
+            vec![SketchEntityUse {
+                entity: entity.id.clone(),
+                reversed: false,
+            }]
+        })
+        .collect::<Vec<_>>();
+    let edges = entities
+        .iter()
+        .filter(|entity| &entity.sketch == sketch && !entity.construction)
+        .filter_map(|entity| sketch_entity_endpoints(entity).map(|ends| (entity, ends)))
+        .collect::<Vec<_>>();
+    if edges.is_empty() {
+        profiles.sort_by_key(|profile| profile[0].entity.clone());
+        return profiles;
+    }
+
+    let endpoints = edges
+        .iter()
+        .flat_map(|(_, [start, end])| [*start, *end])
+        .collect::<Vec<_>>();
+    let mut parents = (0..endpoints.len()).collect::<Vec<_>>();
+    let mut endpoint_cells = HashMap::<(i64, i64), Vec<usize>>::new();
+    for (endpoint, point) in endpoints.iter().copied().enumerate() {
+        let cell = (
+            (point.u / linear_tolerance).floor() as i64,
+            (point.v / linear_tolerance).floor() as i64,
+        );
+        for u_offset in -1..=1 {
+            for v_offset in -1..=1 {
+                let adjacent = (
+                    cell.0.saturating_add(u_offset),
+                    cell.1.saturating_add(v_offset),
+                );
+                for candidate in endpoint_cells.get(&adjacent).into_iter().flatten() {
+                    if sketch_endpoints_close(point, endpoints[*candidate], linear_tolerance) {
+                        union_endpoint_nodes(&mut parents, endpoint, *candidate);
+                    }
+                }
+            }
+        }
+        endpoint_cells.entry(cell).or_default().push(endpoint);
+    }
+    let edge_nodes = (0..edges.len())
+        .map(|edge| {
+            [
+                endpoint_root(&mut parents, edge * 2),
+                endpoint_root(&mut parents, edge * 2 + 1),
+            ]
+        })
+        .collect::<Vec<_>>();
+    let mut adjacency = HashMap::<usize, Vec<usize>>::new();
+    for (edge, [start, end]) in edge_nodes.iter().copied().enumerate() {
+        adjacency.entry(start).or_default().push(edge);
+        adjacency.entry(end).or_default().push(edge);
+    }
+    for incident in adjacency.values_mut() {
+        incident.sort_by_key(|edge| edges[*edge].0.id.clone());
+    }
+
+    let mut visited = vec![false; edges.len()];
+    let mut order = (0..edges.len()).collect::<Vec<_>>();
+    order.sort_by_key(|edge| edges[*edge].0.id.clone());
+    for first_edge in order {
+        if visited[first_edge] {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut pending = vec![first_edge];
+        let mut component_seen = HashSet::new();
+        while let Some(edge) = pending.pop() {
+            if !component_seen.insert(edge) {
+                continue;
+            }
+            component.push(edge);
+            for node in edge_nodes[edge] {
+                pending.extend(adjacency[&node].iter().copied());
+            }
+        }
+        let component_nodes = component
+            .iter()
+            .flat_map(|edge| edge_nodes[*edge])
+            .collect::<HashSet<_>>();
+        if component_nodes
+            .iter()
+            .any(|node| adjacency[node].len() != 2)
+        {
+            if component
+                .iter()
+                .all(|edge| matches!(edges[*edge].0.geometry, SketchGeometry::Line { .. }))
+            {
+                profiles.extend(branched_line_profiles(
+                    &component,
+                    &edges,
+                    &edge_nodes,
+                    &adjacency,
+                    linear_tolerance,
+                ));
+            }
+            for edge in component {
+                visited[edge] = true;
+            }
+            continue;
+        }
+
+        component.sort_by_key(|edge| edges[*edge].0.id.clone());
+        let first_edge = component[0];
+        let start_node = edge_nodes[first_edge][0];
+        let mut current_node = edge_nodes[first_edge][1];
+        let mut profile = vec![SketchEntityUse {
+            entity: edges[first_edge].0.id.clone(),
+            reversed: false,
+        }];
+        visited[first_edge] = true;
+        while current_node != start_node {
+            let Some(next_edge) = adjacency[&current_node]
+                .iter()
+                .copied()
+                .find(|edge| !visited[*edge])
+            else {
+                profile.clear();
+                break;
+            };
+            let [stored_start, stored_end] = edge_nodes[next_edge];
+            let reversed = stored_end == current_node;
+            current_node = if reversed { stored_start } else { stored_end };
+            visited[next_edge] = true;
+            profile.push(SketchEntityUse {
+                entity: edges[next_edge].0.id.clone(),
+                reversed,
+            });
+        }
+        if !profile.is_empty() && component.iter().all(|edge| visited[*edge]) {
+            profiles.push(profile);
+        }
+    }
+    profiles.sort_by_key(|profile| profile[0].entity.clone());
+    profiles
+}
+
+fn branched_line_profiles(
+    component: &[usize],
+    edges: &[(&cadmpeg_ir::sketches::SketchEntity, [Point2; 2])],
+    edge_nodes: &[[usize; 2]],
+    adjacency: &HashMap<usize, Vec<usize>>,
+    linear_tolerance: f64,
+) -> Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>> {
+    use cadmpeg_ir::sketches::SketchEntityUse;
+
+    let component = component.iter().copied().collect::<HashSet<_>>();
+    let mut outgoing = HashMap::<usize, Vec<usize>>::new();
+    for edge in &component {
+        outgoing
+            .entry(edge_nodes[*edge][0])
+            .or_default()
+            .push(edge * 2);
+        outgoing
+            .entry(edge_nodes[*edge][1])
+            .or_default()
+            .push(edge * 2 + 1);
+    }
+    for half_edges in outgoing.values_mut() {
+        half_edges.sort_by(|first, second| {
+            let angle = |half_edge: usize| {
+                let edge = half_edge / 2;
+                let [start, end] = edges[edge].1;
+                let (from, to) = if half_edge.is_multiple_of(2) {
+                    (start, end)
+                } else {
+                    (end, start)
+                };
+                (to.v - from.v).atan2(to.u - from.u)
+            };
+            angle(*first)
+                .total_cmp(&angle(*second))
+                .then_with(|| edges[*first / 2].0.id.cmp(&edges[*second / 2].0.id))
+                .then_with(|| first.cmp(second))
+        });
+    }
+
+    let mut next = HashMap::new();
+    for edge in &component {
+        for half_edge in [edge * 2, edge * 2 + 1] {
+            let destination = edge_nodes[*edge][usize::from(half_edge.is_multiple_of(2))];
+            let around = &outgoing[&destination];
+            let twin = half_edge ^ 1;
+            let twin_position = around
+                .iter()
+                .position(|candidate| *candidate == twin)
+                .expect("each line half-edge has a twin at its destination");
+            next.insert(
+                half_edge,
+                around[(twin_position + around.len() - 1) % around.len()],
+            );
+        }
+    }
+
+    let mut profiles = Vec::new();
+    let mut visited = HashSet::new();
+    let mut starts = component
+        .iter()
+        .flat_map(|edge| [edge * 2, edge * 2 + 1])
+        .collect::<Vec<_>>();
+    starts.sort_by_key(|half_edge| (edges[*half_edge / 2].0.id.clone(), half_edge % 2));
+    for start in starts {
+        if visited.contains(&start) {
+            continue;
+        }
+        let mut current = start;
+        let mut profile = Vec::new();
+        let mut twice_area = 0.0;
+        loop {
+            if !visited.insert(current) {
+                if current != start {
+                    profile.clear();
+                }
+                break;
+            }
+            let edge = current / 2;
+            let [stored_start, stored_end] = edges[edge].1;
+            let reversed = !current.is_multiple_of(2);
+            let (from, to) = if reversed {
+                (stored_end, stored_start)
+            } else {
+                (stored_start, stored_end)
+            };
+            twice_area += from.u * to.v - from.v * to.u;
+            profile.push(SketchEntityUse {
+                entity: edges[edge].0.id.clone(),
+                reversed,
+            });
+            current = next[&current];
+        }
+        if !profile.is_empty() && twice_area > 2.0 * linear_tolerance * linear_tolerance {
+            profiles.push(profile);
+        }
+    }
+
+    debug_assert!(component.iter().all(|edge| {
+        edge_nodes[*edge]
+            .iter()
+            .all(|node| adjacency[node].contains(edge))
+    }));
+    profiles
+}
+
+fn sketch_entity_endpoints(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    match &entity.geometry {
+        SketchGeometry::Line { start, end } => Some([*start, *end]),
+        SketchGeometry::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => Some([
+            Point2::new(
+                center.u + radius.0 * start_angle.0.cos(),
+                center.v + radius.0 * start_angle.0.sin(),
+            ),
+            Point2::new(
+                center.u + radius.0 * end_angle.0.cos(),
+                center.v + radius.0 * end_angle.0.sin(),
+            ),
+        ]),
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            start_angle: Some(start_angle),
+            end_angle: Some(end_angle),
+        } => {
+            let point_at = |parameter: f64| {
+                let x = major_radius.0 * parameter.cos();
+                let y = minor_radius.0 * parameter.sin();
+                Point2::new(
+                    center.u + x * major_angle.0.cos() - y * major_angle.0.sin(),
+                    center.v + x * major_angle.0.sin() + y * major_angle.0.cos(),
+                )
+            };
+            Some([point_at(start_angle.0), point_at(end_angle.0)])
+        }
+        SketchGeometry::Nurbs {
+            control_points,
+            periodic: false,
+            ..
+        } => Some([*control_points.first()?, *control_points.last()?]),
+        _ => None,
+    }
+}
+
+fn sketch_endpoints_close(first: Point2, second: Point2, tolerance: f64) -> bool {
+    (first.u - second.u).hypot(first.v - second.v) <= tolerance
+}
+
+fn endpoint_root(parents: &mut [usize], node: usize) -> usize {
+    if parents[node] != node {
+        parents[node] = endpoint_root(parents, parents[node]);
+    }
+    parents[node]
+}
+
+fn union_endpoint_nodes(parents: &mut [usize], first: usize, second: usize) {
+    let first = endpoint_root(parents, first);
+    let second = endpoint_root(parents, second);
+    if first != second {
+        parents[second] = first;
+    }
 }
 
 /// Project each native relation as an exact atomic constraint or an explicitly
@@ -6820,18 +7160,19 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_lost_edge_groups, bind_sketch_graph,
-        companion_owned_interval, decode_fillet_radius_groups, directional_point_dimension,
-        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
-        exact_offset_constraint, find_dimension_locus_groups, find_dimension_locus_pair,
-        identity_matrix, indirect_angular_lines, neutral_sketch_id, next_indexed_record_offset,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations, resolved_face_group, two_locus_distance_dimension,
+        closed_sketch_profiles, companion_owned_interval, decode_fillet_radius_groups,
+        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
+        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, indirect_angular_lines, neutral_sketch_id,
+        next_indexed_record_offset, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, remove_dimension_frame_relations, resolved_face_group,
+        two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -6847,7 +7188,7 @@ mod relation_tests {
     use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition, SketchEntityId, SketchGeometry, SketchId,
+        SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
     };
     use std::collections::{HashMap, HashSet};
 
@@ -7976,6 +8317,93 @@ mod relation_tests {
     }
 
     #[test]
+    fn unbranched_closed_sketch_components_project_as_ordered_profiles() {
+        let sketch = SketchId("f3d:model:sketch#profile".into());
+        let line = |id: &str, start: Point2, end: Point2| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let entities = vec![
+            line("line-a", Point2::new(0.0, 0.0), Point2::new(2.0, 0.0)),
+            line("line-b", Point2::new(2.0, 2.0), Point2::new(2.0, 0.0)),
+            line("line-c", Point2::new(2.0, 2.0), Point2::new(0.0, 2.0)),
+            line(
+                "line-d",
+                Point2::new(0.0, 2.0 + 5.0e-7),
+                Point2::new(0.0, 0.0),
+            ),
+            line("open-line", Point2::new(10.0, 0.0), Point2::new(11.0, 0.0)),
+            SketchEntity {
+                id: SketchEntityId("circle".into()),
+                sketch: sketch.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Circle {
+                    center: Point2::new(20.0, 20.0),
+                    radius: Length(3.0),
+                },
+            },
+        ];
+
+        let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+        assert_eq!(profiles.len(), 2);
+        assert_eq!(profiles[0].len(), 1);
+        assert_eq!(profiles[0][0].entity, SketchEntityId("circle".into()));
+        assert_eq!(
+            profiles[1]
+                .iter()
+                .map(|entity_use| (entity_use.entity.0.as_str(), entity_use.reversed))
+                .collect::<Vec<_>>(),
+            [
+                ("line-a", false),
+                ("line-b", true),
+                ("line-c", false),
+                ("line-d", false),
+            ]
+        );
+    }
+
+    #[test]
+    fn branched_line_graph_projects_each_bounded_face() {
+        let sketch = SketchId("f3d:model:sketch#branched-profile".into());
+        let line = |id: &str, start: (f64, f64), end: (f64, f64)| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(start.0, start.1),
+                end: Point2::new(end.0, end.1),
+            },
+        };
+        let entities = vec![
+            line("bottom-left", (0.0, 0.0), (1.0, 0.0)),
+            line("bottom-right", (1.0, 0.0), (2.0, 0.0)),
+            line("right", (2.0, 0.0), (2.0, 1.0)),
+            line("top-right", (2.0, 1.0), (1.0, 1.0)),
+            line("top-left", (1.0, 1.0), (0.0, 1.0)),
+            line("left", (0.0, 1.0), (0.0, 0.0)),
+            line("divider", (1.0, 0.0), (1.0, 1.0)),
+        ];
+
+        let profiles = closed_sketch_profiles(&sketch, &entities, 1.0e-6);
+        assert_eq!(profiles.len(), 2);
+        assert!(profiles.iter().all(|profile| profile.len() == 4));
+        assert!(profiles.iter().all(|profile| profile
+            .iter()
+            .any(|entity_use| entity_use.entity.0 == "divider")));
+    }
+
+    #[test]
     fn placed_sketch_projects_point_and_line_in_local_coordinates() {
         let placement = DesignSketchPlacement {
             id: "f3d:native:placement#0".into(),
@@ -8030,7 +8458,7 @@ mod relation_tests {
         let placements = vec![placement];
         let points = vec![point];
         let curves = vec![line];
-        let (sketches, entities) = project_sketch_design(&placements, &points, &curves);
+        let (sketches, entities) = project_sketch_design(&placements, &points, &curves, 1.0e-6);
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].origin, Point3::new(10.0, 20.0, 30.0));
         assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
@@ -8727,7 +9155,7 @@ mod relation_tests {
         assert_eq!(relations[0].owner_entity_id, "A_100");
         assert_eq!(relations[1].owner_entity_id, "B_100");
 
-        let (mut sketches, mut entities) = project_sketch_design(&placements, &points, &[]);
+        let (mut sketches, mut entities) = project_sketch_design(&placements, &points, &[], 1.0e-6);
         let mut constraints =
             project_sketch_constraints(&placements, &points, &[], &relations, &entities);
         assert_eq!(sketches.len(), 2);
