@@ -138,6 +138,14 @@ named state rather than being collapsed into one enabled flag. This is a typed t
 complete support-frame composition and the remaining Part and PartDesign operation families are
 still required by the L4 gate.
 
+Revolution and groove operations retain their linked profile, explicit base point and axis,
+one-angle or two-angle extent, and additive or subtractive effect. Fillet operations retain a
+constant radius, and chamfers distinguish equal-distance, two-distance, and distance-angle laws.
+These operation dimensions participate in the same literal/evaluated/expression parameter graph.
+When a dress-up subelement selector has not resolved through persistent topology identity, its
+native `Base` property remains the edge selection; the decoder does not infer an edge from a
+transient label.
+
 ## Presentation and application records
 
 GUI records retain view-provider identity separately from application-object identity. Visibility,

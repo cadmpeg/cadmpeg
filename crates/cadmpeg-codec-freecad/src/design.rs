@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::features::{
-    BooleanOp, DesignParameter, Extent, Feature, FeatureDefinition, FeatureId, FeatureTreeNodeRole,
-    Length, ParameterId, ParameterValue, ProfileRef, SketchSpace,
+    BooleanOp, ChamferSpec, DesignParameter, EdgeSelection, Extent, Feature, FeatureDefinition,
+    FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue, ProfileRef, RadiusSpec,
+    RevolutionAxis, RevolutionConstruction, SketchSpace,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -128,6 +129,36 @@ pub(crate) fn transfer(
                 },
                 draft: None,
             }
+        } else if is_revolution(&object.type_name) {
+            FeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    profile: Some(profile_ref(&owned, &sketch_ids)),
+                    axis: revolution_axis(&owned),
+                    extent: revolution_extent(&owned),
+                },
+                op: if object.type_name.contains("Groove") {
+                    BooleanOp::Cut
+                } else {
+                    BooleanOp::Join
+                },
+            }
+        } else if object.type_name.contains("Fillet") {
+            FeatureDefinition::Fillet {
+                edges: native_edge_selection(&owned),
+                radius: property(&owned, "Radius").and_then(scalar_value).map_or(
+                    RadiusSpec::Unresolved {
+                        form: Some(cadmpeg_ir::features::RadiusForm::Constant),
+                    },
+                    |radius| RadiusSpec::Constant {
+                        radius: Length(radius),
+                    },
+                ),
+            }
+        } else if object.type_name.contains("Chamfer") {
+            FeatureDefinition::Chamfer {
+                edges: native_edge_selection(&owned),
+                spec: chamfer_spec(&owned),
+            }
         } else {
             FeatureDefinition::Native {
                 kind: object.type_name.clone(),
@@ -135,6 +166,7 @@ pub(crate) fn transfer(
                 properties: BTreeMap::new(),
             }
         };
+        append_operation_parameters(&mut ir.model.parameters, object, &owned);
         let outputs = payloads
             .iter()
             .filter(|payload| owned.iter().any(|property| property.id == payload.property))
@@ -173,6 +205,59 @@ pub(crate) fn transfer(
     }
     bind_parameter_dependencies(&mut ir.model.parameters, objects);
     Ok(())
+}
+
+fn append_operation_parameters(
+    parameters: &mut Vec<DesignParameter>,
+    object: &ObjectRecord,
+    properties: &[&PropertyRecord],
+) {
+    const NAMES: &[&str] = &[
+        "Angle", "Angle2", "Radius", "Size", "Size2", "Length", "Length2",
+    ];
+    for property in properties
+        .iter()
+        .copied()
+        .filter(|property| NAMES.contains(&property.name.as_str()))
+    {
+        if parameters.iter().any(|parameter| {
+            parameter.owner == feature_id(object) && parameter.name == property.name
+        }) {
+            continue;
+        }
+        let Some(value) = scalar_value(property) else {
+            continue;
+        };
+        let expression = expression_binding(properties, &property.name);
+        let is_angle = property.type_name.contains("Angle");
+        let mut retained = BTreeMap::new();
+        if let Some((native_ref, _)) = &expression {
+            retained.insert("expression_native_ref".into(), native_ref.clone());
+        }
+        parameters.push(DesignParameter {
+            id: ParameterId(format!(
+                "fcstd:design:parameter#{}:{}",
+                object.name, property.name
+            )),
+            owner: feature_id(object),
+            ordinal: property.order as u32,
+            name: property.name.clone(),
+            expression: expression.map_or_else(
+                || scalar_text(property).unwrap_or_else(|| value.to_string()),
+                |(_, expression)| expression,
+            ),
+            display: None,
+            value: Some(if is_angle {
+                ParameterValue::Angle(cadmpeg_ir::features::Angle(value.to_radians()))
+            } else {
+                ParameterValue::Length(Length(value))
+            }),
+            dependencies: Vec::new(),
+            properties: retained,
+            pmi: None,
+            native_ref: Some(property.id.clone()),
+        });
+    }
 }
 
 struct SketchTransfer {
@@ -818,6 +903,97 @@ fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId
         )
 }
 
+fn revolution_axis(properties: &[&PropertyRecord]) -> Option<RevolutionAxis> {
+    Some(RevolutionAxis {
+        origin: vector_property(properties, "Base").map_or_else(
+            || Point3::new(0.0, 0.0, 0.0),
+            |vector| Point3::new(vector.x, vector.y, vector.z),
+        ),
+        direction: vector_property(properties, "Axis")?,
+    })
+}
+
+fn revolution_extent(properties: &[&PropertyRecord]) -> Option<Extent> {
+    let mode = property(properties, "Type")
+        .and_then(scalar_value)
+        .unwrap_or(0.0) as i64;
+    let first = property(properties, "Angle").and_then(scalar_value)?;
+    if mode == 4 {
+        Some(Extent::TwoSidedAngles {
+            first: cadmpeg_ir::features::Angle(first.to_radians()),
+            second: cadmpeg_ir::features::Angle(
+                property(properties, "Angle2")
+                    .and_then(scalar_value)
+                    .unwrap_or(0.0)
+                    .to_radians(),
+            ),
+        })
+    } else if mode == 0 {
+        Some(Extent::Angle {
+            angle: cadmpeg_ir::features::Angle(first.to_radians()),
+        })
+    } else {
+        None
+    }
+}
+
+fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3> {
+    let value = property(properties, name)?
+        .values
+        .iter()
+        .find(|value| value.attributes.contains_key("x") || value.attributes.contains_key("X"))?;
+    let component = |lower: &str, upper: &str| {
+        value
+            .attributes
+            .get(lower)
+            .or_else(|| value.attributes.get(upper))?
+            .parse::<f64>()
+            .ok()
+    };
+    Some(Vector3::new(
+        component("x", "X")?,
+        component("y", "Y")?,
+        component("z", "Z")?,
+    ))
+}
+
+fn native_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {
+    property(properties, "Base").map_or(EdgeSelection::Unresolved, |property| {
+        EdgeSelection::Native(property.id.clone())
+    })
+}
+
+fn chamfer_spec(properties: &[&PropertyRecord]) -> ChamferSpec {
+    let mode = property(properties, "ChamferType")
+        .and_then(scalar_value)
+        .unwrap_or(-1.0) as i64;
+    let first = property(properties, "Size").and_then(scalar_value);
+    match (mode, first) {
+        (0, Some(distance)) => ChamferSpec::Distance {
+            distance: Length(distance),
+        },
+        (1, Some(first)) => property(properties, "Size2").and_then(scalar_value).map_or(
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::ChamferForm::TwoDistances),
+            },
+            |second| ChamferSpec::TwoDistances {
+                first: Length(first),
+                second: Length(second),
+            },
+        ),
+        (2, Some(distance)) => property(properties, "Angle").and_then(scalar_value).map_or(
+            ChamferSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::ChamferForm::DistanceAngle),
+            },
+            |angle| ChamferSpec::DistanceAngle {
+                distance: Length(distance),
+                angle: cadmpeg_ir::features::Angle(angle.to_radians()),
+            },
+        ),
+        _ => ChamferSpec::Unresolved { form: None },
+    }
+}
+
 fn property<'a>(properties: &'a [&PropertyRecord], name: &str) -> Option<&'a PropertyRecord> {
     properties
         .iter()
@@ -866,9 +1042,22 @@ fn is_extrusion(kind: &str) -> bool {
         || kind.contains("PartDesign::Pocket")
         || kind.contains("Part::Extrusion")
 }
+fn is_revolution(kind: &str) -> bool {
+    kind.contains("PartDesign::Revolution")
+        || kind.contains("PartDesign::Groove")
+        || kind.contains("Part::Revolution")
+}
+fn is_dress_up(kind: &str) -> bool {
+    kind.contains("Fillet") || kind.contains("Chamfer")
+}
 fn is_body(kind: &str) -> bool {
     kind.contains("PartDesign::Body")
 }
 fn is_design_object(kind: &str) -> bool {
-    is_body(kind) || is_sketch(kind) || is_extrusion(kind) || kind.contains("PartDesign::Feature")
+    is_body(kind)
+        || is_sketch(kind)
+        || is_extrusion(kind)
+        || is_revolution(kind)
+        || is_dress_up(kind)
+        || kind.contains("PartDesign::Feature")
 }

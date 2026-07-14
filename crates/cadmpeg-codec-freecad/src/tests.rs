@@ -26,6 +26,86 @@ fn rejects_malformed_sketch_record_counts() {
 }
 
 #[test]
+fn transfers_revolution_fillet_and_chamfer_semantics() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
+ <Object type="PartDesign::Revolution" name="Revolution" id="2"/>
+ <Object type="PartDesign::Fillet" name="Fillet" id="3"/>
+ <Object type="PartDesign::Chamfer" name="Chamfer" id="4"/>
+ <ObjectDeps Name="Revolution"><Dep Name="Sketch"/></ObjectDeps>
+ <ObjectDeps Name="Fillet"><Dep Name="Revolution"/></ObjectDeps>
+ <ObjectDeps Name="Chamfer"><Dep Name="Fillet"/></ObjectDeps>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Sketch"><Properties Count="1"><Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property></Properties></Object>
+ <Object name="Revolution"><Properties Count="5">
+  <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+  <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
+  <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
+  <Property name="Type" type="App::PropertyEnumeration"><Integer value="0"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="180"/></Property>
+ </Properties></Object>
+ <Object name="Fillet"><Properties Count="2">
+  <Property name="Base" type="App::PropertyLinkSub"><Link object="Revolution" sub="Edge1"/></Property>
+  <Property name="Radius" type="App::PropertyLength"><Float value="2"/></Property>
+ </Properties></Object>
+ <Object name="Chamfer"><Properties Count="4">
+  <Property name="Base" type="App::PropertyLinkSub"><Link object="Fillet" sub="Edge2"/></Property>
+  <Property name="ChamferType" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  <Property name="Size" type="App::PropertyLength"><Float value="1.5"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="30"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("core operations");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("feature")
+            .definition
+    };
+    assert!(matches!(
+        definition("Revolution"),
+        cadmpeg_ir::features::FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)),
+                extent: Some(cadmpeg_ir::features::Extent::Angle { angle }),
+                ..
+            },
+            op: cadmpeg_ir::features::BooleanOp::Join
+        } if (angle.0 - std::f64::consts::PI).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("Fillet"),
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+                radius: cadmpeg_ir::features::Length(2.0)
+            },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Chamfer"),
+        cadmpeg_ir::features::FeatureDefinition::Chamfer {
+            spec: cadmpeg_ir::features::ChamferSpec::DistanceAngle {
+                distance: cadmpeg_ir::features::Length(1.5),
+                angle,
+            },
+            ..
+        } if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
+    ));
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
