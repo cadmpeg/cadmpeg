@@ -938,6 +938,18 @@ pub(super) fn unit_scale_radians(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
 ) -> Option<f64> {
+    unit_scale_radians_inner(id, exchange, active, 0)
+}
+
+fn unit_scale_radians_inner(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+) -> Option<f64> {
+    if depth >= 256 {
+        return None;
+    }
     if !active.insert(id) {
         return None;
     }
@@ -950,7 +962,7 @@ pub(super) fn unit_scale_radians(
         let value = record_values(factor).find_map(measure_number)?;
         let base = record_values(factor)
             .find_map(Value::reference)
-            .and_then(|base| unit_scale_radians(base, exchange, active))?;
+            .and_then(|base| unit_scale_radians_inner(base, exchange, active, depth + 1))?;
         Some(value * base)
     } else {
         None
@@ -964,6 +976,18 @@ pub(super) fn unit_scale_mm(
     exchange: &Exchange,
     active: &mut BTreeSet<u64>,
 ) -> Option<f64> {
+    unit_scale_mm_inner(id, exchange, active, 0)
+}
+
+fn unit_scale_mm_inner(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+    depth: usize,
+) -> Option<f64> {
+    if depth >= 256 {
+        return None;
+    }
     if !active.insert(id) {
         return None;
     }
@@ -988,7 +1012,7 @@ pub(super) fn unit_scale_mm(
             .iter()
             .flat_map(|partial| &partial.parameters)
             .find_map(Value::reference)
-            .and_then(|base| unit_scale_mm(base, exchange, active))?;
+            .and_then(|base| unit_scale_mm_inner(base, exchange, active, depth + 1))?;
         Some(value * base)
     } else {
         None

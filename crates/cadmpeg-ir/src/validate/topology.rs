@@ -315,7 +315,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             )),
             _ => None,
         })
-        .collect::<HashMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     let mut complete = HashSet::new();
     let mut active = HashSet::new();
     for curve in composite_segments.keys().copied() {
@@ -2546,7 +2546,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
 
 fn check_composite_cycle<'a>(
     curve: &'a str,
-    segments: &HashMap<&'a str, Vec<&'a str>>,
+    segments: &BTreeMap<&'a str, Vec<&'a str>>,
     active: &mut HashSet<&'a str>,
     complete: &mut HashSet<&'a str>,
     findings: &mut Vec<Finding>,
@@ -2554,24 +2554,32 @@ fn check_composite_cycle<'a>(
     if complete.contains(curve) {
         return;
     }
-    if !active.insert(curve) {
-        findings.push(Finding {
-            check: Check::ReferentialIntegrity,
-            severity: Severity::Error,
-            message: "composite curve graph contains a cycle".into(),
-            entity: Some(curve.into()),
-        });
-        return;
-    }
-    if let Some(children) = segments.get(curve) {
-        for child in children {
-            if segments.contains_key(child) {
-                check_composite_cycle(child, segments, active, complete, findings);
-            }
+    active.insert(curve);
+    let mut stack = vec![(curve, 0usize)];
+    while let Some((node, child_index)) = stack.last_mut() {
+        let children = &segments[*node];
+        if *child_index >= children.len() {
+            let (node, _) = stack.pop().expect("nonempty composite traversal stack");
+            active.remove(node);
+            complete.insert(node);
+            continue;
         }
+        let child = children[*child_index];
+        *child_index += 1;
+        if !segments.contains_key(child) || complete.contains(child) {
+            continue;
+        }
+        if !active.insert(child) {
+            findings.push(Finding {
+                check: Check::ReferentialIntegrity,
+                severity: Severity::Error,
+                message: "composite curve graph contains a cycle".into(),
+                entity: Some(child.into()),
+            });
+            continue;
+        }
+        stack.push((child, 0));
     }
-    active.remove(curve);
-    complete.insert(curve);
 }
 
 pub(super) fn wire_error(findings: &mut Vec<Finding>, id: &str, message: &str) {

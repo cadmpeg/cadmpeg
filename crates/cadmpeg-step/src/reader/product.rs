@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP product prototypes, occurrence identity, and relative placement.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::ids::{BodyId, OccurrenceId, ProductId};
@@ -97,6 +97,7 @@ pub(super) fn decode(
         .collect::<BTreeSet<_>>();
     let mut definition_occurrences = BTreeMap::<u64, Vec<OccurrenceId>>::new();
     let mut occurrence_paths = BTreeMap::<OccurrenceId, BTreeSet<u64>>::new();
+    let mut pending_occurrences = VecDeque::new();
     for (&definition, &product) in &definitions {
         if child_definitions.contains(&definition) {
             continue;
@@ -113,76 +114,85 @@ pub(super) fn decode(
             .entry(definition)
             .or_default()
             .push(id.clone());
-        occurrence_paths.insert(id, BTreeSet::from([definition]));
+        occurrence_paths.insert(id.clone(), BTreeSet::from([definition]));
+        pending_occurrences.push_back((definition, id));
     }
-    let placements = occurrence_placements(exchange, geometry, &usages);
-    let mut expanded = BTreeSet::<(u64, OccurrenceId)>::new();
+    let placements = occurrence_placements(exchange, geometry, &usages, &mut warnings);
     let mut usage_instances = BTreeMap::<u64, usize>::new();
-    const MAX_OCCURRENCES: usize = 100_000;
-    loop {
-        let ready = usages
-            .iter()
-            .flat_map(|(&usage_id, usage)| {
-                definition_occurrences
-                    .get(&usage.parent_definition)
-                    .into_iter()
-                    .flatten()
-                    .cloned()
-                    .map(move |parent| (usage_id, parent))
-            })
-            .find(|pair| !expanded.contains(pair));
-        let Some((usage_id, parent)) = ready else {
-            break;
-        };
-        expanded.insert((usage_id, parent.clone()));
-        let usage = &usages[&usage_id];
-        let Some(&product) = definitions.get(&usage.child_definition) else {
-            warnings.push(format!(
-                "NAUO #{usage_id} references an unresolved child definition"
-            ));
-            continue;
-        };
-        let parent_path = occurrence_paths.get(&parent).cloned().unwrap_or_default();
-        if parent_path.contains(&usage.child_definition) {
-            warnings.push(format!(
-                "NAUO #{usage_id} closes an assembly definition cycle"
-            ));
-            continue;
-        }
-        let instance = usage_instances.entry(usage_id).or_default();
-        *instance += 1;
-        let suffix = if *instance == 1 {
-            String::new()
-        } else {
-            format!("-instance-{instance}")
-        };
-        let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
-        if ir.model.occurrences.len() >= MAX_OCCURRENCES {
-            warnings.push(format!(
-                "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
-            ));
-            break;
-        }
-        ir.model.occurrences.push(ProductOccurrence {
-            id: id.clone(),
-            product: product_ir_id(product),
-            parent: OccurrenceParent::Occurrence { occurrence: parent },
-            transform: placements
-                .get(&usage_id)
-                .copied()
-                .unwrap_or_else(Transform::identity),
-            name: usage.name.clone(),
-        });
-        let mut path = parent_path;
-        path.insert(usage.child_definition);
-        occurrence_paths.insert(id.clone(), path);
-        definition_occurrences
-            .entry(usage.child_definition)
+    let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
+    for (&usage_id, usage) in &usages {
+        usages_by_parent
+            .entry(usage.parent_definition)
             .or_default()
-            .push(id);
-        typed.insert(usage_id);
+            .push(usage_id);
     }
-    if expanded.is_empty() && !usages.is_empty() {
+    const MAX_OCCURRENCES: usize = 100_000;
+    const MAX_ASSEMBLY_DEPTH: usize = 256;
+    let had_roots = !pending_occurrences.is_empty();
+    'expansion: while let Some((parent_definition, parent)) = pending_occurrences.pop_front() {
+        for &usage_id in usages_by_parent
+            .get(&parent_definition)
+            .into_iter()
+            .flatten()
+        {
+            let usage = &usages[&usage_id];
+            let Some(&product) = definitions.get(&usage.child_definition) else {
+                warnings.push(format!(
+                    "NAUO #{usage_id} references an unresolved child definition"
+                ));
+                continue;
+            };
+            let parent_path = occurrence_paths.get(&parent).cloned().unwrap_or_default();
+            if parent_path.len() >= MAX_ASSEMBLY_DEPTH {
+                warnings.push(format!(
+                    "NAUO #{usage_id} exceeds the {MAX_ASSEMBLY_DEPTH}-level assembly depth limit"
+                ));
+                continue;
+            }
+            if parent_path.contains(&usage.child_definition) {
+                warnings.push(format!(
+                    "NAUO #{usage_id} closes an assembly definition cycle"
+                ));
+                continue;
+            }
+            let instance = usage_instances.entry(usage_id).or_default();
+            *instance += 1;
+            let suffix = if *instance == 1 {
+                String::new()
+            } else {
+                format!("-instance-{instance}")
+            };
+            let id = OccurrenceId(format!("step:product:occurrence#{usage_id}{suffix}"));
+            if ir.model.occurrences.len() >= MAX_OCCURRENCES {
+                warnings.push(format!(
+                    "assembly occurrence expansion exceeds the {MAX_OCCURRENCES}-occurrence limit"
+                ));
+                break 'expansion;
+            }
+            ir.model.occurrences.push(ProductOccurrence {
+                id: id.clone(),
+                product: product_ir_id(product),
+                parent: OccurrenceParent::Occurrence {
+                    occurrence: parent.clone(),
+                },
+                transform: placements
+                    .get(&usage_id)
+                    .copied()
+                    .unwrap_or_else(Transform::identity),
+                name: usage.name.clone(),
+            });
+            let mut path = parent_path;
+            path.insert(usage.child_definition);
+            occurrence_paths.insert(id.clone(), path);
+            definition_occurrences
+                .entry(usage.child_definition)
+                .or_default()
+                .push(id.clone());
+            pending_occurrences.push_back((usage.child_definition, id));
+            typed.insert(usage_id);
+        }
+    }
+    if !had_roots && !usages.is_empty() {
         warnings.push("assembly occurrence graph has no resolvable root".into());
     }
     apply_body_placements(exchange, geometry, &usages, ir, &mut warnings);
@@ -422,6 +432,7 @@ fn occurrence_placements(
     exchange: &Exchange,
     geometry: &GeometryResult,
     usages: &BTreeMap<u64, Usage>,
+    warnings: &mut Vec<String>,
 ) -> BTreeMap<u64, Transform> {
     let pds = exchange
         .records
@@ -476,23 +487,35 @@ fn occurrence_placements(
         else {
             continue;
         };
-        let placement = exchange.records.values().find_map(|record| {
-            if record.simple_name() != Some("MAPPED_ITEM") {
-                return None;
-            }
-            let map = record.parameter(1)?.reference()?;
-            let &(origin, mapped_representation) = representation_maps.get(&map)?;
-            if mapped_representation != child_representation {
-                return None;
-            }
-            let target = record.parameter(2)?.reference()?;
-            Some(between(
-                *geometry.placements.get(&origin)?,
-                *geometry.placements.get(&target)?,
-            ))
-        });
-        if let Some(placement) = placement {
-            result.insert(usage_id, placement);
+        let placements = exchange
+            .records
+            .values()
+            .filter_map(|record| {
+                if record.simple_name() != Some("MAPPED_ITEM") {
+                    return None;
+                }
+                let map = record.parameter(1)?.reference()?;
+                let &(origin, mapped_representation) = representation_maps.get(&map)?;
+                if mapped_representation != child_representation {
+                    return None;
+                }
+                let target = record.parameter(2)?.reference()?;
+                Some(between(
+                    *geometry.placements.get(&origin)?,
+                    *geometry.placements.get(&target)?,
+                ))
+            })
+            .collect::<Vec<_>>();
+        let matching_usages = usages
+            .values()
+            .filter(|candidate| candidate.child_definition == usage.child_definition)
+            .count();
+        if matching_usages == 1 && placements.len() == 1 {
+            result.insert(usage_id, placements[0]);
+        } else if !placements.is_empty() {
+            warnings.push(format!(
+                "NAUO #{usage_id} has an ambiguous mapped-item placement"
+            ));
         }
     }
     result

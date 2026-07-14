@@ -451,6 +451,7 @@ struct AnchorResolver<'a> {
 
 impl<'a> AnchorResolver<'a> {
     const MAX_EXPANDED_NODES: usize = 1_000_000;
+    const MAX_REFERENCE_DEPTH: usize = 256;
 
     fn new(anchors: &'a BTreeMap<String, Value>) -> Self {
         Self {
@@ -475,6 +476,12 @@ impl<'a> AnchorResolver<'a> {
         }
         match value {
             Value::Resource(name) if self.anchors.contains_key(name) => {
+                if stack.len() >= Self::MAX_REFERENCE_DEPTH {
+                    return Err(format!(
+                        "anchor reference chain exceeds {} levels",
+                        Self::MAX_REFERENCE_DEPTH
+                    ));
+                }
                 if let Some((value, nodes)) = self.memo.get(name) {
                     if *nodes > budget {
                         return Err("expanded anchor value exceeds 1000000 nodes".into());

@@ -313,14 +313,14 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             continue;
         }
         let mut text_records = BTreeSet::new();
-        let text = find_annotation_text(id, exchange, &mut text_records);
+        let text = find_annotation_text(id, exchange, &mut text_records, 0);
         let mut placement_records = BTreeSet::new();
         let placement = record
             .parameters()
             .iter()
             .flat_map(references)
             .find_map(|reference| {
-                find_placement(reference, exchange, geometry, &mut placement_records)
+                find_placement(reference, exchange, geometry, &mut placement_records, 0)
             });
         let mut semantics = record
             .parameters()
@@ -584,8 +584,9 @@ fn find_annotation_text(
     id: u64,
     exchange: &Exchange,
     visited: &mut BTreeSet<u64>,
+    depth: usize,
 ) -> Option<String> {
-    if !visited.insert(id) {
+    if depth >= 256 || !visited.insert(id) {
         return None;
     }
     let record = exchange.records.get(&id)?;
@@ -599,7 +600,7 @@ fn find_annotation_text(
         .parameters()
         .iter()
         .flat_map(references)
-        .find_map(|reference| find_annotation_text(reference, exchange, visited))
+        .find_map(|reference| find_annotation_text(reference, exchange, visited, depth + 1))
 }
 
 fn find_placement(
@@ -607,7 +608,11 @@ fn find_placement(
     exchange: &Exchange,
     geometry: &GeometryResult,
     visited: &mut BTreeSet<u64>,
+    depth: usize,
 ) -> Option<Transform> {
+    if depth >= 256 {
+        return None;
+    }
     if let Some(&(origin, z_axis, x_axis)) = geometry.placements.get(&id) {
         let y_axis = cadmpeg_ir::math::Vector3::new(
             z_axis.y * x_axis.z - z_axis.z * x_axis.y,
@@ -632,7 +637,7 @@ fn find_placement(
         .parameters()
         .iter()
         .flat_map(references)
-        .find_map(|reference| find_placement(reference, exchange, geometry, visited))
+        .find_map(|reference| find_placement(reference, exchange, geometry, visited, depth + 1))
 }
 
 fn push_annotation(
@@ -847,7 +852,6 @@ fn measure_inner(
                             measure_inner(parameter, exchange, length_scale, angle_scale, active)
                         })
                 });
-            active.remove(id);
             result
         }
         Value::List(values) => values
