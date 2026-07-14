@@ -8447,6 +8447,63 @@ fn decode_binds_following_dissected_profile_to_compact_extrusion() {
 }
 
 #[test]
+fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Sketch Name="Profile" Type="Sketch" id="8"/>
+            <Extrusion Name="Cut" Type="Localized" id="9"/>
+        </Keywords>"#,
+    ));
+    let mut payload = resolved_feature_classes_with_ids(&[("moProfileFeature_c", "Profile", 8)]);
+    payload.extend_from_slice(&0x84c5u16.to_le_bytes());
+    payload.extend_from_slice(&[0x04, 0x80, 0xff, 0xfe, 0xff, 3]);
+    for unit in "Cut".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 4]);
+    payload.extend_from_slice(&[0xca, 1, 2, 0x40]);
+    payload.extend_from_slice(&9u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 4]);
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &payload,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let profile = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Profile"))
+        .unwrap();
+    let extrusion = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Cut"))
+        .unwrap();
+    assert!(matches!(
+        &extrusion.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(native),
+            op: BooleanOp::Cut,
+            ..
+        } if native == profile.native_ref.as_deref().unwrap()
+    ));
+}
+
+#[test]
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ParameterValue};
 

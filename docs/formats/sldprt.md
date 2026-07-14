@@ -143,6 +143,8 @@ A `moCompEdge_c` child carries an ordered compact edge-selection vector. The vec
 
 An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. A compact extrusion without `DissectableChildren` also consumes a `moProfileFeature_c` object immediately following it. The profile feature is an ordered dependency of the extrusion. These adjacency forms are independent of the `DissectableChildren` property used by explicitly linked extrusion objects.
 
+The inline extrusion operation trailer establishes the extrusion object family independently of its class token. This applies when a repeated token is shared by more than one declared extrusion class.
+
 `moSweep_c` produces a solid sweep. Its Boolean operation remains independently unresolved when no operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
 
 A `moCombineBodies_c` object is a body-Boolean feature independently of whether its Keywords element carries `Operation`, `Target`, or `Tools` attributes. An absent attribute leaves that field unresolved.

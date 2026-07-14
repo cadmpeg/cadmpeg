@@ -1904,10 +1904,8 @@ pub(crate) fn bind_extrusion_operations(
         };
         let mut operations = lanes.iter().filter_map(|lane| {
             let name = feature_object_name(history, lane)?;
-            if history.input_class.as_deref() == Some("moICE_c") {
-                if let Some(operation) = feature_inline_operation(lane, name) {
-                    return Some(operation);
-                }
+            if let Some(operation) = feature_inline_operation(lane, name) {
+                return Some(operation);
             }
             match (
                 history.input_class.as_deref(),
@@ -2176,13 +2174,22 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             .collect::<Vec<_>>();
         objects.sort_by_key(|(name, _)| name.offset);
         for pair in objects.windows(2) {
-            let [(_, first), (_, second)] = pair else {
+            let [(first_name, first), (second_name, second)] = pair else {
                 continue;
             };
-            let first_kind =
-                native_object_class(first.input_class.as_deref().unwrap_or_default()).kind;
-            let second_kind =
-                native_object_class(second.input_class.as_deref().unwrap_or_default()).kind;
+            let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
+                let kind =
+                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+                if kind == NativeClassKind::Unknown
+                    && feature_inline_operation(lane, name).is_some()
+                {
+                    NativeClassKind::Extrusion
+                } else {
+                    kind
+                }
+            };
+            let first_kind = object_kind(first_name, first);
+            let second_kind = object_kind(second_name, second);
             let (profile, extrusion) = match (first_kind, second_kind) {
                 (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion) => (*first, *second),
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature) => (*second, *first),
