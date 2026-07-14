@@ -440,10 +440,8 @@ pub enum FeatureDefinition {
     },
     /// Edge fillet.
     Fillet {
-        /// Edges the fillet is applied to.
-        edges: EdgeSelection,
-        /// Fillet radius assignment along the edges.
-        radius: RadiusSpec,
+        /// Ordered edge groups and their radius laws.
+        groups: Vec<FilletGroup>,
     },
     /// Edge chamfer.
     Chamfer {
@@ -1157,6 +1155,18 @@ pub enum RadiusSpec {
         /// Radius samples along the edge chain, in chain-parameter order.
         points: Vec<VariableRadius>,
     },
+}
+
+/// One independently dimensioned group of filleted edges.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct FilletGroup {
+    /// Edges sharing this radius law.
+    pub edges: EdgeSelection,
+    /// Radius assignment along the edges.
+    pub radius: RadiusSpec,
+    /// Dimensionless tangency weight, when specified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tangency_weight: Option<f64>,
 }
 
 /// Structural form of a fillet radius law.

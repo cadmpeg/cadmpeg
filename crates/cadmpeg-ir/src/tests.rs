@@ -2295,25 +2295,28 @@ fn spatial_sketch_cannot_own_planar_geometry() {
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
-        HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction, RibDraft, RibSide,
-        ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
+        FilletGroup, HoleKind, Length, PatternKind, ProfileRef, RadiusSpec, RibConstruction,
+        RibDraft, RibSide, ScaleCenter, ScaleFactors, ThickenSide, VariableRadius,
     };
 
     let definitions = vec![
         FeatureDefinition::Fillet {
-            edges: EdgeSelection::Unresolved,
-            radius: RadiusSpec::Variable {
-                points: vec![
-                    VariableRadius {
-                        parameter: 0.5,
-                        radius: Length(2.0),
-                    },
-                    VariableRadius {
-                        parameter: 0.25,
-                        radius: Length(-1.0),
-                    },
-                ],
-            },
+            groups: vec![FilletGroup {
+                edges: EdgeSelection::Unresolved,
+                radius: RadiusSpec::Variable {
+                    points: vec![
+                        VariableRadius {
+                            parameter: 0.5,
+                            radius: Length(2.0),
+                        },
+                        VariableRadius {
+                            parameter: 0.25,
+                            radius: Length(-1.0),
+                        },
+                    ],
+                },
+                tangency_weight: None,
+            }],
         },
         FeatureDefinition::Rib {
             construction: RibConstruction {

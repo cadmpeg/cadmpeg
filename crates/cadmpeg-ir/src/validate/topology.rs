@@ -1440,23 +1440,27 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "rib geometry is invalid");
                 }
             }
-            FeatureDefinition::Fillet { edges, radius } => {
-                edge_selections.push(edges);
-                let valid = match radius {
-                    RadiusSpec::Unresolved { .. } => true,
-                    RadiusSpec::Constant { radius } => positive_feature_length(*radius),
-                    RadiusSpec::Variable { points } => {
-                        points.len() >= 2
-                            && points.iter().all(|point| {
-                                point.parameter.is_finite()
-                                    && (0.0..=1.0).contains(&point.parameter)
-                                    && positive_feature_length(point.radius)
-                            })
-                            && points
-                                .windows(2)
-                                .all(|pair| pair[0].parameter < pair[1].parameter)
-                    }
-                };
+            FeatureDefinition::Fillet { groups } => {
+                let valid = !groups.is_empty()
+                    && groups.iter().all(|group| {
+                        edge_selections.push(&group.edges);
+                        group.tangency_weight.is_none_or(f64::is_finite)
+                            && match &group.radius {
+                                RadiusSpec::Unresolved { .. } => true,
+                                RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+                                RadiusSpec::Variable { points } => {
+                                    points.len() >= 2
+                                        && points.iter().all(|point| {
+                                            point.parameter.is_finite()
+                                                && (0.0..=1.0).contains(&point.parameter)
+                                                && positive_feature_length(point.radius)
+                                        })
+                                        && points
+                                            .windows(2)
+                                            .all(|pair| pair[0].parameter < pair[1].parameter)
+                                }
+                            }
+                    });
                 if !valid {
                     feature_geometry_error(findings, feature, "fillet radius is invalid");
                 }

@@ -10,7 +10,7 @@ use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
     ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
+    FeatureTreeNodeRole, FilletGroup, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
     ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
     RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
     ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode,
@@ -808,7 +808,12 @@ pub fn bind_topology_selections(
                     resolve_path_ref(path, &edge_ids, &curve_ids);
                 }
             }
-            FeatureDefinition::Fillet { edges, .. } | FeatureDefinition::Chamfer { edges, .. } => {
+            FeatureDefinition::Fillet { groups } => {
+                for group in groups {
+                    resolve_edge_selection(&mut group.edges, &edge_ids);
+                }
+            }
+            FeatureDefinition::Chamfer { edges, .. } => {
                 resolve_edge_selection(edges, &edge_ids);
             }
             FeatureDefinition::Shell { removed_faces, .. } => {
@@ -1678,12 +1683,15 @@ fn project_fillet(feature: &Feature) -> FeatureDefinition {
             )
     };
     FeatureDefinition::Fillet {
-        edges: feature
-            .properties
-            .get("Edges")
-            .cloned()
-            .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
-        radius,
+        groups: vec![FilletGroup {
+            edges: feature
+                .properties
+                .get("Edges")
+                .cloned()
+                .map_or(EdgeSelection::Unresolved, EdgeSelection::Native),
+            radius,
+            tangency_weight: None,
+        }],
     }
 }
 
@@ -4685,7 +4693,21 @@ pub fn sync_neutral_features(
                 );
                 (kind, parameters, properties)
             }
-            FeatureDefinition::Fillet { edges, radius } => {
+            FeatureDefinition::Fillet { groups } => {
+                let [group] = groups.as_slice() else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has multiple fillet radius groups",
+                        feature.id
+                    )));
+                };
+                if group.tangency_weight.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an explicit fillet tangency weight",
+                        feature.id
+                    )));
+                }
+                let edges = &group.edges;
+                let radius = &group.radius;
                 let selection = edge_selection_value(edges);
                 if selection.is_none()
                     && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
