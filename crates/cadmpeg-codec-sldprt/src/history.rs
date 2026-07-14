@@ -3247,7 +3247,18 @@ pub fn prepare_features_for_write(
 fn project_features_with_native_inputs(
     native: &crate::native::SldprtNative,
 ) -> Vec<cadmpeg_ir::features::Feature> {
-    let mut features = project_features(&native.feature_histories);
+    let mut histories = native.feature_histories.clone();
+    crate::resolved_features::enrich_history_parameters(
+        &mut histories,
+        &native.feature_input_lanes,
+        true,
+    );
+    crate::resolved_features::enrich_history_reference_planes(
+        &mut histories,
+        &native.feature_input_lanes,
+    );
+    crate::pmi::enrich_history_parameters(&mut histories, &native.pmi_dimensions);
+    let mut features = project_features(&histories);
     crate::resolved_features::project_compact_body_selections(
         &mut features,
         &native.feature_input_lanes,

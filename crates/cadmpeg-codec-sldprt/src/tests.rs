@@ -13600,6 +13600,57 @@ fn semantic_writer_rejects_conflicting_feature_edits() {
 }
 
 #[test]
+fn semantic_writer_accepts_matching_resolved_feature_edits() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Extrusion Name="Boss-Extrude1" Type="BossExtrude"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x45,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_features_payload(&[0]),
+    ));
+    let mut decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let cadmpeg_ir::features::FeatureDefinition::Extrude { extent, .. } =
+        &mut decoded.ir.model.features[0].definition
+    else {
+        panic!("typed extrusion feature");
+    };
+    *extent = cadmpeg_ir::features::Extent::Blind {
+        length: cadmpeg_ir::features::Length(50.0),
+    };
+    update_sldprt_native(&mut decoded.ir, |native| {
+        native.feature_histories[0].part_name = Some("Edited".into());
+        let scalar = &mut native.feature_input_lanes[0].scalars[0];
+        scalar.value = 0.05;
+        let offset = usize::try_from(scalar.offset).unwrap();
+        native.feature_input_lanes[0].native_payload[offset..offset + 8]
+            .copy_from_slice(&0.05f64.to_le_bytes());
+    });
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        &regenerated.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            extent: cadmpeg_ir::features::Extent::Blind {
+                length: cadmpeg_ir::features::Length(50.0),
+            },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn semantic_writer_patches_resolved_feature_sketch_types() {
     use crate::records::{FeatureInputClassRole, SketchInputKind};
 
