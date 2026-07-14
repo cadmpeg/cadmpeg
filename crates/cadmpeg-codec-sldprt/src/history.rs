@@ -1765,6 +1765,8 @@ fn project_loft(
             .map_or(Some(false), |closed| parse_bool(closed))?,
         solid: true,
         ruled: false,
+        max_degree: None,
+        check_compatibility: None,
     })
 }
 
@@ -6321,8 +6323,10 @@ pub fn sync_neutral_features(
                 closed,
                 solid,
                 ruled,
+                max_degree,
+                check_compatibility,
             } => {
-                if !solid || *ruled {
+                if !solid || *ruled || max_degree.is_some() || check_compatibility.is_some() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported loft result semantics",
                         feature.id

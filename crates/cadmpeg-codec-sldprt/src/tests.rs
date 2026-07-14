@@ -1755,6 +1755,8 @@ fn encoder_writes_source_less_line_sketches() {
             closed: false,
             solid: true,
             ruled: false,
+            max_degree: None,
+            check_compatibility: None,
         },
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {

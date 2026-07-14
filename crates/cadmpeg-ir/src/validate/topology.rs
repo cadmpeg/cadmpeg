@@ -1682,10 +1682,14 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Loft {
                 profiles: values,
                 guides,
+                max_degree,
                 ..
             } => {
                 profiles.extend(values);
                 paths.extend(guides);
+                if max_degree.is_some_and(|value| value == 0) {
+                    feature_geometry_error(findings, feature, "loft maximum degree is invalid");
+                }
             }
             FeatureDefinition::Rib { construction, .. } => {
                 profiles.extend(&construction.profile);

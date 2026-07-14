@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "25");
+    assert_eq!(result.ir.ir_version, "26");
     let feature = |name: &str| {
         &result
             .ir
@@ -943,9 +943,11 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
   <Property name="Transition" type="App::PropertyEnumeration"><Integer value="2"/></Property>
   <Property name="Transformation" type="App::PropertyEnumeration"><Integer value="1"/></Property>
  </Properties></Object>
- <Object name="SurfaceLoft"><Properties Count="2">
+ <Object name="SurfaceLoft"><Properties Count="4">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="false"/></Property>
+  <Property name="MaxDegree" type="App::PropertyInteger"><Integer value="7"/></Property>
+  <Property name="CheckCompatibility" type="App::PropertyBool"><Bool value="false"/></Property>
  </Properties></Object>
  <Object name="SurfaceSweep"><Properties Count="6">
   <Property name="Sections" type="App::PropertyLinkList"><LinkList count="2"><Link value="Section1"/><Link value="Section2"/></LinkList></Property>
@@ -990,6 +992,8 @@ fn transfers_ordered_loft_sections_and_subtractive_pipe_path() {
         cadmpeg_ir::features::FeatureDefinition::Loft {
             solid: false,
             ruled: false,
+            max_degree: Some(7),
+            check_compatibility: Some(false),
             op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
         }

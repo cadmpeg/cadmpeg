@@ -2310,6 +2310,12 @@ fn loft_definition(
     if profiles.len() < 2 {
         return None;
     }
+    let max_degree = if property(properties, "MaxDegree").is_some() {
+        let value = u32::try_from(integer_property(properties, "MaxDegree")?).ok()?;
+        Some((value > 0).then_some(value)?)
+    } else {
+        None
+    };
     Some(FeatureDefinition::Loft {
         profiles,
         guides: Vec::new(),
@@ -2318,6 +2324,12 @@ fn loft_definition(
         solid: kind.starts_with("PartDesign::")
             || bool_property(properties, "Solid").unwrap_or(true),
         ruled: bool_property(properties, "Ruled").unwrap_or(false),
+        max_degree,
+        check_compatibility: if property(properties, "CheckCompatibility").is_some() {
+            Some(bool_property(properties, "CheckCompatibility")?)
+        } else {
+            None
+        },
     })
 }
 

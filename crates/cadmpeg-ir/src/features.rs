@@ -474,6 +474,12 @@ pub enum FeatureDefinition {
         /// Whether adjacent sections are connected by straight ruled spans.
         #[serde(default)]
         ruled: bool,
+        /// Maximum polynomial degree used to interpolate the sections, when constrained.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        max_degree: Option<u32>,
+        /// Whether section topology is checked and adjusted for compatibility, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        check_compatibility: Option<bool>,
     },
     /// Thin rib grown from a profile.
     Rib {

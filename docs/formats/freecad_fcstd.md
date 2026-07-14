@@ -338,7 +338,8 @@ solid results through their persisted solid flag; PartDesign pipes are solid and
 or cut. Cached result shapes remain outputs and do not replace these construction operands.
 
 Lofts additionally retain whether adjacent sections use ruled spans and whether a standalone Part
-loft produces a solid or sheet result. PartDesign lofts are solid and explicitly join or cut;
+loft produces a solid or sheet result. When carried, the interpolation degree limit and section
+compatibility policy remain explicit. PartDesign lofts are solid and explicitly join or cut;
 standalone lofts create a new result body without fabricating a Boolean relationship.
 
 Sweeps retain the primary and additional ordered sections, primary path and tangent-edge
