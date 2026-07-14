@@ -4285,7 +4285,7 @@ fn profile_loci_by_marker(
         .iter()
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
-    let transforms = marker_transforms_by_feature(features, sketch_entities, lanes);
+    let transforms = marker_transform_candidates_by_feature(features, sketch_entities, lanes);
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -4318,7 +4318,7 @@ fn profile_loci_by_marker(
             let Some(loci) = profile_loci.get(sketch) else {
                 continue;
             };
-            let Some(&transform) = transforms.get(feature) else {
+            let Some(transforms) = transforms.get(feature) else {
                 continue;
             };
             let loci_by_point = loci.iter().fold(
@@ -4336,86 +4336,64 @@ fn profile_loci_by_marker(
                     continue;
                 };
                 let point = quantize(Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR), QUANTUM);
-                let Some(translated) = transform.apply(point) else {
-                    continue;
-                };
-                let Some(marker_loci) = loci_by_point.get(&translated) else {
-                    if marker.kind != SketchInputKind::LineOrCircle {
-                        continue;
-                    }
-                    let Some(midpoints) = line_midpoints.get(sketch) else {
-                        continue;
-                    };
-                    let marker_loci = midpoints
-                        .iter()
-                        .filter_map(|(point, locus)| {
-                            (quantize(*point, QUANTUM) == translated).then_some(locus.clone())
-                        })
-                        .collect::<Vec<_>>();
-                    if marker_loci.is_empty() {
-                        continue;
-                    }
-                    let loci = result.entry(marker.id.clone()).or_default();
-                    for locus in marker_loci {
-                        if !loci.contains(&locus) {
-                            loci.push(locus);
-                        }
-                    }
-                    continue;
-                };
-                let mut marker_loci = marker_loci
+                let marker_loci = transforms
                     .iter()
-                    .filter(|locus| {
-                        geometry_by_entity
-                            .get(&locus_entity(locus))
-                            .is_some_and(|geometry| marker_accepts_locus(marker.kind, geometry))
-                    })
-                    .map(|locus| {
+                    .filter_map(|transform| {
+                        let translated = transform.apply(point)?;
+                        let mut marker_loci = loci_by_point
+                            .get(&translated)
+                            .into_iter()
+                            .flatten()
+                            .filter(|locus| {
+                                geometry_by_entity.get(&locus_entity(locus)).is_some_and(
+                                    |geometry| marker_accepts_locus(marker.kind, geometry),
+                                )
+                            })
+                            .map(|locus| {
+                                if matches!(
+                                    marker.kind,
+                                    SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                                ) {
+                                    SketchLocus::Entity(locus_entity(locus))
+                                } else {
+                                    locus.clone()
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        if marker_loci.is_empty() && marker.kind == SketchInputKind::LineOrCircle {
+                            marker_loci.extend(
+                                line_midpoints.get(sketch).into_iter().flatten().filter_map(
+                                    |(point, locus)| {
+                                        (quantize(*point, QUANTUM) == translated)
+                                            .then_some(locus.clone())
+                                    },
+                                ),
+                            );
+                        }
+                        marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+                        marker_loci.dedup();
                         if matches!(
                             marker.kind,
-                            SketchInputKind::LineOrCircle | SketchInputKind::Arc
-                        ) {
-                            SketchLocus::Entity(locus_entity(locus))
-                        } else {
-                            locus.clone()
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        ) && marker_loci.len() > 1
+                        {
+                            marker_loci.truncate(1);
                         }
+                        (!marker_loci.is_empty()).then_some(marker_loci)
                     })
                     .collect::<Vec<_>>();
-                marker_loci.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
-                marker_loci.dedup();
-                if matches!(
-                    marker.kind,
-                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                ) && marker_loci.len() > 1
+                let Some(first) = marker_loci.first() else {
+                    continue;
+                };
+                if marker_loci.len() == transforms.len()
+                    && marker_loci.iter().all(|candidate| candidate == first)
                 {
-                    marker_loci.truncate(1);
-                }
-                let loci = result.entry(marker.id.clone()).or_default();
-                for locus in marker_loci {
-                    if !loci.contains(&locus) {
-                        loci.push(locus);
-                    }
+                    result.insert(marker.id.clone(), first.clone());
                 }
             }
         }
     }
     result
-}
-
-fn marker_transforms_by_feature(
-    features: &[cadmpeg_ir::features::Feature],
-    sketch_entities: &[SketchEntity],
-    lanes: &[FeatureInputLane],
-) -> HashMap<String, MarkerTransform> {
-    marker_transform_candidates_by_feature(features, sketch_entities, lanes)
-        .into_iter()
-        .filter_map(|(feature, candidates)| {
-            let [transform] = candidates.as_slice() else {
-                return None;
-            };
-            Some((feature, *transform))
-        })
-        .collect()
 }
 
 fn marker_transform_candidates_by_feature(
@@ -5848,6 +5826,85 @@ mod profile_join_tests {
                 vec![cadmpeg_ir::sketches::SketchLocus::Entity(entity.clone())]
             );
         }
+    }
+
+    #[test]
+    fn symmetry_invariant_marker_identifies_profile_entity() {
+        let sketch = SketchId("sketch".into());
+        let circle = SketchEntityId("circle".into());
+        let entity = SketchEntity {
+            id: circle.clone(),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(10.0),
+            },
+        };
+        let points = [-10.0, 10.0].map(|u| SketchEntity {
+            id: SketchEntityId(format!("point-{u}")),
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, 0.0),
+            },
+        });
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch),
+            },
+            native_ref: Some("feature-native".into()),
+        };
+        let mut native_payload = vec![0; 54];
+        for offset in [0, 27] {
+            native_payload[offset + 23..offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        }
+        let mut handle = marker("circle-marker", Some([0.0, 0.0]));
+        handle.kind = SketchInputKind::LineOrCircle;
+        let mut point = marker("point-marker", Some([0.01, 0.0]));
+        point.ordinal = 1;
+        point.offset = 27;
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![handle, point],
+        };
+
+        let mut entities = vec![entity];
+        entities.extend(points);
+        let joins = profile_loci_by_marker(&[feature], &entities, &[lane]);
+        assert_eq!(
+            joins["circle-marker"],
+            vec![cadmpeg_ir::sketches::SketchLocus::Entity(circle)]
+        );
     }
 
     #[test]
