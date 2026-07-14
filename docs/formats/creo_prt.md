@@ -346,6 +346,10 @@ to `((head-c0)<<16)|(XX<<8)|YY`.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
 and sense `3` selects the native second endpoint; the selected loci coincide.
+When exactly one `segtab` row owns each referenced external identifier, this
+incidence equates the corresponding stored `pointid` coordinates. A solved
+coordinate on either endpoint therefore supplies the missing coordinate on the
+other endpoint; conflicting solved coordinates remain distinct.
 For an arc or circle operand, sense `4` selects its center. A type-14 incidence
 stores a symmetry axis as a sense-zero line followed by two point loci selected
 with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero entity

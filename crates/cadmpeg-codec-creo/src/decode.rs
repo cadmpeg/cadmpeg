@@ -1285,6 +1285,21 @@ pub(crate) fn resolved_section_points(
         .flat_map(|table| &table.rows)
         .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
         .collect::<Vec<_>>();
+    let coincident_endpoint_pairs = definition
+        .relations
+        .iter()
+        .flat_map(|table| &table.skamps)
+        .filter(|skamp| skamp.kind == 0)
+        .filter_map(|skamp| {
+            let [first, second] = skamp.items.as_slice() else {
+                return None;
+            };
+            Some([
+                section_skamp_endpoint_point_id(definition, first)?,
+                section_skamp_endpoint_point_id(definition, second)?,
+            ])
+        })
+        .collect::<Vec<_>>();
     let signed_dimensions = definition
         .relations
         .iter()
@@ -1368,6 +1383,23 @@ pub(crate) fn resolved_section_points(
                 _ => {}
             }
         }
+        for &[first_id, second_id] in &coincident_endpoint_pairs {
+            let [first, second] =
+                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
+            for coordinate in 0..2 {
+                match [first[coordinate], second[coordinate]] {
+                    [Some(value), None] => {
+                        points.entry(second_id).or_insert([None, None])[coordinate] = Some(value);
+                        changed = true;
+                    }
+                    [None, Some(value)] => {
+                        points.entry(first_id).or_insert([None, None])[coordinate] = Some(value);
+                        changed = true;
+                    }
+                    _ => {}
+                }
+            }
+        }
         if !changed {
             break;
         }
@@ -1376,6 +1408,26 @@ pub(crate) fn resolved_section_points(
         .into_iter()
         .filter_map(|(id, [u, v])| Some((id, [u?, v?])))
         .collect()
+}
+
+fn section_skamp_endpoint_point_id(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<u32> {
+    let segments = definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .filter(|segment| segment.external_id == item.entity_id)
+        .collect::<Vec<_>>();
+    let [segment] = segments.as_slice() else {
+        return None;
+    };
+    match item.sense {
+        2 => Some(segment.point_ids[0]),
+        3 => Some(segment.point_ids[1]),
+        _ => None,
+    }
 }
 
 pub(crate) fn resolved_section_radii(
@@ -8499,6 +8551,50 @@ mod resolved_sketch_tests {
                     native_ref: Some("creo:featdefs:sketch#917".to_string()),
                 }],
             }
+        );
+        let mut coincident_definition = definition.clone();
+        coincident_definition.variables = Some(crate::feature::FeatureVariableTable {
+            declared_count: 2,
+            entity_ref: None,
+            rows: Vec::new(),
+            points: vec![
+                crate::feature::FeatureSectionPoint {
+                    point_id: 2,
+                    u: Some(3.0),
+                    v: Some(4.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 5,
+                    u: None,
+                    v: None,
+                },
+            ],
+            offset: 0,
+        });
+        coincident_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 17,
+            kind: 0,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 3,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 15,
+                    sense: 2,
+                },
+            ],
+            offset: 83,
+        }];
+        assert_eq!(
+            resolved_section_points(&coincident_definition).get(&5),
+            Some(&[3.0, 4.0])
         );
         let mut saved_definition = definition;
         saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
