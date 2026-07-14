@@ -1678,7 +1678,7 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
             let Some(header) = crate::om::datum_plane_payload_header(record) else {
                 continue;
             };
-            let single = crate::om::datum_plane_single_reference_branch(record);
+            let single = crate::om::datum_plane_descriptor_reference_branch(record);
             let double = crate::om::datum_plane_double_reference_branch(record);
             let descriptor_indices = single
                 .iter()

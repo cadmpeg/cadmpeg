@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 84);
+    assert_eq!(namespace.version, 85);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1415,6 +1415,24 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         count_three.references.map(|reference| reference.offset),
         [110, 118]
     );
+
+    let descriptor_count_three_payload = [
+        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x28, 0x01, 0x02, 0x80, 0x4d, 0x01, 0x29, 0x01,
+        0x02, 0xf1, 0x02, 0xd1, 0x01, 0x01, 0x07, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff,
+        0xff, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d,
+    ];
+    let descriptor_count_three =
+        crate::om::datum_plane_descriptor_reference_branch(crate::om::OperationRecord {
+            bytes: &descriptor_count_three_payload,
+            payload: &descriptor_count_three_payload,
+            ..record
+        })
+        .unwrap();
+    assert_eq!(descriptor_count_three.descriptor_index, 77);
+    assert_eq!(descriptor_count_three.descriptor_offset, 110);
+    assert_eq!(descriptor_count_three.object_index, 721);
+    assert_eq!(descriptor_count_three.object_offset, 116);
 }
 
 #[test]
@@ -5210,7 +5228,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 84);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 85);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

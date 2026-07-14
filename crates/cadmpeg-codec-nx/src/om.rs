@@ -1625,6 +1625,44 @@ pub fn datum_plane_single_reference_branch(
     })
 }
 
+/// Decode any datum-plane branch carrying one descriptor and one object reference.
+pub fn datum_plane_descriptor_reference_branch(
+    record: OperationRecord<'_>,
+) -> Option<DatumPlaneSingleReferenceBranch> {
+    const SEPARATOR: [u8; 4] = [0x01, 0x29, 0x01, 0x02];
+    const SUFFIX: [u8; 35] = [
+        0x01, 0x01, 0x07, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x0d,
+    ];
+    if let Some(branch) = datum_plane_single_reference_branch(record) {
+        return Some(branch);
+    }
+    let header = datum_plane_payload_header(record)?;
+    if header.declared_count != 3 || header.branch_tag != 0x28 {
+        return None;
+    }
+    let mut at = 10;
+    let descriptor_offset = record.payload_offset + at;
+    let (CompactIndex::Value(descriptor_index), width) = compact_index(record.payload.get(at..)?)?
+    else {
+        return None;
+    };
+    at += width;
+    (record.payload.get(at..at + SEPARATOR.len()) == Some(&SEPARATOR)).then_some(())?;
+    at += SEPARATOR.len();
+    let object_offset = record.payload_offset + at;
+    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    at += width;
+    (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+    Some(DatumPlaneSingleReferenceBranch {
+        descriptor_index,
+        descriptor_offset,
+        object_index,
+        object_offset,
+    })
+}
+
 /// Decode either exact tag-`29` two-reference branch form.
 pub fn datum_plane_double_reference_branch(
     record: OperationRecord<'_>,
