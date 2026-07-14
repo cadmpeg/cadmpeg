@@ -16,6 +16,17 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
+fn summary_preview_segment() -> Vec<u8> {
+    let mut bytes = b"FINJPL  \x01\x01\x00\x03CATSummaryInformation\0".to_vec();
+    bytes.extend_from_slice(&[
+        0xff, 0xd8, // SOI
+        0xff, 0xc0, 0x00, 0x0b, 8, 0x01, 0x20, 0x02, 0x80, 1, 1, 0x11, 0, 0xff, 0xda, 0x00, 0x08,
+        1, 1, 0, 0, 0x3f, 0, 0x11, 0x22, 0xff, 0x00, 0x33, 0xff, 0xd9, // EOI
+    ]);
+    bytes.extend_from_slice(b"summary-tail");
+    bytes
+}
+
 fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     let mut entity_count = 0;
     macro_rules! check {
@@ -1767,6 +1778,44 @@ fn detect_high_on_outer_magic() {
     assert_eq!(CatiaCodec.detect(OUTER_MAGIC), Confidence::High);
     assert_eq!(CatiaCodec.detect(&standard_catpart()), Confidence::High);
     assert_eq!(CatiaCodec.detect(b"PK\x03\x04 not catia"), Confidence::No);
+}
+
+#[test]
+fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
+    let bytes = summary_preview_segment();
+    let previews = crate::container::preview_images(&bytes);
+    assert_eq!(previews.len(), 1);
+    assert_eq!(previews[0].width, 640);
+    assert_eq!(previews[0].height, 288);
+    assert_eq!(previews[0].components, 1);
+    assert_eq!(&bytes[previews[0].range.clone()][..2], [0xff, 0xd8]);
+    assert_eq!(
+        &bytes[previews[0].range.clone()][previews[0].range.len() - 2..],
+        [0xff, 0xd9]
+    );
+
+    let mut truncated = bytes;
+    let eoi = truncated
+        .windows(2)
+        .position(|value| value == [0xff, 0xd9])
+        .unwrap();
+    truncated.truncate(eoi + 1);
+    assert!(crate::container::preview_images(&truncated).is_empty());
+}
+
+#[test]
+fn native_namespace_retains_summary_preview_bytes() {
+    let bytes = summary_preview_segment();
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.preview_images.len(), 1);
+    let preview = &native.preview_images[0];
+    assert_eq!(
+        (preview.width, preview.height, preview.components),
+        (640, 288, 1)
+    );
+    assert_eq!(preview.data.len() as u64, preview.byte_len);
+    assert_eq!(&preview.data[..2], [0xff, 0xd8]);
+    assert_eq!(&preview.data[preview.data.len() - 2..], [0xff, 0xd9]);
 }
 
 #[test]

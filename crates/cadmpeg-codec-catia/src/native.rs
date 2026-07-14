@@ -5,11 +5,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::catalog;
+use crate::container;
 use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubtype};
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 4;
+pub const CATIA_NATIVE_VERSION: u32 = 5;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -17,8 +18,30 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "catalogs",
     "object_graph_records",
     "object_graphs",
+    "preview_images",
     "value_blocks",
 ];
+
+/// One exact JPEG preview from the outer summary-information segment.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaPreviewImage {
+    /// Globally unique preview identity.
+    pub id: String,
+    /// JPEG SOI byte offset in the complete file.
+    pub byte_offset: u64,
+    /// Exact encoded length through JPEG EOI.
+    pub byte_len: u64,
+    /// Pixel width from the JPEG start-of-frame segment.
+    pub width: u16,
+    /// Pixel height from the JPEG start-of-frame segment.
+    pub height: u16,
+    /// JPEG component count.
+    pub components: u8,
+    /// Exact JPEG byte stream.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub data: Vec<u8>,
+}
 
 /// One exact outer `01 00 04 00` alias-row core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -162,6 +185,9 @@ pub struct CatiaNative {
     /// Outer ownership graphs.
     #[serde(default)]
     pub object_graphs: Vec<CatiaObjectGraph>,
+    /// Exact JPEG previews extracted from summary-information records.
+    #[serde(default)]
+    pub preview_images: Vec<CatiaPreviewImage>,
     /// Framed value blocks adjacent to source-schema catalogs.
     #[serde(default)]
     pub value_blocks: Vec<CatiaValueBlock>,
@@ -174,6 +200,7 @@ impl Default for CatiaNative {
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
             object_graphs: Vec::new(),
+            preview_images: Vec::new(),
             value_blocks: Vec::new(),
         }
     }
@@ -219,11 +246,25 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaValueBlock::from)
             .collect();
+        let preview_images = container::preview_images(bytes)
+            .into_iter()
+            .enumerate()
+            .map(|(index, preview)| CatiaPreviewImage {
+                id: format!("catia:outer:preview#{index}"),
+                byte_offset: preview.range.start as u64,
+                byte_len: (preview.range.end - preview.range.start) as u64,
+                width: preview.width,
+                height: preview.height,
+                components: preview.components,
+                data: bytes[preview.range].to_vec(),
+            })
+            .collect();
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
             object_graphs,
+            preview_images,
             value_blocks,
         }
     }
@@ -253,12 +294,19 @@ impl CatiaNative {
             graph.records.sort_by_key(|record| record.ordinal);
         }
         let value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
+        let preview_images: Vec<CatiaPreviewImage> =
+            if namespace.arenas.contains_key("preview_images") {
+                namespace.arena_as("preview_images")?
+            } else {
+                Vec::new()
+            };
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
         Ok(Self {
             version: namespace.version,
             alias_rows,
             catalogs,
             object_graphs: graphs,
+            preview_images,
             value_blocks,
         })
     }
@@ -302,6 +350,7 @@ impl CatiaNative {
         namespace.set_arena("catalog_entries", &entries)?;
         namespace.set_arena("object_graphs", &graphs)?;
         namespace.set_arena("object_graph_records", &records)?;
+        namespace.set_arena("preview_images", &self.preview_images)?;
         namespace.set_arena("value_blocks", &self.value_blocks)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()

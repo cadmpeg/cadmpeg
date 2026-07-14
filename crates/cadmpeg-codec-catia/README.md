@@ -62,7 +62,7 @@ when only source metadata and container diagnostics are needed.
 
 The crate reads parts only. It does not write `.CATPart` files or decode
 assemblies, design history, tessellation, appearances, materials, persistent
-object tags, or general document metadata. The [format support matrix][support]
+object tags, or general document metadata beyond the embedded JPEG preview. The [format support matrix][support]
 tracks coverage by model layer.
 
 ## Reference

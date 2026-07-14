@@ -49,6 +49,19 @@ pub struct FinjplSegment {
     pub kind: FinjplKind,
 }
 
+/// One complete JPEG preview embedded in a summary-information segment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreviewImage {
+    /// Exact file range from JPEG SOI through EOI.
+    pub range: Range<usize>,
+    /// Pixel width from the JPEG start-of-frame segment.
+    pub width: u16,
+    /// Pixel height from the JPEG start-of-frame segment.
+    pub height: u16,
+    /// Component count from the JPEG start-of-frame segment.
+    pub components: u8,
+}
+
 /// Split FINJPL segments within a bounded outer-body range.
 #[must_use]
 pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<FinjplSegment> {
@@ -80,6 +93,85 @@ pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<F
             })
         })
         .collect()
+}
+
+/// Extract length-closed JPEG previews from `CATSummaryInformation` FINJPL
+/// segments. JPEG marker framing supplies both dimensions and the exact image
+/// boundary; incidental JPEG signatures outside this segment family are ignored.
+#[must_use]
+pub fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
+    finjpl_segments(data, 0, data.len())
+        .into_iter()
+        .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
+        .filter_map(|segment| {
+            let bytes = &data[segment.range.clone()];
+            let relative_start = bytes
+                .windows(3)
+                .position(|value| value == [0xff, 0xd8, 0xff])?;
+            let (relative_end, width, height, components) = jpeg_extent(bytes, relative_start)?;
+            Some(PreviewImage {
+                range: segment.range.start + relative_start..segment.range.start + relative_end,
+                width,
+                height,
+                components,
+            })
+        })
+        .collect()
+}
+
+fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
+    if data.get(start..start + 2) != Some(&[0xff, 0xd8]) {
+        return None;
+    }
+    let mut at = start + 2;
+    let mut frame = None;
+    let mut in_entropy = false;
+    while at + 1 < data.len() {
+        if data[at] != 0xff {
+            if in_entropy {
+                at += 1;
+                continue;
+            }
+            return None;
+        }
+        while data.get(at) == Some(&0xff) {
+            at += 1;
+        }
+        let marker = *data.get(at)?;
+        at += 1;
+        if in_entropy && marker == 0x00 {
+            continue;
+        }
+        if marker == 0xd9 {
+            let (width, height, components) = frame?;
+            return Some((at, width, height, components));
+        }
+        if matches!(marker, 0x01 | 0xd0..=0xd8) {
+            continue;
+        }
+        let length = usize::from(u16::from_be_bytes([*data.get(at)?, *data.get(at + 1)?]));
+        if length < 2 {
+            return None;
+        }
+        let payload = at + 2;
+        let end = at.checked_add(length)?;
+        if end > data.len() {
+            return None;
+        }
+        if matches!(marker, 0xc0..=0xc3 | 0xc5..=0xc7 | 0xc9..=0xcb | 0xcd..=0xcf) {
+            if length < 8 {
+                return None;
+            }
+            frame = Some((
+                u16::from_be_bytes([data[payload + 3], data[payload + 4]]),
+                u16::from_be_bytes([data[payload + 1], data[payload + 2]]),
+                data[payload + 5],
+            ));
+        }
+        in_entropy = marker == 0xda;
+        at = end;
+    }
+    None
 }
 
 /// Locate the coherent E5 record stream in the outer-body preamble or a FINJPL segment.
@@ -158,6 +250,8 @@ const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 pub mod role {
     /// A named logical stream catalogued by the inner directory.
     pub const STREAM: &str = "stream";
+    /// JPEG preview embedded in the outer summary-information segment.
+    pub const PREVIEW: &str = "preview";
 }
 
 /// One physical extent of a logical stream. `phys_off` is measured from the inner
@@ -229,6 +323,8 @@ pub struct ContainerScan {
     pub inner: Option<InnerDir>,
     /// Reconstructed BREP stream (largest `MainDataStream` + `SurfacicReps`).
     pub brep: Option<Vec<u8>>,
+    /// Exact JPEG previews extracted from summary-information framing.
+    pub previews: Vec<PreviewImage>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
@@ -500,6 +596,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
 
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
+    let previews = preview_images(&data);
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
@@ -525,6 +622,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         outer_dir_length,
         inner,
         brep,
+        previews,
         census,
         variant,
     }
@@ -554,6 +652,21 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
                 attributes,
             });
         }
+    }
+    for (index, preview) in scan.previews.iter().enumerate() {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("file_offset".to_string(), preview.range.start.to_string());
+        attributes.insert("width".to_string(), preview.width.to_string());
+        attributes.insert("height".to_string(), preview.height.to_string());
+        attributes.insert("components".to_string(), preview.components.to_string());
+        entries.push(ContainerEntry {
+            name: format!("CATPreview#{index}"),
+            role: role::PREVIEW.to_string(),
+            compression: "jpeg".to_string(),
+            compressed_size: (preview.range.end - preview.range.start) as u64,
+            uncompressed_size: 0,
+            attributes,
+        });
     }
 
     let mut notes = vec![format!(

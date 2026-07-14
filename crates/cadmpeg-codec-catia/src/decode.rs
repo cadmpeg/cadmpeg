@@ -3573,6 +3573,18 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             scan.census.vertex_markers.to_string(),
         );
     }
+    attributes.insert("preview_count".to_string(), scan.previews.len().to_string());
+    for (index, preview) in scan.previews.iter().enumerate() {
+        attributes.insert(format!("preview_{index}_width"), preview.width.to_string());
+        attributes.insert(
+            format!("preview_{index}_height"),
+            preview.height.to_string(),
+        );
+        attributes.insert(
+            format!("preview_{index}_components"),
+            preview.components.to_string(),
+        );
+    }
     SourceMeta {
         format: "catia".to_string(),
         attributes,
