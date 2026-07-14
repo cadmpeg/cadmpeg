@@ -167,7 +167,7 @@ pub fn surface(e: &mut Emitter, g: &SurfaceGeometry) -> Ref {
                 "TOROIDAL_SURFACE",
                 &format!(
                     "'',{pl},{},{}",
-                    real(*major_radius),
+                    real(major_radius.abs()),
                     real(minor_radius.abs())
                 ),
             )

@@ -645,6 +645,10 @@ fn procedural_step_geometry_round_trips_as_native_entities() {
     assert!(!report.losses.iter().any(|loss| loss
         .message
         .contains("reduced to their solved STEP carriers")));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("normalized to positive STEP radii")));
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())

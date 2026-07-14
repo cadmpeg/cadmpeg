@@ -2244,7 +2244,19 @@ impl<'a> Builder<'a> {
                     major_radius,
                     minor_radius,
                     ..
-                } => *minor_radius < 0.0 || minor_radius.abs() > major_radius.abs(),
+                } => {
+                    *major_radius < 0.0
+                        || *minor_radius < 0.0
+                        || (minor_radius.abs() > major_radius.abs()
+                            && !self.ir.model.procedural_surfaces.iter().any(|procedural| {
+                                procedural.surface == surface.id
+                                    && self.written_procedural_surfaces.contains(&procedural.id.0)
+                                    && matches!(
+                                        procedural.definition,
+                                        ProceduralSurfaceDefinition::DegenerateTorus { .. }
+                                    )
+                            }))
+                }
                 _ => false,
             })
             .count();
