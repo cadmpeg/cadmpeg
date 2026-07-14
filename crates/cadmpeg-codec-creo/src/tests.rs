@@ -864,6 +864,22 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         parameters["generated_entity.9.source_section_entity_id"],
         "2"
     );
+    let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_entity_tables"];
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].fields["owner_feature_id"], 4);
+    assert_eq!(tables[0].fields["entry_ids"][0], 7);
+    assert_eq!(tables[0].fields["entry_ids"][1], 9);
+    assert_eq!(tables[0].fields["entries"][0]["class_id"], 200);
+    assert_eq!(tables[0].fields["entries"][0]["source_entity_id"], 1);
+    assert_eq!(tables[0].fields["entries"][1]["prefixed"], true);
+    assert_annotation(
+        &result.ir,
+        &tables[0].id,
+        "creo:AllFeatur",
+        table.offset as u64,
+        "feature_entity_table",
+        Exactness::ByteExact,
+    );
 }
 
 #[test]
@@ -1193,7 +1209,8 @@ fn decode_types_schema_datum_from_its_unique_plane_carrier() {
 #[test]
 fn scan_resolves_allfeatur_walker_order_entity_references() {
     let allfeatur = b"\xe0\x22first\0\xf7\x01\xe3\xe0\x24second\0\xf7\x00\xe3".to_vec();
-    let scan = container::scan_bytes(build_prt("c", &[("AllFeatur", allfeatur)]));
+    let data = build_prt("c", &[("AllFeatur", allfeatur)]);
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_entities.len(), 2);
     assert_eq!(scan.feature_entities[0].entity_id, 0);
@@ -1205,6 +1222,30 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert!(scan.feature_entity_references[0].target_resolved);
     assert_eq!(scan.feature_entity_references[1].source_entity_id, Some(1));
     assert_eq!(scan.feature_entity_references[1].target_entity_id, 0);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let namespace = result.ir.native.namespace("creo").expect("creo namespace");
+    let entities = &namespace.arenas["feature_entities"];
+    assert_eq!(entities.len(), 2);
+    assert_eq!(entities[0].id, "creo:allfeatur:entity#0");
+    assert_eq!(entities[0].fields["type_byte"], 0x22);
+    assert_eq!(entities[0].fields["name"], "first");
+    let references = &namespace.arenas["feature_entity_references"];
+    assert_eq!(references.len(), 2);
+    let forward = references
+        .iter()
+        .find(|reference| reference.fields["target_entity_id"] == 1)
+        .expect("forward reference");
+    assert_eq!(forward.fields["source_entity_id"], 0);
+    assert_eq!(forward.fields["target_resolved"], true);
+    assert_annotation(
+        &result.ir,
+        &entities[0].id,
+        "creo:AllFeatur",
+        scan.feature_entities[0].offset as u64,
+        "feature_entity",
+        Exactness::ByteExact,
+    );
 }
 
 #[test]

@@ -261,6 +261,97 @@ struct CreoFamilyTableRecord {
 }
 
 #[derive(Serialize)]
+struct CreoFeatureEntityRecord {
+    id: String,
+    entity_id: u32,
+    type_byte: u8,
+    name: String,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureEntityReferenceRecord {
+    id: String,
+    source_entity_id: Option<u32>,
+    target_entity_id: u32,
+    target_resolved: bool,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureEntityTableRecord {
+    id: String,
+    owner_feature_id: Option<u32>,
+    entry_ids: Vec<u32>,
+    entries: Vec<CreoFeatureEntityTableEntryRecord>,
+    surface_ids: Vec<u32>,
+    non_surface_entity_ids: Vec<u32>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoFeatureEntityTableEntryRecord {
+    entity_id: u32,
+    class_id: u32,
+    source_entity_id: Option<u32>,
+    prefixed: bool,
+    offset: usize,
+    end_offset: usize,
+}
+
+fn feature_entity_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityRecord> {
+    scan.feature_entities
+        .iter()
+        .map(|entity| CreoFeatureEntityRecord {
+            id: format!("creo:allfeatur:entity#{}", entity.entity_id),
+            entity_id: entity.entity_id,
+            type_byte: entity.type_byte,
+            name: entity.name.clone(),
+            offset: entity.offset,
+        })
+        .collect()
+}
+
+fn feature_entity_reference_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityReferenceRecord> {
+    scan.feature_entity_references
+        .iter()
+        .map(|reference| CreoFeatureEntityReferenceRecord {
+            id: format!("creo:allfeatur:entity_reference#{}", reference.offset),
+            source_entity_id: reference.source_entity_id,
+            target_entity_id: reference.target_entity_id,
+            target_resolved: reference.target_resolved,
+            offset: reference.offset,
+        })
+        .collect()
+}
+
+fn feature_entity_table_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityTableRecord> {
+    scan.feature_entity_tables
+        .iter()
+        .map(|table| CreoFeatureEntityTableRecord {
+            id: format!("creo:allfeatur:entity_table#{}", table.offset),
+            owner_feature_id: table.feature_id,
+            entry_ids: table.entry_ids.clone(),
+            entries: table
+                .entries
+                .iter()
+                .map(|entry| CreoFeatureEntityTableEntryRecord {
+                    entity_id: entry.entity_id,
+                    class_id: entry.class_id,
+                    source_entity_id: entry.source_entity_id,
+                    prefixed: entry.prefixed,
+                    offset: entry.offset,
+                    end_offset: entry.end_offset,
+                })
+                .collect(),
+            surface_ids: table.surface_ids.clone(),
+            non_surface_entity_ids: table.non_surface_entity_ids.clone(),
+            offset: table.offset,
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
 struct CreoSurfaceParameterRecord {
     id: String,
     surface_id: u32,
@@ -14121,6 +14212,54 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("feature_definitions", &feature_definitions)?;
+    }
+    let feature_entities = feature_entity_records(scan);
+    if !feature_entities.is_empty() {
+        for entity in &feature_entities {
+            annotate(
+                &mut annotations,
+                &entity.id,
+                "AllFeatur",
+                entity.offset as u64,
+                "feature_entity",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_entities", &feature_entities)?;
+    }
+    let feature_entity_references = feature_entity_reference_records(scan);
+    if !feature_entity_references.is_empty() {
+        for reference in &feature_entity_references {
+            annotate(
+                &mut annotations,
+                &reference.id,
+                "AllFeatur",
+                reference.offset as u64,
+                "feature_entity_reference",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_entity_references", &feature_entity_references)?;
+    }
+    let feature_entity_tables = feature_entity_table_records(scan);
+    if !feature_entity_tables.is_empty() {
+        for table in &feature_entity_tables {
+            annotate(
+                &mut annotations,
+                &table.id,
+                "AllFeatur",
+                table.offset as u64,
+                "feature_entity_table",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_entity_tables", &feature_entity_tables)?;
     }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {

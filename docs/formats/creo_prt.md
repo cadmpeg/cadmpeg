@@ -720,6 +720,12 @@ Evaluating one closed linear-sweep profile produces one side face per oriented p
 
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. Each declared entry has an optional `f7 1e` prefix, a canonical entity-reference identifier, a compact entry class, a positional body, and an `e3` close within the bounded feature row. A class `200` entry carries its source section entity's external identifier immediately after the class when that lane is populated; a structural marker in that position leaves the source absent. The record close follows these typed compact lanes; an `e3` byte can be the low byte of their canonical two-byte form. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
+Named records in `AllFeatur` form one implicit entity table in walker order.
+The zero-based walker ordinal is the entity identifier used by `f7` references.
+Each reference retains its containing source entity, target entity, and target
+resolution state. These walker identifiers are not sketch external identifiers
+and do not directly select `segtab` or saved-section entities.
+
 `strong_parents` is the ordered set of earlier modeling features consumed to
 regenerate the owning feature. It is a dependency relation, not feature-tree
 containment.
