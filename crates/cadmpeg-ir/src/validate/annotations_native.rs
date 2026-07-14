@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::features::{DesignConfiguration, DesignParameter};
+use crate::products::{Component, Occurrence};
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;

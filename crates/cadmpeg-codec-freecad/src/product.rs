@@ -5,6 +5,9 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::native::{ObjectRecord, ProductNodeRecord, PropertyRecord};
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::products::{
+    Component, ComponentId, ComponentKind, ComponentReference, Occurrence, OccurrenceId,
+};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -56,6 +59,234 @@ pub(crate) fn transfer(
         });
     }
     Ok(output)
+}
+
+/// Project the lossless native product records into reusable definitions and placed uses.
+pub(crate) fn transfer_neutral(
+    records: &[ProductNodeRecord],
+) -> Result<(Vec<Component>, Vec<Occurrence>), CodecError> {
+    let mut component_objects = records
+        .iter()
+        .filter(|record| record.kind != "occurrence")
+        .map(|record| record.object.clone())
+        .collect::<Vec<_>>();
+    let occurrence_objects = records
+        .iter()
+        .filter(|record| record.kind == "occurrence")
+        .map(|record| record.object.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    for record in records {
+        component_objects.extend(
+            record
+                .members
+                .iter()
+                .filter(|member| !occurrence_objects.contains(member.as_str()))
+                .cloned(),
+        );
+        if record.external_document.is_none() {
+            component_objects.extend(record.prototype.iter().cloned());
+        }
+    }
+    component_objects.sort();
+    component_objects.dedup();
+
+    let component_id =
+        |object: &str| ComponentId(crate::native::model_id("component", object, "definition"));
+    let occurrence_records = records
+        .iter()
+        .filter(|record| record.kind == "occurrence")
+        .map(|record| (record.object.as_str(), record))
+        .collect::<HashMap<_, _>>();
+    let mut parent_by_object = HashMap::<&str, &str>::new();
+    for record in records.iter().filter(|record| record.kind != "occurrence") {
+        for member in &record.members {
+            if occurrence_objects.contains(member.as_str())
+                && parent_by_object.insert(member, &record.object).is_some()
+            {
+                return Err(CodecError::Malformed(format!(
+                    "product occurrence {member} has multiple direct containers"
+                )));
+            }
+        }
+    }
+
+    let mut occurrences = Vec::new();
+    for record in occurrence_records.values() {
+        let count = occurrence_count(record)?;
+        let parent = parent_by_object
+            .get(record.object.as_str())
+            .map(|object| component_id(object));
+        for index in 0..count {
+            let element = count > 1;
+            let element_transform = record.element_transforms.get(index).copied();
+            let local_transform = multiply(
+                record.local_transform.unwrap_or_else(identity),
+                element_transform.unwrap_or_else(identity),
+            );
+            let scale = record
+                .element_scales
+                .get(index)
+                .copied()
+                .unwrap_or([1.0; 3]);
+            let resolved_transform = resolve_container_transform(
+                parent_by_object.get(record.object.as_str()).copied(),
+                records,
+                &parent_by_object,
+                local_transform,
+                &mut Vec::new(),
+            )?;
+            occurrences.push(Occurrence {
+                id: OccurrenceId(crate::native::model_id(
+                    "occurrence",
+                    &record.object,
+                    if element {
+                        index.to_string()
+                    } else {
+                        "instance".into()
+                    },
+                )),
+                prototype: if let Some(document) = &record.external_document {
+                    ComponentReference::External {
+                        document: document.clone(),
+                        object: record.prototype.clone(),
+                    }
+                } else if let Some(prototype) = &record.prototype {
+                    ComponentReference::Local {
+                        component: component_id(prototype),
+                    }
+                } else {
+                    ComponentReference::Unresolved
+                },
+                parent: parent.clone(),
+                array_index: element.then_some(index as u32),
+                local_transform,
+                resolved_transform,
+                scale,
+                link_transform: record.link_transform,
+                native_ref: Some(record.object.clone()),
+            });
+        }
+    }
+
+    let occurrence_ids = occurrences.iter().fold(
+        HashMap::<&str, Vec<OccurrenceId>>::new(),
+        |mut map, item| {
+            if let Some(native) = item.native_ref.as_deref() {
+                map.entry(native).or_default().push(item.id.clone());
+            }
+            map
+        },
+    );
+    let record_by_object = records
+        .iter()
+        .map(|record| (record.object.as_str(), record))
+        .collect::<HashMap<_, _>>();
+    let components = component_objects
+        .into_iter()
+        .map(|object| {
+            let record = record_by_object.get(object.as_str()).copied();
+            let kind = match record.map(|record| record.kind.as_str()) {
+                Some("part") => ComponentKind::Part,
+                Some("group") => ComponentKind::Group,
+                Some("link_group") => ComponentKind::LinkGroup,
+                _ => ComponentKind::Object,
+            };
+            let members = record.map_or(&[][..], |record| record.members.as_slice());
+            Ok(Component {
+                id: component_id(&object),
+                kind,
+                components: members
+                    .iter()
+                    .filter(|member| !occurrence_records.contains_key(member.as_str()))
+                    .map(|member| component_id(member))
+                    .collect(),
+                occurrences: members
+                    .iter()
+                    .flat_map(|member| occurrence_ids.get(member.as_str()).into_iter().flatten())
+                    .cloned()
+                    .collect(),
+                native_ref: Some(object),
+            })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
+    Ok((components, occurrences))
+}
+
+fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
+    let count = record
+        .element_count
+        .map(usize::try_from)
+        .transpose()
+        .map_err(|_| CodecError::Malformed(format!("{} has negative element count", record.id)))?
+        .unwrap_or_else(|| {
+            record
+                .element_transforms
+                .len()
+                .max(record.element_scales.len())
+                .max(1)
+        });
+    if count == 0
+        || [record.element_transforms.len(), record.element_scales.len()]
+            .into_iter()
+            .any(|length| length != 0 && length != count)
+    {
+        return Err(CodecError::Malformed(format!(
+            "{} has inconsistent link-array counts",
+            record.id
+        )));
+    }
+    Ok(count)
+}
+
+fn resolve_container_transform(
+    parent: Option<&str>,
+    records: &[ProductNodeRecord],
+    parent_by_object: &HashMap<&str, &str>,
+    local: [[f64; 4]; 4],
+    stack: &mut Vec<String>,
+) -> Result<[[f64; 4]; 4], CodecError> {
+    let Some(parent) = parent else {
+        return Ok(local);
+    };
+    if stack.iter().any(|object| object == parent) {
+        return Err(CodecError::Malformed(format!(
+            "product container cycle reaches {parent}"
+        )));
+    }
+    stack.push(parent.to_owned());
+    let transform = records
+        .iter()
+        .find(|record| record.object == parent)
+        .and_then(|record| record.local_transform)
+        .unwrap_or_else(identity);
+    let result = resolve_container_transform(
+        parent_by_object.get(parent).copied(),
+        records,
+        parent_by_object,
+        multiply(transform, local),
+        stack,
+    );
+    stack.pop();
+    result
+}
+
+fn identity() -> [[f64; 4]; 4] {
+    [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ]
+}
+
+fn multiply(left: [[f64; 4]; 4], right: [[f64; 4]; 4]) -> [[f64; 4]; 4] {
+    std::array::from_fn(|row| {
+        std::array::from_fn(|column| {
+            (0..4)
+                .map(|index| left[row][index] * right[index][column])
+                .sum()
+        })
+    })
 }
 
 fn parse_placement_list(

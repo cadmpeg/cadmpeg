@@ -157,12 +157,14 @@ cells, and overlapping merged ranges are validated.
 
 ## Product structure
 
-Native namespace version 4 adds a `product_nodes` arena for groups, parts, link groups, and placed
-link occurrences. Containers retain ordered member object identities. An occurrence retains its
-own identity separately from its local or external prototype, its local affine placement and owning
-property, link-transform policy, and array element count. Cross-document link properties use their
-document token and target name without attempting to open the document. Missing local targets and
-container/prototype cycles are validation errors; external targets remain intentionally unresolved
+The native `product_nodes` arena retains groups, parts, link groups, and placed link objects exactly
+as application records. CADIR components separate reusable definitions from occurrences. Ordered
+container membership resolves to component or occurrence ids, and each link-array element becomes
+its own occurrence with a stable array index, scale, local transform, and transform resolved through
+its containing components exactly once. Local prototypes resolve to component ids; cross-document
+links keep the document token and target object without attempting to open the document. Missing
+local targets, duplicate occurrence parents, invalid array counts, non-finite transforms, and
+container cycles are validation errors; external targets remain intentionally unresolved.
 records rather than being silently dropped or recursively loaded.
 
 Native namespace version 5 extends occurrences with ordered link-array element placements and

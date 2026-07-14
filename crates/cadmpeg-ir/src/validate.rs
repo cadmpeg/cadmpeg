@@ -30,6 +30,7 @@ mod carriers_parameterization;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod products;
 mod sketches;
 mod spreadsheets;
 mod subd;
@@ -40,6 +41,7 @@ use carriers_parameterization::{check_carrier_reachability, check_parameter_doma
 use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
 use geometry_payloads::{check_bounds, check_tessellations, check_unknown_payloads};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
+use products::check_products;
 use sketches::check_sketches;
 use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
@@ -82,6 +84,7 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_unknown_payloads(ir, &mut findings);
     check_sketches(ir, &mut findings);
     check_spreadsheets(ir, &mut findings);
+    check_products(ir, &mut findings);
 
     ValidationReport {
         entity_counts: entity_counts(ir),

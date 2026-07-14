@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "41");
+    assert_eq!(result.ir.ir_version, "42");
     let feature = |name: &str| {
         &result
             .ir
@@ -2812,7 +2812,7 @@ fn recovers_product_prototypes_occurrences_and_placements() {
  <Object type="App::Link" name="Occurrence" id="3"/>
 </Objects>
 <ObjectData Count="3">
- <Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property></Properties></Object>
+ <Object name="Assembly"><Properties Count="2"><Property name="Group" type="App::PropertyLinkList"><LinkList count="1"><Link value="Occurrence"/></LinkList></Property><Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property></Properties></Object>
  <Object name="Prototype"><Properties Count="0"/></Object>
  <Object name="Occurrence"><Properties Count="6">
   <Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property>
@@ -2865,8 +2865,43 @@ fn recovers_product_prototypes_occurrences_and_placements() {
     assert_eq!(occurrence.element_transforms.len(), 2);
     assert_eq!(occurrence.element_transforms[1][0][3], 4.0);
     assert_eq!(occurrence.element_scales, vec![[1.0; 3], [2.0; 3]]);
+    assert_eq!(result.ir.model.components.len(), 2);
+    let component = result
+        .ir
+        .model
+        .components
+        .iter()
+        .find(|component| component.kind == cadmpeg_ir::ComponentKind::Part)
+        .expect("neutral assembly component");
+    assert_eq!(component.occurrences.len(), 2);
+    assert_eq!(result.ir.model.occurrences.len(), 2);
+    assert_eq!(result.ir.model.occurrences[0].array_index, Some(0));
+    assert_eq!(result.ir.model.occurrences[0].local_transform[0][3], 5.0);
+    assert_eq!(result.ir.model.occurrences[1].local_transform[0][3], 8.0);
+    assert_eq!(
+        result.ir.model.occurrences[0].resolved_transform[0][3],
+        15.0
+    );
+    assert_eq!(
+        result.ir.model.occurrences[1].resolved_transform[0][3],
+        18.0
+    );
+    assert_eq!(result.ir.model.occurrences[1].scale, [2.0; 3]);
+    assert!(matches!(
+        &result.ir.model.occurrences[0].prototype,
+        cadmpeg_ir::ComponentReference::Local { component }
+            if component.0.contains("Prototype")
+    ));
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
+    let mut corrupted = result.ir.clone();
+    corrupted.model.occurrences[0].prototype = cadmpeg_ir::ComponentReference::Local {
+        component: cadmpeg_ir::ComponentId("fcstd:model:component#missing".into()),
+    };
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid occurrence reference")));
 }
 
 #[test]

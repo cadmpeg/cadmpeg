@@ -12,6 +12,7 @@ use crate::attributes::SourceAttribute;
 use crate::features::{DesignConfiguration, DesignParameter, Feature};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
+use crate::products::{Component, Occurrence};
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
 use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
@@ -45,6 +46,8 @@ macro_rules! arena_registry {
             sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
             spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
+            components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
+            occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
             tessellations: Tessellation, "Tessellation arena.", [] => |e| e.id.clone();
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
@@ -81,10 +84,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "41";
+pub const IR_VERSION: &str = "42";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "40";
+pub const PREVIOUS_IR_VERSION: &str = "41";
 
 arena_registry!(declare_model);
 

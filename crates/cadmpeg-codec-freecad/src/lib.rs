@@ -987,10 +987,8 @@ impl Codec for FcstdCodec {
             namespace.set_arena("shape_payloads", &shape_payloads)?;
             namespace.set_arena("carrier_census", &brep::carrier_census(&shape_payloads))?;
             namespace.set_arena("string_tables", &string_tables)?;
-            namespace.set_arena(
-                "product_nodes",
-                &product::transfer(&graph.objects, &graph.properties, &scan.data)?,
-            )?;
+            let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
+            namespace.set_arena("product_nodes", &product_nodes)?;
             namespace.set_arena(
                 "joints",
                 &joint::transfer(&graph.objects, &graph.properties),
@@ -1026,6 +1024,9 @@ impl Codec for FcstdCodec {
                 application_geometry::transfer(&mut ir, &graph.properties, &entry_records)?;
             topology_transfer::transfer(&mut ir, &shape_payloads, &graph.properties)?;
             design::transfer(&mut ir, &graph.objects, &graph.properties, &shape_payloads)?;
+            let (components, occurrences) = product::transfer_neutral(&product_nodes)?;
+            ir.model.components = components;
+            ir.model.occurrences = occurrences;
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")
