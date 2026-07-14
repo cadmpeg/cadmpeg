@@ -8729,11 +8729,11 @@ fn profile_loci_by_marker(
         .collect::<HashMap<_, _>>();
     let transforms =
         marker_transform_candidates_by_feature(features, sketches, sketch_entities, lanes);
-    let marker_ids = lanes
+    let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
-        .map(|marker| marker.id.as_str())
-        .collect::<HashSet<_>>();
+        .map(|marker| (marker.id.as_str(), marker))
+        .collect::<HashMap<_, _>>();
     for entity in sketch_entities {
         for (point, locus) in sketch_entity_loci(entity) {
             profile_loci
@@ -8762,11 +8762,23 @@ fn profile_loci_by_marker(
                     true,
                 )
             };
-            marker_ids.contains(marker.as_str()).then(|| {
+            markers_by_id.contains_key(marker.as_str()).then(|| {
                 let locus = if entity.id.0.contains("sketch-entity#compact:")
                     && matches!(entity.geometry, SketchGeometry::Line { .. })
                 {
                     SketchLocus::Start(entity.id.clone())
+                } else if markers_by_id.get(marker.as_str()).is_some_and(|marker| {
+                    matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+                }) && matches!(
+                    entity.geometry,
+                    SketchGeometry::Circle { .. }
+                        | SketchGeometry::Arc { .. }
+                        | SketchGeometry::Ellipse { .. }
+                ) {
+                    SketchLocus::Center(entity.id.clone())
                 } else {
                     SketchLocus::Entity(entity.id.clone())
                 };
@@ -10101,6 +10113,75 @@ mod profile_join_tests {
         assert_eq!(
             profile_loci_by_marker(&[feature], &[sketch], &[entity], &[lane])["line"],
             vec![SketchLocus::Entity(line_id)]
+        );
+    }
+
+    #[test]
+    fn point_marker_materializing_a_circle_binds_its_center() {
+        let sketch_id = SketchId("sketch".into());
+        let circle_id = SketchEntityId("circle".into());
+        let sketch = Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch_id.clone()),
+            },
+            native_ref: Some("feature-native".into()),
+        };
+        let entity = SketchEntity {
+            id: circle_id.clone(),
+            sketch: sketch_id,
+            construction: false,
+            native_ref: Some("circle-marker".into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(1.0, 2.0),
+                radius: Length(3.0),
+            },
+        };
+        let mut circle_marker = marker("circle-marker", Some([1.0, 2.0]));
+        circle_marker.kind = SketchInputKind::Point;
+        circle_marker.feature_ref = Some("feature-native".into());
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![circle_marker],
+        };
+
+        assert_eq!(
+            profile_loci_by_marker(&[feature], &[sketch], &[entity], &[lane])["circle-marker"],
+            vec![SketchLocus::Center(circle_id)]
         );
     }
 
