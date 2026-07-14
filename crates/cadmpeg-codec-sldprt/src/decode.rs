@@ -52,7 +52,18 @@ struct DecodedBrep {
 /// The function reads and retains the complete source image. Container framing
 /// or I/O failures return [`CodecError`]; unsupported model records are reported
 /// through [`DecodeResult::report`] when a partial result can be represented.
+#[allow(clippy::trivially_copy_pass_by_ref)]
 pub fn decode(
+    reader: &mut dyn ReadSeek,
+    options: &DecodeOptions,
+) -> Result<DecodeResult, CodecError> {
+    let mut result = decode_inner(reader, options)?;
+    result.source_fidelity.annotations = std::mem::take(&mut result.ir.annotations);
+    Ok(result)
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn decode_inner(
     reader: &mut dyn ReadSeek,
     options: &DecodeOptions,
 ) -> Result<DecodeResult, CodecError> {
@@ -1107,6 +1118,7 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
     // largest single payload) is filtered out instead of copied and dropped.
     let mut normalized = ir.clone();
     normalized.finalize();
+    normalized.annotations = Annotations::default();
     normalized.source = ir.source.as_ref().map(|source| {
         let mut source = source.clone();
         source.attributes.remove("semantic_sha256");

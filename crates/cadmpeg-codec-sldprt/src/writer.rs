@@ -64,7 +64,7 @@ pub fn write_semantic(
             });
         return Err(CodecError::Malformed(detail.into()));
     }
-    check_semantic_support(ir)?;
+    check_semantic_support(ir, annotations)?;
     if ir.model.faces.is_empty() {
         return Err(CodecError::NotImplemented(
             "semantic SLDPRT writing requires a B-rep".into(),
@@ -378,7 +378,7 @@ fn section_type_ids(ir: &CadIr, sections: &[(String, Vec<u8>)]) -> Result<Vec<u3
         .collect()
 }
 
-fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
+fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
     if !ir.model.configurations.is_empty()
         && ir
             .model
@@ -411,8 +411,7 @@ fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
     }
     if ir.model.edges.iter().any(|edge| {
         edge.param_range.is_some()
-            && ir
-                .annotations
+            && annotations
                 .exactness
                 .get(&edge.id.0)
                 .is_none_or(|note| note.entity != cadmpeg_ir::Exactness::Derived)

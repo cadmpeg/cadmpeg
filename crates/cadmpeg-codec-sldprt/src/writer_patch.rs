@@ -21,17 +21,17 @@ fn patch_partition_inner(
     annotations: &Annotations,
     scale: f64,
 ) -> Option<Result<(String, Vec<u8>), CodecError>> {
-    if !ir
+    let requires_native_carrier_patch = ir
         .model
         .surfaces
         .iter()
         .any(|surface| matches!(surface.geometry, SurfaceGeometry::Unknown { .. }))
-        && !ir
+        || ir
             .model
             .curves
             .iter()
-            .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
-    {
+            .any(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }));
+    if !requires_native_carrier_patch {
         return None;
     }
     let source = ir

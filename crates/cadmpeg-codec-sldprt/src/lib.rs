@@ -459,6 +459,16 @@ impl SldprtCodec {
         Self::write_preserved_with_annotations(ir, &ir.annotations, writer)
     }
 
+    /// Write a decoded document with its retained source-fidelity sidecar.
+    pub fn write_preserved_with_source_fidelity(
+        &self,
+        ir: &CadIr,
+        source_fidelity: &SourceFidelity,
+        writer: &mut dyn Write,
+    ) -> Result<(), CodecError> {
+        Self::write_preserved_with_annotations(ir, &source_fidelity.annotations, writer)
+    }
+
     fn write_preserved_with_annotations(
         ir: &CadIr,
         annotations: &Annotations,
