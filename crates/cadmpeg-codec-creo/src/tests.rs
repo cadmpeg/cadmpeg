@@ -504,10 +504,15 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         7, 0x80, 0xc8, 1, 0, 0xe3, // a materialized surface id
         0xf7, 0x1e, 9, 0x80, 0xc8, 2, 0, 0xe3, // a prefixed non-surface entity id
     ];
-    let scan = container::scan_bytes(build_prt(
+    let data = build_prt(
         "c",
-        &[("VisibGeom", geometry), ("AllFeatur", allfeatur)],
-    ));
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Protrusion id 4\0".to_vec()),
+        ],
+    );
+    let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_entity_tables.len(), 1);
     let table = &scan.feature_entity_tables[0];
@@ -525,6 +530,28 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(table.entries[0].end_offset, table.entries[1].offset - 2);
     assert_eq!(table.surface_ids, vec![7]);
     assert_eq!(table.non_surface_entity_ids, vec![9]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.0 == "creo:model:feature#4")
+        .expect("feature 4");
+    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
+    else {
+        panic!("native protrusion feature");
+    };
+    assert_eq!(
+        parameters["generated_entity.7.source_section_entity_id"],
+        "1"
+    );
+    assert_eq!(parameters["generated_entity.7.entry_class"], "200");
+    assert_eq!(
+        parameters["generated_entity.9.source_section_entity_id"],
+        "2"
+    );
 }
 
 #[test]

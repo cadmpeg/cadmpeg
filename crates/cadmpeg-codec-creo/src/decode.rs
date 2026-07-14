@@ -4363,6 +4363,30 @@ fn feature_parameters(scan: &ContainerScan, feature_id: u32) -> BTreeMap<String,
         };
         parameters.insert(name.to_string(), value);
     }
+    for table in scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+    {
+        for entry in &table.entries {
+            let Some(source_entity_id) = entry.source_entity_id else {
+                continue;
+            };
+            insert_feature_parameter(
+                &mut parameters,
+                &format!(
+                    "generated_entity.{}.source_section_entity_id",
+                    entry.entity_id
+                ),
+                source_entity_id.to_string(),
+            );
+            insert_feature_parameter(
+                &mut parameters,
+                &format!("generated_entity.{}.entry_class", entry.entity_id),
+                entry.class_id.to_string(),
+            );
+        }
+    }
     if let Some(definition) = scan
         .feature_definitions
         .iter()

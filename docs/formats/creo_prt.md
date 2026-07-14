@@ -669,6 +669,8 @@ the section axis.
 
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is the section's internal ordering index. A class-200 feature-generated-table entry stores the same `ext_id` as its source identifier and stores the generated surface identifier as its leading entity identifier. This explicit equality joins line, arc, and spline section entities to their generated carriers; table position and family order do not define the join.
 
+The generated-table source identifier remains part of the owning feature's design record even when the corresponding positional section entity is not decoded. It identifies the source section entity; it is not a global geometry identifier or a generated-table ordinal.
+
 The positional `order_table` opener is `f8 <count> f7 <table_class> fb e2 f7
 <entry_class>`. The first tuple is the entry prototype and closes with `f1 f7
 <table_class> e2`; the following `count - 1` tuples are stored entries.
