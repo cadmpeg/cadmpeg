@@ -259,6 +259,7 @@ pub(super) fn project(
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
+    let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
 
     for entry in directory
         .iter()
@@ -282,6 +283,7 @@ pub(super) fn project(
             .filter(|count| *count > 0);
         let mut cursor = 4;
         let mut attributes_valid = attribute_count.is_some();
+        let mut shape = Vec::new();
         for _ in 0..attribute_count.unwrap_or_default() {
             let attribute_type_valid = record.integer(cursor).is_some();
             let data_type = record
@@ -292,6 +294,9 @@ pub(super) fn project(
             cursor += 3;
             attributes_valid &=
                 attribute_type_valid && data_type.is_some() && value_count.is_some();
+            if let Some(descriptor) = data_type.zip(value_count) {
+                shape.push(descriptor);
+            }
             if entry.form != 0 {
                 for _ in 0..value_count.unwrap_or_default() {
                     attributes_valid &= data_type.is_some_and(|data_type| {
@@ -314,10 +319,57 @@ pub(super) fn project(
         }
         if name_valid && list_type_valid && attributes_valid {
             decoded.insert(entry.sequence);
+            if entry.form == 0 {
+                attribute_shapes.insert(entry.sequence, shape);
+            }
         } else {
             losses.push(entity_loss(
                 entry,
                 "attribute-table definition header, value type, value, or display link is invalid",
+            ));
+        }
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let definition = entry
+            .structure
+            .checked_neg()
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|sequence| sequence % 2 == 1);
+        let shape = definition.and_then(|sequence| attribute_shapes.get(&sequence));
+        let row_count = if entry.form == 0 {
+            Some(1)
+        } else {
+            record
+                .integer(1)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0)
+        };
+        let value_start = if entry.form == 0 { 1 } else { 2 };
+        let mut cursor = value_start;
+        let mut values_valid = shape.is_some() && row_count.is_some();
+        for _ in 0..row_count.unwrap_or_default() {
+            for (data_type, count) in shape.into_iter().flatten() {
+                for _ in 0..*count {
+                    values_valid &= attribute_value_valid(record, cursor, *data_type, &entries);
+                    cursor += 1;
+                }
+            }
+        }
+        if values_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "attribute-table instance definition, row count, or typed value is invalid",
             ));
         }
     }

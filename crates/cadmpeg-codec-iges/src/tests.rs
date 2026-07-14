@@ -1778,6 +1778,24 @@ fn owned_test_file_with_attributes(
     levels: &[(u32, i64)],
     line_weights: &[(u32, i64)],
 ) -> Vec<u8> {
+    owned_test_file_with_directory_fields(entities, colors, line_fonts, levels, line_weights, &[])
+}
+
+fn owned_test_file_with_structures(
+    entities: &[OwnedTestEntity],
+    structures: &[(u32, i64)],
+) -> Vec<u8> {
+    owned_test_file_with_directory_fields(entities, &[], &[], &[], &[], structures)
+}
+
+fn owned_test_file_with_directory_fields(
+    entities: &[OwnedTestEntity],
+    colors: &[(u32, i64)],
+    line_fonts: &[(u32, i64)],
+    levels: &[(u32, i64)],
+    line_weights: &[(u32, i64)],
+    structures: &[(u32, i64)],
+) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -1789,7 +1807,11 @@ fn owned_test_file_with_attributes(
             [
                 &entity.entity_type.to_string(),
                 &parameter_sequence.to_string(),
-                "0",
+                &structures
+                    .iter()
+                    .find_map(|(entry, structure)| (*entry == sequence).then_some(*structure))
+                    .unwrap_or(0)
+                    .to_string(),
                 &line_fonts
                     .iter()
                     .find_map(|(entry, line_font)| (*entry == sequence).then_some(*line_font))
@@ -2330,6 +2352,33 @@ fn attribute_definition_forms_file() -> Vec<u8> {
             parameters: "322,4HROW2,1,2,10,2,1,3.5,0,11,6,1,1,0;".into(),
         },
     ])
+}
+
+fn attribute_instance_forms_file() -> Vec<u8> {
+    let entities = [
+        OwnedTestEntity {
+            entity_type: 322,
+            form: 0,
+            label: "ATTRDEF".into(),
+            status: "00000000",
+            parameters: "322,4HMETA,1,2,10,1,1,11,3,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 422,
+            form: 0,
+            label: "ATTRONE".into(),
+            status: "00000000",
+            parameters: "422,7,5HSTEEL;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 422,
+            form: 1,
+            label: "ATTRTAB".into(),
+            status: "00000000",
+            parameters: "422,2,8,4HIRON,9,5HBRASS;".into(),
+        },
+    ];
+    owned_test_file_with_structures(&entities, &[(3, -1), (5, -1)])
 }
 
 fn nested_subfigure_file() -> Vec<u8> {
@@ -3558,6 +3607,33 @@ fn decode_types_all_attribute_table_definition_forms() {
         "real"
     );
     assert!(definitions[2].fields["attributes"][0]["values"][0]["display_template"].is_null());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_types_attribute_table_tuple_and_row_major_instances() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(attribute_instance_forms_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let instances =
+        &result.ir.native.namespace("iges").unwrap().arenas["attribute_table_instances"];
+    assert_eq!(instances.len(), 2);
+    assert_eq!(
+        instances[0].fields["definition"],
+        "iges:product:attribute-definition#D1"
+    );
+    assert_eq!(instances[0].fields["rows"].as_array().unwrap().len(), 1);
+    assert_eq!(instances[1].fields["declared_row_count"], 2);
+    assert_eq!(instances[1].fields["rows"].as_array().unwrap().len(), 2);
+    assert_eq!(instances[1].fields["rows"][1][0]["kind"], "integer");
+    assert_eq!(instances[1].fields["rows"][1][1]["kind"], "string");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

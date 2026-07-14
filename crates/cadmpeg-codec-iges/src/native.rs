@@ -348,6 +348,16 @@ struct NativeAttributeTableDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeAttributeTableInstance {
+    id: String,
+    source_entity: String,
+    form: i64,
+    definition: Option<String>,
+    declared_row_count: Option<i64>,
+    rows: Vec<Vec<NativeTokenValue>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -1235,6 +1245,74 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let attribute_table_instances = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 422 && matches!(entry.form, 0..=1))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let definition_sequence = entry
+                .structure
+                .checked_neg()
+                .and_then(|value| u32::try_from(value).ok());
+            let definition_record =
+                definition_sequence.and_then(|sequence| by_directory.get(&sequence).copied());
+            let attribute_count = definition_record
+                .and_then(|record| record.integer(3))
+                .and_then(|value| usize::try_from(value).ok())
+                .unwrap_or_default();
+            let values_per_row = (0..attribute_count)
+                .map(|index| {
+                    let count_index = 6 + index * 3;
+                    match definition_record
+                        .and_then(|record| record.tokens.get(count_index))
+                        .map(|token| &token.value)
+                    {
+                        None | Some(TokenValue::Omitted) => 1,
+                        Some(TokenValue::Integer(value)) => {
+                            usize::try_from(*value).unwrap_or_default()
+                        }
+                        Some(TokenValue::Real(_) | TokenValue::String(_)) => 0,
+                    }
+                })
+                .sum::<usize>();
+            let row_count = if entry.form == 0 {
+                usize::from(values_per_row > 0)
+            } else {
+                record
+                    .and_then(|record| record.integer(1))
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or_default()
+            };
+            let value_start = if entry.form == 0 { 1 } else { 2 };
+            let rows = (0..row_count)
+                .map(|row| {
+                    (0..values_per_row)
+                        .map(|column| {
+                            record
+                                .and_then(|record| {
+                                    record
+                                        .tokens
+                                        .get(value_start + row * values_per_row + column)
+                                })
+                                .map(token)
+                                .map_or(NativeTokenValue::Omitted, |token| token.value)
+                        })
+                        .collect()
+                })
+                .collect();
+            NativeAttributeTableInstance {
+                id: format!("iges:product:attribute-instance#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                definition: definition_sequence
+                    .map(|sequence| format!("iges:product:attribute-definition#D{sequence}")),
+                declared_row_count: (entry.form == 1)
+                    .then(|| record.and_then(|record| record.integer(1)))
+                    .flatten(),
+                rows,
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -1262,5 +1340,6 @@ pub(crate) fn store(
     namespace.set_arena("external_references", &external_references)?;
     namespace.set_arena("groups", &groups)?;
     namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
+    namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
     Ok(())
 }

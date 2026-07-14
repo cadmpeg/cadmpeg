@@ -86,6 +86,8 @@ Type 402 Forms 1, 7, 14, and 15 group a positive ordered parameter list of exist
 
 Type 322 defines an attribute table with a name, attribute-list classification, and a positive ordered list of attribute descriptors. Each descriptor stores an integer attribute type, value data type `1` integer, `2` real, `3` Hollerith string, `4` entity pointer, `5` omitted/not-used, or `6` logical integer, and a nonnegative value count defaulting to one. Form 0 stores descriptors only. Form 1 follows every descriptor with its typed values. Form 2 follows each typed value with a nullable Type 312 display-template pointer. A zero value count denotes a value that is presently unknown and stores no value token. The `attribute_table_definitions` arena preserves descriptor order, typed native values, omitted fields, and display-template links.
 
+Type 422 instances reference a Type 322 Form 0 definition through the negated Directory Structure field. Form 0 stores one tuple containing the definition's declared values in attribute order. Form 1 stores a positive row count followed by that many complete tuples in row-major order. Every value conforms to its definition's data type and count. The `attribute_table_instances` arena retains definition identity, form, declared row count, row order, and typed native values.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.
