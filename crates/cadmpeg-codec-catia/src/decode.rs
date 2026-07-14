@@ -2797,41 +2797,60 @@ fn attach_standard_topology(
         .iter()
         .map(|support| native_edges.get(&support.tag).copied())
         .collect::<Option<Vec<_>>>();
+    let roster_endpoint_pairs = native_ports.as_ref().and_then(|ports| {
+        let roster = geometry::standard_vertex_roster(source, ir.model.points.len())?;
+        let point_by_identity = roster
+            .into_iter()
+            .enumerate()
+            .map(|(point, identity)| (identity, point))
+            .collect::<HashMap<_, _>>();
+        ports
+            .iter()
+            .map(|identities| {
+                Some([
+                    *point_by_identity.get(&identities[0])?,
+                    *point_by_identity.get(&identities[1])?,
+                ])
+            })
+            .collect::<Option<Vec<_>>>()
+    });
     let graph_propagated_pairs = native_ports
         .as_ref()
         .zip(graph_endpoint_pairs.as_ref())
         .and_then(|(ports, pairs)| topology::propagate_edge_port_points(ports, pairs))
         .and_then(|pairs| pairs.into_iter().collect::<Option<Vec<_>>>());
-    let native_endpoint_pairs = graph_propagated_pairs.or_else(|| {
-        endpoint_options.as_ref().and_then(|options| {
-            const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
-            const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
+    let native_endpoint_pairs = graph_propagated_pairs
+        .or(roster_endpoint_pairs)
+        .or_else(|| {
+            endpoint_options.as_ref().and_then(|options| {
+                const MAX_NATIVE_PORT_CHOICES: usize = 65_536;
+                const MAX_NATIVE_PORT_WORK: usize = 20_000_000;
 
-            let ports = native_ports.as_ref()?;
-            let seeds = options
-                .iter()
-                .map(|choices| {
-                    <[[usize; 2]; 1]>::try_from(choices.as_slice())
-                        .ok()
-                        .map(|[pair]| pair)
-                })
-                .collect::<Vec<_>>();
-            let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
-            if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
-                return Some(complete);
-            }
-            // Exhaustive binding is a fallback after exact identity propagation.
-            // Large symmetric choice sets remain unresolved and continue through
-            // trim-mesh and incidence paths instead of making decode unbounded.
-            let choice_count = options.iter().map(Vec::len).sum::<usize>();
-            (choice_count <= MAX_NATIVE_PORT_CHOICES
-                && options
-                    .len()
-                    .checked_mul(choice_count)
-                    .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
-            .then(|| topology::bind_edge_port_candidates(ports, options))?
-        })
-    });
+                let ports = native_ports.as_ref()?;
+                let seeds = options
+                    .iter()
+                    .map(|choices| {
+                        <[[usize; 2]; 1]>::try_from(choices.as_slice())
+                            .ok()
+                            .map(|[pair]| pair)
+                    })
+                    .collect::<Vec<_>>();
+                let propagated = topology::propagate_edge_port_points(ports, &seeds)?;
+                if let Some(complete) = propagated.iter().copied().collect::<Option<Vec<_>>>() {
+                    return Some(complete);
+                }
+                // Exhaustive binding is a fallback after exact identity propagation.
+                // Large symmetric choice sets remain unresolved and continue through
+                // trim-mesh and incidence paths instead of making decode unbounded.
+                let choice_count = options.iter().map(Vec::len).sum::<usize>();
+                (choice_count <= MAX_NATIVE_PORT_CHOICES
+                    && options
+                        .len()
+                        .checked_mul(choice_count)
+                        .is_some_and(|work| work <= MAX_NATIVE_PORT_WORK))
+                .then(|| topology::bind_edge_port_candidates(ports, options))?
+            })
+        });
     let propagated_endpoint_pairs = endpoint_options
         .as_ref()
         .zip(topology::standard_edge_port_identities(brep))

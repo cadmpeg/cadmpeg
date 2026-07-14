@@ -245,6 +245,54 @@ pub fn vertices(brep: &[u8]) -> Vec<Point3> {
     out
 }
 
+/// Read the unique contiguous standard vertex roster with the requested
+/// cardinality. Each seven-byte row stores `54 <identity:u24le> 00 00 00`;
+/// roster order is coordinate-table order.
+#[must_use]
+pub fn standard_vertex_roster(source: &[u8], vertex_count: usize) -> Option<Vec<u32>> {
+    if vertex_count == 0 {
+        return None;
+    }
+    let mut solutions = Vec::new();
+    let mut position = 0usize;
+    while position + 7 <= source.len() {
+        if source[position] != 0x54 || source[position + 4..position + 7] != [0, 0, 0] {
+            position += 1;
+            continue;
+        }
+        let start = position;
+        let mut identities = Vec::new();
+        while position + 7 <= source.len()
+            && source[position] == 0x54
+            && source[position + 4..position + 7] == [0, 0, 0]
+        {
+            let identity = u32::from_le_bytes([
+                source[position + 1],
+                source[position + 2],
+                source[position + 3],
+                0,
+            ]);
+            if identities
+                .last()
+                .is_some_and(|previous| *previous >= identity)
+            {
+                break;
+            }
+            identities.push(identity);
+            position += 7;
+        }
+        if identities.len() == vertex_count {
+            solutions.push(identities);
+        }
+        if position == start {
+            position += 1;
+        }
+    }
+    <[Vec<u32>; 1]>::try_from(solutions)
+        .ok()
+        .map(|[identities]| identities)
+}
+
 /// Locate every per-face analytic surface record by the strict 5-byte template
 /// `[target_u24 le][00][prebyte] 00 33 <kind>` ([spec §5.8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#58-analytic-surface-records-in-surfacicreps)). The strict template
 /// rejects collisional `00 33` matches inside other binary data.

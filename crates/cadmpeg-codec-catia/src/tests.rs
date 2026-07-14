@@ -433,6 +433,22 @@ fn fbb_topology_requires_one_u16_delimiter_family() {
 }
 
 #[test]
+fn standard_vertex_roster_preserves_native_identity_order() {
+    let mut bytes = vec![0x54, 0x02, 0x00, 0x00, 0, 0, 0, 0xff];
+    for identity in [0x01_0203u32, 0x01_0206, 0x01_0209] {
+        bytes.push(0x54);
+        bytes.extend_from_slice(&identity.to_le_bytes()[..3]);
+        bytes.extend_from_slice(&[0, 0, 0]);
+    }
+    bytes.extend_from_slice(&[0x54, 0x01, 0x00, 0x00, 0, 0, 0]);
+
+    assert_eq!(
+        crate::geometry::standard_vertex_roster(&bytes, 3),
+        Some(vec![0x01_0203, 0x01_0206, 0x01_0209])
+    );
+}
+
+#[test]
 fn standard_topology_matches_edge_interiors_and_collapses_endpoint_ports() {
     let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 11, 0, 0, 0, 11];
     for handle in [1u16, 10, 11, 12, 13, 14, 15, 16, 17, 18, 10] {

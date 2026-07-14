@@ -103,7 +103,7 @@ The descriptor names include `MAIN`, `MainDataStream`, `Header`, `SceneGraph`, `
 
 A parallel representation of faces/edges/vertices indexed by the same topological tags as the BREP spine.
 
-- **Vertex roster:** trailing run of 7-byte records `54 <tag_u24le> 00 00 00`, with unique, strictly increasing tags.
+- **Vertex roster:** trailing run of 7-byte records `54 <tag_u24le> 00 00 00`, with unique, strictly increasing tags. Roster row `i` names counted vertex-coordinate row `i`; edge endpoint identities use these tags directly.
 - **Freeform surface cores:** `<tag_u24le> 00 00 00 <10×f32le> <sign_i8>` (47 bytes), `sign ∈ {+1=0x01, −1=0xff}` (per-face orientation). The ten f32 are `f[0:3]` AABB center, `f[3:6]` AABB half-extents, `f[6:9]` bounding-sphere center, `f[9]` bounding-sphere radius of the **trimmed** face; the per-coordinate containment `|f[i]−f[6+i]| + f[3+i] ≤ f[9]` holds (the AABB-corner-containment reading does not). These cores interleave in face order with analytic surface records (`00 33 <kind>`) at non-uniform stride; a fixed 47-byte stride spans only the freeform prefix before the first analytic record.
 - **Freeform curve rows:** `60 <tag_u24le> 00 00 00 <face_ref> <face_ref>` (count tracks the freeform-curve subset).
 - **`01 00 04 00 <tag_u32le>` alias:** each freeform surface tag has exactly one matching `01 00 04 00 <tag>` link record elsewhere, bridging the tag to its outer-region native geometry (pole net / knots). Vertex tags carry no such alias.
