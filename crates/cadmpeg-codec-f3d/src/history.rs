@@ -7,9 +7,9 @@
 
 use crate::history_records::{
     AsmBulletinBoard, AsmDeltaState, AsmEntityChange, AsmEntityChangeKind, AsmEntityVersion,
-    AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalEntityDelta, AsmHistoricalRelation,
-    AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
-    AsmHistoryRecord,
+    AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalEdge, AsmHistoricalEntityDelta,
+    AsmHistoricalOptionalCarrierBinding, AsmHistoricalRelation, AsmHistoricalTopology,
+    AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory, AsmHistoryRecord,
 };
 use cadmpeg_ir::le::int_at;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -413,6 +413,10 @@ fn historical_transition(
             coedges: delta(&current_topology.coedges, &previous_topology.coedges),
             edges: delta(&current_topology.edges, &previous_topology.edges),
             vertices: delta(&current_topology.vertices, &previous_topology.vertices),
+            points: delta(&current_topology.points, &previous_topology.points),
+            surfaces: delta(&current_topology.surfaces, &previous_topology.surfaces),
+            curves: delta(&current_topology.curves, &previous_topology.curves),
+            pcurves: delta(&current_topology.pcurves, &previous_topology.pcurves),
         },
     })
 }
@@ -472,6 +476,10 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
         coedges: refs(brep.coedges.iter().map(|entity| entity.id.0.as_str()))?,
         edges: refs(brep.edges.iter().map(|entity| entity.id.0.as_str()))?,
         vertices: refs(brep.vertices.iter().map(|entity| entity.id.0.as_str()))?,
+        points: refs(brep.points.iter().map(|entity| entity.id.0.as_str()))?,
+        surfaces: refs(brep.surfaces.iter().map(|entity| entity.id.0.as_str()))?,
+        curves: refs(brep.curves.iter().map(|entity| entity.id.0.as_str()))?,
+        pcurves: refs(brep.pcurves.iter().map(|entity| entity.id.0.as_str()))?,
         body_regions: relations(brep.bodies.iter().map(|body| {
             (
                 body.id.0.as_str(),
@@ -536,6 +544,52 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
                     edge: entity_ref(&edge.id.0)?,
                     start_vertex: entity_ref(&edge.start.0)?,
                     end_vertex: entity_ref(&edge.end.0)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        face_surfaces: brep
+            .faces
+            .iter()
+            .map(|face| {
+                Some(AsmHistoricalCarrierBinding {
+                    entity: entity_ref(&face.id.0)?,
+                    carrier: entity_ref(&face.surface.0)?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        edge_curves: brep
+            .edges
+            .iter()
+            .map(|edge| {
+                Some(AsmHistoricalOptionalCarrierBinding {
+                    entity: entity_ref(&edge.id.0)?,
+                    carrier: match &edge.curve {
+                        Some(curve) => Some(entity_ref(&curve.0)?),
+                        None => None,
+                    },
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        coedge_pcurves: brep
+            .coedges
+            .iter()
+            .map(|coedge| {
+                Some(AsmHistoricalOptionalCarrierBinding {
+                    entity: entity_ref(&coedge.id.0)?,
+                    carrier: match &coedge.pcurve {
+                        Some(pcurve) => Some(entity_ref(&pcurve.0)?),
+                        None => None,
+                    },
+                })
+            })
+            .collect::<Option<Vec<_>>>()?,
+        vertex_points: brep
+            .vertices
+            .iter()
+            .map(|vertex| {
+                Some(AsmHistoricalCarrierBinding {
+                    entity: entity_ref(&vertex.id.0)?,
+                    carrier: entity_ref(&vertex.point.0)?,
                 })
             })
             .collect::<Option<Vec<_>>>()?,
@@ -867,6 +921,10 @@ mod tests {
         assert_eq!(topology.coedge_topology[0].radial_next, 6);
         assert_eq!(topology.edge_vertices[0].start_vertex, 8);
         assert_eq!(topology.edge_vertices[0].end_vertex, 9);
+        assert_eq!(topology.face_surfaces[0].carrier, 20);
+        assert_eq!(topology.edge_curves[0].carrier, Some(21));
+        assert_eq!(topology.coedge_pcurves[0].carrier, None);
+        assert_eq!(topology.vertex_points[0].carrier, 28);
     }
 
     #[test]

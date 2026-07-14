@@ -71,6 +71,10 @@ pub(crate) struct AsmHistoricalTopology {
     pub coedges: Vec<i64>,
     pub edges: Vec<i64>,
     pub vertices: Vec<i64>,
+    pub points: Vec<i64>,
+    pub surfaces: Vec<i64>,
+    pub curves: Vec<i64>,
+    pub pcurves: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body_regions: Vec<AsmHistoricalRelation>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -89,6 +93,14 @@ pub(crate) struct AsmHistoricalTopology {
     pub coedge_topology: Vec<AsmHistoricalCoedge>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub edge_vertices: Vec<AsmHistoricalEdge>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub face_surfaces: Vec<AsmHistoricalCarrierBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edge_curves: Vec<AsmHistoricalOptionalCarrierBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub coedge_pcurves: Vec<AsmHistoricalOptionalCarrierBinding>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertex_points: Vec<AsmHistoricalCarrierBinding>,
 }
 
 /// Ordered stable entity-slot relation in a historical B-rep.
@@ -115,6 +127,21 @@ pub(crate) struct AsmHistoricalEdge {
     pub edge: i64,
     pub start_vertex: i64,
     pub end_vertex: i64,
+}
+
+/// Stable binding from a topology entity to its required geometry carrier.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalCarrierBinding {
+    pub entity: i64,
+    pub carrier: i64,
+}
+
+/// Stable binding from a topology entity to its optional geometry carrier.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalOptionalCarrierBinding {
+    pub entity: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub carrier: Option<i64>,
 }
 
 /// Forward stable-slot changes from an older ASM state to a newer state.
@@ -151,6 +178,10 @@ pub(crate) struct AsmHistoricalTopologyDelta {
     pub coedges: AsmHistoricalEntityDelta,
     pub edges: AsmHistoricalEntityDelta,
     pub vertices: AsmHistoricalEntityDelta,
+    pub points: AsmHistoricalEntityDelta,
+    pub surfaces: AsmHistoricalEntityDelta,
+    pub curves: AsmHistoricalEntityDelta,
+    pub pcurves: AsmHistoricalEntityDelta,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
