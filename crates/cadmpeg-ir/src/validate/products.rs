@@ -77,6 +77,55 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
     }
+
+    for joint in &ir.model.assembly_joints {
+        let expected = if joint.kind == crate::products::JointKind::Grounded {
+            1
+        } else {
+            2
+        };
+        let operands_valid = joint.operands.len() == expected
+            && joint.frames.len() == expected
+            && joint.operands.iter().all(|operand| {
+                operand
+                    .component
+                    .as_ref()
+                    .is_none_or(|component| components.contains_key(component.0.as_str()))
+                    && (operand.external_document.is_some() || operand.object.is_some())
+            });
+        let finite = joint
+            .frames
+            .iter()
+            .flatten()
+            .flatten()
+            .copied()
+            .chain(joint.angle)
+            .chain(joint.distance)
+            .chain(joint.distance2)
+            .chain(
+                joint
+                    .angular_limits
+                    .iter()
+                    .chain(joint.linear_limits.iter())
+                    .flat_map(|limits| [limits.minimum, limits.maximum])
+                    .flatten(),
+            )
+            .all(f64::is_finite);
+        let ordered = [joint.angular_limits.as_ref(), joint.linear_limits.as_ref()]
+            .into_iter()
+            .flatten()
+            .all(|limits| match (limits.minimum, limits.maximum) {
+                (Some(minimum), Some(maximum)) => minimum <= maximum,
+                _ => true,
+            });
+        if !operands_valid || !finite || !ordered {
+            invalid(
+                findings,
+                &joint.id.0,
+                "invalid assembly joint operands, frames, or limits",
+            );
+        }
+    }
 }
 
 fn component_cycle(start: &str, components: &HashMap<&str, &crate::products::Component>) -> bool {

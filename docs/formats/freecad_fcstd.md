@@ -165,7 +165,6 @@ its containing components exactly once. Local prototypes resolve to component id
 links keep the document token and target object without attempting to open the document. Missing
 local targets, duplicate occurrence parents, invalid array counts, non-finite transforms, and
 container cycles are validation errors; external targets remain intentionally unresolved.
-records rather than being silently dropped or recursively loaded.
 
 Native namespace version 5 extends occurrences with ordered link-array element placements and
 scale vectors. Each side entry begins with a little-endian element count followed by either all
@@ -180,6 +179,13 @@ targets with each target's ordered subelement path, and both connector-local fra
 linear, limit-enable, detach, and suppression values remain independently named parameters. Nested
 `Sub` elements belong to their enclosing cross-link and are not separate object references. Joint
 Python proxy payloads remain inert native properties; decoding never imports their module.
+
+CADIR assembly joints resolve local connector objects to component ids while retaining exact
+object and persistent subelement paths. Known fixed, revolute, slider, cylindrical, ball, and
+grounded families are typed; an unfamiliar family remains explicitly native. Connector frames,
+suppression and detach flags, linear offsets, and enabled limit intervals are independent fields.
+Persisted degree values convert to radians for neutral angles and angular limits. Validation checks
+operand/frame cardinality, component references, finite values, and ordered intervals.
 
 ## Drawing graph
 

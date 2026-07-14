@@ -989,10 +989,8 @@ impl Codec for FcstdCodec {
             namespace.set_arena("string_tables", &string_tables)?;
             let product_nodes = product::transfer(&graph.objects, &graph.properties, &scan.data)?;
             namespace.set_arena("product_nodes", &product_nodes)?;
-            namespace.set_arena(
-                "joints",
-                &joint::transfer(&graph.objects, &graph.properties),
-            )?;
+            let joint_records = joint::transfer(&graph.objects, &graph.properties);
+            namespace.set_arena("joints", &joint_records)?;
             namespace.set_arena(
                 "drawings",
                 &drawing::transfer(&graph.objects, &graph.properties),
@@ -1027,6 +1025,8 @@ impl Codec for FcstdCodec {
             let (components, occurrences) = product::transfer_neutral(&product_nodes)?;
             ir.model.components = components;
             ir.model.occurrences = occurrences;
+            ir.model.assembly_joints =
+                joint::transfer_neutral(&joint_records, &ir.model.components);
             let design_census = design::census(&graph.objects, &ir.model.features)?;
             ir.native
                 .namespace_mut("fcstd")

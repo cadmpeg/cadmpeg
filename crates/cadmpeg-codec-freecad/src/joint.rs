@@ -4,6 +4,9 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::native::{JointRecord, ObjectRecord, PropertyRecord};
+use cadmpeg_ir::products::{
+    AssemblyJoint, Component, JointId, JointKind, JointLimits, JointOperand,
+};
 
 pub(crate) fn transfer(
     objects: &[ObjectRecord],
@@ -94,6 +97,120 @@ pub(crate) fn transfer(
         });
     }
     output
+}
+
+pub(crate) fn transfer_neutral(
+    records: &[JointRecord],
+    components: &[Component],
+) -> Vec<AssemblyJoint> {
+    let component_by_native = components
+        .iter()
+        .filter_map(|component| {
+            component
+                .native_ref
+                .as_deref()
+                .map(|native| (native, &component.id))
+        })
+        .collect::<HashMap<_, _>>();
+    records
+        .iter()
+        .map(|record| {
+            let bool_value = |name: &str| {
+                record
+                    .parameters
+                    .get(name)
+                    .and_then(|value| parse_bool(value))
+            };
+            let scalar = |name: &str| {
+                record
+                    .parameters
+                    .get(name)
+                    .and_then(|value| value.parse().ok())
+            };
+            let enabled_limits =
+                |minimum: &str, maximum: &str, enable_min: &str, enable_max: &str, scale: f64| {
+                    let minimum = bool_value(enable_min)
+                        .unwrap_or(false)
+                        .then(|| scalar(minimum))
+                        .flatten()
+                        .map(|value: f64| value * scale);
+                    let maximum = bool_value(enable_max)
+                        .unwrap_or(false)
+                        .then(|| scalar(maximum))
+                        .flatten()
+                        .map(|value: f64| value * scale);
+                    (minimum.is_some() || maximum.is_some())
+                        .then_some(JointLimits { minimum, maximum })
+                };
+            AssemblyJoint {
+                id: JointId(crate::native::model_id(
+                    "joint",
+                    &record.object,
+                    "constraint",
+                )),
+                kind: joint_kind(&record.kind),
+                operands: record
+                    .references
+                    .iter()
+                    .map(|reference| JointOperand {
+                        component: reference
+                            .object
+                            .as_deref()
+                            .and_then(|object| component_by_native.get(object).copied())
+                            .cloned(),
+                        external_document: reference.document.clone(),
+                        object: reference.object.clone(),
+                        subelements: reference.subelements.clone(),
+                    })
+                    .collect(),
+                frames: record.placements.clone(),
+                suppressed: bool_value("Suppressed").unwrap_or(false),
+                detached: [
+                    bool_value("Detach1").unwrap_or(false),
+                    bool_value("Detach2").unwrap_or(false),
+                ],
+                angle: scalar("Angle").map(f64::to_radians),
+                distance: scalar("Distance"),
+                distance2: scalar("Distance2"),
+                angular_limits: enabled_limits(
+                    "AngleMin",
+                    "AngleMax",
+                    "EnableAngleMin",
+                    "EnableAngleMax",
+                    std::f64::consts::PI / 180.0,
+                ),
+                linear_limits: enabled_limits(
+                    "LengthMin",
+                    "LengthMax",
+                    "EnableLengthMin",
+                    "EnableLengthMax",
+                    1.0,
+                ),
+                properties: record.parameters.clone(),
+                native_ref: Some(record.id.clone()),
+            }
+        })
+        .collect()
+}
+
+fn joint_kind(kind: &str) -> JointKind {
+    match kind.to_ascii_lowercase().as_str() {
+        "fixed" => JointKind::Fixed,
+        "revolute" => JointKind::Revolute,
+        "slider" | "prismatic" => JointKind::Slider,
+        "cylindrical" => JointKind::Cylindrical,
+        "ball" | "spherical" => JointKind::Ball,
+        "grounded" => JointKind::Grounded,
+        _ => JointKind::Native(kind.to_owned()),
+    }
+}
+
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.to_ascii_lowercase().as_str() {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
 }
 
 fn enumeration_value(property: &PropertyRecord) -> Option<String> {

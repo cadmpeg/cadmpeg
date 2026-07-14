@@ -381,7 +381,9 @@ fn read_real(bytes: &[u8], offset: usize, width: usize) -> f64 {
 }
 
 fn product_kind(kind: &str) -> Option<&'static str> {
-    if kind.contains("LinkGroup") {
+    if kind.contains("AssemblyObject") {
+        Some("part")
+    } else if kind.contains("LinkGroup") {
         Some("link_group")
     } else if kind.contains("App::Link") {
         Some("occurrence")

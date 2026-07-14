@@ -24,8 +24,7 @@
 //! distinguish derived, inferred, and unknown values. Native namespaces and
 //! unknown records retain source-specific data outside the neutral model.
 //!
-//! Product components and occurrence instancing have neutral arenas; joint
-//! constraints remain reserved.
+//! Product components, occurrence instancing, and assembly joints have neutral arenas.
 
 pub mod annotations;
 pub mod appearance;
@@ -74,7 +73,8 @@ pub use features::{
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use products::{
-    Component, ComponentId, ComponentKind, ComponentReference, Occurrence, OccurrenceId,
+    AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, JointId, JointKind,
+    JointLimits, JointOperand, Occurrence, OccurrenceId,
 };
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;

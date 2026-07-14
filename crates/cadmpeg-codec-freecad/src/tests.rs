@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "42");
+    assert_eq!(result.ir.ir_version, "43");
     let feature = |name: &str| {
         &result
             .ir
@@ -2913,13 +2913,19 @@ fn recovers_assembly_joint_operands_frames_and_state() {
 </Objects>
 <ObjectData Count="2">
  <Object name="Assembly"><Properties Count="0"/></Object>
- <Object name="Joint"><Properties Count="6">
+ <Object name="Joint"><Properties Count="12">
   <Property name="JointType" type="App::PropertyEnumeration"><Integer value="1"/><CustomEnumList count="2"><Enum value="Fixed"/><Enum value="Revolute"/></CustomEnumList></Property>
   <Property name="Reference1" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="2"><Sub value="A.Face1"/><Sub value="A.Edge2"/></XLink></Property>
   <Property name="Reference2" type="App::PropertyXLinkSubHidden"><XLink file="" name="Assembly" count="1"><Sub value="B.Edge3"/></XLink></Property>
   <Property name="Placement1" type="App::PropertyPlacement"><PropertyPlacement Px="1" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Placement2" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
   <Property name="Suppressed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Angle" type="App::PropertyAngle"><Float value="15"/></Property>
+  <Property name="AngleMin" type="App::PropertyAngle"><Float value="-30"/></Property>
+  <Property name="AngleMax" type="App::PropertyAngle"><Float value="45"/></Property>
+  <Property name="EnableAngleMin" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="EnableAngleMax" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="Detach1" type="App::PropertyBool"><Bool value="true"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -2948,8 +2954,34 @@ fn recovers_assembly_joint_operands_frames_and_state() {
         joints[0].parameters.get("Suppressed").map(String::as_str),
         Some("true")
     );
+    assert_eq!(result.ir.model.assembly_joints.len(), 1);
+    let joint = &result.ir.model.assembly_joints[0];
+    assert_eq!(joint.kind, cadmpeg_ir::JointKind::Revolute);
+    assert_eq!(joint.operands.len(), 2);
+    assert!(joint
+        .operands
+        .iter()
+        .all(|operand| operand.component.is_some()));
+    assert_eq!(joint.frames[1][0][3], 2.0);
+    assert!(joint.suppressed);
+    assert_eq!(joint.detached, [true, false]);
+    assert!((joint.angle.expect("angle") - 15_f64.to_radians()).abs() < 1e-12);
+    let limits = joint.angular_limits.as_ref().expect("angular limits");
+    assert!((limits.minimum.expect("minimum") - (-30_f64).to_radians()).abs() < 1e-12);
+    assert!((limits.maximum.expect("maximum") - 45_f64.to_radians()).abs() < 1e-12);
     assert!(crate::validate_native(&result.ir).is_empty());
     assert_valid_document(&result.ir);
+    let mut corrupted = result.ir.clone();
+    let limits = corrupted.model.assembly_joints[0]
+        .angular_limits
+        .as_mut()
+        .expect("limits");
+    limits.minimum = Some(2.0);
+    limits.maximum = Some(1.0);
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid assembly joint")));
 }
 
 #[test]
