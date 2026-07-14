@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 11;
+pub const CATIA_NATIVE_VERSION: u32 = 12;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -120,6 +120,9 @@ pub struct CatiaValueBlock {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub payload: Vec<u8>,
+    /// Lossless typed fields in payload order.
+    #[serde(default)]
+    pub fields: Vec<value_block::ValueField>,
 }
 
 /// One exact `7C02` source-schema catalog.
@@ -591,6 +594,7 @@ impl CatiaValueBlock {
             declared_len: block.declared_len as u64,
             catalog: format!("catia:outer:catalog#{catalog_pos:010}"),
             payload: block.payload,
+            fields: block.fields,
         }
     }
 }
