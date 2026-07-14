@@ -221,6 +221,44 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
 }
 
 #[test]
+fn decode_classifies_cross_card_hollerith_bytes_as_one_global_value() {
+    let product = "p".repeat(70);
+    let global = format!(
+        "1H^^1H!^70H{product}^8Hpart.igs^7Hcadmpeg^3H0.1^32^38^6^308^15^0H^1.0^2^2HMM^1^1.0^15H20260714.000000^0.001^1000.0^6Hauthor^3Horg^11^0^0H^0H!"
+    );
+    let bytes = fixed_ascii_with_global(global.as_bytes());
+
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bytes.as_slice()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let value_spans = result
+        .ir
+        .byte_ledger
+        .spans
+        .iter()
+        .filter(|span| span.meaning == "global_value_2")
+        .collect::<Vec<_>>();
+
+    assert_eq!(value_spans.len(), 2);
+    assert!(value_spans
+        .iter()
+        .all(|span| span.class == cadmpeg_ir::ByteSpanClass::Typed));
+    assert_eq!(
+        value_spans
+            .iter()
+            .map(|span| span.end - span.start)
+            .sum::<u64>(),
+        73
+    );
+    assert_eq!(result.ir.byte_ledger.source_length, bytes.len() as u64);
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
 fn inspect_reports_directory_entity_and_form_census() {
     let bytes = point_file();
 
