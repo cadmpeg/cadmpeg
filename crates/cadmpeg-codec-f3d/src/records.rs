@@ -1099,7 +1099,10 @@ pub struct DesignEdgeRecipeSide {
     pub first: i32,
     /// Scalar between the second and third clause delimiters.
     pub second: i32,
-    /// Two-word prefix after the third clause delimiter.
+    /// Optional scalar between the third and fourth clause delimiters.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub third: Option<i32>,
+    /// Two-word prefix after the final scalar delimiter.
     pub payload_prefix: [i32; 2],
     /// Ordered eight-word payload entries.
     pub entries: Vec<DesignEdgeRecipeEntry>,

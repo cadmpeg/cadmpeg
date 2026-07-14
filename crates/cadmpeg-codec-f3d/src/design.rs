@@ -6806,41 +6806,51 @@ pub(crate) fn edge_recipe_structure(program: &[i32]) -> Option<DesignEdgeRecipeS
         .split(|word| *word == -1)
         .filter(|run| !run.is_empty())
         .collect::<Vec<_>>();
-    if runs.len() != 9
-        || runs[0].len() != 1
-        || runs[1].len() != 2
+    if runs.first().is_none_or(|run| run.len() != 1) {
+        return None;
+    }
+    let sides = [4usize, 5]
+        .into_iter()
+        .filter_map(|first_len| {
+            let second_len = runs.len().checked_sub(1 + first_len)?;
+            if !matches!(second_len, 4 | 5) {
+                return None;
+            }
+            Some([
+                edge_recipe_side(&runs[1..=first_len])?,
+                edge_recipe_side(&runs[1 + first_len..])?,
+            ])
+        })
+        .collect::<Vec<_>>();
+    let [sides] = sides.as_slice() else {
+        return None;
+    };
+    Some(DesignEdgeRecipeStructure {
+        root: runs[0][0],
+        sides: sides.clone(),
+    })
+}
+
+fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignEdgeRecipeSide> {
+    if !matches!(runs.len(), 4 | 5)
+        || runs[0].len() != 2
+        || runs[1].len() != 1
         || runs[2].len() != 1
-        || runs[3].len() != 1
-        || runs[4].len() < 2
-        || (runs[4].len() - 2) % 8 != 0
-        || runs[5].len() != 2
-        || runs[6].len() != 1
-        || runs[7].len() != 1
-        || runs[8].len() < 2
-        || (runs[8].len() - 2) % 8 != 0
+        || (runs.len() == 5 && runs[3].len() != 1)
     {
         return None;
     }
-    let first_entries = edge_recipe_entries(&runs[4][2..])?;
-    let second_entries = edge_recipe_entries(&runs[8][2..])?;
-    Some(DesignEdgeRecipeStructure {
-        root: runs[0][0],
-        sides: [
-            DesignEdgeRecipeSide {
-                header: [runs[1][0], runs[1][1]],
-                first: runs[2][0],
-                second: runs[3][0],
-                payload_prefix: [runs[4][0], runs[4][1]],
-                entries: first_entries,
-            },
-            DesignEdgeRecipeSide {
-                header: [runs[5][0], runs[5][1]],
-                first: runs[6][0],
-                second: runs[7][0],
-                payload_prefix: [runs[8][0], runs[8][1]],
-                entries: second_entries,
-            },
-        ],
+    let payload = runs.last()?;
+    if payload.len() < 2 || (payload.len() - 2) % 8 != 0 {
+        return None;
+    }
+    Some(DesignEdgeRecipeSide {
+        header: [runs[0][0], runs[0][1]],
+        first: runs[1][0],
+        second: runs[2][0],
+        third: (runs.len() == 5).then_some(runs[3][0]),
+        payload_prefix: [payload[0], payload[1]],
+        entries: edge_recipe_entries(&payload[2..])?,
     })
 }
 
@@ -11111,6 +11121,7 @@ mod relation_tests {
         assert_eq!(structured.sides[0].header, [3, 0]);
         assert_eq!(structured.sides[0].first, 2);
         assert_eq!(structured.sides[0].second, 1);
+        assert_eq!(structured.sides[0].third, None);
         assert_eq!(structured.sides[0].payload_prefix, [0, 1]);
         assert_eq!(structured.sides[0].entries[0].selector, 1);
         assert_eq!(structured.sides[0].entries[0].boundary_edge_count.get(), 5);
@@ -11135,6 +11146,7 @@ mod relation_tests {
             3
         );
         assert_eq!(structured.sides[1].header, [3, 0]);
+        assert_eq!(structured.sides[1].third, None);
         assert_eq!(structured.sides[1].payload_prefix, [0, 1]);
         assert_eq!(structured.sides[1].entries[0].selector, 2);
         assert_eq!(structured.sides[1].entries[0].boundary_edge_count.get(), 5);
@@ -11158,6 +11170,15 @@ mod relation_tests {
             structured.sides[1].entries[0].topology_triplets[1].middle,
             1
         );
+        let extended = super::edge_recipe_structure(&[
+            -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 2, -1, 1, -1, 0, -1, 0, 0, -1, 4, 3, -1, 0, -1, 1,
+            -1, 4, -1, 0, 0, -1,
+        ])
+        .expect("recipe structure with a third scalar on its second side");
+        assert_eq!(extended.sides[0].third, None);
+        assert_eq!(extended.sides[1].third, Some(4));
+        assert!(extended.sides[0].entries.is_empty());
+        assert!(extended.sides[1].entries.is_empty());
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(
