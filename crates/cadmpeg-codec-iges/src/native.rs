@@ -301,6 +301,18 @@ struct NativeCircularArray {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeExternalReference {
+    id: String,
+    source_entity: String,
+    form: i64,
+    reference_kind: String,
+    file_identifier: Option<Vec<u8>>,
+    symbolic_name: Option<Vec<u8>>,
+    library_name: Option<Vec<u8>>,
+    resolution_state: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -1062,6 +1074,43 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let external_references = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let (reference_kind, file_index, symbolic_index, library_index) = match entry.form {
+                0 => ("external_definition", Some(1), Some(2), None),
+                1 => ("external_file_definition", Some(1), None, None),
+                2 => ("external_logical", Some(1), Some(2), None),
+                3 => ("native_definition", None, Some(1), None),
+                4 => ("native_library_definition", None, Some(2), Some(1)),
+                _ => unreachable!("filtered external-reference form"),
+            };
+            NativeExternalReference {
+                id: format!("iges:product:external-reference#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                reference_kind: reference_kind.into(),
+                file_identifier: file_index.and_then(|index| {
+                    record
+                        .and_then(|record| record.string(index))
+                        .map(<[u8]>::to_vec)
+                }),
+                symbolic_name: symbolic_index.and_then(|index| {
+                    record
+                        .and_then(|record| record.string(index))
+                        .map(<[u8]>::to_vec)
+                }),
+                library_name: library_index.and_then(|index| {
+                    record
+                        .and_then(|record| record.string(index))
+                        .map(<[u8]>::to_vec)
+                }),
+                resolution_state: "not_attempted".into(),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -1086,5 +1135,6 @@ pub(crate) fn store(
     namespace.set_arena("connect_points", &connect_points)?;
     namespace.set_arena("rectangular_arrays", &rectangular_arrays)?;
     namespace.set_arena("circular_arrays", &circular_arrays)?;
+    namespace.set_arena("external_references", &external_references)?;
     Ok(())
 }

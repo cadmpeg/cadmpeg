@@ -281,5 +281,12 @@ pub(crate) fn summary_notes(records: &[ParameterRecord]) -> Vec<String> {
                 .map(|record| record.tokens.len())
                 .sum::<usize>()
         ),
+        format!(
+            "external_references={}",
+            records
+                .iter()
+                .filter(|record| record.integer(0) == Some(416))
+                .count()
+        ),
     ]
 }

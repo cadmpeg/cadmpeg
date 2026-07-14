@@ -186,6 +186,31 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
 
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 416 && matches!(entry.form, 0..=4))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let nonempty_string = |index| record.string(index).is_some_and(|value| !value.is_empty());
+        let fields_valid = match entry.form {
+            0 | 2 | 4 => nonempty_string(1) && nonempty_string(2),
+            1 | 3 => nonempty_string(1),
+            _ => unreachable!("filtered external-reference form"),
+        };
+        if fields_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "external-reference file, symbolic, or library identifier is empty or invalid",
+            ));
+        }
+    }
+
     let array_targets = directory
         .iter()
         .filter(|entry| matches!(entry.entity_type, 412 | 414) && entry.form == 0)

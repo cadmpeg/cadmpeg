@@ -2233,6 +2233,46 @@ fn patterned_instance_file() -> Vec<u8> {
     ])
 }
 
+fn external_reference_forms_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 416,
+            form: 0,
+            label: "EXTDEF".into(),
+            status: "00000000",
+            parameters: "416,8Hpart.igs,7HBRACKET;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 416,
+            form: 1,
+            label: "EXTFILE".into(),
+            status: "00000000",
+            parameters: "416,12Hassembly.igs;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 416,
+            form: 2,
+            label: "EXTLOGIC".into(),
+            status: "00000000",
+            parameters: "416,9Hsheet.igs,7HFLANGE1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 416,
+            form: 3,
+            label: "NATIVE".into(),
+            status: "00000000",
+            parameters: "416,5HMOTOR;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 416,
+            form: 4,
+            label: "LIBRARY".into(),
+            status: "00000000",
+            parameters: "416,7HDEVICES,5HRELAY;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3362,6 +3402,45 @@ fn decode_preserves_rectangular_and_circular_pattern_order() {
     assert_eq!(circular.fields["location_count"], 4);
     assert_eq!(circular.fields["positions"][0], 1);
     assert_eq!(circular.fields["positions"][1], 3);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_distinguishes_all_external_reference_forms_without_resolution() {
+    let bytes = external_reference_forms_file();
+    let summary = IgesCodec.inspect(&mut Cursor::new(&bytes)).unwrap();
+    assert!(summary
+        .notes
+        .iter()
+        .any(|note| note == "external_references=5"));
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let references = &result.ir.native.namespace("iges").unwrap().arenas["external_references"];
+    assert_eq!(references.len(), 5);
+    assert_eq!(
+        references[0].fields["reference_kind"],
+        "external_definition"
+    );
+    assert_eq!(
+        references[1].fields["reference_kind"],
+        "external_file_definition"
+    );
+    assert!(references[1].fields["symbolic_name"].is_null());
+    assert_eq!(references[2].fields["reference_kind"], "external_logical");
+    assert_eq!(references[3].fields["reference_kind"], "native_definition");
+    assert_eq!(
+        references[4].fields["reference_kind"],
+        "native_library_definition"
+    );
+    assert_eq!(references[4].fields["library_name"][0], 68);
+    assert!(references
+        .iter()
+        .all(|reference| reference.fields["resolution_state"] == "not_attempted"));
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

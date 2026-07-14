@@ -80,6 +80,8 @@ Type 320 Form 0 defines a reusable network subfigure and has entity-use flag `02
 
 Type 420 Form 0 instantiates one Type 320 definition. It stores translation coordinates defaulting to zero; positive definition-space x, y, and z scale factors, where x defaults to one and omitted y or z defaults to x; a type flag; a primary reference designator; an optional Type 312 display-template pointer; and an ordered nullable connect-point list. The instance and definition connect-point counts are equal. Definition-space scaling precedes the instance translation and the Directory transformation. The `network_definitions` and `network_instances` arenas retain native values, ordered identities, nullable connection positions, and placement links.
 
+Type 416 external references are identity records and never cause implicit file or library access. Form 0 names one definition in an external file. Form 1 treats an entire external file as one definition. Form 2 names a logically related entity in an external file. Form 3 names a definition already available in the receiving system. Form 4 names a definition in a receiving-system library. File identifiers, symbolic names, and library names are nonempty Hollerith strings. The `external_references` arena preserves the form-specific reference kind and identifiers with resolution state `not_attempted`; it does not conflate an unattempted reference with a missing or resolved target.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.
