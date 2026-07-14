@@ -1063,15 +1063,17 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        build_standard_edge_curve, fit_rank_one_e5_plane_axes, intersection_line_direction,
-        ordered_range, point_on_known_surface, quintic_jet_pcurve, rational_pcurve_arc,
-        standard_pcurve_geometry,
+        attach_standard_free_vertices, build_standard_edge_curve, fit_rank_one_e5_plane_axes,
+        intersection_line_direction, ordered_range, point_on_known_surface, quintic_jet_pcurve,
+        rational_pcurve_arc, standard_pcurve_geometry,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
     use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
+    use cadmpeg_ir::ids::{PointId, VertexId};
     use cadmpeg_ir::math::{Point3, Vector3};
+    use cadmpeg_ir::topology::Vertex;
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
@@ -1117,6 +1119,25 @@ mod chart_tests {
             CurveGeometry::Unknown { ref record }
                 if record.as_ref().is_some_and(|id| id.0 == "catia:payload:unknown#brep-stream")
         ));
+    }
+
+    #[test]
+    fn standard_unbound_vertices_receive_one_free_vertex_owner() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.vertices.push(Vertex {
+            id: VertexId("v".to_string()),
+            point: PointId("p".to_string()),
+            tolerance: None,
+        });
+        let mut annotations = AnnotationBuilder::new();
+        attach_standard_free_vertices(&mut ir, &mut annotations);
+        assert_eq!(ir.model.bodies.len(), 1);
+        assert_eq!(ir.model.regions.len(), 1);
+        assert_eq!(ir.model.shells.len(), 1);
+        assert_eq!(
+            ir.model.shells[0].free_vertices,
+            [VertexId("v".to_string())]
+        );
     }
 
     #[test]
@@ -2287,6 +2308,8 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                 .map(|vertex| vertex.id.clone())
                 .collect();
             annotations.derived(&shell.id, "free_vertices");
+        } else if !ir.model.vertices.is_empty() {
+            attach_standard_free_vertices(&mut ir, &mut annotations);
         }
     }
     append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
@@ -2410,6 +2433,48 @@ fn attach_standard_faces(
             free_vertices: Vec::new(),
         });
     }
+}
+
+fn attach_standard_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    let body_id = BodyId("catia:standard:body#unbound-points".to_string());
+    let region_id = RegionId("catia:standard:region#unbound-points".to_string());
+    let shell_id = ShellId("catia:standard:shell#unbound-points".to_string());
+    for id in [&body_id.0, &region_id.0, &shell_id.0] {
+        annotate(
+            annotations,
+            id,
+            "MainDataStream+SurfacicReps",
+            0,
+            "unbound_point_owner",
+            Exactness::Inferred,
+        );
+    }
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Wire,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
+    ir.model.shells.push(Shell {
+        id: shell_id,
+        region: region_id,
+        faces: Vec::new(),
+        wire_edges: Vec::new(),
+        free_vertices: ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| vertex.id.clone())
+            .collect(),
+    });
 }
 
 fn fbb_groups(brep: &[u8]) -> Vec<usize> {
@@ -2759,9 +2824,11 @@ fn attach_standard_topology(
                     "previous",
                     "radial_next",
                     "sense",
-                    "pcurve",
                 ] {
                     annotations.derived(&id, field);
+                }
+                if pcurve_id.is_some() {
+                    annotations.derived(&id, "pcurve");
                 }
                 ir.model.coedges.push(Coedge {
                     id,
