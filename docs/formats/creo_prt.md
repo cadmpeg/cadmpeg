@@ -226,7 +226,7 @@ unique perpendicular held axis defines the section plane.
 
 For an axis-aligned plane, the held-coordinate outline defines the placed plane
 equation. An axis-aligned `local_sys` support frame without that outline does not
-establish the model-space offset.
+establish the model-space offset outside its generating feature.
 
 A `crv_array` edge whose two face references resolve to nonparallel placed
 planes has the exact model-space carrier given by their intersection line. Its
@@ -451,6 +451,9 @@ A typed schema row that owns a materialized `srf_array` row is an active constru
 A class-923 feature with exactly one resolved plane carrier defines that datum plane by the carrier's model-space origin, normal, and in-plane reference direction.
 
 For a linear section sweep, generated plane carriers parallel to the section normal are cap planes. Their signed offsets are measured from the section origin along the section normal. One distinct nonzero offset defines a blind extrusion from offset zero to that offset; a negative offset reverses the sweep direction. Exactly two offsets with opposite signs define a two-sided extrusion. Equal magnitudes select the symmetric form with total length equal to the sum of the magnitudes. The section-definition identifier is the profile reference; it denotes a neutral sketch profile only when the sketch contains a resolved profile chain.
+Within the generating feature, a complete plane `local_sys` supplies the cap
+support point and normal. A held-coordinate outline for the same surface takes
+precedence.
 
 For a rotational section sweep, the unique nondegenerate section line whose
 two solved endpoints have `u = 0` is the revolution axis. Applying the section
@@ -557,6 +560,7 @@ An `18` immediately before any positional generated-arc scalar opener is a
 standalone zero and does not consume that opener as a cache index.
 
 In plane `local_sys` rows, `18 e5` encodes `[0, 1, 0]`. `18 10`, `18 e4`, `18 e6`, and bare `10` encode standalone zero values under their row-specific token rules.
+The positional row scalar `0e` encodes `-0.5`.
 
 Positional `ActDatums` plane rows contain flat `envlp(2x2)` and `outline(2x3)` scalar sequences without `f9` array openers. Their outlines use the held-coordinate plane rule of named rows. The datum-plane set includes the named datum row and positional `geom_type = 0x22` rows.
 

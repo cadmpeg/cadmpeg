@@ -106,6 +106,9 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
 /// implicit zero low byte. Named scalar fields use the eight-byte `0x71`
 /// form handled by [`decode_in_lane`].
 pub fn decode_in_row_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x0e) {
+        return Some((-0.5, offset + 1));
+    }
     if data.get(offset) == Some(&0x71) {
         return ieee7(data, offset, 0x3f);
     }
@@ -241,6 +244,16 @@ mod tests {
         assert_eq!(
             decode_in_lane(&data, 0, &cache).map(|(_, end)| end),
             Some(8)
+        );
+    }
+
+    #[test]
+    fn row_lane_decodes_negative_half_literal() {
+        let cache = ScalarCache::default();
+
+        assert_eq!(
+            decode_in_row_lane(&[0x0e, 0x18], 0, &cache),
+            Some((-0.5, 1))
         );
     }
 }

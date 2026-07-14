@@ -1367,6 +1367,33 @@ fn normalized(vector: [f64; 3]) -> Option<[f64; 3]> {
     (magnitude > 1e-12).then(|| vector.map(|value| value / magnitude))
 }
 
+fn feature_plane_equations(scan: &ContainerScan, feature_id: u32) -> Vec<([f64; 3], [f64; 3])> {
+    let ids = scan
+        .surface_rows
+        .iter()
+        .filter(|row| {
+            row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
+        })
+        .map(|row| row.id)
+        .collect::<BTreeSet<_>>();
+    let outlines = scan
+        .outline_planes
+        .iter()
+        .filter(|plane| ids.contains(&plane.surface_id))
+        .map(|plane| (plane.surface_id, (plane.origin, plane.normal)))
+        .collect::<BTreeMap<_, _>>();
+    ids.into_iter()
+        .filter_map(|id| {
+            outlines.get(&id).copied().or_else(|| {
+                scan.plane_local_systems
+                    .iter()
+                    .find(|frame| frame.surface_id == id)
+                    .and_then(|frame| Some((frame.origin?, frame.normal?)))
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 fn extruded_segment_surface(
     transform: &crate::placement::FeatureSectionTransform,
@@ -1887,23 +1914,7 @@ fn transfer_resolved_extrusion_breps(
         if sketch.profiles.is_empty() {
             continue;
         }
-        let cap_origins = scan
-            .surface_rows
-            .iter()
-            .filter(|row| {
-                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
-            })
-            .filter_map(|row| {
-                let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-                ir.model.surfaces.iter().find(|surface| surface.id == id)
-            })
-            .filter_map(|surface| match surface.geometry {
-                SurfaceGeometry::Plane { origin, normal, .. } => Some((
-                    [origin.x, origin.y, origin.z],
-                    [normal.x, normal.y, normal.z],
-                )),
-                _ => None,
-            });
+        let cap_origins = feature_plane_equations(scan, feature_id);
         let Some(span) = extrusion_span(transform.origin, transform.normal, cap_origins) else {
             continue;
         };
@@ -3492,24 +3503,7 @@ fn schema_feature_definition(
                     }
                 });
             if let Some(profile) = profile {
-                let cap_origins = scan
-                    .surface_rows
-                    .iter()
-                    .filter(|row| {
-                        row.feature_id == feature_id
-                            && row.kind == crate::surface::SurfaceKind::Plane
-                    })
-                    .filter_map(|row| {
-                        let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-                        ir.model.surfaces.iter().find(|surface| surface.id == id)
-                    })
-                    .filter_map(|surface| match surface.geometry {
-                        SurfaceGeometry::Plane { origin, normal, .. } => Some((
-                            [origin.x, origin.y, origin.z],
-                            [normal.x, normal.y, normal.z],
-                        )),
-                        _ => None,
-                    });
+                let cap_origins = feature_plane_equations(scan, feature_id);
                 if let Some((extent, direction)) =
                     extrusion_extent_and_direction(transform.origin, transform.normal, cap_origins)
                 {
@@ -3618,6 +3612,9 @@ fn extrusion_span(
             .zip(direction)
             .map(|((coordinate, base), axis)| (coordinate - base) * axis)
             .sum::<f64>();
+        if offset.abs() <= 1e-12 {
+            continue;
+        }
         let scale = offset.abs().max(1.0);
         if !offsets
             .iter()
@@ -3754,6 +3751,26 @@ mod resolved_sketch_tests {
                     length: Length(48.0),
                 },
                 [-0.0, 1.0, -0.0],
+            ))
+        );
+    }
+
+    #[test]
+    fn zero_offset_support_plane_does_not_obscure_blind_cap() {
+        assert_eq!(
+            extrusion_extent_and_direction(
+                [0.0; 3],
+                [0.0, 1.0, 0.0],
+                [
+                    ([20.0, 0.0, 6.0], [0.0, 1.0, 0.0]),
+                    ([0.0, 48.0, 0.0], [0.0, 1.0, 0.0]),
+                ],
+            ),
+            Some((
+                Extent::Blind {
+                    length: Length(48.0),
+                },
+                [0.0, 1.0, 0.0],
             ))
         );
     }
