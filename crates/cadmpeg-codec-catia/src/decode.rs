@@ -1158,13 +1158,14 @@ mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve, canonical_periodic_range,
         circle_parameter_range_from_surface_branch, combine_propagated_endpoint_pairs,
-        e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
+        e5_body_kinds, e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
         equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes, include_native_endpoint_pairs,
         intersection_line_direction, ordered_range, point_distance, point_on_known_surface,
         quintic_jet_pcurve, rational_pcurve_arc, resolve_standard_endpoint_pairs,
         reverse_e5_pcurve_geometry, standard_circle_endpoint_candidates,
         standard_circle_param_range, standard_pcurve_geometry, unique_native_identity_points,
     };
+    use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
@@ -1174,11 +1175,70 @@ mod chart_tests {
     };
     use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{Point, Vertex};
+    use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
+
+    #[test]
+    fn e5_body_kinds_require_complete_single_body_edge_ownership() {
+        let face = |record_id| E5Face {
+            record_id,
+            surface: 100 + record_id,
+            trailer_sign: 1,
+            loops: vec![E5Loop {
+                record_id: 200 + record_id,
+                surface: 100 + record_id,
+                pcurves: vec![300 + record_id],
+                edge_uses: vec![10],
+                reversed: vec![false],
+                absolute_reversed: Some(vec![false]),
+                outer: Some(true),
+            }],
+        };
+        let edge = |record_id| E5Edge {
+            record_id,
+            support: 20,
+            start_vertex: 30,
+            end_vertex: 31,
+            parameter_start: 40,
+            parameter_end: 41,
+            tail: Vec::new(),
+        };
+        let topology = |faces: Vec<E5Face>, edges: Vec<u32>| E5Topology {
+            bodies: Vec::new(),
+            faces,
+            edges: edges
+                .into_iter()
+                .map(|record_id| (record_id, edge(record_id)))
+                .collect(),
+            pcurves: BTreeMap::new(),
+            bounds: BTreeMap::new(),
+            curve_supports: BTreeMap::new(),
+            vertex_refs: Vec::new(),
+        };
+
+        assert_eq!(
+            e5_body_kinds(&topology(vec![face(1)], vec![10]), &[(None, vec![1])]),
+            Some(vec![BodyKind::Sheet])
+        );
+        assert_eq!(
+            e5_body_kinds(
+                &topology(vec![face(1), face(2)], vec![10]),
+                &[(None, vec![1, 2])],
+            ),
+            Some(vec![BodyKind::Solid])
+        );
+        assert!(e5_body_kinds(
+            &topology(vec![face(1), face(2)], vec![10]),
+            &[(Some(1), vec![1]), (Some(2), vec![2])],
+        )
+        .is_none());
+        assert!(
+            e5_body_kinds(&topology(vec![face(1)], vec![10, 11]), &[(None, vec![1])],).is_none()
+        );
+    }
 
     #[test]
     fn rational_arc_preserves_angular_parameterization() {
@@ -2384,6 +2444,9 @@ fn transfer_e5_topology(
     {
         return false;
     }
+    let Some(body_kinds) = e5_body_kinds(topology, &body_faces) else {
+        return false;
+    };
 
     let edge_ids: HashMap<u32, EdgeId> = topology
         .edges
@@ -2531,7 +2594,7 @@ fn transfer_e5_topology(
         ));
         let region_id = RegionId(format!("catia:e5:region#{body_index}"));
         let shell_id = ShellId(format!("catia:e5:shell#{body_index}"));
-        let kind = e5_body_kind(topology, faces);
+        let kind = body_kinds[body_index];
         annotate(
             annotations,
             &body_id,
@@ -3313,25 +3376,49 @@ fn e5_surface_uv(surface: &geometry::E5Surface, raw: [f64; 2]) -> Point2 {
     Point2::new(raw[0] * surface.uv_scale[0], raw[1] * surface.uv_scale[1])
 }
 
-fn e5_body_kind(topology: &crate::e5::E5Topology, faces: &[u32]) -> BodyKind {
-    let face_ids: HashSet<u32> = faces.iter().copied().collect();
-    let mut uses = HashMap::<u32, usize>::new();
-    for face in topology
-        .faces
-        .iter()
-        .filter(|face| face_ids.contains(&face.record_id))
-    {
-        for edge in face.loops.iter().flat_map(|loop_| &loop_.edge_uses) {
-            *uses.entry(*edge).or_default() += 1;
+fn e5_body_kinds(
+    topology: &crate::e5::E5Topology,
+    body_faces: &[(Option<u32>, Vec<u32>)],
+) -> Option<Vec<BodyKind>> {
+    let mut body_by_face = HashMap::new();
+    for (body, (_, faces)) in body_faces.iter().enumerate() {
+        for face in faces {
+            if body_by_face.insert(*face, body).is_some() {
+                return None;
+            }
         }
     }
-    if uses.values().any(|count| *count > 2) {
-        BodyKind::General
-    } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
-        BodyKind::Solid
-    } else {
-        BodyKind::Sheet
+    let mut uses = vec![HashMap::<u32, usize>::new(); body_faces.len()];
+    let mut bodies_by_edge = topology
+        .edges
+        .keys()
+        .map(|edge| (*edge, HashSet::new()))
+        .collect::<HashMap<_, _>>();
+    for face in &topology.faces {
+        let body = *body_by_face.get(&face.record_id)?;
+        for edge in face.loops.iter().flat_map(|loop_| &loop_.edge_uses) {
+            bodies_by_edge.get_mut(edge)?.insert(body);
+            *uses[body].entry(*edge).or_default() += 1;
+        }
     }
+    if body_by_face.len() != topology.faces.len()
+        || bodies_by_edge.values().any(|bodies| bodies.len() != 1)
+    {
+        return None;
+    }
+    Some(
+        uses.into_iter()
+            .map(|uses| {
+                if uses.values().any(|count| *count > 2) {
+                    BodyKind::General
+                } else if !uses.is_empty() && uses.values().all(|count| *count == 2) {
+                    BodyKind::Solid
+                } else {
+                    BodyKind::Sheet
+                }
+            })
+            .collect(),
+    )
 }
 
 fn point_distance(a: Point3, b: Point3) -> f64 {
