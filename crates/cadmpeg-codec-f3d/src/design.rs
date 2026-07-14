@@ -16,8 +16,9 @@ use crate::records::{
     DesignExtrudeSelectionMember, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject,
     DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, PersistentSubentityTag,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -2710,6 +2711,41 @@ pub fn decode_face_operands(
     Ok(out)
 }
 
+/// Join each face recipe's persistent Design reference to active solved faces.
+pub fn bind_face_operand_candidates(
+    operands: &mut [DesignFaceOperand],
+    recipes: &[ConstructionRecipe],
+    tags: &[PersistentSubentityTag],
+) {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let recipes = recipes
+        .iter()
+        .map(|recipe| (recipe.id.as_str(), recipe))
+        .collect::<HashMap<_, _>>();
+    for operand in operands {
+        let Some(design_reference) = recipes
+            .get(operand.recipe_id.as_str())
+            .and_then(|recipe| recipe.design_id.as_deref())
+            .and_then(|value| value.parse::<i64>().ok())
+        else {
+            continue;
+        };
+        operand.candidate_faces = tags
+            .iter()
+            .filter(|tag| tag.design_references.contains(&design_reference))
+            .filter_map(|tag| match &tag.target {
+                AttributeTarget::Face(id) => Some(id.clone()),
+                _ => None,
+            })
+            .collect();
+        operand
+            .candidate_faces
+            .sort_by(|left, right| left.0.cmp(&right.0));
+        operand.candidate_faces.dedup();
+    }
+}
+
 /// Resolve the unique sketch-profile frame named by every Extrude scope.
 pub fn bind_extrude_profiles(
     scan: &ContainerScan,
@@ -3541,6 +3577,7 @@ fn parse_face_operand(
         recipe_record_byte_offset: recipe_start,
         recipe_id: recipe.id.clone(),
         recipe_kind: recipe.kind,
+        candidate_faces: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -5435,8 +5472,8 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        bind_dimension_loci, bind_extrude_selection_geometry, bind_sketch_graph,
-        decode_fillet_radius_groups, find_dimension_locus_pair, identity_matrix,
+        bind_dimension_loci, bind_extrude_selection_geometry, bind_face_operand_candidates,
+        bind_sketch_graph, decode_fillet_radius_groups, find_dimension_locus_pair, identity_matrix,
         next_indexed_record_offset, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
@@ -5450,11 +5487,13 @@ mod relation_tests {
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
         DesignDimensionLocusPair, DesignEntityHeader, DesignExtrudeOperandRole,
         DesignExtrudeProfileOperand, DesignObjectKind, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, SketchConstraintKind,
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-        SketchRelationOperand,
+        DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, PersistentSubentityTag,
+        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+        SketchRelation, SketchRelationOperand,
     };
+    use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue};
+    use cadmpeg_ir::ids::FaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchGeometry};
     use std::collections::HashSet;
@@ -6230,7 +6269,8 @@ mod relation_tests {
         face_scope.kind = "Extrude".into();
         let mut face_recipe = recipe;
         face_recipe.kind = ConstructionRecipeKind::BoundedFace;
-        let operand = parse_face_operand(
+        face_recipe.design_id = Some("303".into());
+        let mut operand = parse_face_operand(
             &bytes,
             &face_scope,
             0,
@@ -6245,6 +6285,22 @@ mod relation_tests {
         assert_eq!(operand.recipe_id, face_recipe.id);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, next_at);
+        bind_face_operand_candidates(
+            std::slice::from_mut(&mut operand),
+            std::slice::from_ref(&face_recipe),
+            &[PersistentSubentityTag {
+                id: "f3d:asm:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
+            }],
+        );
+        assert_eq!(
+            operand.candidate_faces,
+            [FaceId("f3d:brep:entity#50".into())]
+        );
     }
 
     #[test]

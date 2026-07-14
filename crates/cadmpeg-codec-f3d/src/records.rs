@@ -835,6 +835,9 @@ pub struct DesignFaceOperand {
     pub recipe_id: String,
     /// Exact face-recipe family.
     pub recipe_kind: ConstructionRecipeKind,
+    /// Active solved faces carrying the recipe's persistent Design reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_faces: Vec<FaceId>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.

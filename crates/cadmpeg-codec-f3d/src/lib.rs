@@ -900,6 +900,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
+        let mut expected_faces = recipe
+            .and_then(|recipe| recipe.design_id.as_deref())
+            .and_then(|value| value.parse::<i64>().ok())
+            .map(|design_reference| {
+                native
+                    .persistent_subentity_tags
+                    .iter()
+                    .filter(|tag| tag.design_references.contains(&design_reference))
+                    .filter_map(|tag| match &tag.target {
+                        cadmpeg_ir::attributes::AttributeTarget::Face(id) => Some(id.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        expected_faces.sort_by(|left, right| left.0.cmp(&right.0));
+        expected_faces.dedup();
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && operand.paired_class_tag.len() == 3
@@ -931,6 +948,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 records::ConstructionRecipeKind::Face
                     | records::ConstructionRecipeKind::BoundedFace
             )
+            && operand.candidate_faces == expected_faces
             && recipe.is_some_and(|recipe| {
                 design_stream(&recipe.id) == native_stream
                     && recipe.kind == operand.recipe_kind
