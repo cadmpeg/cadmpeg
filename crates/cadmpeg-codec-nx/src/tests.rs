@@ -4036,6 +4036,67 @@ fn tolerant_edge_becomes_a_two_support_procedural_intersection() {
 }
 
 #[test]
+fn intersection_support_completion_requires_one_unique_incident_complement() {
+    use cadmpeg_ir::geometry::{IntcurveSupportContext, IntcurveSupportSide, ProceduralCurve};
+    use cadmpeg_ir::ids::ProceduralCurveId;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let edge = ir.model.edges[0].clone();
+    let incident = ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.edge == edge.id)
+        .filter_map(|coedge| {
+            let face = ir
+                .model
+                .loops
+                .iter()
+                .find(|loop_| loop_.id == coedge.owner_loop)?
+                .face
+                .clone();
+            ir.model
+                .faces
+                .iter()
+                .find(|candidate| candidate.id == face)
+                .map(|face| face.surface.clone())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(incident.len(), 2);
+    let curve = edge.curve.expect("cube edge curve");
+    ir.model.procedural_curves.push(ProceduralCurve {
+        id: ProceduralCurveId("nx:test:intersection#0".into()),
+        curve,
+        definition: ProceduralCurveDefinition::Intersection {
+            context: IntcurveSupportContext {
+                sides: [
+                    IntcurveSupportSide {
+                        surface: Some(incident[0].clone()),
+                        pcurve: None,
+                    },
+                    IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    },
+                ],
+                parameter_range: [0.0, 1.0],
+                discontinuities: [Vec::new(), Vec::new(), Vec::new()],
+            },
+            discontinuity_flag: false,
+        },
+        cache_fit_tolerance: None,
+    });
+
+    crate::decode::complete_intersection_supports_from_edge_incidence(&mut ir);
+    let ProceduralCurveDefinition::Intersection { context, .. } =
+        &ir.model.procedural_curves[0].definition
+    else {
+        panic!("intersection");
+    };
+    assert_eq!(context.sides[1].surface.as_ref(), Some(&incident[1]));
+}
+
+#[test]
 fn decode_attaches_dimension_two_bcurve_through_surface_curve() {
     let stream = pcurve_topology_partition_stream();
     let mut input = Cursor::new(prt_with_partition(&stream));

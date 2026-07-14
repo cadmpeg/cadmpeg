@@ -451,6 +451,12 @@ The chart/start-term/end-term witness slots `ref[2:5]` are atomic: all three are
 
 For the `0x5a` delta twin the layout is fixed (primary = ref[0], bridge = ref[1]); for type-38 the primary/bridge assignment follows the `0x00cc` marker (marker-2 → primary ref[0]; marker-3 → primary ref[1]).
 
+When exactly one serialized support is null, an edge using the construction
+supplies the missing support if its incident face surfaces contain exactly one
+surface not already named by the construction. That unique complement occupies
+the null support slot. Two null slots or more than one unmatched incident
+surface do not establish support order and remain unresolved.
+
 **CHART_s (`0x28`):** branch selector and native-parameter certificate:
 
 ```text

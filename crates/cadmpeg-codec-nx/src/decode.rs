@@ -2052,6 +2052,7 @@ fn emit_topology(
     }
 
     attach_tolerant_edge_intersections(ir, graph, &edges, &prefix, source_stream, annotations);
+    complete_intersection_supports_from_edge_incidence(ir);
 
     let owned_edges: BTreeSet<_> = ir
         .model
@@ -2089,6 +2090,75 @@ fn ordered_parameter_range(mut range: [f64; 2]) -> Option<[f64; 2]> {
         range.swap(0, 1);
     }
     Some(range)
+}
+
+pub(crate) fn complete_intersection_supports_from_edge_incidence(ir: &mut CadIr) {
+    let loop_faces = ir
+        .model
+        .loops
+        .iter()
+        .map(|loop_| (loop_.id.clone(), loop_.face.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let face_surfaces = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| (face.id.clone(), face.surface.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let edge_curves = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| Some((edge.id.clone(), edge.curve.clone()?)))
+        .collect::<BTreeMap<_, _>>();
+    let mut incident_surfaces = BTreeMap::<CurveId, Vec<SurfaceId>>::new();
+    for coedge in &ir.model.coedges {
+        let Some(curve) = edge_curves.get(&coedge.edge) else {
+            continue;
+        };
+        let Some(surface) = loop_faces
+            .get(&coedge.owner_loop)
+            .and_then(|face| face_surfaces.get(face))
+        else {
+            continue;
+        };
+        let surfaces = incident_surfaces.entry(curve.clone()).or_default();
+        if !surfaces.contains(surface) {
+            surfaces.push(surface.clone());
+        }
+    }
+
+    for procedural in &mut ir.model.procedural_curves {
+        let ProceduralCurveDefinition::Intersection { context, .. } = &mut procedural.definition
+        else {
+            continue;
+        };
+        let missing = context
+            .sides
+            .iter()
+            .enumerate()
+            .filter_map(|(index, side)| side.surface.is_none().then_some(index))
+            .collect::<Vec<_>>();
+        if missing.len() != 1 {
+            continue;
+        }
+        let Some(incident) = incident_surfaces.get(&procedural.curve) else {
+            continue;
+        };
+        let candidates = incident
+            .iter()
+            .filter(|surface| {
+                !context
+                    .sides
+                    .iter()
+                    .any(|side| side.surface.as_ref() == Some(surface))
+            })
+            .collect::<Vec<_>>();
+        let [surface] = candidates.as_slice() else {
+            continue;
+        };
+        context.sides[missing[0]].surface = Some((*surface).clone());
+    }
 }
 
 pub(crate) fn attach_tolerant_edge_intersections(
