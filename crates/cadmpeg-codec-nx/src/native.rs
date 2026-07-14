@@ -561,6 +561,8 @@ pub struct FeatureExtrudePayload32Branch {
     pub id: String,
     /// Owning `EXTRUDE` operation label.
     pub operation_label: String,
+    /// Body object index anchoring the branch.
+    pub body_object_index: u32,
     /// Finite shifted-IEEE scalar following the branch marker.
     pub scalar: f64,
     /// Ordered fixed-width big-endian atoms in the first counted lane.
@@ -575,6 +577,23 @@ pub struct FeatureExtrudePayload32Branch {
     pub terminal_object_index: u32,
     /// Absolute file offset of the `32` branch marker.
     pub source_offset: u64,
+}
+
+/// Complete alternate extrusion construction using the structured `32` branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureExtrude32Construction {
+    /// Globally unique construction identity.
+    pub id: String,
+    /// Owning `EXTRUDE` operation label.
+    pub operation_label: String,
+    /// Structured branch supplying the body-anchored construction lanes.
+    pub branch: String,
+    /// Body object index witnessed at both ends of the structured branch.
+    pub body_object_index: u32,
+    /// Ordered profile-reference identities.
+    pub profile_references: Vec<String>,
+    /// Ordered uniquely resolved profile blocks.
+    pub profile_data_blocks: Vec<String>,
 }
 
 /// Ordered construction reference carried by a bounded `BLOCK` payload.
@@ -1706,6 +1725,7 @@ pub fn feature_extrude_payload_32_branches(
                 operation_label: format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
                 ),
+                body_object_index: branch.body_object_index,
                 scalar: branch.scalar,
                 atoms_be: branch.atoms_be,
                 atom_indices: branch.atom_indices,
@@ -1717,6 +1737,50 @@ pub fn feature_extrude_payload_32_branches(
         }
     }
     branches
+}
+
+/// Join exact profile fields to self-witnessed structured extrusion branches.
+pub fn feature_extrude_32_constructions(
+    references: &[FeatureExtrudeProfileReference],
+    branches: &[FeatureExtrudePayload32Branch],
+) -> Vec<FeatureExtrude32Construction> {
+    let mut constructions = Vec::new();
+    for branch in branches {
+        let mut profile = references
+            .iter()
+            .filter(|reference| reference.operation_label == branch.operation_label)
+            .collect::<Vec<_>>();
+        profile.sort_by_key(|reference| reference.ordinal);
+        if profile.is_empty()
+            || profile
+                .iter()
+                .enumerate()
+                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+        {
+            continue;
+        }
+        let Some(profile_data_blocks) = profile
+            .iter()
+            .map(|reference| reference.data_block.clone())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        constructions.push(FeatureExtrude32Construction {
+            id: branch
+                .id
+                .replacen("extrude-payload-32-branch", "extrude-32-construction", 1),
+            operation_label: branch.operation_label.clone(),
+            branch: branch.id.clone(),
+            body_object_index: branch.body_object_index,
+            profile_references: profile
+                .iter()
+                .map(|reference| reference.id.clone())
+                .collect(),
+            profile_data_blocks,
+        });
+    }
+    constructions
 }
 
 /// Decode and resolve ordered construction references in `BLOCK` payloads.

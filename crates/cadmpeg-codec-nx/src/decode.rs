@@ -2798,6 +2798,10 @@ fn attach_native_object_model(
         );
     let feature_extrude_payload_32_branches =
         crate::native::feature_extrude_payload_32_branches(&scan.container);
+    let feature_extrude_32_constructions = crate::native::feature_extrude_32_constructions(
+        &feature_extrude_profile_references,
+        &feature_extrude_payload_32_branches,
+    );
     let feature_block_construction_references =
         crate::native::feature_block_construction_references(&scan.container);
     let feature_block_constructions =
@@ -2854,6 +2858,7 @@ fn attach_native_object_model(
         && feature_operation_body_reference_lanes.is_empty()
         && feature_extrude_construction_profiles.is_empty()
         && feature_extrude_payload_32_branches.is_empty()
+        && feature_extrude_32_constructions.is_empty()
         && feature_block_construction_references.is_empty()
         && feature_block_constructions.is_empty()
         && feature_sketch_records.is_empty()
@@ -3087,7 +3092,7 @@ fn attach_native_object_model(
     }
     attach_feature_operations(
         ir,
-        FeatureOperationSources {
+        &FeatureOperationSources {
             labels: &feature_operation_labels,
             booleans: &feature_boolean_operations,
             body_references: &feature_body_references,
@@ -3099,6 +3104,7 @@ fn attach_native_object_model(
             operation_body_operands: &feature_operation_body_operands,
             sketch_construction_inputs: &feature_sketch_construction_inputs,
             block_constructions: &feature_block_constructions,
+            extrude_32_constructions: &feature_extrude_32_constructions,
             parameter_bindings: &feature_parameter_bindings,
             expressions: &expressions,
             operation_records: &feature_operation_records,
@@ -3112,7 +3118,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(52);
+    namespace.version = namespace.version.max(53);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3218,6 +3224,12 @@ fn attach_native_object_model(
             &feature_extrude_payload_32_branches,
         )?;
     }
+    if !feature_extrude_32_constructions.is_empty() {
+        namespace.set_arena(
+            "feature_extrude_32_constructions",
+            &feature_extrude_32_constructions,
+        )?;
+    }
     if !feature_block_construction_references.is_empty() {
         namespace.set_arena(
             "feature_block_construction_references",
@@ -3303,6 +3315,7 @@ struct FeatureOperationSources<'a> {
     operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
     sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
+    extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
@@ -3312,7 +3325,7 @@ struct FeatureOperationSources<'a> {
 
 fn attach_feature_operations(
     ir: &mut CadIr,
-    sources: FeatureOperationSources<'_>,
+    sources: &FeatureOperationSources<'_>,
     annotations: &mut AnnotationBuilder,
 ) {
     let FeatureOperationSources {
@@ -3327,12 +3340,13 @@ fn attach_feature_operations(
         operation_body_operands,
         sketch_construction_inputs,
         block_constructions,
+        extrude_32_constructions,
         parameter_bindings,
         expressions,
         operation_records,
         payload_strings,
         body_bindings,
-    } = sources;
+    } = *sources;
     let stream = annotations.stream("nx:container");
     let base_ordinal = ir.model.features.len() as u64;
     let booleans = booleans
@@ -3401,6 +3415,10 @@ fn attach_feature_operations(
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
         .collect::<BTreeMap<_, _>>();
     let block_constructions_by_operation = block_constructions
+        .iter()
+        .map(|construction| (construction.operation_label.as_str(), construction))
+        .collect::<BTreeMap<_, _>>();
+    let extrude_32_constructions_by_operation = extrude_32_constructions
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
@@ -3505,6 +3523,12 @@ fn attach_feature_operations(
         }
         if let Some(construction) = block_constructions_by_operation.get(label.id.as_str()) {
             source_properties.insert("block_construction".to_string(), construction.id.clone());
+        }
+        if let Some(construction) = extrude_32_constructions_by_operation.get(label.id.as_str()) {
+            source_properties.insert(
+                "extrude_32_construction".to_string(),
+                construction.id.clone(),
+            );
         }
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(

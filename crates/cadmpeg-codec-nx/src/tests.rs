@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 52);
+    assert_eq!(namespace.version, 53);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1784,6 +1784,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     };
     let branch = crate::om::extrude_payload_32_branch(record).unwrap();
     assert_eq!(branch.offset, 105);
+    assert_eq!(branch.body_object_index, 115);
     assert!(branch.scalar.is_finite());
     assert_eq!(branch.atoms_be, [0x3d82_5600, 0x3d82_5700]);
     assert_eq!(branch.atom_indices, [598, 599]);
@@ -1812,6 +1813,54 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
         })
         .is_none()
     );
+
+    let mut wrong_terminal_body = bytes.to_vec();
+    wrong_terminal_body[43] = 0x72;
+    assert!(
+        crate::om::extrude_payload_32_branch(crate::om::OperationRecord {
+            bytes: &wrong_terminal_body,
+            payload: &wrong_terminal_body,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
+    let reference = crate::native::FeatureExtrudeProfileReference {
+        id: "profile#0".to_string(),
+        operation_label: "operation".to_string(),
+        ordinal: 0,
+        witnessed: false,
+        object_index: 100,
+        data_block: Some("block#100".to_string()),
+        source_offset: 10,
+    };
+    let branch = crate::native::FeatureExtrudePayload32Branch {
+        id: "branch".to_string(),
+        operation_label: "operation".to_string(),
+        body_object_index: 42,
+        scalar: 1.0,
+        atoms_be: vec![0x3d80_0100],
+        atom_indices: vec![1],
+        first_indices: vec![2],
+        second_indices: vec![3],
+        terminal_object_index: 42,
+        source_offset: 20,
+    };
+    let constructions = crate::native::feature_extrude_32_constructions(
+        std::slice::from_ref(&reference),
+        std::slice::from_ref(&branch),
+    );
+    assert_eq!(constructions.len(), 1);
+    assert_eq!(constructions[0].body_object_index, 42);
+    assert_eq!(constructions[0].profile_references, ["profile#0"]);
+    assert_eq!(constructions[0].profile_data_blocks, ["block#100"]);
+
+    let mut unresolved = reference;
+    unresolved.data_block = None;
+    assert!(crate::native::feature_extrude_32_constructions(&[unresolved], &[branch]).is_empty());
 }
 
 #[test]
@@ -4568,7 +4617,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 52);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 53);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -399,6 +399,8 @@ pub struct OperationBodyReferenceLane {
 pub struct ExtrudePayload32Branch {
     /// Absolute offset of the `32` branch marker.
     pub offset: usize,
+    /// Body object index anchoring the branch.
+    pub body_object_index: u32,
     /// Finite shifted-IEEE scalar following the branch marker.
     pub scalar: f64,
     /// Ordered fixed-width big-endian atoms in the first counted lane.
@@ -1204,11 +1206,14 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
     }
     let (terminal_object_index, next) = feature_object_index(record.bytes, at + 2)?;
     let terminal_object_index = terminal_object_index?;
-    if record.bytes.get(next..next + 2) != Some(&[0x00, 0x00]) {
+    if terminal_object_index != reference.object_index
+        || record.bytes.get(next..next + 2) != Some(&[0x00, 0x00])
+    {
         return None;
     }
     Some(ExtrudePayload32Branch {
         offset: record.offset + branch_at,
+        body_object_index: reference.object_index,
         scalar,
         atoms_be,
         atom_indices,
