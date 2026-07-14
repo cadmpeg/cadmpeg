@@ -588,6 +588,19 @@ fn project_extrude(
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ProfileRef};
 
     scope.extrude_profile.as_ref()?;
+    let scope_groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    if scope_groups
+        .iter()
+        .any(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces))
+    {
+        return None;
+    }
     let unique = |source_kind: &str| {
         let matches = parameters
             .iter()
@@ -606,6 +619,13 @@ fn project_extrude(
     };
     if against.is_some_and(|distance| distance.0 == 0.0) {
         return None;
+    }
+    for source_kind in ["ProfileOffset", "Side1Offset", "Side2Offset"] {
+        if let Some(parameter) = unique(source_kind)? {
+            if design_length(parameter)?.0 != 0.0 {
+                return None;
+            }
+        }
     }
     let side_two_draft = match unique("Side2TaperAngle")? {
         Some(parameter) => Some(design_angle(parameter)?),
@@ -641,11 +661,9 @@ fn project_extrude(
         Some(parameter) => design_angle(parameter).filter(|angle| angle.0 != 0.0),
         None => None,
     };
-    let has_body_operands = construction_groups.iter().any(|group| {
-        native_stream(&group.id) == native_stream(&scope.id)
-            && group.scope_record_index == scope.record_index
-            && group.extrude_role == Some(DesignExtrudeOperandRole::Bodies)
-    });
+    let has_body_operands = scope_groups
+        .iter()
+        .any(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Bodies));
     Some(FeatureDefinition::Extrude {
         profile: ProfileRef::Native(scope.id.clone()),
         direction,
@@ -6734,6 +6752,27 @@ mod relation_tests {
                 ..
             }
         ));
+
+        let mut face_group = body_group.clone();
+        face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
+        face_group.extrude_role = Some(DesignExtrudeOperandRole::Faces);
+        face_group.role = 0x0000_0011_0000_0000;
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &taper)],
+            &[body_group.clone(), face_group],
+            &[],
+        )
+        .is_none());
+
+        let profile_offset = parameter("ProfileOffset", "mm", 0.1);
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &profile_offset)],
+            std::slice::from_ref(&body_group),
+            &[],
+        )
+        .is_none());
 
         let against = parameter("AgainstDistance", "mm", -0.05);
         let two_sided = project_extrude(&scope, &[(0, &along), (1, &against)], &[], &[])
