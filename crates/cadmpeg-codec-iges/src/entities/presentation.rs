@@ -2,6 +2,7 @@
 //! Directory display attributes and color definitions.
 
 use crate::directory::DirectoryEntry;
+use crate::global::Global;
 use crate::parameter::ParameterRecord;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::ids::AppearanceId;
@@ -71,6 +72,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
+    global: &Global,
 ) -> PresentationProjection {
     let records = parameters
         .iter()
@@ -266,6 +268,14 @@ pub(super) fn project(
             losses.push(loss(
                 entry,
                 "negative Directory level does not reference a decoded Definition Levels property",
+            ));
+        }
+    }
+    for entry in directory.iter().filter(|entry| entry.line_weight != 0) {
+        if global.line_weight_mm(entry.line_weight).is_none() {
+            losses.push(loss(
+                entry,
+                "line-weight number is outside the Global gradation range",
             ));
         }
     }

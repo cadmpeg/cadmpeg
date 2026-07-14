@@ -74,6 +74,8 @@ Directory line-font values `1` through `5` select standard patterns. A negative 
 
 A nonnegative Directory level value selects that single exchange-file level. A negative value is the negated odd Directory sequence of a Definition Levels Property Entity (Type 406, Form 1). The property stores a positive count followed by that many distinct nonnegative level numbers. A malformed definition or link is retained but does not become a decoded display-level set.
 
+A positive Directory line-weight number selects that numbered increment in the uniform Global line-weight series and cannot exceed the Global maximum gradation count. Its model-space width is `number * maximum_width / maximum_gradations`; neutral/native display width converts that result to millimetres. Zero leaves the display width unspecified.
+
 A Manifold Solid B-rep Object or orphan Shell color binds to its body. A Face color binds to that face and overrides the body color for that face. Trimmed and bounded surface colors bind to their generated sheet body and face. The blank-status field determines body visibility. Curve and surface source-object associations retain their direct Directory colors.
 
 The `native.iges` namespace version is `2`. Its `colors` arena stores typed Type 314 percentages, names, and fallback color numbers. Its `line_fonts` arena stores typed template and visible-blank definitions. Its `definition_levels` arena stores ordered multiple-level sets. Its `display_attributes` arena stores one record per Directory entity with visibility, line-font number or definition link, level number or definition link, view, line weight, and color number or definition link. These values remain distinct from effective neutral appearance bindings.

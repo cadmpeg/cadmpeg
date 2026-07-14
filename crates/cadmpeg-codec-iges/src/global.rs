@@ -230,6 +230,18 @@ impl Global {
         (resolution.is_finite() && resolution > 0.0).then_some(resolution * factor)
     }
 
+    pub(crate) fn line_weight_mm(&self, number: i64) -> Option<f64> {
+        let gradations = self.values.get(15).and_then(Value::integer).unwrap_or(1);
+        let maximum = self.values.get(16).and_then(Value::real)?;
+        let factor = self.length_factor_mm()?;
+        (number > 0
+            && number <= gradations
+            && gradations > 0
+            && maximum.is_finite()
+            && maximum > 0.0)
+            .then_some(number as f64 * maximum * factor / gradations as f64)
+    }
+
     pub(crate) fn sender_product(&self) -> Option<String> {
         self.values.get(2).and_then(Value::string)
     }

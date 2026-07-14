@@ -59,7 +59,14 @@ pub(crate) fn decode(
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
     ir.byte_ledger = scan.ledger.clone();
-    native::store(&mut ir, &scan, &directory, &parameters, &references)?;
+    native::store(
+        &mut ir,
+        &scan,
+        &directory,
+        &parameters,
+        &references,
+        &global,
+    )?;
 
     let projection = if options.container_only {
         entities::geometry::Projection {

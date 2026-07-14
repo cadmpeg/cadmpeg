@@ -1738,11 +1738,18 @@ fn owned_test_file_with_display(
     colors: &[(u32, i64)],
     line_fonts: &[(u32, i64)],
 ) -> Vec<u8> {
-    owned_test_file_with_attributes(entities, colors, line_fonts, &[])
+    owned_test_file_with_attributes(entities, colors, line_fonts, &[], &[])
 }
 
 fn owned_test_file_with_levels(entities: &[OwnedTestEntity], levels: &[(u32, i64)]) -> Vec<u8> {
-    owned_test_file_with_attributes(entities, &[], &[], levels)
+    owned_test_file_with_attributes(entities, &[], &[], levels, &[])
+}
+
+fn owned_test_file_with_line_weights(
+    entities: &[OwnedTestEntity],
+    line_weights: &[(u32, i64)],
+) -> Vec<u8> {
+    owned_test_file_with_attributes(entities, &[], &[], &[], line_weights)
 }
 
 fn owned_test_file_with_attributes(
@@ -1750,6 +1757,7 @@ fn owned_test_file_with_attributes(
     colors: &[(u32, i64)],
     line_fonts: &[(u32, i64)],
     levels: &[(u32, i64)],
+    line_weights: &[(u32, i64)],
 ) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
@@ -1783,7 +1791,11 @@ fn owned_test_file_with_attributes(
         bytes.extend(directory_card(
             [
                 &entity.entity_type.to_string(),
-                "0",
+                &line_weights
+                    .iter()
+                    .find_map(|(entry, weight)| (*entry == sequence).then_some(*weight))
+                    .unwrap_or(0)
+                    .to_string(),
                 &colors
                     .iter()
                     .find_map(|(entry, color)| (*entry == sequence).then_some(*color))
@@ -1982,6 +1994,17 @@ fn definition_levels_file() -> Vec<u8> {
         },
     ];
     owned_test_file_with_levels(&entities, &[(3, -1)])
+}
+
+fn weighted_line_file() -> Vec<u8> {
+    let entities = [OwnedTestEntity {
+        entity_type: 110,
+        form: 0,
+        label: "LINE".into(),
+        status: "00000000",
+        parameters: "110,0,0,0,1,0,0;".into(),
+    }];
+    owned_test_file_with_line_weights(&entities, &[(1, 1)])
 }
 
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
@@ -2789,6 +2812,24 @@ fn decode_types_definition_levels_and_directory_level_links() {
         line.fields["level_definition"],
         "iges:presentation:definition-levels#D1"
     );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_resolves_directory_line_weight_to_millimetres() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(weighted_line_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let display = &result.ir.native.namespace("iges").unwrap().arenas["display_attributes"][0];
+    assert_eq!(display.fields["line_weight_number"], 1);
+    assert_eq!(display.fields["line_weight_mm"], 1.0);
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

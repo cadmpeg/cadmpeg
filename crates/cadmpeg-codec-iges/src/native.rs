@@ -3,6 +3,7 @@
 
 use crate::card::CardScan;
 use crate::directory::DirectoryEntry;
+use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{ParameterRecord, Token, TokenValue};
 use cadmpeg_ir::codec::CodecError;
@@ -76,7 +77,7 @@ struct NativeColorDefinition {
     fallback_color_number: i64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeDisplayAttributes {
     id: String,
     source_entity: String,
@@ -87,6 +88,7 @@ struct NativeDisplayAttributes {
     level_definition: Option<String>,
     view: i64,
     line_weight_number: i64,
+    line_weight_mm: Option<f64>,
     color_number: i64,
     color_definition: Option<String>,
 }
@@ -172,6 +174,7 @@ pub(crate) fn store(
     directory: &[DirectoryEntry],
     parameters: &[ParameterRecord],
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
+    global: &Global,
 ) -> Result<(), CodecError> {
     let cards = scan
         .lines
@@ -358,6 +361,7 @@ pub(crate) fn store(
             }),
             view: entry.view,
             line_weight_number: entry.line_weight,
+            line_weight_mm: global.line_weight_mm(entry.line_weight),
             color_number: entry.color,
             color_definition: (entry.color < 0)
                 .then(|| format!("iges:presentation:color#D{}", entry.color.unsigned_abs())),

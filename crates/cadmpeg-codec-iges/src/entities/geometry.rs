@@ -884,7 +884,7 @@ pub(crate) fn project_geometry(
     handled.extend(brep.handled);
     decoded.extend(brep.decoded);
     losses.extend(brep.losses);
-    let presentation = super::presentation::project(ir, directory, parameters);
+    let presentation = super::presentation::project(ir, directory, parameters, global);
     handled.extend(presentation.handled);
     decoded.extend(presentation.decoded);
     losses.extend(presentation.losses);
