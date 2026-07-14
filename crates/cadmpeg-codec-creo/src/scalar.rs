@@ -255,6 +255,21 @@ pub fn decode_tabulated_cylinder_second_coordinate(
     decode_in_surface_row_lane(data, offset, cache)
 }
 
+/// Decode one coordinate in a named surface-prototype `local_sys` body.
+///
+/// Compact `0x0e` is positive one half in this lane. Positional surface rows
+/// assign the negative value to the same byte.
+pub fn decode_named_local_system_coordinate(
+    data: &[u8],
+    offset: usize,
+    cache: &ScalarCache,
+) -> Option<(f64, usize)> {
+    if data.get(offset) == Some(&0x0e) {
+        return Some((0.5, offset + 1));
+    }
+    decode_tabulated_cylinder_second_coordinate(data, offset, cache)
+}
+
 /// Decode one scalar in a replay-bound tabulated-cylinder envelope frame.
 ///
 /// The frame otherwise uses the second-coordinate lane, but `0x4a` is a

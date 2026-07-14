@@ -3087,6 +3087,42 @@ fn decode_places_first_cylinder_instance_from_named_prototype() {
 }
 
 #[test]
+fn decode_places_direct_two_direction_named_prototype_frame() {
+    let mut payload = b"srf_array\0\xf8\x01".to_vec();
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(b"srf_prim_ptr(torus)\0\xe0\x02local_sys\0\xf9\x04\x03");
+    for value in [1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, -2.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.extend_from_slice(b"\xe0\x01radius1\0\xe4\xe0\x01radius2\0\xe4");
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+    let torus = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id.as_str() == "creo:visibgeom:surface#7")
+        .expect("first torus instance");
+
+    assert_eq!(
+        torus.geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Torus {
+            center: cadmpeg_ir::math::Point3::new(2.0, 0.0, -2.0),
+            axis: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 1.0,
+            minor_radius: 1.0,
+        }
+    );
+}
+
+#[test]
 fn decode_places_first_plane_instance_from_named_prototype() {
     let mut payload = b"srf_array\0\xf8\x01".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);

@@ -13135,12 +13135,18 @@ fn prototype_local_frame(
     };
     let slots = values.iter().copied().collect::<Option<Vec<_>>>()?;
     let slots: [f64; 12] = slots.try_into().ok()?;
-    let scale = slots.iter().copied().map(f64::abs).fold(1.0, f64::max);
-    if slots[3..6].iter().any(|value| value.abs() > 1e-10 * scale) {
-        return None;
-    }
     let reference = normalized(slots[0..3].try_into().ok()?)?;
-    let second = normalized(slots[6..9].try_into().ok()?)?;
+    let middle: [f64; 3] = slots[3..6].try_into().ok()?;
+    let third: [f64; 3] = slots[6..9].try_into().ok()?;
+    let middle_norm = dot(middle, middle).sqrt();
+    let third_norm = dot(third, third).sqrt();
+    let second = if middle_norm <= 1e-10 && third_norm > 1e-10 {
+        normalized(third)?
+    } else if (middle_norm - 1.0).abs() <= 1e-10 {
+        normalized(middle)?
+    } else {
+        return None;
+    };
     if dot(reference, second).abs() > 1e-10 {
         return None;
     }

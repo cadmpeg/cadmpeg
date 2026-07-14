@@ -242,7 +242,7 @@ bounded field body; trailing bytes make the field opaque.
 
 Named prototype fields describe the first surface instance. The first instance is the adjacent same-family positional surface row. The preceding adjacent row is the first instance when the prototype separates it from replay rows; otherwise the following adjacent row is the first instance. Positional row bodies carry the per-instance values for subsequent instances.
 
-A complete analytic prototype `local_sys` and family parameters define the first instance carrier. The first and second support triples occupy slots 0 through 2 and 6 through 8, slots 3 through 5 are zero, and slots 9 through 11 are the origin. The normalized cross product of the two orthogonal support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A cylinder requires a positive `radius`. A cone uses the local-system origin as its apex, has zero radius there, circular ratio one, and requires a `half_angle` in `(0, pi/2)`. A zero `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin.
+A complete analytic prototype `local_sys` and family parameters define the first instance carrier. Slots 0 through 2 contain the first support direction. When slots 3 through 5 contain a unit direction, it is the second support direction. In the rank-two compressed form slots 3 through 5 are zero and slots 6 through 8 contain the second support direction. Slots 9 through 11 contain the origin. The normalized cross product of the two orthogonal support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. A plane passes through the local-system origin, uses the analytic axis as its normal, and uses the first support direction as its parameter-space reference direction. A cylinder requires a positive `radius`. A cone uses the local-system origin as its apex, has zero radius there, circular ratio one, and requires a `half_angle` in `(0, pi/2)`. A zero `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin.
 
 The next valid named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. A named-field header has a field type no greater than `24` and a nonempty identifier made from ASCII letters, digits, underscores, or parentheses. An `e0` byte inside a scalar token does not terminate the field. Bytes after the structural close belong to subsequent instance or namespace records.
 A parenthesized `srf_prim_ptr(<family>)` record also ends at the next legacy
@@ -339,6 +339,9 @@ Named prototype `local_sys f9 04 03` coordinate slots use the signed
 directrix-coordinate DICT lattice and fixed-width coordinate forms. Stock-vector
 and zero macros retain their local-system expansion rules. Generic positional
 row scalar mappings do not apply to these slots.
+
+Compact token `0e` encodes positive `0.5` in a named prototype local-system
+coordinate slot. Its negative positional-row meaning does not apply.
 
 In a compound-closed `geom_type = 26` row, the final two tokens of the terminal
 scalar frame store the per-instance torus `radius1` and `radius2` in that order

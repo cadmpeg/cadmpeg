@@ -1405,7 +1405,7 @@ fn row_scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> V
             continue;
         }
         if let Some((value, next)) =
-            scalar::decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+            scalar::decode_named_local_system_coordinate(body, cursor, cache)
         {
             slots.push(Some(value));
             cursor = next;
@@ -2156,6 +2156,18 @@ mod tests {
         assert_eq!(values[6], Some(0.070_335_614_969_227_37));
         assert_eq!(values[7], Some(0.997_523_383_819_597_8));
         assert_eq!(&values[9..12], &[Some(-180.0), Some(-3.0), Some(40.0)]);
+    }
+
+    #[test]
+    fn named_local_system_decodes_positive_compact_half_coordinate() {
+        let body = [0xf9, 0x04, 0x03, 0x0e];
+        let SurfaceNamedValue::ScalarArray { values, .. } =
+            named_surface_value("local_sys", &body, &scalar::ScalarCache::default())
+        else {
+            panic!("scalar local system");
+        };
+
+        assert_eq!(values[0], Some(0.5));
     }
 
     #[test]
