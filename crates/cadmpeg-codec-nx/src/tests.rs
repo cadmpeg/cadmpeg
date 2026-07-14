@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 69);
+    assert_eq!(namespace.version, 70);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1159,6 +1159,52 @@ fn nx_sketch_point_names_require_positive_decimal_suffixes() {
     for malformed in ["Point", "Point0", "point1", "Point-1", "Point1A"] {
         assert_eq!(crate::native::parse_sketch_point_name(malformed), None);
     }
+}
+
+#[test]
+fn om_simple_hole_placement_requires_two_identical_shifted_scalar_pairs() {
+    let shifted = |value: f64| {
+        let mut bytes = value.to_be_bytes();
+        bytes[0] -= 0x10;
+        bytes
+    };
+    let mut payload = Vec::new();
+    for value in [508.0, 38.1, 508.0, 38.1] {
+        payload.extend_from_slice(&shifted(value));
+        payload.push(0x7f);
+    }
+    payload.extend_from_slice(&[0x04, 0x08]);
+    payload.extend_from_slice(b"Hole_X");
+    payload.push(0x00);
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 120,
+        value: "SIMPLE HOLE",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label,
+    };
+    let placement = crate::om::simple_hole_placement_2d(record).unwrap();
+    assert_eq!(placement.position[0], 508.0);
+    assert!((placement.position[1] - 38.1).abs() < 2.0e-12);
+    assert_eq!(placement.witness_offsets, [[200, 209], [218, 227]]);
+
+    let mut mismatched = payload.clone();
+    mismatched[18 + 7] ^= 1;
+    assert!(
+        crate::om::simple_hole_placement_2d(crate::om::OperationRecord {
+            bytes: &mismatched,
+            payload: &mismatched,
+            ..record
+        })
+        .is_none()
+    );
 }
 
 #[test]
@@ -4894,7 +4940,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 69);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 70);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

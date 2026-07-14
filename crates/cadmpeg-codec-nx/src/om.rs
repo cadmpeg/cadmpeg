@@ -439,6 +439,15 @@ pub struct ExtrudePayloadHeader {
     pub scalars: [f64; 2],
 }
 
+/// Redundantly serialized two-dimensional placement in a simple-hole payload.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SimpleHolePlacement2d {
+    /// Ordered placement coordinates in model millimeters.
+    pub position: [f64; 2],
+    /// Absolute offsets of the first and repeated coordinate pairs.
+    pub witness_offsets: [[usize; 2]; 2],
+}
+
 /// Width form of one self-delimiting operation-payload scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PayloadScalarEncoding {
@@ -904,6 +913,44 @@ pub fn operation_payload_strings(record: OperationRecord<'_>) -> Vec<OperationPa
         at = end + 1;
     }
     strings
+}
+
+/// Decode an exact duplicated shifted-binary64 placement before a hole template.
+pub fn simple_hole_placement_2d(record: OperationRecord<'_>) -> Option<SimpleHolePlacement2d> {
+    if record.label.value != "SIMPLE HOLE" {
+        return None;
+    }
+    let templates = operation_payload_strings(record)
+        .into_iter()
+        .filter(|value| value.value.starts_with("Hole_"))
+        .collect::<Vec<_>>();
+    let [template] = templates.as_slice() else {
+        return None;
+    };
+    let boundary = template.offset.checked_sub(record.payload_offset)?;
+    let prefix = record.payload.get(..boundary)?;
+    let mut scalars = Vec::new();
+    let mut at = 0usize;
+    while at + 8 <= prefix.len() {
+        if prefix[at] == 0x30 {
+            if let Some(value) = shifted_ieee_f64(&prefix[at..at + 8]) {
+                scalars.push((value, record.payload_offset + at));
+                at += 8;
+                continue;
+            }
+        }
+        at += 1;
+    }
+    let [x0, y0, x1, y1] = scalars.as_slice() else {
+        return None;
+    };
+    if x0.0.to_bits() != x1.0.to_bits() || y0.0.to_bits() != y1.0.to_bits() {
+        return None;
+    }
+    Some(SimpleHolePlacement2d {
+        position: [x0.0, y0.0],
+        witness_offsets: [[x0.1, y0.1], [x1.1, y1.1]],
+    })
 }
 
 /// Decode the unique counted reference field in a bounded `SKETCH` payload.

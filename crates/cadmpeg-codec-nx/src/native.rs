@@ -256,6 +256,21 @@ pub struct FeatureSimpleHoleTemplate {
     pub end_treatment: SimpleHoleEndTreatment,
 }
 
+/// Exact redundantly witnessed planar placement in a simple-hole payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSimpleHolePlacement2d {
+    /// Globally unique placement identity.
+    pub id: String,
+    /// Owning `SIMPLE HOLE` operation label.
+    pub operation_label: String,
+    /// Ordered two-dimensional coordinates in model millimeters.
+    pub position: [f64; 2],
+    /// Absolute offsets of the first coordinate pair.
+    pub first_witness_offsets: [u64; 2],
+    /// Absolute offsets of the byte-identical repeated coordinate pair.
+    pub second_witness_offsets: [u64; 2],
+}
+
 /// Construction family named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1074,6 +1089,50 @@ pub fn feature_simple_hole_templates(
             })
         })
         .collect()
+}
+
+/// Decode exact duplicated planar placements from simple-hole operations.
+pub fn feature_simple_hole_placements_2d(
+    container: &Container,
+) -> Vec<FeatureSimpleHolePlacement2d> {
+    let sections = container.om_sections();
+    let mut placements = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(placement) = crate::om::simple_hole_placement_2d(record) else {
+                continue;
+            };
+            placements.push(FeatureSimpleHolePlacement2d {
+                id: format!(
+                    "nx:feature-history:simple-hole-placement-2d#{section_key}-{operation_ordinal}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                ),
+                position: placement.position,
+                first_witness_offsets: placement.witness_offsets[0]
+                    .map(|offset| entry_offset + offset as u64),
+                second_witness_offsets: placement.witness_offsets[1]
+                    .map(|offset| entry_offset + offset as u64),
+            });
+        }
+    }
+    placements
 }
 
 pub(crate) fn parse_simple_hole_template(
