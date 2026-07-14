@@ -929,6 +929,17 @@ pub struct MeshEdgePlacementCandidate {
     pub segment_count: usize,
 }
 
+/// One placement within a complete face assignment, together with the point
+/// pairs allowed by its two currently bound trim corners. An absent domain
+/// means that at least one corner has no exact point binding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MeshEdgePlacementEndpointCandidate {
+    /// Span-consistent placement in its face boundary.
+    pub placement: MeshEdgePlacementCandidate,
+    /// Unordered logical-point pairs allowed at the placement corners.
+    pub endpoint_pairs: Option<Vec<[usize; 2]>>,
+}
+
 /// Recover exact face-local mesh coverage without assigning unmatched edge rows
 /// to gaps. A result exists only for a unique trim-handle width and when every
 /// matched interior occurs on one of its two serialized incident faces.
@@ -1181,22 +1192,20 @@ pub fn standard_mesh_missing_edge_placements(
     })
 }
 
-/// Derive endpoint-pair domains for unmatched rows whose candidate placement
-/// corners are both bound by exact matched edge runs. Input pairs are physical
-/// edge-row ordered; pair orientation is ignored in the returned domains
-/// because a missing placement has not yet selected its traversal direction.
-#[must_use]
-pub fn standard_mesh_placement_endpoint_pairs(
+type MeshCorner = (usize, usize, usize);
+type MeshCornerPoints = HashMap<MeshCorner, HashSet<usize>>;
+
+fn standard_mesh_assignment_corner_points(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_points: &[Option<[usize; 2]>],
-) -> Option<Vec<Vec<[usize; 2]>>> {
+) -> Option<(Vec<Vec<Vec<MeshEdgePlacementCandidate>>>, MeshCornerPoints)> {
     let edge_rows = standard_edge_rows(bytes)?;
     if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
         return None;
     }
     let runs = standard_mesh_edge_runs(bytes)?;
-    let placements = standard_mesh_missing_edge_placements(bytes, edge_faces)?;
+    let assignments = standard_mesh_missing_edge_assignments(bytes, edge_faces)?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
         .into_iter()
@@ -1212,7 +1221,7 @@ pub fn standard_mesh_placement_endpoint_pairs(
         })
         .collect::<Option<Vec<_>>>()?;
     let [cycle_lengths] = <[Vec<Vec<usize>>; 1]>::try_from(cycle_solutions).ok()?;
-    let mut corner_points = HashMap::<(usize, usize, usize), HashSet<usize>>::new();
+    let mut corner_points = MeshCornerPoints::new();
     let mut run_constraints = Vec::new();
     for run in runs {
         let Some(pair) = edge_points[run.edge] else {
@@ -1279,31 +1288,198 @@ pub fn standard_mesh_placement_endpoint_pairs(
             break;
         }
     }
+    Some((assignments, corner_points))
+}
+
+/// Retain endpoint constraints on each placement inside each complete face
+/// assignment. Assignment and placement order are unchanged from the serialized
+/// face and edge order.
+#[must_use]
+pub fn standard_mesh_missing_edge_endpoint_assignments(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[Option<[usize; 2]>],
+) -> Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>> {
+    let (assignments, corner_points) =
+        standard_mesh_assignment_corner_points(bytes, edge_faces, edge_points)?;
+    Some(
+        assignments
+            .into_iter()
+            .map(|face| {
+                face.into_iter()
+                    .map(|assignment| {
+                        assignment
+                            .into_iter()
+                            .map(|placement| {
+                                let endpoint_pairs = corner_points
+                                    .get(&(placement.face, placement.cycle, placement.start))
+                                    .zip(corner_points.get(&(
+                                        placement.face,
+                                        placement.cycle,
+                                        placement.end,
+                                    )))
+                                    .map(|(starts, ends)| {
+                                        let mut pairs = starts
+                                            .iter()
+                                            .flat_map(|&start| {
+                                                ends.iter().filter(move |&&end| start != end).map(
+                                                    move |&end| {
+                                                        let mut pair = [start, end];
+                                                        pair.sort_unstable();
+                                                        pair
+                                                    },
+                                                )
+                                            })
+                                            .collect::<Vec<_>>();
+                                        pairs.sort_unstable();
+                                        pairs.dedup();
+                                        pairs
+                                    });
+                                MeshEdgePlacementEndpointCandidate {
+                                    placement,
+                                    endpoint_pairs,
+                                }
+                            })
+                            .collect()
+                    })
+                    .collect()
+            })
+            .collect(),
+    )
+}
+
+/// Enforce resolved edge endpoint pairs and complete opposite-face placement
+/// domains across correlated face assignments. A face assignment is removed as
+/// a unit when any of its placements has no compatible endpoint pair.
+#[must_use]
+pub fn standard_mesh_pruned_missing_edge_endpoint_assignments(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[Option<[usize; 2]>],
+) -> Option<Vec<Vec<Vec<MeshEdgePlacementEndpointCandidate>>>> {
+    let mut faces =
+        standard_mesh_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)?;
+    loop {
+        let before = (
+            faces.iter().map(Vec::len).sum::<usize>(),
+            faces
+                .iter()
+                .flatten()
+                .flatten()
+                .filter_map(|candidate| candidate.endpoint_pairs.as_ref().map(Vec::len))
+                .sum::<usize>(),
+        );
+        let mut face_domains = HashMap::<(usize, usize), Option<HashSet<[usize; 2]>>>::new();
+        for (face, assignments) in faces.iter().enumerate() {
+            for edge in edge_faces
+                .iter()
+                .enumerate()
+                .filter_map(|(edge, incident)| incident.contains(&face).then_some(edge))
+            {
+                let candidates = assignments
+                    .iter()
+                    .filter_map(|assignment| {
+                        assignment
+                            .iter()
+                            .find(|candidate| candidate.placement.edge == edge)
+                    })
+                    .collect::<Vec<_>>();
+                if candidates.len() != assignments.len()
+                    || candidates
+                        .iter()
+                        .any(|candidate| candidate.endpoint_pairs.is_none())
+                {
+                    face_domains.insert((face, edge), None);
+                    continue;
+                }
+                let domain = candidates
+                    .into_iter()
+                    .flat_map(|candidate| {
+                        candidate
+                            .endpoint_pairs
+                            .as_ref()
+                            .into_iter()
+                            .flatten()
+                            .copied()
+                    })
+                    .collect::<HashSet<_>>();
+                face_domains.insert((face, edge), Some(domain));
+            }
+        }
+        for assignments in &mut faces {
+            assignments.retain_mut(|assignment| {
+                assignment.iter_mut().all(|candidate| {
+                    let edge = candidate.placement.edge;
+                    let seed = edge_points[edge].map(|mut pair| {
+                        pair.sort_unstable();
+                        pair
+                    });
+                    let opposite = edge_faces[edge]
+                        .into_iter()
+                        .find(|&face| face != candidate.placement.face)
+                        .and_then(|face| face_domains.get(&(face, edge)))
+                        .and_then(Option::as_ref);
+                    let Some(domain) = &mut candidate.endpoint_pairs else {
+                        return true;
+                    };
+                    domain.retain(|pair| {
+                        seed.is_none_or(|seed| same_unordered_pair(*pair, seed))
+                            && opposite.is_none_or(|opposite| opposite.contains(pair))
+                    });
+                    !domain.is_empty()
+                })
+            });
+            if assignments.is_empty() {
+                return None;
+            }
+        }
+        let after = (
+            faces.iter().map(Vec::len).sum::<usize>(),
+            faces
+                .iter()
+                .flatten()
+                .flatten()
+                .filter_map(|candidate| candidate.endpoint_pairs.as_ref().map(Vec::len))
+                .sum::<usize>(),
+        );
+        if after == before {
+            break;
+        }
+    }
+    Some(faces)
+}
+
+/// Derive endpoint-pair domains for unmatched rows whose candidate placement
+/// corners are both bound by exact matched edge runs. Input pairs are physical
+/// edge-row ordered; pair orientation is ignored in the returned domains
+/// because a missing placement has not yet selected its traversal direction.
+#[must_use]
+pub fn standard_mesh_placement_endpoint_pairs(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_points: &[Option<[usize; 2]>],
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    let edge_rows = standard_edge_rows(bytes)?;
+    if edge_rows.len() != edge_points.len() || edge_rows.len() != edge_faces.len() {
+        return None;
+    }
+    let assignments =
+        standard_mesh_pruned_missing_edge_endpoint_assignments(bytes, edge_faces, edge_points)?;
     let mut domains = vec![Vec::new(); edge_rows.len()];
     let mut placement_counts = vec![0usize; edge_rows.len()];
     let mut bound_counts = vec![0usize; edge_rows.len()];
-    for face in placements {
-        for placement in face {
-            placement_counts[placement.edge] += 1;
-            let Some(starts) =
-                corner_points.get(&(placement.face, placement.cycle, placement.start))
-            else {
-                continue;
-            };
-            let Some(ends) = corner_points.get(&(placement.face, placement.cycle, placement.end))
-            else {
-                continue;
-            };
-            bound_counts[placement.edge] += 1;
-            for &start in starts {
-                for &end in ends {
-                    if start == end {
-                        continue;
-                    }
-                    let mut pair = [start, end];
-                    pair.sort_unstable();
-                    if !domains[placement.edge].contains(&pair) {
-                        domains[placement.edge].push(pair);
+    for face in assignments {
+        let mut placements = face.into_iter().flatten().collect::<Vec<_>>();
+        placements.sort_unstable_by_key(|candidate| candidate.placement);
+        placements.dedup_by_key(|candidate| candidate.placement);
+        for candidate in placements {
+            let edge = candidate.placement.edge;
+            placement_counts[edge] += 1;
+            if let Some(pairs) = candidate.endpoint_pairs {
+                bound_counts[edge] += 1;
+                for pair in pairs {
+                    if !domains[edge].contains(&pair) {
+                        domains[edge].push(pair);
                     }
                 }
             }

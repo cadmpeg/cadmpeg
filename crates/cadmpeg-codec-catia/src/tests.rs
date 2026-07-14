@@ -278,6 +278,33 @@ fn standard_mesh_coverage_reports_exact_matched_partition() {
     )
     .expect("gap-corner endpoint domains");
     assert_eq!(endpoint_domains[0], [[0, 1]]);
+    let endpoint_assignments = crate::topology::standard_mesh_missing_edge_endpoint_assignments(
+        &bytes,
+        &[[0, 0]; 4],
+        &[None, Some([1, 2]), Some([2, 3]), Some([3, 0])],
+    )
+    .expect("correlated gap-corner endpoint assignments");
+    assert_eq!(endpoint_assignments[0].len(), 1);
+    assert_eq!(endpoint_assignments[0][0].len(), 1);
+    assert_eq!(
+        endpoint_assignments[0][0][0].endpoint_pairs,
+        Some(vec![[0, 1]])
+    );
+    let pruned = crate::topology::standard_mesh_pruned_missing_edge_endpoint_assignments(
+        &bytes,
+        &[[0, 0]; 4],
+        &[Some([1, 0]), Some([1, 2]), Some([2, 3]), Some([3, 0])],
+    )
+    .expect("endpoint-compatible face assignment");
+    assert_eq!(pruned[0][0][0].endpoint_pairs, Some(vec![[0, 1]]));
+    assert!(
+        crate::topology::standard_mesh_pruned_missing_edge_endpoint_assignments(
+            &bytes,
+            &[[0, 0]; 4],
+            &[Some([0, 2]), Some([1, 2]), Some([2, 3]), Some([3, 0]),],
+        )
+        .is_none()
+    );
 }
 
 #[test]
