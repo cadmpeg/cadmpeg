@@ -1727,6 +1727,12 @@ fn explicit_vertex_loop_file_with_outer_flag(has_outer_loop: bool) -> Vec<u8> {
 }
 
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
+    explicit_multi_pcurve_loop_file_with_first_pcurve(
+        "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
+    )
+}
+
+fn explicit_multi_pcurve_loop_file_with_first_pcurve(first_pcurve: &str) -> Vec<u8> {
     let mut entities = vec![
         OwnedTestEntity {
             entity_type: 116,
@@ -1787,7 +1793,7 @@ fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
             form: 1,
             label: "PCURVE1".into(),
             status: "00010500",
-            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;".into(),
+            parameters: first_pcurve.into(),
         },
         OwnedTestEntity {
             entity_type: 126,
@@ -2261,6 +2267,28 @@ fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
         "{:#?}",
         result.report.losses
     );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_rejects_disagreeing_explicit_loop_pcurves() {
+    let shifted = "126,1,1,1,0,1,0,0,0,1,1,1,1,0.1,0,0,0.5,0,0,0,1,0,0,1;";
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_multi_pcurve_loop_file_with_first_pcurve(shifted)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.id.0 != "iges:model:body#D27"));
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("loop edge-use pcurves disagree with the edge vertices")));
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit IGES B-rep topology projection.
 
+use super::evaluation;
 use super::geometry::{entity_loss, resolve_transform};
 use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
@@ -141,6 +142,39 @@ fn project_pcurve_uses(
             })
         })
         .collect()
+}
+
+fn pcurves_agree(
+    source: &CadIr,
+    uses: &[(bool, u32)],
+    surface: &cadmpeg_ir::geometry::SurfaceGeometry,
+    factor: f64,
+    expected_start: Point3,
+    expected_end: Point3,
+    tolerance: f64,
+) -> bool {
+    if uses.is_empty() {
+        return true;
+    }
+    let mapped = uses
+        .iter()
+        .map(|(_, sequence)| {
+            let (geometry, range) = pcurve_geometry(source, *sequence, surface, factor)?;
+            let start = evaluation::pcurve(&geometry, range[0])
+                .and_then(|uv| evaluation::surface(surface, uv))?;
+            let end = evaluation::pcurve(&geometry, range[1])
+                .and_then(|uv| evaluation::surface(surface, uv))?;
+            Some((start, end))
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(mapped) = mapped else {
+        return false;
+    };
+    evaluation::distance(mapped[0].0, expected_start) <= tolerance
+        && evaluation::distance(mapped[mapped.len() - 1].1, expected_end) <= tolerance
+        && mapped
+            .windows(2)
+            .all(|pair| evaluation::distance(pair[0].1, pair[1].0) <= tolerance)
 }
 
 pub(super) struct BrepProjection {
@@ -743,6 +777,25 @@ pub(super) fn project(
                                     coedge_by_use.get(&prior).cloned()
                                 })
                             };
+                            let expected = vertex_lists[vertex_list][*vertex_index];
+                            if !global.minimum_resolution_mm().is_some_and(|tolerance| {
+                                pcurves_agree(
+                                    ir,
+                                    pcurves,
+                                    &support.geometry,
+                                    factor,
+                                    expected,
+                                    expected,
+                                    tolerance,
+                                )
+                            }) {
+                                losses.push(entity_loss(
+                                    entry,
+                                    "loop vertex-use pcurves disagree with the pole vertex",
+                                ));
+                                valid = false;
+                                break;
+                            }
                             let Some(projected) = project_pcurve_uses(
                                 &mut candidate,
                                 ir,
@@ -778,6 +831,33 @@ pub(super) fn project(
                             );
                         }
                         let edge_key = (*edge_list, *edge_index);
+                        let natural_start =
+                            vertex_lists[&edge_definition.start_list][edge_definition.start_index];
+                        let natural_end =
+                            vertex_lists[&edge_definition.end_list][edge_definition.end_index];
+                        let (expected_start, expected_end) = if *sense == Sense::Forward {
+                            (natural_start, natural_end)
+                        } else {
+                            (natural_end, natural_start)
+                        };
+                        if !global.minimum_resolution_mm().is_some_and(|tolerance| {
+                            pcurves_agree(
+                                ir,
+                                pcurves,
+                                &support.geometry,
+                                factor,
+                                expected_start,
+                                expected_end,
+                                tolerance,
+                            )
+                        }) {
+                            losses.push(entity_loss(
+                                entry,
+                                "loop edge-use pcurves disagree with the edge vertices",
+                            ));
+                            valid = false;
+                            break;
+                        }
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
                             id.clone()
                         } else {
