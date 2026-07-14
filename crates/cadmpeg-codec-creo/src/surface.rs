@@ -1221,6 +1221,21 @@ mod tests {
     }
 
     #[test]
+    fn summarizes_seven_byte_torus_radius() {
+        let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\x5e\x33\x33\x33\x33\x33\x2c\xe0\x01radius2\0\x29\xc9\x99\xe3";
+
+        assert!(matches!(
+            prototypes(payload).as_slice(),
+            [SurfacePrototype {
+                kind: SurfaceKind::TorusOrSphere,
+                radius: Some(major),
+                radius2: Some(minor),
+                ..
+            }] if (*major - 0.3).abs() < 1e-12 && (*minor - 0.2).abs() < 1e-12
+        ));
+    }
+
+    #[test]
     fn derives_one_held_coordinate_outline_plane() {
         let records = [PlaneEnvelopeRecord {
             surface_id: 42,

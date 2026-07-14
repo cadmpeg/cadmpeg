@@ -43,6 +43,8 @@ pub enum TokenKind {
     CompactInt,
     /// A 3-byte short-form float token ([spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#23-scalar-tokens)): `<prefix> XX YY`.
     ShortFloat,
+    /// A seven-byte subunit float token beginning with `0x5e`.
+    SevenByteFloat,
     /// An 8-byte world-coordinate token whose leading byte is `0x46`
     /// (positive) or `0x2d` (negative).
     WorldCoordinate,
@@ -112,6 +114,13 @@ pub fn tokens(data: &[u8]) -> Vec<Token> {
             0x29 | 0x2a | 0x2e | 0x2f | 0x42 | 0x43 | 0x47 | 0x48 => {
                 if offset + 3 <= data.len() {
                     (3, TokenKind::ShortFloat)
+                } else {
+                    (data.len() - offset, TokenKind::Truncated(head))
+                }
+            }
+            0x5e => {
+                if offset + 7 <= data.len() {
+                    (7, TokenKind::SevenByteFloat)
                 } else {
                     (data.len() - offset, TokenKind::Truncated(head))
                 }
