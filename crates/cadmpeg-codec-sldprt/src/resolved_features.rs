@@ -248,10 +248,13 @@ mod marker_tests {
         compact_body_selection_vector, compact_edge_selection_at, compact_extrusion_through_all_at,
         compact_extrusion_to_face_at, compact_general_curve_ref_at, compact_surface_selection_at,
         marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names, unique_locus,
-        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        resolve_operand_marker, unique_locus, unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER,
+        NAME_MARKER, SCALAR_HEADER,
     };
-    use crate::records::SketchRelationKind;
+    use crate::records::{
+        FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchRelationKind,
+    };
     use cadmpeg_ir::sketches::{SketchEntityId, SketchLocus};
 
     #[test]
@@ -262,6 +265,36 @@ mod marker_tests {
         assert_eq!(marker_local_id(&payload, 0), Some(37));
         payload[88..92].fill(0xff);
         assert_eq!(marker_local_id(&payload, 0), None);
+    }
+
+    #[test]
+    fn qualified_operand_falls_back_to_marker_family_ordinal() {
+        let markers = [4, 8, 11]
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, local_id)| SketchInputEntity {
+                id: format!("marker-{local_id}"),
+                parent: "lane".into(),
+                feature_ref: Some("feature".into()),
+                ordinal: ordinal as u32,
+                offset: ordinal as u64,
+                local_id: Some(local_id),
+                kind: SketchInputKind::LineOrCircle,
+                state_value: None,
+                coordinates_m: None,
+                links: Vec::new(),
+                link_selector: None,
+            })
+            .collect::<Vec<_>>();
+        let kind = FeatureInputOperandKind::Native(0x8386);
+        assert_eq!(
+            resolve_operand_marker(&markers, kind, 4).map(|marker| marker.id.as_str()),
+            Some("marker-4")
+        );
+        assert_eq!(
+            resolve_operand_marker(&markers, kind, 2).map(|marker| marker.id.as_str()),
+            Some("marker-11")
+        );
     }
 
     #[test]
@@ -959,11 +992,18 @@ pub(crate) fn resolve_operand_marker<'a>(
     if operand_uses_compatible_ordinal(kind) {
         return compatible.get(usize::from(address)).copied();
     }
-    let mut matches = compatible
-        .into_iter()
+    let matches = compatible
+        .iter()
+        .copied()
         .filter(|entity| entity.local_id == Some(u32::from(address)));
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first)
+    let exact = matches.collect::<Vec<_>>();
+    match exact.as_slice() {
+        [entity] => Some(*entity),
+        [] if operand_allows_compatible_ordinal_fallback(kind) => {
+            compatible.get(usize::from(address)).copied()
+        }
+        _ => None,
+    }
 }
 
 fn compact_body_selections(
@@ -1487,6 +1527,13 @@ fn operand_uses_compatible_ordinal(kind: FeatureInputOperandKind) -> bool {
         FeatureInputOperandKind::D6
             | FeatureInputOperandKind::E1
             | FeatureInputOperandKind::Native(0x80cc | 0x83fe | 0x8ab6 | 0x929d | 0xbd69)
+    )
+}
+
+fn operand_allows_compatible_ordinal_fallback(kind: FeatureInputOperandKind) -> bool {
+    matches!(
+        kind,
+        FeatureInputOperandKind::Native(0x837b | 0x8386 | 0x8dcb | 0x8dda | 0xbc7c | 0xbc87)
     )
 }
 
