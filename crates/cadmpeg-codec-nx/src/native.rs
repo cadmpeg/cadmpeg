@@ -833,8 +833,8 @@ pub struct FeatureSketchPoint {
     pub name: String,
     /// Ordered scalar fields carrying the two coordinates.
     pub scalar_fields: [String; 2],
-    /// Solved two-dimensional coordinates in model millimeters.
-    pub position: [f64; 2],
+    /// Ordered finite native coordinate values.
+    pub coordinates: [f64; 2],
 }
 
 /// Ordered object reference carried by a bounded sketch-operation payload.
@@ -2829,7 +2829,7 @@ pub fn feature_sketch_points(
                 named_record: record.id.clone(),
                 name: name.value.clone(),
                 scalar_fields: [first.id.clone(), second.id.clone()],
-                position: [first.value, second.value],
+                coordinates: [first.value, second.value],
             })
         })
         .collect()
