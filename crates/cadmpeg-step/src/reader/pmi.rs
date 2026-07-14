@@ -74,6 +74,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
                     &annotations,
                     &mut datum_records,
                     geometry.length_scale,
+                    geometry.plane_angle_scale,
                 )
             })
             .collect::<Vec<_>>();
@@ -101,9 +102,14 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
         let Some(kind) = dimension_kind(record.simple_name()) else {
             continue;
         };
-        let nominal = characteristic_values(id, exchange, geometry.length_scale)
-            .into_iter()
-            .next();
+        let nominal = characteristic_values(
+            id,
+            exchange,
+            geometry.length_scale,
+            geometry.plane_angle_scale,
+        )
+        .into_iter()
+        .next();
         let aspect_ids = record
             .parameters()
             .iter()
@@ -147,7 +153,14 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             let values = limits
                 .parameters()
                 .iter()
-                .filter_map(|value| measure(value, exchange, geometry.length_scale))
+                .filter_map(|value| {
+                    measure(
+                        value,
+                        exchange,
+                        geometry.length_scale,
+                        geometry.plane_angle_scale,
+                    )
+                })
                 .collect::<Vec<_>>();
             if let PmiDefinition::Dimension {
                 lower_deviation,
@@ -176,10 +189,14 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .iter()
             .flat_map(references)
             .collect::<Vec<_>>();
-        let magnitude = record
-            .parameters()
-            .iter()
-            .find_map(|value| measure(value, exchange, geometry.length_scale));
+        let magnitude = record.parameters().iter().find_map(|value| {
+            measure(
+                value,
+                exchange,
+                geometry.length_scale,
+                geometry.plane_angle_scale,
+            )
+        });
         let Some(magnitude) = magnitude else {
             warnings.push(format!(
                 "{} #{id} has no numeric magnitude",
@@ -288,6 +305,7 @@ fn datum_references(
     annotations: &BTreeMap<u64, usize>,
     typed: &mut BTreeSet<u64>,
     length_scale: f64,
+    angle_scale: f64,
 ) -> Vec<DatumReference> {
     let Some(compartment_id) = value.reference() else {
         return Vec::new();
@@ -307,7 +325,7 @@ fn datum_references(
         .and_then(ValueExt::list)
         .into_iter()
         .flatten()
-        .filter_map(|modifier| modifier_text(modifier, exchange, typed, length_scale))
+        .filter_map(|modifier| modifier_text(modifier, exchange, typed, length_scale, angle_scale))
         .collect::<Vec<_>>();
     datum_ids(compartment.parameter(4))
         .into_iter()
@@ -345,10 +363,11 @@ fn modifier_text(
     exchange: &Exchange,
     typed: &mut BTreeSet<u64>,
     length_scale: f64,
+    angle_scale: f64,
 ) -> Option<String> {
     match value {
         Value::Enumeration(value) => Some(value.to_ascii_lowercase()),
-        Value::Typed(_, value) => modifier_text(value, exchange, typed, length_scale),
+        Value::Typed(_, value) => modifier_text(value, exchange, typed, length_scale, angle_scale),
         Value::Reference(id) => {
             let record = exchange.records.get(id)?;
             if record.simple_name() != Some("DATUM_REFERENCE_MODIFIER_WITH_VALUE") {
@@ -357,7 +376,13 @@ fn modifier_text(
             typed.insert(*id);
             let kind = record.parameter(0)?.enumeration()?.to_ascii_lowercase();
             let measure_id = record.parameter(1)?.reference()?;
-            let value = measure(&Value::Reference(measure_id), exchange, length_scale)?.value;
+            let value = measure(
+                &Value::Reference(measure_id),
+                exchange,
+                length_scale,
+                angle_scale,
+            )?
+            .value;
             typed.insert(measure_id);
             Some(format!("{kind}:{value}"))
         }
@@ -506,7 +531,12 @@ fn tolerance_kind(name: Option<&str>) -> Option<GeometricToleranceKind> {
     })
 }
 
-fn characteristic_values(id: u64, exchange: &Exchange, scale: f64) -> Vec<PmiValue> {
+fn characteristic_values(
+    id: u64,
+    exchange: &Exchange,
+    length_scale: f64,
+    angle_scale: f64,
+) -> Vec<PmiValue> {
     exchange
         .records
         .values()
@@ -519,11 +549,16 @@ fn characteristic_values(id: u64, exchange: &Exchange, scale: f64) -> Vec<PmiVal
                     .any(|item| item == id)
         })
         .flat_map(RecordExt::parameters)
-        .filter_map(|value| measure(value, exchange, scale))
+        .filter_map(|value| measure(value, exchange, length_scale, angle_scale))
         .collect()
 }
 
-fn measure(value: &Value, exchange: &Exchange, scale: f64) -> Option<PmiValue> {
+fn measure(
+    value: &Value,
+    exchange: &Exchange,
+    length_scale: f64,
+    angle_scale: f64,
+) -> Option<PmiValue> {
     match value {
         Value::Integer(value) => Some(PmiValue {
             value: *value as f64,
@@ -535,7 +570,9 @@ fn measure(value: &Value, exchange: &Exchange, scale: f64) -> Option<PmiValue> {
         }),
         Value::Typed(name, value) => value.number().map(|number| PmiValue {
             value: if name.contains("LENGTH") {
-                number * scale
+                number * length_scale
+            } else if name.contains("ANGLE") {
+                number * angle_scale
             } else {
                 number
             },
@@ -556,23 +593,48 @@ fn measure(value: &Value, exchange: &Exchange, scale: f64) -> Option<PmiValue> {
             } else {
                 PmiQuantity::Ratio
             };
-            record.parameters().iter().find_map(|parameter| {
-                parameter
-                    .number()
-                    .map(|number| PmiValue {
-                        value: if quantity == PmiQuantity::Length {
-                            number * scale
-                        } else {
-                            number
-                        },
-                        quantity,
+            let unit = record
+                .partials
+                .iter()
+                .flat_map(|partial| &partial.parameters)
+                .filter_map(Value::reference)
+                .find(|unit| {
+                    exchange.records.get(unit).is_some_and(|record| {
+                        record.partials.iter().any(|partial| {
+                            matches!(partial.name.as_str(), "LENGTH_UNIT" | "PLANE_ANGLE_UNIT")
+                        })
                     })
-                    .or_else(|| measure(parameter, exchange, scale))
-            })
+                });
+            let scale = match quantity {
+                PmiQuantity::Length => unit
+                    .and_then(|unit| {
+                        super::geometry::unit_scale_mm(unit, exchange, &mut BTreeSet::new())
+                    })
+                    .unwrap_or(length_scale),
+                PmiQuantity::Angle => unit
+                    .and_then(|unit| {
+                        super::geometry::unit_scale_radians(unit, exchange, &mut BTreeSet::new())
+                    })
+                    .unwrap_or(angle_scale),
+                PmiQuantity::Ratio => 1.0,
+            };
+            record
+                .partials
+                .iter()
+                .flat_map(|partial| &partial.parameters)
+                .find_map(|parameter| {
+                    parameter
+                        .number()
+                        .map(|number| PmiValue {
+                            value: number * scale,
+                            quantity,
+                        })
+                        .or_else(|| measure(parameter, exchange, length_scale, angle_scale))
+                })
         }
         Value::List(values) => values
             .iter()
-            .find_map(|value| measure(value, exchange, scale)),
+            .find_map(|value| measure(value, exchange, length_scale, angle_scale)),
         _ => None,
     }
 }

@@ -23,6 +23,7 @@ pub(super) struct GeometryResult {
     pub warnings: Vec<String>,
     pub placements: BTreeMap<u64, (Point3, Vector3, Vector3)>,
     pub length_scale: f64,
+    pub plane_angle_scale: f64,
 }
 
 pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
@@ -789,6 +790,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         warnings,
         placements,
         length_scale: scale,
+        plane_angle_scale: angle_scale,
     }
 }
 
@@ -848,7 +850,11 @@ fn plane_angle_scale(exchange: &Exchange) -> Option<f64> {
     unit_scale_radians(unit_id, exchange, &mut BTreeSet::new())
 }
 
-fn unit_scale_radians(id: u64, exchange: &Exchange, active: &mut BTreeSet<u64>) -> Option<f64> {
+pub(super) fn unit_scale_radians(
+    id: u64,
+    exchange: &Exchange,
+    active: &mut BTreeSet<u64>,
+) -> Option<f64> {
     if !active.insert(id) {
         return None;
     }
