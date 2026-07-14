@@ -18,6 +18,7 @@ use crate::CatiaCodec;
 
 fn summary_preview_segment() -> Vec<u8> {
     let mut bytes = b"FINJPL  \x01\x01\x00\x03CATSummaryInformation\0".to_vec();
+    bytes.extend_from_slice(b"LastSaveVersion\0<Version>5/<Version><Release>27/<Release><ServicePack>2/<ServicePack><BuildDate>03-10-2017.22.00/<BuildDate><HotFix>0/<HotFix>\0");
     bytes.extend_from_slice(&[
         0xff, 0xd8, // SOI
         0xff, 0xc0, 0x00, 0x0b, 8, 0x01, 0x20, 0x02, 0x80, 1, 1, 0x11, 0, 0xff, 0xda, 0x00, 0x08,
@@ -1801,6 +1802,28 @@ fn summary_preview_parser_extracts_exact_jpeg_and_dimensions() {
         .unwrap();
     truncated.truncate(eoi + 1);
     assert!(crate::container::preview_images(&truncated).is_empty());
+}
+
+#[test]
+fn summary_version_parser_requires_one_consistent_tuple() {
+    let bytes = summary_preview_segment();
+    let version = crate::container::last_save_version(&bytes).unwrap();
+    assert_eq!(version.version, 5);
+    assert_eq!(version.release, 27);
+    assert_eq!(version.service_pack, 2);
+    assert_eq!(version.hot_fix, 0);
+    assert_eq!(version.build_date, "03-10-2017.22.00");
+
+    let mut conflicting = bytes;
+    let mut other = summary_preview_segment();
+    let release = other
+        .windows(11)
+        .position(|value| value == b"<Release>27")
+        .unwrap();
+    other[release + 9] = b'2';
+    other[release + 10] = b'8';
+    conflicting.extend_from_slice(&other);
+    assert!(crate::container::last_save_version(&conflicting).is_none());
 }
 
 #[test]

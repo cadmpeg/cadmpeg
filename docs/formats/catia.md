@@ -71,6 +71,8 @@ The inner sub-container stores fragmented named streams and a stream directory. 
 
 A project-flags segment with type word `0x01010003` contains the summary-information fields. Its JPEG preview is the complete marker stream from `ff d8` SOI through `ff d9` EOI. The JPEG start-of-frame segment supplies pixel width, height, and component count. JPEG signatures outside this segment family are not previews.
 
+The `LastSaveVersion` summary field stores ASCII values delimited by `<Version>`/`/<Version>`, `<Release>`/`/<Release>`, `<ServicePack>`/`/<ServicePack>`, `<BuildDate>`/`/<BuildDate>`, and `<HotFix>`/`/<HotFix>`. Repeated identical tuples are one saved-by version; conflicting tuples do not define a governing version.
+
 ### 3.4 Nested-container stream directory
 
 ```text

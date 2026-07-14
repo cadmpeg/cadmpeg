@@ -62,6 +62,21 @@ pub struct PreviewImage {
     pub components: u8,
 }
 
+/// CATIA application version stored by the summary-information record.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LastSaveVersion {
+    /// CATIA generation number.
+    pub version: u16,
+    /// CATIA release number.
+    pub release: u16,
+    /// Installed service-pack number.
+    pub service_pack: u16,
+    /// Installed hot-fix number.
+    pub hot_fix: u16,
+    /// Source build-date string.
+    pub build_date: String,
+}
+
 /// Split FINJPL segments within a bounded outer-body range.
 #[must_use]
 pub fn finjpl_segments(data: &[u8], body_start: usize, body_end: usize) -> Vec<FinjplSegment> {
@@ -117,6 +132,54 @@ pub fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
             })
         })
         .collect()
+}
+
+/// Decode the unique `LastSaveVersion` tuple from project-flags segments.
+/// Repeated identical copies collapse to one value; conflicting copies reject
+/// the version instead of selecting by position.
+#[must_use]
+pub fn last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
+    let mut versions = finjpl_segments(data, 0, data.len())
+        .into_iter()
+        .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
+        .filter_map(|segment| parse_last_save_version(&data[segment.range]))
+        .collect::<Vec<_>>();
+    versions.dedup();
+    (versions.len() == 1).then(|| versions.remove(0))
+}
+
+fn parse_last_save_version(data: &[u8]) -> Option<LastSaveVersion> {
+    let version = tagged_ascii(data, b"<Version>", b"/<Version>")?
+        .parse()
+        .ok()?;
+    let release = tagged_ascii(data, b"<Release>", b"/<Release>")?
+        .parse()
+        .ok()?;
+    let service_pack = tagged_ascii(data, b"<ServicePack>", b"/<ServicePack>")?
+        .parse()
+        .ok()?;
+    let hot_fix = tagged_ascii(data, b"<HotFix>", b"/<HotFix>")?
+        .parse()
+        .ok()?;
+    let build_date = tagged_ascii(data, b"<BuildDate>", b"/<BuildDate>")?;
+    Some(LastSaveVersion {
+        version,
+        release,
+        service_pack,
+        hot_fix,
+        build_date,
+    })
+}
+
+fn tagged_ascii(data: &[u8], open: &[u8], close: &[u8]) -> Option<String> {
+    let start = data.windows(open.len()).position(|value| value == open)? + open.len();
+    let relative_end = data[start..]
+        .windows(close.len())
+        .position(|value| value == close)?;
+    let value = data.get(start..start + relative_end)?;
+    value
+        .is_ascii()
+        .then(|| std::str::from_utf8(value).ok().map(str::to_owned))?
 }
 
 fn jpeg_extent(data: &[u8], start: usize) -> Option<(usize, u16, u16, u8)> {
@@ -325,6 +388,8 @@ pub struct ContainerScan {
     pub brep: Option<Vec<u8>>,
     /// Exact JPEG previews extracted from summary-information framing.
     pub previews: Vec<PreviewImage>,
+    /// Unique saved-by application version from summary information.
+    pub last_save_version: Option<LastSaveVersion>,
     /// Record-family census.
     pub census: Census,
     /// Identified storage variant.
@@ -597,6 +662,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let inner = parse_stream_directory(&data);
     let brep = inner.as_ref().and_then(|dir| brep_stream(&data, dir));
     let previews = preview_images(&data);
+    let last_save_version = last_save_version(&data);
 
     let mut census = Census {
         a9_markers: count_subslice(&data, A9_MARKER),
@@ -623,6 +689,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         inner,
         brep,
         previews,
+        last_save_version,
         census,
         variant,
     }
@@ -700,6 +767,16 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         notes.push(format!(
             "record-family census: {} a9 03, {} e5 0d 03",
             scan.census.a9_markers, scan.census.e5_markers
+        ));
+    }
+    if let Some(version) = &scan.last_save_version {
+        notes.push(format!(
+            "last saved by CATIA V{}R{} SP{} HF{} ({})",
+            version.version,
+            version.release,
+            version.service_pack,
+            version.hot_fix,
+            version.build_date
         ));
     }
     notes.push(

@@ -3585,6 +3585,16 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             preview.components.to_string(),
         );
     }
+    if let Some(version) = &scan.last_save_version {
+        attributes.insert("catia_version".to_string(), version.version.to_string());
+        attributes.insert("catia_release".to_string(), version.release.to_string());
+        attributes.insert(
+            "catia_service_pack".to_string(),
+            version.service_pack.to_string(),
+        );
+        attributes.insert("catia_hot_fix".to_string(), version.hot_fix.to_string());
+        attributes.insert("catia_build_date".to_string(), version.build_date.clone());
+    }
     SourceMeta {
         format: "catia".to_string(),
         attributes,
