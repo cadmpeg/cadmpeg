@@ -271,6 +271,23 @@ pub struct FeatureSimpleHolePlacement2d {
     pub second_witness_offsets: [u64; 2],
 }
 
+/// Offset-store blocks linked after both witnesses of a simple-hole placement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSimpleHolePlacementBlockReferences {
+    /// Globally unique reference-lane identity.
+    pub id: String,
+    /// Owning `SIMPLE HOLE` operation label.
+    pub operation_label: String,
+    /// Ordered blocks following the first coordinate pair.
+    pub first_data_blocks: [String; 2],
+    /// Ordered blocks following the repeated coordinate pair.
+    pub second_data_blocks: [String; 2],
+    /// Absolute offsets of the first pair of tagged-index tokens.
+    pub first_reference_offsets: [u64; 2],
+    /// Absolute offsets of the repeated pair of tagged-index tokens.
+    pub second_reference_offsets: [u64; 2],
+}
+
 /// Construction family named by a simple-hole template.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -1133,6 +1150,81 @@ pub fn feature_simple_hole_placements_2d(
         }
     }
     placements
+}
+
+/// Resolve the tagged block-index pairs following both simple-hole placement
+/// witnesses through the unique offset store that owns the operation inputs.
+pub fn feature_simple_hole_placement_block_references(
+    container: &Container,
+) -> Vec<FeatureSimpleHolePlacementBlockReferences> {
+    let sections = container.om_sections();
+    let inputs = feature_input_blocks(container);
+    let blocks = data_blocks(container)
+        .into_iter()
+        .map(|block| block.id)
+        .collect::<BTreeSet<_>>();
+    let mut references = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal}");
+            let prefixes = inputs
+                .iter()
+                .filter(|input| input.operation_label == operation_label)
+                .filter_map(|input| {
+                    input
+                        .data_block
+                        .rsplit_once(":block#")
+                        .map(|(prefix, _)| prefix)
+                })
+                .collect::<BTreeSet<_>>();
+            if prefixes.len() != 1 {
+                continue;
+            }
+            let prefix = prefixes.into_iter().next().expect("one checked prefix");
+            let Some(decoded) = crate::om::simple_hole_placement_block_references(record) else {
+                continue;
+            };
+            let resolve = |indices: [u32; 2]| {
+                let targets = indices.map(|index| format!("{prefix}:block#{index}"));
+                targets
+                    .iter()
+                    .all(|target| blocks.contains(target))
+                    .then_some(targets)
+            };
+            let (Some(first_data_blocks), Some(second_data_blocks)) =
+                (resolve(decoded.first), resolve(decoded.second))
+            else {
+                continue;
+            };
+            references.push(FeatureSimpleHolePlacementBlockReferences {
+                id: format!(
+                    "nx:feature-history:simple-hole-placement-block-references#{section_key}-{operation_ordinal}"
+                ),
+                operation_label,
+                first_data_blocks,
+                second_data_blocks,
+                first_reference_offsets: decoded.offsets[0].map(|offset| entry_offset + offset as u64),
+                second_reference_offsets: decoded.offsets[1].map(|offset| entry_offset + offset as u64),
+            });
+        }
+    }
+    references
 }
 
 pub(crate) fn parse_simple_hole_template(

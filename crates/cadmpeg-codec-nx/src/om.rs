@@ -448,6 +448,17 @@ pub struct SimpleHolePlacement2d {
     pub witness_offsets: [[usize; 2]; 2],
 }
 
+/// Two tagged offset-store indices following each simple-hole placement witness.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SimpleHolePlacementBlockReferences {
+    /// Ordered block indices following the first coordinate pair.
+    pub first: [u32; 2],
+    /// Ordered block indices following the repeated coordinate pair.
+    pub second: [u32; 2],
+    /// Absolute offsets of the four tagged-index tokens.
+    pub offsets: [[usize; 2]; 2],
+}
+
 /// Width form of one self-delimiting operation-payload scalar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PayloadScalarEncoding {
@@ -950,6 +961,37 @@ pub fn simple_hole_placement_2d(record: OperationRecord<'_>) -> Option<SimpleHol
     Some(SimpleHolePlacement2d {
         position: [x0.0, y0.0],
         witness_offsets: [[x0.1, y0.1], [x1.1, y1.1]],
+    })
+}
+
+/// Decode the two tagged block indices immediately following each witnessed
+/// simple-hole coordinate pair.
+pub fn simple_hole_placement_block_references(
+    record: OperationRecord<'_>,
+) -> Option<SimpleHolePlacementBlockReferences> {
+    let placement = simple_hole_placement_2d(record)?;
+    let decode_pair = |coordinate_offset: usize| {
+        let relative = coordinate_offset.checked_sub(record.payload_offset)?;
+        let mut at = relative.checked_add(8)?;
+        let first_offset = at;
+        let (first, width) = payload_object_index(record.payload.get(at..)?)?;
+        at += width;
+        let second_offset = at;
+        let (second, _) = payload_object_index(record.payload.get(at..)?)?;
+        Some((
+            [first, second],
+            [
+                record.payload_offset + first_offset,
+                record.payload_offset + second_offset,
+            ],
+        ))
+    };
+    let (first, first_offsets) = decode_pair(placement.witness_offsets[0][1])?;
+    let (second, second_offsets) = decode_pair(placement.witness_offsets[1][1])?;
+    Some(SimpleHolePlacementBlockReferences {
+        first,
+        second,
+        offsets: [first_offsets, second_offsets],
     })
 }
 

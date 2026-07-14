@@ -2774,6 +2774,8 @@ fn attach_native_object_model(
     );
     let feature_simple_hole_placements_2d =
         crate::native::feature_simple_hole_placements_2d(&scan.container);
+    let feature_simple_hole_placement_block_references =
+        crate::native::feature_simple_hole_placement_block_references(&scan.container);
     let feature_body_references = crate::native::feature_body_references(&scan.container);
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
@@ -2891,6 +2893,7 @@ fn attach_native_object_model(
         && feature_payload_strings.is_empty()
         && feature_simple_hole_templates.is_empty()
         && feature_simple_hole_placements_2d.is_empty()
+        && feature_simple_hole_placement_block_references.is_empty()
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
         && feature_sketch_references.is_empty()
@@ -3198,7 +3201,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(70);
+    namespace.version = namespace.version.max(71);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3239,6 +3242,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_simple_hole_placements_2d",
             &feature_simple_hole_placements_2d,
+        )?;
+    }
+    if !feature_simple_hole_placement_block_references.is_empty() {
+        namespace.set_arena(
+            "feature_simple_hole_placement_block_references",
+            &feature_simple_hole_placement_block_references,
         )?;
     }
     if !feature_body_references.is_empty() {
