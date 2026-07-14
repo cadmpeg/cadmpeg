@@ -1109,7 +1109,7 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
                 Point3::new(1.0, 0.0, 0.0),
                 Point3::new(0.0, 1.0, 0.0),
             ],
-            triangles: vec![[0, 1, 2]],
+            triangles: vec![[0, 1, 2], [2, 1, 0]],
             strip_lengths: Vec::new(),
             normals: vec![Vector3::new(0.0, 0.0, 1.0); 3],
             channels: Vec::new(),
@@ -1124,6 +1124,8 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
         .losses
         .iter()
         .any(|loss| loss.message.contains("tessellation")));
+    let text = String::from_utf8(bytes.clone()).expect("STEP text");
+    assert_eq!(text.matches("TRIANGULATED_FACE(").count(), 1);
 
     let decoded = StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -1131,7 +1133,7 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
     assert_eq!(decoded.ir.model.tessellations.len(), 1);
     let mesh = &decoded.ir.model.tessellations[0];
     assert_eq!(mesh.vertices.len(), 3);
-    assert_eq!(mesh.triangles, [[0, 1, 2]]);
+    assert_eq!(mesh.triangles, [[0, 1, 2], [2, 1, 0]]);
     assert_eq!(mesh.normals.len(), 3);
     assert!(mesh.body.is_some());
 }
@@ -1835,7 +1837,7 @@ fn ap203e1_does_not_emit_invisibility_entities() {
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(false);
     let mut output = Vec::new();
-    write_step(
+    let report = write_step(
         &ir,
         &mut output,
         &StepWriteOptions {
@@ -1845,6 +1847,10 @@ fn ap203e1_does_not_emit_invisibility_entities() {
     )
     .unwrap();
     assert!(!String::from_utf8(output).unwrap().contains("INVISIBILITY"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("hidden body visibility")));
 }
 
 #[test]
@@ -2273,6 +2279,30 @@ fn rejected_step_write_detects_incomplete_datum_system() {
     };
     references[0].datum = PmiId("test:model:pmi#missing".into());
     let mut output = Vec::new();
+    assert!(matches!(
+        write_step(
+            &ir,
+            &mut output,
+            &StepWriteOptions {
+                schema: StepSchema::Ap242Edition3,
+                unsupported: StepUnsupportedPolicy::Reject,
+                ..StepWriteOptions::default()
+            }
+        ),
+        Err(StepError::Unsupported(_))
+    ));
+    assert!(output.is_empty());
+
+    let system = ir
+        .model
+        .pmi
+        .iter_mut()
+        .find(|annotation| matches!(annotation.definition, PmiDefinition::DatumSystem { .. }))
+        .unwrap();
+    let PmiDefinition::DatumSystem { references } = &mut system.definition else {
+        unreachable!()
+    };
+    references.clear();
     assert!(matches!(
         write_step(
             &ir,

@@ -351,6 +351,9 @@ struct Builder<'a> {
     unstyled_colors: usize,
     unsupported_standalone_geometry: usize,
     written_pmi: usize,
+    length_unit: Option<Ref>,
+    angle_unit: Option<Ref>,
+    ratio_unit: Option<Ref>,
 }
 
 impl<'a> Builder<'a> {
@@ -437,6 +440,9 @@ impl<'a> Builder<'a> {
             unstyled_colors: 0,
             unsupported_standalone_geometry: 0,
             written_pmi: 0,
+            length_unit: None,
+            angle_unit: None,
+            ratio_unit: None,
         }
     }
 
@@ -1145,10 +1151,7 @@ impl<'a> Builder<'a> {
     /// context reference.
     fn emit_context(&mut self) -> Ref {
         let len = self.emit_length_unit();
-        let angle = self.emitter.emit_raw(
-            "PLANE_ANGLE_UNIT",
-            "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
-        );
+        let angle = self.emit_angle_unit();
         let solid = self.emitter.emit_raw(
             "SOLID_ANGLE_UNIT",
             "( NAMED_UNIT(*) SI_UNIT($,.STERADIAN.) SOLID_ANGLE_UNIT() )",
@@ -1177,10 +1180,38 @@ impl<'a> Builder<'a> {
     ///
     /// Coordinate values are written unchanged.
     fn emit_length_unit(&mut self) -> Ref {
-        self.emitter.emit_raw(
+        if let Some(unit) = self.length_unit {
+            return unit;
+        }
+        let unit = self.emitter.emit_raw(
             "LENGTH_UNIT",
             "( LENGTH_UNIT() NAMED_UNIT(*) SI_UNIT(.MILLI.,.METRE.) )",
-        )
+        );
+        self.length_unit = Some(unit);
+        unit
+    }
+
+    fn emit_angle_unit(&mut self) -> Ref {
+        if let Some(unit) = self.angle_unit {
+            return unit;
+        }
+        let unit = self.emitter.emit_raw(
+            "PLANE_ANGLE_UNIT",
+            "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
+        );
+        self.angle_unit = Some(unit);
+        unit
+    }
+
+    fn emit_ratio_unit(&mut self) -> Ref {
+        if let Some(unit) = self.ratio_unit {
+            return unit;
+        }
+        let unit = self
+            .emitter
+            .emit_raw("RATIO_UNIT", "( NAMED_UNIT(*) RATIO_UNIT() )");
+        self.ratio_unit = Some(unit);
+        unit
     }
 
     /// Emit one solid per region across all displayed bodies; returns the
@@ -1323,6 +1354,23 @@ impl<'a> Builder<'a> {
 
     fn emit_visibility(&mut self) {
         if !self.schema.supports_visibility() {
+            let hidden = self
+                .ir
+                .model
+                .bodies
+                .iter()
+                .filter(|body| body.visible == Some(false))
+                .count();
+            if hidden != 0 {
+                self.loss(
+                    LossCategory::Metadata,
+                    Severity::Warning,
+                    format!(
+                        "{hidden} hidden body visibility assignment(s) are unsupported by {}",
+                        self.schema.file_schema()
+                    ),
+                );
+            }
             return;
         }
         let hidden = self
@@ -1538,34 +1586,34 @@ impl<'a> Builder<'a> {
                 matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
             });
             let item = if let Some((kind, link)) = linked_body {
-                let faces = mesh
+                let triangles = mesh
                     .triangles
                     .iter()
-                    .enumerate()
-                    .map(|(index, triangle)| {
-                        let triangle = format!(
+                    .map(|triangle| {
+                        format!(
                             "({},{},{})",
                             triangle[0] + 1,
                             triangle[1] + 1,
                             triangle[2] + 1
-                        );
-                        self.emitter.emit(
-                            "TRIANGULATED_FACE",
-                            &format!(
-                                "{},{coordinates},{},{normals},$,({point_indices}),({triangle})",
-                                string(&format!("{} face {}", mesh.id, index + 1)),
-                                mesh.vertices.len()
-                            ),
                         )
                     })
-                    .collect::<Vec<_>>();
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let face = self.emitter.emit(
+                    "TRIANGULATED_FACE",
+                    &format!(
+                        "{},{coordinates},{},{normals},$,({point_indices}),({triangles})",
+                        string(&mesh.id),
+                        mesh.vertices.len()
+                    ),
+                );
                 self.emitter.emit(
                     if kind == BodyKind::Solid {
                         "TESSELLATED_SOLID"
                     } else {
                         "TESSELLATED_SHELL"
                     },
-                    &format!("{},{},{link}", string(&mesh.id), refs(&faces)),
+                    &format!("{},({face}),{link}", string(&mesh.id)),
                 )
             } else {
                 let triangles = mesh
@@ -2139,6 +2187,9 @@ impl<'a> Builder<'a> {
                     })
                     .collect::<Vec<_>>();
                 let complete = compartments.len() == groups.len();
+                if compartments.is_empty() {
+                    continue;
+                }
                 let system = self.emitter.emit(
                     "DATUM_SYSTEM",
                     &format!(
@@ -2389,17 +2440,9 @@ impl<'a> Builder<'a> {
             PmiQuantity::Angle => (
                 "PLANE_ANGLE_MEASURE_WITH_UNIT",
                 "PLANE_ANGLE_MEASURE",
-                self.emitter.emit_raw(
-                    "PLANE_ANGLE_UNIT",
-                    "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
-                ),
+                self.emit_angle_unit(),
             ),
-            PmiQuantity::Ratio => (
-                "MEASURE_WITH_UNIT",
-                "RATIO_MEASURE",
-                self.emitter
-                    .emit_raw("RATIO_UNIT", "( NAMED_UNIT(*) RATIO_UNIT() )"),
-            ),
+            PmiQuantity::Ratio => ("MEASURE_WITH_UNIT", "RATIO_MEASURE", self.emit_ratio_unit()),
         };
         self.emitter
             .emit(entity, &format!("{typed}({}),{unit}", real(value.value)))
@@ -2413,18 +2456,8 @@ impl<'a> Builder<'a> {
         use cadmpeg_ir::pmi::PmiQuantity;
         let (typed, unit) = match value.quantity {
             PmiQuantity::Length => ("LENGTH_MEASURE", self.emit_length_unit()),
-            PmiQuantity::Angle => (
-                "PLANE_ANGLE_MEASURE",
-                self.emitter.emit_raw(
-                    "PLANE_ANGLE_UNIT",
-                    "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
-                ),
-            ),
-            PmiQuantity::Ratio => (
-                "RATIO_MEASURE",
-                self.emitter
-                    .emit_raw("RATIO_UNIT", "( NAMED_UNIT(*) RATIO_UNIT() )"),
-            ),
+            PmiQuantity::Angle => ("PLANE_ANGLE_MEASURE", self.emit_angle_unit()),
+            PmiQuantity::Ratio => ("RATIO_MEASURE", self.emit_ratio_unit()),
         };
         self.emitter.emit(
             "MEASURE_REPRESENTATION_ITEM",

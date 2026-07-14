@@ -329,12 +329,26 @@ fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationIt
         };
     }
     match exchange.records.get(&id).and_then(RecordExt::simple_name) {
-        Some("PRODUCT") => PresentationItem::Product {
-            product: ProductId(format!("step:product:product#{id}")),
-        },
-        Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE") => PresentationItem::Occurrence {
-            occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
-        },
+        Some("PRODUCT")
+            if ir
+                .model
+                .products
+                .iter()
+                .any(|product| product.id.as_str() == format!("step:product:product#{id}")) =>
+        {
+            PresentationItem::Product {
+                product: ProductId(format!("step:product:product#{id}")),
+            }
+        }
+        Some("NEXT_ASSEMBLY_USAGE_OCCURRENCE")
+            if ir.model.occurrences.iter().any(|occurrence| {
+                occurrence.id.as_str() == format!("step:product:occurrence#{id}")
+            }) =>
+        {
+            PresentationItem::Occurrence {
+                occurrence: OccurrenceId(format!("step:product:occurrence#{id}")),
+            }
+        }
         Some(name)
             if (name == "DATUM"
                 || name == "DATUM_SYSTEM"
@@ -348,7 +362,13 @@ fn presentation_item(id: u64, exchange: &Exchange, ir: &CadIr) -> PresentationIt
                 annotation: PmiId(format!("step:presentation:pmi#{id}")),
             }
         }
-        Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET") => {
+        Some("TRIANGULATED_FACE" | "COMPLEX_TRIANGULATED_FACE" | "TRIANGULATED_SURFACE_SET")
+            if ir
+                .model
+                .tessellations
+                .iter()
+                .any(|mesh| mesh.id == format!("step:tessellation:mesh#{id}")) =>
+        {
             PresentationItem::Tessellation {
                 tessellation: format!("step:tessellation:mesh#{id}"),
             }
