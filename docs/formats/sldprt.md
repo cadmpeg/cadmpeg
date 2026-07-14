@@ -327,6 +327,8 @@ Schema 36001 also carries a single-region disc20 layout with one `0x1a` region. 
 
 A second schema-36001 single-region layout uses one `0x1a/flo1` region. Its upper root chain is `0x1a.slot1 -> 0x20`, `0x20.slot1 -> 0x28`, `0x28.slot1 -> 0x2a`, and `0x2a.slot1 -> 0x2c`. Its lower root chain is `0x1a.slot2 -> 0x18`, `0x18.slot2 -> 0x16`, `0x16.slot2 -> 0x14`, `0x14.slot2 -> 0x10`, and `0x10.slot2 -> 0x0e`. When both chains are complete, every canonical face in the site belongs to the sole `0x16` shell.
 
+The compact schema-36001 single-region layout uses one `0x1a/flo2` region. Its upper root chain is `0x1a.slot1 -> 0x1c` and `0x1c.slot1 -> 0x1e`. Its lower root chain is `0x1a.slot2 -> 0x18`, `0x18.slot2 -> 0x14`, `0x14.slot2 -> 0x12`, `0x12.slot2 -> 0x10`, and `0x10.slot2 -> 0x0e`. The `0x14` record is the shell root. When both chains are complete, every canonical face in the site belongs to that shell.
+
 ---
 
 ## 7. Geometry carriers
