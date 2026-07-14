@@ -52,5 +52,8 @@ DATA;
 #45=COMPOSITE_CURVE('trimmed composite',(#44),.F.);
 #46=GEOMETRIC_CURVE_SET('styled set',(#3,#8));
 #47=STYLED_ITEM('',(#36),#46);
+#48=POLYLINE('two segments',(#16,#17,#18));
+#49=STYLED_ITEM('',(#36),#48);
+#50=STYLED_ITEM('',(#36),#6);
 ENDSEC;
 END-ISO-10303-21;

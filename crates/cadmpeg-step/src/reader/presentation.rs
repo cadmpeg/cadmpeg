@@ -177,6 +177,10 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
                 .any(|mesh| mesh.id == tessellation_id)
             {
                 AppearanceTarget::Tessellation(tessellation_id)
+            } else if exchange.records.contains_key(&target_step) {
+                AppearanceTarget::Source {
+                    source_id: format!("#{target_step}"),
+                }
             } else {
                 warnings.push(format!(
                     "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"

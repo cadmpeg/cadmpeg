@@ -248,6 +248,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             {
                 ref_error(findings, &owner, "tessellation", tessellation);
             }
+            AppearanceTarget::Source { .. } => {}
             _ => {}
         }
     }

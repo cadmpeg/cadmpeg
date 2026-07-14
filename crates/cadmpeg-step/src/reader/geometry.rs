@@ -242,6 +242,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                         }
                     },
                 ),
+            Some("POLYLINE") => polyline(record, &points).map(CurveGeometry::Nurbs),
             Some("B_SPLINE_CURVE_WITH_KNOTS") => {
                 nurbs_curve(record, &points).map(CurveGeometry::Nurbs)
             }
@@ -1246,6 +1247,30 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
         control_points,
         weights,
         periodic,
+    })
+}
+
+fn polyline(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<NurbsCurve> {
+    let control_points = record
+        .parameter(1)?
+        .list()?
+        .iter()
+        .map(|value| value.reference().and_then(|id| points.get(&id).copied()))
+        .collect::<Option<Vec<_>>>()?;
+    if control_points.len() < 2 {
+        return None;
+    }
+    let last = (control_points.len() - 1) as f64;
+    let mut knots = Vec::with_capacity(control_points.len() + 2);
+    knots.push(0.0);
+    knots.extend((0..control_points.len()).map(|index| index as f64));
+    knots.push(last);
+    Some(NurbsCurve {
+        degree: 1,
+        knots,
+        control_points,
+        weights: None,
+        periodic: false,
     })
 }
 

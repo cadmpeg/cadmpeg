@@ -348,7 +348,8 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Curve(_)
                 | AppearanceTarget::Point(_)
                 | AppearanceTarget::Edge(_)
-                | AppearanceTarget::Tessellation(_) => {}
+                | AppearanceTarget::Tessellation(_)
+                | AppearanceTarget::Source { .. } => {}
             }
         }
         for body in &ir.model.bodies {

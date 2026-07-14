@@ -58,6 +58,11 @@ pub enum AppearanceTarget {
     Point(crate::ids::PointId),
     /// Tessellated geometry appearance.
     Tessellation(String),
+    /// Native presentation carrier without a neutral geometry arena.
+    Source {
+        /// Native source entity identity.
+        source_id: String,
+    },
 }
 
 /// An explicit appearance assignment.

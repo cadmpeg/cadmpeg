@@ -348,7 +348,7 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
     assert_eq!(placed.position.x, 1.0);
     assert_eq!(placed.position.y, 2.0);
     assert_eq!(placed.position.z, 3.0);
-    assert_eq!(result.ir.model.curves.len(), 8);
+    assert_eq!(result.ir.model.curves.len(), 9);
     assert!(result.ir.model.curves.iter().any(|curve| {
         curve.id.as_str() == "step:data:curve#45"
             && matches!(curve.geometry, CurveGeometry::Composite { .. })
@@ -426,6 +426,22 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
             .count(),
         2
     );
+    assert!(result
+        .ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            &binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Source { source_id } if source_id == "#6"
+        )));
+    assert!(result.ir.model.curves.iter().any(|curve| matches!(
+        &curve.geometry,
+        CurveGeometry::Nurbs(nurbs)
+            if curve.id.as_str() == "step:data:curve#48"
+                && nurbs.degree == 1
+                && nurbs.knots == [0.0, 0.0, 1.0, 2.0, 2.0]
+    )));
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, normal, .. }
