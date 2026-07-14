@@ -2148,6 +2148,34 @@ fn storage_property_parser_enumerates_external_catia_documents() {
 }
 
 #[test]
+fn decode_persists_external_references_in_native_namespace() {
+    let mut file = standard_catpart();
+    file.extend_from_slice(&external_reference_segment("Support.CATPart"));
+    let file_len = u32::try_from(file.len()).expect("external-reference fixture length");
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode external-reference fixture");
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA native namespace"),
+    )
+    .expect("load CATIA native namespace");
+    let [reference] = native.external_references.as_slice() else {
+        panic!("one external reference");
+    };
+    assert_eq!(reference.target, "Support.CATPart");
+    assert!(native
+        .finjpl_segments
+        .iter()
+        .any(|segment| segment.id == reference.segment));
+}
+
+#[test]
 fn native_namespace_retains_summary_preview_bytes() {
     let bytes = summary_preview_segment();
     let native = crate::native::CatiaNative::decode(&bytes);
