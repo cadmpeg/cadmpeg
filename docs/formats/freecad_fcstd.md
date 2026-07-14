@@ -386,6 +386,11 @@ Part spirals use the same neutral curve family with zero axial pitch and retain 
 revolution, total rotations, and subdivision length. Invalid dimensions or enumeration values
 leave the operation attributable and native.
 
+Part projection-on-surface operations retain the complete ordered source-subelement property, one
+support face, normalized projection direction, all-shapes, faces-only, or edges-only result mode,
+solid extrusion height, and signed surface offset. Empty sources, ambiguous support selections,
+invalid modes, and zero directions leave the operation attributable and native.
+
 Part extrusions retain their normalized direction, custom-vector, selected-edge, or profile-normal
 direction source, independent forward and reverse lengths and tapers, symmetric construction, and
 solid-versus-sheet result. Solid construction additionally retains the extensible face-maker class

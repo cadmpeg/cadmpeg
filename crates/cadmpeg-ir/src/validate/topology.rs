@@ -2217,6 +2217,28 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "projection direction is invalid");
                 }
             }
+            FeatureDefinition::ProjectOnSurface {
+                sources,
+                support_face,
+                direction,
+                height,
+                offset,
+                ..
+            } => {
+                paths.push(sources);
+                face_selections.push(support_face);
+                if !valid_feature_direction(*direction)
+                    || !height.0.is_finite()
+                    || height.0 < 0.0
+                    || !offset.0.is_finite()
+                {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "projection-on-surface construction is invalid",
+                    );
+                }
+            }
             FeatureDefinition::CompositeCurve { segments, .. } => {
                 paths.extend(segments);
                 if segments.is_empty() {

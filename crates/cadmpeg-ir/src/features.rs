@@ -317,6 +317,21 @@ pub enum FeatureDefinition {
         #[serde(default)]
         bidirectional: bool,
     },
+    /// Shapes projected along a direction onto one support surface.
+    ProjectOnSurface {
+        /// Ordered shapes and subelements projected onto the support.
+        sources: PathRef,
+        /// Single support face receiving the projection.
+        support_face: FaceSelection,
+        /// Unit projection direction.
+        direction: Vector3,
+        /// Result topology retained from the projected shapes.
+        mode: SurfaceProjectionMode,
+        /// Normal extrusion height used to turn projected faces into solids.
+        height: Length,
+        /// Normal offset applied to the projected result.
+        offset: Length,
+    },
     /// Ordered chain of source paths exposed as one construction curve.
     CompositeCurve {
         /// Source segments in traversal order.
@@ -1451,6 +1466,18 @@ pub enum HelixConstructionStyle {
     Legacy,
     /// Corrected construction used by newly created features.
     Corrected,
+}
+
+/// Result topology retained by a projection-on-surface operation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceProjectionMode {
+    /// Retain all projected result shapes.
+    All,
+    /// Retain projected faces only.
+    Faces,
+    /// Retain projected edges only.
+    Edges,
 }
 
 /// Boolean effect of a solid-producing feature.

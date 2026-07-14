@@ -14,8 +14,8 @@ use cadmpeg_ir::features::{
     HoleThreadDepth, InnerWireTaper, Length, ParameterId, ParameterValue, PathRef, PatternKind,
     PatternScaleCenter, PatternStage, PatternStageCombination, PrimitiveSolid, ProfileRef,
     RadiusSpec, RevolutionAxis, RevolutionConstruction, RuledCurveOrientation, ScaleCenter,
-    ScaleFactors, ShellJoin, ShellMode, SketchSpace, SweepMode, SweepOrientation,
-    SweepTransformation, SweepTransition, ThreadHand,
+    ScaleFactors, ShellJoin, ShellMode, SketchSpace, SurfaceProjectionMode, SweepMode,
+    SweepOrientation, SweepTransformation, SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -259,6 +259,12 @@ pub(crate) fn transfer(
             })
         } else if object.type_name == "Part::Mirroring" {
             mirror_shape_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
+                kind: object.type_name.clone(),
+                parameters: native_parameters(&owned),
+                properties: BTreeMap::new(),
+            })
+        } else if object.type_name == "Part::ProjectOnSurface" {
+            project_on_surface_definition(&owned).unwrap_or_else(|| FeatureDefinition::Native {
                 kind: object.type_name.clone(),
                 parameters: native_parameters(&owned),
                 properties: BTreeMap::new(),
@@ -2139,6 +2145,41 @@ fn mirror_shape_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefi
     })
 }
 
+fn project_on_surface_definition(properties: &[&PropertyRecord]) -> Option<FeatureDefinition> {
+    let sources = property(properties, "Projection")?;
+    if sources.links.is_empty() {
+        return None;
+    }
+    let support = property(properties, "SupportFace")?;
+    if support.links.len() != 1 {
+        return None;
+    }
+    let mode = match integer_property(properties, "Mode").unwrap_or(0) {
+        0 => SurfaceProjectionMode::All,
+        1 => SurfaceProjectionMode::Faces,
+        2 => SurfaceProjectionMode::Edges,
+        _ => return None,
+    };
+    let height = if property(properties, "Height").is_some() {
+        scalar_named(properties, "Height").filter(|value| *value >= 0.0)?
+    } else {
+        0.0
+    };
+    let offset = if property(properties, "Offset").is_some() {
+        scalar_named(properties, "Offset")?
+    } else {
+        0.0
+    };
+    Some(FeatureDefinition::ProjectOnSurface {
+        sources: PathRef::Native(sources.id.clone()),
+        support_face: cadmpeg_ir::features::FaceSelection::Native(support.id.clone()),
+        direction: unit_vector(vector_property(properties, "Direction")?)?,
+        mode,
+        height: Length(height),
+        offset: Length(offset),
+    })
+}
+
 fn draft_definition(
     properties: &[&PropertyRecord],
     objects: &[ObjectRecord],
@@ -3268,7 +3309,7 @@ fn is_design_object(kind: &str) -> bool {
         )
         || matches!(
             kind,
-            "Part::RuledSurface" | "Part::Section" | "Part::Mirroring"
+            "Part::RuledSurface" | "Part::Section" | "Part::Mirroring" | "Part::ProjectOnSurface"
         )
         || kind.contains("PartDesign::Feature")
 }

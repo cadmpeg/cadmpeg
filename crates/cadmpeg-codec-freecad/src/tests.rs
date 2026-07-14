@@ -520,7 +520,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "28");
+    assert_eq!(result.ir.ir_version, "29");
     let feature = |name: &str| {
         &result
             .ir
@@ -863,6 +863,57 @@ fn transfers_standalone_part_mirror_plane_semantics() {
         } if source.ends_with(":property:Source") && reference.ends_with(":property:MirrorPlane")
     ));
     assert_eq!(feature.dependencies.len(), 2);
+    assert!(result.report.losses.is_empty());
+}
+
+#[test]
+fn transfers_part_projection_on_surface_construction() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Box" name="First" id="1"/>
+ <Object type="Part::Box" name="Second" id="2"/>
+ <Object type="Part::Box" name="Support" id="3"/>
+ <Object type="Part::ProjectOnSurface" name="Projection" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="First"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="1"/></Property><Property name="Width" type="App::PropertyLength"><Float value="1"/></Property><Property name="Height" type="App::PropertyLength"><Float value="1"/></Property></Properties></Object>
+ <Object name="Second"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="2"/></Property><Property name="Width" type="App::PropertyLength"><Float value="2"/></Property><Property name="Height" type="App::PropertyLength"><Float value="2"/></Property></Properties></Object>
+ <Object name="Support"><Properties Count="3"><Property name="Length" type="App::PropertyLength"><Float value="3"/></Property><Property name="Width" type="App::PropertyLength"><Float value="3"/></Property><Property name="Height" type="App::PropertyLength"><Float value="3"/></Property></Properties></Object>
+ <Object name="Projection"><Properties Count="6">
+  <Property name="Projection" type="App::PropertyLinkSubList"><LinkList count="2"><Link object="First" sub="Wire1"/><Link object="Second" sub="Face2"/></LinkList></Property>
+  <Property name="SupportFace" type="App::PropertyLinkSub"><Link object="Support" sub="Face1"/></Property>
+  <Property name="Direction" type="App::PropertyVector"><Vector x="0" y="0" z="5"/></Property>
+  <Property name="Mode" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  <Property name="Height" type="App::PropertyLength"><Float value="8"/></Property>
+  <Property name="Offset" type="App::PropertyDistance"><Float value="-1.5"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("projection on surface");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Projection"))
+        .expect("projection feature");
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::ProjectOnSurface {
+            sources: cadmpeg_ir::features::PathRef::Native(sources),
+            support_face: cadmpeg_ir::features::FaceSelection::Native(support),
+            direction: cadmpeg_ir::math::Vector3 { x: 0.0, y: 0.0, z: 1.0 },
+            mode: cadmpeg_ir::features::SurfaceProjectionMode::Faces,
+            height: cadmpeg_ir::features::Length(8.0),
+            offset: cadmpeg_ir::features::Length(-1.5),
+        } if sources.ends_with(":property:Projection")
+            && support.ends_with(":property:SupportFace")
+    ));
+    assert_eq!(feature.dependencies.len(), 3);
     assert!(result.report.losses.is_empty());
 }
 
