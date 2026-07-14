@@ -3975,23 +3975,57 @@ fn section_dimension_constraints(
 }
 
 fn section_skamp_locus(
-    definition_id: u32,
-    segments: &[crate::feature::FeatureSegment],
+    definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
-    let segment = segments
-        .iter()
-        .find(|segment| segment.external_id == item.entity_id)?;
     let entity = SketchEntityId(format!(
-        "creo:featdefs:sketch_entity#{definition_id}:{}",
-        segment.external_id
+        "creo:featdefs:sketch_entity#{}:{}",
+        definition.id, item.entity_id
     ));
-    match (segment.kind, item.sense) {
+    if let Some(segment) = definition
+        .segments
+        .iter()
+        .flat_map(|segments| &segments.rows)
+        .find(|segment| segment.external_id == item.entity_id)
+    {
+        return match (segment.kind, item.sense) {
+            (_, 0) => Some(SketchLocus::Entity(entity)),
+            (crate::feature::FeatureSegmentKind::Arc, 2) => Some(SketchLocus::End(entity)),
+            (crate::feature::FeatureSegmentKind::Arc, 3) => Some(SketchLocus::Start(entity)),
+            (_, 2) => Some(SketchLocus::Start(entity)),
+            (_, 3) => Some(SketchLocus::End(entity)),
+            _ => None,
+        };
+    }
+    let internal_id = definition
+        .order_table
+        .as_ref()?
+        .rows
+        .iter()
+        .find(|row| row.external_id == item.entity_id)?
+        .internal_id;
+    let saved = definition
+        .saved_section
+        .as_ref()?
+        .entities
+        .iter()
+        .find(|saved| match saved {
+            crate::feature::FeatureSavedEntity::Line(line) => line.entity_id == internal_id,
+            crate::feature::FeatureSavedEntity::Arc(arc) => arc.entity_id == internal_id,
+            crate::feature::FeatureSavedEntity::Circle(circle) => circle.entity_id == internal_id,
+            crate::feature::FeatureSavedEntity::Spline(spline) => {
+                spline.entity_id == Some(internal_id)
+            }
+            crate::feature::FeatureSavedEntity::Dummy(dummy) => {
+                dummy.entity_id == Some(internal_id)
+            }
+        })?;
+    match (saved, item.sense) {
         (_, 0) => Some(SketchLocus::Entity(entity)),
-        (crate::feature::FeatureSegmentKind::Arc, 2) => Some(SketchLocus::End(entity)),
-        (crate::feature::FeatureSegmentKind::Arc, 3) => Some(SketchLocus::Start(entity)),
-        (_, 2) => Some(SketchLocus::Start(entity)),
-        (_, 3) => Some(SketchLocus::End(entity)),
+        (crate::feature::FeatureSavedEntity::Line(_), 2) => Some(SketchLocus::Start(entity)),
+        (crate::feature::FeatureSavedEntity::Line(_), 3) => Some(SketchLocus::End(entity)),
+        (crate::feature::FeatureSavedEntity::Arc(_), 2) => Some(SketchLocus::End(entity)),
+        (crate::feature::FeatureSavedEntity::Arc(_), 3) => Some(SketchLocus::Start(entity)),
         _ => None,
     }
 }
@@ -4006,12 +4040,11 @@ fn section_skamp_segment<'a>(
 }
 
 fn section_skamp_endpoint(
-    definition_id: u32,
-    segments: &[crate::feature::FeatureSegment],
+    definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     matches!(item.sense, 2 | 3)
-        .then(|| section_skamp_locus(definition_id, segments, item))
+        .then(|| section_skamp_locus(definition, item))
         .flatten()
 }
 
@@ -4029,14 +4062,13 @@ fn section_skamp_constraints(
         .filter_map(|skamp| {
             let constraint_definition = match (skamp.kind, skamp.items.as_slice()) {
                 (0, [first, second])
-                    if section_skamp_endpoint(definition.id, &segments.rows, first).is_some()
-                        && section_skamp_endpoint(definition.id, &segments.rows, second)
-                            .is_some() =>
+                    if section_skamp_endpoint(definition, first).is_some()
+                        && section_skamp_endpoint(definition, second).is_some() =>
                 {
                     SketchConstraintDefinition::CoincidentLoci {
                         loci: vec![
-                            section_skamp_endpoint(definition.id, &segments.rows, first)?,
-                            section_skamp_endpoint(definition.id, &segments.rows, second)?,
+                            section_skamp_endpoint(definition, first)?,
+                            section_skamp_endpoint(definition, second)?,
                         ],
                     }
                 }
@@ -4044,18 +4076,16 @@ fn section_skamp_constraints(
                     if (first.sense == 0
                         && section_skamp_segment(&segments.rows, first)?.kind
                             == crate::feature::FeatureSegmentKind::Point
-                        && section_skamp_endpoint(definition.id, &segments.rows, second)
-                            .is_some())
+                        && section_skamp_endpoint(definition, second).is_some())
                         || (second.sense == 0
                             && section_skamp_segment(&segments.rows, second)?.kind
                                 == crate::feature::FeatureSegmentKind::Point
-                            && section_skamp_endpoint(definition.id, &segments.rows, first)
-                                .is_some()) =>
+                            && section_skamp_endpoint(definition, first).is_some()) =>
                 {
                     SketchConstraintDefinition::CoincidentLoci {
                         loci: vec![
-                            section_skamp_locus(definition.id, &segments.rows, first)?,
-                            section_skamp_locus(definition.id, &segments.rows, second)?,
+                            section_skamp_locus(definition, first)?,
+                            section_skamp_locus(definition, second)?,
                         ],
                     }
                 }
@@ -4082,27 +4112,24 @@ fn section_skamp_constraints(
                     }
                 }
                 (4, [first, second])
-                    if section_skamp_endpoint(definition.id, &segments.rows, first).is_some()
-                        && section_skamp_endpoint(definition.id, &segments.rows, second)
-                            .is_some() =>
+                    if section_skamp_endpoint(definition, first).is_some()
+                        && section_skamp_endpoint(definition, second).is_some() =>
                 {
                     SketchConstraintDefinition::TangentLoci {
-                        first: section_skamp_endpoint(definition.id, &segments.rows, first)?,
-                        second: section_skamp_endpoint(definition.id, &segments.rows, second)?,
+                        first: section_skamp_endpoint(definition, first)?,
+                        second: section_skamp_endpoint(definition, second)?,
                     }
                 }
                 (14, [axis, first, second])
                     if axis.sense == 0
                         && section_skamp_segment(&segments.rows, axis)?.kind
                             == crate::feature::FeatureSegmentKind::Line
-                        && section_skamp_endpoint(definition.id, &segments.rows, first)
-                            .is_some()
-                        && section_skamp_endpoint(definition.id, &segments.rows, second)
-                            .is_some() =>
+                        && section_skamp_endpoint(definition, first).is_some()
+                        && section_skamp_endpoint(definition, second).is_some() =>
                 {
                     SketchConstraintDefinition::Symmetric {
-                        first: section_skamp_endpoint(definition.id, &segments.rows, first)?,
-                        second: section_skamp_endpoint(definition.id, &segments.rows, second)?,
+                        first: section_skamp_endpoint(definition, first)?,
+                        second: section_skamp_endpoint(definition, second)?,
                         axis: SketchEntityId(format!(
                             "creo:featdefs:sketch_entity#{}:{}",
                             definition.id, axis.entity_id
@@ -7548,6 +7575,45 @@ mod resolved_sketch_tests {
                     native_ref: Some("creo:featdefs:sketch#917".to_string()),
                 }],
             }
+        );
+        let mut saved_definition = definition;
+        saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureOrderRow {
+                external_id: 14,
+                internal_id: 20,
+                bitmask: 1,
+                offset: 81,
+            }],
+            offset: 80,
+        });
+        saved_definition.saved_section = Some(crate::feature::FeatureSavedSection {
+            entities: vec![crate::feature::FeatureSavedEntity::Line(
+                crate::feature::FeatureSavedLine {
+                    entity_id: 20,
+                    references: Vec::new(),
+                    attributes: Vec::new(),
+                    endpoints: [
+                        [Some(0.0), Some(0.0), Some(0.0)],
+                        [Some(1.0), Some(0.0), Some(0.0)],
+                    ],
+                    offset: 82,
+                },
+            )],
+            offset: 82,
+        });
+        assert_eq!(
+            section_skamp_endpoint(
+                &saved_definition,
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 14,
+                    sense: 3,
+                },
+            ),
+            Some(SketchLocus::End(SketchEntityId(
+                "creo:featdefs:sketch_entity#917:14".to_string()
+            )))
         );
     }
 

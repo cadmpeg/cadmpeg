@@ -359,6 +359,9 @@ An incidence item may reference a complete saved-section entity through its
 mapping, retain the incidence type, ordered entity identifiers, and sense values
 as one native sketch constraint; the absence of a typed locus interpretation
 does not remove the solver relation.
+For an ordered saved line, senses `2` and `3` select its first and second stored
+endpoints. For an ordered saved arc they select the neutral end and start loci,
+respectively, because saved-arc evaluation reverses the stored endpoint order.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;
