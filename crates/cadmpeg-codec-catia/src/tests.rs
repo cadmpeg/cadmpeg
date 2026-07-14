@@ -580,6 +580,14 @@ fn standard_mesh_gap_assignment_follows_native_port_cycle() {
             .len()
             == 4
     }));
+    let (topology, points) = crate::topology::parse_standard_mesh_endpoint_candidates(
+        &bytes,
+        &[[0, 0]; 4],
+        &[vec![[0, 1]], vec![[1, 2]], vec![[2, 3]], vec![[3, 0]]],
+    )
+    .expect("endpoint-constrained full gap");
+    assert_eq!(topology.logical_vertex_count(), 4);
+    assert_eq!(points, [0, 1, 2, 3]);
 }
 
 #[test]
