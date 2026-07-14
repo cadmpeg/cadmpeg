@@ -5800,7 +5800,9 @@ fn typed_relation_definition(
                     unique_profile_distance_locus(sketch, &known, parameter, sketch_entities)?,
                     known,
                 ),
-                (None, None) => return None,
+                (None, None) => {
+                    unique_profile_distance_loci_pair(sketch, parameter, sketch_entities)?
+                }
             };
             Some(SketchConstraintDefinition::DistanceLoci {
                 first,
@@ -5910,6 +5912,40 @@ fn unique_profile_distance_locus(
     let mut candidates = candidates.into_iter();
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)
+}
+
+fn unique_profile_distance_loci_pair(
+    sketch: &SketchId,
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    sketch_entities: &[SketchEntity],
+) -> Option<(SketchLocus, SketchLocus)> {
+    let cadmpeg_ir::features::ParameterValue::Length(distance) = parameter.value.as_ref()? else {
+        return None;
+    };
+    let loci = sketch_entities
+        .iter()
+        .filter(|entity| entity.sketch == *sketch)
+        .flat_map(sketch_entity_loci)
+        .collect::<Vec<_>>();
+    let mut candidates = Vec::new();
+    for (first_index, (first_point, first)) in loci.iter().enumerate() {
+        for (second_point, second) in &loci[first_index + 1..] {
+            let measured = (second_point.u - first_point.u).hypot(second_point.v - first_point.v);
+            if same_dimension_length(measured, distance.0) {
+                candidates.push((first.clone(), second.clone()));
+            }
+        }
+    }
+    candidates.sort_by(|(first_left, second_left), (first_right, second_right)| {
+        locus_key(first_left)
+            .cmp(&locus_key(first_right))
+            .then_with(|| locus_key(second_left).cmp(&locus_key(second_right)))
+    });
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn unique_dimensioned_circle_entity(
@@ -7113,8 +7149,8 @@ mod profile_join_tests {
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_compatible_marker_transform,
-        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_distance_locus,
-        MarkerTransform,
+        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_distance_loci_pair,
+        unique_profile_distance_locus, MarkerTransform,
     };
     use crate::records::{
         FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
@@ -7425,6 +7461,59 @@ mod profile_join_tests {
                 &known_locus,
                 &parameter,
                 &[known, candidate, ambiguous],
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn distance_pair_fallback_requires_one_pair_in_the_complete_sketch() {
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, u: f64, v: f64| SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, v),
+            },
+        };
+        let parameter = DesignParameter {
+            id: ParameterId("distance".into()),
+            owner: FeatureId("feature".into()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "5mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(5.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        };
+        let first = point("first", 0.0, 0.0);
+        let second = point("second", 3.0, 4.0);
+        let unrelated = point("unrelated", 20.0, 20.0);
+        assert_eq!(
+            unique_profile_distance_loci_pair(
+                &sketch,
+                &parameter,
+                &[first.clone(), second.clone(), unrelated.clone()],
+            ),
+            Some((
+                SketchLocus::Entity(first.id.clone()),
+                SketchLocus::Entity(second.id.clone()),
+            ))
+        );
+
+        let ambiguous = point("ambiguous", 23.0, 24.0);
+        assert_eq!(
+            unique_profile_distance_loci_pair(
+                &sketch,
+                &parameter,
+                &[first, second, unrelated, ambiguous],
             ),
             None
         );

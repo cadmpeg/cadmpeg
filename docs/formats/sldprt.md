@@ -205,6 +205,8 @@ Sketch relations use named scalar records with reference cells at fixed scalar-r
 
 When exactly one point-distance operand identifies a locus, the other operand identifies the sole distinct point locus in the complete owning sketch at the stored distance. Zero or multiple distance-compatible loci leave the operand unresolved.
 
+When neither point-distance operand identifies a locus, the operands identify the sole unordered pair of profile loci in the complete owning sketch separated by the stored distance. Zero or multiple distance-compatible pairs leave both operands unresolved.
+
 A relation instance without a driving scalar uses its display scalar's attached name record to identify an existing same-named parameter owned by the same sketch feature. The binding requires one parameter and applies only when no driving relation or earlier display-only relation has claimed that parameter.
 
 Distance, horizontal-distance, vertical-distance, and circular-dimension driving scalars store metres. Angular driving scalars store radians. These relation-family units apply independently of the owning Keywords dimension's expression spelling.
