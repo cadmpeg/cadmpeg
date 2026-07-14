@@ -1315,6 +1315,12 @@ pub(crate) fn resolved_section_points(
             }
         })
         .collect::<Vec<_>>();
+    let point_on_line_coordinates = definition
+        .relations
+        .iter()
+        .flat_map(|table| &table.skamps)
+        .filter_map(|skamp| section_skamp_point_on_line(definition, skamp))
+        .collect::<Vec<_>>();
     let signed_dimensions = definition
         .relations
         .iter()
@@ -1333,11 +1339,8 @@ pub(crate) fn resolved_section_points(
             let segment = segments.iter().find(|segment| {
                 segment.point_ids == [first, second] || segment.point_ids == [second, first]
             })?;
-            let coordinate = match segment.vertical_horizontal {
-                Some(0) => 1,
-                Some(1) => 0,
-                _ => return None,
-            };
+            let coordinate =
+                1usize.checked_sub(section_line_fixed_coordinate(definition, segment)?)?;
             let magnitude = definition
                 .dimensions
                 .as_ref()?
@@ -1361,10 +1364,8 @@ pub(crate) fn resolved_section_points(
     loop {
         let mut changed = false;
         for segment in &segments {
-            let coordinate = match segment.vertical_horizontal {
-                Some(0) => 0,
-                Some(1) => 1,
-                _ => continue,
+            let Some(coordinate) = section_line_fixed_coordinate(definition, segment) else {
+                continue;
             };
             let [first_id, second_id] = segment.point_ids;
             let [first, second] =
@@ -1415,6 +1416,21 @@ pub(crate) fn resolved_section_points(
                 }
             }
         }
+        for &(line_point_id, point_id, coordinate) in &point_on_line_coordinates {
+            let [line_point, point] = [line_point_id, point_id]
+                .map(|id| points.get(&id).copied().unwrap_or([None, None]));
+            match [line_point[coordinate], point[coordinate]] {
+                [Some(value), None] => {
+                    points.entry(point_id).or_insert([None, None])[coordinate] = Some(value);
+                    changed = true;
+                }
+                [None, Some(value)] => {
+                    points.entry(line_point_id).or_insert([None, None])[coordinate] = Some(value);
+                    changed = true;
+                }
+                _ => {}
+            }
+        }
         if !changed {
             break;
         }
@@ -1423,6 +1439,72 @@ pub(crate) fn resolved_section_points(
         .into_iter()
         .filter_map(|(id, [u, v])| Some((id, [u?, v?])))
         .collect()
+}
+
+fn section_line_fixed_coordinate(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<usize> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
+    let mut coordinates = segment
+        .vertical_horizontal
+        .and_then(|selector| match selector {
+            0 => Some(0),
+            1 => Some(1),
+            _ => None,
+        })
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    coordinates.extend(
+        definition
+            .relations
+            .iter()
+            .flat_map(|table| &table.skamps)
+            .filter_map(|skamp| match (skamp.kind, skamp.items.as_slice()) {
+                (1, [item]) if item.sense == 0 && item.entity_id == segment.external_id => Some(1),
+                (2, [item]) if item.sense == 0 && item.entity_id == segment.external_id => Some(0),
+                _ => None,
+            }),
+    );
+    coordinates
+        .first()
+        .copied()
+        .filter(|_| coordinates.len() == 1)
+}
+
+fn section_skamp_point_on_line(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(u32, u32, usize)> {
+    let [first, second] = skamp.items.as_slice() else {
+        return None;
+    };
+    let pair = match skamp.kind {
+        3 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                let line = unique_section_skamp_segment(definition, line_item.entity_id)?;
+                (line_item.sense == 0 && line.kind == crate::feature::FeatureSegmentKind::Line)
+                    .then_some((
+                        line,
+                        section_skamp_selected_point_id(definition, point_item)?,
+                    ))
+            }),
+        9 => [(first, second), (second, first)]
+            .into_iter()
+            .find_map(|(line_item, point_item)| {
+                let line = unique_section_skamp_segment(definition, line_item.entity_id)?;
+                let point = unique_section_skamp_segment(definition, point_item.entity_id)?;
+                (line_item.sense == 0
+                    && point_item.sense == 0
+                    && line.kind == crate::feature::FeatureSegmentKind::Line
+                    && point.kind == crate::feature::FeatureSegmentKind::Point)
+                    .then_some((line, point.point_ids[0]))
+            }),
+        _ => None,
+    }?;
+    let coordinate = section_line_fixed_coordinate(definition, pair.0)?;
+    Some((pair.0.point_ids[0], pair.1, coordinate))
 }
 
 fn section_skamp_endpoint_point_id(
@@ -8615,7 +8697,7 @@ mod resolved_sketch_tests {
                 },
                 crate::feature::FeatureSectionPoint {
                     point_id: 4,
-                    u: Some(8.0),
+                    u: None,
                     v: Some(9.0),
                 },
                 crate::feature::FeatureSectionPoint {
@@ -8665,10 +8747,39 @@ mod resolved_sketch_tests {
                 ],
                 offset: 84,
             },
+            crate::feature::FeatureSkamp {
+                id: 19,
+                kind: 2,
+                flags: 0,
+                status: 0,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 15,
+                    sense: 0,
+                }],
+                offset: 85,
+            },
+            crate::feature::FeatureSkamp {
+                id: 20,
+                kind: 9,
+                flags: 0,
+                status: 0,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 15,
+                        sense: 0,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 14,
+                        sense: 0,
+                    },
+                ],
+                offset: 86,
+            },
         ];
         let coincident_points = resolved_section_points(&coincident_definition);
         assert_eq!(coincident_points.get(&5), Some(&[3.0, 4.0]));
-        assert_eq!(coincident_points.get(&6), Some(&[8.0, 9.0]));
+        assert_eq!(coincident_points.get(&4), Some(&[3.0, 9.0]));
+        assert_eq!(coincident_points.get(&6), Some(&[3.0, 9.0]));
         let mut saved_definition = definition;
         saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 1,

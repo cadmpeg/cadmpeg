@@ -373,6 +373,11 @@ A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci coincide.
 A one-item type-one incidence makes the referenced entity horizontal. A
 one-item type-two incidence makes the referenced entity vertical.
+Stored horizontal/vertical selectors and unique type-one/type-two incidences
+define the line's held `v`/`u` coordinate, respectively. For type three or type
+nine, a selected point on such a line inherits that held coordinate from either
+line endpoint. The equality propagates in either direction and does not
+overwrite conflicting solved coordinates.
 A three-item type-fourteen incidence stores a sense-zero line followed by two
 endpoint-selected loci. The loci are symmetric about the line, in stored order.
 An incidence item may reference a complete saved-section entity through its
