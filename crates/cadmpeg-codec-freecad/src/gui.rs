@@ -64,9 +64,30 @@ pub(crate) fn transfer(
         let Some(object_id) = objects_by_name.get(name).copied() else {
             continue;
         };
-        let values = provider
+        let property_nodes = provider
             .descendants()
             .filter(|node| node.has_tag_name("Property"))
+            .collect::<Vec<_>>();
+        let properties_node = provider
+            .children()
+            .find(|node| node.has_tag_name("Properties"))
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("ViewProvider {name} has no Properties"))
+            })?;
+        let declared = properties_node
+            .attribute("Count")
+            .and_then(|value| value.parse::<usize>().ok())
+            .ok_or_else(|| {
+                CodecError::Malformed(format!("ViewProvider {name} has invalid property count"))
+            })?;
+        if declared != property_nodes.len() {
+            return Err(CodecError::Malformed(format!(
+                "ViewProvider {name} declares {declared} properties but contains {}",
+                property_nodes.len()
+            )));
+        }
+        let values = property_nodes
+            .into_iter()
             .filter_map(|property| {
                 Some((
                     property.attribute("name")?,
