@@ -216,8 +216,7 @@ fn dimension_children_valid(
 
 fn witness_valid(record: &ParameterRecord, entries: &BTreeMap<u32, &DirectoryEntry>) -> bool {
     let Some(count) = record
-        .integer(2)
-        .and_then(|value| usize::try_from(value).ok())
+        .count(2)
         .filter(|count| *count >= 3 && *count % 2 == 1)
     else {
         return false;

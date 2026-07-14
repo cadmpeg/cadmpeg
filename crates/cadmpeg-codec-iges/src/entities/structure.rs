@@ -101,10 +101,7 @@ fn array_mask_valid(
     first_position_index: usize,
     total: usize,
 ) -> bool {
-    let Some(count) = record
-        .integer(count_index)
-        .and_then(|value| usize::try_from(value).ok())
-    else {
+    let Some(count) = record.count(count_index) else {
         return false;
     };
     let Some(flag) = record
@@ -319,14 +316,8 @@ fn property_fields_valid(
         9 => exact(4) && (2..=5).all(|index| record.string(index).is_some()),
         10 => exact(6) && (2..=7).all(|index| integer_range(index, 0..=1)),
         11 => {
-            let dependent_count = record
-                .integer(3)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0 && *count <= end);
-            let independent_count = record
-                .integer(4)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count <= end);
+            let dependent_count = record.count(3).filter(|count| *count > 0 && *count <= end);
+            let independent_count = record.count(4).filter(|count| *count <= end);
             let Some((dependent_count, independent_count)) = dependent_count.zip(independent_count)
             else {
                 return false;
@@ -370,14 +361,11 @@ fn property_fields_valid(
                 && (5 + 2 * independent_count..end)
                     .all(|index| record.number(index).is_some_and(f64::is_finite))
         }
-        12 | 14 => record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .is_some_and(|count| {
-                count > 0
-                    && end == count + 2
-                    && (0..count).all(|offset| record.string(2 + offset).is_some())
-            }),
+        12 | 14 => record.count(1).is_some_and(|count| {
+            count > 0
+                && end == count + 2
+                && (0..count).all(|offset| record.string(2 + offset).is_some())
+        }),
         13 => {
             matches!(record.integer(1), Some(2 | 3))
                 && end == record.integer(1).unwrap_or_default() as usize + 2
@@ -412,8 +400,7 @@ fn property_fields_valid(
                 && record.string(3).is_some_and(|value| !value.is_empty())
         }
         24 => record
-            .integer(2)
-            .and_then(|value| usize::try_from(value).ok())
+            .count(2)
             .filter(|count| *count > 0)
             .is_some_and(|count| {
                 exact(i64::try_from(1 + 4 * count).unwrap_or_default())
@@ -428,8 +415,7 @@ fn property_fields_valid(
                     })
             }),
         25 => record
-            .integer(3)
-            .and_then(|value| usize::try_from(value).ok())
+            .count(3)
             .filter(|count| *count > 0 && *count <= end)
             .is_some_and(|count| {
                 exact(i64::try_from(2 + count).unwrap_or_default())
@@ -449,8 +435,7 @@ fn property_fields_valid(
                     .is_some_and(|value| matches!(value, 1..=5 | 5001..=9999))
         }
         27 => record
-            .integer(3)
-            .and_then(|value| usize::try_from(value).ok())
+            .count(3)
             .filter(|count| *count > 0)
             .is_some_and(|count| {
                 exact(i64::try_from(2 + 2 * count).unwrap_or_default())
@@ -494,8 +479,7 @@ fn property_fields_valid(
                     .is_some_and(|value| value >= 0 && (fraction == Some(0) || value > 0))
         }
         30 => record
-            .integer(13)
-            .and_then(|value| usize::try_from(value).ok())
+            .count(13)
             .filter(|count| *count <= end)
             .is_some_and(|count| {
                 exact(i64::try_from(12 + count * 3).unwrap_or_default())
@@ -533,8 +517,7 @@ fn property_fields_valid(
                 && record.string(3).is_some_and(|value| !value.is_empty())
         }
         34 | 35 => record
-            .integer(2)
-            .and_then(|value| usize::try_from(value).ok())
+            .count(2)
             .filter(|count| *count > 0 && *count <= end)
             .is_some_and(|count| {
                 exact(i64::try_from(1 + count * 3).unwrap_or_default())
@@ -577,11 +560,7 @@ fn predefined_associativity_valid(
     let end = entity_parameter_end(record, entries);
     match entry.form {
         5 => {
-            let Some(count) = record
-                .integer(1)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0)
-            else {
+            let Some(count) = record.count(1).filter(|count| *count > 0) else {
                 return false;
             };
             end == 2 + count * 7
@@ -603,10 +582,7 @@ fn predefined_associativity_valid(
                 })
         }
         9 => {
-            let child_count = record
-                .integer(2)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0);
+            let child_count = record.count(2).filter(|count| *count > 0);
             let members = child_count.and_then(|count| {
                 (3..4 + count)
                     .map(|index| existing_pointer(record, index, entries))
@@ -623,10 +599,7 @@ fn predefined_associativity_valid(
                 })
         }
         12 => {
-            let count = record
-                .integer(1)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0);
+            let count = record.count(1).filter(|count| *count > 0);
             count.is_some_and(|count| {
                 end == 2 + count * 2
                     && (0..count).all(|offset| {
@@ -637,10 +610,7 @@ fn predefined_associativity_valid(
             })
         }
         13 => {
-            let geometry_count = record
-                .integer(2)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0);
+            let geometry_count = record.count(2).filter(|count| *count > 0);
             let dimension = existing_pointer(record, 3, entries);
             record.integer(1) == Some(1)
                 && geometry_count.is_some_and(|count| {
@@ -657,10 +627,7 @@ fn predefined_associativity_valid(
                 })
         }
         16 => {
-            let count = record
-                .integer(2)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0);
+            let count = record.count(2).filter(|count| *count > 0);
             let transform_valid = match record.integer(3) {
                 Some(0) => true,
                 Some(_) => existing_pointer(record, 3, entries).is_some_and(|sequence| {
@@ -679,10 +646,7 @@ fn predefined_associativity_valid(
                 })
         }
         21 => {
-            let geometry_count = record
-                .integer(2)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0);
+            let geometry_count = record.count(2).filter(|count| *count > 0);
             let dimension = existing_pointer(record, 3, entries);
             let dimension_entry = dimension.and_then(|sequence| entries.get(&sequence).copied());
             let orientation_valid = record.integer(4).is_some_and(|orientation| {
@@ -761,11 +725,7 @@ fn flow_associativity(
         return None;
     }
     let counts = (2..=7)
-        .map(|index| {
-            record
-                .integer(index)
-                .and_then(|value| usize::try_from(value).ok())
-        })
+        .map(|index| record.count(index))
         .collect::<Option<Vec<_>>>()?;
     let _type_flag = record.integer(8).filter(|value| matches!(value, 0..=2))?;
     let function_flag = (form == 18)
@@ -1013,10 +973,7 @@ pub(super) fn project(
                     })
             }
             30 => {
-                let note_count = record
-                    .integer(13)
-                    .and_then(|value| usize::try_from(value).ok())
-                    .unwrap_or_default();
+                let note_count = record.count(13).unwrap_or_default();
                 let owners_valid = !owners.is_empty()
                     && (note_count == 0 || owners.len() == 1)
                     && owners.iter().all(|owner| {
@@ -1246,15 +1203,23 @@ pub(super) fn project(
             .and_then(|value| u32::try_from(value).ok())
             .filter(|sequence| sequence % 2 == 1);
         let shape = definition.and_then(|sequence| attribute_shapes.get(&sequence));
-        let row_count = if entry.form == 0 {
+        let declared_row_count = if entry.form == 0 {
             Some(1)
         } else {
-            record
-                .integer(1)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0)
+            record.count(1).filter(|count| *count > 0)
         };
         let value_start = if entry.form == 0 { 1 } else { 2 };
+        let values_per_row = shape.and_then(|shape| {
+            shape
+                .iter()
+                .try_fold(0_usize, |total, (_, count)| total.checked_add(*count))
+        });
+        let row_count = declared_row_count
+            .zip(values_per_row)
+            .and_then(|(rows, width)| {
+                let available = record.tokens.len().saturating_sub(value_start);
+                (width == 0 || rows <= available / width).then_some(rows)
+            });
         let mut cursor = value_start;
         let mut values_valid = shape.is_some() && row_count.is_some();
         for _ in 0..row_count.unwrap_or_default() {
@@ -1284,10 +1249,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let count = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0);
+        let count = record.count(1).filter(|count| *count > 0);
         let mut types = BTreeSet::<Vec<u8>>::new();
         let units_valid = count.is_some_and(|count| {
             entity_parameter_end(record, &entries) == 2 + count * 3
@@ -1329,10 +1291,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let class_count = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0);
+        let class_count = record.count(1).filter(|count| *count > 0);
         let mut cursor = 2;
         let mut classes_valid = class_count.is_some();
         for _ in 0..class_count.unwrap_or_default() {
@@ -1342,10 +1301,7 @@ pub(super) fn project(
             classes_valid &= record
                 .integer(cursor + 1)
                 .is_some_and(|value| matches!(value, 1..=2));
-            let item_count = record
-                .integer(cursor + 2)
-                .and_then(|value| usize::try_from(value).ok())
-                .filter(|count| *count > 0);
+            let item_count = record.count(cursor + 2).filter(|count| *count > 0);
             cursor += 3;
             for _ in 0..item_count.unwrap_or_default() {
                 classes_valid &= record
@@ -1384,10 +1340,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let count = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0);
+        let count = record.count(1).filter(|count| *count > 0);
         let members = count.and_then(|count| {
             (0..count)
                 .map(|index| {
@@ -1831,9 +1784,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| usize::try_from(value).ok());
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
-        let count = record
-            .integer(3)
-            .and_then(|value| usize::try_from(value).ok());
+        let count = record.count(3);
         let members = count.and_then(|count| {
             (0..count)
                 .map(|index| {
@@ -1916,9 +1867,7 @@ pub(super) fn project(
             .integer(1)
             .and_then(|value| usize::try_from(value).ok());
         let name_valid = record.string(2).is_some_and(|name| !name.is_empty());
-        let member_count = record
-            .integer(3)
-            .and_then(|value| usize::try_from(value).ok());
+        let member_count = record.count(3);
         let members = member_count.and_then(|count| {
             (0..count)
                 .map(|index| {
@@ -1952,9 +1901,7 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_count = record
-            .integer(7 + member_count)
-            .and_then(|value| usize::try_from(value).ok());
+        let connect_count = record.count(7 + member_count);
         let connect_points_valid = connect_count.is_some_and(|count| {
             (0..count).all(|index| {
                 record
@@ -2033,9 +1980,7 @@ pub(super) fn project(
                         .is_some_and(|target| target.entity_type == 312)
                 })
         });
-        let connect_count = record
-            .integer(11)
-            .and_then(|value| usize::try_from(value).ok());
+        let connect_count = record.count(11);
         let connect_points_valid = connect_count.is_some_and(|count| {
             (0..count).all(|index| {
                 record.integer(12 + index).is_some_and(|value| {

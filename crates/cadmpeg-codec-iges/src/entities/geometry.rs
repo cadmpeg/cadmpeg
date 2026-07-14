@@ -599,10 +599,7 @@ pub(crate) fn project_geometry(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(k) = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
+        let Some(k) = record.count(1) else {
             losses.push(entity_loss(entry, "upper control-point index K is invalid"));
             continue;
         };
