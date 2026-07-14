@@ -31,6 +31,7 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     let mut warnings = Vec::new();
     let mut annotations = BTreeMap::<u64, usize>::new();
 
+    let mut presentation_semantics = BTreeMap::<u64, Vec<u64>>::new();
     for (&id, record) in &exchange.records {
         if record.simple_name() != Some("DATUM") {
             continue;
@@ -239,15 +240,10 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             ));
             continue;
         };
-        let datum_system = refs
-            .iter()
-            .find(|reference| {
-                exchange
-                    .records
-                    .get(reference)
-                    .is_some_and(|candidate| candidate.simple_name() == Some("DATUM_SYSTEM"))
-            })
-            .map(|id| pmi_id(*id));
+        // This path decodes simple tolerance entities. Datum references belong
+        // to GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE complex instances; a
+        // surplus reference on a simple entity does not alter its semantics.
+        let datum_system = None;
         push_annotation(
             ir,
             &mut annotations,
@@ -272,6 +268,25 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
     }
 
     for (&id, record) in &exchange.records {
+        if record.simple_name() != Some("DRAUGHTING_MODEL_ITEM_ASSOCIATION") {
+            continue;
+        }
+        let Some(definition) = record.parameter(2).and_then(ValueExt::reference) else {
+            continue;
+        };
+        let Some(item) = record.parameter(4).and_then(ValueExt::reference) else {
+            continue;
+        };
+        if annotations.contains_key(&definition) {
+            presentation_semantics
+                .entry(item)
+                .or_default()
+                .push(definition);
+            typed.insert(id);
+        }
+    }
+
+    for (&id, record) in &exchange.records {
         let Some(name) = record.simple_name() else {
             continue;
         };
@@ -288,13 +303,21 @@ pub(super) fn decode(exchange: &Exchange, geometry: &GeometryResult, ir: &mut Ca
             .find_map(|reference| {
                 find_placement(reference, exchange, geometry, &mut placement_records)
             });
-        let semantics = record
+        let mut semantics = record
             .parameters()
             .iter()
             .flat_map(references)
             .filter(|reference| annotations.contains_key(reference))
             .map(pmi_id)
             .collect::<Vec<_>>();
+        semantics.extend(
+            presentation_semantics
+                .get(&id)
+                .into_iter()
+                .flatten()
+                .copied()
+                .map(pmi_id),
+        );
         push_annotation(
             ir,
             &mut annotations,

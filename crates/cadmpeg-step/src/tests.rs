@@ -1040,6 +1040,7 @@ fn writer_declares_each_supported_target_schema_exactly() {
     ] {
         let options = StepWriteOptions {
             schema,
+            unsupported: StepUnsupportedPolicy::Reject,
             ..StepWriteOptions::default()
         };
         let mut bytes = Vec::new();
@@ -1446,7 +1447,7 @@ fn decode_transfers_ap242_semantic_pmi() {
                 value: 0.05,
                 quantity: PmiQuantity::Length,
             },
-            datum_system: Some(_),
+            datum_system: None,
         }
     ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
@@ -2189,6 +2190,30 @@ fn strict_writer_rejects_before_emitting_bytes() {
     let mut bytes = Vec::new();
     let error = write_step(&ir, &mut bytes, &options).expect_err("strict rejection");
     assert!(matches!(error, StepError::Unsupported(_)));
+    assert!(bytes.is_empty());
+}
+
+#[test]
+fn strict_writer_refuses_retained_opaque_step_records_atomically() {
+    let decoded = StepCodec::default()
+        .decode(
+            &mut Cursor::new(include_bytes!("../tests/fixtures/ap242_minimal.p21")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode opaque STEP records");
+    assert_eq!(decoded.ir.native_unknowns("step").unwrap().len(), 2);
+
+    let mut bytes = Vec::new();
+    let result = write_step(
+        &decoded.ir,
+        &mut bytes,
+        &StepWriteOptions {
+            schema: StepSchema::Ap242Edition3,
+            unsupported: StepUnsupportedPolicy::Reject,
+            ..StepWriteOptions::default()
+        },
+    );
+    assert!(matches!(result, Err(StepError::Unsupported(_))));
     assert!(bytes.is_empty());
 }
 

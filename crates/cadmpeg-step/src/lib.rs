@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP AP214 exchange
-//! files.
+//! Reads and writes [`cadmpeg_ir::CadIr`] documents as ISO 10303-21 STEP Part
+//! 21 exchange structures for AP203, AP214, and AP242.
 //!
-//! [`write_step`] emits a Part 21 `AUTOMOTIVE_DESIGN` file containing an
-//! `ADVANCED_BREP_SHAPE_REPRESENTATION`. It writes the product-definition and
-//! representation-context records needed to connect the file metadata to the
-//! boundary representation. Each reachable IR region becomes a
-//! `MANIFOLD_SOLID_BREP` or, when the region has inner shells, a
-//! `BREP_WITH_VOIDS`.
+//! [`write_step`] emits the application protocol selected by
+//! [`StepWriteOptions::schema`]. It writes product and representation context,
+//! connected exact shape, product occurrences, tessellation, presentation,
+//! and PMI when the target schema carries those domains.
 //!
 //! # Export workflow
 //!
@@ -27,16 +25,13 @@
 //! # Ok::<(), cadmpeg_step::StepError>(())
 //! ```
 //!
-//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining the output. Export continues
-//! when an IR fact has no representation in this writer. Unknown-surface faces
-//! and edges without typed 3D curves are omitted; pcurves, source attributes,
-//! passthrough records, and parametric history are reported rather than
-//! emitted. Display colors on bodies and faces (direct or through appearance
-//! bindings) become per-face `STYLED_ITEM` presentation on `ADVANCED_FACE`: a
-//! body color is pushed down onto each of its faces so that viewers reading
-//! only face colors still show it. Other appearance data is reduced to those
-//! base colors. Body transforms remain unapplied, leaving affected coordinates
-//! in body-local space.
+//! Review [`cadmpeg_ir::ExportReport::losses`] before retaining report-mode
+//! output. [`StepUnsupportedPolicy::Reject`] rejects all such losses before any
+//! output byte is written. Opaque records, source attributes, unsupported
+//! procedural definitions, and target-schema incompatibilities are reported or
+//! rejected rather than silently discarded. Body and face colors become
+//! per-face `STYLED_ITEM` presentation; direct geometry and tessellation
+//! bindings retain their native presentation targets.
 //!
 //! Coordinates are emitted unchanged under a millimetre length-unit context.
 //! Callers must convert non-millimetre geometry before export. Analytic curves
@@ -340,8 +335,9 @@ struct Builder<'a> {
     /// Emitted `ADVANCED_FACE` instances keyed by IR face id, for presentation
     /// styling.
     face_step_refs: HashMap<String, Ref>,
-    /// First emitted exact solid for each body, used by AP242 tessellation links.
+    /// First emitted exact solid or shell for each body, used by AP242 tessellation links.
     body_step_refs: HashMap<String, Ref>,
+    default_product_definition_shape: Option<Ref>,
     /// Emitted representation item for each body.
     body_shape_refs: HashMap<String, Ref>,
     tessellation_step_refs: HashMap<String, Ref>,
@@ -428,6 +424,7 @@ impl<'a> Builder<'a> {
             unknown_surface_faces: BTreeSet::new(),
             face_step_refs: HashMap::new(),
             body_step_refs: HashMap::new(),
+            default_product_definition_shape: None,
             body_shape_refs: HashMap::new(),
             tessellation_step_refs: HashMap::new(),
             written_appearance_bindings: BTreeSet::new(),
@@ -468,6 +465,7 @@ impl<'a> Builder<'a> {
 
         if self.ir.model.products.is_empty() {
             let product_def_shape = self.emit_product_structure();
+            self.default_product_definition_shape = Some(product_def_shape);
             let representation_kind = if self
                 .ir
                 .model
@@ -1013,6 +1011,7 @@ impl<'a> Builder<'a> {
             let shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
+            self.default_product_definition_shape.get_or_insert(shape);
             let mut body_items = product
                 .bodies
                 .iter()
@@ -1471,38 +1470,74 @@ impl<'a> Builder<'a> {
                         .join(",")
                 )
             };
-            let triangles = mesh
-                .triangles
-                .iter()
-                .map(|triangle| {
-                    format!(
-                        "({},{},{})",
-                        triangle[0] + 1,
-                        triangle[1] + 1,
-                        triangle[2] + 1
-                    )
-                })
+            let point_indices = (1..=mesh.vertices.len())
+                .map(|index| index.to_string())
                 .collect::<Vec<_>>()
                 .join(",");
-            let item = self.emitter.emit(
-                "TRIANGULATED_SURFACE_SET",
-                &format!(
-                    "{},{coordinates},{},{normals},(),({triangles})",
-                    string(&mesh.id),
-                    mesh.vertices.len()
-                ),
-            );
-            let item = mesh
-                .body
-                .as_ref()
-                .and_then(|body| self.body_step_refs.get(body.as_str()).copied())
-                .map(|solid| {
-                    self.emitter.emit(
-                        "TESSELLATED_SOLID",
-                        &format!("{},({item}),{solid}", string(&mesh.id)),
-                    )
-                })
-                .unwrap_or(item);
+            let linked_body = mesh.body.as_ref().and_then(|body| {
+                let link = self.body_step_refs.get(body.as_str()).copied()?;
+                let kind = self
+                    .ir
+                    .model
+                    .bodies
+                    .iter()
+                    .find(|candidate| candidate.id == *body)?
+                    .kind;
+                matches!(kind, BodyKind::Solid | BodyKind::Sheet).then_some((kind, link))
+            });
+            let item = if let Some((kind, link)) = linked_body {
+                let faces = mesh
+                    .triangles
+                    .iter()
+                    .enumerate()
+                    .map(|(index, triangle)| {
+                        let triangle = format!(
+                            "({},{},{})",
+                            triangle[0] + 1,
+                            triangle[1] + 1,
+                            triangle[2] + 1
+                        );
+                        self.emitter.emit(
+                            "TRIANGULATED_FACE",
+                            &format!(
+                                "{},{coordinates},{},{normals},$,({point_indices}),({triangle})",
+                                string(&format!("{} face {}", mesh.id, index + 1)),
+                                mesh.vertices.len()
+                            ),
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                self.emitter.emit(
+                    if kind == BodyKind::Solid {
+                        "TESSELLATED_SOLID"
+                    } else {
+                        "TESSELLATED_SHELL"
+                    },
+                    &format!("{},{},{link}", string(&mesh.id), refs(&faces)),
+                )
+            } else {
+                let triangles = mesh
+                    .triangles
+                    .iter()
+                    .map(|triangle| {
+                        format!(
+                            "({},{},{})",
+                            triangle[0] + 1,
+                            triangle[1] + 1,
+                            triangle[2] + 1
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(",");
+                self.emitter.emit(
+                    "TRIANGULATED_SURFACE_SET",
+                    &format!(
+                        "{},{coordinates},{},{normals},({point_indices}),({triangles})",
+                        string(&mesh.id),
+                        mesh.vertices.len()
+                    ),
+                )
+            };
             self.tessellation_step_refs.insert(mesh.id.clone(), item);
             representation_items.push(item);
         }
@@ -1946,9 +1981,9 @@ impl<'a> Builder<'a> {
             return;
         }
         let annotations = self.ir.model.pmi.clone();
-        let pds = self
-            .emitter
-            .emit("PRODUCT_DEFINITION_SHAPE", "'PMI shape','',$");
+        let Some(pds) = self.default_product_definition_shape else {
+            return;
+        };
         let mut annotation_refs = HashMap::new();
         let mut aspects = HashMap::<String, Ref>::new();
         for annotation in &annotations {
@@ -2078,7 +2113,7 @@ impl<'a> Builder<'a> {
                     };
                     let characteristic = self.emitter.emit(entity, &parameters);
                     if let Some(value) = nominal {
-                        let measure = self.emit_pmi_measure(*value);
+                        let measure = self.emit_pmi_measure_representation_item(*value, name);
                         let representation = self.emitter.emit(
                             "SHAPE_DIMENSION_REPRESENTATION",
                             &format!("'',({measure}),{context}"),
@@ -2142,14 +2177,18 @@ impl<'a> Builder<'a> {
                     };
                     let measure = self.emit_pmi_measure(*magnitude);
                     let aspect = target_ref(annotation).unwrap_or(fallback_aspect);
-                    let datum = datum_system
-                        .as_ref()
-                        .and_then(|id| annotation_refs.get(id))
-                        .map_or_else(String::new, |datum| format!(",{datum}"));
+                    // Datum references are carried by the complex
+                    // GEOMETRIC_TOLERANCE_WITH_DATUM_REFERENCE subtype. Until
+                    // that complex entity is modeled, refuse it through the
+                    // unwritten-PMI accounting instead of emitting an invalid
+                    // fifth parameter on the simple tolerance entity.
+                    if datum_system.is_some() {
+                        continue;
+                    }
                     let tolerance_ref = self.emitter.emit(
                         entity,
                         &format!(
-                            "{},'',{measure},{aspect}{datum}",
+                            "{},'',{measure},{aspect}",
                             string(annotation.name.as_deref().unwrap_or(""))
                         ),
                     );
@@ -2162,6 +2201,7 @@ impl<'a> Builder<'a> {
             }
         }
         let mut presentation_items = Vec::new();
+        let mut presentation_semantics = Vec::new();
         for annotation in &annotations {
             let PmiDefinition::Presentation {
                 text,
@@ -2184,10 +2224,15 @@ impl<'a> Builder<'a> {
                 cadmpeg_ir::math::Vector3::new(rows[0][2], rows[1][2], rows[2][2]),
                 cadmpeg_ir::math::Vector3::new(rows[0][0], rows[1][0], rows[2][0]),
             );
+            let font_source = self.emitter.emit("EXTERNAL_SOURCE", "'ISO 3098'");
+            let font = self.emitter.emit(
+                "EXTERNALLY_DEFINED_TEXT_FONT",
+                &format!("IDENTIFIER('ISO 3098'),{font_source}"),
+            );
             let literal = self.emitter.emit(
                 "TEXT_LITERAL",
                 &format!(
-                    "{},{},{placement},'left',.RIGHT.,$",
+                    "{},{},{placement},'left',.RIGHT.,{font}",
                     string(annotation.name.as_deref().unwrap_or("")),
                     string(text)
                 ),
@@ -2199,26 +2244,38 @@ impl<'a> Builder<'a> {
             if semantic_refs.len() != semantics.len() {
                 continue;
             }
+            let style = self
+                .emitter
+                .emit("PRESENTATION_STYLE_ASSIGNMENT", "(.NULL.)");
             let occurrence = self.emitter.emit(
                 "ANNOTATION_TEXT_OCCURRENCE",
                 &format!(
                     "{},{},{literal}",
                     string(annotation.name.as_deref().unwrap_or("")),
-                    refs(&semantic_refs)
+                    refs(&[style])
                 ),
             );
             presentation_items.push(occurrence);
+            presentation_semantics.push((occurrence, semantic_refs));
             annotation_refs.insert(annotation.id.clone(), occurrence);
             self.written_pmi += 1;
         }
         if !presentation_items.is_empty() {
-            self.emitter.emit(
+            let model = self.emitter.emit(
                 "DRAUGHTING_MODEL",
                 &format!(
                     "'PMI presentation',{}, {context}",
                     refs(&presentation_items)
                 ),
             );
+            for (occurrence, semantics) in presentation_semantics {
+                for semantic in semantics {
+                    self.emitter.emit(
+                        "DRAUGHTING_MODEL_ITEM_ASSOCIATION",
+                        &format!("'','',{semantic},{model},{occurrence}"),
+                    );
+                }
+            }
         }
     }
 
@@ -2247,6 +2304,33 @@ impl<'a> Builder<'a> {
         };
         self.emitter
             .emit(entity, &format!("{typed}({}),{unit}", real(value.value)))
+    }
+
+    fn emit_pmi_measure_representation_item(
+        &mut self,
+        value: cadmpeg_ir::PmiValue,
+        name: &str,
+    ) -> Ref {
+        use cadmpeg_ir::pmi::PmiQuantity;
+        let (typed, unit) = match value.quantity {
+            PmiQuantity::Length => ("LENGTH_MEASURE", self.emit_length_unit()),
+            PmiQuantity::Angle => (
+                "PLANE_ANGLE_MEASURE",
+                self.emitter.emit_raw(
+                    "PLANE_ANGLE_UNIT",
+                    "( NAMED_UNIT(*) PLANE_ANGLE_UNIT() SI_UNIT($,.RADIAN.) )",
+                ),
+            ),
+            PmiQuantity::Ratio => (
+                "RATIO_MEASURE",
+                self.emitter
+                    .emit_raw("RATIO_UNIT", "( NAMED_UNIT(*) RATIO_UNIT() )"),
+            ),
+        };
+        self.emitter.emit(
+            "MEASURE_REPRESENTATION_ITEM",
+            &format!("{},{typed}({}),{unit}", string(name), real(value.value),),
+        )
     }
 
     /// Record aggregate loss notes for IR content the writer does not carry.
