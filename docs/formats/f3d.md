@@ -539,8 +539,8 @@ cyl_spl_sur :=
   VECTOR_3D extrusion_direction
   POSITION
   curve-cache
-  surface-cache
-  DOUBLE cache_fit_tolerance
+  [ surface-cache
+    DOUBLE cache_fit_tolerance ]
   0x10
 ```
 
