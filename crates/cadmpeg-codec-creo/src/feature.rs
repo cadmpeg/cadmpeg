@@ -489,6 +489,8 @@ pub enum FeatureSegmentKind {
     Line,
     /// Type `3` circular-arc segment.
     Arc,
+    /// Type `5` isolated point entity.
+    Point,
 }
 
 /// One positional `segtab_ptr` replay row.
@@ -498,7 +500,8 @@ pub struct FeatureSegment {
     pub kind: FeatureSegmentKind,
     /// Three direction fields; control-range sentinels remain `None`.
     pub directions: [Option<u32>; 3],
-    /// Endpoint IDs into the section variable table.
+    /// Endpoint IDs into the section variable table. Point entities normalize
+    /// their single stored point identifier into both slots.
     pub point_ids: [u32; 2],
     /// Arc center point ID, or `None` for the null sentinel.
     pub center_id: Option<u32>,
@@ -1340,14 +1343,22 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
         let (_, radius_ref) = named_values(b"radius\0", 1)?;
         let (_, radius2_ref) = named_values(b"radius2\0", 1)?;
         let (_, external_id) = named_values(b"ext_id\0", 1)?;
+        let kind = match kind[0]? {
+            2 => FeatureSegmentKind::Line,
+            3 => FeatureSegmentKind::Arc,
+            5 => FeatureSegmentKind::Point,
+            _ => return None,
+        };
+        let point0 = point_ids[0]?;
+        let point1 = if kind == FeatureSegmentKind::Point {
+            point0
+        } else {
+            point_ids[1]?
+        };
         Some(FeatureSegment {
-            kind: match kind[0]? {
-                2 => FeatureSegmentKind::Line,
-                3 => FeatureSegmentKind::Arc,
-                _ => return None,
-            },
+            kind,
             directions: [directions[0], directions[1], directions[2]],
-            point_ids: [point_ids[0]?, point_ids[1]?],
+            point_ids: [point0, point1],
             center_id: center_id[0],
             arc_orientation: arc_orientation[0],
             vertical_horizontal: vertical_horizontal[0],
@@ -1378,21 +1389,28 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
     let mut rows = named_row.into_iter().collect::<Vec<_>>();
     let first_row = cursor;
     while cursor < region_end {
-        if !matches!(payload[cursor], 2 | 3)
-            || (cursor != first_row
-                && payload.get(cursor.saturating_sub(1)) != Some(&0xe3)
-                && payload.get(cursor.saturating_sub(4)..cursor) != Some(&[0xe2, 0x00, 0xf6, 0xe2]))
+        let row_start = cursor;
+        let kind_offset = if payload.get(cursor..cursor + 2) == Some(&[0xc0, 0x80]) {
+            cursor + 2
+        } else {
+            cursor
+        };
+        if !matches!(payload.get(kind_offset), Some(2 | 3 | 5))
+            || (row_start != first_row
+                && payload.get(row_start.saturating_sub(1)) != Some(&0xe3)
+                && payload.get(row_start.saturating_sub(4)..row_start)
+                    != Some(&[0xe2, 0x00, 0xf6, 0xe2]))
         {
             cursor += 1;
             continue;
         }
-        let row_start = cursor;
-        let mut p = cursor;
+        let mut p = kind_offset;
         let (kind_raw, next) = segment_int(payload, p);
         p = next;
         let kind = match kind_raw {
             Some(2) => FeatureSegmentKind::Line,
             Some(3) => FeatureSegmentKind::Arc,
+            Some(5) => FeatureSegmentKind::Point,
             _ => {
                 cursor += 1;
                 continue;
@@ -1403,10 +1421,17 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
             next_segment_int(payload, &mut p),
             next_segment_int(payload, &mut p),
         ];
-        let (Some(point0), Some(point1)) = (
-            next_segment_int(payload, &mut p),
-            next_segment_int(payload, &mut p),
-        ) else {
+        let point0 = next_segment_int(payload, &mut p);
+        let point1 = next_segment_int(payload, &mut p);
+        let Some(point0) = point0 else {
+            cursor += 1;
+            continue;
+        };
+        let point1 = if kind == FeatureSegmentKind::Point {
+            point0
+        } else if let Some(point1) = point1 {
+            point1
+        } else {
             cursor += 1;
             continue;
         };
@@ -1419,7 +1444,7 @@ fn segment_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureSegm
         }
         let radius_ref = next_segment_int(payload, &mut p);
         let radius2_ref = next_segment_int(payload, &mut p);
-        let Some(external_id) = next_segment_int(payload, &mut p).filter(|id| *id != 0) else {
+        let Some(external_id) = next_segment_int(payload, &mut p) else {
             cursor += 1;
             continue;
         };
@@ -2445,6 +2470,7 @@ fn saved_positional_generated_entities(
         let value_count = match segment.kind {
             FeatureSegmentKind::Line => 6,
             FeatureSegmentKind::Arc => 12,
+            FeatureSegmentKind::Point => continue,
         };
         let Some(header_size) = payload[after_id..row_end]
             .iter()
@@ -2541,6 +2567,7 @@ fn saved_positional_generated_entities(
                     offset: row_start,
                 }));
             }
+            FeatureSegmentKind::Point => {}
         }
     }
     entities

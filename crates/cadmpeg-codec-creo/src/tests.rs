@@ -957,10 +957,14 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
 #[test]
 fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     let mut payload =
-        b"feat_defs_40\0segtab_ptr\0\xf8\x03\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+        b"feat_defs_40\0segtab_ptr\0\xf8\x05\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     payload.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     payload.extend_from_slice(&[3, 0, 0, 0, 8, 9, 10, 1, 0, 11, 12, 43, 0xe2, 0xe3]);
     payload.extend_from_slice(&[2, 0, 0, 0, 9, 10, 0xf6, 0, 0, 0xf6, 0xf6, 0x80, 0xe3, 0xe2]);
+    payload.extend_from_slice(&[0xe3, 0xe2, 0, 0xf6, 0xe2, 0xc0, 0x80]);
+    payload.extend_from_slice(&[2, 0, 0, 0, 11, 12, 0xf6, 0, 0, 0xf6, 0xf6, 0, 0xe2]);
+    payload.extend_from_slice(&[0xe3, 0xe2, 0, 0xf6, 0xe2]);
+    payload.extend_from_slice(&[5, 1, 0, 0xe4, 13, 0xe4, 0xf6, 0, 2, 0xf6, 0xf6, 4, 0xe2]);
     payload.extend_from_slice(b"dimtab_ptr\0");
     payload.extend_from_slice(&[2, 0, 0, 0, 11, 12, 0xf6, 0, 0, 0xf6, 0xf6, 44, 0xe2]);
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
@@ -969,8 +973,8 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
         .segments
         .as_ref()
         .expect("segtab");
-    assert_eq!(segments.declared_count, 3);
-    assert_eq!(segments.rows.len(), 3);
+    assert_eq!(segments.declared_count, 5);
+    assert_eq!(segments.rows.len(), 5);
     assert_eq!(
         segments.rows[0].kind,
         crate::feature::FeatureSegmentKind::Line
@@ -984,6 +988,14 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     );
     assert_eq!(segments.rows[1].center_id, Some(10));
     assert_eq!(segments.rows[2].external_id, 227);
+    assert_eq!(segments.rows[3].point_ids, [11, 12]);
+    assert_eq!(segments.rows[3].external_id, 0);
+    assert_eq!(
+        segments.rows[4].kind,
+        crate::feature::FeatureSegmentKind::Point
+    );
+    assert_eq!(segments.rows[4].point_ids, [13, 13]);
+    assert_eq!(segments.rows[4].external_id, 4);
 }
 
 #[test]

@@ -336,6 +336,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     kind: match segment.kind {
                         crate::feature::FeatureSegmentKind::Line => "line",
                         crate::feature::FeatureSegmentKind::Arc => "arc",
+                        crate::feature::FeatureSegmentKind::Point => "point",
                     },
                     point_ids: segment.point_ids,
                     center_id: segment.center_id,
@@ -394,6 +395,17 @@ fn section_line_geometry(
     })
 }
 
+fn section_point_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == crate::feature::FeatureSegmentKind::Point).then_some(())?;
+    let position = points.get(&segment.point_ids[0])?;
+    Some(SketchGeometry::Point {
+        position: cadmpeg_ir::math::Point2::new(position[0], position[1]),
+    })
+}
+
 fn section_arc_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -429,7 +441,9 @@ fn section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    section_line_geometry(points, segment).or_else(|| section_arc_geometry(points, segment))
+    section_line_geometry(points, segment)
+        .or_else(|| section_arc_geometry(points, segment))
+        .or_else(|| section_point_geometry(points, segment))
 }
 
 fn saved_section_line_geometry(
@@ -1301,6 +1315,7 @@ fn transfer_feature_extrusion_surfaces(
                 crate::feature::FeatureSegmentKind::Arc => {
                     arc_bindings.get(&segment.external_id).copied()
                 }
+                crate::feature::FeatureSegmentKind::Point => None,
             };
             let Some(surface_id) = surface_id else {
                 continue;
@@ -2077,6 +2092,7 @@ fn transfer_resolved_sketches(
                     match segment.kind {
                         crate::feature::FeatureSegmentKind::Line => "solved_section_line",
                         crate::feature::FeatureSegmentKind::Arc => "solved_section_arc",
+                        crate::feature::FeatureSegmentKind::Point => "solved_section_point",
                     },
                     Exactness::Derived,
                 );
@@ -2089,12 +2105,14 @@ fn transfer_resolved_sketches(
                         "creo:featdefs:section_curve#{}:{}",
                         definition.id, segment.external_id
                     )),
-                    endpoint_refs: if segment.kind == crate::feature::FeatureSegmentKind::Arc {
-                        [segment.point_ids[1], segment.point_ids[0]]
-                    } else {
-                        segment.point_ids
+                    endpoint_refs: match segment.kind {
+                        crate::feature::FeatureSegmentKind::Arc => {
+                            vec![segment.point_ids[1], segment.point_ids[0]]
+                        }
+                        crate::feature::FeatureSegmentKind::Line => segment.point_ids.to_vec(),
+                        crate::feature::FeatureSegmentKind::Point => vec![segment.point_ids[0]],
                     }
-                    .iter()
+                    .into_iter()
                     .map(|point| format!("creo:featdefs:sketch#{}:point#{point}", definition.id))
                     .collect(),
                     geometry,
@@ -2904,6 +2922,30 @@ mod resolved_sketch_tests {
             Some(SketchGeometry::Line {
                 start: cadmpeg_ir::math::Point2::new(2.0, 3.0),
                 end: cadmpeg_ir::math::Point2::new(5.0, 8.0),
+            })
+        );
+    }
+
+    #[test]
+    fn section_point_uses_its_single_solved_position() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Point,
+            directions: [None; 3],
+            point_ids: [7, 7],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 4,
+            offset: 40,
+        };
+        let points = BTreeMap::from([(7, [2.0, 3.0])]);
+
+        assert_eq!(
+            section_point_geometry(&points, &segment),
+            Some(SketchGeometry::Point {
+                position: cadmpeg_ir::math::Point2::new(2.0, 3.0),
             })
         );
     }

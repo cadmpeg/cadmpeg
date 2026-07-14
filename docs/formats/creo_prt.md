@@ -321,6 +321,11 @@ The `f8` count is the exact total row count; bytes following that many rows do
 not belong to `var_arr`.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
+Positional rows may insert the two-byte `c0 80` wrapper before `type`. The
+wrapper does not change the following field layout. A compact `ext_id` value of
+zero is an identifier; the `f6` control sentinel represents an absent value.
+Segment type `5` is an isolated point entity. It stores one defined `pointid`;
+the second point slot is a control sentinel.
 
 An arc radius is the distance from its center to an endpoint in `var_arr`. A trim-vertex identifier is distinct from a `segtab` point identifier.
 
