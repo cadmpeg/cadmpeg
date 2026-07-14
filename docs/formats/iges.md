@@ -46,6 +46,14 @@ An entity retains its type, form, Directory Entry fields, status fields, ordered
 
 Model-space lengths equal native values divided by the Global model-space scale and converted from the declared unit to millimetres. Dimensionless values, parameter coordinates, weights, and unit direction vectors are not length-scaled. Angles convert to radians when projected to neutral IR. A transformation matrix is a 3-by-3 linear part plus translation. Translation is length-valued. Entity transforms compose from the entity definition toward model space exactly once. Definition, subfigure-instance, and occurrence transforms remain separate native relationships.
 
+## Primitive solids
+
+Primitive solid entities use Form 0. Their native dimensional values remain in declared model units, their origin defaults to `(0,0,0)`, and their axis vectors are dimensionless. An omitted X axis defaults to `(1,0,0)` and an omitted Z or revolution axis defaults to `(0,0,1)`. Every supplied or defaulted axis is unit length. Entities carrying both X and Z axes require them to be orthogonal; local Y is `Z × X`. The Directory transformation remains a separate placement link.
+
+Type 150 stores three positive block lengths, origin, X axis, and Z axis. Type 152 adds a nonnegative top X length strictly smaller than its positive base X length; its Y and Z lengths are positive. Type 154 stores positive cylinder height and radius, its first-face center, and axis. Type 156 stores positive frustum height, a positive large radius, and a smaller radius in `[0, large_radius)`; the small radius defaults to zero. Type 158 stores a positive sphere radius and center. Type 160 stores torus major and minor radii with `major > minor > 0`, center, and axis. Type 168 stores ellipsoid radii with `X ≥ Y ≥ Z > 0`, center, X axis, and Z axis.
+
+The `native.iges` `primitive_solids` arena retains the typed primitive kind, named native dimensions, omitted-versus-present origin and axis components, source entity, and transformation link. Invalid dimensions, axes, units, or transformation chains prevent semantic decoding while the generic native entity remains intact.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

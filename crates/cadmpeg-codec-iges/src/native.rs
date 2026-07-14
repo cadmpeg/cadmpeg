@@ -124,6 +124,18 @@ struct NativeDefinitionLevels {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativePrimitiveSolid {
+    id: String,
+    source_entity: String,
+    kind: String,
+    dimensions: BTreeMap<String, Option<f64>>,
+    origin: [Option<f64>; 3],
+    x_axis: Option<[Option<f64>; 3]>,
+    z_axis: Option<[Option<f64>; 3]>,
+    transformation: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -429,6 +441,78 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let primitive_solids = directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 150 | 152 | 154 | 156 | 158 | 160 | 168))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            let number = |index| record.and_then(|record| record.number(index));
+            let (kind, dimension_names, origin_start, x_axis_start, z_axis_start) =
+                match entry.entity_type {
+                    150 => (
+                        "block",
+                        vec!["x_length", "y_length", "z_length"],
+                        4,
+                        Some(7),
+                        Some(10),
+                    ),
+                    152 => (
+                        "right_angular_wedge",
+                        vec!["x_length", "y_length", "z_length", "top_x_length"],
+                        5,
+                        Some(8),
+                        Some(11),
+                    ),
+                    154 => (
+                        "right_circular_cylinder",
+                        vec!["height", "radius"],
+                        3,
+                        None,
+                        Some(6),
+                    ),
+                    156 => (
+                        "right_circular_cone_frustum",
+                        vec!["height", "large_radius", "small_radius"],
+                        4,
+                        None,
+                        Some(7),
+                    ),
+                    158 => ("sphere", vec!["radius"], 2, None, None),
+                    160 => (
+                        "torus",
+                        vec!["major_radius", "minor_radius"],
+                        3,
+                        None,
+                        Some(6),
+                    ),
+                    168 => (
+                        "ellipsoid",
+                        vec!["x_radius", "y_radius", "z_radius"],
+                        4,
+                        Some(7),
+                        Some(10),
+                    ),
+                    _ => unreachable!("filtered primitive type"),
+                };
+            let dimensions = dimension_names
+                .into_iter()
+                .enumerate()
+                .map(|(index, name)| (name.to_owned(), number(index + 1)))
+                .collect();
+            let axis = |start: usize| [number(start), number(start + 1), number(start + 2)];
+            NativePrimitiveSolid {
+                id: format!("iges:solid:primitive#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                kind: kind.into(),
+                dimensions,
+                origin: axis(origin_start),
+                x_axis: x_axis_start.map(axis),
+                z_axis: z_axis_start.map(axis),
+                transformation: (entry.transform > 0)
+                    .then(|| format!("iges:native:transformation#D{}", entry.transform)),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -440,5 +524,6 @@ pub(crate) fn store(
     namespace.set_arena("display_attributes", &display_attributes)?;
     namespace.set_arena("line_fonts", &line_fonts)?;
     namespace.set_arena("definition_levels", &definition_levels)?;
+    namespace.set_arena("primitive_solids", &primitive_solids)?;
     Ok(())
 }

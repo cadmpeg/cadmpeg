@@ -2007,6 +2007,67 @@ fn weighted_line_file() -> Vec<u8> {
     owned_test_file_with_line_weights(&entities, &[(1, 1)])
 }
 
+fn primitive_solids_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 150,
+            form: 0,
+            label: "BLOCK".into(),
+            status: "00000000",
+            parameters: "150,2,3,4,1,2,3,1,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 150,
+            form: 0,
+            label: "DEFAULT".into(),
+            status: "00000000",
+            parameters: "150,1,2,3,,,,,,,,,;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 152,
+            form: 0,
+            label: "WEDGE".into(),
+            status: "00000000",
+            parameters: "152,4,3,2,1,0,0,0,1,0,0,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 154,
+            form: 0,
+            label: "CYLINDER".into(),
+            status: "00000000",
+            parameters: "154,5,2,1,2,3,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 156,
+            form: 0,
+            label: "FRUSTUM".into(),
+            status: "00000000",
+            parameters: "156,5,3,1,1,2,3,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 158,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00000000",
+            parameters: "158,2,1,2,3;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 160,
+            form: 0,
+            label: "TORUS".into(),
+            status: "00000000",
+            parameters: "160,4,1,1,2,3,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 168,
+            form: 0,
+            label: "ELLIPSO".into(),
+            status: "00000000",
+            parameters: "168,4,3,2,1,2,3,1,0,0,0,0,1;".into(),
+        },
+    ])
+}
+
 fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
     explicit_multi_pcurve_loop_file_with_first_pcurve(
         "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;",
@@ -2835,6 +2896,72 @@ fn decode_resolves_directory_line_weight_to_millimetres() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_types_all_csg_primitive_solids_and_defaults() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(primitive_solids_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let solids = &result.ir.native.namespace("iges").unwrap().arenas["primitive_solids"];
+    assert_eq!(solids.len(), 8);
+    let block = solids
+        .iter()
+        .find(|solid| solid.id == "iges:solid:primitive#D1")
+        .unwrap();
+    assert_eq!(block.fields["kind"], "block");
+    assert_eq!(block.fields["dimensions"]["x_length"], 2.0);
+    assert_eq!(block.fields["origin"][0], 1.0);
+    let default_block = solids
+        .iter()
+        .find(|solid| solid.id == "iges:solid:primitive#D3")
+        .unwrap();
+    assert!(default_block.fields["origin"][0].is_null());
+    assert_eq!(
+        solids
+            .iter()
+            .map(|solid| solid.fields["kind"].as_str().unwrap())
+            .collect::<std::collections::BTreeSet<_>>(),
+        std::collections::BTreeSet::from([
+            "block",
+            "ellipsoid",
+            "right_angular_wedge",
+            "right_circular_cone_frustum",
+            "right_circular_cylinder",
+            "sphere",
+            "torus",
+        ])
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_rejects_invalid_csg_primitive_dimensions_semantically() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 160,
+        form: 0,
+        label: "TORUS".into(),
+        status: "00000000",
+        parameters: "160,1,2,0,0,0,0,0,1;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        result.ir.native.namespace("iges").unwrap().arenas["primitive_solids"].len(),
+        1
+    );
+    assert!(result.report.losses.iter().any(|loss| loss
+        .message
+        .contains("primitive dimension invariant is violated")));
+    assert!(!result.report.geometry_transferred);
 }
 
 fn append_tetrahedral_shell(
