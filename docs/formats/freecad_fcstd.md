@@ -245,3 +245,9 @@ framing. `Document.xml` properties and `GuiDocument.xml` state/property spans ar
 intervening XML syntax is structural. Uninterpreted embedded assets remain named opaque and retain
 their owning record. These claims are sorted and rejected on overlap before the ledger is emitted;
 validation then requires every logical entry to close without gaps.
+
+Native namespace version 11 adds attachment records. Support links retain ordered object and
+subelement identity separately from the map mode. The persisted resolved `Placement` and local
+`AttachmentOffset` remain distinct matrices. Neutral geometry uses the resolved placement when it
+is present and otherwise the offset; the decoder never multiplies both speculatively. Validation
+checks support identity, finite matrices, and this effective-frame rule.

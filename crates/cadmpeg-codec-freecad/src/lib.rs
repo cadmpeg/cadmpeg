@@ -3,6 +3,7 @@
 
 mod annotation;
 mod application;
+mod attachment;
 mod brep;
 mod container;
 mod design;
@@ -115,6 +116,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
     let applications = match namespace.arena_as::<native::ApplicationRecord>("applications") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let attachments = match namespace.arena_as::<native::AttachmentRecord>("attachments") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
@@ -263,6 +268,49 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 Some(record.id.clone()),
             ));
         }
+    }
+    for attachment in &attachments {
+        let missing_support = attachment.supports.iter().any(|support| {
+            support.document.is_none()
+                && support
+                    .object
+                    .as_ref()
+                    .is_some_and(|object| !object_ids.contains(object.as_str()))
+        });
+        let non_finite = attachment
+            .placement
+            .iter()
+            .chain(attachment.offset.iter())
+            .chain(std::iter::once(&attachment.effective_frame))
+            .flat_map(|matrix| matrix.iter().flatten())
+            .any(|value| !value.is_finite());
+        let effective_mismatch = attachment.placement.or(attachment.offset).unwrap_or([
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ]) != attachment.effective_frame;
+        if !object_ids.contains(attachment.object.as_str())
+            || missing_support
+            || non_finite
+            || effective_mismatch
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "{} has an invalid attachment target or frame",
+                    attachment.id
+                ),
+                Some(attachment.id.clone()),
+            ));
+        }
+    }
+    if attachments != attachment::transfer(&objects, &properties) {
+        findings.push(finding(
+            Check::NativeLinks,
+            "FCStd attachment graph does not match the application property graph",
+            None,
+        ));
     }
     let gui_provider_ids = gui_providers
         .iter()
@@ -925,6 +973,10 @@ impl Codec for FcstdCodec {
             namespace.set_arena(
                 "applications",
                 &application::transfer(&graph.objects, &graph.properties),
+            )?;
+            namespace.set_arena(
+                "attachments",
+                &attachment::transfer(&graph.objects, &graph.properties),
             )?;
             let mut curve_transfer = transfer_text_curves(&shape_payloads, &graph.properties);
             let surface_transfer =

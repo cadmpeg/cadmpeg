@@ -5,7 +5,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 10;
+pub const VERSION: u32 = 11;
+
+/// One support attachment and its distinct persisted frames.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AttachmentRecord {
+    /// Stable attachment identity.
+    pub id: String,
+    /// Attached application object.
+    pub object: String,
+    /// Ordered support objects and subelements.
+    pub supports: Vec<LinkTarget>,
+    /// Persisted attachment-map mode.
+    pub map_mode: Option<String>,
+    /// Persisted resolved object placement.
+    pub placement: Option<[[f64; 4]; 4]>,
+    /// Persisted attachment-local offset.
+    pub offset: Option<[[f64; 4]; 4]>,
+    /// Effective frame used for neutral geometry.
+    pub effective_frame: [[f64; 4]; 4],
+}
 
 /// Document-level GUI state outside application-object view providers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

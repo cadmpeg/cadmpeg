@@ -664,6 +664,48 @@ fn transfers_sketch_pad_and_pocket_design_history() {
 }
 
 #[test]
+fn retains_support_attachment_and_distinct_offset_frame() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="PartDesign::Feature" name="Support" id="1"/>
+ <Object type="Sketcher::SketchObject" name="Sketch" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="Support"><Properties Count="0"/></Object>
+ <Object name="Sketch"><Properties Count="5">
+  <Property name="Geometry" type="Part::PropertyGeometryList"><GeometryList count="0"/></Property>
+  <Property name="Support" type="App::PropertyLinkSub"><Link object="Support" sub="Face1"/></Property>
+  <Property name="MapMode" type="App::PropertyString"><String value="FlatFace"/></Property>
+  <Property name="Placement" type="App::PropertyPlacement"><PropertyPlacement Px="10" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+  <Property name="AttachmentOffset" type="App::PropertyPlacement"><PropertyPlacement Px="2" Py="0" Pz="0" Q0="0" Q1="0" Q2="0" Q3="1"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("attachment");
+    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let attachments = namespace
+        .arena_as::<crate::native::AttachmentRecord>("attachments")
+        .expect("attachments");
+    assert_eq!(attachments.len(), 1);
+    assert_eq!(attachments[0].map_mode.as_deref(), Some("FlatFace"));
+    assert_eq!(
+        attachments[0].supports[0].object.as_deref(),
+        Some("fcstd:object:Support")
+    );
+    assert_eq!(attachments[0].supports[0].subelements, ["Face1"]);
+    assert_eq!(attachments[0].placement.expect("placement")[0][3], 10.0);
+    assert_eq!(attachments[0].offset.expect("offset")[0][3], 2.0);
+    assert_eq!(attachments[0].effective_frame[0][3], 10.0);
+    let sketch = result.ir.model.sketches.first().expect("sketch");
+    assert_eq!(sketch.origin.x, 10.0);
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn transfers_recursive_exact_parameter_curve_geometry() {
     let source = crate::brep::TextCurve2d::Offset {
         distance: 0.25,
@@ -918,7 +960,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 10);
+    assert_eq!(namespace.version, 11);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");
