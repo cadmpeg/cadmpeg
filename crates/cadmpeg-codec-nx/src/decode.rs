@@ -2806,6 +2806,10 @@ fn attach_native_object_model(
         &feature_input_blocks,
         &feature_sketch_references,
     );
+    let feature_sketch_construction_inputs = crate::native::feature_sketch_construction_inputs(
+        &feature_sketch_records,
+        &feature_sketch_references,
+    );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expression_declarations = crate::native::expression_declarations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
@@ -2850,6 +2854,7 @@ fn attach_native_object_model(
         && feature_extrude_payload_32_branches.is_empty()
         && feature_block_construction_references.is_empty()
         && feature_sketch_records.is_empty()
+        && feature_sketch_construction_inputs.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
         && expressions.is_empty()
@@ -3089,6 +3094,7 @@ fn attach_native_object_model(
             extrude_profile_references: &feature_extrude_profile_references,
             extrude_construction_profiles: &feature_extrude_construction_profiles,
             operation_body_operands: &feature_operation_body_operands,
+            sketch_construction_inputs: &feature_sketch_construction_inputs,
             parameter_bindings: &feature_parameter_bindings,
             expressions: &expressions,
             operation_records: &feature_operation_records,
@@ -3102,7 +3108,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(49);
+    namespace.version = namespace.version.max(50);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3217,6 +3223,12 @@ fn attach_native_object_model(
     if !feature_sketch_records.is_empty() {
         namespace.set_arena("feature_sketch_records", &feature_sketch_records)?;
     }
+    if !feature_sketch_construction_inputs.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_construction_inputs",
+            &feature_sketch_construction_inputs,
+        )?;
+    }
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
     }
@@ -3282,6 +3294,7 @@ struct FeatureOperationSources<'a> {
     extrude_profile_references: &'a [crate::native::FeatureExtrudeProfileReference],
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
     operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
+    sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     expressions: &'a [crate::native::Expression],
     operation_records: &'a [crate::native::FeatureOperationRecord],
@@ -3304,6 +3317,7 @@ fn attach_feature_operations(
         extrude_profile_references,
         extrude_construction_profiles,
         operation_body_operands,
+        sketch_construction_inputs,
         parameter_bindings,
         expressions,
         operation_records,
@@ -3373,6 +3387,10 @@ fn attach_feature_operations(
             .or_default()
             .push(operand);
     }
+    let sketch_construction_inputs_by_operation = sketch_construction_inputs
+        .iter()
+        .map(|inputs| (inputs.operation_label.as_str(), inputs))
+        .collect::<BTreeMap<_, _>>();
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
     for binding in parameter_bindings {
@@ -3468,6 +3486,9 @@ fn attach_feature_operations(
                 format!("body_reference.{}", reference.ordinal),
                 reference.body_object_index.to_string(),
             );
+        }
+        if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
+            source_properties.insert("sketch_construction_inputs".to_string(), inputs.id.clone());
         }
         for (slot, value) in label.object_indices.iter().enumerate() {
             source_properties.insert(

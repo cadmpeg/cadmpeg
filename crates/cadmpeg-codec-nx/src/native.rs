@@ -320,6 +320,25 @@ pub struct FeatureSketchRecord {
     pub source_offset: u64,
 }
 
+/// Completely resolved counted-reference field of one sketch construction.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSketchConstructionInputs {
+    /// Globally unique construction-input identity.
+    pub id: String,
+    /// Owning `SKETCH` operation label.
+    pub operation_label: String,
+    /// Joined typed sketch record.
+    pub sketch_record: String,
+    /// Ordered references preceding the field separator.
+    pub member_references: Vec<String>,
+    /// Ordered uniquely resolved member blocks.
+    pub member_data_blocks: Vec<String>,
+    /// Reference following the field separator.
+    pub terminal_reference: String,
+    /// Uniquely resolved terminal block.
+    pub terminal_data_block: String,
+}
+
 /// Ordered object reference carried by a bounded sketch-operation payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchReference {
@@ -1077,6 +1096,62 @@ pub fn feature_sketch_records(
             })
         })
         .collect()
+}
+
+/// Join complete, uniquely resolved sketch construction-reference fields.
+pub fn feature_sketch_construction_inputs(
+    sketches: &[FeatureSketchRecord],
+    references: &[FeatureSketchReference],
+) -> Vec<FeatureSketchConstructionInputs> {
+    let mut inputs = Vec::new();
+    for sketch in sketches {
+        let mut field = references
+            .iter()
+            .filter(|reference| reference.operation_label == sketch.operation_label)
+            .collect::<Vec<_>>();
+        field.sort_by_key(|reference| reference.ordinal);
+        let Some(first) = field.first() else {
+            continue;
+        };
+        let expected_len = usize::from(first.declared_count.max(1));
+        if field.len() != expected_len
+            || field.iter().enumerate().any(|(ordinal, reference)| {
+                reference.declared_count != first.declared_count
+                    || reference.ordinal != ordinal as u32
+                    || reference.terminal != (ordinal + 1 == expected_len)
+            })
+        {
+            continue;
+        }
+        let Some((terminal, members)) = field.split_last() else {
+            continue;
+        };
+        let Some(member_data_blocks) = members
+            .iter()
+            .map(|reference| reference.data_block.clone())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some(terminal_data_block) = terminal.data_block.clone() else {
+            continue;
+        };
+        inputs.push(FeatureSketchConstructionInputs {
+            id: sketch
+                .id
+                .replacen("sketch-record", "sketch-construction-inputs", 1),
+            operation_label: sketch.operation_label.clone(),
+            sketch_record: sketch.id.clone(),
+            member_references: members
+                .iter()
+                .map(|reference| reference.id.clone())
+                .collect(),
+            member_data_blocks,
+            terminal_reference: terminal.id.clone(),
+            terminal_data_block,
+        });
+    }
+    inputs
 }
 
 /// Decode and resolve the ordered counted-reference field in sketch payloads.

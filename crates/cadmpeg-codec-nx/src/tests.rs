@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 49);
+    assert_eq!(namespace.version, 50);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -641,6 +641,28 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
             "nx:feature-history:sketch-reference#0-7-1"
         ]
     );
+    let construction = crate::native::feature_sketch_construction_inputs(&sketches, &references);
+    assert_eq!(construction.len(), 1);
+    assert_eq!(
+        construction[0].member_references,
+        ["nx:feature-history:sketch-reference#0-7-0"]
+    );
+    assert_eq!(
+        construction[0].member_data_blocks,
+        ["nx:om-data-blocks-2:block#96"]
+    );
+    assert_eq!(
+        construction[0].terminal_reference,
+        "nx:feature-history:sketch-reference#0-7-1"
+    );
+    assert_eq!(
+        construction[0].terminal_data_block,
+        "nx:om-data-blocks-2:block#97"
+    );
+
+    let mut malformed = references;
+    malformed[0].ordinal = 2;
+    assert!(crate::native::feature_sketch_construction_inputs(&sketches, &malformed).is_empty());
 }
 
 #[test]
@@ -4508,7 +4530,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 49);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 50);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
