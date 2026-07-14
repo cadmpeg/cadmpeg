@@ -2089,7 +2089,7 @@ fn generated_projected_brep_c2_curve(
     origin: cadmpeg_ir::math::Point3,
     u_axis: cadmpeg_ir::math::Vector3,
     v_axis: cadmpeg_ir::math::Vector3,
-) -> ([u8; 16], Vec<u8>) {
+) -> Result<([u8; 16], Vec<u8>), CodecError> {
     use cadmpeg_ir::topology::Sense;
 
     let curve = model
@@ -2097,7 +2097,7 @@ fn generated_projected_brep_c2_curve(
         .iter()
         .find(|curve| edge.curve.as_ref() == Some(&curve.id))
         .expect("validated edge curve");
-    match &curve.geometry {
+    Ok(match &curve.geometry {
         CurveGeometry::Line { .. } => {
             let (from, to) = if sense == Sense::Forward {
                 (&edge.start, &edge.end)
@@ -2139,6 +2139,7 @@ fn generated_projected_brep_c2_curve(
                     .rev()
                     .map(|knot| sum - knot)
                     .collect();
+                canonicalize_native_curve_knots(&mut projected, &curve.id.0)?;
             }
             (
                 NURBS_CURVE_CLASS,
@@ -2146,7 +2147,24 @@ fn generated_projected_brep_c2_curve(
             )
         }
         _ => unreachable!("validated writable Brep curve"),
-    }
+    })
+}
+
+fn canonicalize_native_curve_knots(
+    curve: &mut cadmpeg_ir::geometry::NurbsCurve,
+    id: &str,
+) -> Result<(), CodecError> {
+    let order = curve.degree as usize + 1;
+    let count = curve.control_points.len();
+    let stored = curve.knots[1..curve.knots.len() - 1].to_vec();
+    curve.knots = crate::surfaces::reconstruct_knots(&stored, order, count)
+        .map_err(|error| CodecError::Malformed(format!("curve {id}: {error}")))?;
+    curve.periodic = crate::surfaces::periodic_knots(
+        &curve.knots[1..curve.knots.len() - 1],
+        order,
+        count,
+    );
+    Ok(())
 }
 
 fn brep_c2_curve(
@@ -2158,7 +2176,7 @@ fn brep_c2_curve(
     v_axis: cadmpeg_ir::math::Vector3,
 ) -> Result<([u8; 16], Vec<u8>), CodecError> {
     let generated =
-        generated_projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis);
+        generated_projected_brep_c2_curve(model, edge, coedge.sense, origin, u_axis, v_axis)?;
     if coedge.pcurve.is_none() {
         return Ok(generated);
     }
@@ -3593,6 +3611,32 @@ mod tests {
             decoded.ir.model.curves[0].geometry,
             ir.model.curves[0].geometry
         );
+    }
+
+    #[test]
+    fn reversed_unclamped_nurbs_knots_are_native_canonical() {
+        let mut curve = cadmpeg_ir::geometry::NurbsCurve {
+            degree: 2,
+            knots: vec![-3.0, 0.0, 1.0, 5.0, 8.0, 9.0, 10.0, 11.0, 14.0],
+            control_points: (0..6)
+                .map(|index| Point3::new(f64::from(index), 0.0, 0.0))
+                .collect(),
+            weights: None,
+            periodic: false,
+        };
+        super::canonicalize_native_curve_knots(&mut curve, "reversed")
+            .expect("reflected stored knots reconstruct");
+
+        assert_eq!([curve.knots[2], curve.knots[6]], [1.0, 10.0]);
+        super::check_knot_roundtrip(
+            "reversed",
+            "curve",
+            &curve.knots,
+            3,
+            6,
+            curve.periodic,
+        )
+        .expect("canonicalized knots serialize without another change");
     }
 
     #[test]
