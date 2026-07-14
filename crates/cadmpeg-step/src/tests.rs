@@ -706,6 +706,28 @@ fn decode_builds_a_valid_connected_sheet_brep() {
     ));
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+
+    let mut output = Vec::new();
+    let report = write_step(&result.ir, &mut output, &StepWriteOptions::default())
+        .expect("write sheet pcurve");
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("coedge pcurve(s) use unsupported")));
+    let roundtrip = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode written pcurve");
+    assert_eq!(roundtrip.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        roundtrip
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.pcurve.is_some())
+            .count(),
+        1
+    );
 }
 
 #[test]

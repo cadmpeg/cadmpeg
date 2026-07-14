@@ -6,8 +6,10 @@
 //! counterparts. NURBS carriers use `*_WITH_KNOTS`, with complex instances for
 //! rational geometry.
 
-use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve, NurbsSurface, SurfaceGeometry};
-use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, SurfaceGeometry,
+};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::writer::{real, refs, Emitter, Ref};
 
@@ -15,6 +17,37 @@ use crate::writer::{real, refs, Emitter, Ref};
 pub fn point(e: &mut Emitter, p: Point3) -> Ref {
     let params = format!("'',({},{},{})", real(p.x), real(p.y), real(p.z));
     e.emit_interned("CARTESIAN_POINT", &params)
+}
+
+fn point2(e: &mut Emitter, p: Point2) -> Ref {
+    let params = format!("'',({},{})", real(p.u), real(p.v));
+    e.emit_interned("CARTESIAN_POINT", &params)
+}
+
+fn direction2(e: &mut Emitter, v: Point2) -> Ref {
+    let magnitude = (v.u * v.u + v.v * v.v).sqrt();
+    let (x, y) = if magnitude > 0.0 {
+        (v.u / magnitude, v.v / magnitude)
+    } else {
+        (1.0, 0.0)
+    };
+    e.emit_interned("DIRECTION", &format!("'',({},{})", real(x), real(y)))
+}
+
+/// Emit a two-dimensional curve for use inside a `PCURVE` representation.
+pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Ref {
+    match geometry {
+        PcurveGeometry::Line { origin, direction } => {
+            let point = point2(e, *origin);
+            let magnitude = (direction.u * direction.u + direction.v * direction.v).sqrt();
+            let direction = direction2(e, *direction);
+            let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
+            e.emit("LINE", &format!("'',{point},{vector}"))
+        }
+        PcurveGeometry::Nurbs { .. } => {
+            unreachable!("NURBS pcurves are filtered before emission")
+        }
+    }
 }
 
 /// Emit or reuse a unit-length `DIRECTION`.

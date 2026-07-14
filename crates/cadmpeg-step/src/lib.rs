@@ -61,7 +61,8 @@ use cadmpeg_ir::codec::{
     Encoder, ReadSeek,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, Surface,
+    SurfaceGeometry,
 };
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{Coedge, Edge, Point, Sense, Vertex};
@@ -265,12 +266,15 @@ struct Builder<'a> {
     coedges: HashMap<&'a str, &'a Coedge>,
     surfaces: HashMap<&'a str, &'a Surface>,
     curves: HashMap<&'a str, &'a Curve>,
+    pcurves: HashMap<&'a str, &'a Pcurve>,
+    coedge_surfaces: HashMap<&'a str, &'a str>,
 
     // Emitted-instance caches keyed by IR id, so shared carriers emit once.
     surface_refs: HashMap<String, Ref>,
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Ref>,
     vertex_refs: HashMap<String, Ref>,
+    pcurve_context: Option<Ref>,
 
     /// Edges skipped because they carry no attributed 3D curve, deduplicated
     /// (a shared edge is reached once per coedge) and aggregated into a single
@@ -293,6 +297,32 @@ struct Builder<'a> {
 
 impl<'a> Builder<'a> {
     fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
+        let loop_surfaces = ir
+            .model
+            .faces
+            .iter()
+            .flat_map(|face| {
+                face.loops
+                    .iter()
+                    .map(move |loop_id| (loop_id.as_str(), face.surface.as_str()))
+            })
+            .collect::<HashMap<_, _>>();
+        let coedge_surfaces = ir
+            .model
+            .loops
+            .iter()
+            .filter_map(|loop_| {
+                loop_surfaces
+                    .get(loop_.id.as_str())
+                    .map(|surface| (loop_, *surface))
+            })
+            .flat_map(|(loop_, surface)| {
+                loop_
+                    .coedges
+                    .iter()
+                    .map(move |coedge| (coedge.as_str(), surface))
+            })
+            .collect();
         Builder {
             ir,
             schema,
@@ -319,10 +349,18 @@ impl<'a> Builder<'a> {
                 .map(|s| (s.id.as_str(), s))
                 .collect(),
             curves: ir.model.curves.iter().map(|c| (c.id.as_str(), c)).collect(),
+            pcurves: ir
+                .model
+                .pcurves
+                .iter()
+                .map(|p| (p.id.as_str(), p))
+                .collect(),
+            coedge_surfaces,
             surface_refs: HashMap::new(),
             curve_refs: HashMap::new(),
             edge_refs: HashMap::new(),
             vertex_refs: HashMap::new(),
+            pcurve_context: None,
             curveless_edges: BTreeSet::new(),
             unknown_surface_faces: BTreeSet::new(),
             face_step_refs: HashMap::new(),
@@ -965,7 +1003,34 @@ impl<'a> Builder<'a> {
             self.curveless_edges.insert(edge_id.to_string());
             return None;
         }
-        let curve_ref = self.emit_curve(curve_id.as_str())?;
+        let basis_curve = self.emit_curve(curve_id.as_str())?;
+        let associated = self
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge.as_str() == edge_id)
+            .filter_map(|coedge| {
+                Some((
+                    coedge.pcurve.as_ref()?.0.clone(),
+                    self.coedge_surfaces.get(coedge.id.as_str())?.to_string(),
+                ))
+            })
+            .collect::<Vec<_>>();
+        let mut pcurve_refs = Vec::new();
+        for (pcurve_id, surface_id) in associated {
+            if let Some(pcurve) = self.emit_pcurve(&pcurve_id, &surface_id) {
+                pcurve_refs.push(pcurve);
+            }
+        }
+        let curve_ref = if pcurve_refs.is_empty() {
+            basis_curve
+        } else {
+            self.emitter.emit(
+                "SURFACE_CURVE",
+                &format!("'',{basis_curve},{},.CURVE_3D.", refs(&pcurve_refs)),
+            )
+        };
         // same_sense = .T.: the edge runs start→end along the curve's own
         // parameterization, the convention IR curves follow.
         let r = self
@@ -973,6 +1038,33 @@ impl<'a> Builder<'a> {
             .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T."));
         self.edge_refs.insert(edge_id.to_string(), r);
         Some(r)
+    }
+
+    fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
+        let pcurve = self.pcurves.get(pcurve_id).copied()?;
+        if !matches!(pcurve.geometry, PcurveGeometry::Line { .. }) {
+            return None;
+        }
+        let surface = self.emit_surface(surface_id)?;
+        let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry);
+        let context = if let Some(context) = self.pcurve_context {
+            context
+        } else {
+            let context = self.emitter.emit_raw(
+                "GEOMETRIC_REPRESENTATION_CONTEXT",
+                "( GEOMETRIC_REPRESENTATION_CONTEXT(2) PARAMETRIC_REPRESENTATION_CONTEXT() REPRESENTATION_CONTEXT('uv','2D') )",
+            );
+            self.pcurve_context = Some(context);
+            context
+        };
+        let representation = self.emitter.emit(
+            "DEFINITIONAL_REPRESENTATION",
+            &format!("'',({curve}),{context}"),
+        );
+        Some(
+            self.emitter
+                .emit("PCURVE", &format!("'',{surface},{representation}")),
+        )
     }
 
     fn emit_vertex(&mut self, vertex_id: &str) -> Option<Ref> {
@@ -1125,26 +1217,23 @@ impl<'a> Builder<'a> {
             .model
             .coedges
             .iter()
-            .filter(|c| c.pcurve.is_some())
+            .filter_map(|coedge| coedge.pcurve.as_ref())
+            .filter(|id| {
+                self.pcurves.get(id.as_str()).is_none_or(|pcurve| {
+                    !matches!(pcurve.geometry, PcurveGeometry::Line { .. })
+                        || pcurve.wrapper_reversed.is_some()
+                        || pcurve.native_tail_flags.is_some()
+                        || pcurve.parameter_range.is_some()
+                        || pcurve.fit_tolerance.is_some()
+                })
+            })
             .count();
         if pcurve_count > 0 {
             self.loss(
                 LossCategory::Geometry,
                 Severity::Info,
                 format!(
-                    "{pcurve_count} coedge pcurve(s) were not written; parameter-space \
-                     trims are omitted, and consumers recompute them from the 3D \
-                     edge/surface geometry"
-                ),
-            );
-        }
-        if !self.ir.model.pcurves.is_empty() {
-            self.loss(
-                LossCategory::Geometry,
-                Severity::Info,
-                format!(
-                    "{} pcurve carrier(s) in the IR were not emitted",
-                    self.ir.model.pcurves.len()
+                    "{pcurve_count} coedge pcurve(s) use unsupported geometry or native-only metadata and were not written"
                 ),
             );
         }
