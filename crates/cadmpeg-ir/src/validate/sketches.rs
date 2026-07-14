@@ -207,7 +207,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 entities,
                 operands,
                 ..
-            } => !native_kind.is_empty() && (!entities.is_empty() || !operands.is_empty()),
+            } => {
+                !native_kind.is_empty()
+                    && (!entities.is_empty()
+                        || !operands.is_empty()
+                        || constraint.native_ref.is_some())
+            }
             _ => true,
         };
         if !valid {

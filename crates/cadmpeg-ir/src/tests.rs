@@ -1818,6 +1818,42 @@ fn sketch_constraint_native_ref_must_resolve() {
 }
 
 #[test]
+fn source_backed_native_sketch_constraint_may_have_opaque_arity() {
+    let mut ir = unit_cube();
+    let backed = crate::sketches::SketchConstraintId(
+        "synthetic:test:sketch-constraint#source-backed".into(),
+    );
+    let source_less =
+        crate::sketches::SketchConstraintId("synthetic:test:sketch-constraint#source-less".into());
+    for (id, native_ref) in [
+        (backed.clone(), Some("native:relation#0".into())),
+        (source_less.clone(), None),
+    ] {
+        ir.model
+            .sketch_constraints
+            .push(crate::sketches::SketchConstraint {
+                id,
+                sketch: crate::sketches::SketchId("synthetic:test:sketch#missing".into()),
+                definition: crate::sketches::SketchConstraintDefinition::Native {
+                    native_kind: "opaque-relation".into(),
+                    entities: Vec::new(),
+                    parameter: None,
+                    operands: Vec::new(),
+                },
+                native_ref,
+            });
+    }
+
+    let findings = validate(&ir, Vec::new()).findings;
+    assert!(!findings.iter().any(|finding| {
+        finding.check == Check::Counts && finding.entity.as_deref() == Some(backed.0.as_str())
+    }));
+    assert!(findings.iter().any(|finding| {
+        finding.check == Check::Counts && finding.entity.as_deref() == Some(source_less.0.as_str())
+    }));
+}
+
+#[test]
 fn periodic_curve_parameter_domain_is_checked() {
     let mut ir = unit_cube();
     let curve_id = ir.model.edges[0].curve.clone().unwrap();
