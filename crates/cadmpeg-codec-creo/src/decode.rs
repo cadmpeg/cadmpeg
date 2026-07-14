@@ -2375,7 +2375,7 @@ fn resolved_profile_chains(
     emitted: &BTreeSet<u32>,
 ) -> Vec<Vec<SketchEntityUse>> {
     let Some(table) = &definition.trim_entities else {
-        return Vec::new();
+        return resolved_segment_profile_chains(definition, emitted);
     };
     let rows = table
         .rows
@@ -2490,6 +2490,107 @@ fn resolved_profile_chains(
     profiles
 }
 
+fn resolved_segment_profile_chains(
+    definition: &crate::feature::FeatureDefinition,
+    emitted: &BTreeSet<u32>,
+) -> Vec<Vec<SketchEntityUse>> {
+    let Some(table) = &definition.segments else {
+        return Vec::new();
+    };
+    let rows = table
+        .rows
+        .iter()
+        .filter(|segment| {
+            emitted.contains(&segment.external_id)
+                && matches!(
+                    segment.kind,
+                    crate::feature::FeatureSegmentKind::Line
+                        | crate::feature::FeatureSegmentKind::Arc
+                )
+        })
+        .collect::<Vec<_>>();
+    let mut incident = BTreeMap::<u32, Vec<usize>>::new();
+    for (index, segment) in rows.iter().enumerate() {
+        for point in segment.point_ids {
+            incident.entry(point).or_default().push(index);
+        }
+    }
+    let mut remaining = (0..rows.len()).collect::<BTreeSet<_>>();
+    let mut profiles = Vec::new();
+    while let Some(seed) = remaining.first().copied() {
+        let mut component = BTreeSet::from([seed]);
+        let mut frontier = vec![seed];
+        while let Some(index) = frontier.pop() {
+            for point in rows[index].point_ids {
+                for adjacent in &incident[&point] {
+                    if component.insert(*adjacent) {
+                        frontier.push(*adjacent);
+                    }
+                }
+            }
+        }
+        remaining.retain(|index| !component.contains(index));
+        if component.iter().any(|index| {
+            rows[*index].point_ids.into_iter().any(|point| {
+                incident[&point]
+                    .iter()
+                    .filter(|row| component.contains(row))
+                    .count()
+                    != 2
+            })
+        }) {
+            continue;
+        }
+        let first = component
+            .iter()
+            .min_by_key(|index| rows[**index].external_id)
+            .copied()
+            .expect("component contains seed");
+        let mut point = rows[first].point_ids[0].min(rows[first].point_ids[1]);
+        let start = point;
+        let mut unused = component;
+        let mut profile = Vec::new();
+        while !unused.is_empty() {
+            let candidates = incident[&point]
+                .iter()
+                .filter(|index| unused.contains(index))
+                .copied()
+                .collect::<BTreeSet<_>>();
+            let index = if profile.is_empty() && candidates.contains(&first) {
+                first
+            } else if candidates.len() == 1 {
+                *candidates.first().expect("one candidate")
+            } else {
+                break;
+            };
+            let segment = rows[index];
+            let traversal_reversed = segment.point_ids[1] == point;
+            if !traversal_reversed && segment.point_ids[0] != point {
+                break;
+            }
+            let analytic_reversed = segment.kind == crate::feature::FeatureSegmentKind::Arc
+                && segment.arc_orientation == Some(0);
+            profile.push(SketchEntityUse {
+                entity: SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{}:{}",
+                    definition.id, segment.external_id
+                )),
+                reversed: traversal_reversed ^ analytic_reversed,
+            });
+            point = if traversal_reversed {
+                segment.point_ids[0]
+            } else {
+                segment.point_ids[1]
+            };
+            unused.remove(&index);
+        }
+        if unused.is_empty() && point == start {
+            profiles.push(profile);
+        }
+    }
+    profiles
+}
+
 fn transfer_resolved_sketches(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -2514,6 +2615,40 @@ fn transfer_resolved_sketches(
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
         let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
+        let emitted = segments
+            .rows
+            .iter()
+            .filter(|segment| {
+                if solved.contains(&segment.external_id) {
+                    trimmed_section_segment_geometry(
+                        definition,
+                        &points,
+                        &trim_vertex_coordinates,
+                        segment,
+                    )
+                    .is_some()
+                } else {
+                    resolved_section_segment_geometry(definition, &points, segment).is_some()
+                }
+            })
+            .map(|segment| segment.external_id)
+            .collect::<BTreeSet<_>>();
+        let profiles = resolved_profile_chains(definition, &emitted);
+        let profile_segments = segments
+            .rows
+            .iter()
+            .filter(|segment| {
+                let id = SketchEntityId(format!(
+                    "creo:featdefs:sketch_entity#{}:{}",
+                    definition.id, segment.external_id
+                ));
+                profiles
+                    .iter()
+                    .flatten()
+                    .any(|entity_use| entity_use.entity == id)
+            })
+            .map(|segment| segment.external_id)
+            .collect::<BTreeSet<_>>();
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
         let mut entities = segments
             .rows
@@ -2548,7 +2683,8 @@ fn transfer_resolved_sketches(
                 Some(SketchEntity {
                     id,
                     sketch: sketch_id.clone(),
-                    construction: !solved.contains(&segment.external_id),
+                    construction: !solved.contains(&segment.external_id)
+                        && !profile_segments.contains(&segment.external_id),
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                     geometry_ref: Some(format!(
                         "creo:featdefs:section_curve#{}:{}",
@@ -2706,24 +2842,6 @@ fn transfer_resolved_sketches(
                 }),
             });
         }
-        let emitted = segments
-            .rows
-            .iter()
-            .filter(|segment| {
-                if solved.contains(&segment.external_id) {
-                    trimmed_section_segment_geometry(
-                        definition,
-                        &points,
-                        &trim_vertex_coordinates,
-                        segment,
-                    )
-                    .is_some()
-                } else {
-                    resolved_section_segment_geometry(definition, &points, segment).is_some()
-                }
-            })
-            .map(|segment| segment.external_id)
-            .collect::<BTreeSet<_>>();
         let constraints = segments
             .rows
             .iter()
@@ -2783,7 +2901,7 @@ fn transfer_resolved_sketches(
                 transform.u_axis[1],
                 transform.u_axis[2],
             ),
-            profiles: resolved_profile_chains(definition, &emitted),
+            profiles,
             native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
         });
     }
@@ -4356,6 +4474,41 @@ mod resolved_sketch_tests {
         let arc_profile = resolved_profile_chains(&arcs, &BTreeSet::from([10, 11]));
         assert_eq!(arc_profile.len(), 1);
         assert!(arc_profile[0].iter().all(|entity| entity.reversed));
+
+        let mut segment_graph = definition;
+        segment_graph.trim_entities = None;
+        segment_graph.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 5,
+            entity_ref: None,
+            rows: [
+                (10, [1, 2]),
+                (11, [3, 2]),
+                (12, [3, 4]),
+                (13, [4, 1]),
+                (20, [8, 9]),
+            ]
+            .into_iter()
+            .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
+                kind: crate::feature::FeatureSegmentKind::Line,
+                directions: [None; 3],
+                point_ids,
+                center_id: None,
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: None,
+                radius2_ref: None,
+                external_id,
+                offset: external_id as usize,
+            })
+            .collect(),
+            offset: 4,
+        });
+        let segment_profile =
+            resolved_profile_chains(&segment_graph, &BTreeSet::from([10, 11, 12, 13, 20]));
+        assert_eq!(segment_profile.len(), 1);
+        assert_eq!(segment_profile[0].len(), 4);
+        assert!(!segment_profile[0][0].reversed);
+        assert!(segment_profile[0][1].reversed);
     }
 
     #[test]

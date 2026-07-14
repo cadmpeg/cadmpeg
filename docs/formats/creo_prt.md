@@ -399,6 +399,14 @@ Connected components of this incidence graph are profile chains. A component
 is closed when every vertex has degree two and open when exactly two vertices
 have degree one; any other degree pattern is not a profile chain.
 
+When `ent_tab` is absent, emitted line and arc `segtab` rows use their two
+`pointid` values as the incidence graph. A connected component is a profile
+loop only when every point has degree two and traversal consumes every row and
+returns to its starting point. Open, branched, isolated, and incompletely
+decoded components remain construction geometry. For `arcorient=0`, profile
+traversal reverses the analytic arc when it runs from the first `pointid` to
+the second.
+
 In a round-feature generated-entity table, a rowless face-use entry is a cylinder only when the table's following materialized `srf_array` entry is a cylinder. The table class token alone does not identify the surface kind.
 
 ## 6. Features and datums
