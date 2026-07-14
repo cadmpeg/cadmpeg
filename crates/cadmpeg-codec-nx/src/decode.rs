@@ -2782,6 +2782,10 @@ fn attach_native_object_model(
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
     let feature_datum_csys_constructions =
         crate::native::feature_datum_csys_constructions(&scan.container);
+    let feature_datum_csys_block_uses = crate::native::feature_datum_csys_block_uses(
+        &feature_datum_csys_constructions,
+        &feature_input_blocks,
+    );
     let feature_sketch_references = crate::native::feature_sketch_references(&scan.container);
     let feature_extrude_profile_references =
         crate::native::feature_extrude_profile_references(&scan.container);
@@ -2901,6 +2905,7 @@ fn attach_native_object_model(
         && feature_body_references.is_empty()
         && feature_input_blocks.is_empty()
         && feature_datum_csys_constructions.is_empty()
+        && feature_datum_csys_block_uses.is_empty()
         && feature_sketch_references.is_empty()
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
@@ -3217,7 +3222,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(73);
+    namespace.version = namespace.version.max(74);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3282,6 +3287,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_datum_csys_constructions",
             &feature_datum_csys_constructions,
+        )?;
+    }
+    if !feature_datum_csys_block_uses.is_empty() {
+        namespace.set_arena(
+            "feature_datum_csys_block_uses",
+            &feature_datum_csys_block_uses,
         )?;
     }
     if !feature_sketch_references.is_empty() {

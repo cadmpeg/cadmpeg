@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 73);
+    assert_eq!(namespace.version, 74);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1352,6 +1352,41 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
         })
         .is_none()
     );
+}
+
+#[test]
+fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
+    let construction = crate::native::FeatureDatumCsysConstruction {
+        id: "construction".to_string(),
+        operation_label: "operation#0".to_string(),
+        object_indices: std::array::from_fn(|index| index as u32 + 40),
+        data_blocks: std::array::from_fn(|index| format!("block#{}", index + 40)),
+        source_offsets: std::array::from_fn(|index| index as u64 + 100),
+    };
+    let input =
+        |id: &str, operation: &str, slot: u8, block: &str| crate::native::FeatureInputBlock {
+            id: id.to_string(),
+            operation_label: operation.to_string(),
+            input_slot: slot,
+            object_index: 44,
+            data_block: block.to_string(),
+            source_offset: 200,
+        };
+    let uses = crate::native::feature_datum_csys_block_uses(
+        &[construction],
+        &[
+            input("input#0", "operation#0", 1, "block#43"),
+            input("input#1", "operation#6", 0, "block#44"),
+            input("input#2", "operation#7", 0, "block#44"),
+        ],
+    );
+    assert_eq!(uses.len(), 3);
+    assert_eq!(uses[0].reference_ordinal, 3);
+    assert_eq!(uses[0].input_operation_label, "operation#0");
+    assert_eq!(uses[1].reference_ordinal, 4);
+    assert_eq!(uses[1].input_operation_label, "operation#6");
+    assert_eq!(uses[2].reference_ordinal, 4);
+    assert_eq!(uses[2].input_operation_label, "operation#7");
 }
 
 #[test]
@@ -5107,7 +5142,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 73);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 74);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

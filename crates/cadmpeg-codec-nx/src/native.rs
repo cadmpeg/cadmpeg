@@ -423,6 +423,27 @@ pub struct FeatureDatumCsysConstruction {
     pub source_offsets: [u64; 8],
 }
 
+/// Exact reuse of one datum-coordinate-system construction block by an operation input.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumCsysBlockUse {
+    /// Globally unique block-use identity.
+    pub id: String,
+    /// Owning datum-coordinate-system construction.
+    pub construction: String,
+    /// `DATUM_CSYS` operation owning the construction lane.
+    pub construction_operation_label: String,
+    /// Zero-based position in the eight-reference construction lane.
+    pub reference_ordinal: u8,
+    /// Shared offset-store block.
+    pub data_block: String,
+    /// Matching operation-header input binding.
+    pub input_binding: String,
+    /// Operation whose header addresses the shared block.
+    pub input_operation_label: String,
+    /// Zero-based operation-header input slot.
+    pub input_slot: u8,
+}
+
 /// Completely resolved counted-reference field of one sketch construction.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSketchConstructionInputs {
@@ -1591,6 +1612,38 @@ pub fn feature_datum_csys_constructions(
         }
     }
     constructions
+}
+
+/// Join resolved datum-coordinate-system blocks to every exact operation input
+/// addressing the same native block.
+pub fn feature_datum_csys_block_uses(
+    constructions: &[FeatureDatumCsysConstruction],
+    inputs: &[FeatureInputBlock],
+) -> Vec<FeatureDatumCsysBlockUse> {
+    let mut uses = Vec::new();
+    for construction in constructions {
+        for (reference_ordinal, data_block) in construction.data_blocks.iter().enumerate() {
+            for input in inputs
+                .iter()
+                .filter(|input| input.data_block == *data_block)
+            {
+                uses.push(FeatureDatumCsysBlockUse {
+                    id: format!(
+                        "{}:block-use#{reference_ordinal}-{}-{}",
+                        construction.id, input.operation_label, input.input_slot
+                    ),
+                    construction: construction.id.clone(),
+                    construction_operation_label: construction.operation_label.clone(),
+                    reference_ordinal: reference_ordinal as u8,
+                    data_block: data_block.clone(),
+                    input_binding: input.id.clone(),
+                    input_operation_label: input.operation_label.clone(),
+                    input_slot: input.input_slot,
+                });
+            }
+        }
+    }
+    uses
 }
 
 /// Join each sketch operation to its bounded record and ordered input blocks.
