@@ -509,7 +509,7 @@ pub struct DatumPlaneDescriptorBlock {
 
 /// Exact scalar pair following a datum-coordinate-system discriminator.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DatumCsysPayloadScalarPair {
+pub struct ObjectPayloadScalarPair {
     /// Payload-relative offset of the discriminator.
     pub offset: usize,
     /// Ordered finite shifted-IEEE values.
@@ -1876,8 +1876,8 @@ pub fn datum_plane_descriptor_block(bytes: &[u8]) -> Option<DatumPlaneDescriptor
     })
 }
 
-/// Decode every exactly framed scalar pair in a reconstructed datum-CSYS payload.
-pub fn datum_csys_payload_scalar_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadScalarPair> {
+/// Decode every exactly framed scalar pair in a reconstructed object payload.
+pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair> {
     const DISCRIMINATOR: [u8; 15] = [
         0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
     ];
@@ -1889,7 +1889,7 @@ pub fn datum_csys_payload_scalar_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadScal
             let first = offset + DISCRIMINATOR.len();
             let second = first + 9;
             (bytes.get(first + 8) == Some(&0x00)).then_some(())?;
-            Some(DatumCsysPayloadScalarPair {
+            Some(ObjectPayloadScalarPair {
                 offset,
                 values: [
                     shifted_ieee_f64(bytes.get(first..first + 8)?)?,

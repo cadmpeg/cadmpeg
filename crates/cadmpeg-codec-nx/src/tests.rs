@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 96);
+    assert_eq!(namespace.version, 97);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1501,14 +1501,14 @@ fn om_datum_csys_scalar_pairs_require_discriminator_and_separator() {
     bytes.extend_from_slice(&[0x30, 0x24, 0, 0, 0, 0, 0, 0]);
     bytes.push(0);
     bytes.extend_from_slice(&[0xb0, 0x34, 0, 0, 0, 0, 0, 0]);
-    let pairs = crate::om::datum_csys_payload_scalar_pairs(&bytes);
+    let pairs = crate::om::object_payload_scalar_pairs(&bytes);
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].offset, 6);
     assert_eq!(pairs[0].value_offsets, [21, 30]);
     assert_eq!(pairs[0].values, [10.0, -20.0]);
 
     bytes[29] = 1;
-    assert!(crate::om::datum_csys_payload_scalar_pairs(&bytes).is_empty());
+    assert!(crate::om::object_payload_scalar_pairs(&bytes).is_empty());
 }
 
 #[test]
@@ -5352,7 +5352,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 96);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 97);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
