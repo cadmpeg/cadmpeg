@@ -1613,6 +1613,284 @@ struct OwnedTestEntity {
     parameters: String,
 }
 
+fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    let mut parameter_sequence = 1_u32;
+    for (index, entity) in entities.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        let line_count = entity.parameters.len().div_ceil(64);
+        bytes.extend(directory_card(
+            [
+                &entity.entity_type.to_string(),
+                &parameter_sequence.to_string(),
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                entity.status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [
+                &entity.entity_type.to_string(),
+                "0",
+                "0",
+                &line_count.to_string(),
+                &entity.form.to_string(),
+                "",
+                "",
+                &entity.label,
+                "0",
+            ],
+            sequence + 1,
+        ));
+        parameter_sequence += u32::try_from(line_count).unwrap();
+    }
+    parameter_sequence = 1;
+    for (index, entity) in entities.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        bytes.extend(parameter_cards(
+            entity.parameters.as_bytes(),
+            sequence,
+            parameter_sequence,
+        ));
+        parameter_sequence += u32::try_from(entity.parameters.len().div_ceil(64)).unwrap();
+    }
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!(
+            "S0000001G{global_cards:07}D{:07}P{:07}",
+            entities.len() * 2,
+            parameter_sequence - 1
+        )
+        .as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+fn explicit_vertex_loop_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "CENTER".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 196,
+            form: 0,
+            label: "SPHERE".into(),
+            status: "00010000",
+            parameters: "196,1,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "POLE".into(),
+            status: "00010000",
+            parameters: "502,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "VLOOP".into(),
+            status: "00010000",
+            parameters: "508,1,1,5,1,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE".into(),
+            status: "00010000",
+            parameters: "510,3,1,1,7;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 514,
+            form: 2,
+            label: "SHELL".into(),
+            status: "00000000",
+            parameters: "514,1,9,1;".into(),
+        },
+    ])
+}
+
+fn explicit_multi_pcurve_loop_file() -> Vec<u8> {
+    let mut entities = vec![
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "LOCATION".into(),
+            status: "00010000",
+            parameters: "116,0,0,0,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 123,
+            form: 0,
+            label: "NORMAL".into(),
+            status: "00010000",
+            parameters: "123,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 190,
+            form: 0,
+            label: "SURFACE".into(),
+            status: "00010000",
+            parameters: "190,1,3;".into(),
+        },
+    ];
+    for (index, parameters) in [
+        "110,0,0,0,1,0,0;",
+        "110,1,0,0,1,1,0;",
+        "110,1,1,0,0,1,0;",
+        "110,0,1,0,0,0,0;",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        entities.push(OwnedTestEntity {
+            entity_type: 110,
+            form: 0,
+            label: format!("EDGE{}", index + 1),
+            status: "00010000",
+            parameters: parameters.into(),
+        });
+    }
+    entities.extend([
+        OwnedTestEntity {
+            entity_type: 502,
+            form: 1,
+            label: "VERTICES".into(),
+            status: "00010000",
+            parameters: "502,4,0,0,0,1,0,0,1,1,0,0,1,0;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 504,
+            form: 1,
+            label: "EDGES".into(),
+            status: "00010001",
+            parameters: "504,4,7,15,1,15,2,9,15,2,15,3,11,15,3,15,4,13,15,4,15,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "PCURVE1".into(),
+            status: "00010500",
+            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0,0,0,0.5,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 126,
+            form: 1,
+            label: "PCURVE2".into(),
+            status: "00010500",
+            parameters: "126,1,1,1,0,1,0,0,0,1,1,1,1,0.5,0,0,1,0,0,0,1,0,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 508,
+            form: 1,
+            label: "LOOP".into(),
+            status: "00010000",
+            parameters: "508,5,0,17,1,1,2,1,19,0,21,1,15,2,0,0,0,17,2,1,0,0,17,3,1,0,0,17,4,1,0;"
+                .into(),
+        },
+        OwnedTestEntity {
+            entity_type: 510,
+            form: 1,
+            label: "FACE".into(),
+            status: "00010000",
+            parameters: "510,5,1,1,23;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 514,
+            form: 2,
+            label: "SHELL".into(),
+            status: "00000000",
+            parameters: "514,1,25,1;".into(),
+        },
+    ]);
+    owned_test_file(&entities)
+}
+
+#[test]
+fn decode_preserves_ordered_loop_pcurve_collection_and_isoparametric_flags() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_multi_pcurve_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let coedge = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id.0 == "iges:model:coedge#D27:D23:0")
+        .unwrap();
+    assert_eq!(coedge.pcurves.len(), 2);
+    assert_eq!(coedge.pcurves[0].isoparametric, Some(true));
+    assert_eq!(coedge.pcurves[1].isoparametric, Some(false));
+    assert!(coedge.pcurves[0].pcurve.0.ends_with(":0:0"));
+    assert!(coedge.pcurves[1].pcurve.0.ends_with(":0:1"));
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.0 == "iges:model:loop#D27:D23")
+        .unwrap();
+    assert_eq!(loop_.vertex_uses.len(), 1);
+    assert_eq!(loop_.vertex_uses[0].vertex.0, "iges:model:vertex#D27:D15:2");
+    assert_eq!(loop_.vertex_uses[0].after.as_ref(), Some(&coedge.id));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_builds_a_vertex_only_pole_loop() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_vertex_loop_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.0 == "iges:model:loop#D11:D7")
+        .unwrap_or_else(|| {
+            panic!(
+                "loops={:#?} losses={:#?}",
+                result.ir.model.loops, result.report.losses
+            )
+        });
+    assert!(loop_.coedges.is_empty());
+    assert_eq!(loop_.vertex_uses.len(), 1);
+    assert_eq!(loop_.vertex_uses[0].vertex.0, "iges:model:vertex#D11:D5:1");
+    assert!(loop_.vertex_uses[0].after.is_none());
+    assert!(loop_.vertex_uses[0].pcurves.is_empty());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 fn append_tetrahedral_shell(
     entities: &mut Vec<OwnedTestEntity>,
     label: &str,
@@ -1772,7 +2050,6 @@ fn append_tetrahedral_shell(
 }
 
 fn explicit_void_solid_file() -> (Vec<u8>, u32, u32, u32) {
-    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut entities = Vec::new();
     let outer = append_tetrahedral_shell(&mut entities, "OUT", [0.0, 0.0, 0.0], 4.0);
     let void = append_tetrahedral_shell(&mut entities, "VOID", [0.5, 0.5, 0.5], 0.5);
@@ -1785,64 +2062,7 @@ fn explicit_void_solid_file() -> (Vec<u8>, u32, u32, u32) {
         parameters: format!("186,{outer},1,1,{void},0;"),
     });
 
-    let mut bytes = fixed_ascii_with_global(global);
-    bytes.truncate(bytes.len() - 81);
-    let mut parameter_sequence = 1_u32;
-    for (index, entity) in entities.iter().enumerate() {
-        let sequence = u32::try_from(index * 2 + 1).unwrap();
-        let line_count = entity.parameters.len().div_ceil(64);
-        bytes.extend(directory_card(
-            [
-                &entity.entity_type.to_string(),
-                &parameter_sequence.to_string(),
-                "0",
-                "0",
-                "0",
-                "0",
-                "0",
-                "0",
-                entity.status,
-            ],
-            sequence,
-        ));
-        bytes.extend(directory_card(
-            [
-                &entity.entity_type.to_string(),
-                "0",
-                "0",
-                &line_count.to_string(),
-                &entity.form.to_string(),
-                "",
-                "",
-                &entity.label,
-                "0",
-            ],
-            sequence + 1,
-        ));
-        parameter_sequence += u32::try_from(line_count).unwrap();
-    }
-    parameter_sequence = 1;
-    for (index, entity) in entities.iter().enumerate() {
-        let sequence = u32::try_from(index * 2 + 1).unwrap();
-        bytes.extend(parameter_cards(
-            entity.parameters.as_bytes(),
-            sequence,
-            parameter_sequence,
-        ));
-        parameter_sequence += u32::try_from(entity.parameters.len().div_ceil(64)).unwrap();
-    }
-    let global_cards = global.len().div_ceil(72);
-    bytes.extend(card(
-        format!(
-            "S0000001G{global_cards:07}D{:07}P{:07}",
-            entities.len() * 2,
-            parameter_sequence - 1
-        )
-        .as_bytes(),
-        b'T',
-        1,
-    ));
-    (bytes, solid, outer, void)
+    (owned_test_file(&entities), solid, outer, void)
 }
 
 #[test]

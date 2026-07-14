@@ -15,6 +15,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::report::LossNote;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, PcurveUse, Point, Region, Sense, Shell, Vertex,
+    VertexUse,
 };
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,12 +29,19 @@ struct EdgeDefinition {
     end_index: usize,
 }
 
-#[derive(Clone, Copy)]
-struct EdgeUse {
-    edge_list: u32,
-    edge_index: usize,
-    sense: Sense,
-    pcurve: Option<u32>,
+#[derive(Clone)]
+enum LoopUse {
+    Edge {
+        edge_list: u32,
+        edge_index: usize,
+        sense: Sense,
+        pcurves: Vec<(bool, u32)>,
+    },
+    Vertex {
+        vertex_list: u32,
+        vertex_index: usize,
+        pcurves: Vec<(bool, u32)>,
+    },
 }
 
 #[derive(Clone)]
@@ -78,6 +86,62 @@ fn list_index(record: &ParameterRecord, index: usize) -> Option<usize> {
         .and_then(|value| value.checked_sub(1))
 }
 
+fn topology_vertex(
+    candidate: &mut CadIr,
+    vertex_ids: &mut BTreeMap<(u32, usize), VertexId>,
+    vertex_lists: &BTreeMap<u32, Vec<Point3>>,
+    stem: &str,
+    list: u32,
+    index: usize,
+) -> VertexId {
+    vertex_ids
+        .entry((list, index))
+        .or_insert_with(|| {
+            let point_id = PointId(format!("iges:model:point#{stem}:D{list}:{}", index + 1));
+            let vertex_id = VertexId(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1));
+            candidate.model.points.push(Point {
+                id: point_id.clone(),
+                position: vertex_lists[&list][index],
+            });
+            candidate.model.vertices.push(Vertex {
+                id: vertex_id.clone(),
+                point: point_id,
+                tolerance: None,
+            });
+            vertex_id
+        })
+        .clone()
+}
+
+fn project_pcurve_uses(
+    candidate: &mut CadIr,
+    source: &CadIr,
+    uses: &[(bool, u32)],
+    surface: &cadmpeg_ir::geometry::SurfaceGeometry,
+    factor: f64,
+    id_stem: &str,
+) -> Option<Vec<PcurveUse>> {
+    uses.iter()
+        .enumerate()
+        .map(|(index, (isoparametric, sequence))| {
+            let (geometry, range) = pcurve_geometry(source, *sequence, surface, factor)?;
+            let id = PcurveId(format!("{id_stem}:{index}"));
+            candidate.model.pcurves.push(Pcurve {
+                id: id.clone(),
+                geometry,
+                wrapper_reversed: None,
+                native_tail_flags: None,
+                parameter_range: Some(range),
+                fit_tolerance: None,
+            });
+            Some(PcurveUse {
+                pcurve: id,
+                isoparametric: Some(*isoparametric),
+            })
+        })
+        .collect()
+}
+
 pub(super) struct BrepProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -110,7 +174,7 @@ pub(super) fn project(
     };
     let mut vertex_lists = BTreeMap::<u32, Vec<Point3>>::new();
     let mut edge_lists = BTreeMap::<u32, Vec<EdgeDefinition>>::new();
-    let mut loops = BTreeMap::<u32, Vec<EdgeUse>>::new();
+    let mut loops = BTreeMap::<u32, Vec<LoopUse>>::new();
     let mut faces = BTreeMap::<u32, FaceDefinition>::new();
 
     for entry in directory
@@ -256,29 +320,17 @@ pub(super) fn project(
         let mut index = 2;
         let mut uses = Vec::with_capacity(count);
         for _ in 0..count {
-            if record.integer(index) != Some(0) {
-                losses.push(entity_loss(
-                    entry,
-                    "vertex-only loop uses are not projected",
-                ));
-                uses.clear();
-                break;
-            }
-            let Some(edge_list) = pointer(record, index + 1) else {
+            let Some(use_type) = record.integer(index) else {
                 uses.clear();
                 break;
             };
-            let Some(edge_index) = list_index(record, index + 2) else {
+            let Some(list) = pointer(record, index + 1) else {
                 uses.clear();
                 break;
             };
-            let sense = match record.integer(index + 3) {
-                Some(1) => Sense::Forward,
-                Some(0) => Sense::Reversed,
-                _ => {
-                    uses.clear();
-                    break;
-                }
+            let Some(item_index) = list_index(record, index + 2) else {
+                uses.clear();
+                break;
             };
             let Some(pcurve_count) = record
                 .integer(index + 4)
@@ -287,47 +339,77 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
-            if pcurve_count > 1 {
-                losses.push(entity_loss(
-                    entry,
-                    "loop pcurve collection has more than one member",
-                ));
-                uses.clear();
-                break;
-            }
-            let pcurve = if pcurve_count == 1 {
-                if !matches!(record.integer(index + 5), Some(0 | 1)) {
-                    uses.clear();
-                    break;
-                }
-                let Some(sequence) = pointer(record, index + 6) else {
-                    uses.clear();
+            let mut pcurves = Vec::with_capacity(pcurve_count);
+            for pcurve_index in 0..pcurve_count {
+                let isoparametric = match record.integer(index + 5 + pcurve_index * 2) {
+                    Some(1) => true,
+                    Some(0) => false,
+                    _ => {
+                        pcurves.clear();
+                        break;
+                    }
+                };
+                let Some(sequence) = pointer(record, index + 6 + pcurve_index * 2) else {
+                    pcurves.clear();
                     break;
                 };
                 if entries
                     .get(&sequence)
                     .is_none_or(|entry| entry.status.use_flag != 5)
                 {
-                    uses.clear();
+                    pcurves.clear();
                     break;
                 }
-                Some(sequence)
-            } else {
-                None
-            };
-            if edge_lists
-                .get(&edge_list)
-                .is_none_or(|list| edge_index >= list.len())
-            {
+                pcurves.push((isoparametric, sequence));
+            }
+            if pcurves.len() != pcurve_count {
                 uses.clear();
                 break;
             }
-            uses.push(EdgeUse {
-                edge_list,
-                edge_index,
-                sense,
-                pcurve,
-            });
+            let use_ = match use_type {
+                0 => {
+                    let sense = match record.integer(index + 3) {
+                        Some(1) => Sense::Forward,
+                        Some(0) => Sense::Reversed,
+                        _ => {
+                            uses.clear();
+                            break;
+                        }
+                    };
+                    if edge_lists
+                        .get(&list)
+                        .is_none_or(|items| item_index >= items.len())
+                    {
+                        uses.clear();
+                        break;
+                    }
+                    LoopUse::Edge {
+                        edge_list: list,
+                        edge_index: item_index,
+                        sense,
+                        pcurves,
+                    }
+                }
+                1 => {
+                    if vertex_lists
+                        .get(&list)
+                        .is_none_or(|items| item_index >= items.len())
+                    {
+                        uses.clear();
+                        break;
+                    }
+                    LoopUse::Vertex {
+                        vertex_list: list,
+                        vertex_index: item_index,
+                        pcurves,
+                    }
+                }
+                _ => {
+                    uses.clear();
+                    break;
+                }
+            };
+            uses.push(use_);
             index += 5 + pcurve_count * 2;
         }
         if uses.len() != count {
@@ -600,44 +682,94 @@ pub(super) fn project(
                 for loop_sequence in face_definition.loops {
                     let uses = loops[&loop_sequence].clone();
                     let loop_id = LoopId(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"));
-                    let coedge_ids = (0..uses.len())
+                    let edge_use_indices = uses
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(index, use_)| {
+                            matches!(use_, LoopUse::Edge { .. }).then_some(index)
+                        })
+                        .collect::<Vec<_>>();
+                    let coedge_ids = edge_use_indices
+                        .iter()
                         .map(|index| {
                             CoedgeId(format!(
                                 "iges:model:coedge#{shell_stem}:D{loop_sequence}:{index}"
                             ))
                         })
                         .collect::<Vec<_>>();
-                    for (use_index, edge_use) in uses.into_iter().enumerate() {
-                        let edge_definition = edge_lists[&edge_use.edge_list][edge_use.edge_index];
+                    let coedge_by_use = edge_use_indices
+                        .iter()
+                        .copied()
+                        .zip(coedge_ids.iter().cloned())
+                        .collect::<BTreeMap<_, _>>();
+                    let mut loop_vertex_uses = Vec::new();
+                    for (use_index, use_) in uses.iter().enumerate() {
+                        let LoopUse::Edge {
+                            edge_list,
+                            edge_index,
+                            sense,
+                            pcurves,
+                        } = use_
+                        else {
+                            let LoopUse::Vertex {
+                                vertex_list,
+                                vertex_index,
+                                pcurves,
+                            } = use_
+                            else {
+                                unreachable!()
+                            };
+                            let vertex = topology_vertex(
+                                &mut candidate,
+                                &mut vertex_ids,
+                                &vertex_lists,
+                                &stem,
+                                *vertex_list,
+                                *vertex_index,
+                            );
+                            let after = if coedge_ids.is_empty() {
+                                None
+                            } else {
+                                (1..=uses.len()).find_map(|distance| {
+                                    let prior = (use_index + uses.len() - distance) % uses.len();
+                                    coedge_by_use.get(&prior).cloned()
+                                })
+                            };
+                            let Some(projected) = project_pcurve_uses(
+                                &mut candidate,
+                                ir,
+                                pcurves,
+                                &support.geometry,
+                                factor,
+                                &format!(
+                                    "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
+                                ),
+                            ) else {
+                                valid = false;
+                                break;
+                            };
+                            loop_vertex_uses.push(VertexUse {
+                                vertex,
+                                after,
+                                pcurves: projected,
+                            });
+                            continue;
+                        };
+                        let edge_definition = edge_lists[edge_list][*edge_index];
                         for (list, index) in [
                             (edge_definition.start_list, edge_definition.start_index),
                             (edge_definition.end_list, edge_definition.end_index),
                         ] {
-                            if let std::collections::btree_map::Entry::Vacant(slot) =
-                                vertex_ids.entry((list, index))
-                            {
-                                let position = vertex_lists[&list][index];
-                                let point_id = PointId(format!(
-                                    "iges:model:point#{stem}:D{list}:{}",
-                                    index + 1
-                                ));
-                                let vertex_id = VertexId(format!(
-                                    "iges:model:vertex#{stem}:D{list}:{}",
-                                    index + 1
-                                ));
-                                candidate.model.points.push(Point {
-                                    id: point_id.clone(),
-                                    position,
-                                });
-                                candidate.model.vertices.push(Vertex {
-                                    id: vertex_id.clone(),
-                                    point: point_id,
-                                    tolerance: None,
-                                });
-                                slot.insert(vertex_id);
-                            }
+                            topology_vertex(
+                                &mut candidate,
+                                &mut vertex_ids,
+                                &vertex_lists,
+                                &stem,
+                                list,
+                                index,
+                            );
                         }
-                        let edge_key = (edge_use.edge_list, edge_use.edge_index);
+                        let edge_key = (*edge_list, *edge_index);
                         let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
                             id.clone()
                         } else {
@@ -672,51 +804,37 @@ pub(super) fn project(
                             edge_ids.insert(edge_key, id.clone());
                             id
                         };
-                        let pcurve_id = match edge_use.pcurve {
-                            Some(sequence) => {
-                                let Some((geometry, range)) =
-                                    pcurve_geometry(ir, sequence, &support.geometry, factor)
-                                else {
-                                    valid = false;
-                                    break;
-                                };
-                                let id = PcurveId(format!(
-                                    "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
-                                ));
-                                candidate.model.pcurves.push(Pcurve {
-                                    id: id.clone(),
-                                    geometry,
-                                    wrapper_reversed: None,
-                                    native_tail_flags: None,
-                                    parameter_range: Some(range),
-                                    fit_tolerance: None,
-                                });
-                                Some(id)
-                            }
-                            None => None,
+                        let Some(projected) = project_pcurve_uses(
+                            &mut candidate,
+                            ir,
+                            pcurves,
+                            &support.geometry,
+                            factor,
+                            &format!("iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"),
+                        ) else {
+                            valid = false;
+                            break;
                         };
-                        let coedge_id = coedge_ids[use_index].clone();
+                        let coedge_position = edge_use_indices
+                            .iter()
+                            .position(|index| *index == use_index)
+                            .expect("edge use has coedge position");
+                        let coedge_id = coedge_ids[coedge_position].clone();
                         radial
                             .entry((shell_sequence, edge_key.0, edge_key.1))
                             .or_default()
                             .push(coedge_id.clone());
                         candidate.model.coedges.push(Coedge {
-                            id: coedge_id,
+                            id: coedge_id.clone(),
                             owner_loop: loop_id.clone(),
                             edge: edge_id,
-                            next: coedge_ids[(use_index + 1) % coedge_ids.len()].clone(),
+                            next: coedge_ids[(coedge_position + 1) % coedge_ids.len()].clone(),
                             previous: coedge_ids
-                                [(use_index + coedge_ids.len() - 1) % coedge_ids.len()]
+                                [(coedge_position + coedge_ids.len() - 1) % coedge_ids.len()]
                             .clone(),
-                            radial_next: coedge_ids[use_index].clone(),
-                            sense: edge_use.sense,
-                            pcurves: pcurve_id
-                                .into_iter()
-                                .map(|pcurve| PcurveUse {
-                                    pcurve,
-                                    isoparametric: None,
-                                })
-                                .collect(),
+                            radial_next: coedge_id.clone(),
+                            sense: *sense,
+                            pcurves: projected,
                         });
                     }
                     if !valid {
@@ -726,7 +844,7 @@ pub(super) fn project(
                         id: loop_id.clone(),
                         face: face_id.clone(),
                         coedges: coedge_ids,
-                        vertex_uses: Vec::new(),
+                        vertex_uses: loop_vertex_uses,
                     });
                     face_loops.push(loop_id);
                     consumed.insert(loop_sequence);

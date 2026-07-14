@@ -154,8 +154,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
             continue;
         };
         let (Some([t0, _]), Some([_, t1])) = (
-            pcurve_parameter_extremes(first),
-            pcurve_parameter_extremes(last),
+            pcurve_parameter_extremes(&first.geometry),
+            pcurve_parameter_extremes(&last.geometry),
         ) else {
             continue;
         };
@@ -192,11 +192,8 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
 /// The parameter extremes over which a pcurve is checked: the stored parameter
 /// range when present, otherwise the NURBS knot extremes. A line pcurve
 /// without a stored range has no intrinsic extent and is skipped.
-fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
-    if let Some(range) = pcurve.parameter_range {
-        return Some(range);
-    }
-    match &pcurve.geometry {
+fn pcurve_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
         PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
         PcurveGeometry::Line { .. } => None,
     }

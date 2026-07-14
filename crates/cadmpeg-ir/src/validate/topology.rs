@@ -2377,6 +2377,12 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .flat_map(|edge| [edge.start.0.as_str(), edge.end.0.as_str()])
         .collect::<HashSet<_>>();
+    let loop_vertices = ir
+        .model
+        .loops
+        .iter()
+        .flat_map(|loop_| loop_.vertex_uses.iter().map(|use_| use_.vertex.0.as_str()))
+        .collect::<HashSet<_>>();
     let mut wire_owners = HashMap::<&str, usize>::new();
     let mut free_owners = HashMap::<&str, usize>::new();
 
@@ -2418,6 +2424,7 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
     }
     for vertex in &ir.model.vertices {
         if !edge_vertices.contains(vertex.id.0.as_str())
+            && !loop_vertices.contains(vertex.id.0.as_str())
             && free_owners.get(vertex.id.0.as_str()).copied().unwrap_or(0) != 1
         {
             wire_error(
