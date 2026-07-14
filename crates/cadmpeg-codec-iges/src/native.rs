@@ -627,6 +627,20 @@ enum NativePropertyValue {
         fraction_flag: Option<i64>,
         precision: Option<i64>,
     },
+    DimensionDisplayData {
+        dimension_type: Option<i64>,
+        label_position: Option<i64>,
+        character_set: Option<i64>,
+        label: Option<Vec<u8>>,
+        decimal_symbol: Option<i64>,
+        witness_line_angle: Option<f64>,
+        text_alignment: Option<i64>,
+        text_level: Option<i64>,
+        text_placement: Option<i64>,
+        arrow_orientation: Option<i64>,
+        initial_value: Option<f64>,
+        supplemental_notes: Vec<NativeSupplementalNote>,
+    },
     BasicDimension {
         corners: Vec<[Option<f64>; 2]>,
     },
@@ -656,6 +670,13 @@ struct NativeTextScoreRange {
     text_index: Option<i64>,
     first_character: Option<i64>,
     last_character: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeSupplementalNote {
+    position: Option<i64>,
+    first_text: Option<i64>,
+    last_text: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -2410,9 +2431,7 @@ pub(crate) fn store(
         .collect::<Vec<_>>();
     let properties = directory
         .iter()
-        .filter(|entry| {
-            entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=29 | 31..=36)
-        })
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
         .filter_map(|entry| {
             let record = by_directory.get(&entry.sequence).copied()?;
             let bounded_count = |index| {
@@ -2621,6 +2640,38 @@ pub(crate) fn store(
                     fraction_flag: record.integer(8),
                     precision: record.integer(9),
                 },
+                30 => {
+                    let note_count = bounded_count(13);
+                    NativePropertyValue::DimensionDisplayData {
+                        dimension_type: record.integer(2),
+                        label_position: record.integer(3),
+                        character_set: match record.tokens.get(4).map(|token| &token.value) {
+                            None | Some(TokenValue::Omitted) => Some(1),
+                            _ => record.integer(4),
+                        },
+                        label: record.string(5).map(<[u8]>::to_vec),
+                        decimal_symbol: record.integer(6),
+                        witness_line_angle: match record.tokens.get(7).map(|token| &token.value) {
+                            None | Some(TokenValue::Omitted) => Some(std::f64::consts::FRAC_PI_2),
+                            _ => record.number(7),
+                        },
+                        text_alignment: record.integer(8),
+                        text_level: record.integer(9),
+                        text_placement: record.integer(10),
+                        arrow_orientation: record.integer(11),
+                        initial_value: record.number(12),
+                        supplemental_notes: (0..note_count)
+                            .map(|offset| {
+                                let start = 14 + offset * 3;
+                                NativeSupplementalNote {
+                                    position: record.integer(start),
+                                    first_text: record.integer(start + 1),
+                                    last_text: record.integer(start + 2),
+                                }
+                            })
+                            .collect(),
+                    }
+                }
                 31 => NativePropertyValue::BasicDimension {
                     corners: (0..4)
                         .map(|offset| {

@@ -2569,7 +2569,7 @@ fn dimension_property_forms_file() -> Vec<u8> {
             form: 0,
             label: "DIMENS".into(),
             status: "00000100",
-            parameters: "216,1,3,3,0,0,0,3,7,9,11;".into(),
+            parameters: "216,1,3,3,0,0,0,4,7,9,11,13;".into(),
         },
         OwnedTestEntity {
             entity_type: 406,
@@ -2591,6 +2591,13 @@ fn dimension_property_forms_file() -> Vec<u8> {
             label: "BASICDIM".into(),
             status: "00010000",
             parameters: "406,8,0,0,2,0,2,1,0,1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 30,
+            label: "DIMDISP".into(),
+            status: "00010000",
+            parameters: "406,15,2,1,1,3HDIA,0,1.5707963267948966,1,0,0,0,12.5,1,1,1,1;".into(),
         },
     ])
 }
@@ -4681,7 +4688,7 @@ fn decode_types_dimension_drawing_text_and_closure_properties() {
             .unwrap()
     };
     for (bytes, expected_forms) in [
-        (dimension_property_forms_file(), vec![28, 29, 31]),
+        (dimension_property_forms_file(), vec![28, 29, 30, 31]),
         (drawing_metadata_property_forms_file(), vec![32, 33]),
         (text_score_property_forms_file(), vec![34, 35]),
         (closure_property_file(), vec![36]),

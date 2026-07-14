@@ -493,6 +493,33 @@ fn property_fields_valid(
                     .integer(9)
                     .is_some_and(|value| value >= 0 && (fraction == Some(0) || value > 0))
         }
+        30 => record
+            .integer(13)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count <= end)
+            .is_some_and(|count| {
+                exact(i64::try_from(12 + count * 3).unwrap_or_default())
+                    && integer_range(2, 0..=2)
+                    && integer_range(3, 0..=4)
+                    && integer_or(record, 4, 1)
+                        .is_some_and(|value| matches!(value, 1 | 1001..=1003))
+                    && record.string(5).is_some()
+                    && integer_range(6, 0..=1)
+                    && number_or(record, 7, std::f64::consts::FRAC_PI_2).is_some_and(f64::is_finite)
+                    && integer_range(8, 0..=1)
+                    && integer_range(9, 0..=2)
+                    && integer_range(10, 0..=2)
+                    && integer_range(11, 0..=1)
+                    && record.number(12).is_some_and(f64::is_finite)
+                    && (0..count).all(|offset| {
+                        let start = 14 + offset * 3;
+                        integer_range(start, 1..=4)
+                            && record
+                                .integer(start + 1)
+                                .zip(record.integer(start + 2))
+                                .is_some_and(|(first, last)| first > 0 && last >= first)
+                    })
+            }),
         31 => exact(8) && (2..=9).all(|index| record.number(index).is_some_and(f64::is_finite)),
         32 => {
             exact(3)
@@ -921,9 +948,10 @@ pub(super) fn project(
         })
         .collect::<BTreeMap<_, _>>();
 
-    for entry in directory.iter().filter(|entry| {
-        entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=29 | 31..=36)
-    }) {
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 2 | 3 | 5..=15 | 18..=36))
+    {
         handled.insert(entry.sequence);
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
@@ -983,6 +1011,63 @@ pub(super) fn project(
                             .get(owner)
                             .is_some_and(|owner| dimension_entity_type(owner.entity_type))
                     })
+            }
+            30 => {
+                let note_count = record
+                    .integer(13)
+                    .and_then(|value| usize::try_from(value).ok())
+                    .unwrap_or_default();
+                let owners_valid = !owners.is_empty()
+                    && (note_count == 0 || owners.len() == 1)
+                    && owners.iter().all(|owner| {
+                        let Some(owner_entry) = entries.get(owner) else {
+                            return false;
+                        };
+                        if !dimension_entity_type(owner_entry.entity_type) {
+                            return false;
+                        }
+                        let Some(owner_record) = records.get(owner) else {
+                            return false;
+                        };
+                        let groups = trailing_pointer_groups(owner_record, &entries);
+                        let has_basic = groups.as_ref().is_some_and(|groups| {
+                            groups.properties.iter().any(|sequence| {
+                                entries.get(sequence).is_some_and(|property| {
+                                    property.entity_type == 406 && property.form == 31
+                                })
+                            })
+                        });
+                        let display_count = groups.as_ref().map_or(0, |groups| {
+                            groups
+                                .properties
+                                .iter()
+                                .filter(|sequence| {
+                                    entries.get(sequence).is_some_and(|property| {
+                                        property.entity_type == 406 && property.form == 30
+                                    })
+                                })
+                                .count()
+                        });
+                        let basic_consistent = (record.integer(2) == Some(2)) == has_basic;
+                        let notes_valid = note_count == 0
+                            || existing_pointer(owner_record, 1, &entries).is_some_and(|note| {
+                                entries
+                                    .get(&note)
+                                    .is_some_and(|note| note.entity_type == 212)
+                                    && records
+                                        .get(&note)
+                                        .and_then(|note| note.integer(1))
+                                        .is_some_and(|text_count| {
+                                            (0..note_count).all(|offset| {
+                                                record
+                                                    .integer(16 + offset * 3)
+                                                    .is_some_and(|last| last <= text_count)
+                                            })
+                                        })
+                            });
+                        display_count == 1 && basic_consistent && notes_valid
+                    });
+                owners_valid
             }
             31 => {
                 entry.status.subordinate == 1
