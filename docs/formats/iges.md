@@ -88,6 +88,8 @@ Type 322 defines an attribute table with a name, attribute-list classification, 
 
 Type 422 instances reference a Type 322 Form 0 definition through the negated Directory Structure field. Form 0 stores one tuple containing the definition's declared values in attribute order. Form 1 stores a positive row count followed by that many complete tuples in row-major order. Every value conforms to its definition's data type and count. The `attribute_table_instances` arena retains definition identity, form, declared row count, row order, and typed native values.
 
+Type 406 Form 7 attaches one nonempty reference-designator string to component entities through their second trailing pointer group. It is not attached to Type 420 because that entity carries its primary reference designator directly. Type 406 Form 15 attaches one nonempty user-defined name to entities without an intrinsic parameter-data name. A subordinate property has at least one owner pointer; an independent property applies by its Directory level. The `product_properties` arena retains property identity, kind, raw string bytes, and every explicit owner identity.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

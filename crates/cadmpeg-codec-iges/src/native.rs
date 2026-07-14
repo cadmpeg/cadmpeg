@@ -358,6 +358,16 @@ struct NativeAttributeTableInstance {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
+struct NativeProductProperty {
+    id: String,
+    source_entity: String,
+    form: i64,
+    property_kind: String,
+    value: Option<Vec<u8>>,
+    owners: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub(crate) struct NativeEntity {
     id: String,
     directory_sequence: u32,
@@ -400,6 +410,29 @@ fn token(token: &Token) -> NativeToken {
             TokenValue::String(value) => NativeTokenValue::String(value.clone()),
         },
     }
+}
+
+fn record_has_property_pointer(record: &ParameterRecord, property_sequence: u32) -> bool {
+    (1..record.tokens.len()).any(|association_count_index| {
+        let Some(association_count) = record
+            .integer(association_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return false;
+        };
+        let property_count_index = association_count_index + 1 + association_count;
+        let Some(property_count) = record
+            .integer(property_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return false;
+        };
+        property_count_index + 1 + property_count == record.tokens.len()
+            && (0..property_count).any(|index| {
+                record.integer(property_count_index + 1 + index)
+                    == Some(i64::from(property_sequence))
+            })
+    })
 }
 
 pub(crate) fn store(
@@ -1313,6 +1346,34 @@ pub(crate) fn store(
             }
         })
         .collect::<Vec<_>>();
+    let product_properties = directory
+        .iter()
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 7 | 15))
+        .map(|entry| {
+            let record = by_directory.get(&entry.sequence).copied();
+            NativeProductProperty {
+                id: format!("iges:product:property#D{}", entry.sequence),
+                source_entity: format!("iges:entity:directory#{}", entry.sequence),
+                form: entry.form,
+                property_kind: if entry.form == 7 {
+                    "reference_designator".into()
+                } else {
+                    "name".into()
+                },
+                value: record
+                    .and_then(|record| record.string(2))
+                    .map(<[u8]>::to_vec),
+                owners: by_directory
+                    .iter()
+                    .filter(|(sequence, owner_record)| {
+                        **sequence != entry.sequence
+                            && record_has_property_pointer(owner_record, entry.sequence)
+                    })
+                    .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
+                    .collect(),
+            }
+        })
+        .collect::<Vec<_>>();
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -1341,5 +1402,6 @@ pub(crate) fn store(
     namespace.set_arena("groups", &groups)?;
     namespace.set_arena("attribute_table_definitions", &attribute_table_definitions)?;
     namespace.set_arena("attribute_table_instances", &attribute_table_instances)?;
+    namespace.set_arena("product_properties", &product_properties)?;
     Ok(())
 }

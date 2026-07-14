@@ -176,6 +176,52 @@ fn has_association_back_pointer(
     })
 }
 
+fn has_property_pointer(
+    record: &ParameterRecord,
+    property_sequence: u32,
+    entries: &BTreeMap<u32, &DirectoryEntry>,
+) -> bool {
+    (1..record.tokens.len()).any(|association_count_index| {
+        let Some(association_count) = record
+            .integer(association_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            return false;
+        };
+        let association_start = association_count_index + 1;
+        let property_count_index = association_start + association_count;
+        let Some(property_count) = record
+            .integer(property_count_index)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            return false;
+        };
+        if property_count_index + 1 + property_count != record.tokens.len() {
+            return false;
+        }
+        let associations_valid = (0..association_count).all(|index| {
+            record
+                .integer(association_start + index)
+                .and_then(|value| u32::try_from(value).ok())
+                .and_then(|sequence| entries.get(&sequence))
+                .is_some_and(|target| matches!(target.entity_type, 212 | 312 | 402))
+        });
+        associations_valid
+            && (0..property_count).all(|index| {
+                record
+                    .integer(property_count_index + 1 + index)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .and_then(|sequence| entries.get(&sequence))
+                    .is_some_and(|target| matches!(target.entity_type, 322 | 406 | 422))
+            })
+            && (0..property_count).any(|index| {
+                record.integer(property_count_index + 1 + index)
+                    == Some(i64::from(property_sequence))
+            })
+    })
+}
+
 fn attribute_value_valid(
     record: &ParameterRecord,
     index: usize,
@@ -260,6 +306,42 @@ pub(super) fn project(
     let mut losses = Vec::new();
     let mut assemblies = BTreeMap::new();
     let mut attribute_shapes = BTreeMap::<u32, Vec<(i64, usize)>>::new();
+
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 406 && matches!(entry.form, 7 | 15))
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let owners = records
+            .iter()
+            .filter_map(|(sequence, owner_record)| {
+                (*sequence != entry.sequence
+                    && has_property_pointer(owner_record, entry.sequence, &entries))
+                .then_some(*sequence)
+            })
+            .collect::<Vec<_>>();
+        let fields_valid =
+            record.integer(1) == Some(1) && record.string(2).is_some_and(|value| !value.is_empty());
+        let attachment_valid = entry.status.subordinate == 0 || !owners.is_empty();
+        let reference_designator_valid = entry.form != 7
+            || owners.iter().all(|owner| {
+                entries
+                    .get(owner)
+                    .is_some_and(|owner| owner.entity_type != 420)
+            });
+        if fields_valid && attachment_valid && reference_designator_valid {
+            decoded.insert(entry.sequence);
+        } else {
+            losses.push(entity_loss(
+                entry,
+                "product property value, attachment, or owner kind is invalid",
+            ));
+        }
+    }
 
     for entry in directory
         .iter()

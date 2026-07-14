@@ -2381,6 +2381,32 @@ fn attribute_instance_forms_file() -> Vec<u8> {
     owned_test_file_with_structures(&entities, &[(3, -1), (5, -1)])
 }
 
+fn product_property_file() -> Vec<u8> {
+    owned_test_file(&[
+        OwnedTestEntity {
+            entity_type: 116,
+            form: 0,
+            label: "COMP".into(),
+            status: "00000000",
+            parameters: "116,0,0,0,0,0,2,3,5;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 7,
+            label: "REFDES".into(),
+            status: "00010000",
+            parameters: "406,1,2HR1;".into(),
+        },
+        OwnedTestEntity {
+            entity_type: 406,
+            form: 15,
+            label: "NAME".into(),
+            status: "00010000",
+            parameters: "406,1,7HBRACKET;".into(),
+        },
+    ])
+}
+
 fn nested_subfigure_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -3634,6 +3660,31 @@ fn decode_types_attribute_table_tuple_and_row_major_instances() {
     assert_eq!(instances[1].fields["rows"].as_array().unwrap().len(), 2);
     assert_eq!(instances[1].fields["rows"][1][0]["kind"], "integer");
     assert_eq!(instances[1].fields["rows"][1][1]["kind"], "string");
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+}
+
+#[test]
+fn decode_links_product_names_and_reference_designators_to_owners() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(product_property_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let properties = &result.ir.native.namespace("iges").unwrap().arenas["product_properties"];
+    assert_eq!(properties.len(), 2);
+    assert_eq!(
+        properties[0].fields["property_kind"],
+        "reference_designator"
+    );
+    assert_eq!(properties[0].fields["owners"][0], "iges:entity:directory#1");
+    assert_eq!(properties[1].fields["property_kind"], "name");
+    assert_eq!(properties[1].fields["value"][0], 66);
+    assert_eq!(properties[1].fields["owners"][0], "iges:entity:directory#1");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
