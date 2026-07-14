@@ -448,9 +448,10 @@ sweep and `protrevolve` identifies a rotational section sweep. The recipe name
 precedes the `<Kind> id <N>` operation name and applies to that feature state.
 DEPDB stores the same join in
 `f7 <record-ref> <feature-id> <schema-class> f6 <parent-id> <display-name> 00 f6 00 <recipe> 00`.
-The feature identifier assigns the recipe to the localized operation name with
-the same `ID <N>` suffix; the record reference, feature identifier, schema
-class, and parent identifier are compact integers.
+The feature identifier owns the operation even when no localized `ID <N>` name
+is present. When such a name is present, the shared feature identifier decorates
+the recipe operation with that display name. The record reference, feature
+identifier, schema class, and parent identifier are compact integers.
 
 A `feat_defs_<id>` record-name identifier in `FeatDefs` or `DEPDB_DATA` belongs
 to the feature-definition record namespace. A unique canonical named `feat_id` inside the bounded record is the

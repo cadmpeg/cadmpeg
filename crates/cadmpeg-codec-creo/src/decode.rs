@@ -6397,23 +6397,40 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         );
         retain_native_feature_parameters(&mut source_properties, &definition, &parameters);
         let dependencies = feature_dependencies(scan, &ir, operation.feature_id);
+        let operation_section = scan
+            .sections
+            .iter()
+            .find(|section| {
+                operation.offset >= section.offset
+                    && operation.offset < section.offset.saturating_add(section.length)
+            })
+            .map_or("MdlStatus", |section| section.name.as_str());
         annotate(
             &mut annotations,
             &id,
-            "MdlStatus",
+            operation_section,
             operation.offset as u64,
-            "feature_operation_name",
+            if operation.display_name_stored {
+                "feature_operation_name"
+            } else {
+                "feature_recipe"
+            },
             Exactness::ByteExact,
         );
         ir.model.features.push(Feature {
             id,
             ordinal: (operation_ordinal_base + operation_index) as u64,
-            name: Some(format!("{} id {}", operation.kind, operation.feature_id)),
+            name: operation
+                .display_name_stored
+                .then(|| format!("{} id {}", operation.kind, operation.feature_id)),
             suppressed: false,
             parent: None,
             dependencies,
             source_properties,
-            source_tag: None,
+            source_tag: operation.recipe.map(|recipe| match recipe {
+                crate::feature::FeatureRecipeKind::Extrude => "protextrude".to_string(),
+                crate::feature::FeatureRecipeKind::Revolve => "protrevolve".to_string(),
+            }),
             source_text: None,
             source_content: Vec::new(),
             outputs,

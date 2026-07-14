@@ -27,6 +27,8 @@ pub struct FeatureOperation {
     pub feature_id: u32,
     /// Stored operation-family name.
     pub kind: String,
+    /// Whether `kind` came from a stored `<Kind> id <N>` display name.
+    pub display_name_stored: bool,
     /// Optional one-byte state prefix immediately preceding the family name.
     pub status_prefix: Option<u8>,
     /// Procedural recipe name stored in the same current-state record.
@@ -44,6 +46,7 @@ struct FeatureRecipeBinding {
     kind: FeatureRecipeKind,
     root_schema_class: u32,
     parent_feature_id: u32,
+    offset: usize,
 }
 
 fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
@@ -92,6 +95,7 @@ fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
                     kind: *kind,
                     root_schema_class: schema_class,
                     parent_feature_id,
+                    offset: marker,
                 },
             );
         }
@@ -168,11 +172,34 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         result.push(FeatureOperation {
             feature_id,
             kind: String::from_utf8_lossy(family).into_owned(),
+            display_name_stored: true,
             status_prefix,
             recipe,
             root_schema_class: bound_recipe.map(|binding| binding.root_schema_class),
             parent_feature_id: bound_recipe.map(|binding| binding.parent_feature_id),
             offset,
+        });
+    }
+    for (feature_id, binding) in &bound_recipes {
+        if result
+            .iter()
+            .any(|operation| operation.feature_id == *feature_id)
+        {
+            continue;
+        }
+        result.push(FeatureOperation {
+            feature_id: *feature_id,
+            kind: match binding.kind {
+                FeatureRecipeKind::Extrude => "Extrude",
+                FeatureRecipeKind::Revolve => "Revolve",
+            }
+            .to_string(),
+            display_name_stored: false,
+            status_prefix: None,
+            recipe: Some(binding.kind),
+            root_schema_class: Some(binding.root_schema_class),
+            parent_feature_id: Some(binding.parent_feature_id),
+            offset: binding.offset,
         });
     }
     result.sort_by_key(|operation| operation.offset);
@@ -4365,6 +4392,21 @@ mod tests {
         assert_eq!(operations[1].recipe, Some(FeatureRecipeKind::Extrude));
         assert_eq!(operations[1].root_schema_class, Some(917));
         assert_eq!(operations[1].parent_feature_id, Some(8051));
+    }
+
+    #[test]
+    fn promotes_depdb_recipe_without_operation_display_name() {
+        let payload = b"\xe3\
+            \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0";
+
+        let operations = operations(payload);
+        assert_eq!(operations.len(), 1);
+        assert_eq!(operations[0].feature_id, 8053);
+        assert_eq!(operations[0].kind, "Extrude");
+        assert_eq!(operations[0].recipe, Some(FeatureRecipeKind::Extrude));
+        assert_eq!(operations[0].root_schema_class, Some(917));
+        assert_eq!(operations[0].parent_feature_id, Some(8051));
+        assert_eq!(operations[0].offset, 1);
     }
 
     #[test]
