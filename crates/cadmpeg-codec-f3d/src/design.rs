@@ -6851,6 +6851,7 @@ fn parse_edge_operand(
         changed_candidate_faces: Vec::new(),
         preceding_boundary_edge_slots: Vec::new(),
         changed_boundary_edge_slots: Vec::new(),
+        recipe_reference_contexts: Vec::new(),
         recipe_candidate_edge_slots: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,

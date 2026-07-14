@@ -1079,6 +1079,9 @@ pub struct DesignEdgeOperand {
     /// Preceding boundary-edge slots deleted or updated by the owning feature.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub changed_boundary_edge_slots: Vec<i64>,
+    /// Ordered historical topology context for each prefix reference.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recipe_reference_contexts: Vec<DesignEdgeRecipeReferenceContext>,
     /// Changed boundary-edge slots satisfying the recipe side clauses' face-loop
     /// edge counts when each side carries at most one entry.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1087,6 +1090,20 @@ pub struct DesignEdgeOperand {
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
     pub next_byte_offset: u64,
+}
+
+/// Historical edge-boundary context for one ordered edge-recipe prefix reference.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeRecipeReferenceContext {
+    /// Zero-based position in the edge recipe's prefix reference sequence.
+    pub reference_ordinal: u32,
+    /// Referenced faces present in the immediately preceding ASM topology.
+    pub preceding_faces: Vec<FaceId>,
+    /// Stable edge slots shared by the referenced-face boundaries and the
+    /// primary candidate-face boundaries.
+    pub shared_edge_slots: Vec<i64>,
+    /// Shared edge slots deleted or updated by the owning feature transition.
+    pub changed_shared_edge_slots: Vec<i64>,
 }
 
 /// Standard delimiter structure following an edge recipe's common prologue.

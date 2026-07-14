@@ -675,6 +675,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.changed_candidate_faces.clear();
         operand.preceding_boundary_edge_slots.clear();
         operand.changed_boundary_edge_slots.clear();
+        operand.recipe_reference_contexts.clear();
         operand.recipe_candidate_edge_slots.clear();
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
@@ -724,6 +725,35 @@ pub(crate) fn bind_edge_operand_history_candidates(
             .iter()
             .copied()
             .filter(|edge| changed_edges.contains(edge))
+            .collect();
+        operand.recipe_reference_contexts = operand
+            .recipe_references
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, reference)| {
+                let reference_ordinal = u32::try_from(ordinal).ok()?;
+                let preceding_faces = faces_in_topology(&reference.candidate_faces, topology);
+                let reference_edges = face_boundary_edges(&preceding_faces, topology)
+                    .into_iter()
+                    .collect::<HashSet<_>>();
+                let shared_edge_slots = operand
+                    .preceding_boundary_edge_slots
+                    .iter()
+                    .copied()
+                    .filter(|edge| reference_edges.contains(edge))
+                    .collect::<Vec<_>>();
+                let changed_shared_edge_slots = shared_edge_slots
+                    .iter()
+                    .copied()
+                    .filter(|edge| changed_edges.contains(edge))
+                    .collect();
+                Some(crate::records::DesignEdgeRecipeReferenceContext {
+                    reference_ordinal,
+                    preceding_faces,
+                    shared_edge_slots,
+                    changed_shared_edge_slots,
+                })
+            })
             .collect();
         operand.recipe_candidate_edge_slots = recipe_boundary_count_candidates(operand, topology);
     }
