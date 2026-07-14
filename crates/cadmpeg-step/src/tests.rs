@@ -799,6 +799,41 @@ fn decode_builds_a_valid_ap203_sheet_brep() {
 }
 
 #[test]
+fn writer_round_trips_rational_nurbs_pcurves() {
+    let bytes = include_bytes!("../tests/fixtures/ap214_sheet.p21");
+    let mut ir = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode sheet")
+        .ir;
+    ir.model.pcurves[0].geometry = cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 1.0],
+        control_points: vec![
+            cadmpeg_ir::math::Point2::new(0.0, 0.0),
+            cadmpeg_ir::math::Point2::new(1.0, 0.0),
+        ],
+        weights: Some(vec![1.0, 2.0]),
+        periodic: false,
+    };
+
+    let mut output = Vec::new();
+    write_step(&ir, &mut output, &StepWriteOptions::default()).expect("write NURBS pcurve");
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .expect("decode NURBS pcurve");
+    assert!(matches!(
+        &decoded.ir.model.pcurves[0].geometry,
+        cadmpeg_ir::geometry::PcurveGeometry::Nurbs {
+            degree: 1,
+            control_points,
+            weights: Some(weights),
+            periodic: false,
+            ..
+        } if control_points.len() == 2 && weights == &[1.0, 2.0]
+    ));
+}
+
+#[test]
 fn decode_builds_a_sheet_from_a_geometric_surface_set() {
     use cadmpeg_ir::topology::BodyKind;
 

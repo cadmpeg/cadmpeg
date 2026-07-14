@@ -44,8 +44,42 @@ pub fn pcurve(e: &mut Emitter, geometry: &PcurveGeometry) -> Ref {
             let vector = e.emit("VECTOR", &format!("'',{direction},{}", real(magnitude)));
             e.emit("LINE", &format!("'',{point},{vector}"))
         }
-        PcurveGeometry::Nurbs { .. } => {
-            unreachable!("NURBS pcurves are filtered before emission")
+        PcurveGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic,
+        } => {
+            let points = control_points
+                .iter()
+                .map(|point| point2(e, *point))
+                .collect::<Vec<_>>();
+            let (knots, multiplicities) = compress_knots(knots);
+            let base = format!(
+                "{degree},{},.UNSPECIFIED.,{},.U.",
+                refs(&points),
+                closed_flag(*periodic)
+            );
+            let with_knots = format!(
+                "{},{},.UNSPECIFIED.",
+                int_list(&multiplicities),
+                real_list(&knots)
+            );
+            if let Some(weights) = weights {
+                e.emit_raw(
+                    "B_SPLINE_CURVE_WITH_KNOTS",
+                    &format!(
+                        "( BOUNDED_CURVE() B_SPLINE_CURVE({base}) B_SPLINE_CURVE_WITH_KNOTS({with_knots}) CURVE() GEOMETRIC_REPRESENTATION_ITEM() RATIONAL_B_SPLINE_CURVE({}) REPRESENTATION_ITEM('') )",
+                        real_list(weights)
+                    ),
+                )
+            } else {
+                e.emit(
+                    "B_SPLINE_CURVE_WITH_KNOTS",
+                    &format!("'',{base},{with_knots}"),
+                )
+            }
         }
     }
 }

@@ -61,8 +61,7 @@ use cadmpeg_ir::codec::{
     Encoder, ReadSeek,
 };
 use cadmpeg_ir::geometry::{
-    Curve, CurveGeometry, Pcurve, PcurveGeometry, ProceduralSurfaceDefinition, Surface,
-    SurfaceGeometry,
+    Curve, CurveGeometry, Pcurve, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
 };
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::topology::{BodyKind, Coedge, Edge, Point, Sense, Vertex};
@@ -1066,9 +1065,6 @@ impl<'a> Builder<'a> {
 
     fn emit_pcurve(&mut self, pcurve_id: &str, surface_id: &str) -> Option<Ref> {
         let pcurve = self.pcurves.get(pcurve_id).copied()?;
-        if !matches!(pcurve.geometry, PcurveGeometry::Line { .. }) {
-            return None;
-        }
         let surface = self.emit_surface(surface_id)?;
         let curve = geometry::pcurve(&mut self.emitter, &pcurve.geometry);
         let context = if let Some(context) = self.pcurve_context {
@@ -1244,8 +1240,7 @@ impl<'a> Builder<'a> {
             .filter_map(|coedge| coedge.pcurve.as_ref())
             .filter(|id| {
                 self.pcurves.get(id.as_str()).is_none_or(|pcurve| {
-                    !matches!(pcurve.geometry, PcurveGeometry::Line { .. })
-                        || pcurve.wrapper_reversed.is_some()
+                    pcurve.wrapper_reversed.is_some()
                         || pcurve.native_tail_flags.is_some()
                         || pcurve.parameter_range.is_some()
                         || pcurve.fit_tolerance.is_some()

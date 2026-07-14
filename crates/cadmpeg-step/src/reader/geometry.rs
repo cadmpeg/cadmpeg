@@ -175,7 +175,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
             }
         }
     }
-    let pcurve_geometries = exchange
+    let mut pcurve_geometries = exchange
         .records
         .iter()
         .filter_map(|(&id, record)| {
@@ -194,8 +194,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         })
         .collect::<BTreeMap<_, _>>();
     for (&id, record) in &exchange.records {
+        if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_some() {
+            if let Some(geometry) = nurbs_pcurve(record, &points2) {
+                pcurve_geometries.insert(id, geometry);
+            }
+        }
+    }
+    for (&id, record) in &exchange.records {
         let geometry = match record.simple_name() {
             Some("LINE") if pcurve_geometries.contains_key(&id) => continue,
+            Some("B_SPLINE_CURVE_WITH_KNOTS") if pcurve_geometries.contains_key(&id) => continue,
             Some("LINE") => record
                 .parameter(1)
                 .and_then(Value::reference)
@@ -265,6 +273,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
     for (&id, record) in &exchange.records {
         if record.partial("B_SPLINE_CURVE_WITH_KNOTS").is_none()
             || record.simple_name() == Some("B_SPLINE_CURVE_WITH_KNOTS")
+            || pcurve_geometries.contains_key(&id)
         {
             continue;
         }
@@ -1242,6 +1251,46 @@ fn nurbs_curve(record: &RawRecord, points: &BTreeMap<u64, Point3>) -> Option<Nur
         None
     };
     Some(NurbsCurve {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic,
+    })
+}
+
+fn nurbs_pcurve(record: &RawRecord, points: &BTreeMap<u64, Point2>) -> Option<PcurveGeometry> {
+    let complex = record.partials.len() > 1;
+    let base = if complex {
+        record.partial("B_SPLINE_CURVE")?
+    } else {
+        record.partial("B_SPLINE_CURVE_WITH_KNOTS")?
+    };
+    let offset = usize::from(!complex);
+    let degree = u32::try_from(base.parameters.get(offset)?.integer()?).ok()?;
+    let control_points = references(base.parameters.get(offset + 1)?)?
+        .into_iter()
+        .map(|id| points.get(&id).copied())
+        .collect::<Option<Vec<_>>>()?;
+    let periodic = logical_value(base.parameters.get(offset + 3)?)?.unwrap_or(false);
+    let knot_leaf = record.partial("B_SPLINE_CURVE_WITH_KNOTS")?;
+    let tail = knot_leaf.parameters.len().checked_sub(3)?;
+    let knots = expand_knots(
+        knot_leaf.parameters.get(tail)?,
+        knot_leaf.parameters.get(tail + 1)?,
+    )?;
+    if knots.len() != control_points.len() + degree as usize + 1 {
+        return None;
+    }
+    let weights = if let Some(leaf) = record.partial("RATIONAL_B_SPLINE_CURVE") {
+        let values = numbers(leaf.parameters.first()?)?;
+        (values.len() == control_points.len())
+            .then_some(values)
+            .map(Some)?
+    } else {
+        None
+    };
+    Some(PcurveGeometry::Nurbs {
         degree,
         knots,
         control_points,
