@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 139);
+    assert_eq!(namespace.version, 140);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6452,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 139);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 140);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7813,6 +7813,25 @@ fn decode_emits_charted_surface_intersection_construction() {
     assert!(matches!(
         support_uv[0].framing,
         crate::native::ParasolidSupportUvFraming::Direct
+    ));
+    let charts = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ParasolidChartRecord>("parasolid_chart_records")
+        .unwrap();
+    assert_eq!(charts.len(), 1);
+    assert_eq!(charts[0].count, 2);
+    assert_eq!(charts[0].base_parameter, 0.0);
+    assert_eq!(charts[0].base_scale, 1.0);
+    assert_eq!(charts[0].chart_count, 2);
+    assert_eq!(charts[0].chordal_error, 0.000_01);
+    assert_eq!(charts[0].angular_error, 0.001);
+    assert_eq!(charts[0].points, [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0]]);
+    assert!(matches!(
+        charts[0].point_layout,
+        crate::native::ParasolidChartPointLayout::Xyz3
     ));
 
     let procedural = result

@@ -11,7 +11,59 @@ use crate::topology::{self, CompositeCurve};
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
 const INLINE_TERM_TAIL: &[u8] = b"\x00\x00\x00\x01\x01\x63\x43\x5a";
 const INLINE_UV_TAIL: &[u8] = b"\x00\x00\x00\x02\x01\x66\x01";
-type SupportUv = [Option<Vec<[f64; 2]>>; 2];
+/// Two ordered optional support-surface parameter lanes.
+pub type SupportUv = [Option<Vec<[f64; 2]>>; 2];
+
+/// Serialized framing of one `CHART_s` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartFraming {
+    /// Direct `0x0028` tag.
+    Direct,
+    /// `0x0028ff` escaped tag.
+    Escaped,
+}
+
+/// Serialized Hvec layout of one `CHART_s` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChartPointLayout {
+    /// Three model-space coordinates per point.
+    Xyz3,
+    /// Eleven scalars containing point, two UV lanes, tangent, and parameter.
+    Ext11,
+}
+
+/// One complete physical `CHART_s` source record.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ChartSourceRecord {
+    /// Cross-reference index of the chart.
+    pub xmt: u32,
+    /// Serialized leading point count.
+    pub count: u32,
+    /// Base chart parameter.
+    pub base_parameter: f64,
+    /// Chord-to-parameter scale.
+    pub base_scale: f64,
+    /// Redundant serialized chart count.
+    pub chart_count: u32,
+    /// Chordal error in Parasolid metres.
+    pub chordal_error: f64,
+    /// Angular error in radians.
+    pub angular_error: f64,
+    /// Two serialized missing-parameter sentinels.
+    pub parameter_errors: [f64; 2],
+    /// Model-space chart points in millimetres.
+    pub points: Vec<Point3>,
+    /// Native ext11 parameters, when present.
+    pub native_parameters: Option<Vec<f64>>,
+    /// Two ordered ext11 support-UV lanes.
+    pub ext_support_uv: SupportUv,
+    /// Hvec point layout.
+    pub point_layout: ChartPointLayout,
+    /// Serialized record framing.
+    pub framing: ChartFraming,
+    /// Type-tag offset in the inflated stream.
+    pub pos: usize,
+}
 
 /// A complete type-59 second-support bridge record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -367,6 +419,51 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
 
 fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
     let mut out = BTreeMap::new();
+    for source in chart_source_records(stream) {
+        let mut chord_parameters = Vec::with_capacity(source.points.len());
+        chord_parameters.push(source.base_parameter);
+        for pair in source.points.windows(2) {
+            let chord_m = distance(pair[0], pair[1]) / 1000.0;
+            chord_parameters.push(
+                chord_parameters
+                    .last()
+                    .copied()
+                    .expect("invariant: base parameter inserted")
+                    + chord_m * source.base_scale,
+            );
+        }
+        let candidate = Chart {
+            points: source.points,
+            parameters: source.native_parameters.clone().unwrap_or(chord_parameters),
+            fit_tolerance: source.chordal_error * 1000.0,
+            ext_support_uv: source.ext_support_uv,
+        };
+        match out.entry(source.xmt) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(candidate);
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry)
+                if source.native_parameters.is_some()
+                    && entry.get().points.len() == candidate.points.len()
+                    && entry.get().points.iter().zip(&candidate.points).all(
+                        |(first, second)| {
+                            distance(*first, *second)
+                                <= entry.get().fit_tolerance.max(candidate.fit_tolerance)
+                        },
+                    ) =>
+            {
+                entry.get_mut().parameters = candidate.parameters;
+                entry.get_mut().ext_support_uv = candidate.ext_support_uv;
+            }
+            std::collections::btree_map::Entry::Occupied(_) => {}
+        }
+    }
+    out
+}
+
+/// Decode every complete physical direct or escaped `CHART_s` source record.
+pub fn chart_source_records(stream: &[u8]) -> Vec<ChartSourceRecord> {
+    let mut out = Vec::new();
     for tag in find_tags(stream, [0, 40]) {
         for escape in [0usize, 1] {
             if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
@@ -395,6 +492,9 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
             let Some(chordal_error) = be::f64_at(stream, preamble + 20) else {
                 continue;
             };
+            let Some(angular_error) = be::f64_at(stream, preamble + 28) else {
+                continue;
+            };
             let errors = [
                 be::f64_at(stream, preamble + 36),
                 be::f64_at(stream, preamble + 44),
@@ -405,6 +505,7 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
                 || base_scale == 0.0
                 || !chordal_error.is_finite()
                 || chordal_error <= 0.0
+                || !angular_error.is_finite()
                 || errors != [Some(MISSING_PARAMETER), Some(MISSING_PARAMETER)]
             {
                 continue;
@@ -413,44 +514,34 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
             let Some(chart_points) = chart_points(stream, block, count) else {
                 continue;
             };
-            let mut chord_parameters = Vec::with_capacity(chart_points.points.len());
-            chord_parameters.push(base_parameter);
-            for pair in chart_points.points.windows(2) {
-                let chord_m = distance(pair[0], pair[1]) / 1000.0;
-                chord_parameters.push(
-                    chord_parameters
-                        .last()
-                        .copied()
-                        .expect("invariant: base parameter inserted")
-                        + chord_m * base_scale,
-                );
-            }
-            let native_parameters = chart_points.native_parameters;
-            let candidate = Chart {
-                points: chart_points.points,
-                parameters: native_parameters.clone().unwrap_or(chord_parameters),
-                fit_tolerance: chordal_error * 1000.0,
-                ext_support_uv: chart_points.ext_support_uv,
+            let point_layout = if chart_points.native_parameters.is_some() {
+                ChartPointLayout::Ext11
+            } else {
+                ChartPointLayout::Xyz3
             };
-            match out.entry(xmt) {
-                std::collections::btree_map::Entry::Vacant(entry) => {
-                    entry.insert(candidate);
-                }
-                std::collections::btree_map::Entry::Occupied(mut entry)
-                    if native_parameters.is_some()
-                        && entry.get().points.len() == candidate.points.len()
-                        && entry.get().points.iter().zip(&candidate.points).all(
-                            |(first, second)| {
-                                distance(*first, *second)
-                                    <= entry.get().fit_tolerance.max(candidate.fit_tolerance)
-                            },
-                        ) =>
-                {
-                    entry.get_mut().parameters = candidate.parameters;
-                    entry.get_mut().ext_support_uv = candidate.ext_support_uv;
-                }
-                std::collections::btree_map::Entry::Occupied(_) => {}
-            }
+            out.push(ChartSourceRecord {
+                xmt,
+                count: count as u32,
+                base_parameter,
+                base_scale,
+                chart_count,
+                chordal_error,
+                angular_error,
+                parameter_errors: [
+                    errors[0].expect("validated parameter error"),
+                    errors[1].expect("validated parameter error"),
+                ],
+                points: chart_points.points,
+                native_parameters: chart_points.native_parameters,
+                ext_support_uv: chart_points.ext_support_uv,
+                point_layout,
+                framing: if escape == 0 {
+                    ChartFraming::Direct
+                } else {
+                    ChartFraming::Escaped
+                },
+                pos: tag,
+            });
             break;
         }
     }

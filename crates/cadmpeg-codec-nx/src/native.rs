@@ -318,6 +318,110 @@ pub fn parasolid_support_uv_records(streams: &[Stream]) -> Vec<ParasolidSupportU
     records
 }
 
+/// Hvec point layout of a Parasolid chart record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidChartPointLayout {
+    /// Three model-space coordinates per point.
+    Xyz3,
+    /// Eleven scalars containing point, UV lanes, tangent, and parameter.
+    Ext11,
+}
+
+/// Serialized framing of a Parasolid chart record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParasolidChartFraming {
+    /// Direct `0x0028` tag.
+    Direct,
+    /// `0x0028ff` escaped tag.
+    Escaped,
+}
+
+/// Complete typed source record for one physical Parasolid `CHART_s` record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParasolidChartRecord {
+    /// Globally unique physical-record identity.
+    pub id: String,
+    /// Zero-based source stream ordinal.
+    pub stream_ordinal: u32,
+    /// Cross-reference index of the chart.
+    pub xmt: u32,
+    /// Serialized leading point count.
+    pub count: u32,
+    /// Base chart parameter.
+    pub base_parameter: f64,
+    /// Chord-to-parameter scale.
+    pub base_scale: f64,
+    /// Redundant serialized chart count.
+    pub chart_count: u32,
+    /// Chordal error in Parasolid metres.
+    pub chordal_error: f64,
+    /// Angular error in radians.
+    pub angular_error: f64,
+    /// Two serialized missing-parameter sentinels.
+    pub parameter_errors: [f64; 2],
+    /// Model-space chart points in millimetres.
+    pub points: Vec<[f64; 3]>,
+    /// Native ext11 parameters, when present.
+    pub native_parameters: Option<Vec<f64>>,
+    /// Two ordered ext11 support-UV lanes.
+    pub ext_support_uv: [Option<Vec<[f64; 2]>>; 2],
+    /// Hvec point layout.
+    pub point_layout: ParasolidChartPointLayout,
+    /// Serialized record framing.
+    pub framing: ParasolidChartFraming,
+    /// Type-tag offset in the inflated stream.
+    pub inflated_offset: u64,
+}
+
+/// Decode every complete physical Parasolid chart source record.
+pub fn parasolid_chart_records(streams: &[Stream]) -> Vec<ParasolidChartRecord> {
+    let mut records = Vec::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            continue;
+        }
+        for chart in crate::intersection::chart_source_records(&stream.inflated) {
+            let point_layout = match chart.point_layout {
+                crate::intersection::ChartPointLayout::Xyz3 => ParasolidChartPointLayout::Xyz3,
+                crate::intersection::ChartPointLayout::Ext11 => ParasolidChartPointLayout::Ext11,
+            };
+            let framing = match chart.framing {
+                crate::intersection::ChartFraming::Direct => ParasolidChartFraming::Direct,
+                crate::intersection::ChartFraming::Escaped => ParasolidChartFraming::Escaped,
+            };
+            records.push(ParasolidChartRecord {
+                id: format!(
+                    "nx:s{stream_ordinal}:chart-record#{}-{}",
+                    chart.xmt, chart.pos
+                ),
+                stream_ordinal: stream_ordinal as u32,
+                xmt: chart.xmt,
+                count: chart.count,
+                base_parameter: chart.base_parameter,
+                base_scale: chart.base_scale,
+                chart_count: chart.chart_count,
+                chordal_error: chart.chordal_error,
+                angular_error: chart.angular_error,
+                parameter_errors: chart.parameter_errors,
+                points: chart
+                    .points
+                    .into_iter()
+                    .map(|point| [point.x, point.y, point.z])
+                    .collect(),
+                native_parameters: chart.native_parameters,
+                ext_support_uv: chart.ext_support_uv,
+                point_layout,
+                framing,
+                inflated_offset: chart.pos as u64,
+            });
+        }
+    }
+    records.sort_by(|left, right| left.id.cmp(&right.id));
+    records
+}
+
 /// Complete typed source record for one Parasolid surface-intersection curve.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ParasolidIntersectionRecord {
