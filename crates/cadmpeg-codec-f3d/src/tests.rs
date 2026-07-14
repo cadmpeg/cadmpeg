@@ -4096,9 +4096,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     source_less.set_native_unknowns("f3d", &[]).unwrap();
     source_less.model.bodies[0].visible = Some(false);
     source_less.model.vertices[0].tolerance = Some(0.025);
+    source_less.model.edges[0].tolerance = Some(0.035);
     let tangent_edge = source_less.model.edges[0].id.clone();
     let visible_body = source_less.model.bodies[0].id.clone();
     let tolerant_vertex = source_less.model.vertices[0].id.clone();
+    let tolerant_edge = source_less.model.edges[0].id.clone();
     let owner_coedge = source_less.model.coedges[0].id.clone();
     let tolerant_coedge = source_less.model.coedges[1].id.clone();
     {
@@ -4117,6 +4119,12 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             vertex: tolerant_vertex,
             record_index: 0,
             trailing_floats: [1.25, -2.5],
+        }];
+        native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
+            id: "f3d:asm:tolerant-edge-tail#generated".into(),
+            edge: tolerant_edge,
+            record_index: 0,
+            trailing_integers: [22800, 0],
         }];
         native.tolerant_coedge_parameters = vec![crate::records::TolerantCoedgeParameters {
             id: "f3d:asm:tolerant-coedge-parameters#generated".into(),
@@ -4175,6 +4183,13 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             .count(),
         1
     );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| record.head == "tedge")
+            .count(),
+        1
+    );
     drop(archive);
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -4227,6 +4242,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir.model.edges.len(), 3);
     assert_eq!(round_trip.ir.model.vertices.len(), 3);
     assert_eq!(round_trip.ir.model.vertices[0].tolerance, Some(0.025));
+    assert_eq!(round_trip.ir.model.edges[0].tolerance, Some(0.035));
+    assert_eq!(
+        f3d_native(&round_trip.ir).tolerant_edge_tails[0].trailing_integers,
+        [22800, 0]
+    );
     assert_eq!(
         f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_floats,
         [1.25, -2.5]
@@ -4265,6 +4285,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     let mut edited = round_trip.ir;
     edited.model.bodies[0].visible = Some(true);
     edited.model.vertices[0].tolerance = Some(0.05);
+    edited.model.edges[0].tolerance = Some(0.06);
     {
         let mut native = f3d_native_mut(&mut edited);
         native.body_native_keys[0].asm_body_key = Some(84);
@@ -4283,6 +4304,11 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         Some(crate::records::FaceContainment::Out)
     );
     assert_eq!(retained.ir.model.vertices[0].tolerance, Some(0.05));
+    assert_eq!(retained.ir.model.edges[0].tolerance, Some(0.06));
+    assert_eq!(
+        f3d_native(&retained.ir).tolerant_edge_tails[0].trailing_integers,
+        [22800, 0]
+    );
     assert_eq!(retained.ir.model.bodies[0].visible, Some(true));
     assert_eq!(
         f3d_native(&retained.ir).body_native_keys[0].asm_body_key,
@@ -4404,10 +4430,14 @@ fn generated_source_less_preserves_supported_topology_tolerances_or_refuses_loss
 
     source_less.model.faces[0].tolerance = None;
     source_less.model.edges[0].tolerance = Some(0.03);
-    let error = F3dCodec
-        .encode(&source_less, &mut Vec::new())
-        .expect_err("edge tolerance must not disappear");
-    assert!(error.to_string().contains("tedge tolerance grammar"));
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("supported tolerant edge encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("supported tolerant edge round trip");
+    assert_eq!(round_trip.ir.model.edges[0].tolerance, Some(0.03));
 
     source_less.model.edges[0].tolerance = None;
     source_less.model.vertices[0].tolerance = Some(0.04);

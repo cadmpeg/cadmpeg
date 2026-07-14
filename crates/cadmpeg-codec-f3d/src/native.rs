@@ -16,8 +16,8 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
     PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
-    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
-    TransformHints, VertexOwnership, WireTopology,
+    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantEdgeTail,
+    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -73,6 +73,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "sketch_points",
     "sketch_relations",
     "tolerant_coedge_parameters",
+    "tolerant_edge_tails",
     "tolerant_vertex_tails",
     "transform_hints",
     "vertex_ownerships",
@@ -127,6 +128,7 @@ macro_rules! f3d_arenas {
             mesh_surface_sentinels: MeshSurfaceSentinel;
             vertex_ownerships: VertexOwnership;
             tolerant_coedge_parameters: TolerantCoedgeParameters;
+            tolerant_edge_tails: TolerantEdgeTail;
             tolerant_vertex_tails: TolerantVertexTail;
             transform_hints: TransformHints;
             wire_topologies: WireTopology;
@@ -318,6 +320,9 @@ pub struct F3dNative {
     /// Native parameter intervals stored on tolerant ASM coedges.
     #[serde(default)]
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
+    /// Native trailing LONG slots stored on tolerant ASM edges.
+    #[serde(default)]
+    pub tolerant_edge_tails: Vec<TolerantEdgeTail>,
     /// Native trailing f32 slots stored on tolerant ASM vertices.
     #[serde(default)]
     pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
@@ -381,6 +386,7 @@ impl Default for F3dNative {
             mesh_surface_sentinels: Vec::new(),
             vertex_ownerships: Vec::new(),
             tolerant_coedge_parameters: Vec::new(),
+            tolerant_edge_tails: Vec::new(),
             tolerant_vertex_tails: Vec::new(),
             transform_hints: Vec::new(),
             wire_topologies: Vec::new(),

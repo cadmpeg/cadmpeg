@@ -164,6 +164,19 @@ pub struct TolerantVertexTail {
     pub trailing_floats: [f32; 2],
 }
 
+/// Native integer tail retained from one tolerant ASM edge record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct TolerantEdgeTail {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Solved B-rep edge carrying the tolerant record.
+    pub edge: EdgeId,
+    /// Source SAB record index.
+    pub record_index: u32,
+    /// Two trailing LONG slots following the model-space tolerance.
+    pub trailing_integers: [i64; 2],
+}
+
 /// Parameter interval stored by one tolerant ASM coedge.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TolerantCoedgeParameters {

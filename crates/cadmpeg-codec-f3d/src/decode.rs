@@ -1185,6 +1185,7 @@ fn build_geometry_ir(
         vertex_ownerships: brep.vertex_ownerships,
         face_sidedness: brep.face_sidedness,
         tolerant_vertex_tails: brep.tolerant_vertex_tails,
+        tolerant_edge_tails: brep.tolerant_edge_tails,
         tolerant_coedge_parameters: brep.tolerant_coedge_parameters,
         mesh_surface_sentinels: brep.mesh_surface_sentinels,
         wire_topologies: brep.wire_topologies,

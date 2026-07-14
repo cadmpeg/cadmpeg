@@ -754,6 +754,20 @@ mod tests {
         bytes
     }
 
+    fn generated_tedge_record(ref_width: usize) -> Vec<u8> {
+        let mut bytes = generated_edge_record(ref_width);
+        bytes.splice(1..6, [5, b't', b'e', b'd', b'g', b'e']);
+        bytes.pop();
+        bytes.push(0x06);
+        bytes.extend_from_slice(&0.0035f64.to_le_bytes());
+        for value in [22800i64, 0] {
+            bytes.push(0x04);
+            bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
+        }
+        bytes.push(0x11);
+        bytes
+    }
+
     fn generated_tcoedge_record(ref_width: usize) -> Vec<u8> {
         let mut bytes = vec![0x0d, 7];
         bytes.extend_from_slice(b"tcoedge");
@@ -1083,6 +1097,17 @@ mod tests {
                     .expect("edge range offset");
                 assert_eq!(edge[offset], 0x06);
             }
+
+            let edge = generated_tedge_record(ref_width);
+            let records = frame(&edge, 0, edge.len(), ref_width).expect("generated tolerant edge");
+            assert!(
+                matches!(records[0].chunk(11), Some(super::Token::Double(value)) if *value == 0.0035)
+            );
+            assert!(matches!(
+                records[0].chunk(12),
+                Some(super::Token::Long(22800))
+            ));
+            assert!(matches!(records[0].chunk(13), Some(super::Token::Long(0))));
 
             let coedge = generated_tcoedge_record(ref_width);
             let records =

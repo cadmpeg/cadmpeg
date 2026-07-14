@@ -295,7 +295,7 @@ The `{+35,+44,+53}` triad is next/prev/partner. `+72` is the owner loop. **Partn
 
 A closed cylindrical band may use two loops, each containing one self-linked coedge on a full-circle edge. The two circular edges retain their distinct repeated vertices and full-period parameter phases. No seam edge or seam coedge occurs in this native topology.
 
-`tedge` inherits this complete base field sequence. Its additional tolerance carrier does not change the base endpoint, curve, sense, or continuity fields.
+`tedge` carries this complete base field sequence followed by `chunk[11]` as an f64 model-space tolerance, `chunk[12]` as an opaque LONG producer-version value, and `chunk[13]` as LONG zero. The tolerance converts from native centimetres to document millimetres. The two LONG fields are retained verbatim. The extension does not change the base endpoint, curve, sense, or continuity fields.
 
 **Vertex (63 B):** `chunk[3]` @+36 = owning_edge, `chunk[4]` @+45 = index_flag (`0` = this is the owning edge's START vertex, `1` = its END vertex), `chunk[5]` @+54 = point ref. Each vertex has its own point entity; no deduplication.
 

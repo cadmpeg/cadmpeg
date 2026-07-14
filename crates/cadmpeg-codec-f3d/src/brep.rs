@@ -20,8 +20,8 @@ use std::collections::{HashMap, HashSet};
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceContainment,
     FaceSidedness, MeshSurfaceSentinel, PersistentDesignLink, PersistentSubentityTag,
-    SketchCurveLink, TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantVertexTail,
-    TransformHints, VertexOwnership, WireSide, WireTopology,
+    SketchCurveLink, TolerantCoedgeExtension, TolerantCoedgeParameters, TolerantEdgeTail,
+    TolerantVertexTail, TransformHints, VertexOwnership, WireSide, WireTopology,
 };
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::eval;
@@ -109,6 +109,8 @@ pub struct Brep {
     pub face_sidedness: Vec<FaceSidedness>,
     /// Native parameter intervals stored on tolerant coedges.
     pub tolerant_coedge_parameters: Vec<TolerantCoedgeParameters>,
+    /// Native trailing fields stored on tolerant edges.
+    pub tolerant_edge_tails: Vec<TolerantEdgeTail>,
     /// Native trailing fields stored on tolerant vertices.
     pub tolerant_vertex_tails: Vec<TolerantVertexTail>,
     /// Zero-payload mesh-surface records used by emitted faces.
@@ -4000,14 +4002,33 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 Sense::Reversed => reversed_curve_id(c),
                 Sense::Forward => CurveId(id(c)),
             });
+            let tolerant_tail = match (r.head.as_str(), r.chunk(11), r.chunk(12), r.chunk(13)) {
+                (
+                    "tedge",
+                    Some(Token::Double(tolerance)),
+                    Some(Token::Long(first)),
+                    Some(Token::Long(second @ 0)),
+                ) if tolerance.is_finite() && *tolerance >= 0.0 => {
+                    Some((*tolerance, [*first, *second]))
+                }
+                _ => None,
+            };
             out.edges.push(Edge {
                 id: EdgeId(id(i)),
                 curve,
                 start: VertexId(id(start)),
                 end: VertexId(id(end)),
                 param_range,
-                tolerance: None,
+                tolerance: tolerant_tail.map(|(tolerance, _)| tolerance * LEN_TO_MM),
             });
+            if let Some((_, trailing_integers)) = tolerant_tail {
+                out.tolerant_edge_tails.push(TolerantEdgeTail {
+                    id: format!("f3d:asm:tolerant-edge-tail#{i}"),
+                    edge: EdgeId(id(i)),
+                    record_index: r.index as u32,
+                    trailing_integers,
+                });
+            }
             out.edge_ownerships.push(EdgeOwnership {
                 id: format!("f3d:asm:edge-ownership#{i}"),
                 edge: EdgeId(id(i)),
