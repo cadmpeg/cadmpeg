@@ -3950,6 +3950,7 @@ type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 
 struct MeshSelectionSearch<'a> {
     assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
+    possible_face_equations: Vec<Vec<[usize; 2]>>,
     face_work: Vec<Option<usize>>,
     edge_candidates: &'a [Vec<[usize; 2]>],
     edge_rows: &'a [EdgeRow],
@@ -3959,6 +3960,52 @@ struct MeshSelectionSearch<'a> {
     solution: Option<(StandardTopology, Vec<usize>)>,
     ambiguous: bool,
     exhausted: bool,
+}
+
+fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec<[usize; 2]>> {
+    fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
+        let port = |reversed: bool| {
+            use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
+                !reversed
+            } else {
+                reversed
+            }))
+        };
+        match use_.reversed {
+            Some(reversed) => [port(reversed), None],
+            None => [port(false), port(true)],
+        }
+    }
+
+    faces
+        .iter()
+        .map(|assignments| {
+            let mut equations = HashSet::new();
+            for assignment in assignments {
+                for boundary in &assignment.boundaries {
+                    if boundary.is_empty() {
+                        continue;
+                    }
+                    for index in 0..boundary.len() {
+                        let left = ports(boundary[index], true);
+                        let right = ports(boundary[(index + 1) % boundary.len()], false);
+                        for left in left.into_iter().flatten() {
+                            for right in right.into_iter().flatten() {
+                                equations.insert(if left <= right {
+                                    [left, right]
+                                } else {
+                                    [right, left]
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            let mut equations = equations.into_iter().collect::<Vec<_>>();
+            equations.sort_unstable();
+            equations
+        })
+        .collect()
 }
 
 fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
@@ -4007,20 +4054,6 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 
 impl MeshSelectionSearch<'_> {
     fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> Option<usize> {
-        fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> [Option<usize>; 2] {
-            let port = |reversed: bool| {
-                use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
-                    !reversed
-                } else {
-                    reversed
-                }))
-            };
-            match use_.reversed {
-                Some(reversed) => [port(reversed), None],
-                None => [port(false), port(true)],
-            }
-        }
-
         let node_count = quotient.union.len();
         let mut possible = UnionFind::new(node_count);
         for node in 0..node_count {
@@ -4034,21 +4067,8 @@ impl MeshSelectionSearch<'_> {
             if selected.is_some() {
                 continue;
             }
-            for assignment in &self.assignments[face] {
-                for boundary in &assignment.boundaries {
-                    if boundary.is_empty() {
-                        continue;
-                    }
-                    for index in 0..boundary.len() {
-                        let left = ports(boundary[index], true);
-                        let right = ports(boundary[(index + 1) % boundary.len()], false);
-                        for left in left.into_iter().flatten() {
-                            for right in right.into_iter().flatten() {
-                                possible.union(left, right);
-                            }
-                        }
-                    }
-                }
+            for [left, right] in &self.possible_face_equations[face] {
+                possible.union(*left, *right);
             }
         }
         let after = (0..node_count)
@@ -4711,6 +4731,7 @@ pub fn parse_standard_mesh_endpoint_candidates(
     }
     let mut search = MeshSelectionSearch {
         assignments: &assignments,
+        possible_face_equations: possible_face_equations(&assignments),
         face_work,
         edge_candidates,
         edge_rows: &edge_rows,
@@ -5312,11 +5333,12 @@ mod motif_tests {
     use super::{
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments,
         mesh_assignment_can_merge, mesh_edge_points_compatible, motif_port_points,
-        parse_trim_chain, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
-        reconstruct_incidence, reconstruct_incidence_candidates, standard_face_count,
-        unique_coordinate_bijection, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
-        FaceTopology, MeshBoundaryEdgeCandidate, MeshFaceBoundaryAssignment, MeshQuotient,
-        MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind,
+        parse_trim_chain, possible_face_equations, propagate_edge_port_points,
+        prune_edge_candidates_by_port_domains, reconstruct_incidence,
+        reconstruct_incidence_candidates, standard_face_count, unique_coordinate_bijection,
+        Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
+        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
+        TrimRecord, UnionFind,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -5822,6 +5844,7 @@ mod motif_tests {
         ];
         let mut search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1); 3],
             edge_candidates: &[],
             edge_rows: &[],
@@ -5864,6 +5887,7 @@ mod motif_tests {
         let edge_candidates = vec![Vec::new(); 3];
         let mut search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1); 3],
             edge_candidates: &edge_candidates,
             edge_rows: &[],
@@ -5905,6 +5929,7 @@ mod motif_tests {
         let edge_candidates = vec![Vec::new(); 3];
         let search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1); 3],
             edge_candidates: &edge_candidates,
             edge_rows: &[],
@@ -5971,6 +5996,7 @@ mod motif_tests {
         let edge_candidates = vec![Vec::new(); 2];
         let search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1); 2],
             edge_candidates: &edge_candidates,
             edge_rows: &[],
@@ -6011,6 +6037,7 @@ mod motif_tests {
         let edge_candidates = vec![Vec::new(); 2];
         let search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1)],
             edge_candidates: &edge_candidates,
             edge_rows: &[],
@@ -6056,6 +6083,7 @@ mod motif_tests {
         }];
         let mut search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1)],
             edge_candidates: &edge_candidates,
             edge_rows: &edge_rows,
@@ -6107,6 +6135,7 @@ mod motif_tests {
         ];
         let mut search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1)],
             edge_candidates: &edge_candidates,
             edge_rows: &edge_rows,
@@ -6158,6 +6187,7 @@ mod motif_tests {
         let candidates = vec![vec![], vec![], vec![]];
         let search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(1)],
             edge_candidates: &candidates,
             edge_rows: &[],
@@ -6200,6 +6230,7 @@ mod motif_tests {
         let candidates = vec![vec![], vec![], vec![]];
         let search = MeshSelectionSearch {
             assignments: &assignments,
+            possible_face_equations: possible_face_equations(&assignments),
             face_work: vec![Some(2)],
             edge_candidates: &candidates,
             edge_rows: &[],
