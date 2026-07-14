@@ -495,7 +495,7 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
     parameters
 }
 
-fn parse_native_parameter_literal(
+pub(crate) fn parse_native_parameter_literal(
     feature: &Feature,
     name: &str,
     expression: &str,
@@ -3906,6 +3906,28 @@ pub fn sync_neutral_features(
         });
     }
     let native = native.as_mut().expect("initialized above");
+    let original_parameters = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.clone(), feature.parameters.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut resolved_histories = native.feature_histories.clone();
+    crate::resolved_features::enrich_history_parameters(
+        &mut resolved_histories,
+        &native.feature_input_lanes,
+        true,
+    );
+    let resolved_parameter_names = resolved_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| {
+            (
+                feature.id.clone(),
+                feature.parameters.keys().cloned().collect::<HashSet<_>>(),
+            )
+        })
+        .collect::<HashMap<_, _>>();
     if native.feature_histories.is_empty() {
         native.feature_histories.push(FeatureHistory {
             id: "sldprt:generated:feature-history#0".into(),
@@ -4866,8 +4888,13 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                let positional_depth =
-                    parameters.contains_key("D1") && !parameters.contains_key("Depth");
+                let positional_depth = (parameters.contains_key("D1")
+                    || existing.as_deref().is_some_and(|record| {
+                        resolved_parameter_names
+                            .get(&record.id)
+                            .is_some_and(|names| names.contains("D1"))
+                    }))
+                    && !parameters.contains_key("Depth");
                 let mut properties = feature.source_properties.clone();
                 if matches!(extent, Extent::Unresolved) && existing.is_none() {
                     return Err(CodecError::NotImplemented(format!(
@@ -6939,6 +6966,26 @@ pub fn sync_neutral_features(
         }
     }
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
+    let changed_parameters = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .flat_map(|feature| {
+            let original = original_parameters.get(&feature.id);
+            feature
+                .parameters
+                .iter()
+                .filter_map(move |(name, expression)| {
+                    (original.and_then(|parameters| parameters.get(name)) != Some(expression))
+                        .then(|| (feature.id.clone(), name.clone()))
+                })
+        })
+        .collect::<std::collections::HashSet<_>>();
+    crate::resolved_features::sync_changed_feature_scalars(
+        &native.feature_histories,
+        &mut native.feature_input_lanes,
+        &changed_parameters,
+    )?;
     let projected_features = project_features(&native.feature_histories);
     let desired_sketches = features
         .iter()

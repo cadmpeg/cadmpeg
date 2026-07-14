@@ -1236,6 +1236,95 @@ pub(crate) fn enrich_history_parameters(
     }
 }
 
+pub(crate) fn sync_changed_feature_scalars(
+    histories: &[crate::records::FeatureHistory],
+    lanes: &mut [FeatureInputLane],
+    changed: &HashSet<(String, String)>,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    use cadmpeg_ir::features::ParameterValue;
+
+    for lane in lanes {
+        let names_by_id = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name.value.as_str()))
+            .collect::<HashMap<_, _>>();
+        let mut starts = histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|feature| {
+                feature_object_name(feature, lane).map(|name| (name.offset, feature))
+            })
+            .collect::<Vec<_>>();
+        starts.sort_by_key(|(offset, _)| *offset);
+        let mut updates = Vec::<(usize, f64)>::new();
+        for (index, &(start, feature)) in starts.iter().enumerate() {
+            let end = starts
+                .get(index + 1)
+                .map_or(u64::MAX, |(offset, _)| *offset);
+            for (name, expression) in &feature.parameters {
+                if !changed.contains(&(feature.id.clone(), name.clone())) {
+                    continue;
+                }
+                let candidates = lane
+                    .scalars
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, scalar)| scalar.offset > start && scalar.offset < end)
+                    .filter(|(_, scalar)| {
+                        names_by_id.get(scalar.name.as_str()) == Some(&name.as_str())
+                    })
+                    .collect::<Vec<_>>();
+                let driving = candidates
+                    .iter()
+                    .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Driving)
+                    .copied()
+                    .collect::<Vec<_>>();
+                let candidates = if driving.is_empty() {
+                    candidates
+                        .into_iter()
+                        .filter(|(_, scalar)| scalar.role == FeatureInputScalarRole::Native)
+                        .collect::<Vec<_>>()
+                } else {
+                    driving
+                };
+                let [(scalar_index, _)] = candidates.as_slice() else {
+                    continue;
+                };
+                let value =
+                    match crate::history::parse_native_parameter_literal(feature, name, expression)
+                    {
+                        Some(ParameterValue::Length(value)) => value.0 / 1000.0,
+                        Some(ParameterValue::Angle(value)) => value.0,
+                        Some(ParameterValue::Real(value)) => value,
+                        _ => continue,
+                    };
+                updates.push((*scalar_index, value));
+            }
+        }
+        for (scalar_index, value) in updates {
+            let scalar = &mut lane.scalars[scalar_index];
+            let offset = usize::try_from(scalar.offset).map_err(|_| {
+                cadmpeg_ir::codec::CodecError::Malformed(
+                    "SLDPRT scalar offset exceeds address space".into(),
+                )
+            })?;
+            let bytes = lane
+                .native_payload
+                .get_mut(offset..offset + 8)
+                .ok_or_else(|| {
+                    cadmpeg_ir::codec::CodecError::Malformed(format!(
+                        "SLDPRT scalar {} lies outside its payload",
+                        scalar.id
+                    ))
+                })?;
+            bytes.copy_from_slice(&value.to_le_bytes());
+            scalar.value = value;
+        }
+    }
+    Ok(())
+}
+
 /// Add exact fixed-reference-plane frames to a projection copy of history.
 pub(crate) fn enrich_history_reference_planes(
     histories: &mut [crate::records::FeatureHistory],
