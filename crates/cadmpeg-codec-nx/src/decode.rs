@@ -3941,11 +3941,12 @@ fn attach_native_object_model(
         &feature_parameter_uses,
         annotations,
     );
+    attach_block_dimension_parameter_consumers(ir, &feature_block_dimensions, annotations);
     ir.model
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(142);
+    namespace.version = namespace.version.max(143);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -5856,6 +5857,53 @@ pub(crate) fn attach_expression_parameters(
                 pmi: None,
                 native_ref: Some(expression.id.clone()),
             });
+        }
+    }
+}
+
+pub(crate) fn attach_block_dimension_parameter_consumers(
+    ir: &mut CadIr,
+    dimensions: &[crate::native::FeatureBlockDimensions],
+    annotations: &mut AnnotationBuilder,
+) {
+    let mut parameters = ir
+        .model
+        .parameters
+        .iter_mut()
+        .map(|parameter| (parameter.id.clone(), parameter))
+        .collect::<BTreeMap<_, _>>();
+    for dimension_set in dimensions {
+        let consumer = dimension_set
+            .operation_label
+            .replacen("operation-label", "feature", 1);
+        for (ordinal, expression) in dimension_set.expressions.iter().enumerate() {
+            let Some(parameter_id) = expression_parameter_id(expression) else {
+                continue;
+            };
+            let Some(parameter) = parameters.get_mut(&parameter_id) else {
+                continue;
+            };
+            parameter.properties.insert(
+                format!("block_dimension.{ordinal}"),
+                dimension_set.id.clone(),
+            );
+            if !parameter
+                .properties
+                .values()
+                .any(|value| value == &consumer)
+            {
+                let consumer_ordinal = (0..=parameter.properties.len())
+                    .find(|candidate| {
+                        !parameter
+                            .properties
+                            .contains_key(&format!("consumer.{candidate}"))
+                    })
+                    .expect("finite parameter properties have a free consumer ordinal");
+                parameter
+                    .properties
+                    .insert(format!("consumer.{consumer_ordinal}"), consumer.clone());
+            }
+            annotations.derived(&parameter.id.0, "properties");
         }
     }
 }

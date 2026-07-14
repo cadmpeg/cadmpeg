@@ -344,6 +344,56 @@ fn nx_block_source_content_includes_complete_ordered_dimension_run() {
     );
 }
 
+#[test]
+fn nx_block_dimension_parameters_name_the_block_as_consumer() {
+    let expression = |key: u32| crate::native::Expression {
+        id: format!("nx:test:expression#{key}"),
+        object_id: Some(key),
+        record: None,
+        declaration: None,
+        name: format!("p{key}"),
+        parameter_index: Some(key),
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: key.to_string(),
+        value: Some(f64::from(key)),
+        source_entry: "part".into(),
+        source_offset: u64::from(key),
+    };
+    let expressions = [expression(20), expression(21), expression(22)];
+    let dimensions = crate::native::FeatureBlockDimensions {
+        id: "dimensions".into(),
+        operation_label: "nx:feature-history:operation-label#1-4".into(),
+        construction: "construction".into(),
+        anchor_bindings: vec!["binding".into()],
+        declarations: ["d20".into(), "d21".into(), "d22".into()],
+        expressions: [
+            expressions[0].id.clone(),
+            expressions[1].id.clone(),
+            expressions[2].id.clone(),
+        ],
+        values: [20.0, 21.0, 22.0],
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+    crate::decode::attach_block_dimension_parameter_consumers(
+        &mut ir,
+        &[dimensions],
+        &mut annotations,
+    );
+    for (ordinal, parameter) in ir.model.parameters.iter().enumerate() {
+        assert_eq!(
+            parameter.properties[&format!("block_dimension.{ordinal}")],
+            "dimensions"
+        );
+        assert_eq!(
+            parameter.properties["consumer.0"],
+            "nx:feature-history:feature#1-4"
+        );
+    }
+}
+
 /// Write three big-endian doubles into `rec` starting at `at`.
 fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
@@ -544,7 +594,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 142);
+    assert_eq!(namespace.version, 143);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6459,7 +6509,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 142);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 143);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
