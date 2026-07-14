@@ -2112,7 +2112,7 @@ fn storage_property_parser_enumerates_external_catia_documents() {
     assert_eq!(references[0].target, "Support.CATPart");
     assert_eq!(references[1].target, "Assembly.CATProduct");
 
-    let scan = crate::container::scan_bytes(bytes);
+    let scan = crate::container::scan_bytes(bytes.clone());
     let summary = crate::container::summarize(&scan);
     assert_eq!(
         summary
@@ -2123,6 +2123,28 @@ fn storage_property_parser_enumerates_external_catia_documents() {
             .collect::<Vec<_>>(),
         ["Support.CATPart", "Assembly.CATProduct"]
     );
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.version, 18);
+    assert_eq!(native.external_references.len(), 2);
+    assert_eq!(native.external_references[0].target, "Support.CATPart");
+    assert_eq!(
+        native.external_references[0].segment,
+        native.finjpl_segments[0].id
+    );
+    assert_eq!(
+        native.external_references[1].segment,
+        native.finjpl_segments[1].id
+    );
+    for reference in &native.external_references {
+        let segment = native
+            .finjpl_segments
+            .iter()
+            .find(|segment| segment.id == reference.segment)
+            .expect("external-reference segment");
+        assert!(reference.byte_offset >= segment.byte_offset);
+        assert!(reference.byte_offset < segment.byte_offset + segment.byte_len);
+    }
 }
 
 #[test]

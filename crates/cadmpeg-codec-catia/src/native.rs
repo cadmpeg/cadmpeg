@@ -13,13 +13,14 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 17;
+pub const CATIA_NATIVE_VERSION: u32 = 18;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
     "design_objects",
+    "external_references",
     "finjpl_segments",
     "object_graph_records",
     "object_graphs",
@@ -47,6 +48,19 @@ pub struct CatiaFinjplSegment {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub data: Vec<u8>,
+}
+
+/// One external CATIA document selected by a storage-property record.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaExternalReference {
+    /// Globally unique reference identity.
+    pub id: String,
+    /// File offset of the length-prefixed target string.
+    pub byte_offset: u64,
+    /// Referenced CATIA document name or path.
+    pub target: String,
+    /// Containing project-flags FINJPL segment.
+    pub segment: String,
 }
 
 /// One exact JPEG preview from the outer summary-information segment.
@@ -354,6 +368,9 @@ pub struct CatiaNative {
     /// Design objects grouped by their serialized owner ordinal.
     #[serde(default)]
     pub design_objects: Vec<CatiaDesignObject>,
+    /// External CATIA document references in source order.
+    #[serde(default)]
+    pub external_references: Vec<CatiaExternalReference>,
     /// Complete bounded outer FINJPL segments.
     #[serde(default)]
     pub finjpl_segments: Vec<CatiaFinjplSegment>,
@@ -375,6 +392,7 @@ impl Default for CatiaNative {
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
             design_objects: Vec::new(),
+            external_references: Vec::new(),
             finjpl_segments: Vec::new(),
             object_graphs: Vec::new(),
             preview_images: Vec::new(),
@@ -460,12 +478,31 @@ impl CatiaNative {
                 name: segment.name,
                 data: bytes[segment.range].to_vec(),
             })
+            .collect::<Vec<_>>();
+        let external_references = container::external_references(bytes)
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, reference)| {
+                let offset = reference.offset as u64;
+                let segment = finjpl_segments.iter().find(|segment| {
+                    offset >= segment.byte_offset
+                        && offset < segment.byte_offset + segment.byte_len
+                        && segment.family == "project-flags"
+                })?;
+                Some(CatiaExternalReference {
+                    id: format!("catia:outer:external-reference#{index}"),
+                    byte_offset: offset,
+                    target: reference.target,
+                    segment: segment.id.clone(),
+                })
+            })
             .collect();
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
             design_objects,
+            external_references,
             finjpl_segments,
             object_graphs,
             preview_images,
@@ -509,6 +546,12 @@ impl CatiaNative {
             } else {
                 Vec::new()
             };
+        let external_references: Vec<CatiaExternalReference> =
+            if namespace.arenas.contains_key("external_references") {
+                namespace.arena_as("external_references")?
+            } else {
+                Vec::new()
+            };
         let preview_images: Vec<CatiaPreviewImage> =
             if namespace.arenas.contains_key("preview_images") {
                 namespace.arena_as("preview_images")?
@@ -521,6 +564,7 @@ impl CatiaNative {
             alias_rows,
             catalogs,
             design_objects,
+            external_references,
             finjpl_segments,
             object_graphs: graphs,
             preview_images,
@@ -564,6 +608,7 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
         namespace.set_arena("design_objects", &self.design_objects)?;
+        namespace.set_arena("external_references", &self.external_references)?;
         namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
         namespace.set_arena("alias_rows", &self.alias_rows)?;
         namespace.set_arena("catalog_entries", &entries)?;
@@ -590,6 +635,7 @@ impl CatiaNative {
             alias_rows,
             mut catalogs,
             design_objects,
+            external_references,
             finjpl_segments,
             mut object_graphs,
             preview_images,
@@ -607,6 +653,7 @@ impl CatiaNative {
         namespace.version = version;
         namespace.set_arena_owned("catalogs", catalogs)?;
         namespace.set_arena_owned("design_objects", design_objects)?;
+        namespace.set_arena_owned("external_references", external_references)?;
         namespace.set_arena_owned("catalog_entries", entries)?;
         namespace.set_arena_owned("object_graphs", object_graphs)?;
         namespace.set_arena_owned("object_graph_records", records)?;
