@@ -345,6 +345,8 @@ type-four incidence makes the referenced entities tangent at their selected
 endpoint loci.
 A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci coincide.
+A one-item type-one incidence makes the referenced entity horizontal. A
+one-item type-two incidence makes the referenced entity vertical.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;

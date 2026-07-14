@@ -2534,6 +2534,18 @@ fn section_skamp_constraints(
                         section_skamp_locus(definition.id, &segments.rows, second)?,
                     ],
                 },
+                (1, [item]) => SketchConstraintDefinition::Horizontal {
+                    entity: SketchEntityId(format!(
+                        "creo:featdefs:sketch_entity#{}:{}",
+                        definition.id, item.entity_id
+                    )),
+                },
+                (2, [item]) => SketchConstraintDefinition::Vertical {
+                    entity: SketchEntityId(format!(
+                        "creo:featdefs:sketch_entity#{}:{}",
+                        definition.id, item.entity_id
+                    )),
+                },
                 (4, [first, second]) => SketchConstraintDefinition::Tangent {
                     first: SketchEntityId(format!(
                         "creo:featdefs:sketch_entity#{}:{}",
@@ -3118,6 +3130,12 @@ fn transfer_resolved_sketches(
             constraints.push(constraint);
         }
         for (constraint, offset) in section_skamp_constraints(definition, &sketch_id) {
+            if constraints
+                .iter()
+                .any(|existing| existing.definition == constraint.definition)
+            {
+                continue;
+            }
             annotate(
                 annotations,
                 &constraint.id.0,
@@ -4647,6 +4665,85 @@ mod resolved_sketch_tests {
         segment.kind = crate::feature::FeatureSegmentKind::Arc;
         segment.vertical_horizontal = Some(0);
         assert_eq!(line_orientation_definition(&segment, entity), None);
+    }
+
+    #[test]
+    fn unary_solver_incidences_define_line_orientation() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [1, 2],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 12,
+            offset: 40,
+        };
+        let relations = crate::feature::FeatureRelationTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            skamps: vec![
+                crate::feature::FeatureSkamp {
+                    id: 3,
+                    kind: 1,
+                    flags: 0,
+                    status: 0,
+                    items: vec![crate::feature::FeatureSkampItem {
+                        entity_id: 12,
+                        sense: 0,
+                    }],
+                    offset: 50,
+                },
+                crate::feature::FeatureSkamp {
+                    id: 4,
+                    kind: 2,
+                    flags: 0,
+                    status: 0,
+                    items: vec![crate::feature::FeatureSkampItem {
+                        entity_id: 12,
+                        sense: 0,
+                    }],
+                    offset: 60,
+                },
+            ],
+            triples: Vec::new(),
+            offset: 45,
+        };
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: vec![segment],
+                offset: 30,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(relations),
+            saved_section: None,
+            offset: 0,
+        };
+        let constraints = section_skamp_constraints(&definition, &SketchId("sketch".into()));
+
+        assert!(matches!(
+            constraints[0].0.definition,
+            SketchConstraintDefinition::Horizontal { .. }
+        ));
+        assert!(matches!(
+            constraints[1].0.definition,
+            SketchConstraintDefinition::Vertical { .. }
+        ));
     }
 
     #[test]
