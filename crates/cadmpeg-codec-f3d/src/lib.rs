@@ -248,9 +248,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         entity.object_kind == Some(records::DesignObjectKind::Sketch)
                             && entity.entity_id == profile.entity_id
                     })
-                    && valid_design_guid(&profile.type_id)
-                    && profile.type_id_offset > profile.byte_offset
-                    && profile.entity_reference_offset > profile.type_id_offset
+                    && valid_design_guid(&profile.asset_id)
+                    && profile.asset_id_offset > profile.byte_offset
+                    && profile.entity_reference_offset > profile.asset_id_offset
                     && profile.paired_byte_offset > profile.entity_reference_offset
                     && profile.paired_class_tag.len() == 3
                     && profile
@@ -409,6 +409,38 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let native_stream = design_stream(&member.id);
         let group = groups_by_index.get(&(native_stream, member.group_record_index));
         let header = records_by_index.get(&(native_stream, member.record_index));
+        let selected_profile = group
+            .and_then(|group| scopes_by_index.get(&(native_stream, group.scope_record_index)))
+            .and_then(|scope| scope.extrude_profile.as_ref());
+        let selected_sketch =
+            selected_profile.and_then(|profile| u32::try_from(profile.entity_suffix).ok());
+        let point_targets = native.sketch_points.iter().filter_map(|point| {
+            (selected_sketch.is_some()
+                && design_stream(&point.id) == native_stream
+                && point.owner_reference == selected_sketch
+                && point.persistent_id == member.local_id)
+                .then_some(records::SketchRelationOperand::Point {
+                    record_index: point.record_index,
+                    persistent_id: point.persistent_id,
+                })
+        });
+        let curve_targets = native.sketch_curve_identities.iter().filter_map(|curve| {
+            (selected_sketch.is_some()
+                && design_stream(&curve.id) == native_stream
+                && curve.owner_reference == selected_sketch
+                && (curve.primary_id == member.local_id
+                    || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
+                .then_some(records::SketchRelationOperand::Curve {
+                    record_index: curve.record_index,
+                    primary_id: curve.primary_id,
+                    secondary_id: curve.secondary_id,
+                })
+        });
+        let targets = point_targets.chain(curve_targets).collect::<Vec<_>>();
+        let expected_target = match targets.as_slice() {
+            [target] => Some(target.clone()),
+            _ => None,
+        };
         let valid = member.class_tag.len() == 3
             && member.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.is_some_and(|group| {
@@ -420,11 +452,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && header.is_some_and(|header| {
                 header.byte_offset == member.byte_offset && header.class_tag == member.class_tag
             })
-            && member.opaque_value_offset == member.byte_offset.saturating_add(21)
-            && member.first_id_offset == member.byte_offset.saturating_add(33)
-            && member.second_id_offset > member.first_id_offset
-            && valid_design_guid(&member.first_id)
-            && valid_design_guid(&member.second_id)
+            && member.local_id_offset == member.byte_offset.saturating_add(21)
+            && member.asset_id_offset == member.byte_offset.saturating_add(33)
+            && member.context_id_offset > member.asset_id_offset
+            && valid_design_guid(&member.asset_id)
+            && valid_design_guid(&member.context_id)
+            && selected_profile.is_some_and(|profile| profile.asset_id == member.asset_id)
+            && member.resolved_geometry == expected_target
             && member.next_byte_offset == member.byte_offset.saturating_add(190)
             && member.next_record_index != 0
             && member_slots.insert((
@@ -467,7 +501,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     })
             })
         });
-        if !complete {
+        let context_id = members_by_slot
+            .get(&(native_stream, group.record_index, 0))
+            .map(|member| member.context_id.as_str());
+        let context_consistent = context_id.is_some_and(|context_id| {
+            (0..group.members.len()).all(|ordinal| {
+                u32::try_from(ordinal)
+                    .ok()
+                    .and_then(|ordinal| {
+                        members_by_slot.get(&(native_stream, group.record_index, ordinal))
+                    })
+                    .is_some_and(|member| member.context_id == context_id)
+            })
+        });
+        if !(complete && context_consistent) {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,

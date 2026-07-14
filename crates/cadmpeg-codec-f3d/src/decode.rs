@@ -105,6 +105,13 @@ pub fn decode(
                 &mut native.sketch_curve_identities,
                 &mut native.sketch_relations,
             )?;
+            crate::design::bind_extrude_selection_geometry(
+                &mut native.design_extrude_selection_members,
+                &native.design_extrude_selection_groups,
+                &native.design_parameter_scopes,
+                &native.sketch_points,
+                &native.sketch_curve_identities,
+            );
             native.design_dimension_locus_pairs = crate::design::decode_dimension_locus_pairs(
                 &scan,
                 &native.design_parameters,
@@ -266,6 +273,13 @@ pub fn decode(
         &mut native.sketch_curve_identities,
         &mut native.sketch_relations,
     )?;
+    crate::design::bind_extrude_selection_geometry(
+        &mut native.design_extrude_selection_members,
+        &native.design_extrude_selection_groups,
+        &native.design_parameter_scopes,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
+    );
     native.design_dimension_locus_pairs = crate::design::decode_dimension_locus_pairs(
         &scan,
         &native.design_parameters,

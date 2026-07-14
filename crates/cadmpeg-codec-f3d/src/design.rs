@@ -2751,6 +2751,67 @@ pub fn decode_extrude_selection_members(
     Ok(out)
 }
 
+/// Resolve selection-member local identities against persistent point and
+/// curve identities owned by the Extrude scope's selected Sketch.
+pub fn bind_extrude_selection_geometry(
+    members: &mut [DesignExtrudeSelectionMember],
+    groups: &[DesignExtrudeSelectionGroup],
+    scopes: &[DesignParameterScope],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+) {
+    let selected_sketches = groups
+        .iter()
+        .filter_map(|group| {
+            let stream = native_stream(&group.id)?;
+            let scope = scopes.iter().find(|scope| {
+                native_stream(&scope.id) == Some(stream)
+                    && scope.record_index == group.scope_record_index
+            })?;
+            Some((
+                (stream, group.record_index),
+                scope.extrude_profile.as_ref()?.entity_suffix,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    for member in members {
+        let Some(stream) = native_stream(&member.id) else {
+            continue;
+        };
+        let Some(entity_suffix) = selected_sketches.get(&(stream, member.group_record_index))
+        else {
+            continue;
+        };
+        let Ok(entity_suffix) = u32::try_from(*entity_suffix) else {
+            continue;
+        };
+        let point_operands = points.iter().filter_map(|point| {
+            (native_stream(&point.id) == Some(stream)
+                && point.owner_reference == Some(entity_suffix)
+                && point.persistent_id == member.local_id)
+                .then_some(SketchRelationOperand::Point {
+                    record_index: point.record_index,
+                    persistent_id: point.persistent_id,
+                })
+        });
+        let curve_operands = curves.iter().filter_map(|curve| {
+            (native_stream(&curve.id) == Some(stream)
+                && curve.owner_reference == Some(entity_suffix)
+                && (curve.primary_id == member.local_id
+                    || curve.secondary_id != 0 && curve.secondary_id == member.local_id))
+                .then_some(SketchRelationOperand::Curve {
+                    record_index: curve.record_index,
+                    primary_id: curve.primary_id,
+                    secondary_id: curve.secondary_id,
+                })
+        });
+        let matches = point_operands.chain(curve_operands).collect::<Vec<_>>();
+        if let [resolved] = matches.as_slice() {
+            member.resolved_geometry = Some(resolved.clone());
+        }
+    }
+}
+
 fn parse_extrude_selection_member(
     bytes: &[u8],
     group: &DesignExtrudeSelectionGroup,
@@ -2761,14 +2822,14 @@ fn parse_extrude_selection_member(
     if bytes.get(start + 11..start + 21)? != [0; 10] {
         return None;
     }
-    let opaque_value = read_u64(bytes, start + 21)?;
-    let (first_id, after_first_id) = lp_utf16(bytes, start + 29)?;
-    let (second_id, after_second_id) = lp_utf16(bytes, after_first_id)?;
-    if !is_guid(&first_id)
-        || !is_guid(&second_id)
-        || u32_at(bytes, after_second_id)? != 2
-        || bytes.get(after_second_id + 4..after_second_id + 9)? != [0; 5]
-        || after_second_id.checked_add(9)? != start.checked_add(190)?
+    let local_id = read_u64(bytes, start + 21)?;
+    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 29)?;
+    let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
+    if !is_guid(&asset_id)
+        || !is_guid(&context_id)
+        || u32_at(bytes, after_context_id)? != 2
+        || bytes.get(after_context_id + 4..after_context_id + 9)? != [0; 5]
+        || after_context_id.checked_add(9)? != start.checked_add(190)?
     {
         return None;
     }
@@ -2781,12 +2842,13 @@ fn parse_extrude_selection_member(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        opaque_value,
-        opaque_value_offset: u64::try_from(start + 21).ok()?,
-        first_id,
-        first_id_offset: u64::try_from(start + 33).ok()?,
-        second_id,
-        second_id_offset: u64::try_from(after_first_id + 4).ok()?,
+        local_id,
+        local_id_offset: u64::try_from(start + 21).ok()?,
+        asset_id,
+        asset_id_offset: u64::try_from(start + 33).ok()?,
+        context_id,
+        context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+        resolved_geometry: None,
         next_record_index: u32_at(bytes, after_next_tag)?,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })
@@ -2808,11 +2870,11 @@ fn parse_extrude_profile(
     {
         return None;
     }
-    let (type_id, after_type_id) = lp_utf16(bytes, start + 36)?;
-    if !is_guid(&type_id) {
+    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 36)?;
+    if !is_guid(&asset_id) {
         return None;
     }
-    let (entity_suffix_text, after_entity_suffix) = lp_utf16(bytes, after_type_id)?;
+    let (entity_suffix_text, after_entity_suffix) = lp_utf16(bytes, after_asset_id)?;
     let entity_suffix = entity_suffix_text.parse::<u64>().ok()?;
     let paired_at = next_indexed_record_offset(bytes, start + 11)?;
     let (paired_class_tag, after_paired_tag) = lp_ascii(bytes, paired_at)?;
@@ -2837,11 +2899,11 @@ fn parse_extrude_profile(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        type_id,
-        type_id_offset: u64::try_from(start + 40).ok()?,
+        asset_id,
+        asset_id_offset: u64::try_from(start + 40).ok()?,
         entity_id: entity.entity_id.clone(),
         entity_suffix,
-        entity_reference_offset: u64::try_from(after_type_id + 4).ok()?,
+        entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
         paired_class_tag,
         paired_byte_offset: u64::try_from(paired_at).ok()?,
     })
@@ -4782,13 +4844,14 @@ fn is_utf16_guid(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod relation_tests {
     use super::{
-        bind_dimension_loci, bind_sketch_graph, find_dimension_locus_pair, identity_matrix,
-        next_indexed_record_offset, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        bind_dimension_loci, bind_extrude_selection_geometry, bind_sketch_graph,
+        find_dimension_locus_pair, identity_matrix, next_indexed_record_offset,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_parameter_companion,
+        parse_parameter_owner, parse_parameter_scope, parse_sketch_placement_candidates,
+        parse_sketch_relation, project_extrude, project_parameter_design,
+        project_sketch_constraints, project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignDimensionLocusPair, DesignEntityHeader,
@@ -5243,7 +5306,7 @@ mod relation_tests {
         let paired_at = group_bytes.len();
         header(&mut group_bytes, *b"259", 100);
 
-        let group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
+        let mut group = parse_extrude_selection_group(&group_bytes, &scope, 0, &record)
             .expect("counted Extrude selection group");
         assert_eq!(group.members, [200, 201]);
         assert_eq!(group.opaque_index, 180);
@@ -5267,11 +5330,55 @@ mod relation_tests {
         member_bytes.extend_from_slice(&[0; 5]);
         header(&mut member_bytes, *b"290", 201);
 
-        let member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
+        let mut member = parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
             .expect("fixed Extrude selection member");
-        assert_eq!(member.opaque_value, 586);
+        assert_eq!(member.local_id, 586);
         assert_eq!(member.next_byte_offset, 190);
         assert_eq!(member.next_record_index, 201);
+
+        group.id = "f3d:Design/BulkStream.dat:selection-group#100".into();
+        member.id = "f3d:Design/BulkStream.dat:selection-member#200".into();
+        let mut owning_scope = scope;
+        owning_scope.extrude_profile = Some(DesignExtrudeProfileOperand {
+            scope_reference_ordinal: 1,
+            record_index: 300,
+            byte_offset: 3000,
+            class_tag: "308".into(),
+            asset_id: "df9087bd-02a6-4a3f-a132-7e69990f323c".into(),
+            asset_id_offset: 3040,
+            entity_id: "0_172".into(),
+            entity_suffix: 172,
+            entity_reference_offset: 3120,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 3200,
+        });
+        let curve = SketchCurveIdentity {
+            id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
+            record_index: 400,
+            owner_reference: Some(172),
+            class_tag: "270".into(),
+            byte_offset: 4000,
+            geometry_offset: 100,
+            entity_genesis: None,
+            primary_id: 586,
+            secondary_id: 0,
+            geometry: None,
+        };
+        bind_extrude_selection_geometry(
+            std::slice::from_mut(&mut member),
+            std::slice::from_ref(&group),
+            std::slice::from_ref(&owning_scope),
+            &[],
+            &[curve],
+        );
+        assert!(matches!(
+            member.resolved_geometry,
+            Some(SketchRelationOperand::Curve {
+                record_index: 400,
+                primary_id: 586,
+                secondary_id: 0,
+            })
+        ));
     }
 
     #[test]
@@ -5914,8 +6021,8 @@ mod relation_tests {
                 record_index: 100,
                 byte_offset: 300,
                 class_tag: "308".into(),
-                type_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
-                type_id_offset: 330,
+                asset_id: "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b".into(),
+                asset_id_offset: 330,
                 entity_id: "0_172".into(),
                 entity_suffix: 172,
                 entity_reference_offset: 420,

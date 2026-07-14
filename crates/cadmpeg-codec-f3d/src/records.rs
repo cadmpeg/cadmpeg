@@ -544,10 +544,10 @@ pub struct DesignExtrudeProfileOperand {
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII primary class tag.
     pub class_tag: String,
-    /// UUID selecting the profile-reference record family.
-    pub type_id: String,
-    /// Byte offset of the type UUID's UTF-16LE code units.
-    pub type_id_offset: u64,
+    /// Asset UUID qualifying the selected Sketch reference.
+    pub asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    pub asset_id_offset: u64,
     /// Full Design entity id of the selected Sketch.
     pub entity_id: String,
     /// Numeric suffix stored by the profile frame.
@@ -612,18 +612,22 @@ pub struct DesignExtrudeSelectionMember {
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: String,
-    /// Opaque u64 preceding the two UUID fields.
-    pub opaque_value: u64,
-    /// Byte offset of `opaque_value`.
-    pub opaque_value_offset: u64,
-    /// First UUID stored by the member frame.
-    pub first_id: String,
-    /// Byte offset of the first UUID's UTF-16LE code units.
-    pub first_id_offset: u64,
-    /// Second UUID stored by the member frame.
-    pub second_id: String,
-    /// Byte offset of the second UUID's UTF-16LE code units.
-    pub second_id_offset: u64,
+    /// Local persistent selection identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Byte offset of `local_id`.
+    pub local_id_offset: u64,
+    /// Asset UUID qualifying the local selection identity.
+    pub asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the local selection-identity context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Sketch geometry carrying `local_id`, when it resolves uniquely in
+    /// the selected Sketch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_geometry: Option<SketchRelationOperand>,
     /// Identity of the indexed record immediately following this member.
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this member.
