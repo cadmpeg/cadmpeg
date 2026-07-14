@@ -7210,6 +7210,23 @@ fn decode_emits_offset_surface_construction() {
 }
 
 #[test]
+fn offset_surface_parameter_solver_preserves_support_parameters() {
+    let stream = offset_surface_topology_partition_stream();
+    let mut cur = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let surface = result.ir.model.procedural_surfaces[0].surface.clone();
+    let expected = Point2::new(12.0, 7.0);
+    let point = cadmpeg_ir::eval::model_surface_point(&result.ir, &surface, expected.u, expected.v)
+        .unwrap();
+
+    let actual =
+        crate::decode::offset_surface_parameters(&result.ir, &surface, point, None).unwrap();
+
+    assert!((actual.u - expected.u).abs() < 1.0e-8);
+    assert!((actual.v - expected.v).abs() < 1.0e-8);
+}
+
+#[test]
 fn decode_tracks_fully_extended_offset_common_header() {
     let stream = offset_surface_with_fully_extended_common_header();
     assert_eq!(crate::topology::offset_surfaces(&stream).len(), 1);
@@ -8247,7 +8264,7 @@ fn analytic_uv_completion_fills_missing_intersection_support_lanes() {
         [None, None],
     )];
 
-    crate::decode::complete_analytic_support_uv(&mut result.ir, &pending);
+    crate::decode::complete_support_uv(&mut result.ir, &pending);
 
     let ProceduralCurveDefinition::Intersection { context, .. } =
         &result.ir.model.procedural_curves[0].definition

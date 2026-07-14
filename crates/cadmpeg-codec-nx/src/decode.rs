@@ -739,7 +739,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
             &mut annotations,
         );
         complete_ext11_support_uv(&mut ir, &pending_ext11_support_uv);
-        complete_analytic_support_uv(&mut ir, &pending_ext11_support_uv);
+        complete_support_uv(&mut ir, &pending_ext11_support_uv);
 
         // Preserve the whole inflated stream verbatim so nothing is dropped.
         let mut unknown = unknown_stream(si, stream);
@@ -1656,7 +1656,7 @@ pub(crate) fn complete_ext11_support_uv(ir: &mut CadIr, pending: &[PendingExt11S
     }
 }
 
-pub(crate) fn complete_analytic_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
+pub(crate) fn complete_support_uv(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let mut replacements = Vec::new();
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         let Some(procedural) = ir
@@ -1691,6 +1691,9 @@ pub(crate) fn complete_analytic_support_uv(ir: &mut CadIr, pending: &[PendingExt
                     SurfaceGeometry::Nurbs(nurbs) => {
                         nurbs_parameters(nurbs, *point, uv.last().copied())
                     }
+                    SurfaceGeometry::Procedural { .. } => {
+                        offset_surface_parameters(ir, surface_id, *point, uv.last().copied())
+                    }
                     geometry => analytic_surface_parameters(geometry, *point),
                 };
                 let Some(parameters) = parameters else {
@@ -1715,7 +1718,7 @@ pub(crate) fn complete_analytic_support_uv(ir: &mut CadIr, pending: &[PendingExt
                 }
             }
             let reproduces_chart = uv.iter().zip(points).all(|(uv, point)| {
-                surface_point(&surface.geometry, uv.u, uv.v)
+                model_surface_point(ir, surface_id, uv.u, uv.v)
                     .is_some_and(|actual| point_distance(actual, *point) <= *fit_tolerance)
             });
             if reproduces_chart {
@@ -1750,6 +1753,185 @@ pub(crate) fn complete_analytic_support_uv(ir: &mut CadIr, pending: &[PendingExt
             context.sides[side].pcurve = Some(pcurve);
         }
     }
+}
+
+pub(crate) fn offset_surface_parameters(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+) -> Option<Point2> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    let SurfaceGeometry::Procedural { construction } = &carrier.geometry else {
+        return None;
+    };
+    let procedural = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| &candidate.id == construction && &candidate.surface == surface)?;
+    let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+        return None;
+    };
+    let mut parameters = seed.or_else(|| initial_surface_parameters(ir, support, point, None))?;
+    let domain = surface_parameter_domain(ir, support);
+    clamp_surface_parameters(&mut parameters, domain);
+    for _ in 0..32 {
+        let position = model_surface_point(ir, surface, parameters.u, parameters.v)?;
+        let residual = Vector3::new(
+            position.x - point.x,
+            position.y - point.y,
+            position.z - point.z,
+        );
+        let u_step = parameter_derivative_step(parameters.u, domain.map(|domain| domain.0));
+        let v_step = parameter_derivative_step(parameters.v, domain.map(|domain| domain.1));
+        let du = model_surface_derivative(ir, surface, parameters, u_step, true, domain)?;
+        let dv = model_surface_derivative(ir, surface, parameters, v_step, false, domain)?;
+        let Some((step_u, step_v)) = least_squares_step(du, dv, residual) else {
+            break;
+        };
+        parameters.u -= step_u;
+        parameters.v -= step_v;
+        clamp_surface_parameters(&mut parameters, domain);
+        if step_u.abs() <= 1.0e-12 * (1.0 + parameters.u.abs())
+            && step_v.abs() <= 1.0e-12 * (1.0 + parameters.v.abs())
+        {
+            break;
+        }
+    }
+    Some(parameters)
+}
+
+fn initial_surface_parameters(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    seed: Option<Point2>,
+) -> Option<Point2> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    match &carrier.geometry {
+        SurfaceGeometry::Nurbs(nurbs) => nurbs_parameters(nurbs, point, seed),
+        SurfaceGeometry::Procedural { construction } => {
+            let procedural =
+                ir.model.procedural_surfaces.iter().find(|candidate| {
+                    &candidate.id == construction && &candidate.surface == surface
+                })?;
+            let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+                return None;
+            };
+            initial_surface_parameters(ir, support, point, seed)
+        }
+        geometry => analytic_surface_parameters(geometry, point),
+    }
+}
+
+fn surface_parameter_domain(ir: &CadIr, surface: &SurfaceId) -> Option<([f64; 2], [f64; 2])> {
+    let carrier = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)?;
+    match &carrier.geometry {
+        SurfaceGeometry::Nurbs(nurbs) => {
+            let u_degree = usize::try_from(nurbs.u_degree).ok()?;
+            let v_degree = usize::try_from(nurbs.v_degree).ok()?;
+            let u_count = usize::try_from(nurbs.u_count).ok()?;
+            let v_count = usize::try_from(nurbs.v_count).ok()?;
+            Some((
+                [*nurbs.u_knots.get(u_degree)?, *nurbs.u_knots.get(u_count)?],
+                [*nurbs.v_knots.get(v_degree)?, *nurbs.v_knots.get(v_count)?],
+            ))
+        }
+        SurfaceGeometry::Procedural { construction } => {
+            let procedural =
+                ir.model.procedural_surfaces.iter().find(|candidate| {
+                    &candidate.id == construction && &candidate.surface == surface
+                })?;
+            let ProceduralSurfaceDefinition::Offset { support, .. } = &procedural.definition else {
+                return None;
+            };
+            surface_parameter_domain(ir, support)
+        }
+        _ => None,
+    }
+}
+
+fn clamp_surface_parameters(parameters: &mut Point2, domain: Option<([f64; 2], [f64; 2])>) {
+    if let Some((u_domain, v_domain)) = domain {
+        parameters.u = parameters.u.clamp(u_domain[0], u_domain[1]);
+        parameters.v = parameters.v.clamp(v_domain[0], v_domain[1]);
+    }
+}
+
+fn parameter_derivative_step(parameter: f64, domain: Option<[f64; 2]>) -> f64 {
+    domain.map_or_else(
+        || 1.0e-6 * (1.0 + parameter.abs()),
+        |domain| 1.0e-6 * (domain[1] - domain[0]).abs().max(1.0),
+    )
+}
+
+fn model_surface_derivative(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    parameters: Point2,
+    step: f64,
+    along_u: bool,
+    domain: Option<([f64; 2], [f64; 2])>,
+) -> Option<Vector3> {
+    let mut before = parameters;
+    let mut after = parameters;
+    if along_u {
+        before.u -= step;
+        after.u += step;
+    } else {
+        before.v -= step;
+        after.v += step;
+    }
+    clamp_surface_parameters(&mut before, domain);
+    clamp_surface_parameters(&mut after, domain);
+    let width = if along_u {
+        after.u - before.u
+    } else {
+        after.v - before.v
+    };
+    if !width.is_finite() || width == 0.0 {
+        return None;
+    }
+    let first = model_surface_point(ir, surface, before.u, before.v)?;
+    let second = model_surface_point(ir, surface, after.u, after.v)?;
+    Some(Vector3::new(
+        (second.x - first.x) / width,
+        (second.y - first.y) / width,
+        (second.z - first.z) / width,
+    ))
+}
+
+fn least_squares_step(du: Vector3, dv: Vector3, residual: Vector3) -> Option<(f64, f64)> {
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let du_squared = dot(du, du);
+    let mixed = dot(du, dv);
+    let dv_squared = dot(dv, dv);
+    let determinant = du_squared * dv_squared - mixed * mixed;
+    if !determinant.is_finite()
+        || determinant.abs() <= f64::EPSILON * du_squared.max(dv_squared).powi(2)
+    {
+        return None;
+    }
+    let du_residual = dot(du, residual);
+    let dv_residual = dot(dv, residual);
+    Some((
+        (dv_squared * du_residual - mixed * dv_residual) / determinant,
+        (du_squared * dv_residual - mixed * du_residual) / determinant,
+    ))
 }
 
 pub(crate) fn nurbs_parameters(
