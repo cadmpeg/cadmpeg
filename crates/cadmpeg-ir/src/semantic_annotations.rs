@@ -44,6 +44,9 @@ pub struct SemanticAnnotationTarget {
     /// Stable source object token within an external document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_object: Option<String>,
+    /// Whether the persisted reference is an explicit null target.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_null: bool,
     /// Ordered model subelement selectors.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub subelements: Vec<String>,

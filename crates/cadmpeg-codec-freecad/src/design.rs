@@ -529,10 +529,17 @@ fn append_spreadsheet(
         column_widths: spreadsheet_dimensions(
             properties,
             "PropertyColumnWidths",
+            "ColumnInfo",
             "Column",
             "width",
         )?,
-        row_heights: spreadsheet_dimensions(properties, "PropertyRowHeights", "Row", "height")?,
+        row_heights: spreadsheet_dimensions(
+            properties,
+            "PropertyRowHeights",
+            "RowInfo",
+            "Row",
+            "height",
+        )?,
         merged_ranges,
         native_ref: Some(object.id.clone()),
     })
@@ -541,6 +548,7 @@ fn append_spreadsheet(
 fn spreadsheet_dimensions(
     properties: &[&PropertyRecord],
     type_name: &str,
+    container: &str,
     element: &str,
     value_name: &str,
 ) -> Result<Vec<SpreadsheetDimension>, CodecError> {
@@ -559,7 +567,7 @@ fn spreadsheet_dimensions(
     })?;
     let root = xml
         .descendants()
-        .find(|node| node.children().any(|child| child.has_tag_name(element)))
+        .find(|node| node.has_tag_name(container))
         .ok_or_else(|| {
             CodecError::Malformed(format!("{} has no dimension container", property.id))
         })?;
@@ -745,9 +753,10 @@ fn parse_sketch(
             .filter(|node| node.has_tag_name("Geometry"))
             .enumerate()
         {
-            let carrier = node
-                .children()
-                .find(|child| child.is_element() && !child.has_tag_name("Construction"));
+            let carrier = node.children().find(|child| {
+                child.is_element()
+                    && !matches!(child.tag_name().name(), "Construction" | "GeoExtensions")
+            });
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
@@ -795,9 +804,10 @@ fn parse_sketch(
             .skip(2)
             .enumerate()
         {
-            let carrier = node
-                .children()
-                .find(|child| child.is_element() && !child.has_tag_name("Construction"));
+            let carrier = node.children().find(|child| {
+                child.is_element()
+                    && !matches!(child.tag_name().name(), "Construction" | "GeoExtensions")
+            });
             let native_kind = node
                 .attribute("type")
                 .or_else(|| carrier.map(|child| child.tag_name().name()))
@@ -1498,7 +1508,11 @@ fn constraint_operands(node: roxmltree::Node<'_, '_>) -> Result<Vec<(i64, i64)>,
         if ids.len() != positions.len() {
             return Err("ElementIds and ElementPositions counts differ");
         }
-        return Ok(ids.into_iter().zip(positions).collect());
+        return Ok(ids
+            .into_iter()
+            .zip(positions)
+            .filter(|(entity, _)| *entity != -2000)
+            .collect());
     }
     Ok(["First", "Second", "Third"]
         .into_iter()

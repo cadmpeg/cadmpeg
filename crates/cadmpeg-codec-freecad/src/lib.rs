@@ -326,10 +326,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for attachment in &attachments {
         let missing_support = attachment.supports.iter().any(|support| {
             support.document.is_none()
-                && support
-                    .object
-                    .as_ref()
-                    .is_some_and(|object| !object_ids.contains(object.as_str()))
+                && support.object.as_ref().is_some_and(|object| {
+                    !object.is_empty() && !object_ids.contains(object.as_str())
+                })
         });
         let non_finite = attachment
             .placement
@@ -401,7 +400,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         if provider
             .object
             .as_ref()
-            .is_some_and(|object| !object_ids.contains(object.as_str()))
+            .is_some_and(|object| !object.is_empty() && !object_ids.contains(object.as_str()))
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -493,10 +492,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let missing_link = !object_ids.contains(joint.object.as_str())
             || joint.references.iter().any(|reference| {
                 reference.document.is_none()
-                    && reference
-                        .object
-                        .as_ref()
-                        .is_some_and(|object| !object_ids.contains(object.as_str()))
+                    && reference.object.as_ref().is_some_and(|object| {
+                        !object.is_empty() && !object_ids.contains(object.as_str())
+                    })
             });
         let expected_placements = if joint.kind == "grounded" { 1 } else { 2 };
         let invalid_frames = joint.placements.len() != expected_placements
@@ -531,10 +529,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .is_some_and(|template| !object_ids.contains(template.as_str()))
             || drawing.sources.iter().any(|source| {
                 source.document.is_none()
-                    && source
-                        .object
-                        .as_ref()
-                        .is_some_and(|object| !object_ids.contains(object.as_str()))
+                    && source.object.as_ref().is_some_and(|object| {
+                        !object.is_empty() && !object_ids.contains(object.as_str())
+                    })
             });
         let missing_entry = drawing
             .side_entries
@@ -542,10 +539,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .any(|entry| !entry_names.contains(entry.as_str()));
         let missing_relationship = drawing.relationships.values().flatten().any(|link| {
             link.document.is_none()
-                && link
-                    .object
-                    .as_ref()
-                    .is_some_and(|object| !object_ids.contains(object.as_str()))
+                && link.object.as_ref().is_some_and(|object| {
+                    !object.is_empty() && !object_ids.contains(object.as_str())
+                })
         });
         if missing_object || missing_entry || missing_relationship {
             findings.push(finding(
@@ -559,10 +555,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let object = object_by_id.get(annotation.object.as_str());
         let missing_reference = annotation.references.values().flatten().any(|reference| {
             reference.document.is_none()
-                && reference
-                    .object
-                    .as_ref()
-                    .is_some_and(|object| !object_ids.contains(object.as_str()))
+                && reference.object.as_ref().is_some_and(|object| {
+                    !object.is_empty() && !object_ids.contains(object.as_str())
+                })
         });
         let missing_entry = annotation
             .side_entries

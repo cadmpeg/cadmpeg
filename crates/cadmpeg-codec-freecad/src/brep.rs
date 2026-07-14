@@ -15,6 +15,8 @@ use crate::native::{EntryRecord, PropertyRecord};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShapePayloadForm {
+    /// Explicit zero-byte null shape.
+    Empty,
     /// Compact text shape-set grammar.
     Text,
     /// Binary shape-set grammar.
@@ -455,38 +457,51 @@ pub fn parse_payloads(
         .iter()
         .map(|entry| (entry.name.as_str(), entry))
         .collect::<BTreeMap<_, _>>();
-    properties
+    let mut payloads = Vec::new();
+    for property in properties
         .iter()
         .filter(|property| property.type_name.contains("PropertyPartShape"))
-        .flat_map(|property| {
-            property
-                .side_entries
-                .iter()
-                .map(move |name| (property, name))
-        })
-        .map(|(property, name)| {
+    {
+        for name in &property.side_entries {
             let entry = entries.get(name.as_str()).ok_or_else(|| {
                 CodecError::Malformed(format!("missing exact-shape entry {name}"))
             })?;
-            let form = if name.to_ascii_lowercase().ends_with(".bin") {
+            let is_shape_entry = entry.role == "brep"
+                || roxmltree::Document::parse(&property.raw_xml)
+                    .ok()
+                    .and_then(|xml| {
+                        xml.descendants()
+                            .find(|node| node.has_tag_name("Part"))
+                            .and_then(|node| node.attribute("file"))
+                            .map(|file| file == name)
+                    })
+                    .unwrap_or(false);
+            if !is_shape_entry {
+                continue;
+            }
+            let form = if entry.data.is_empty() {
+                ShapePayloadForm::Empty
+            } else if name.to_ascii_lowercase().ends_with(".bin") {
                 ShapePayloadForm::Binary
             } else {
                 ShapePayloadForm::Text
             };
             let (text, binary) = match form {
+                ShapePayloadForm::Empty => (None, None),
                 ShapePayloadForm::Text => (Some(parse_text(&entry.data)?), None),
                 ShapePayloadForm::Binary => (None, Some(parse_binary_prefix(&entry.data)?)),
             };
-            Ok(ShapePayloadRecord {
+            payloads.push(ShapePayloadRecord {
                 id: crate::native::native_child_id("shape-payload", &property.id, "shape"),
                 property: property.id.clone(),
                 entry: entry.id.clone(),
                 form,
                 text,
                 binary,
-            })
-        })
-        .collect()
+            });
+        }
+    }
+    Ok(payloads)
 }
 
 /// Derive an exhaustive family census from successfully parsed exact-shape payloads.
@@ -524,6 +539,7 @@ pub fn carrier_census(payloads: &[ShapePayloadRecord]) -> Vec<crate::native::Car
                 id: crate::native::native_child_id("carrier-census", &payload.id, "families"),
                 payload: payload.id.clone(),
                 form: match payload.form {
+                    ShapePayloadForm::Empty => "empty".into(),
                     ShapePayloadForm::Text => "text".into(),
                     ShapePayloadForm::Binary => "binary".into(),
                 },
@@ -2713,13 +2729,16 @@ fn parse_edge_representation(
             record.primary =
                 parse_reference(cursor, "edge parameter curve", counts["Curve2ds"], false)?;
             if kind == 3 {
-                record.secondary = Some(parse_reference(
+                let (secondary, joined_continuity) = parse_reference_suffix(
                     cursor,
                     "edge secondary parameter curve",
                     counts["Curve2ds"],
-                    false,
-                )?);
-                record.continuity = Some(cursor.next("edge continuity")?.to_owned());
+                )?;
+                record.secondary = Some(secondary);
+                record.continuity = Some(
+                    joined_continuity
+                        .map_or_else(|| cursor.next("edge continuity").map(str::to_owned), Ok)?,
+                );
             }
             record.surface = Some(parse_reference(
                 cursor,
@@ -2896,6 +2915,25 @@ fn parse_reference(
         return Err(CodecError::Malformed(format!("{label} index is zero")));
     }
     Ok(value)
+}
+
+fn parse_reference_suffix(
+    cursor: &mut TokenCursor<'_>,
+    label: &str,
+    maximum: usize,
+) -> Result<(usize, Option<String>), CodecError> {
+    let token = cursor.next(label)?;
+    let split = token
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(token.len());
+    let (reference, suffix) = token.split_at(split);
+    let value = reference
+        .parse::<usize>()
+        .map_err(|_| CodecError::Malformed(format!("invalid {label}")))?;
+    if value == 0 || value > maximum {
+        return Err(CodecError::Malformed(format!("{label} limit exceeded")));
+    }
+    Ok((value, (!suffix.is_empty()).then(|| suffix.to_owned())))
 }
 
 fn parse_range(cursor: &mut TokenCursor<'_>, label: &str) -> Result<[f64; 2], CodecError> {
@@ -3419,6 +3457,58 @@ mod tests {
         format!(
             "CASCADE Topology V1, (c) Matra-Datavision\nLocations 0\nCurve2ds 0\nCurves {curve_count}\n{curves}\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces {surface_count}\n{surfaces}\nTriangulations 0\nTShapes 0\n*"
         )
+    }
+
+    #[test]
+    fn parses_joined_seam_pcurve_continuity_token() {
+        let tokens = ["1", "2CN", "1", "0", "0", "10"];
+        let mut cursor = TokenCursor::new(&tokens);
+        let counts = BTreeMap::from([
+            ("Curve2ds".to_owned(), 2),
+            ("Surfaces".to_owned(), 1),
+            ("Locations".to_owned(), 0),
+        ]);
+        let record = parse_edge_representation(3, &mut cursor, &counts, 1)
+            .expect("joined pcurve continuity");
+        assert_eq!(record.primary, 1);
+        assert_eq!(record.secondary, Some(2));
+        assert_eq!(record.continuity.as_deref(), Some("CN"));
+        assert!(cursor.is_empty());
+    }
+
+    #[test]
+    fn retains_zero_byte_null_shape_as_typed_empty_payload() {
+        let property = PropertyRecord {
+            id: crate::native::native_id("property", "Shape:SuppressedShape"),
+            owner: crate::native::native_id("object", "Shape"),
+            name: "SuppressedShape".into(),
+            type_name: "Part::PropertyPartShape".into(),
+            family: crate::native::PropertyFamily::Geometry,
+            status: None,
+            transient: false,
+            dynamic: None,
+            order: 0,
+            values: Vec::new(),
+            links: Vec::new(),
+            side_entries: vec!["empty.brp".into()],
+            raw_xml: String::new(),
+            byte_start: 0,
+            byte_end: 0,
+        };
+        let entry = EntryRecord {
+            id: crate::native::native_id("entry", "empty.brp"),
+            name: "empty.brp".into(),
+            role: "brep".into(),
+            byte_len: 0,
+            sha256: cadmpeg_ir::hash::sha256_hex(b""),
+            referenced_by: vec![property.id.clone()],
+            data: Vec::new(),
+        };
+        let payloads = parse_payloads(&[property], &[entry]).expect("empty shape payload");
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].form, ShapePayloadForm::Empty);
+        assert!(payloads[0].text.is_none());
+        assert!(payloads[0].binary.is_none());
     }
 
     #[test]

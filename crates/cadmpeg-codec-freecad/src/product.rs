@@ -364,6 +364,7 @@ fn occurrence_count(record: &ProductNodeRecord) -> Result<usize, CodecError> {
         .map(usize::try_from)
         .transpose()
         .map_err(|_| CodecError::Malformed(format!("{} has negative element count", record.id)))?
+        .filter(|count| *count > 0)
         .unwrap_or_else(|| {
             [
                 record.element_transforms.len(),
@@ -621,7 +622,9 @@ fn linked_object(properties: &[&PropertyRecord], name: &str) -> Option<String> {
         .links
         .first()?
         .object
-        .clone()
+        .as_ref()
+        .filter(|object| !object.is_empty())
+        .cloned()
 }
 
 fn vector(properties: &[&PropertyRecord], name: &str) -> Option<[f64; 3]> {

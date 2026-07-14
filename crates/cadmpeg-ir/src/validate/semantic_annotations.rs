@@ -18,7 +18,8 @@ pub(super) fn check_semantic_annotations(
             && annotation.assets.iter().all(|id| all_ids.contains(id))
             && annotation.references.values().flatten().all(|target| {
                 target.target.as_ref().is_none_or(|id| all_ids.contains(id))
-                    && (target.target.is_some()
+                    && (target.is_null
+                        || target.target.is_some()
                         || (target.external_document.is_some() && target.external_object.is_some()))
             });
         let numeric_valid = annotation

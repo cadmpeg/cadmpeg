@@ -15,6 +15,58 @@ fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
 }
 
 #[test]
+fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
+    let fixtures: [(&str, &[u8]); 3] = [
+        (
+            "application_payloads.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/application_payloads.FCStd"
+            )),
+        ),
+        (
+            "core_design_product.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/core_design_product.FCStd"
+            )),
+        ),
+        (
+            "techdraw_annotations.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/techdraw_annotations.FCStd"
+            )),
+        ),
+    ];
+    for (name, bytes) in fixtures {
+        let first = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let second = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        assert_eq!(
+            first.ir.to_canonical_json().expect("canonical fixture"),
+            second.ir.to_canonical_json().expect("canonical fixture"),
+            "{name} is nondeterministic"
+        );
+        assert!(
+            first
+                .report
+                .losses
+                .iter()
+                .all(|loss| loss.severity < cadmpeg_ir::Severity::Blocking),
+            "{name}: {:#?}",
+            first.report.losses
+        );
+        let native_findings = crate::validate_native(&first.ir);
+        assert!(native_findings.is_empty(), "{name}: {native_findings:#?}");
+        assert_valid_document(&first.ir);
+    }
+}
+
+#[test]
 fn rejects_malformed_sketch_record_counts() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="1"><Object type="Sketcher::SketchObject" name="Sketch" id="1"/></Objects>
@@ -609,7 +661,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "52");
+    assert_eq!(result.ir.ir_version, "53");
     let feature = |name: &str| {
         &result
             .ir
@@ -4572,7 +4624,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 19);
+    assert_eq!(namespace.version, 20);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");

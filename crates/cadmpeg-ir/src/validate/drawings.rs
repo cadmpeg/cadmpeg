@@ -18,7 +18,8 @@ pub(super) fn check_drawings(ir: &CadIr, all_ids: &HashSet<String>, findings: &m
             && drawing.assets.iter().all(|id| all_ids.contains(id))
             && drawing.relationships.values().flatten().all(|target| {
                 target.target.as_ref().is_none_or(|id| all_ids.contains(id))
-                    && (target.target.is_some()
+                    && (target.is_null
+                        || target.target.is_some()
                         || (target.external_document.is_some() && target.external_object.is_some()))
             });
         let numeric_valid = drawing

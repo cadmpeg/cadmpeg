@@ -332,6 +332,12 @@ parameters, and resolved assets. Local drawing targets resolve to neutral drawin
 external document/object pairs remain explicit. Referential and finite-numeric validation is
 independent of drawing presentation and of provenance annotations.
 
+CADIR version 53 makes persisted empty drawing and annotation links explicit. A target whose
+native link record is present but names no document object has `is_null: true`; it is distinct
+from an absent target and from an unresolved nonempty reference. Local referential validation
+therefore accepts only explicitly null empty targets and continues to reject every nonempty
+missing object identity.
+
 Native namespace version 10 adds a `gui_documents` arena. A GUI archive has exactly one document
 record; a headless archive has none. The record retains the GUI schema and root attributes plus
 every document-level element outside `ViewProviderData` in source order. These named state records
@@ -354,6 +360,12 @@ from zero through the declared length with positive, contiguous, nonoverlapping 
 re-derives the report, rejects missing or unknown logical entries, validates every typed or opaque
 span owner, requires structural spans to be ownerless, and rechecks retained entry lengths and
 SHA-256 digests. Zero-length entries are represented by an empty partition and still counted.
+
+Native namespace version 20 gives a zero-byte exact-shape side entry the typed `empty` payload
+form. This is FreeCAD's persisted representation of a null or suppressed `PropertyPartShape`, not
+a malformed text B-rep. Only side entries classified as B-rep payloads are parsed as shapes;
+element-map, placement-list, scale-list, and other side entries owned by the same property remain
+in their own typed or named-opaque carrier.
 
 Native namespace version 11 adds attachment records. Support links retain ordered object and
 subelement identity separately from the map mode. The persisted resolved `Placement` and local

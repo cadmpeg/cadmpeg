@@ -37,12 +37,19 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
         .collect::<HashSet<_>>();
-    let points = ir
+    let mut points = ir
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.0.as_str())
         .collect::<HashSet<_>>();
+    points.extend(
+        ir.model
+            .points
+            .iter()
+            .filter(|point| point.source_object.is_some())
+            .map(|point| point.id.0.as_str()),
+    );
 
     for procedural in &ir.model.procedural_surfaces {
         surfaces.insert(&procedural.surface.0);

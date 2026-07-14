@@ -127,7 +127,11 @@ fn parse_points(property: &PropertyRecord, bytes: &[u8]) -> Result<Vec<Point>, C
         .map(|index| {
             let position = reader.point3(ByteOrder::Little, "point-cloud point")?;
             Ok(Point {
-                id: PointId(format!("{}:point#{index}", property.id)),
+                id: PointId(crate::native::model_id(
+                    "point",
+                    &property.id,
+                    index.to_string(),
+                )),
                 position: transform_point(transform, position),
                 source_object: Some(source_object.clone()),
             })

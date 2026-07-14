@@ -53,6 +53,15 @@ pub(crate) fn transfer(
         builder.emit_unowned_triangulations(ir);
     }
     close_radial_rings(&mut ir.model.coedges);
+    let referenced_pcurves = ir
+        .model
+        .coedges
+        .iter()
+        .filter_map(|coedge| coedge.pcurve.as_ref())
+        .collect::<HashSet<_>>();
+    ir.model
+        .pcurves
+        .retain(|pcurve| referenced_pcurves.contains(&pcurve.id));
     Ok(())
 }
 

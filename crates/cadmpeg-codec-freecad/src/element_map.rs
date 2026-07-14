@@ -105,7 +105,10 @@ pub(crate) fn parse(
         else {
             continue;
         };
-        let declared_count = parse_count(map_node, "ElementMap")?;
+        let declared_count = map_node
+            .attribute("count")
+            .map(|count| parse_usize(count, "ElementMap count"))
+            .transpose()?;
         let source_entry = map_node.attribute("file").filter(|name| !name.is_empty());
         let bytes = if let Some(name) = source_entry {
             *entry_data.get(name).ok_or_else(|| {
@@ -122,12 +125,14 @@ pub(crate) fn parse(
                 .filter(|chain| !chain.is_empty())
                 .count()
         });
-        if declared_count != actual_count {
+        if declared_count.is_some_and(|declared| declared != actual_count) {
             return Err(CodecError::Malformed(format!(
-                "ElementMap for {} declares {declared_count} entries but contains {actual_count}",
+                "ElementMap for {} declares {} entries but contains {actual_count}",
                 property.id,
+                declared_count.unwrap_or_default(),
             )));
         }
+        let declared_count = declared_count.unwrap_or(actual_count);
         maps.push(ElementMapRecord {
             id: crate::native::native_child_id("element-map", &property.id, "map"),
             property: property.id.clone(),
@@ -161,12 +166,21 @@ pub(crate) fn bind_topology(
         };
         for group in &mut root.groups {
             let ids = topology_ids(ir, payload_id, &group.indexed_name);
-            if group.names.is_empty() || !ids.len().is_multiple_of(group.names.len()) {
+            let populated_positions = group
+                .names
+                .iter()
+                .enumerate()
+                .filter_map(|(position, names)| (!names.is_empty()).then_some(position))
+                .collect::<Vec<_>>();
+            if populated_positions.is_empty()
+                || !ids.len().is_multiple_of(populated_positions.len())
+            {
                 continue;
             }
-            let name_count = group.names.len();
+            let name_count = populated_positions.len();
             for (position, id) in ids.into_iter().enumerate() {
-                for name in &mut group.names[position % name_count] {
+                let slot = populated_positions[position % name_count];
+                for name in &mut group.names[slot] {
                     name.topology_ids.push(id.clone());
                 }
             }
@@ -570,7 +584,8 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
                 .ok_or_else(|| {
                     CodecError::Malformed("mapped-name prefix index is out of range".into())
                 })?;
-            let element = parse_usize(fields[1], "mapped-name element index")?;
+            let element = usize::try_from(parse_hex(fields[1], "mapped-name element index")?)
+                .map_err(|_| CodecError::Malformed("negative mapped-name element index".into()))?;
             (format!("{prefix}{element}"), 2, 3)
         } else if let Some(base) = fields[0]
             .strip_prefix(';')
@@ -585,7 +600,10 @@ fn parse_mapped_name(encoded: &str, postfixes: &[String]) -> Result<ElementMappe
     let postfix_index = fields
         .get(postfix_position)
         .ok_or_else(|| CodecError::Malformed("mapped name has no postfix index".into()))
-        .and_then(|value| parse_usize(value, "mapped-name postfix index"))?;
+        .and_then(|value| {
+            usize::try_from(parse_hex(value, "mapped-name postfix index")?)
+                .map_err(|_| CodecError::Malformed("negative mapped-name postfix index".into()))
+        })?;
     let mut resolved = base;
     if postfix_index != 0 {
         resolved.push_str(postfixes.get(postfix_index - 1).ok_or_else(|| {
@@ -667,7 +685,7 @@ mod tests {
     fn parses_map_nodes_and_mapped_name_chains() {
         let input = b"7 PostfixCount 1 :tag MapCount 1\n\
             ElementMap 1 7 1 Face ChildCount 0 NameCount 2\n\
-            ;Generated.0.a 0 :1.2.0.b 0 EndMap";
+            ;Generated.0.a 0 :1.a.0.b 0 EndMap";
         let parsed = parse_element_map(input, false).unwrap();
         assert_eq!(parsed.map_id, 7);
         assert_eq!(parsed.postfixes, [":tag"]);
@@ -675,7 +693,7 @@ mod tests {
         assert_eq!(parsed.maps[0].groups[0].names[1][0].string_ids, [11]);
         assert_eq!(
             parsed.maps[0].groups[0].names[1][0].resolved.as_deref(),
-            Some(":tag2")
+            Some(":tag10")
         );
     }
 

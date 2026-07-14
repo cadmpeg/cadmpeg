@@ -87,16 +87,20 @@ pub(crate) fn transfer_neutral(
                 .document
                 .is_none()
                 .then(|| {
-                    link.object.as_ref().map(|object| {
-                        drawing_ids
-                            .get(object.as_str())
-                            .cloned()
-                            .unwrap_or_else(|| object.clone())
-                    })
+                    link.object
+                        .as_ref()
+                        .filter(|object| !object.is_empty())
+                        .map(|object| {
+                            drawing_ids
+                                .get(object.as_str())
+                                .cloned()
+                                .unwrap_or_else(|| object.clone())
+                        })
                 })
                 .flatten(),
             external_document: link.document.clone(),
             external_object: link.document.as_ref().and(link.object.clone()),
+            is_null: link.document.is_none() && link.object.as_deref() == Some(""),
             subelements: link.subelements.clone(),
         };
         let x = scalar_property(&owned, "X");
