@@ -1076,22 +1076,26 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
     let body_references = crate::native::feature_body_references(&scan.container);
     let booleans = crate::native::feature_boolean_operations(&scan.container);
     let bindings = crate::native::segment_body_bindings(&scan.container, &scan.streams);
-    if booleans.is_empty() {
+    let body_reference_occurrences =
+        crate::native::feature_body_reference_occurrences(&scan.container);
+    let body_members = crate::native::feature_operation_body_members(&scan.container);
+    let body_operands = crate::native::feature_operation_body_operands(
+        &body_members,
+        &body_reference_occurrences,
+        &bindings,
+    );
+    if booleans.is_empty() && body_operands.is_empty() {
         return false;
     }
     let Some(terminal) = crate::native::terminal_feature_body_indices(
         &labels,
         &body_references,
         &booleans,
+        &body_operands,
         &bindings,
     ) else {
         return false;
     };
-    let written = body_references
-        .iter()
-        .map(|reference| reference.body_object_index)
-        .collect::<BTreeSet<_>>();
-
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
     for binding in bindings
@@ -1101,7 +1105,6 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
         let identities = [binding.body_object_index, binding.body_alias_object_index];
         let statuses = identities
             .into_iter()
-            .filter(|identity| written.contains(identity))
             .map(|identity| terminal.contains(&identity))
             .collect::<BTreeSet<_>>();
         if statuses.len() != 1 {

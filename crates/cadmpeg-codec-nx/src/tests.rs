@@ -1059,7 +1059,7 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
     }];
 
     assert_eq!(
-        crate::native::terminal_feature_body_indices(&labels, &references, &booleans, &[]),
+        crate::native::terminal_feature_body_indices(&labels, &references, &booleans, &[], &[]),
         Some([10].into_iter().collect())
     );
 }
@@ -1106,7 +1106,50 @@ fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
     }];
 
     assert_eq!(
-        crate::native::terminal_feature_body_indices(&labels, &references, &booleans, &bindings,),
+        crate::native::terminal_feature_body_indices(
+            &labels,
+            &references,
+            &booleans,
+            &[],
+            &bindings,
+        ),
+        Some(std::collections::BTreeSet::new())
+    );
+}
+
+#[test]
+fn feature_body_lineage_consumes_segment_bound_sew_operands() {
+    use crate::native::{FeatureOperationBodyOperand, FeatureOperationLabel, SegmentBodyBinding};
+    let labels = [FeatureOperationLabel {
+        id: "operation#0".to_string(),
+        section_link: "history#0".to_string(),
+        ordinal: 0,
+        value: "SEW".to_string(),
+        object_indices: [None; 4],
+        source_offset: 0,
+    }];
+    let bindings = [SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: "partition".to_string(),
+        body_object_index: 20,
+        body_alias_object_index: 30,
+        stream_role: 0,
+        source_offset: 0,
+    }];
+    let operands = [FeatureOperationBodyOperand {
+        id: "operand#0".to_string(),
+        operation_label: "operation#0".to_string(),
+        body_object_index: 10,
+        body_reference_ordinal: 0,
+        ordinal: 0,
+        operand_object_index: 30,
+        segment_body_bindings: vec!["binding#0".to_string()],
+        source_offset: 0,
+    }];
+    assert_eq!(
+        crate::native::terminal_feature_body_indices(&labels, &[], &[], &operands, &bindings),
         Some(std::collections::BTreeSet::new())
     );
 }

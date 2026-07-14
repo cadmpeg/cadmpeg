@@ -886,19 +886,21 @@ pub fn feature_body_reference_occurrences(
     references
 }
 
-/// Return body objects whose latest decoded writer is not consumed as a later
-/// Boolean tool. The operation order must belong to one feature-history area.
+/// Return body objects whose latest decoded writer is not consumed by a later
+/// Boolean, sewing, or trimming operation. Segment-bound bodies exist before
+/// the retained history area unless a decoded operation writes them.
 pub fn terminal_feature_body_indices(
     labels: &[FeatureOperationLabel],
     references: &[FeatureBodyReference],
     booleans: &[FeatureBooleanOperation],
+    operands: &[FeatureOperationBodyOperand],
     bindings: &[SegmentBodyBinding],
 ) -> Option<BTreeSet<u32>> {
     let sections = labels
         .iter()
         .map(|label| label.section_link.as_str())
         .collect::<BTreeSet<_>>();
-    if sections.len() != 1 || references.is_empty() {
+    if sections.len() != 1 || (references.is_empty() && bindings.is_empty()) {
         return None;
     }
     let positions = labels
@@ -908,10 +910,14 @@ pub fn terminal_feature_body_indices(
         .collect::<BTreeMap<_, _>>();
     let aliases = body_alias_roots(bindings)?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
-    let mut last_writers = BTreeMap::<u32, usize>::new();
+    let mut last_writers = bindings
+        .iter()
+        .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index])
+        .map(|identity| (canonical(identity), None))
+        .collect::<BTreeMap<u32, Option<usize>>>();
     for reference in references {
         let position = *positions.get(reference.operation_label.as_str())?;
-        last_writers.insert(canonical(reference.body_object_index), position);
+        last_writers.insert(canonical(reference.body_object_index), Some(position));
     }
     let mut consumed = BTreeSet::new();
     for operation in booleans {
@@ -920,10 +926,30 @@ pub fn terminal_feature_body_indices(
             let tool = canonical(*tool);
             if last_writers
                 .get(&tool)
-                .is_some_and(|writer| *writer < position)
+                .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
             {
                 consumed.insert(tool);
             }
+        }
+    }
+    let operation_kinds = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label.value.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    for operand in operands {
+        if !matches!(
+            operation_kinds.get(operand.operation_label.as_str()),
+            Some(&("SEW" | "TRIM BODY"))
+        ) {
+            continue;
+        }
+        let position = *positions.get(operand.operation_label.as_str())?;
+        let body = canonical(operand.operand_object_index);
+        if last_writers
+            .get(&body)
+            .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
+        {
+            consumed.insert(body);
         }
     }
     let terminal_roots = last_writers
