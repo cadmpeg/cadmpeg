@@ -2494,46 +2494,17 @@ fn section_dimension_constraints(
                     _ => None,
                 }
             })();
-            let constraint_definition = typed.unwrap_or_else(|| {
-                let operands = relation.operand_vectors.map_or_else(
-                    || {
-                        relation
-                            .operands
-                            .iter()
-                            .copied()
-                            .map(|value| SketchNativeOperand {
-                                native_kind: "operand".to_string(),
-                                object_index: u32::from(value),
-                                native_ref: None,
-                            })
-                            .collect()
-                    },
-                    |vectors| {
-                        vectors
-                            .into_iter()
-                            .enumerate()
-                            .flat_map(|(vector, slots)| {
-                                slots
-                                    .into_iter()
-                                    .enumerate()
-                                    .filter_map(move |(slot, value)| {
-                                        value.map(|value| SketchNativeOperand {
-                                            native_kind: format!("vector_{vector}_slot_{slot}"),
-                                            object_index: value,
-                                            native_ref: None,
-                                        })
-                                    })
-                            })
-                            .collect()
-                    },
-                );
-                SketchConstraintDefinition::Native {
+            let constraint_definition =
+                typed.unwrap_or_else(|| SketchConstraintDefinition::Native {
                     native_kind: format!("creo:relation:{}", relation.relation_type),
                     entities: Vec::new(),
                     parameter,
-                    operands,
-                }
-            });
+                    operands: vec![SketchNativeOperand {
+                        native_kind: "relat_ptr".to_string(),
+                        object_index: relation.relation_id,
+                        native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                    }],
+                });
             (
                 SketchConstraint {
                     id: SketchConstraintId(format!(
@@ -2640,8 +2611,8 @@ fn section_skamp_constraints(
                             .items
                             .iter()
                             .map(|item| SketchNativeOperand {
-                                native_kind: "sense".to_string(),
-                                object_index: item.sense,
+                                native_kind: format!("sense:{}", item.sense),
+                                object_index: item.entity_id,
                                 native_ref: None,
                             })
                             .collect(),
@@ -4887,8 +4858,8 @@ mod resolved_sketch_tests {
                 )],
                 parameter: None,
                 operands: vec![SketchNativeOperand {
-                    native_kind: "sense".to_string(),
-                    object_index: 4,
+                    native_kind: "sense:4".to_string(),
+                    object_index: 12,
                     native_ref: None,
                 }],
             }
@@ -4900,18 +4871,11 @@ mod resolved_sketch_tests {
                 native_kind: "creo:relation:99".to_string(),
                 entities: Vec::new(),
                 parameter: Some(ParameterId("creo:featdefs:parameter#40:42".to_string())),
-                operands: vec![
-                    SketchNativeOperand {
-                        native_kind: "operand".to_string(),
-                        object_index: 12,
-                        native_ref: None,
-                    },
-                    SketchNativeOperand {
-                        native_kind: "operand".to_string(),
-                        object_index: 4,
-                        native_ref: None,
-                    },
-                ],
+                operands: vec![SketchNativeOperand {
+                    native_kind: "relat_ptr".to_string(),
+                    object_index: 8,
+                    native_ref: Some("creo:featdefs:sketch#917".to_string()),
+                }],
             }
         );
     }
