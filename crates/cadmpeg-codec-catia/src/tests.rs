@@ -3089,6 +3089,21 @@ fn b5_pcurve_parser_reads_degree5_uv_jet() {
 }
 
 #[test]
+fn b5_pcurve_parser_accepts_split_24_bit_support_reference() {
+    let a8 = a8_pcurve_stream();
+    let mut payload = a8[11..].to_vec();
+    payload.splice(1..4, [0x28, 0x34, 0x12]);
+    let mut b5 = vec![0xb5, 0x03, 0x20, u8::try_from(payload.len()).unwrap()];
+    b5.extend_from_slice(&0x5678u32.to_le_bytes());
+    b5.extend_from_slice(&payload);
+
+    let pcurves = crate::geometry::object_stream_pcurves(&b5);
+
+    assert_eq!(pcurves.len(), 1);
+    assert_eq!(pcurves[0].support_id, 0x0012_0034);
+}
+
+#[test]
 fn a5_pcurve_parser_reads_compact_support_and_uv_jet() {
     let pcurves = crate::geometry::a5_pcurves(&a5_pcurve_stream());
     assert_eq!(pcurves.len(), 1);

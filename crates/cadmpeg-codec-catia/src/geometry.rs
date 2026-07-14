@@ -3157,19 +3157,7 @@ fn parse_object_stream_pcurve(
     object_id: u32,
 ) -> Option<A8Pcurve> {
     let mut at = payload + 1;
-    let support_id = match *data.get(at)? {
-        0x18 => {
-            let v = u32::from(u16_le(data, at + 1)?);
-            at += 3;
-            v
-        }
-        0x38 => {
-            let v = u32_le_24(data, at + 1)?;
-            at += 4;
-            v
-        }
-        _ => return None,
-    };
+    let support_id = object_stream_reference(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
     at += 2;
     data.get(..at)?;
@@ -4212,6 +4200,26 @@ fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
         byte if byte >= 0x80 => Some(((byte - 0x80) as u32, at + 1)),
         _ => None,
     }
+}
+
+fn object_stream_reference(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    let lead = *bytes.get(*at)?;
+    let (value, width) = match lead {
+        0x38 => (u32_le_24(bytes, *at + 1)?, 4),
+        0x30 => (u32::from(u16_le(bytes, *at + 1)?) << 8, 3),
+        0x28 => (
+            u32::from(*bytes.get(*at + 1)?) | (u32::from(*bytes.get(*at + 2)?) << 16),
+            3,
+        ),
+        0x20 => (u32::from(*bytes.get(*at + 1)?) << 16, 2),
+        0x18 => (u32::from(u16_le(bytes, *at + 1)?), 3),
+        0x10 => (u32::from(*bytes.get(*at + 1)?) << 8, 2),
+        0x08 => (u32::from(*bytes.get(*at + 1)?), 2),
+        0x80..=0xff => (u32::from(lead - 0x80), 1),
+        _ => return None,
+    };
+    *at += width;
+    Some(value)
 }
 
 fn u32_le_24(bytes: &[u8], at: usize) -> Option<u32> {
