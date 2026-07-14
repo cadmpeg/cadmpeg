@@ -355,6 +355,7 @@ fn feature_entity_table_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityTa
 struct CreoSurfaceParameterRecord {
     id: String,
     surface_id: u32,
+    surface_type_byte: u8,
     surface_family: &'static str,
     boundary: &'static str,
     body: Vec<u8>,
@@ -424,6 +425,7 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
             Some(CreoSurfaceParameterRecord {
                 id: format!("creo:visibgeom:surface_parameter#{}", record.surface_id),
                 surface_id: record.surface_id,
+                surface_type_byte: row.type_byte,
                 surface_family,
                 boundary,
                 body: record.body.clone(),
@@ -479,7 +481,7 @@ fn surface_parameter_records(scan: &ContainerScan) -> Vec<CreoSurfaceParameterRe
                     }
                 }),
                 extrusion_direction: (row.kind == crate::surface::SurfaceKind::Extrusion)
-                    .then(|| record.extrusion_direction())
+                    .then(|| record.extrusion_direction(row.type_byte))
                     .flatten(),
                 row_offset: record.offset,
                 body_offset: record.body_offset,
@@ -7864,8 +7866,9 @@ mod resolved_sketch_tests {
             ],
             offset: 0,
         };
-        let row = |id, kind| crate::surface::SurfaceRow {
+        let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
             id,
+            type_byte: kind.canonical_type_byte(),
             kind,
             feature_id: 17,
             reversed: false,
@@ -7921,8 +7924,9 @@ mod resolved_sketch_tests {
 
     #[test]
     fn rowless_round_cylinder_requires_the_four_entry_sibling_layout() {
-        let row = |id, kind| crate::surface::SurfaceRow {
+        let row = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
             id,
+            type_byte: kind.canonical_type_byte(),
             kind,
             feature_id: 23,
             reversed: false,
@@ -12676,17 +12680,19 @@ fn transfer_positional_line_extrusion_planes(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> usize {
-    let kinds = scan
+    let row_types = scan
         .surface_rows
         .iter()
-        .map(|row| (row.id, row.kind))
+        .map(|row| (row.id, (row.kind, row.type_byte)))
         .collect::<BTreeMap<_, _>>();
     let mut transferred = 0;
     for record in &scan.surface_parameters {
-        if kinds.get(&record.surface_id) != Some(&crate::surface::SurfaceKind::Extrusion) {
+        let Some((crate::surface::SurfaceKind::Extrusion, type_byte)) =
+            row_types.get(&record.surface_id).copied()
+        else {
             continue;
-        }
-        let Some(frame) = record.line_extrusion_frame() else {
+        };
+        let Some(frame) = record.line_extrusion_frame(type_byte) else {
             continue;
         };
         let directrix =
@@ -14391,10 +14397,13 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.surface_parameters
             .iter()
             .filter(|record| {
-                scan.surface_rows.iter().any(|row| {
-                    row.id == record.surface_id
-                        && row.kind == crate::surface::SurfaceKind::Extrusion
-                }) && record.extrusion_direction().is_some()
+                scan.surface_rows
+                    .iter()
+                    .find(|row| row.id == record.surface_id)
+                    .is_some_and(|row| {
+                        row.kind == crate::surface::SurfaceKind::Extrusion
+                            && record.extrusion_direction(row.type_byte).is_some()
+                    })
             })
             .count()
             .to_string(),

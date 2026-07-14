@@ -1691,8 +1691,9 @@ mod tests {
             next_edges: [curve_id, curve_id],
             offset,
         };
-        let surface = |id, kind| crate::surface::SurfaceRow {
+        let surface = |id, kind: crate::surface::SurfaceKind| crate::surface::SurfaceRow {
             id,
+            type_byte: kind.canonical_type_byte(),
             kind,
             feature_id: 4,
             reversed: false,

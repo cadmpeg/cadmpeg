@@ -279,7 +279,29 @@ fn scan_discovers_typed_surface_rows() {
 
     assert_eq!(scan.surface_rows.len(), 2);
     assert_eq!(scan.surface_rows[0].id, 7);
+    assert_eq!(scan.surface_rows[0].type_byte, 0x22);
     assert_eq!(scan.surface_rows[1].id, 8);
+    assert_eq!(scan.surface_rows[1].type_byte, 0x24);
+}
+
+#[test]
+fn scan_preserves_linear_extrusion_type_variants() {
+    let mut payload = visibgeom_payload(2, 0);
+    payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 8]);
+    payload.extend_from_slice(&[8, 0x2c, 4, 0x01, 0, 0]);
+    let scan = container::scan_bytes(build_prt("c", &[("VisibGeom", payload)]));
+
+    assert_eq!(scan.surface_rows.len(), 2);
+    assert_eq!(
+        scan.surface_rows[0].kind,
+        crate::surface::SurfaceKind::Extrusion
+    );
+    assert_eq!(scan.surface_rows[0].type_byte, 0x2a);
+    assert_eq!(
+        scan.surface_rows[1].kind,
+        crate::surface::SurfaceKind::Extrusion
+    );
+    assert_eq!(scan.surface_rows[1].type_byte, 0x2c);
 }
 
 #[test]
@@ -318,7 +340,7 @@ fn scan_bounds_surface_parameter_bodies_and_decodes_scalars() {
 #[test]
 fn decode_transfers_positional_line_extrusion_plane() {
     let mut payload = visibgeom_payload(1, 0);
-    payload.extend_from_slice(&[7, 0x2a, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0]);
     for value in [0.0, 0.0, 1.0] {
         push_generated_scalar(&mut payload, value);
     }
@@ -382,6 +404,7 @@ fn decode_transfers_positional_line_extrusion_plane() {
         }
     ));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(record.fields["surface_type_byte"], 0x2c);
     assert_eq!(record.fields["extrusion_direction"][0], 0.0);
     assert_eq!(record.fields["extrusion_direction"][1], 0.0);
     assert_eq!(record.fields["extrusion_direction"][2], 1.0);
@@ -398,6 +421,26 @@ fn decode_transfers_positional_line_extrusion_plane() {
     );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_preserves_type_2c_direction_before_named_record() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x2c, 4, 0x01, 0, 0, 0x0f, 0xe4, 0x0f]);
+    payload.extend_from_slice(&[0x00, 0x0c, 0x9a]);
+    payload.extend_from_slice(b"\xe0\x01next_record\0");
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(record.fields["boundary"], "named_record");
+    assert_eq!(record.fields["extrusion_direction"][0], 0.0);
+    assert_eq!(record.fields["extrusion_direction"][1], 1.0);
+    assert_eq!(record.fields["extrusion_direction"][2], 0.0);
+    assert!(result.ir.model.surfaces.is_empty());
 }
 
 #[test]

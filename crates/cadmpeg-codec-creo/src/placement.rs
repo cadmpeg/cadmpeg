@@ -528,6 +528,7 @@ mod tests {
         };
         let generated_plane = SurfaceRow {
             id: 43,
+            type_byte: 0x22,
             kind: SurfaceKind::Plane,
             feature_id: 40,
             reversed: false,
@@ -726,6 +727,7 @@ mod tests {
         };
         let row = SurfaceRow {
             id: 7,
+            type_byte: 0x22,
             kind: SurfaceKind::Plane,
             feature_id: 3,
             reversed: false,

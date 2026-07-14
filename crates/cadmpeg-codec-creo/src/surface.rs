@@ -24,8 +24,8 @@ pub enum SurfaceKind {
     Spline,
     /// `geom_type = 0x29`: fillet surface family.
     Fillet,
-    /// `geom_type = 0x2a` or `0x2c`: a `surface_of_extrusion` linear
-    /// extrusion.
+    /// `geom_type = 0x2a` or `0x2c`: linear-extrusion family. The raw variant
+    /// remains available as [`SurfaceRow::type_byte`].
     Extrusion,
 }
 
@@ -42,6 +42,19 @@ impl SurfaceKind {
             _ => None,
         }
     }
+
+    #[cfg(test)]
+    pub(crate) const fn canonical_type_byte(self) -> u8 {
+        match self {
+            Self::Plane => 0x22,
+            Self::Cylinder => 0x24,
+            Self::Cone => 0x25,
+            Self::TorusOrSphere => 0x26,
+            Self::Spline => 0x28,
+            Self::Fillet => 0x29,
+            Self::Extrusion => 0x2a,
+        }
+    }
 }
 
 /// One `srf_array` row whose fixed prefix passed the row grammar.
@@ -51,6 +64,8 @@ pub struct SurfaceRow {
     /// namespace, referenced by curve `F0`/`F1` face fields and by
     /// `next_surface` links.
     pub id: u32,
+    /// Raw `geom_type` byte selecting the surface-family encoding variant.
+    pub type_byte: u8,
     /// The row's surface family, from `geom_type`.
     pub kind: SurfaceKind,
     /// The `feat_id` compact integer: the feature that generated this
@@ -270,8 +285,8 @@ impl SurfaceParameterRecord {
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
     #[must_use]
-    pub fn extrusion_direction(&self) -> Option<[f64; 3]> {
-        if self.boundary != SurfaceBodyBoundary::CompoundClose {
+    pub fn extrusion_direction(&self, type_byte: u8) -> Option<[f64; 3]> {
+        if type_byte != 0x2c {
             return None;
         }
         let direction = self.scalar_frames.first()?;
@@ -298,14 +313,14 @@ impl SurfaceParameterRecord {
     /// Decode the two-frame positional body used by a straight
     /// `surface_of_extrusion` instance.
     #[must_use]
-    pub fn line_extrusion_frame(&self) -> Option<LineExtrusionFrame> {
+    pub fn line_extrusion_frame(&self, type_byte: u8) -> Option<LineExtrusionFrame> {
         if self.boundary != SurfaceBodyBoundary::CompoundClose {
             return None;
         }
         let [direction, directrix] = self.scalar_frames.as_slice() else {
             return None;
         };
-        let direction_values = self.extrusion_direction()?;
+        let direction_values = self.extrusion_direction(type_byte)?;
         let [start_x, start_y, start_z, end_x, end_y, end_z] = directrix.slots.as_slice() else {
             return None;
         };
@@ -550,12 +565,17 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
                 (after > value_start).then_some((value, at))
             })
         };
-        let kind = find_in(payload, b"geom_type\0", start, end)
+        let typed_kind = find_in(payload, b"geom_type\0", start, end)
             .and_then(|at| payload.get(at + b"geom_type\0".len()))
-            .and_then(|byte| SurfaceKind::from_byte(*byte));
-        if let (Some((id, id_offset)), Some(kind), Some((feature_id, _)), Some((next_surface, _))) = (
+            .and_then(|byte| SurfaceKind::from_byte(*byte).map(|kind| (*byte, kind)));
+        if let (
+            Some((id, id_offset)),
+            Some((type_byte, kind)),
+            Some((feature_id, _)),
+            Some((next_surface, _)),
+        ) = (
             value(b"geom_id\0"),
-            kind,
+            typed_kind,
             value(b"feat_id\0"),
             value(b"next_geom_ptr\0"),
         ) {
@@ -569,6 +589,7 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
                 .unwrap_or(0);
             result.push(SurfaceRow {
                 id,
+                type_byte,
                 kind,
                 feature_id,
                 reversed,
@@ -610,6 +631,7 @@ pub fn rows(payload: &[u8]) -> Vec<SurfaceRow> {
         }
         result.push(SurfaceRow {
             id,
+            type_byte: payload[type_offset],
             kind,
             feature_id,
             reversed: orientation == 0xf6,
@@ -1516,6 +1538,7 @@ mod tests {
             vec![
                 SurfaceRow {
                     id: 7,
+                    type_byte: 0x22,
                     kind: SurfaceKind::Plane,
                     feature_id: 4,
                     reversed: false,
@@ -1525,6 +1548,7 @@ mod tests {
                 },
                 SurfaceRow {
                     id: 128,
+                    type_byte: 0x24,
                     kind: SurfaceKind::Cylinder,
                     feature_id: 257,
                     reversed: true,
