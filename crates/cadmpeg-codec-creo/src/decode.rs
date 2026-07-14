@@ -6495,7 +6495,11 @@ fn schema_feature_definition(
                         axis,
                         extent: None,
                     },
-                    op: BooleanOp::Unresolved,
+                    op: section_sweep_boolean_operation(
+                        kind,
+                        false,
+                        preceding_features_establish_body(ir),
+                    ),
                 };
             }
         }
@@ -6532,13 +6536,14 @@ fn schema_feature_definition(
                         profile,
                         direction: Some(Vector3::new(direction[0], direction[1], direction[2])),
                         extent,
-                        op: if ir.model.bodies.iter().any(|body| {
-                            body.id == BodyId(format!("creo:feature:extrusion#{feature_id}:body"))
-                        }) {
-                            BooleanOp::NewBody
-                        } else {
-                            BooleanOp::Unresolved
-                        },
+                        op: section_sweep_boolean_operation(
+                            kind,
+                            ir.model.bodies.iter().any(|body| {
+                                body.id
+                                    == BodyId(format!("creo:feature:extrusion#{feature_id}:body"))
+                            }),
+                            preceding_features_establish_body(ir),
+                        ),
                         draft: None,
                     };
                 }
@@ -6576,6 +6581,30 @@ fn schema_feature_definition(
         kind: kind.to_string(),
         parameters: feature_parameters(scan, feature_id),
         properties: BTreeMap::new(),
+    }
+}
+
+fn preceding_features_establish_body(ir: &CadIr) -> bool {
+    ir.model.features.iter().any(|feature| {
+        matches!(
+            feature.definition,
+            IrFeatureDefinition::Extrude { .. }
+                | IrFeatureDefinition::Revolve { .. }
+                | IrFeatureDefinition::Hole { .. }
+                | IrFeatureDefinition::Fillet { .. }
+                | IrFeatureDefinition::Chamfer { .. }
+        )
+    })
+}
+
+fn section_sweep_boolean_operation(kind: &str, creates_body: bool, prior_body: bool) -> BooleanOp {
+    if creates_body {
+        return BooleanOp::NewBody;
+    }
+    match kind {
+        "Protrusion" if prior_body => BooleanOp::Join,
+        "Cut" => BooleanOp::Cut,
+        _ => BooleanOp::Unresolved,
     }
 }
 
@@ -7479,6 +7508,30 @@ mod resolved_sketch_tests {
                 },
                 [0.0, -1.0, 0.0]
             ))
+        );
+    }
+
+    #[test]
+    fn stored_section_sweep_family_defines_boolean_operation() {
+        assert_eq!(
+            section_sweep_boolean_operation("Protrusion", false, true),
+            BooleanOp::Join
+        );
+        assert_eq!(
+            section_sweep_boolean_operation("Cut", false, false),
+            BooleanOp::Cut
+        );
+        assert_eq!(
+            section_sweep_boolean_operation("Protrusion", true, false),
+            BooleanOp::NewBody
+        );
+        assert_eq!(
+            section_sweep_boolean_operation("Protrusion", false, false),
+            BooleanOp::Unresolved
+        );
+        assert_eq!(
+            section_sweep_boolean_operation("Körper", false, true),
+            BooleanOp::Unresolved
         );
     }
 
