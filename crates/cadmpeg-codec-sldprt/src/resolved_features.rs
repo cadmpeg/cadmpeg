@@ -299,6 +299,32 @@ mod marker_tests {
     }
 
     #[test]
+    fn qualified_operand_selects_one_coordinate_marker_in_a_reused_local_id() {
+        let marker = |id: &str, coordinates_m| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("feature".into()),
+            ordinal: 0,
+            offset: 0,
+            local_id: Some(7),
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let markers = [
+            marker("reference", None),
+            marker("geometry", Some([1.0, 2.0])),
+        ];
+        assert_eq!(
+            resolve_operand_marker(&markers, FeatureInputOperandKind::Native(0x837b), 7,)
+                .map(|marker| marker.id.as_str()),
+            Some("geometry")
+        );
+    }
+
+    #[test]
     fn curve_operand_selects_an_arc_by_local_identifier() {
         let markers = [
             SketchInputEntity {
@@ -1139,7 +1165,13 @@ pub(crate) fn resolve_operand_marker<'a>(
                 _ => None,
             }
         }
-        _ => None,
+        _ => unique_marker_candidate(
+            &exact
+                .iter()
+                .map(|entity| (entity.id.clone(), entity.coordinates_m.is_some()))
+                .collect::<Vec<_>>(),
+        )
+        .and_then(|id| exact.iter().copied().find(|entity| entity.id == id)),
     }
 }
 
