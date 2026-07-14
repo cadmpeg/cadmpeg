@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 66);
+    assert_eq!(namespace.version, 68);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1120,6 +1120,45 @@ fn om_sketch_scalar_field_requires_exact_frame_and_finite_shifted_value() {
     malformed = bytes;
     malformed[6] = 0x70;
     assert!(crate::om::sketch_payload_scalar_fields(&malformed).is_empty());
+}
+
+#[test]
+fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
+    let bytes = [
+        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00, 0xaa, 0x66, 0x80, 0x83,
+        0x03, 0x07, b'L', b'i', b'n', b'e', b'2', 0x00,
+    ];
+    let fields = crate::om::sketch_payload_named_fields(&bytes);
+    assert_eq!(fields.len(), 2);
+    assert_eq!(
+        (fields[0].offset, fields[0].type_code, fields[0].value),
+        (0, 0x32, "Point1")
+    );
+    assert_eq!(
+        (fields[1].offset, fields[1].type_code, fields[1].value),
+        (12, 0x83, "Line2")
+    );
+
+    assert!(crate::om::sketch_payload_named_fields(&[
+        0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
+    ])
+    .is_empty());
+    assert!(crate::om::sketch_payload_named_fields(&[
+        0x66, 0x32, 0x03, 0x08, b'P', b'o', b'i', b'n', b't',
+    ])
+    .is_empty());
+}
+
+#[test]
+fn nx_sketch_point_names_require_positive_decimal_suffixes() {
+    assert_eq!(crate::native::parse_sketch_point_name("Point1"), Some(1));
+    assert_eq!(
+        crate::native::parse_sketch_point_name("Point2048"),
+        Some(2048)
+    );
+    for malformed in ["Point", "Point0", "point1", "Point-1", "Point1A"] {
+        assert_eq!(crate::native::parse_sketch_point_name(malformed), None);
+    }
 }
 
 #[test]
@@ -4855,7 +4894,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 66);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 68);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -213,6 +213,66 @@ pub fn sketch_payload_scalar_fields(bytes: &[u8]) -> Vec<SketchPayloadScalarFiel
     fields
 }
 
+/// One compact-code string field in a reconstructed sketch payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SketchPayloadNamedField<'a> {
+    /// Payload-relative offset of the `66` marker.
+    pub offset: usize,
+    /// Decoded non-null compact type code following the marker.
+    pub type_code: u32,
+    /// Exact nonempty printable ASCII value.
+    pub value: &'a str,
+}
+
+/// Decode exact `66, compact_type, 03, declared_len, text, 00` fields.
+pub fn sketch_payload_named_fields(bytes: &[u8]) -> Vec<SketchPayloadNamedField<'_>> {
+    let mut fields = Vec::new();
+    for start in 0..bytes.len().saturating_sub(5) {
+        if bytes[start] != 0x66 {
+            continue;
+        }
+        let Some((CompactIndex::Value(type_code), type_width)) =
+            bytes.get(start + 1..).and_then(compact_index)
+        else {
+            continue;
+        };
+        let marker = start + 1 + type_width;
+        if bytes.get(marker) != Some(&0x03) {
+            continue;
+        }
+        let Some(text_len) = bytes
+            .get(marker + 1)
+            .copied()
+            .and_then(|declared| declared.checked_sub(2))
+            .map(usize::from)
+        else {
+            continue;
+        };
+        let text_start = marker + 2;
+        let Some(text_end) = text_start.checked_add(text_len) else {
+            continue;
+        };
+        let Some(text) = bytes.get(text_start..text_end) else {
+            continue;
+        };
+        if text.is_empty()
+            || !text.iter().all(u8::is_ascii_graphic)
+            || bytes.get(text_end) != Some(&0x00)
+        {
+            continue;
+        }
+        let Ok(value) = std::str::from_utf8(text) else {
+            continue;
+        };
+        fields.push(SketchPayloadNamedField {
+            offset: start,
+            type_code,
+            value,
+        });
+    }
+    fields
+}
+
 /// One tagged reference occurrence in an externally bounded OM record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ReferenceValue {

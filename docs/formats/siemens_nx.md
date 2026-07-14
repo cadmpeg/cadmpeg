@@ -571,6 +571,10 @@ The logical sketch construction payload is the bytewise concatenation of the res
 
 A sketch payload scalar field is `50 59 66, field_code:u8, 00, shifted_f64`. The shifted binary64 uses the extrusion shifted-IEEE transform. Each complete finite field retains its discriminator, decoded value, payload-relative marker offset, and absolute source offset. The field frame does not assign a geometric or constraint role to the value.
 
+A sketch payload name field is `66, compact_type, 03, declared_len:u8, text[declared_len-2], 00`. The compact type is non-null, and text is nonempty printable ASCII. A complete name field opens a named payload interval ending exclusively at the next complete name field or the reconstructed payload boundary. Framed scalar fields within that interval are retained in payload order. Bytes preceding the first complete name field remain outside named intervals.
+
+A named payload interval whose name is exactly `Point` followed by a positive decimal ordinal is a sketch point when the interval contains exactly two framed scalar fields. The scalar order is the point's two-dimensional coordinate order in model millimeters. A zero ordinal, nondecimal suffix, missing scalar, or additional scalar rejects the typed point atomically.
+
 An `EXTRUDE` operation carries an ordered profile-reference field `01 02 16 01, count:u8, reference[count-1], 01 03 79`, with `count >= 2`. The payload may repeat the identical ordered encoded references as `01, count, reference[count-1], 00 00`; an exact unique repetition is retained as an independent witness of the list. Profile indices use the same canonical `f0` and `f1` widths and resolve against offset-only OM data blocks under the same uniqueness rule.
 
 The extrusion payload begins `0f 00 00 01 00` followed by two shifted-IEEE scalars. A shifted-IEEE scalar occupies eight bytes: adding `0x10` to its first byte and retaining the following seven bytes verbatim produces one big-endian IEEE-754 binary64 value. Overflow of the first-byte addition and non-finite reconstructed values invalidate the scalar header atomically.

@@ -2829,6 +2829,20 @@ fn attach_native_object_model(
         &scan.container,
         &feature_sketch_construction_inputs,
     );
+    let feature_sketch_payload_names = crate::native::feature_sketch_payload_names(
+        &scan.container,
+        &feature_sketch_construction_inputs,
+    );
+    let feature_sketch_payload_named_records = crate::native::feature_sketch_payload_named_records(
+        &feature_sketch_construction_payloads,
+        &feature_sketch_payload_names,
+        &feature_sketch_payload_scalars,
+    );
+    let feature_sketch_points = crate::native::feature_sketch_points(
+        &feature_sketch_payload_named_records,
+        &feature_sketch_payload_names,
+        &feature_sketch_payload_scalars,
+    );
     let feature_boolean_operations = crate::native::feature_boolean_operations(&scan.container);
     let expression_declarations = crate::native::expression_declarations(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
@@ -2894,6 +2908,9 @@ fn attach_native_object_model(
         && feature_sketch_construction_inputs.is_empty()
         && feature_sketch_construction_payloads.is_empty()
         && feature_sketch_payload_scalars.is_empty()
+        && feature_sketch_payload_names.is_empty()
+        && feature_sketch_payload_named_records.is_empty()
+        && feature_sketch_points.is_empty()
         && feature_boolean_operations.is_empty()
         && expression_declarations.is_empty()
         && expressions.is_empty()
@@ -3178,7 +3195,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(66);
+    namespace.version = namespace.version.max(68);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3325,6 +3342,21 @@ fn attach_native_object_model(
             "feature_sketch_payload_scalars",
             &feature_sketch_payload_scalars,
         )?;
+    }
+    if !feature_sketch_payload_names.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_payload_names",
+            &feature_sketch_payload_names,
+        )?;
+    }
+    if !feature_sketch_payload_named_records.is_empty() {
+        namespace.set_arena(
+            "feature_sketch_payload_named_records",
+            &feature_sketch_payload_named_records,
+        )?;
+    }
+    if !feature_sketch_points.is_empty() {
+        namespace.set_arena("feature_sketch_points", &feature_sketch_points)?;
     }
     if !feature_boolean_operations.is_empty() {
         namespace.set_arena("feature_boolean_operations", &feature_boolean_operations)?;
