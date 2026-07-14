@@ -1746,7 +1746,10 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
 }
 
 fn standard_catpart_with_value_block() -> Vec<u8> {
-    let mut stream = value_block_stream(&[0x81, 0x83, 0x32, 4, 0, 0, 0, 0x83, 0x82]);
+    let mut stream = object_graph_stream();
+    stream.extend(value_block_stream(&[
+        0x81, 0x83, 0x32, 4, 0, 0, 0, 0x83, 0x82,
+    ]));
     stream.extend(catalog_stream(&[
         "CATCatalogManager",
         "catalogManager",
@@ -4502,9 +4505,16 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     .expect("load CATIA native records");
 
     assert_eq!(native.value_blocks.len(), 1);
-    assert_eq!(native.value_blocks[0].byte_offset, 16);
+    assert_eq!(
+        native.value_blocks[0].byte_offset,
+        u64::try_from(16 + object_graph_stream().len()).unwrap()
+    );
     assert_eq!(native.value_blocks[0].byte_len, 16);
     assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
+    assert_eq!(
+        native.value_blocks[0].object_graph.as_deref(),
+        Some(native.object_graphs[0].id.as_str())
+    );
     assert_eq!(
         native.value_blocks[0].payload,
         [0x81, 0x83, 0x32, 4, 0, 0, 0, 0x83, 0x82]

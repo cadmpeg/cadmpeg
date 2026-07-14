@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 20;
+pub const CATIA_NATIVE_VERSION: u32 = 21;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -128,6 +128,9 @@ pub struct CatiaValueBlock {
     pub byte_len: u64,
     /// Stored length from the marker through the byte before the terminator.
     pub declared_len: u64,
+    /// Object graph ending exactly where this value block begins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_graph: Option<String>,
     /// Source-schema catalog that begins immediately after this block.
     pub catalog: String,
     /// Value payload in serialized order.
@@ -452,7 +455,13 @@ impl CatiaNative {
                 let catalog = catalogs
                     .iter()
                     .find(|catalog| catalog.byte_offset == catalog_pos as u64);
-                CatiaValueBlock::from_parts(block, catalog_pos, catalog)
+                let object_graph = object_graphs.iter().find(|graph| {
+                    graph
+                        .byte_offset
+                        .checked_add(graph.byte_len)
+                        .is_some_and(|end| end == block.pos as u64)
+                });
+                CatiaValueBlock::from_parts(block, catalog_pos, catalog, object_graph)
             })
             .collect();
         let preview_images = container::preview_images(bytes)
@@ -678,7 +687,7 @@ impl CatiaNative {
 impl From<value_block::ValueBlock> for CatiaValueBlock {
     fn from(block: value_block::ValueBlock) -> Self {
         let catalog_pos = block.pos + block.total_len;
-        Self::from_parts(block, catalog_pos, None)
+        Self::from_parts(block, catalog_pos, None, None)
     }
 }
 
@@ -687,6 +696,7 @@ impl CatiaValueBlock {
         block: value_block::ValueBlock,
         catalog_pos: usize,
         catalog: Option<&CatiaCatalog>,
+        object_graph: Option<&CatiaObjectGraph>,
     ) -> Self {
         let selector_indices = block
             .fields
@@ -731,6 +741,7 @@ impl CatiaValueBlock {
             byte_offset: block.pos as u64,
             byte_len: block.total_len as u64,
             declared_len: block.declared_len as u64,
+            object_graph: object_graph.map(|graph| graph.id.clone()),
             catalog: format!("catia:outer:catalog#{catalog_pos:010}"),
             payload: block.payload,
             fields: block.fields,
