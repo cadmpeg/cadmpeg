@@ -191,6 +191,7 @@ pub fn unit_cube() -> CadIr {
         ir.model.loops.push(Loop {
             id: loop_id.clone().into(),
             face: format!("synthetic:cube:face#{name}").into(),
+            boundary_role: crate::topology::LoopBoundaryRole::Outer,
             coedges: coedge_ids.iter().map(|c| CoedgeId(c.clone())).collect(),
             vertex_uses: Vec::new(),
         });

@@ -48,6 +48,7 @@ enum LoopUse {
 struct FaceDefinition {
     surface: u32,
     loops: Vec<u32>,
+    has_outer_loop: bool,
 }
 
 #[derive(Clone)]
@@ -444,10 +445,14 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "face loop count is not positive"));
             continue;
         };
-        if !matches!(record.integer(3), Some(0 | 1)) {
-            losses.push(entity_loss(entry, "face outer-loop flag is not logical"));
-            continue;
-        }
+        let has_outer_loop = match record.integer(3) {
+            Some(1) => true,
+            Some(0) => false,
+            _ => {
+                losses.push(entity_loss(entry, "face outer-loop flag is not logical"));
+                continue;
+            }
+        };
         let Some(face_loops) = (0..count)
             .map(|index| pointer(record, 4 + index))
             .collect::<Option<Vec<_>>>()
@@ -467,6 +472,7 @@ pub(super) fn project(
             FaceDefinition {
                 surface,
                 loops: face_loops,
+                has_outer_loop,
             },
         );
     }
@@ -679,7 +685,9 @@ pub(super) fn project(
                 };
                 let face_id = FaceId(format!("iges:model:face#{shell_stem}:D{face_sequence}"));
                 let mut face_loops = Vec::new();
-                for loop_sequence in face_definition.loops {
+                for (face_loop_index, loop_sequence) in
+                    face_definition.loops.into_iter().enumerate()
+                {
                     let uses = loops[&loop_sequence].clone();
                     let loop_id = LoopId(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"));
                     let edge_use_indices = uses
@@ -843,6 +851,11 @@ pub(super) fn project(
                     candidate.model.loops.push(Loop {
                         id: loop_id.clone(),
                         face: face_id.clone(),
+                        boundary_role: if face_definition.has_outer_loop && face_loop_index == 0 {
+                            cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                        } else {
+                            cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                        },
                         coedges: coedge_ids,
                         vertex_uses: loop_vertex_uses,
                     });

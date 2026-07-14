@@ -15,7 +15,7 @@ cargo add cadmpeg-ir
 
 A `CadIr` document contains:
 
-- required IR version 5 schema, including vertex loops, ordered pcurve uses, the `subds` arena, and source-byte ledger;
+- required IR version 5 schema, including loop boundary roles, vertex loops, ordered pcurve uses, the `subds` arena, and source-byte ledger;
 - canonical units and document tolerances;
 - flat, ID-referenced arenas for topology, geometry, subdivision control cages, construction features,
   tessellation, appearance, and source attributes;

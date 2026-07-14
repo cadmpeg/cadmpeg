@@ -93,6 +93,7 @@ fn edgeless_doc() -> CadIr {
     ir.model.loops.push(Loop {
         id: LoopId("lp0".into()),
         face: FaceId("f0".into()),
+        boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
         coedges: vec![CoedgeId("ce0".into())],
         vertex_uses: Vec::new(),
     });

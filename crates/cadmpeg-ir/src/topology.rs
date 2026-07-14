@@ -133,6 +133,20 @@ pub struct Face {
     pub tolerance: Option<f64>,
 }
 
+/// A loop's boundary role within its owning face.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopBoundaryRole {
+    /// The source does not classify this loop as outer or inner.
+    #[default]
+    Unspecified,
+    /// The loop is the explicit exterior boundary of the face.
+    Outer,
+    /// The loop bounds material excluded from the face; all loops may be inner
+    /// when the surface parameter domain supplies the exterior boundary.
+    Inner,
+}
+
 /// A closed boundary loop of a face, expressed as an ordered ring of coedges.
 /// The ordering in `coedges` is the ring order; each coedge's `next` should
 /// point to the following entry (validation enforces the ring closes).
@@ -142,6 +156,9 @@ pub struct Loop {
     pub id: LoopId,
     /// Owning face.
     pub face: FaceId,
+    /// Boundary role within the owning face.
+    #[serde(default)]
+    pub boundary_role: LoopBoundaryRole,
     /// Coedges in ring order for an edge loop.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coedges: Vec<CoedgeId>,

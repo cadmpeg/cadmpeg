@@ -3912,6 +3912,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             out.loops.push(Loop {
                 id: LoopId(id(i)),
                 face: FaceId(id(owner)),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges,
                 vertex_uses: Vec::new(),
             });

@@ -626,6 +626,7 @@ fn decode_graph(
             out.loops.push(Loop {
                 id: LoopId(id_loop(*loop_attr)),
                 face: FaceId(id_face(f.bridge_attr)),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges,
                 vertex_uses: Vec::new(),
             });

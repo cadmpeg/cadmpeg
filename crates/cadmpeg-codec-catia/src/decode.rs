@@ -631,6 +631,7 @@ fn transfer_e5_topology(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
                 vertex_uses: Vec::new(),
             });
@@ -1300,6 +1301,7 @@ fn attach_standard_topology(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: FaceId(format!("catia:standard:face#{face_index}")),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids,
                 vertex_uses: Vec::new(),
             });

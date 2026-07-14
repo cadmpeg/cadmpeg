@@ -504,6 +504,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face,
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
                 vertex_uses: Vec::new(),
             });

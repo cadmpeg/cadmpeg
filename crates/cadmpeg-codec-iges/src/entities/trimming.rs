@@ -349,7 +349,8 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let (surface_sequence, boundary_sequences, mut valid) = if entry.entity_type == 144 {
+        let explicit_outer = entry.entity_type == 144;
+        let (surface_sequence, boundary_sequences, mut valid) = if explicit_outer {
             let Some(surface) = pointer(record, 1) else {
                 losses.push(entity_loss(
                     entry,
@@ -639,6 +640,15 @@ pub(super) fn project(
             candidate.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: if explicit_outer {
+                    if boundary_index == 0 {
+                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                    } else {
+                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                    }
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
+                },
                 coedges: coedge_ids,
                 vertex_uses: Vec::new(),
             });

@@ -1784,6 +1784,7 @@ fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: coedge_ids,
             vertex_uses: Vec::new(),
         });
@@ -1827,6 +1828,7 @@ fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: vec![coedge_id],
             vertex_uses: Vec::new(),
         });

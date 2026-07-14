@@ -50,6 +50,8 @@ Model-space lengths equal native values divided by the Global model-space scale 
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.
 
+A Form 1 Face Entity (Type 510) stores a support-surface pointer, a positive loop count, an outer-loop logical, and the ordered loop pointers. When the logical is true, the first loop is `outer` and every following loop is `inner`. When it is false, every loop is `inner` and the support surface's parameter domain supplies the exterior boundary. A face has at most one explicit outer loop.
+
 Boundary, curve-on-surface, bounded-surface, and trimmed-surface entities carry face-local boundaries. They produce sheet regions whose loops, coedges, edges, and vertices are owned by the source face. No cross-face edge sharing is inferred without a shared source topology entity. A topology candidate is attached only after the complete neutral ownership and reference graph validates.
 
 A Form 0 Boundary Entity (Type 141) stores `TYPE`, `PREF`, the support-surface pointer, and a positive model-curve count. Each ordered model-curve item stores its curve pointer, sense (`1` forward or `2` reversed), pcurve count, and that many parameter-curve pointers. `TYPE=0` requires every pcurve count to be zero. `TYPE=1` requires every pcurve count to be positive. The parameter curves of one item remain ordered and together form that coedge's parameter-space image.

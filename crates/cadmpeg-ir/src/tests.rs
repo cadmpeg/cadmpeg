@@ -1966,6 +1966,7 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
     ir.model.loops.push(crate::topology::Loop {
         id: loop_id.clone(),
         face: face_id,
+        boundary_role: crate::topology::LoopBoundaryRole::Inner,
         coedges: Vec::new(),
         vertex_uses: vec![crate::topology::VertexUse {
             vertex: vertex_id,
@@ -1977,6 +1978,24 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
     ir.model.finalize();
     let report = validate(&ir, Vec::new());
     assert!(report.is_ok(), "{:#?}", report.findings);
+
+    ir.model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == loop_id)
+        .unwrap()
+        .boundary_role = crate::topology::LoopBoundaryRole::Outer;
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.check == Check::LoopClosure
+            && finding.message == "face has more than one explicit outer loop"
+    }));
+    ir.model
+        .loops
+        .iter_mut()
+        .find(|loop_| loop_.id == loop_id)
+        .unwrap()
+        .boundary_role = crate::topology::LoopBoundaryRole::Inner;
 
     let coedge = ir.model.loops[0].coedges[0].clone();
     ir.model

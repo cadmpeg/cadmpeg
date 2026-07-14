@@ -1676,6 +1676,10 @@ fn owned_test_file(entities: &[OwnedTestEntity]) -> Vec<u8> {
 }
 
 fn explicit_vertex_loop_file() -> Vec<u8> {
+    explicit_vertex_loop_file_with_outer_flag(true)
+}
+
+fn explicit_vertex_loop_file_with_outer_flag(has_outer_loop: bool) -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
             entity_type: 116,
@@ -1710,7 +1714,7 @@ fn explicit_vertex_loop_file() -> Vec<u8> {
             form: 1,
             label: "FACE".into(),
             status: "00010000",
-            parameters: "510,3,1,1,7;".into(),
+            parameters: format!("510,3,1,{},7;", i32::from(has_outer_loop)),
         },
         OwnedTestEntity {
             entity_type: 514,
@@ -2102,6 +2106,10 @@ fn decode_builds_a_vertex_only_pole_loop() {
     assert_eq!(loop_.vertex_uses[0].vertex.0, "iges:model:vertex#D11:D5:1");
     assert!(loop_.vertex_uses[0].after.is_none());
     assert!(loop_.vertex_uses[0].pcurves.is_empty());
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -2109,6 +2117,32 @@ fn decode_builds_a_vertex_only_pole_loop() {
     );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_preserves_a_face_with_no_explicit_outer_loop() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_vertex_loop_file_with_outer_flag(false)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.0 == "iges:model:loop#D11:D7")
+        .unwrap();
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+    );
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
 }
 
 fn append_tetrahedral_shell(
@@ -2510,6 +2544,10 @@ fn decode_builds_shared_explicit_open_shell_topology() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
     assert_eq!(loop_.coedges.len(), 4);
     let explicit_edges = result
         .ir
@@ -2566,6 +2604,10 @@ fn decode_builds_a_parametrically_bounded_sheet() {
         .iter()
         .find(|coedge| coedge.id == loop_.coedges[0])
         .unwrap();
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Unspecified
+    );
     assert!(!coedge.pcurves.is_empty());
     assert!(
         result.report.losses.is_empty(),
@@ -2672,6 +2714,10 @@ fn decode_builds_a_valid_face_local_trimmed_sheet() {
         .iter()
         .find(|loop_| loop_.id == face.loops[0])
         .unwrap();
+    assert_eq!(
+        loop_.boundary_role,
+        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+    );
     assert_eq!(loop_.coedges.len(), 1);
     let coedge = result
         .ir

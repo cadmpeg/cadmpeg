@@ -2108,6 +2108,7 @@ fn stage_extrusion_caps(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: vec![coedge_id.clone()],
                 vertex_uses: Vec::new(),
             });
@@ -2621,6 +2622,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
         staged.loops.push(Loop {
             id: id.clone(),
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges,
             vertex_uses: Vec::new(),
         });

@@ -1060,6 +1060,7 @@ fn emit_topology(
         ir.model.loops.push(Loop {
             id: id.clone(),
             face: face.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: Vec::new(),
             vertex_uses: Vec::new(),
         });

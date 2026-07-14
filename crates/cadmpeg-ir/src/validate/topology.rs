@@ -2254,6 +2254,23 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|c| (c.id.0.as_str(), c))
         .collect();
 
+    for face in &ir.model.faces {
+        let outer_count = face
+            .loops
+            .iter()
+            .filter_map(|id| ir.model.loops.iter().find(|loop_| loop_.id == *id))
+            .filter(|loop_| loop_.boundary_role == crate::topology::LoopBoundaryRole::Outer)
+            .count();
+        if outer_count > 1 {
+            findings.push(Finding {
+                check: Check::LoopClosure,
+                severity: Severity::Error,
+                message: "face has more than one explicit outer loop".into(),
+                entity: Some(face.id.0.clone()),
+            });
+        }
+    }
+
     for lp in &ir.model.loops {
         let vertex_only =
             lp.coedges.is_empty() && lp.vertex_uses.len() == 1 && lp.vertex_uses[0].after.is_none();

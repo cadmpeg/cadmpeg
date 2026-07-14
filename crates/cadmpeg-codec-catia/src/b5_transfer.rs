@@ -336,6 +336,7 @@ pub(crate) fn transfer(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
                 vertex_uses: Vec::new(),
             });
