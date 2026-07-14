@@ -217,6 +217,8 @@ When exactly one line-distance operand identifies a profile line, the other oper
 
 When exactly one angular-dimension operand identifies a profile line, the other operand identifies the sole distinct profile line in the complete owning sketch whose unsigned direction angle equals the stored angle. When neither operand identifies a line, the operands identify the sole unordered profile-line pair at that angle. The unsigned direction angle is the arccosine of the normalized direction dot product and lies in `[0, pi]`. Zero or multiple compatible lines or pairs leave the missing operands unresolved.
 
+For a point-line dimension, a resolved point operand identifies the sole profile line in the complete owning sketch at the stored perpendicular distance, and a resolved line operand identifies the sole profile locus at that distance. When neither operand resolves directly, the operands identify the sole ordered profile-locus and profile-line pair at that distance. Zero or multiple compatible candidates leave the missing operands unresolved.
+
 A relation instance without a driving scalar uses its display scalar's attached name record to identify an existing same-named parameter owned by the same sketch feature. The binding requires one parameter and applies only when no driving relation or earlier display-only relation has claimed that parameter.
 
 Distance, horizontal-distance, vertical-distance, and circular-dimension driving scalars store metres. Angular driving scalars store radians. These relation-family units apply independently of the owning Keywords dimension's expression spelling.
