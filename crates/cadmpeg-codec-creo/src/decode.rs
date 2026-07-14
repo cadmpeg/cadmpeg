@@ -1294,10 +1294,7 @@ pub(crate) fn resolved_section_points(
                 return None;
             }
             let vectors = relation.operand_vectors?;
-            if vectors[0][2..] != [None, Some(1)]
-                || vectors[1] != [Some(1), Some(1), Some(0), Some(1)]
-                || vectors[2] != [Some(15), Some(16), Some(15), Some(1)]
-            {
+            if !section_linear_distance_vectors(vectors) {
                 return None;
             }
             let [Some(first), Some(second), _, _] = vectors[0] else {
@@ -3937,10 +3934,7 @@ fn section_dimension_constraints(
                 if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
                     return None;
                 }
-                if vectors[0][2..] != [None, Some(1)]
-                    || vectors[1] != [Some(1), Some(1), Some(0), Some(1)]
-                    || vectors[2] != [Some(15), Some(16), Some(15), Some(1)]
-                {
+                if !section_linear_distance_vectors(vectors) {
                     return None;
                 }
                 let [Some(first_id), Some(second_id), _, _] = vectors[0] else {
@@ -3991,6 +3985,15 @@ fn section_dimension_constraints(
             )
         })
         .collect()
+}
+
+fn section_linear_distance_vectors(vectors: [[Option<u32>; 4]; 3]) -> bool {
+    vectors[0][2..] == [None, Some(1)]
+        && matches!(
+            vectors[1],
+            [Some(0), Some(0), Some(0), Some(0)] | [Some(1), Some(1), Some(0), Some(1)]
+        )
+        && vectors[2] == [Some(15), Some(16), Some(15), Some(1)]
 }
 
 fn section_skamp_locus(
@@ -7786,6 +7789,40 @@ mod resolved_sketch_tests {
                         "creo:featdefs:sketch_entity#917:13".to_string()
                     )),
                 ],
+            }
+        );
+        let mut distance_definition = definition.clone();
+        let distance_segment = &mut distance_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows[0];
+        distance_segment.vertical_horizontal = Some(0);
+        let distance_relation = &mut distance_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows[0];
+        distance_relation.relation_type = 0;
+        distance_relation.sign = 1;
+        distance_relation.dimension_id = 0;
+        distance_relation.operand_vectors = Some([
+            [Some(1), Some(2), None, Some(1)],
+            [Some(0), Some(0), Some(0), Some(0)],
+            [Some(15), Some(16), Some(15), Some(1)],
+        ]);
+        assert_eq!(
+            section_dimension_constraints(&distance_definition, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::VerticalDistance {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                parameter: ParameterId("creo:featdefs:parameter#40:42".to_string()),
             }
         );
         let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));

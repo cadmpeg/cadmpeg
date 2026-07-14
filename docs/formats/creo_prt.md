@@ -383,7 +383,8 @@ and `f6` is a null operand. Expansion is bounded independently at four slots
 for each of `a`, `b`, and `c`.
 
 For a type-zero linear-distance relation with operand-vector forms
-`a = [point0, point1, null, 1]`, `b = [1, 1, 0, 1]`, and
+`a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
+`b = [1, 1, 0, 1]`, and
 `c = [15, 16, 15, 1]`, the referenced dimension supplies the distance between
 the two points along the measured horizontal or vertical segment. Sign `1`
 adds the dimension and sign `f6` subtracts it. Sign zero selects the segment
@@ -391,7 +392,8 @@ direction: first-direction `1` adds the dimension, while the null
 first-direction selector subtracts it.
 
 A type-zero relation with vectors `a=[first_point,second_point,null,1]`,
-`b=[1,1,0,1]`, and `c=[15,16,15,1]` is a segment-aligned linear dimension.
+`b=[0,0,0,0]` or `b=[1,1,0,1]`, and `c=[15,16,15,1]` is a
+segment-aligned linear dimension.
 Its dimension selector is a zero-based index into `dimtab_ptr`. `verhor=1`
 selects the section `u` difference and `verhor=0` selects the section `v`
 difference. Sign `1` defines `second-first=+value`; sign `f6` defines
