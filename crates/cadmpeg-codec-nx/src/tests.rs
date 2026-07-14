@@ -784,6 +784,45 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
 }
 
 #[test]
+fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
+    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::geometry::ProceduralSurface;
+    use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let output = BodyId("nx:s4:body#3".into());
+    let make_offset = |ordinal: u32, distance: f64| ProceduralSurface {
+        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support: SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+            distance,
+            u_sense: 1,
+            v_sense: 1,
+            extension_flags: Vec::new(),
+        },
+        cache_fit_tolerance: None,
+    };
+    ir.model.procedural_surfaces.push(make_offset(0, 30.0));
+    ir.model.procedural_surfaces.push(make_offset(1, 30.0));
+
+    let (definition, supports) =
+        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("unique offset distance");
+    assert_eq!(supports.len(), 2);
+    assert!(matches!(
+        definition,
+        FeatureDefinition::OffsetSurface {
+            distance: cadmpeg_ir::features::Length(30.0),
+            ..
+        }
+    ));
+
+    ir.model.procedural_surfaces.push(make_offset(2, -30.0));
+    assert!(crate::decode::offset_surface_feature_definition(&ir, &[output]).is_none());
+}
+
+#[test]
 fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     use crate::native::{
         FeatureInputBlock, FeatureOperationLabel, FeatureOperationRecord, FeatureSketchReference,

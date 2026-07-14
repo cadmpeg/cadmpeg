@@ -632,6 +632,13 @@ A wrapped operation-body member is a body operand when its compact index differs
 
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
+An `OFFSET` operation with exactly one segment-bound output image resolves as a
+surface-offset feature when that image contains at least one OFFSET_SURF and
+every OFFSET_SURF construction in the image carries the same bit-exact signed
+distance. The ordered distinct base-surface identities form the native face
+selection. An unbound output or multiple distance bit patterns leave the
+operation native.
+
 The structured extrusion branch begins `32 00 00` after its unique body-reference field, followed by one shifted-IEEE binary64 scalar. A counted fixed-width lane follows as `01, count:u8, (3d, extended_compact_index, 00)[count-1]`, where `count >= 2`. Each wrapped index uses exactly `80..fe, low:u8` and decodes as `(marker-80)*256+low`; direct and null forms are invalid in this lane. Two counted compact-index lanes follow, each framed `01, count:u8, index[count-1]` with `count >= 2`. Compact indices use `00..7f` as direct values, `80..fe, low:u8` as `(marker-80)*256+low`, and `ff` as null; null is invalid in these lanes. Indices in all three lanes address offset-only OM data blocks under the unique-resolution rule used by profile references. The branch ends `00 01, object_index, 00 00`, using the feature object-index form. The terminal object index equals the body object index anchoring the branch.
 
 A complete structured-`32` extrusion construction requires one self-witnessed structured branch, one non-empty profile-reference field with contiguous ordinals, and unique data-block resolution for every profile reference and every member of the branch's three index lanes. It retains the branch, body identity, ordered profile references, and the four resolved block lanes without assigning unresolved semantic roles to the three branch lanes.

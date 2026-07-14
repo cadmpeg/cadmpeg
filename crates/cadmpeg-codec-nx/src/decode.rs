@@ -18,8 +18,8 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::eval::{curve_point, pcurve_uv, surface_point};
 use cadmpeg_ir::features::{
     Angle, BodySelection, BooleanOp, ConfigurationId, DesignConfiguration, DesignParameter,
-    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleKind,
-    Length, ParameterId, ParameterValue, SketchSpace,
+    FaceSelection, Feature, FeatureDefinition, FeatureId, FeatureSourceContent,
+    FeatureTreeNodeRole, HoleKind, Length, ParameterId, ParameterValue, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -4733,12 +4733,28 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
+        let offset_projection = (label.value == "OFFSET")
+            .then(|| offset_surface_feature_definition(ir, &outputs))
+            .flatten();
+        if let Some((_, supports)) = &offset_projection {
+            for (support_ordinal, support) in supports.iter().enumerate() {
+                source_properties.insert(
+                    format!("offset_support_surface.{support_ordinal}"),
+                    support.0.clone(),
+                );
+            }
+        }
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
-                non_boolean_feature_definition(
-                    &label.value,
-                    &operation_payload_strings,
-                    block_dimension_values,
+                offset_projection.map_or_else(
+                    || {
+                        non_boolean_feature_definition(
+                            &label.value,
+                            &operation_payload_strings,
+                            block_dimension_values,
+                        )
+                    },
+                    |(definition, _)| definition,
                 )
             },
             |operation| FeatureDefinition::Combine {
@@ -4798,6 +4814,46 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn offset_surface_feature_definition(
+    ir: &CadIr,
+    outputs: &[BodyId],
+) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
+    let [body] = outputs else {
+        return None;
+    };
+    let (prefix, _) = body.0.rsplit_once("body#")?;
+    let mut distance = None::<f64>;
+    let mut supports = Vec::new();
+    for procedural in &ir.model.procedural_surfaces {
+        if !procedural.surface.0.starts_with(prefix) {
+            continue;
+        }
+        let ProceduralSurfaceDefinition::Offset {
+            support,
+            distance: candidate,
+            ..
+        } = &procedural.definition
+        else {
+            continue;
+        };
+        if distance.is_some_and(|distance| distance.to_bits() != candidate.to_bits()) {
+            return None;
+        }
+        distance = Some(*candidate);
+        if !supports.contains(support) {
+            supports.push(support.clone());
+        }
+    }
+    let distance = distance?;
+    Some((
+        FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Native(format!("{prefix}offset-support-surfaces")),
+            distance: Length(distance),
+        },
+        supports,
+    ))
 }
 
 pub(crate) fn feature_source_content(
