@@ -3295,20 +3295,39 @@ fn typed_marker_relation_definition(
     Some(match kind {
         Horizontal | Vertical | Fixed => {
             let entities = marker_entities(marker.id.as_str(), markers_by_id, loci_by_marker);
-            let [entity] = entities.as_slice() else {
+            if let [entity] = entities.as_slice() {
+                match kind {
+                    Horizontal => SketchConstraintDefinition::Horizontal {
+                        entity: entity.clone(),
+                    },
+                    Vertical => SketchConstraintDefinition::Vertical {
+                        entity: entity.clone(),
+                    },
+                    Fixed => SketchConstraintDefinition::Fixed {
+                        entity: entity.clone(),
+                    },
+                    _ => unreachable!("relation kind was filtered above"),
+                }
+            } else if matches!(kind, Horizontal | Vertical) {
+                let Some(loci) = linked_single_loci(marker, loci_by_marker) else {
+                    return Some(native());
+                };
+                let [first, second] = loci.as_slice() else {
+                    return Some(native());
+                };
+                match kind {
+                    Horizontal => SketchConstraintDefinition::HorizontalPoints {
+                        first: first.clone(),
+                        second: second.clone(),
+                    },
+                    Vertical => SketchConstraintDefinition::VerticalPoints {
+                        first: first.clone(),
+                        second: second.clone(),
+                    },
+                    _ => unreachable!("relation kind was filtered above"),
+                }
+            } else {
                 return Some(native());
-            };
-            match kind {
-                Horizontal => SketchConstraintDefinition::Horizontal {
-                    entity: entity.clone(),
-                },
-                Vertical => SketchConstraintDefinition::Vertical {
-                    entity: entity.clone(),
-                },
-                Fixed => SketchConstraintDefinition::Fixed {
-                    entity: entity.clone(),
-                },
-                _ => unreachable!("relation kind was filtered above"),
             }
         }
         ArcAngle90 | ArcAngle180 | ArcAngle270 => {
@@ -4322,6 +4341,20 @@ mod profile_join_tests {
         markers.insert(horizontal_points.id.as_str(), &horizontal_points);
         assert_eq!(
             typed_marker_relation_definition(&horizontal_points, &markers, &joins),
+            Some(SketchConstraintDefinition::HorizontalPoints {
+                first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
+                second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
+            })
+        );
+        let mut legacy_horizontal_points = marker("legacy-horizontal-points", None);
+        legacy_horizontal_points.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        legacy_horizontal_points.links = parallel.links.clone();
+        markers.insert(
+            legacy_horizontal_points.id.as_str(),
+            &legacy_horizontal_points,
+        );
+        assert_eq!(
+            typed_marker_relation_definition(&legacy_horizontal_points, &markers, &joins),
             Some(SketchConstraintDefinition::HorizontalPoints {
                 first: cadmpeg_ir::sketches::SketchLocus::Start(first.clone()),
                 second: cadmpeg_ir::sketches::SketchLocus::End(SketchEntityId("second".into())),
