@@ -547,7 +547,26 @@ pub fn named_prototype_records(payload: &[u8]) -> Vec<SurfacePrototypeRecord> {
         let named = tokens
             .iter()
             .enumerate()
-            .filter(|(_, token)| token.kind == psb::TokenKind::NamedRecord)
+            .filter(|(_, token)| {
+                if token.kind != psb::TokenKind::NamedRecord || token.length < 4 {
+                    return false;
+                }
+                let token_offset = close + 2 + token.offset;
+                let Some(&field_type) = payload.get(token_offset + 1) else {
+                    return false;
+                };
+                let name_start = token_offset + 2;
+                let name_end = token_offset + token.length - 1;
+                let Some(name) = payload.get(name_start..name_end) else {
+                    return false;
+                };
+                field_type <= 0x24
+                    && !name.is_empty()
+                    && name[0].is_ascii_alphabetic()
+                    && name.iter().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'(' | b')')
+                    })
+            })
             .collect::<Vec<_>>();
         let mut parameters = Vec::new();
         for (position, (_, token)) in named.iter().enumerate() {
@@ -1248,6 +1267,21 @@ mod tests {
                 ..
             }] if (*major - 0.3).abs() < 1e-12 && (*minor - 0.2).abs() < 1e-12
         ));
+    }
+
+    #[test]
+    fn scalar_tail_named_marker_does_not_end_prototype_field() {
+        let payload = b"srf_prim_ptr(torus)\0\xe0\x01radius1\0\xe4\xe0\x01radius2\0\x71\xe0\0\0\0\0\0\0\xe0\x01c_pnts\0\xf8\0";
+        let records = named_prototype_records(payload);
+        let radius2 = records[0].field("radius2").expect("radius2 field");
+
+        assert_eq!(radius2.body, [0x71, 0xe0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(
+            radius2.value,
+            SurfaceNamedValue::ScalarSequence(vec![f64::from_be_bytes([
+                0x3f, 0xe0, 0, 0, 0, 0, 0, 0,
+            ])])
+        );
     }
 
     #[test]

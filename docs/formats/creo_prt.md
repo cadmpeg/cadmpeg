@@ -205,7 +205,7 @@ Named prototype fields describe the first surface instance. The first instance i
 
 A complete analytic prototype `local_sys` and family parameters define the first instance carrier. The first and second support triples occupy slots 0 through 2 and 6 through 8, slots 3 through 5 are zero, and slots 9 through 11 are the origin. The normalized cross product of the two orthogonal support directions is the analytic axis. A bare terminal `18` in the bounded `local_sys` body occupies one zero slot. A cylinder requires a positive `radius`. A cone uses the local-system origin as its apex, has zero radius there, circular ratio one, and requires a `half_angle` in `(0, pi/2)`. A zero `radius1` and positive `radius2` define a sphere centered at the local-system origin. Positive `radius1` and `radius2` define a torus with respective major and minor radii centered at that origin.
 
-The next named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. Bytes after that close belong to subsequent instance or namespace records.
+The next valid named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. A named-field header has a field type no greater than `24` and a nonempty identifier made from ASCII letters, digits, underscores, or parentheses. An `e0` byte inside a scalar token does not terminate the field. Bytes after the structural close belong to subsequent instance or namespace records.
 
 `radius`, `radius1`, `radius2`, and `half_angle` are scalar-typed fields. A body that does not complete a scalar token remains opaque and is not reinterpreted as a compact integer.
 
