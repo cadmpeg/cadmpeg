@@ -1291,6 +1291,10 @@ fn extend_related_design_records(
         &native.design_parameter_companions,
         &native.construction_recipes,
     )?;
+    crate::design::bind_dimension_recipe_reference_candidates(
+        &mut native.design_dimension_recipe_records,
+        &native.persistent_subentity_tags,
+    );
     Ok(())
 }
 

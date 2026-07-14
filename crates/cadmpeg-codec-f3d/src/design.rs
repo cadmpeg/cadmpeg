@@ -4718,9 +4718,42 @@ pub(crate) fn decode_dimension_recipe_references(
             token_offset: prefix_offset.saturating_add(token_at as u64),
             design_reference: i64::from(design_reference),
             design_reference_offset: prefix_offset.saturating_add((marker_at + 4) as u64),
+            candidate_faces: Vec::new(),
         });
     }
     references
+}
+
+/// Join dimension-recipe selector/reference pairs to active solved faces.
+pub fn bind_dimension_recipe_reference_candidates(
+    records: &mut [DesignDimensionRecipeRecord],
+    tags: &[PersistentSubentityTag],
+) {
+    for reference in records.iter_mut().flat_map(|record| &mut record.references) {
+        reference.candidate_faces = dimension_recipe_candidate_faces(reference, tags);
+    }
+}
+
+pub(crate) fn dimension_recipe_candidate_faces(
+    reference: &crate::records::DesignDimensionRecipeReference,
+    tags: &[PersistentSubentityTag],
+) -> Vec<cadmpeg_ir::ids::FaceId> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+
+    let mut faces = tags
+        .iter()
+        .filter(|tag| {
+            tag.token == reference.token
+                && tag.design_references.contains(&reference.design_reference)
+        })
+        .filter_map(|tag| match &tag.target {
+            AttributeTarget::Face(face) => Some(face.clone()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    faces.sort_by(|left, right| left.0.cmp(&right.0));
+    faces.dedup();
+    faces
 }
 
 fn dimension_recipe_prefix(
@@ -9842,6 +9875,30 @@ mod relation_tests {
         assert_eq!(
             references[1].design_reference_offset,
             1_000 + second_reference_at as u64
+        );
+        assert_eq!(
+            super::dimension_recipe_candidate_faces(
+                &references[0],
+                &[
+                    PersistentSubentityTag {
+                        id: "matching".into(),
+                        target: AttributeTarget::Face(FaceId("face-b".into())),
+                        selector: 1,
+                        token: "13".into(),
+                        design_references: vec![331],
+                        ordinal: 0,
+                    },
+                    PersistentSubentityTag {
+                        id: "other".into(),
+                        target: AttributeTarget::Face(FaceId("face-a".into())),
+                        selector: 1,
+                        token: "13".into(),
+                        design_references: vec![999],
+                        ordinal: 0,
+                    },
+                ],
+            ),
+            [FaceId("face-b".into())]
         );
     }
 

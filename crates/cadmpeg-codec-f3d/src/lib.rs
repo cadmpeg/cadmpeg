@@ -1554,8 +1554,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let program_end = record
             .program_offset
             .checked_add((record.program.len() as u64).saturating_mul(4));
-        let decoded_references =
+        let mut decoded_references =
             design::decode_dimension_recipe_references(&record.prefix_bytes, record.prefix_offset);
+        for reference in &mut decoded_references {
+            reference.candidate_faces = design::dimension_recipe_candidate_faces(
+                reference,
+                &native.persistent_subentity_tags,
+            );
+        }
         let valid = record.class_tag.len() == 3
             && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && record.frame_length >= 11

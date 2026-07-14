@@ -471,6 +471,9 @@ pub struct DesignDimensionRecipeReference {
     pub design_reference: i64,
     /// Byte offset of `design_reference`.
     pub design_reference_offset: u64,
+    /// Active solved faces carrying the exact selector/reference pair.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub candidate_faces: Vec<FaceId>,
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
