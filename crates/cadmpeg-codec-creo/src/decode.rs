@@ -1641,6 +1641,117 @@ fn extruded_geometry_surface(
     }
 }
 
+fn revolved_section_surface(
+    transform: &crate::placement::FeatureSectionTransform,
+    geometry: &SketchGeometry,
+    revolution_axis: RevolutionAxis,
+) -> Option<SurfaceGeometry> {
+    let axis = normalized([
+        revolution_axis.direction.x,
+        revolution_axis.direction.y,
+        revolution_axis.direction.z,
+    ])?;
+    let axis_origin = [
+        revolution_axis.origin.x,
+        revolution_axis.origin.y,
+        revolution_axis.origin.z,
+    ];
+    let project = |point: [f64; 3]| {
+        let displacement = std::array::from_fn(|index| point[index] - axis_origin[index]);
+        let axial = dot(displacement, axis);
+        let on_axis = std::array::from_fn(|index| axis_origin[index] + axial * axis[index]);
+        let radial = std::array::from_fn(|index| point[index] - on_axis[index]);
+        (on_axis, radial)
+    };
+    let vector = |values: [f64; 3]| Vector3::new(values[0], values[1], values[2]);
+    let point = |values: [f64; 3]| Point3::new(values[0], values[1], values[2]);
+    match geometry {
+        SketchGeometry::Line { start, end } => {
+            let start = section_point_in_model(transform, [start.u, start.v]);
+            let end = section_point_in_model(transform, [end.u, end.v]);
+            let direction = normalized(std::array::from_fn(|index| end[index] - start[index]))?;
+            let (mut on_axis, mut radial) = project(start);
+            let mut radius = dot(radial, radial).sqrt();
+            if radius <= 1e-10 {
+                (on_axis, radial) = project(end);
+                radius = dot(radial, radial).sqrt();
+            }
+            let axial_rate = dot(direction, axis);
+            let radial_rate =
+                std::array::from_fn(|index| direction[index] - axial_rate * axis[index]);
+            let radial_speed = dot(radial_rate, radial_rate).sqrt();
+            let scale = radius.max(1.0);
+            if radius > 1e-10 {
+                let coplanar_residual = dot(cross(radial, radial_rate), axis).abs();
+                (coplanar_residual <= 1e-9 * scale).then_some(())?;
+            }
+            let reference = normalized(radial).or_else(|| normalized(radial_rate))?;
+            if radial_speed <= 1e-10 {
+                (radius > 1e-10).then_some(())?;
+                return Some(SurfaceGeometry::Cylinder {
+                    origin: point(on_axis),
+                    axis: vector(axis),
+                    ref_direction: vector(reference),
+                    radius,
+                });
+            }
+            if axial_rate.abs() <= 1e-10 {
+                return Some(SurfaceGeometry::Plane {
+                    origin: point(on_axis),
+                    normal: vector(axis),
+                    u_axis: vector(reference),
+                });
+            }
+            let radial_rate = dot(radial_rate, reference);
+            let cone_axis = if radial_rate / axial_rate < 0.0 {
+                std::array::from_fn(|index| -axis[index])
+            } else {
+                axis
+            };
+            Some(SurfaceGeometry::Cone {
+                origin: point(on_axis),
+                axis: vector(cone_axis),
+                ref_direction: vector(reference),
+                radius,
+                ratio: 1.0,
+                half_angle: radial_rate.abs().atan2(axial_rate.abs()),
+            })
+        }
+        SketchGeometry::Arc { center, radius, .. } => {
+            let center = section_point_in_model(transform, [center.u, center.v]);
+            let (on_axis, radial) = project(center);
+            let major_radius = dot(radial, radial).sqrt();
+            let reference = normalized(radial).or_else(|| {
+                [transform.u_axis, transform.v_axis]
+                    .into_iter()
+                    .find_map(|candidate| {
+                        let axial = dot(candidate, axis);
+                        normalized(std::array::from_fn(|index| {
+                            candidate[index] - axial * axis[index]
+                        }))
+                    })
+            })?;
+            if major_radius <= 1e-10 {
+                Some(SurfaceGeometry::Sphere {
+                    center: point(center),
+                    axis: vector(axis),
+                    ref_direction: vector(reference),
+                    radius: radius.0,
+                })
+            } else {
+                Some(SurfaceGeometry::Torus {
+                    center: point(on_axis),
+                    axis: vector(axis),
+                    ref_direction: vector(reference),
+                    major_radius,
+                    minor_radius: radius.0,
+                })
+            }
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 fn placed_section_curve_geometry(
     transform: &crate::placement::FeatureSectionTransform,
@@ -3513,6 +3624,59 @@ fn transfer_resolved_revolution_surfaces(
         let Some(axis) = resolved_revolution_axis(definition, transform) else {
             continue;
         };
+        let points = resolved_section_points(definition);
+        let solved_ids = definition
+            .trim_entities
+            .iter()
+            .flat_map(|table| &table.rows)
+            .filter_map(|row| trim_segment_id(definition, row))
+            .collect::<BTreeSet<_>>();
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.rows)
+            .filter(|segment| solved_ids.contains(&segment.external_id))
+        {
+            let Some(geometry) = resolved_section_segment_geometry(definition, &points, segment)
+            else {
+                continue;
+            };
+            let Some(surface) = revolved_section_surface(transform, &geometry, axis) else {
+                continue;
+            };
+            let surface_id = SurfaceId(format!(
+                "creo:feature:revolution_surface#{feature_id}:segment{}",
+                segment.external_id
+            ));
+            if ir.model.surfaces.iter().any(|item| item.id == surface_id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &surface_id,
+                "FeatDefs",
+                segment.offset as u64,
+                "evaluated_analytic_revolution_surface",
+                Exactness::Derived,
+            );
+            ir.model.surfaces.push(Surface {
+                id: surface_id,
+                geometry: surface,
+                source_object: Some(SourceObjectAssociation {
+                    format: "creo".to_string(),
+                    object_id: format!(
+                        "FeatDefs:revolution#{feature_id}:segment{}",
+                        segment.external_id
+                    ),
+                    name: None,
+                    color: None,
+                    visible: None,
+                    layer: None,
+                    instance_path: Vec::new(),
+                }),
+            });
+            transferred += 1;
+        }
         for spline in definition
             .saved_section
             .iter()
@@ -4356,6 +4520,69 @@ mod resolved_sketch_tests {
             fc05_model_frame(2, 17.0, center, reference, -1.0),
             ([13.0, 11.0, 17.0], [0.0, 0.0, -1.0], [0.8, 0.6, 0.0])
         );
+    }
+
+    #[test]
+    fn full_turn_section_carriers_classify_analytic_revolution_surfaces() {
+        let transform = crate::placement::FeatureSectionTransform {
+            definition_id: 1,
+            feature_id: Some(2),
+            origin: [0.0, 0.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 1.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+            offset: 0,
+        };
+        let axis = RevolutionAxis {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+        };
+        let line = |start: [f64; 2], end: [f64; 2]| SketchGeometry::Line {
+            start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+            end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+        };
+
+        assert!(matches!(
+            revolved_section_surface(&transform, &line([2.0, 0.0], [2.0, 4.0]), axis),
+            Some(SurfaceGeometry::Cylinder { radius, .. }) if radius == 2.0
+        ));
+        assert!(matches!(
+            revolved_section_surface(&transform, &line([0.0, 3.0], [4.0, 3.0]), axis),
+            Some(SurfaceGeometry::Plane { origin, .. }) if origin.y == 3.0
+        ));
+        assert!(matches!(
+            revolved_section_surface(&transform, &line([2.0, 0.0], [4.0, 2.0]), axis),
+            Some(SurfaceGeometry::Cone { radius, half_angle, .. })
+                if radius == 2.0 && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+        ));
+        assert!(matches!(
+            revolved_section_surface(&transform, &line([4.0, 0.0], [2.0, 2.0]), axis),
+            Some(SurfaceGeometry::Cone { axis, radius, half_angle, .. })
+                if axis.y == -1.0
+                    && radius == 4.0
+                    && (half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12
+        ));
+        let centered_arc = SketchGeometry::Arc {
+            center: cadmpeg_ir::math::Point2::new(0.0, 3.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        };
+        assert!(matches!(
+            revolved_section_surface(&transform, &centered_arc, axis),
+            Some(SurfaceGeometry::Sphere { radius, .. }) if radius == 2.0
+        ));
+        let offset_arc = SketchGeometry::Arc {
+            center: cadmpeg_ir::math::Point2::new(5.0, 3.0),
+            radius: Length(2.0),
+            start_angle: Angle(0.0),
+            end_angle: Angle(std::f64::consts::PI),
+        };
+        assert!(matches!(
+            revolved_section_surface(&transform, &offset_arc, axis),
+            Some(SurfaceGeometry::Torus { major_radius, minor_radius, .. })
+                if major_radius == 5.0 && minor_radius == 2.0
+        ));
     }
 
     #[test]

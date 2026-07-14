@@ -786,7 +786,7 @@ The identifiers `r`, `theta`, and `z` define cylindrical curve coordinates over 
 
 A curve-equation entity carries its placement in `local_sys f9 <dimensions> <count> <body>`. The scalar body is bounded by the following named field and uses the stateful local-system lane; it is part of the equation entity rather than a reference to a separate coordinate-system entity.
 
-A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. Extruding a section line yields a plane, extruding an arc yields a cylinder, and a closed profile yields cap planes. Revolving a line parallel, angled, or perpendicular to the axis yields a cylinder, cone, or plane. An arc with center on or off the axis yields a sphere or torus.
+A `protextrude` or `protrevolve` operation references its sweep axis through `gsec3d_ptr` placement fields rather than an inline axis vector. Extruding a section line yields a plane, extruding an arc yields a cylinder, and a closed profile yields cap planes. For a complete angular turn, each solved `ent_tab` carrier can be revolved independently. A line parallel, angled, or perpendicular to the axis yields a cylinder, circular cone, or plane. A circular arc with center on or off the axis yields a sphere or torus. The projected carrier-to-axis vector defines the zero-azimuth direction; construction segments outside `ent_tab` do not generate surfaces.
 
 `FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table pointer. `e1` is an explicit null pointer; `f7 <canonical-reference-id>` identifies a present driver table.
 
