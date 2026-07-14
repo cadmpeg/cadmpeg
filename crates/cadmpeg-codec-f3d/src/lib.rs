@@ -1492,6 +1492,72 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut dimension_recipe_ids = HashSet::new();
+    for record in &native.design_dimension_recipe_records {
+        let native_stream = design_stream(&record.id);
+        let companion = companions_by_index.get(&(native_stream, record.companion_record_index));
+        let dimension_companion = companion.is_some_and(|companion| {
+            owners_by_index
+                .get(&(native_stream, companion.owner_record_index))
+                .and_then(|owner| {
+                    parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+                })
+                .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension)
+        });
+        let recipe = native
+            .construction_recipes
+            .iter()
+            .find(|recipe| recipe.id == record.recipe_id);
+        let companion_order_matches = companion.is_some_and(|companion| {
+            usize::try_from(record.recipe_ordinal)
+                .ok()
+                .and_then(|ordinal| companion.owned_recipe_ids.get(ordinal))
+                == Some(&record.recipe_id)
+        });
+        let frame_end = record.byte_offset.checked_add(record.frame_length);
+        let valid = record.class_tag.len() == 3
+            && record.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && record.frame_length >= 11
+            && dimension_companion
+            && companion_order_matches
+            && recipe.is_some_and(|recipe| {
+                design_stream(&recipe.id) == native_stream
+                    && recipe.byte_offset >= record.byte_offset.saturating_add(11)
+                    && frame_end.is_some_and(|end| recipe.byte_offset < end)
+            })
+            && dimension_recipe_ids.insert((native_stream, record.recipe_id.as_str()));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design dimension recipe has an invalid indexed-record owner"
+                    .into(),
+                entity: Some(record.id.clone()),
+            });
+        }
+    }
+    for companion in &native.design_parameter_companions {
+        let native_stream = design_stream(&companion.id);
+        let dimension_companion = owners_by_index
+            .get(&(native_stream, companion.owner_record_index))
+            .and_then(|owner| {
+                parameters_by_index.get(&(native_stream, owner.parameter_record_index))
+            })
+            .is_some_and(|parameter| parameter.kind == records::DesignParameterKind::Dimension);
+        if dimension_companion
+            && companion.owned_recipe_ids.iter().any(|recipe_id| {
+                !dimension_recipe_ids.contains(&(native_stream, recipe_id.as_str()))
+            })
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design dimension companion has an unowned construction recipe"
+                    .into(),
+                entity: Some(companion.id.clone()),
+            });
+        }
+    }
     let mut locus_pair_indices = HashSet::new();
     let mut locus_pair_companions = HashSet::new();
     for pair in &native.design_dimension_locus_pairs {

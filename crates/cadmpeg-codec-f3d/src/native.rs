@@ -9,14 +9,15 @@ use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignConfiguration,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
-    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject, DesignParameter,
-    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
-    DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
-    MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
-    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
+    DesignEdgeOperand, DesignEntityHeader, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignFaceOperand, DesignFilletRadiusGroup,
+    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
+    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
+    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantVertexTail,
+    TransformHints, VertexOwnership, WireTopology,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -44,6 +45,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_dimension_locus_groups",
     "design_dimension_locus_pairs",
     "design_dimension_null_locus_pairs",
+    "design_dimension_recipe_records",
     "design_edge_operands",
     "design_entity_headers",
     "design_extrude_selection_groups",
@@ -89,6 +91,7 @@ macro_rules! f3d_arenas {
             design_dimension_locus_groups: DesignDimensionLocusGroup;
             design_dimension_locus_pairs: DesignDimensionLocusPair;
             design_dimension_null_locus_pairs: DesignDimensionNullLocusPair;
+            design_dimension_recipe_records: DesignDimensionRecipeRecord;
             design_edge_operands: DesignEdgeOperand;
             design_face_operands: DesignFaceOperand;
             design_construction_operand_groups: DesignConstructionOperandGroup;
@@ -207,6 +210,9 @@ pub struct F3dNative {
     /// Null-plus-typed loci recovered from dimensional companion graphs.
     #[serde(default)]
     pub design_dimension_null_locus_pairs: Vec<DesignDimensionNullLocusPair>,
+    /// Indexed records containing dimension-owned construction recipes.
+    #[serde(default)]
+    pub design_dimension_recipe_records: Vec<DesignDimensionRecipeRecord>,
     /// Edge-selection operands recovered from Fillet and Chamfer scopes.
     #[serde(default)]
     pub design_edge_operands: Vec<DesignEdgeOperand>,
@@ -339,6 +345,7 @@ impl Default for F3dNative {
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),
             design_dimension_null_locus_pairs: Vec::new(),
+            design_dimension_recipe_records: Vec::new(),
             design_edge_operands: Vec::new(),
             design_face_operands: Vec::new(),
             design_construction_operand_groups: Vec::new(),

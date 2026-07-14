@@ -397,6 +397,29 @@ pub struct DesignParameterCompanion {
     pub owned_recipe_ids: Vec<String>,
 }
 
+/// Indexed record that directly contains one construction recipe owned by a
+/// dimensional parameter companion.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionRecipeRecord {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this indexed record.
+    pub companion_record_index: u32,
+    /// Zero-based recipe position within the companion payload.
+    pub recipe_ordinal: u32,
+    /// Construction recipe contained by this indexed record.
+    pub recipe_id: String,
+    /// Byte offset of the indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Number of bytes from this header to the next indexed header or the end
+    /// of the companion-owned payload.
+    pub frame_length: u64,
+}
+
 /// Paired-locus frame nested under a dimensional parameter companion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignDimensionLocusPair {

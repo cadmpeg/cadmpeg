@@ -1035,6 +1035,13 @@ fn extend_related_design_records(
         &native.construction_recipes,
         &stream_lengths,
     );
+    native.design_dimension_recipe_records = crate::design::decode_dimension_recipe_records(
+        scan,
+        &native.design_parameters,
+        &native.design_parameter_owners,
+        &native.design_parameter_companions,
+        &native.construction_recipes,
+    )?;
     Ok(())
 }
 

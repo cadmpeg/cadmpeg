@@ -12,14 +12,14 @@ use crate::records::{
     DesignBodyMember, DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
+    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
+    PersistentReference, PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind,
+    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -3483,6 +3483,122 @@ pub fn bind_parameter_companion_payloads<S: std::hash::BuildHasher>(
         owned.sort_by_key(|recipe| recipe.byte_offset);
         companion.owned_recipe_ids = owned.into_iter().map(|recipe| recipe.id.clone()).collect();
     }
+}
+
+/// Decode the indexed record that directly contains each construction recipe
+/// owned by a dimensional parameter companion.
+pub fn decode_dimension_recipe_records(
+    scan: &ContainerScan,
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    companions: &[DesignParameterCompanion],
+    recipes: &[ConstructionRecipe],
+) -> Result<Vec<DesignDimensionRecipeRecord>, CodecError> {
+    let parameters = parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((
+                (native_stream(&parameter.id)?, parameter.record_index),
+                parameter,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let dimension_owners = owners
+        .iter()
+        .filter_map(|owner| {
+            let stream = native_stream(&owner.id)?;
+            parameters
+                .get(&(stream, owner.parameter_record_index))
+                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+                .then_some((stream.to_owned(), owner.record_index))
+        })
+        .collect::<HashSet<_>>();
+    let recipes = recipes
+        .iter()
+        .map(|recipe| (recipe.id.as_str(), recipe))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for companion in companions.iter().filter(|companion| {
+        native_stream(&companion.id).is_some_and(|stream| {
+            dimension_owners.contains(&(stream.to_owned(), companion.owner_record_index))
+        })
+    }) {
+        let Some(stream) = native_stream(&companion.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(start) = usize::try_from(companion.payload_byte_offset).ok() else {
+            continue;
+        };
+        let Some(end) = usize::try_from(companion.payload_byte_length)
+            .ok()
+            .and_then(|length| start.checked_add(length))
+            .filter(|end| *end <= bytes.len())
+        else {
+            continue;
+        };
+        for (recipe_ordinal, recipe_id) in companion.owned_recipe_ids.iter().enumerate() {
+            let Some(recipe) = recipes.get(recipe_id.as_str()).copied() else {
+                continue;
+            };
+            let Some(recipe_offset) = usize::try_from(recipe.byte_offset).ok() else {
+                continue;
+            };
+            let Some((at, class_tag, record_index, record_end)) =
+                indexed_record_containing(bytes, start, end, recipe_offset)
+            else {
+                continue;
+            };
+            out.push(DesignDimensionRecipeRecord {
+                id: format!(
+                    "f3d:{}:design-dimension-recipe-record#{}",
+                    entry.name, recipe.byte_offset
+                ),
+                companion_record_index: companion.record_index,
+                recipe_ordinal: u32::try_from(recipe_ordinal).unwrap_or(u32::MAX),
+                recipe_id: recipe.id.clone(),
+                byte_offset: u64::try_from(at).unwrap_or(u64::MAX),
+                class_tag,
+                record_index,
+                frame_length: u64::try_from(record_end - at).unwrap_or(u64::MAX),
+            });
+        }
+    }
+    out.sort_by_key(|record| record.id.clone());
+    Ok(out)
+}
+
+fn indexed_record_containing(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    member_offset: usize,
+) -> Option<(usize, String, u32, usize)> {
+    if start > member_offset || member_offset >= end || end > bytes.len() {
+        return None;
+    }
+    let mut cursor = start;
+    let mut containing = None;
+    while let Some(at) = next_indexed_record_offset(bytes, cursor) {
+        if at >= end {
+            break;
+        }
+        if at > member_offset {
+            return containing
+                .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at));
+        }
+        let (class_tag, after_tag) = lp_ascii(bytes, at)?;
+        containing = Some((at, class_tag, u32_at(bytes, after_tag)?));
+        cursor = at + 11;
+    }
+    containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
 }
 
 /// Decode paired typed sketch loci nested immediately after dimensional
@@ -7690,17 +7806,18 @@ mod relation_tests {
         closed_sketch_profiles, companion_owned_interval, decode_fillet_radius_groups,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
-        find_dimension_locus_pair, identity_matrix, indirect_angular_lines,
-        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
-        null_locus_dimension_definition, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, remove_dimension_frame_relations,
-        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
+        find_dimension_locus_pair, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
+        next_indexed_record_offset, null_locus_dimension_definition,
+        parse_construction_operand_group, parse_construction_operand_identity,
+        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
+        two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7925,6 +8042,33 @@ mod relation_tests {
         );
         prefix[42..50].fill(0);
         assert!(parse_parameter_companion(&prefix).is_none());
+    }
+
+    #[test]
+    fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
+        let mut bytes = vec![0xaa; 5];
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"415");
+        bytes.extend_from_slice(&40u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 17]);
+        let recipe_offset = bytes.len();
+        bytes.extend_from_slice(b"edge_recipe_data");
+        bytes.extend_from_slice(&[0; 13]);
+        let next_offset = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"423");
+        bytes.extend_from_slice(&41u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 9]);
+
+        assert_eq!(
+            indexed_record_containing(&bytes, 5, bytes.len(), recipe_offset),
+            Some((5, "415".into(), 40, next_offset))
+        );
+        assert_eq!(
+            indexed_record_containing(&bytes, 5, bytes.len(), next_offset + 11),
+            Some((next_offset, "423".into(), 41, bytes.len()))
+        );
+        assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
     }
 
     #[test]
