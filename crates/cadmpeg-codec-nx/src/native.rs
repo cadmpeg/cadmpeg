@@ -115,6 +115,63 @@ pub enum OmSchemaRole {
     Other,
 }
 
+/// Internally pointed record area in a role-classified size-framed OM section.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OmRecordArea {
+    /// Globally unique record-area identity.
+    pub id: String,
+    /// Link identifying the owning ordered OM section.
+    pub section_link: String,
+    /// Registry-derived role of the owning section.
+    pub schema_role: OmSchemaRole,
+    /// Three exact little-endian control words.
+    pub control_words: [u32; 3],
+    /// Exact printable product/version string.
+    pub product_version: String,
+    /// Exact record-area byte length.
+    pub byte_len: u64,
+    /// SHA-256 of the complete pointed record area.
+    pub sha256: String,
+    /// Absolute file offset of the first control word.
+    pub source_offset: u64,
+}
+
+/// Decode internally pointed record areas from linked OM sections.
+pub fn om_record_areas(container: &Container) -> Vec<OmRecordArea> {
+    let links = segment_om_links(container);
+    let sections = container.om_sections();
+    links
+        .into_iter()
+        .filter_map(|link| {
+            let section = sections
+                .iter()
+                .find(|(entry, section)| {
+                    entry
+                        .file_span
+                        .map_or(section.offset as u64, |(offset, _)| {
+                            offset + section.offset as u64
+                        })
+                        == link.section_offset
+                })?
+                .1
+                .clone();
+            let header = section.record_area_header()?;
+            let bytes = section.record_area?;
+            let entry_offset = link.section_offset.checked_sub(section.offset as u64)?;
+            Some(OmRecordArea {
+                id: format!("nx:om-record-areas:area#{}", header.offset),
+                section_link: link.id,
+                schema_role: link.schema_role,
+                control_words: header.control_words,
+                product_version: header.product.value.to_string(),
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(bytes),
+                source_offset: entry_offset + header.offset as u64,
+            })
+        })
+        .collect()
+}
+
 /// Resolve segment-index words that point to validated framed OM sections.
 pub fn segment_om_links(container: &Container) -> Vec<SegmentOmLink> {
     let Some((entry, index)) = container.segment_index() else {

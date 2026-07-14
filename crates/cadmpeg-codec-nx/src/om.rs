@@ -59,6 +59,17 @@ pub struct StoreVersion<'a> {
     pub value: &'a str,
 }
 
+/// Header of an internally pointed size-framed OM record area.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordAreaHeader<'a> {
+    /// Absolute offset of the first control word.
+    pub offset: usize,
+    /// Three little-endian control words preceding the product record.
+    pub control_words: [u32; 3],
+    /// Product/version record following the control words.
+    pub product: StoreVersion<'a>,
+}
+
 /// Tagged NX OM cross-record reference family.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReferenceKind {
@@ -260,6 +271,26 @@ impl<'a> IndexedSection<'a> {
                     })
             })
             .collect()
+    }
+}
+
+impl<'a> Section<'a> {
+    /// Decode the validated record-area control and product header.
+    pub fn record_area_header(&self) -> Option<RecordAreaHeader<'a>> {
+        let bytes = self.record_area?;
+        let offset = self.record_area_offset?;
+        let control_words = [u32_at(bytes, 0)?, u32_at(bytes, 4)?, u32_at(bytes, 8)?];
+        let suffix = bytes.get(12..)?;
+        is_product_record(suffix).then_some(())?;
+        let length = usize::from(suffix[2]) - 2;
+        Some(RecordAreaHeader {
+            offset,
+            control_words,
+            product: StoreVersion {
+                offset: offset + 12,
+                value: std::str::from_utf8(&suffix[3..3 + length]).ok()?,
+            },
+        })
     }
 }
 

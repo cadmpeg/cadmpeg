@@ -68,6 +68,16 @@ fn segment_om_payload(separated: bool) -> Vec<u8> {
     payload
 }
 
+fn segment_om_record_area_payload() -> Vec<u8> {
+    let mut payload = Vec::new();
+    for word in [32u32, 9, 11, 1, 1, 24] {
+        payload.extend_from_slice(&word.to_le_bytes());
+    }
+    payload.resize(32, 0);
+    payload.extend_from_slice(&size_framed_om_section_with_record_area());
+    payload
+}
+
 #[test]
 fn nx_expression_parameter_references_preserve_formula_order() {
     assert_eq!(
@@ -363,7 +373,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 14);
+    assert_eq!(namespace.version, 15);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -449,6 +459,31 @@ fn decode_links_segment_index_words_to_direct_and_separated_om_sections() {
             links[0].source_offset + u64::from(expected_separator)
         );
     }
+}
+
+#[test]
+fn decode_retains_role_scoped_om_record_area_header() {
+    let file =
+        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_om_record_area_payload())]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let areas = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::OmRecordArea>("om_record_areas")
+        .unwrap();
+    assert_eq!(areas.len(), 1);
+    assert_eq!(
+        areas[0].schema_role,
+        crate::native::OmSchemaRole::FeatureHistory
+    );
+    assert_eq!(areas[0].control_words, [13, 14, 44]);
+    assert_eq!(areas[0].product_version, "NX 2027.3102");
+    assert!(areas[0].byte_len > 12);
+    assert_eq!(areas[0].sha256.len(), 64);
 }
 
 #[test]
@@ -3156,7 +3191,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 14);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 15);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

@@ -2703,6 +2703,7 @@ fn attach_native_object_model(
     let segment_index_rows = crate::native::segment_index_rows(&scan.container);
     let segment_om_links = crate::native::segment_om_links(&scan.container);
     let segment_stream_links = crate::native::segment_stream_links(&scan.container, &scan.streams);
+    let om_record_areas = crate::native::om_record_areas(&scan.container);
     let expressions = crate::native::expressions(&scan.container);
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
@@ -2721,6 +2722,7 @@ fn attach_native_object_model(
     if segment_index_rows.is_empty()
         && segment_om_links.is_empty()
         && segment_stream_links.is_empty()
+        && om_record_areas.is_empty()
         && expressions.is_empty()
         && classes.is_empty()
         && fields.is_empty()
@@ -2756,6 +2758,12 @@ fn attach_native_object_model(
             .note(&link.id, annotation_stream, link.source_offset)
             .tag("UG_PART_SEGMENT_OM_LINK");
         annotations.exactness(&link.id, Exactness::ByteExact);
+    }
+    for area in &om_record_areas {
+        annotations
+            .note(&area.id, annotation_stream, area.source_offset)
+            .tag("OM_RECORD_AREA");
+        annotations.exactness(&area.id, Exactness::ByteExact);
     }
     for header in &store_headers {
         annotations
@@ -2857,7 +2865,7 @@ fn attach_native_object_model(
     }
     attach_expression_parameters(ir, &expressions, annotations);
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(14);
+    namespace.version = namespace.version.max(15);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -2866,6 +2874,9 @@ fn attach_native_object_model(
     }
     if !segment_om_links.is_empty() {
         namespace.set_arena("segment_om_links", &segment_om_links)?;
+    }
+    if !om_record_areas.is_empty() {
+        namespace.set_arena("om_record_areas", &om_record_areas)?;
     }
     if !expressions.is_empty() {
         namespace.set_arena("expressions", &expressions)?;
