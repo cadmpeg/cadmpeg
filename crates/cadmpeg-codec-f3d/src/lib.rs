@@ -150,6 +150,59 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|entity| ((design_stream(&entity.id), entity.entity_suffix), entity))
         .collect::<std::collections::HashMap<_, _>>();
+    let body_native_keys = native
+        .body_native_keys
+        .iter()
+        .filter_map(|key| Some(((key.body.clone(), key.asm_body_key?), key)))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut binding_offsets = HashSet::new();
+    let mut binding_groups =
+        std::collections::HashMap::<(&str, u64), Vec<&records::DesignBodyBinding>>::new();
+    for binding in &native.design_body_bindings {
+        let native_stream = design_stream(&binding.id);
+        let valid = native_stream == format!("f3d:{}", binding.stream)
+            && binding.pair_count > 0
+            && binding.pair_ordinal < binding.pair_count
+            && binding.entity_suffix_offset == binding.asm_body_key_offset.saturating_add(8)
+            && binding.blob_name.starts_with("BREP.")
+            && binding.blob_name_offset > binding.entity_suffix_offset
+            && binding.body.as_ref().is_none_or(|body| {
+                body_native_keys.contains_key(&(body.clone(), binding.asm_body_key))
+            })
+            && binding_offsets.insert((native_stream, binding.asm_body_key_offset));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design body binding has an invalid ordered map entry".into(),
+                entity: Some(binding.id.clone()),
+            });
+        }
+        binding_groups
+            .entry((native_stream, binding.blob_name_offset))
+            .or_default()
+            .push(binding);
+    }
+    for bindings in binding_groups.values_mut() {
+        bindings.sort_by_key(|binding| binding.pair_ordinal);
+        let complete = bindings
+            .first()
+            .is_some_and(|first| usize::try_from(first.pair_count).ok() == Some(bindings.len()))
+            && bindings.iter().enumerate().all(|(ordinal, binding)| {
+                usize::try_from(binding.pair_ordinal).ok() == Some(ordinal)
+                    && binding.pair_count == bindings[0].pair_count
+                    && binding.blob_name == bindings[0].blob_name
+                    && binding.stream == bindings[0].stream
+            });
+        if !complete {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design body map has an incomplete ordered pair run".into(),
+                entity: bindings.first().map(|binding| binding.id.clone()),
+            });
+        }
+    }
     let mut bounded_bodies = HashSet::new();
     for bounds in &native.design_body_bounds {
         let native_stream = design_stream(&bounds.id);
@@ -168,6 +221,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             bounds.minimum.y,
             bounds.minimum.z,
         ];
+        let mut expected_bindings = native
+            .design_body_bindings
+            .iter()
+            .filter(|binding| {
+                native_stream == format!("f3d:{}", binding.stream)
+                    && binding.entity_suffix == bounds.entity_suffix
+            })
+            .collect::<Vec<_>>();
+        expected_bindings.sort_by_key(|binding| binding.asm_body_key_offset);
+        let expected_binding_ids = expected_bindings
+            .into_iter()
+            .map(|binding| binding.id.as_str())
+            .collect::<Vec<_>>();
         let valid = entity_headers_by_suffix
             .get(&(native_stream, bounds.entity_suffix))
             .is_some_and(|entity| {
@@ -182,6 +248,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .iter()
                 .zip(bounds.record_byte_offsets)
                 .all(|(value, record)| *value > record)
+            && bounds
+                .body_binding_ids
+                .iter()
+                .map(String::as_str)
+                .eq(expected_binding_ids)
             && corners.iter().all(|value| value.is_finite())
             && bounds.maximum.x >= bounds.minimum.x
             && bounds.maximum.y >= bounds.minimum.y

@@ -8,8 +8,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyBounds, DesignBodyMember,
-    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
+    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
+    DesignBodyMember, DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
@@ -7218,6 +7218,7 @@ pub fn decode_body_bounds(
             record_indices,
             record_byte_offsets: [*first as u64, *second as u64, *third as u64],
             value_byte_offsets: value_offsets.map(|offset| offset as u64),
+            body_binding_ids: Vec::new(),
             maximum: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
             minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
         });
@@ -7418,6 +7419,12 @@ fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
 pub(crate) struct BodyBinding {
     /// Basename of the B-rep blob entry the ASM key resolves in.
     pub blob_name: String,
+    /// Byte offset of the BREP blob name's UTF-16LE code units.
+    pub blob_name_offset: usize,
+    /// Number of pairs in the enclosing map.
+    pub pair_count: u32,
+    /// Zero-based position in the enclosing map.
+    pub pair_ordinal: u32,
     /// The referenced ASM body key.
     pub asm_key: u64,
     /// Byte offset of `asm_key` within the stream.
@@ -7473,6 +7480,9 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
                 if let (Some(key), Some(suffix)) = (read_u64(bytes, at), read_u64(bytes, at + 8)) {
                     out.push(BodyBinding {
                         blob_name: blob_name.clone(),
+                        blob_name_offset: offset,
+                        pair_count: count as u32,
+                        pair_ordinal: pair as u32,
                         asm_key: key,
                         asm_key_offset: at,
                         entity_suffix: suffix,
@@ -7484,6 +7494,79 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
         }
     }
     out
+}
+
+/// Decode every ordered Design BREP body-map pair and resolve pairs targeting
+/// the selected BREP to solved ASM bodies.
+pub fn decode_design_body_bindings(
+    scan: &ContainerScan,
+    active_brep_entry: Option<&str>,
+    body_keys: &[BodyNativeKey],
+) -> Result<Vec<DesignBodyBinding>, CodecError> {
+    let active_basename = active_brep_entry.and_then(|entry| entry.rsplit('/').next());
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for binding in body_bindings(bytes) {
+            let body = (active_basename == Some(binding.blob_name.as_str()))
+                .then(|| {
+                    let matches = body_keys
+                        .iter()
+                        .filter(|key| key.asm_body_key == Some(binding.asm_key))
+                        .map(|key| key.body.clone())
+                        .collect::<Vec<_>>();
+                    let [body] = matches.as_slice() else {
+                        return None;
+                    };
+                    Some(body.clone())
+                })
+                .flatten();
+            out.push(DesignBodyBinding {
+                id: format!(
+                    "f3d:{}:design-body-binding#{}",
+                    entry.name, binding.asm_key_offset
+                ),
+                stream: entry.name.clone(),
+                pair_count: binding.pair_count,
+                pair_ordinal: binding.pair_ordinal,
+                asm_body_key: binding.asm_key,
+                asm_body_key_offset: binding.asm_key_offset as u64,
+                entity_suffix: binding.entity_suffix,
+                entity_suffix_offset: binding.entity_suffix_offset as u64,
+                blob_name: binding.blob_name,
+                blob_name_offset: binding.blob_name_offset as u64,
+                body,
+            });
+        }
+    }
+    out.sort_by_key(|binding| binding.id.clone());
+    Ok(out)
+}
+
+/// Bind each body cache to every BREP map pair carrying the same Design entity
+/// suffix in the same stream.
+pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyBinding]) {
+    for bounds in bounds {
+        let Some(stream) = native_stream(&bounds.id) else {
+            continue;
+        };
+        let mut matches = bindings
+            .iter()
+            .filter(|binding| {
+                stream == format!("f3d:{}", binding.stream)
+                    && binding.entity_suffix == bounds.entity_suffix
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by_key(|binding| binding.asm_body_key_offset);
+        bounds.body_binding_ids = matches
+            .into_iter()
+            .map(|binding| binding.id.clone())
+            .collect();
+    }
 }
 
 /// Decode per-body display visibility from the Design `BulkStream`.

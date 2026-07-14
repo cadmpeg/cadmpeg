@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
-    CreationTimestamp, DesignBodyBounds, DesignBodyMember, DesignConfiguration,
+    CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignConfiguration,
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
@@ -35,6 +35,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "body_visibilities",
     "construction_recipes",
     "creation_timestamps",
+    "design_body_bindings",
     "design_body_bounds",
     "design_body_members",
     "design_configurations",
@@ -102,6 +103,7 @@ macro_rules! f3d_arenas {
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
             design_sketch_placements: DesignSketchPlacement;
+            design_body_bindings: DesignBodyBinding;
             design_body_bounds: DesignBodyBounds;
             design_body_members: DesignBodyMember;
             design_configurations: DesignConfiguration;
@@ -250,6 +252,9 @@ pub struct F3dNative {
     /// `BodiesRoot` list members from the Design `BulkStream`.
     #[serde(default)]
     pub design_body_members: Vec<DesignBodyMember>,
+    /// Ordered BREP body-map pairs from Design streams.
+    #[serde(default)]
+    pub design_body_bindings: Vec<DesignBodyBinding>,
     /// Triplicated axis-aligned bounds cached by Design body containers.
     #[serde(default)]
     pub design_body_bounds: Vec<DesignBodyBounds>,
@@ -349,6 +354,7 @@ impl Default for F3dNative {
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),
             design_body_members: Vec::new(),
+            design_body_bindings: Vec::new(),
             design_body_bounds: Vec::new(),
             design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),

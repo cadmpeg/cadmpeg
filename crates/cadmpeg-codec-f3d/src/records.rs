@@ -1484,10 +1484,41 @@ pub struct DesignBodyBounds {
     pub record_byte_offsets: [u64; 3],
     /// First f64 byte of each repeated sextuple.
     pub value_byte_offsets: [u64; 3],
+    /// Design BREP body-map pairs carrying this entity suffix, in stream order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_binding_ids: Vec<String>,
     /// Maximum model-space corner in millimetres.
     pub maximum: Point3,
     /// Minimum model-space corner in millimetres.
     pub minimum: Point3,
+}
+
+/// One ordered pair in a Design `BulkStream` BREP body-map record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignBodyBinding {
+    /// Globally unique deterministic identifier for this native map entry.
+    pub id: String,
+    /// Design `BulkStream` ZIP entry containing the map.
+    pub stream: String,
+    /// Number of pairs in the enclosing body map.
+    pub pair_count: u32,
+    /// Zero-based position in the enclosing body map.
+    pub pair_ordinal: u32,
+    /// ASM body key stored by this pair.
+    pub asm_body_key: u64,
+    /// Byte offset of `asm_body_key` within `stream`.
+    pub asm_body_key_offset: u64,
+    /// Numeric Design entity suffix stored by this pair.
+    pub entity_suffix: u64,
+    /// Byte offset of `entity_suffix` within `stream`.
+    pub entity_suffix_offset: u64,
+    /// Basename of the BREP blob whose body namespace contains the key.
+    pub blob_name: String,
+    /// Byte offset of the UTF-16LE `blob_name` code units within `stream`.
+    pub blob_name_offset: u64,
+    /// Solved body when this pair targets the selected active BREP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<BodyId>,
 }
 
 /// Design browser-node visibility joined to one solved ASM body.
