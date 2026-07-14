@@ -94,7 +94,7 @@ fn edgeless_doc() -> CadIr {
         id: LoopId("lp0".into()),
         face: FaceId("f0".into()),
         coedges: vec![CoedgeId("ce0".into())],
-        vertex: None,
+        vertex_uses: Vec::new(),
     });
     ir.model.faces.push(Face {
         id: FaceId("f0".into()),

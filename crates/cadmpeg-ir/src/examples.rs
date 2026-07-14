@@ -192,7 +192,7 @@ pub fn unit_cube() -> CadIr {
             id: loop_id.clone().into(),
             face: format!("synthetic:cube:face#{name}").into(),
             coedges: coedge_ids.iter().map(|c| CoedgeId(c.clone())).collect(),
-            vertex: None,
+            vertex_uses: Vec::new(),
         });
         ir.model.faces.push(Face {
             id: format!("synthetic:cube:face#{name}").into(),

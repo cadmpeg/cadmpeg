@@ -145,9 +145,9 @@ pub struct Loop {
     /// Coedges in ring order for an edge loop.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coedges: Vec<CoedgeId>,
-    /// Sole vertex for a degenerate vertex loop.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vertex: Option<VertexId>,
+    /// Ordered pole-vertex occurrences within the cyclic loop traversal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertex_uses: Vec<VertexUse>,
 }
 
 /// One ordered parameter-space representation of a coedge.
@@ -158,6 +158,19 @@ pub struct PcurveUse {
     /// Whether the source declares this curve isoparametric on the face surface.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isoparametric: Option<bool>,
+}
+
+/// One pole-vertex occurrence in a loop traversal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexUse {
+    /// Referenced pole vertex.
+    pub vertex: VertexId,
+    /// Preceding coedge in the cyclic traversal, absent for a vertex-only loop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<CoedgeId>,
+    /// Ordered parameter-space images associated with this pole occurrence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pcurves: Vec<PcurveUse>,
 }
 
 /// One use of an edge by a loop.

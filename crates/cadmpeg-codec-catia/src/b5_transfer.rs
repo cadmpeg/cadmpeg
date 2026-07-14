@@ -337,7 +337,7 @@ pub(crate) fn transfer(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
-                vertex: None,
+                vertex_uses: Vec::new(),
             });
             for (index, ((&edge, &pcurve), &reversed)) in loop_
                 .edges

@@ -165,9 +165,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ref_error(findings, &lp.id.0, "coedge", &ce.0);
             }
         }
-        if let Some(vertex) = &lp.vertex {
-            if !ids.vertices.contains(&vertex.0) {
-                ref_error(findings, &lp.id.0, "vertex", &vertex.0);
+        for use_ in &lp.vertex_uses {
+            if !ids.vertices.contains(&use_.vertex.0) {
+                ref_error(findings, &lp.id.0, "vertex", &use_.vertex.0);
+            }
+            if let Some(after) = &use_.after {
+                if !ids.coedges.contains(&after.0) {
+                    ref_error(findings, &lp.id.0, "coedge(vertex-use after)", &after.0);
+                }
+            }
+            for pcurve in &use_.pcurves {
+                if !ids.pcurves.contains(&pcurve.pcurve.0) {
+                    ref_error(findings, &lp.id.0, "pcurve(vertex use)", &pcurve.pcurve.0);
+                }
             }
         }
     }
@@ -2245,11 +2255,19 @@ pub(super) fn check_loops(ir: &CadIr, findings: &mut Vec<Finding>) {
         .collect();
 
     for lp in &ir.model.loops {
-        if lp.coedges.is_empty() == lp.vertex.is_none() {
+        let vertex_only =
+            lp.coedges.is_empty() && lp.vertex_uses.len() == 1 && lp.vertex_uses[0].after.is_none();
+        let edge_loop = !lp.coedges.is_empty()
+            && lp.vertex_uses.iter().all(|use_| {
+                use_.after
+                    .as_ref()
+                    .is_some_and(|after| lp.coedges.contains(after))
+            });
+        if !vertex_only && !edge_loop {
             findings.push(Finding {
                 check: Check::LoopClosure,
                 severity: Severity::Error,
-                message: "loop must contain either a coedge ring or one vertex".into(),
+                message: "loop must contain a coedge ring with anchored vertex uses or one unanchored vertex use".into(),
                 entity: Some(lp.id.0.clone()),
             });
             continue;

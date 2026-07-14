@@ -66,7 +66,7 @@ body → region → shell → face → loop → coedge → edge → vertex → p
                            └── surface
 ```
 
-`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible` — whether the source document displays it; exporters omit bodies with `visible: false` from display-oriented formats. A body owns regions. A region is a connected component of a body and owns shells. A shell owns at least one of faces, wire edges, or free vertices. A face is an oriented bounded portion of one surface and owns loops. An edge loop lists coedges in traversal order. A vertex loop references one vertex and no coedges. A coedge is one oriented use of an edge by one loop and owns an ordered list of parameter-space curve uses. Each pcurve use may record whether the source declared it isoparametric. An edge joins two vertices and optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
+`Body.kind` is `solid`, `sheet`, `wire`, or `general`. A body optionally records a display name, color, and `visible` — whether the source document displays it; exporters omit bodies with `visible: false` from display-oriented formats. A body owns regions. A region is a connected component of a body and owns shells. A shell owns at least one of faces, wire edges, or free vertices. A face is an oriented bounded portion of one surface and owns loops. An edge loop lists coedges in traversal order and may contain ordered pole-vertex uses anchored after a coedge. A vertex loop contains one unanchored vertex use and no coedges. A coedge and a pole-vertex use each own an ordered list of parameter-space curve uses. Each pcurve use may record whether the source declared it isoparametric. An edge joins two vertices and optionally references a curve and canonical parameter range. A vertex references a point carrier. Point remains a separate carrier because it has independent identity and provenance.
 
 | cadmpeg IR | ACIS/ASM | Parasolid        | STEP AP242                                                            |
 | ---------- | -------- | ---------------- | --------------------------------------------------------------------- |
@@ -85,7 +85,7 @@ body → region → shell → face → loop → coedge → edge → vertex → p
 
 ### Loop and radial rings
 
-A loop contains exactly one representation: a nonempty `coedges` ring or one `vertex`. For every edge loop, `coedges` contains exactly one simple cycle. Each coedge's `next` and `previous` links are reciprocal and remain within that loop. A vertex loop contains no coedges.
+A loop is either a nonempty `coedges` ring or one unanchored vertex use. For every edge loop, `coedges` contains exactly one simple cycle. Each coedge's `next` and `previous` links are reciprocal and remain within that loop. Pole-vertex uses in an edge loop identify their preceding member with `after`; multiple uses after one coedge retain vector order. A vertex loop contains no coedges and exactly one vertex use whose `after` is absent.
 
 All coedges that use an edge form one closed radial ring through `radial_next`. Every member references the same edge:
 
@@ -214,7 +214,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "5"`. The `model.subds` arena and top-level `byte_ledger` are required, including when they are empty. Version 5 represents loops as either coedge rings or vertex loops and represents a coedge's parameter-space images as ordered pcurve uses. Version 4 documents migrate by setting each loop's `vertex` to absent and replacing each coedge's optional `pcurve` with an empty or one-element `pcurves` list whose `isoparametric` value is absent. Removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. See [byte-accounting.md](byte-accounting.md) for ledger serialization, validation, canonicalization, diff, and migration rules.
+Readers accept exactly `ir_version: "5"`. The `model.subds` arena and top-level `byte_ledger` are required, including when they are empty. Version 5 represents loops as coedge rings with optional anchored pole-vertex uses or as a single unanchored vertex use, and represents parameter-space images as ordered pcurve uses. Version 4 documents migrate by setting each loop's `vertex_uses` to empty and replacing each coedge's optional `pcurve` with an empty or one-element `pcurves` list whose `isoparametric` value is absent. Removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. See [byte-accounting.md](byte-accounting.md) for ledger serialization, validation, canonicalization, diff, and migration rules.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 

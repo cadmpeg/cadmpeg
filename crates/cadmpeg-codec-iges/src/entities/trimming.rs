@@ -635,7 +635,7 @@ pub(super) fn project(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: coedge_ids,
-                vertex: None,
+                vertex_uses: Vec::new(),
             });
             loop_ids.push(loop_id);
             consumed.push(sequence);

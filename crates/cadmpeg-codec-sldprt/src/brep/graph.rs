@@ -627,7 +627,7 @@ fn decode_graph(
                 id: LoopId(id_loop(*loop_attr)),
                 face: FaceId(id_face(f.bridge_attr)),
                 coedges,
-                vertex: None,
+                vertex_uses: Vec::new(),
             });
         }
     }

@@ -1967,7 +1967,11 @@ fn vertex_loop_is_valid_and_exclusive_with_coedges() {
         id: loop_id.clone(),
         face: face_id,
         coedges: Vec::new(),
-        vertex: Some(vertex_id),
+        vertex_uses: vec![crate::topology::VertexUse {
+            vertex: vertex_id,
+            after: None,
+            pcurves: Vec::new(),
+        }],
     });
     ir.model.faces[0].loops.push(loop_id.clone());
     ir.model.finalize();
