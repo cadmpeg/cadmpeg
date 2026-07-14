@@ -534,6 +534,8 @@ struct IncidenceCandidateSearch<'a> {
     assignment: Vec<Option<[usize; 2]>>,
     degrees: Vec<Vec<u8>>,
     solution: Option<StandardTopology>,
+    ambiguous: bool,
+    exhausted: bool,
     states: usize,
 }
 
@@ -573,7 +575,11 @@ impl IncidenceCandidateSearch<'_> {
         // propagation. Keep it bounded so unresolved geometric ambiguity
         // declines atomically instead of making container decode unbounded.
         const MAX_STATES: usize = 1_024;
-        if self.solution.is_some() || self.states >= MAX_STATES {
+        if self.ambiguous || self.exhausted {
+            return;
+        }
+        if self.states >= MAX_STATES {
+            self.exhausted = true;
             return;
         }
         self.states += 1;
@@ -589,7 +595,7 @@ impl IncidenceCandidateSearch<'_> {
             .min();
         let Some((count, edge)) = next else {
             let points = self.assignment.iter().copied().collect::<Option<Vec<_>>>();
-            self.solution = points.and_then(|points| {
+            let candidate = points.and_then(|points| {
                 reconstruct_incidence(
                     self.edge_rows.to_vec(),
                     self.vertex_points.to_vec(),
@@ -598,6 +604,13 @@ impl IncidenceCandidateSearch<'_> {
                     self.face_count,
                 )
             });
+            if let Some(candidate) = candidate {
+                match &self.solution {
+                    Some(solution) if *solution != candidate => self.ambiguous = true,
+                    None => self.solution = Some(candidate),
+                    Some(_) => {}
+                }
+            }
             return;
         };
         if count == 0 {
@@ -663,6 +676,8 @@ fn reconstruct_incidence_candidates(
         assignment: vec![None; choices.len()],
         degrees: vec![vec![0; vertex_points.len()]; face_count],
         solution: None,
+        ambiguous: false,
+        exhausted: false,
         states: 0,
     };
     for edge in 0..choices.len() {
@@ -686,7 +701,9 @@ fn reconstruct_incidence_candidates(
         return None;
     }
     search.search();
-    search.solution
+    (!search.ambiguous && !search.exhausted)
+        .then_some(search.solution)
+        .flatten()
 }
 
 /// Return the endpoint-port handles for the standard edge table, in physical
