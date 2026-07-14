@@ -188,6 +188,21 @@ fn standard_mesh_ports_bridge_table_local_endpoint_names() {
 }
 
 #[test]
+fn standard_mesh_ports_are_occurrence_components_not_coordinate_indices() {
+    let ports = crate::topology::standard_mesh_edge_ports(&standard_quad_topology_stream())
+        .expect("mesh endpoint components");
+    assert_eq!(ports.len(), 4);
+    assert_eq!(
+        ports
+            .into_iter()
+            .flatten()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        4
+    );
+}
+
+#[test]
 fn standard_mesh_coverage_reports_exact_matched_partition() {
     let coverage = crate::topology::standard_mesh_face_coverage(
         &standard_quad_topology_stream(),

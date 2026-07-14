@@ -602,7 +602,11 @@ pub(crate) fn standard_edge_port_identities(bytes: &[u8]) -> Option<Vec<[u32; 2]
         .collect()
 }
 
-pub(crate) fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
+/// Collapse physical edge endpoints through every exact trim-mesh occurrence.
+/// The returned component identifiers are compact and stable within this
+/// result; they are not coordinate-row indices.
+#[must_use]
+pub fn standard_mesh_edge_ports(bytes: &[u8]) -> Option<Vec<[u32; 2]>> {
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     let mut solutions = Vec::new();
