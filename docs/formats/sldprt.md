@@ -197,6 +197,8 @@ Point-reference object indices address sketch-marker local identifiers within th
 
 Operand tags `80d6`, `80cc`, `837b`, `8ab6`, `8dcb`, `929d`, `bc7c`, and `bd69` select point or constrained-point markers. Tags `80e1`, `8386`, `83fe`, `8dda`, and `bc87` select line, circle, or arc markers.
 
+A uniquely linked reference-handle chain resolves to its terminal profile locus. Cyclic chains and chains with multiple terminal loci remain unresolved. A relation handle whose linked chains identify one common profile entity identifies that entity.
+
 Feature-input geometry-handle coordinates and the nested Parasolid profile differ by a signed axis permutation and constant translation per sketch feature. A unique transform mapping at least two distinct geometry-handle coordinates onto compatible profile anchors binds every matching geometry or relation marker coordinate to those loci. Profile loci are the primary anchors. When they do not determine a frame, point handles admit entity endpoints and centers, line-or-circle handles admit line endpoints, midpoints, and circular centers, and arc handles admit arc centers. Relation-marker coordinates do not participate in selecting the frame. The identity axis permutation has precedence when it has a unique translation. When equally scoring signed axis permutations include zero-translation transforms, translated transforms are excluded. A reference marker whose linked endpoint markers share one profile entity identifies that entity.
 
 Multiple valid signed-axis transforms bind a marker when every transform maps that marker to the same normalized profile locus set. A transform-dependent marker remains unresolved.

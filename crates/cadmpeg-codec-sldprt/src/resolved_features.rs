@@ -4224,19 +4224,43 @@ fn marker_point_locus(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Option<SketchLocus> {
+    resolved_marker_locus(
+        marker_id,
+        markers_by_id,
+        loci_by_marker,
+        &mut HashSet::new(),
+    )
+}
+
+fn resolved_marker_locus(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    visited: &mut HashSet<String>,
+) -> Option<SketchLocus> {
     if let Some(loci) = loci_by_marker.get(marker_id) {
         return unique_locus(loci);
+    }
+    if !visited.insert(marker_id.to_string()) {
+        return None;
     }
     let marker = markers_by_id.get(marker_id)?;
     let mut linked = marker
         .links
         .iter()
-        .filter_map(|link| loci_by_marker.get(&link.entity_ref));
-    let loci = linked.next()?;
-    if linked.next().is_some() {
-        return None;
-    }
-    unique_locus(loci)
+        .filter(|link| link.entity_ref != marker_id)
+        .filter_map(|link| {
+            resolved_marker_locus(
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                &mut visited.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    linked.sort_by(|left, right| locus_key(left).cmp(&locus_key(right)));
+    linked.dedup();
+    unique_locus(&linked)
 }
 
 fn unique_locus(loci: &[SketchLocus]) -> Option<SketchLocus> {
@@ -5087,8 +5111,25 @@ fn marker_entities(
     markers_by_id: &HashMap<&str, &SketchInputEntity>,
     loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
 ) -> Vec<SketchEntityId> {
+    marker_entities_inner(
+        marker_id,
+        markers_by_id,
+        loci_by_marker,
+        &mut HashSet::new(),
+    )
+}
+
+fn marker_entities_inner(
+    marker_id: &str,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+    loci_by_marker: &HashMap<String, Vec<SketchLocus>>,
+    visited: &mut HashSet<String>,
+) -> Vec<SketchEntityId> {
     if let Some(loci) = loci_by_marker.get(marker_id) {
         return loci.iter().map(locus_entity).collect();
+    }
+    if !visited.insert(marker_id.to_string()) {
+        return Vec::new();
     }
     let Some(marker) = markers_by_id.get(marker_id) else {
         return Vec::new();
@@ -5096,8 +5137,17 @@ fn marker_entities(
     let mut linked = marker
         .links
         .iter()
-        .filter_map(|link| loci_by_marker.get(&link.entity_ref))
-        .map(|loci| loci.iter().map(locus_entity).collect::<HashSet<_>>())
+        .filter(|link| link.entity_ref != marker_id)
+        .map(|link| {
+            marker_entities_inner(
+                &link.entity_ref,
+                markers_by_id,
+                loci_by_marker,
+                &mut visited.clone(),
+            )
+            .into_iter()
+            .collect::<HashSet<_>>()
+        })
         .filter(|entities| !entities.is_empty());
     let Some(mut entities) = linked.next() else {
         return Vec::new();
@@ -5409,7 +5459,7 @@ mod profile_join_tests {
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
             references: Vec::new(),
-            sketch_entities: vec![marker_a, marker_b, marker_c, display, reference],
+            sketch_entities: vec![marker_a, marker_b, marker_c, display, reference.clone()],
         };
 
         let joins = profile_loci_by_marker(&[feature], &entities, std::slice::from_ref(&lane));
@@ -5427,6 +5477,27 @@ mod profile_join_tests {
             marker_entities("reference", &markers, &joins),
             vec![first.clone()]
         );
+        let mut wrapper = marker("wrapper", None);
+        wrapper.links = vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: "marker-a".into(),
+        }];
+        let mut nested_reference = reference.clone();
+        nested_reference.id = "nested-reference".into();
+        nested_reference.links[0].entity_ref = wrapper.id.clone();
+        markers.insert(wrapper.id.as_str(), &wrapper);
+        markers.insert(nested_reference.id.as_str(), &nested_reference);
+        assert_eq!(
+            marker_entities("nested-reference", &markers, &joins),
+            vec![first.clone()]
+        );
+        let mut cycle = marker("cycle", None);
+        cycle.links = vec![SketchInputLink {
+            local_id: 1,
+            entity_ref: cycle.id.clone(),
+        }];
+        markers.insert(cycle.id.as_str(), &cycle);
+        assert!(marker_entities("cycle", &markers, &joins).is_empty());
         assert_eq!(
             typed_marker_relation_definition(markers["reference"], &markers, &joins,),
             Some(SketchConstraintDefinition::Vertical {
