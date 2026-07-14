@@ -15,7 +15,7 @@ use cadmpeg_ir::units::{LengthUnit, Units};
 use cadmpeg_ir::CadIr;
 use std::io::Cursor;
 
-use crate::{write_step, StepCodec, StepWriteOptions};
+use crate::{write_step, StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
 fn string_codec_decodes_all_part21_escape_forms_and_round_trips_unicode() {
@@ -89,7 +89,7 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
     assert!(summary
         .notes
         .iter()
-        .any(|note| note.contains("AP242") && note.contains("edition 3")));
+        .any(|note| note.contains("AP242") && note.contains("edition 2")));
 }
 
 #[test]
@@ -812,6 +812,30 @@ fn reader_recovers_a_valid_solid_from_writer_output() {
     assert_eq!(result.ir.model.vertices.len(), 8);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn writer_declares_each_supported_target_schema_exactly() {
+    for schema in [
+        StepSchema::Ap203Edition1,
+        StepSchema::Ap203Edition2,
+        StepSchema::Ap214,
+        StepSchema::Ap242Edition1,
+        StepSchema::Ap242Edition2,
+        StepSchema::Ap242Edition3,
+    ] {
+        let options = StepWriteOptions {
+            schema,
+            ..StepWriteOptions::default()
+        };
+        let mut bytes = Vec::new();
+        write_step(&unit_cube(), &mut bytes, &options).expect("write target schema");
+        let text = std::str::from_utf8(&bytes).expect("ASCII STEP output");
+        assert!(text.contains(&format!("FILE_SCHEMA(('{}'));", schema.file_schema())));
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode target-schema output");
+    }
 }
 
 #[test]

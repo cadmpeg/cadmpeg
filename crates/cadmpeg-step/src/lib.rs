@@ -77,6 +77,8 @@ use writer::{real, refs, string, Emitter, Ref};
 /// timestamp.
 #[derive(Debug, Clone)]
 pub struct StepWriteOptions {
+    /// Application protocol and edition declared by `FILE_SCHEMA`.
+    pub schema: StepSchema,
     /// The `FILE_NAME` name field.
     ///
     /// The STEP `PRODUCT` id and name come from the first IR body name, or
@@ -98,11 +100,47 @@ pub struct StepWriteOptions {
 impl Default for StepWriteOptions {
     fn default() -> Self {
         StepWriteOptions {
+            schema: StepSchema::Ap214,
             product_name: "cadmpeg_model".to_string(),
             author: String::new(),
             organization: String::new(),
             timestamp: String::new(),
             originating_system: "cadmpeg".to_string(),
+        }
+    }
+}
+
+/// STEP application-protocol targets supported by the Part 21 writer.
+///
+/// The AP242 edition number and the long-form schema revision are distinct:
+/// editions 1, 2, and 3 use long-form revisions 1, 3, and 4 respectively.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum StepSchema {
+    /// AP203 edition 1 `CONFIG_CONTROL_DESIGN`.
+    Ap203Edition1,
+    /// AP203 edition 2 modular long form.
+    Ap203Edition2,
+    /// AP214 `AUTOMOTIVE_DESIGN`.
+    #[default]
+    Ap214,
+    /// AP242 edition 1 modular long form.
+    Ap242Edition1,
+    /// AP242 edition 2 modular long form.
+    Ap242Edition2,
+    /// AP242 edition 3 modular long form.
+    Ap242Edition3,
+}
+
+impl StepSchema {
+    /// Exact schema identifier written in `FILE_SCHEMA`.
+    pub const fn file_schema(self) -> &'static str {
+        match self {
+            Self::Ap203Edition1 => "CONFIG_CONTROL_DESIGN",
+            Self::Ap203Edition2 => "AP203_CONFIGURATION_CONTROLLED_3D_DESIGN_OF_MECHANICAL_PARTS_AND_ASSEMBLIES_MIM_LF { 1 0 10303 403 2 1 2 }",
+            Self::Ap214 => "AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }",
+            Self::Ap242Edition1 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 1 1 4 }",
+            Self::Ap242Edition2 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 3 1 4 }",
+            Self::Ap242Edition3 => "AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }",
         }
     }
 }
@@ -174,10 +212,7 @@ fn write_header(w: &mut (impl Write + ?Sized), opts: &StepWriteOptions) -> std::
         string(&opts.originating_system),
         string("")
     )?;
-    writeln!(
-        w,
-        "FILE_SCHEMA(('AUTOMOTIVE_DESIGN {{ 1 0 10303 214 1 1 1 1 }}'));"
-    )?;
+    writeln!(w, "FILE_SCHEMA(({}));", string(opts.schema.file_schema()))?;
     writeln!(w, "ENDSEC;")?;
     Ok(())
 }
@@ -1321,10 +1356,12 @@ impl Codec for StepCodec {
                 names.join(",")
             })
             .unwrap_or_else(|| "unspecified".into());
-        let edition = if schema.contains("442 3") {
+        let edition = if schema.contains("442 4") {
             "edition 3"
-        } else if schema.contains("442 2") {
+        } else if schema.contains("442 3") {
             "edition 2"
+        } else if schema.contains("442 1") {
+            "edition 1"
         } else {
             "edition unspecified"
         };
