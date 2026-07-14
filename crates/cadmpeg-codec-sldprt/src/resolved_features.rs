@@ -11,7 +11,7 @@ use crate::records::{
     SketchRelationKind,
 };
 use cadmpeg_ir::annotations::Annotations;
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition};
+use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PathRef, PatternKind};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
@@ -1340,6 +1340,97 @@ fn feature_object_name<'a>(
     let mut matches = lane.names.iter().filter(|name| name.value == feature.name);
     let first = matches.next()?;
     matches.next().is_none().then_some(first)
+}
+
+/// Bind curve-driven patterns to their immediately following sketch objects.
+pub(crate) fn bind_curve_pattern_paths(
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    let model_by_native = model_features
+        .iter()
+        .enumerate()
+        .filter_map(|(index, feature)| Some((feature.native_ref.as_deref()?, index)))
+        .collect::<HashMap<_, _>>();
+    let mut assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId, PathRef)>::new();
+
+    for lane in lanes {
+        let mut starts = history_features
+            .iter()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .collect::<Vec<_>>();
+        starts.sort_unstable_by_key(|(offset, _)| *offset);
+        for (start_index, (_, feature)) in starts.iter().enumerate() {
+            if feature.input_class.as_deref() != Some("moCurvePattern_c") {
+                continue;
+            }
+            let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
+                continue;
+            };
+            if !matches!(
+                model_features[model_index].definition,
+                FeatureDefinition::Pattern {
+                    pattern: PatternKind::CurveDriven { path: None, .. },
+                    ..
+                }
+            ) {
+                continue;
+            }
+            let Some((_, target)) = starts.get(start_index + 1) else {
+                continue;
+            };
+            if target.input_class.as_deref() != Some("moProfileFeature_c") {
+                continue;
+            }
+            let Some(&target_index) = model_by_native.get(target.id.as_str()) else {
+                continue;
+            };
+            let FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &model_features[target_index].definition
+            else {
+                continue;
+            };
+            assignments.push((
+                model_index,
+                model_features[target_index].id.clone(),
+                PathRef::Sketch(sketch.clone()),
+            ));
+        }
+    }
+    let mut assignments_by_pattern = HashMap::<usize, Vec<_>>::new();
+    for (index, dependency, path) in assignments {
+        let candidates = assignments_by_pattern.entry(index).or_default();
+        if !candidates
+            .iter()
+            .any(|candidate| *candidate == (dependency.clone(), path.clone()))
+        {
+            candidates.push((dependency, path));
+        }
+    }
+    for (index, candidates) in assignments_by_pattern {
+        let [(dependency, path)] = candidates.as_slice() else {
+            continue;
+        };
+        if !model_features[index].dependencies.contains(dependency) {
+            model_features[index].dependencies.push(dependency.clone());
+        }
+        if let FeatureDefinition::Pattern {
+            pattern: PatternKind::CurveDriven { path: slot, .. },
+            ..
+        } = &mut model_features[index].definition
+        {
+            if slot.is_none() {
+                *slot = Some(path.clone());
+            }
+        }
+    }
 }
 
 /// Resolve scalar operand indices within their owning feature-object interval.
@@ -8002,12 +8093,13 @@ fn marker_entities_inner(
 #[cfg(test)]
 mod profile_join_tests {
     use super::{
-        bind_circular_profile_by_dimension, bind_detached_relation_drivers,
-        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
-        implicit_circle_marker, line_endpoint_markers, marker_entities, marker_point_locus,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_owner_markers, relation_parameter_by_display_name, resolved_marker_locus,
+        bind_circular_profile_by_dimension, bind_curve_pattern_paths,
+        bind_detached_relation_drivers, dimensioned_circle_surface_transforms,
+        dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
+        marker_entities, marker_point_locus, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, project_relation_point_geometry,
+        project_relation_solved_point_geometry, relation_owner_markers,
+        relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_axis_aligned_linked_loci,
@@ -8020,14 +8112,14 @@ mod profile_join_tests {
         unique_profile_point_line_pair, MarkerTransform,
     };
     use crate::records::{
-        FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
-        FeatureInputRelationFamily, FeatureInputRelationInstance, FeatureInputScalar,
-        FeatureInputScalarRole, SketchInputEntity, SketchInputKind, SketchInputLink,
-        SketchRelationKind,
+        Feature as NativeFeature, FeatureHistory, FeatureInputLane, FeatureInputName,
+        FeatureInputOperand, FeatureInputOperandKind, FeatureInputRelationFamily,
+        FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
+        SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
         Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue, SketchSpace,
+        ParameterId, ParameterValue, PathRef, PatternKind, SketchSpace,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -8746,6 +8838,142 @@ mod profile_join_tests {
             resolved_marker_locus(&point.id, &markers, &loci, &mut HashSet::new()),
             None
         );
+    }
+
+    #[test]
+    fn curve_pattern_binds_the_immediately_following_sketch_object() {
+        let native_feature = |id: &str, source_id: &str, name: &str| NativeFeature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source_id.into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: name.into(),
+            kind: String::new(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let mut pattern_native = native_feature("pattern-native", "10", "Pattern1");
+        pattern_native.input_class = Some("moCurvePattern_c".into());
+        let mut path_native = native_feature("path-native", "20", "PathSketch");
+        path_native.input_class = Some("moProfileFeature_c".into());
+        let next_native = native_feature("next-native", "30", "NextFeature");
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![pattern_native, path_native, next_native],
+        };
+        let name = |offset: u64, object_id: u32, value: &str| FeatureInputName {
+            id: format!("name-{offset}"),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset,
+            value: value.into(),
+            object_id: Some(object_id),
+        };
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: vec![
+                name(100, 10, "Pattern1"),
+                name(150, 20, "PathSketch"),
+                name(200, 30, "NextFeature"),
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let model_feature = |id: &str, native_ref: &str, definition| Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: Some(native_ref.into()),
+        };
+        let sketch = SketchId("path-sketch".into());
+        let mut features = vec![
+            model_feature(
+                "pattern",
+                "pattern-native",
+                FeatureDefinition::Pattern {
+                    seeds: Vec::new(),
+                    pattern: PatternKind::CurveDriven {
+                        path: None,
+                        spacing: Length(5.0),
+                        count: 3,
+                    },
+                },
+            ),
+            model_feature(
+                "path",
+                "path-native",
+                FeatureDefinition::Sketch {
+                    space: SketchSpace::Planar,
+                    sketch: Some(sketch.clone()),
+                },
+            ),
+        ];
+
+        bind_curve_pattern_paths(
+            &mut features,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        );
+
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                pattern: PatternKind::CurveDriven {
+                    path: Some(PathRef::Sketch(ref path)),
+                    ..
+                },
+                ..
+            } if path == &sketch
+        ));
+        assert_eq!(features[0].dependencies, [features[1].id.clone()]);
+
+        let mut ambiguous_lane = lane;
+        ambiguous_lane.names.insert(2, name(175, 20, "PathSketch"));
+        if let FeatureDefinition::Pattern {
+            pattern: PatternKind::CurveDriven { path, .. },
+            ..
+        } = &mut features[0].definition
+        {
+            *path = None;
+        }
+        bind_curve_pattern_paths(&mut features, &[history], &[ambiguous_lane]);
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                pattern: PatternKind::CurveDriven { path: None, .. },
+                ..
+            }
+        ));
     }
 
     #[test]
