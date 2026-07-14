@@ -43,6 +43,36 @@ enum Format {
     F3d,
     /// `SolidWorks` `.sldprt`.
     Sldprt,
+    /// Rhino `.3dm`.
+    #[value(alias = "3dm")]
+    Rhino,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum RhinoVersion {
+    /// Rhino 5 archive version 50.
+    #[value(name = "50", alias = "5")]
+    V5,
+    /// Rhino 6 archive version 60.
+    #[value(name = "60", alias = "6")]
+    V6,
+    /// Rhino 7 archive version 70.
+    #[value(name = "70", alias = "7")]
+    V7,
+    /// Rhino 8 archive version 80.
+    #[value(name = "80", alias = "8")]
+    V8,
+}
+
+impl RhinoVersion {
+    const fn codec(self) -> cadmpeg_codec_rhino::RhinoArchiveVersion {
+        match self {
+            Self::V5 => cadmpeg_codec_rhino::RhinoArchiveVersion::V5,
+            Self::V6 => cadmpeg_codec_rhino::RhinoArchiveVersion::V6,
+            Self::V7 => cadmpeg_codec_rhino::RhinoArchiveVersion::V7,
+            Self::V8 => cadmpeg_codec_rhino::RhinoArchiveVersion::V8,
+        }
+    }
 }
 
 impl Format {
@@ -53,12 +83,16 @@ impl Format {
             "fcstd" => Some(Self::Fcstd),
             "f3d" => Some(Self::F3d),
             "sldprt" => Some(Self::Sldprt),
+            "3dm" => Some(Self::Rhino),
             _ => None,
         }
     }
 
     fn is_geometry_export(self) -> bool {
-        matches!(self, Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt)
+        matches!(
+            self,
+            Self::Step | Self::Fcstd | Self::F3d | Self::Sldprt | Self::Rhino
+        )
     }
 
     fn from_path(path: Option<&std::path::Path>) -> Option<Self> {
@@ -74,6 +108,7 @@ impl Format {
             Self::Fcstd => "fcstd",
             Self::F3d => "f3d",
             Self::Sldprt => "sldprt",
+            Self::Rhino => "rhino",
         }
     }
 }
@@ -210,6 +245,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Target Rhino archive version; valid only for Rhino output.
+        #[arg(long, value_enum)]
+        rhino_version: Option<RhinoVersion>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -249,6 +287,9 @@ enum Command {
         /// Write geometry output even when decoding transferred no geometry.
         #[arg(long)]
         allow_empty: bool,
+        /// Target Rhino archive version; valid only for Rhino output.
+        #[arg(long, value_enum)]
+        rhino_version: Option<RhinoVersion>,
         #[command(flatten)]
         input_args: InputArgs,
         #[command(flatten)]
@@ -296,6 +337,7 @@ fn main() -> ExitCode {
             force,
             report,
             allow_empty,
+            rhino_version,
             input_args,
             decode,
         } => commands::export(
@@ -307,6 +349,7 @@ fn main() -> ExitCode {
                 force,
                 report,
                 allow_empty,
+                rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },
             &decode,
@@ -321,6 +364,7 @@ fn main() -> ExitCode {
             report,
             allow_invalid,
             allow_empty,
+            rhino_version,
             input_args,
             decode,
         } => commands::convert(
@@ -333,6 +377,7 @@ fn main() -> ExitCode {
                 report,
                 allow_invalid,
                 allow_empty,
+                rhino_version: rhino_version.map(RhinoVersion::codec),
                 forced_input: input_args.forced(),
             },
             &decode,

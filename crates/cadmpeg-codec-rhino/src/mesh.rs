@@ -218,6 +218,7 @@ fn decode_inner(
             &mut decoded,
             &mut decompressed_bytes,
             document_budget,
+            archive,
         )?;
     }
     if minor >= 2 {
@@ -232,6 +233,7 @@ fn decode_inner(
             "surface parameters",
             &mut decompressed_bytes,
             document_budget,
+            archive,
         )?;
         if let Some(bytes) = surface {
             decoded
@@ -452,6 +454,7 @@ fn read_compressed_channels(
     decoded: &mut MeshChannels,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
+    archive: ArchiveVersion,
 ) -> Result<(), GeometryError> {
     let expected = [
         vertices * 12,
@@ -469,6 +472,7 @@ fn read_compressed_channels(
             names[index],
             decompressed_bytes,
             document_budget,
+            archive,
         )?;
         let Some(bytes) = bytes else { continue };
         match index {
@@ -530,6 +534,7 @@ fn read_buffer(
     name: &str,
     decompressed_bytes: &mut usize,
     document_budget: &mut MeshBudget,
+    archive: ArchiveVersion,
 ) -> Result<Option<Vec<u8>>, GeometryError> {
     let budget_checkpoint = *document_budget;
     let declared = reader.u32()? as usize;
@@ -559,10 +564,42 @@ fn read_buffer(
     }
     let crc = reader.u32()?;
     let method = reader.u8()?;
-    let mut input = reader.unread()?;
     let (bytes, consumed) = match method {
-        0 => (input.take(declared)?.to_vec(), declared),
-        1 => inflate(input, declared)?,
+        0 => {
+            let mut input = reader.unread()?;
+            (input.take(declared)?.to_vec(), declared)
+        }
+        1 => {
+            let chunk = chunk_at(
+                reader.backing_bytes(),
+                reader.position(),
+                reader.end(),
+                archive,
+                false,
+            )?;
+            if chunk.typecode != 0x4000_8000 || chunk.short {
+                return Err(error(
+                    reader.position(),
+                    "compressed buffer is not anonymous",
+                ));
+            }
+            let input =
+                BoundedReader::new(reader.backing_bytes(), chunk.body.start, chunk.body.end)?;
+            let (bytes, compressed) = inflate(input, declared)?;
+            if compressed != chunk.body.len() {
+                return Err(error(
+                    chunk.body.start + compressed,
+                    "zlib chunk has trailing bytes",
+                ));
+            }
+            if matches!(
+                verify_checksum(reader.backing_bytes(), &chunk)?,
+                ChecksumStatus::Mismatch { .. }
+            ) {
+                warnings.push(format!("{name} compressed chunk CRC mismatch"));
+            }
+            (bytes, chunk.next_offset - reader.position())
+        }
         _ => {
             return Err(error(
                 reader.position() - 1,
@@ -603,6 +640,7 @@ pub(crate) fn fuzz_buffer(data: &[u8]) {
         "fuzz",
         &mut decompressed_bytes,
         &mut document_budget,
+        ArchiveVersion::V8,
     );
 }
 
@@ -778,6 +816,7 @@ fn read_double_chunk(
         "double vertices",
         decompressed_bytes,
         document_budget,
+        archive,
     )?;
     if child.remaining() != 0 {
         return Err(error(
@@ -948,7 +987,7 @@ mod tests {
         } else {
             let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
             encoder.write_all(value).expect("zlib write");
-            result.extend(encoder.finish().expect("zlib finish"));
+            result.extend(chunk(&encoder.finish().expect("zlib finish")));
         }
         result
     }
@@ -994,6 +1033,7 @@ mod tests {
                 "test",
                 &mut budget,
                 &mut document_budget,
+                ArchiveVersion::V8,
             )
             .expect("buffer"),
             Some(vec![1, 2, 3])
@@ -1018,6 +1058,7 @@ mod tests {
                 "test",
                 &mut budget,
                 &mut document_budget,
+                ArchiveVersion::V8,
             )
             .expect("buffer"),
             Some(vec![4, 5, 6, 7])
@@ -1030,6 +1071,7 @@ mod tests {
                 "test",
                 &mut budget,
                 &mut document_budget,
+                ArchiveVersion::V8,
             )
             .expect("next"),
             Some(vec![8])
@@ -1052,6 +1094,7 @@ mod tests {
                 "test",
                 &mut budget,
                 &mut document_budget,
+                ArchiveVersion::V8,
             )
             .expect("buffer"),
             None
@@ -1074,6 +1117,7 @@ mod tests {
             "bad",
             &mut 0,
             &mut MeshBudget::new(),
+            ArchiveVersion::V8,
         )
         .is_err());
         let mut truncated = buffer(&[1, 2, 3], 1);
@@ -1086,6 +1130,7 @@ mod tests {
             "short",
             &mut 0,
             &mut MeshBudget::new(),
+            ArchiveVersion::V8,
         )
         .is_err());
     }
@@ -1104,6 +1149,7 @@ mod tests {
             "bomb",
             &mut 0,
             &mut MeshBudget::new(),
+            ArchiveVersion::V8,
         )
         .is_err());
     }
@@ -1120,6 +1166,7 @@ mod tests {
             "budget",
             &mut budget,
             &mut MeshBudget::new(),
+            ArchiveVersion::V8,
         )
         .is_err());
     }
@@ -1137,6 +1184,7 @@ mod tests {
                 "aggregate",
                 &mut 0,
                 &mut document_budget,
+                ArchiveVersion::V8,
             );
             assert_eq!(result.is_ok(), expected_success);
         }

@@ -8,7 +8,9 @@ use cadmpeg_codec_freecad::FcstdCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
-use cadmpeg_ir::codec::{CadirEncoder, Codec, Confidence, Encoder};
+use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder};
+use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::ExportReport;
 use cadmpeg_step::StepCodec;
 
 /// Native codecs available to the CLI.
@@ -34,6 +36,7 @@ impl Registry {
                 Box::new(FcstdCodec),
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
+                Box::new(RhinoCodec),
                 Box::new(StepCodec::default()),
                 Box::new(CadirEncoder),
             ],
@@ -72,6 +75,28 @@ impl Registry {
             .find(|encoder| encoder.id() == id)
             .map(Box::as_ref)
     }
+
+    /// Encode through the registered format path with optional target selection.
+    pub fn encode_by_id(
+        &self,
+        id: &str,
+        rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
+        ir: &CadIr,
+        output: &mut dyn std::io::Write,
+    ) -> Option<Result<ExportReport, CodecError>> {
+        if rhino_version.is_some() && id != "rhino" {
+            return Some(Err(CodecError::Malformed(
+                "Rhino archive version requires the Rhino encoder".into(),
+            )));
+        }
+        if id == "rhino" {
+            if let Some(version) = rhino_version {
+                return Some(cadmpeg_codec_rhino::RhinoEncoder::new(version).encode(ir, output));
+            }
+        }
+        self.encoder_by_id(id)
+            .map(|encoder| encoder.encode(ir, output))
+    }
 }
 
 #[cfg(test)]
@@ -88,6 +113,7 @@ mod tests {
             Format::Fcstd,
             Format::F3d,
             Format::Sldprt,
+            Format::Rhino,
         ] {
             assert!(
                 registry.encoder_by_id(format.name()).is_some(),
