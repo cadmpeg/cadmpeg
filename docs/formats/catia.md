@@ -302,7 +302,7 @@ A 2D spline in a support surface's parameter space. Its payload stores `degU`, `
 
 `b2 03 20` is the B-family form with the same support reference, degree, knot-site parameters, U/V values, first derivatives, second derivatives, and native range. Wide `a6/a7` and `b3/b4` records use identical payload grammars.
 
-For a co-parametric edge block, each uniquely bound analytic carrier lifts the first and last pcurve sites to the shared 3D endpoint loci. When both sides are liftable, their unordered endpoint pairs agree within `2e-3` mm; disagreement invalidates the endpoint result rather than selecting one side.
+For a co-parametric edge block, each uniquely bound analytic carrier lifts the first and last pcurve sites to the shared 3D endpoint loci. A NURBS carrier with signed normal offset `d` lifts a site as `S(u,v) + d·normalize(Su(u,v)×Sv(u,v))`; a degenerate tangent pair has no endpoint lift. When both sides are liftable, their unordered endpoint pairs agree within `2e-3` mm; disagreement invalidates the endpoint result rather than selecting one side.
 
 ### 6.4 Consolidated guide and topology metadata
 

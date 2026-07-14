@@ -14,7 +14,7 @@
 use std::{collections::BTreeMap, ops::Range};
 
 use cadmpeg_ir::be::f32_at as f32_be;
-use cadmpeg_ir::eval::surface_point;
+use cadmpeg_ir::eval::nurbs_surface_partials;
 use cadmpeg_ir::geometry::{CurveGeometry, NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1112,6 +1112,7 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                         &standalone,
                         &embedded,
                         &cones,
+                        &surfaces,
                     )
                 }) else {
                     continue;
@@ -1134,8 +1135,14 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                     supports[partner] = Some(winner.clone());
                 }
             }
-            let endpoint_loci =
-                resolved_support_endpoints(&block, &supports, &standalone, &embedded, &cones);
+            let endpoint_loci = resolved_support_endpoints(
+                &block,
+                &supports,
+                &standalone,
+                &embedded,
+                &cones,
+                &surfaces,
+            );
             ResolvedA5EdgeBlock {
                 block,
                 supports,
@@ -1151,12 +1158,20 @@ fn resolved_support_endpoints(
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
+    surfaces: &[A8Surface],
 ) -> Option<[Point3; 2]> {
     let candidates = supports
         .iter()
         .zip(&block.pcurves)
         .filter_map(|(binding, pcurve)| {
-            let points = support_points(binding.as_ref()?, pcurve, cylinders, embedded, cones)?;
+            let points = support_points(
+                binding.as_ref()?,
+                pcurve,
+                cylinders,
+                embedded,
+                cones,
+                surfaces,
+            )?;
             Some([*points.first()?, *points.last()?])
         })
         .collect::<Vec<_>>();
@@ -1179,6 +1194,7 @@ fn support_points(
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
+    surfaces: &[A8Surface],
 ) -> Option<Vec<Point3>> {
     match binding {
         A5SupportBinding::Cylinder { pos } => {
@@ -1205,7 +1221,29 @@ fn support_points(
                 .map(|uv| b2_cone_point(carrier, *uv))
                 .collect()
         }
-        A5SupportBinding::Circle { .. } | A5SupportBinding::NurbsCarrier { .. } => None,
+        A5SupportBinding::NurbsCarrier { pos, offset } => {
+            let SurfaceGeometry::Nurbs(surface) = &surfaces
+                .iter()
+                .find(|surface| surface.pos == *pos)?
+                .geometry
+            else {
+                return None;
+            };
+            pcurve
+                .points
+                .iter()
+                .map(|&[u, v]| {
+                    let partials = nurbs_surface_partials(surface, u, v)?;
+                    let normal = unit(cross(partials.du, partials.dv))?;
+                    Some(Point3::new(
+                        partials.point.x + offset * normal.x,
+                        partials.point.y + offset * normal.y,
+                        partials.point.z + offset * normal.z,
+                    ))
+                })
+                .collect()
+        }
+        A5SupportBinding::Circle { .. } => None,
     }
 }
 
@@ -1220,30 +1258,17 @@ fn nurbs_carrier_offset(
     if parameters.len() != anchors.len() || parameters.is_empty() {
         return None;
     }
-    let u_domain = [*surface.u_knots.first()?, *surface.u_knots.last()?];
-    let v_domain = [*surface.v_knots.first()?, *surface.v_knots.last()?];
     let mut offsets = Vec::with_capacity(parameters.len());
     for (&[u, v], &anchor) in parameters.iter().zip(anchors) {
-        let point = surface_point(geometry, u, v)?;
+        let partials = nurbs_surface_partials(surface, u, v)?;
+        let point = partials.point;
         let residual = Vector3::new(anchor.x - point.x, anchor.y - point.y, anchor.z - point.z);
         let residual_length = (residual.x.powi(2) + residual.y.powi(2) + residual.z.powi(2)).sqrt();
         if residual_length < 1e-6 {
             offsets.push(0.0);
             continue;
         }
-        let hu = ((u_domain[1] - u_domain[0]).abs() * 1e-6).max(1e-8);
-        let hv = ((v_domain[1] - v_domain[0]).abs() * 1e-6).max(1e-8);
-        let u0 = (u - hu).max(u_domain[0]);
-        let u1 = (u + hu).min(u_domain[1]);
-        let v0 = (v - hv).max(v_domain[0]);
-        let v1 = (v + hv).min(v_domain[1]);
-        let pu0 = surface_point(geometry, u0, v)?;
-        let pu1 = surface_point(geometry, u1, v)?;
-        let pv0 = surface_point(geometry, u, v0)?;
-        let pv1 = surface_point(geometry, u, v1)?;
-        let du = Vector3::new(pu1.x - pu0.x, pu1.y - pu0.y, pu1.z - pu0.z);
-        let dv = Vector3::new(pv1.x - pv0.x, pv1.y - pv0.y, pv1.z - pv0.z);
-        let normal = unit(cross(du, dv))?;
+        let normal = unit(cross(partials.du, partials.dv))?;
         let distance = residual.x * normal.x + residual.y * normal.y + residual.z * normal.z;
         let perpendicular_squared = residual_length.powi(2) - distance.powi(2);
         if perpendicular_squared > 1e-12 {
