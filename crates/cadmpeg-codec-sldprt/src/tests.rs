@@ -1730,6 +1730,10 @@ fn encoder_writes_source_less_line_sketches() {
                     direction: Vector3::new(0.0, 1.0, 0.0),
                 }),
                 extent: Some(Extent::Angle { angle: Angle(1.2) }),
+                axis_reference: None,
+                solid: Some(true),
+                face_maker_class: None,
+                fuse_order: None,
             },
             op: BooleanOp::NewBody,
         },
@@ -2721,6 +2725,7 @@ fn decode_retains_nonfinite_feature_dimensions_as_native() {
                 profile: None,
                 axis: Some(_),
                 extent: None,
+                ..
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
         }
@@ -2839,6 +2844,7 @@ fn decode_retains_invalid_feature_directions_and_angles_as_native() {
                 profile: None,
                 axis: Some(_),
                 extent: None,
+                ..
             },
             op: cadmpeg_ir::features::BooleanOp::Join,
         }
@@ -10961,6 +10967,7 @@ fn semantic_writer_round_trips_typed_revolution() {
                     direction: Vector3 { x: 0.0, y: 1.0, z: 0.0 },
                 }),
                 extent: Some(Extent::Angle { angle: Angle(value) }),
+                ..
             },
             op: BooleanOp::Join,
         } if (*value - std::f64::consts::PI).abs() < 1e-12
@@ -11031,6 +11038,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
                     },
                 }),
                 extent: None,
+                ..
             },
             op: BooleanOp::Unresolved,
         }
@@ -11066,6 +11074,7 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
                 axis: Some(_),
                 profile: None,
                 extent: None,
+                ..
             },
             op: BooleanOp::Unresolved,
         }

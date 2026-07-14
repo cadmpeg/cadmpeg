@@ -2006,6 +2006,10 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
             profile,
             axis,
             extent,
+            axis_reference: None,
+            solid: Some(true),
+            face_maker_class: None,
+            fuse_order: None,
         },
         op,
     }
@@ -6164,6 +6168,16 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Revolve { construction, op } => {
+                if construction.axis_reference.is_some()
+                    || construction.solid == Some(false)
+                    || construction.face_maker_class.is_some()
+                    || construction.fuse_order.is_some()
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses unsupported revolution construction controls",
+                        feature.id
+                    )));
+                }
                 if existing
                     .as_deref()
                     .is_some_and(|record| !is_revolve(record))

@@ -397,7 +397,7 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Angle" type="App::PropertyAngle"><Float value="120"/></Property>
   <Property name="Angle2" type="App::PropertyAngle"><Float value="30"/></Property>
  </Properties></Object>
- <Object name="Midplane"><Properties Count="7">
+ <Object name="Midplane"><Properties Count="9">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="3" z="0"/></Property>
@@ -405,6 +405,8 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Angle" type="App::PropertyAngle"><Float value="90"/></Property>
   <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="ReferenceAxis" type="App::PropertyLinkSub"><Link object="Sketch" sub="H_Axis"/></Property>
+  <Property name="FuseOrder" type="App::PropertyEnumeration"><Integer value="1"/></Property>
  </Properties></Object>
  <Object name="ThroughAll"><Properties Count="4">
   <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
@@ -412,13 +414,15 @@ fn transfers_non_default_revolution_branches() {
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="1" z="0"/></Property>
   <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
  </Properties></Object>
- <Object name="Standalone"><Properties Count="6">
+ <Object name="Standalone"><Properties Count="8">
   <Property name="Source" type="App::PropertyLink"><Link value="Sketch"/></Property>
   <Property name="Base" type="App::PropertyVector"><Vector x="0" y="0" z="0"/></Property>
   <Property name="Axis" type="App::PropertyVector"><Vector x="0" y="0" z="4"/></Property>
   <Property name="Angle" type="App::PropertyFloatConstraint"><Float value="45"/></Property>
   <Property name="Symmetric" type="App::PropertyBool"><Bool value="true"/></Property>
   <Property name="Solid" type="App::PropertyBool"><Bool value="true"/></Property>
+  <Property name="AxisLink" type="App::PropertyLinkSub"><Link object="Sketch" sub="Edge1"/></Property>
+  <Property name="FaceMakerClass" type="App::PropertyString"><String value="Part::FaceMakerUnified"/></Property>
  </Properties></Object>
 </ObjectData></Document>"#;
     let result = FcstdCodec
@@ -466,8 +470,8 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("Midplane"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), .. }, .. }
-            if axis.direction.y == -1.0
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), fuse_order: Some(cadmpeg_ir::features::RevolutionFuseOrder::FeatureFirst), solid: Some(true), .. }, .. }
+            if axis.direction.y == -1.0 && reference.ends_with(":property:ReferenceAxis")
     ));
     assert!(matches!(
         definition("ThroughAll"),
@@ -481,8 +485,9 @@ fn transfers_non_default_revolution_branches() {
     ));
     assert!(matches!(
         definition("Standalone"),
-        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }) }, op: BooleanOp::NewBody }
-            if axis.direction.z == 1.0
+        FeatureDefinition::Revolve { construction: cadmpeg_ir::features::RevolutionConstruction { profile: Some(cadmpeg_ir::features::ProfileRef::Sketch(_)), axis: Some(axis), extent: Some(Extent::SymmetricAngle { .. }), axis_reference: Some(cadmpeg_ir::features::PathRef::Native(reference)), solid: Some(true), face_maker_class: Some(face_maker), .. }, op: BooleanOp::NewBody }
+            if axis.direction.z == 1.0 && reference.ends_with(":property:AxisLink")
+                && face_maker == "Part::FaceMakerUnified"
     ));
 }
 
@@ -520,7 +525,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "31");
+    assert_eq!(result.ir.ir_version, "32");
     let feature = |name: &str| {
         &result
             .ir

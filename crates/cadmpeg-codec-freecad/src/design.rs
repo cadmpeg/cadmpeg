@@ -14,9 +14,9 @@ use cadmpeg_ir::features::{
     HoleSpecification, HoleThreadDepth, InnerWireTaper, Length, ParameterId, ParameterValue,
     PathRef, PatternKind, PatternScaleCenter, PatternStage, PatternStageCombination,
     PrimitiveSolid, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode, SketchSpace,
-    SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation, SweepTransition,
-    ThreadHand,
+    RevolutionFuseOrder, RuledCurveOrientation, ScaleCenter, ScaleFactors, ShellJoin, ShellMode,
+    SketchSpace, SurfaceProjectionMode, SweepMode, SweepOrientation, SweepTransformation,
+    SweepTransition, ThreadHand,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::sketches::{
@@ -1690,11 +1690,48 @@ fn revolution_definition(
     if bool_property(properties, "Reversed").unwrap_or(false) {
         axis.direction = Vector3::new(-axis.direction.x, -axis.direction.y, -axis.direction.z);
     }
+    let axis_reference_property = ["AxisLink", "ReferenceAxis"]
+        .iter()
+        .find_map(|name| property(properties, name))
+        .filter(|property| !property.links.is_empty());
+    if axis_reference_property.is_some_and(|property| property.links.len() != 1) {
+        return None;
+    }
+    let axis_reference =
+        axis_reference_property.map(|property| PathRef::Native(property.id.clone()));
+    let face_maker_class =
+        if kind == "Part::Revolution" && property(properties, "FaceMakerClass").is_some() {
+            Some(string_property_value(property(properties, "FaceMakerClass")?)?.to_owned())
+        } else {
+            None
+        };
+    let fuse_order =
+        if kind.starts_with("PartDesign::") && property(properties, "FuseOrder").is_some() {
+            Some(match integer_property(properties, "FuseOrder")? {
+                0 => RevolutionFuseOrder::BaseFirst,
+                1 => RevolutionFuseOrder::FeatureFirst,
+                _ => return None,
+            })
+        } else {
+            None
+        };
     Some(FeatureDefinition::Revolve {
         construction: RevolutionConstruction {
             profile: Some(profile),
             axis: Some(axis),
             extent: Some(extent),
+            axis_reference,
+            solid: Some(if kind == "Part::Revolution" {
+                if property(properties, "Solid").is_some() {
+                    bool_property(properties, "Solid")?
+                } else {
+                    false
+                }
+            } else {
+                true
+            }),
+            face_maker_class,
+            fuse_order,
         },
         op: if kind == "Part::Revolution" {
             BooleanOp::NewBody

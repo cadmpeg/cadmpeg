@@ -1111,6 +1111,28 @@ pub struct RevolutionConstruction {
     /// Angular extent, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extent: Option<Extent>,
+    /// Native edge, datum, or sketch-axis selection used to resolve the axis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axis_reference: Option<PathRef>,
+    /// Whether a standalone revolution creates a solid rather than a sheet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solid: Option<bool>,
+    /// Face-building algorithm used for a standalone solid revolution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub face_maker_class: Option<String>,
+    /// Compatibility ordering for fusing a `PartDesign` revolution into its body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fuse_order: Option<RevolutionFuseOrder>,
+}
+
+/// Operand ordering used to fuse a `PartDesign` revolution result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RevolutionFuseOrder {
+    /// Existing body is the first fuse operand.
+    BaseFirst,
+    /// Newly revolved feature is the first fuse operand.
+    FeatureFirst,
 }
 
 /// Complete line placement used as a revolution axis.

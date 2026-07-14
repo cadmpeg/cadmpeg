@@ -1684,6 +1684,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
                 extents.extend(&construction.extent);
+                paths.extend(&construction.axis_reference);
                 if construction.axis.as_ref().is_some_and(|axis| {
                     !axis.origin.x.is_finite()
                         || !axis.origin.y.is_finite()
@@ -2735,6 +2736,7 @@ fn check_feature_sketch_references(
             }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
+                paths.extend(&construction.axis_reference);
             }
             FeatureDefinition::Sweep { profile, path, .. } => {
                 profiles.extend(profile);
