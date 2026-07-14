@@ -2753,6 +2753,60 @@ fn emit_curve(out: &mut Brep, carrier: &Carrier) {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn shared_edge_coedge_parity_orients_connected_faces() {
+        use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, ShellId, SurfaceId};
+        use cadmpeg_ir::topology::{Coedge, Face, Loop, Sense};
+
+        let face = |id: &str, lp: &str| Face {
+            id: FaceId(id.into()),
+            shell: ShellId("shell".into()),
+            surface: SurfaceId(format!("surface-{id}")),
+            sense: Sense::Forward,
+            loops: vec![LoopId(lp.into())],
+            name: None,
+            color: None,
+            tolerance: None,
+        };
+        let lp = |id: &str, face: &str, coedge: &str| Loop {
+            id: LoopId(id.into()),
+            face: FaceId(face.into()),
+            coedges: vec![CoedgeId(coedge.into())],
+        };
+        let coedge = |id: &str, lp: &str, radial: &str, sense| Coedge {
+            id: CoedgeId(id.into()),
+            owner_loop: LoopId(lp.into()),
+            edge: EdgeId("edge".into()),
+            next: CoedgeId(id.into()),
+            previous: CoedgeId(id.into()),
+            radial_next: CoedgeId(radial.into()),
+            sense,
+            pcurve: None,
+        };
+        let mut brep = super::Brep {
+            faces: vec![face("face-a", "loop-a"), face("face-b", "loop-b")],
+            loops: vec![
+                lp("loop-a", "face-a", "coedge-a"),
+                lp("loop-b", "face-b", "coedge-b"),
+            ],
+            coedges: vec![
+                coedge("coedge-a", "loop-a", "coedge-b", Sense::Forward),
+                coedge("coedge-b", "loop-b", "coedge-a", Sense::Forward),
+            ],
+            ..Default::default()
+        };
+
+        super::solve_face_orientation(&mut brep);
+        assert_eq!(brep.faces[0].sense, Sense::Forward);
+        assert_eq!(brep.faces[1].sense, Sense::Reversed);
+
+        brep.faces[1].sense = Sense::Reversed;
+        brep.coedges[1].sense = Sense::Reversed;
+        super::solve_face_orientation(&mut brep);
+        assert_eq!(brep.faces[0].sense, Sense::Forward);
+        assert_eq!(brep.faces[1].sense, Sense::Forward);
+    }
+
+    #[test]
     fn geometry_free_stream_does_not_report_synthetic_body_grouping() {
         let decoded = super::decode_body(&[], "empty");
 

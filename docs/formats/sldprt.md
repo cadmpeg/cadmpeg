@@ -289,6 +289,8 @@ edge.end_vertex   = partner coedge (same edge_use_attr).start_vertex_use → …
 
 The `00 10.refs[0]` coedge anchors the stored edge direction. Sentinel attributes `0` and `1` do not reference vertex-use or point records.
 
+For an edge with exactly two coedge uses, equal coedge markers require opposite face senses and opposite coedge markers require equal face senses. The bridge marker of one face anchors the face-sense parity of each connected shell component; applying the edge parity across the component determines every other face sense.
+
 ### 4.2 Deltas encodings
 
 Deltas streams re-encode records in prefixed/tripled forms (each ref stored as a `[hi][lo][01]` triple) or as `[disc][attr]` adjacency tables; the magic occurs at the family-specific position within the record window.
