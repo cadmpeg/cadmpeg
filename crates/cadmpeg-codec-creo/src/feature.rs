@@ -103,9 +103,9 @@ fn recipe_bindings(payload: &[u8]) -> BTreeMap<u32, FeatureRecipeBinding> {
     bindings
 }
 
-/// Decode NUL-terminated `<Kind> id <N>` operation names and their bounded
-/// procedural-recipe records from one feature-state namespace.
-pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
+/// Decode every NUL-terminated `<Kind> id <N>` operation state and bounded
+/// procedural-recipe record from one feature-state namespace, in byte order.
+pub fn operation_states(payload: &[u8]) -> Vec<FeatureOperation> {
     const SEPARATORS: &[&[u8]] = &[b" id ", b" ID "];
     let family_byte = |byte: u8| {
         byte.is_ascii_alphanumeric()
@@ -203,7 +203,12 @@ pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
         });
     }
     result.sort_by_key(|operation| operation.offset);
-    let mut current = result
+    result
+}
+
+/// Decode the current operation state for each feature identifier.
+pub fn operations(payload: &[u8]) -> Vec<FeatureOperation> {
+    let mut current = operation_states(payload)
         .into_iter()
         .map(|operation| (operation.feature_id, operation))
         .collect::<BTreeMap<_, _>>()

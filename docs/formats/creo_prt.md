@@ -542,8 +542,9 @@ operation.
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
 name's localization. An ASCII `o`, `x`, `y`, or `z` byte immediately preceding
 an uppercase operation-family name is a state prefix, not part of the family
-name. Multiple operation names with the same feature identifier are stored
-states; the last occurrence is the current state.
+name. Multiple operation names with the same feature identifier are ordered
+stored states; the last occurrence is the current state. Decoding the current
+state does not discard the preceding state records.
 
 Within one current-state record, `protextrude` identifies a linear section
 sweep and `protrevolve` identifies a rotational section sweep. The recipe name

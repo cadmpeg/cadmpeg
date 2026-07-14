@@ -3291,6 +3291,11 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         )],
     );
     let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.feature_operation_states.len(), 7);
+    assert_eq!(scan.feature_operation_states[0].feature_id, 40);
+    assert_eq!(scan.feature_operation_states[0].kind, "Protrusion");
+    assert_eq!(scan.feature_operation_states[5].feature_id, 40);
+    assert_eq!(scan.feature_operation_states[5].kind, "Hole");
     assert_eq!(scan.feature_operations.len(), 6);
     assert_eq!(scan.feature_operations[0].feature_id, 41);
     assert_eq!(scan.feature_operations[0].kind, "Round");
@@ -3304,6 +3309,10 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
     assert_eq!(scan.feature_operations[5].status_prefix, Some(b'y'));
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert_eq!(
+        result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"].len(),
+        7
+    );
     assert_eq!(result.ir.model.features.len(), 6);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),

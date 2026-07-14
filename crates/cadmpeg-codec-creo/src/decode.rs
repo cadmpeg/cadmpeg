@@ -225,6 +225,40 @@ struct CreoCurveExpressionAssignment {
 }
 
 #[derive(Serialize)]
+struct CreoFeatureOperationState {
+    id: String,
+    feature_id: u32,
+    family: String,
+    status_prefix: Option<String>,
+    recipe: Option<&'static str>,
+    root_schema_class: Option<u32>,
+    parent_feature_id: Option<u32>,
+    offset: usize,
+}
+
+fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOperationState> {
+    scan.feature_operation_states
+        .iter()
+        .enumerate()
+        .map(|(index, state)| CreoFeatureOperationState {
+            id: format!("creo:mdlstatus:feature_state#{}:{index}", state.feature_id),
+            feature_id: state.feature_id,
+            family: state.kind.clone(),
+            status_prefix: state
+                .status_prefix
+                .map(|prefix| char::from(prefix).to_string()),
+            recipe: state.recipe.map(|recipe| match recipe {
+                crate::feature::FeatureRecipeKind::Extrude => "protextrude",
+                crate::feature::FeatureRecipeKind::Revolve => "protrevolve",
+            }),
+            root_schema_class: state.root_schema_class,
+            parent_feature_id: state.parent_feature_id,
+            offset: state.offset,
+        })
+        .collect()
+}
+
+#[derive(Serialize)]
 struct CreoPcurveEndpointRecord {
     id: String,
     curve_id: u32,
@@ -13475,6 +13509,30 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("curve_expressions", &curve_expressions)?;
     }
+    let feature_operation_states = feature_operation_state_records(scan);
+    if !feature_operation_states.is_empty() {
+        for state in &feature_operation_states {
+            let section = scan
+                .sections
+                .iter()
+                .find(|section| {
+                    state.offset >= section.offset
+                        && state.offset < section.offset.saturating_add(section.length)
+                })
+                .map_or("MdlStatus", |section| section.name.as_str());
+            annotate(
+                &mut annotations,
+                &state.id,
+                section,
+                state.offset as u64,
+                "feature_operation_state",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_operation_states", &feature_operation_states)?;
+    }
     ir.annotations = annotations.build();
     Ok(ir)
 }
@@ -13658,6 +13716,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_feature_section_transform_count".to_string(),
         scan.feature_section_transforms.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_operation_state_count".to_string(),
+        scan.feature_operation_states.len().to_string(),
     );
     attributes.insert(
         "decoded_feature_operation_count".to_string(),

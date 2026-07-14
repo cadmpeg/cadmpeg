@@ -238,7 +238,9 @@ pub struct ContainerScan {
     pub feature_definitions: Vec<FeatureDefinition>,
     /// Section-to-model frames resolved from perpendicular active datums.
     pub feature_section_transforms: Vec<FeatureSectionTransform>,
-    /// Ordered feature-operation names from `MdlStatus`.
+    /// Every stored feature-operation state from `MdlStatus`, in byte order.
+    pub feature_operation_states: Vec<FeatureOperation>,
+    /// Current feature-operation state for each feature identifier.
     pub feature_operations: Vec<FeatureOperation>,
     /// Named records in the implicit `AllFeatur` walker-order entity table.
     pub feature_entities: Vec<FeatureEntity>,
@@ -1015,6 +1017,26 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
     current
 }
 
+fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
+    let mut records = Vec::new();
+    for section in sections
+        .iter()
+        .filter(|section| section.name == "MdlStatus" || section.name == "DEPDB_DATA")
+    {
+        let end = (section.offset + section.length).min(data.len());
+        records.extend(
+            feature::operation_states(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                }),
+        );
+    }
+    records.sort_by_key(|record| record.offset);
+    records
+}
+
 fn depdb_recipe_rows(data: &[u8], sections: &[Section]) -> Vec<FeatureRow> {
     sections
         .iter()
@@ -1155,6 +1177,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         },
         &feature_entity_tables,
     );
+    let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);
     let declared_body_count = geomlists_value(&data, &sections, b"n_bodies\0");
@@ -1203,6 +1226,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_direction_bytes,
         feature_definitions,
         feature_section_transforms,
+        feature_operation_states,
         feature_operations,
         feature_entities,
         feature_entity_references,
