@@ -1000,7 +1000,7 @@ fn b2_width_coded_owner_packet_stream() -> Vec<u8> {
         .enumerate()
     {
         if index % 2 == 0 {
-            if value <= u16::from(u8::MAX) {
+            if u8::try_from(value).is_ok() {
                 record.extend_from_slice(&[0x04, u8::try_from(value).unwrap()]);
             } else {
                 record.push(0x08);
