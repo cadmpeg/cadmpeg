@@ -39,6 +39,11 @@ pub(crate) fn transfer(
                     .into_iter()
                     .flat_map(|name| links(&owned, name))
                     .collect(),
+                relationships: owned
+                    .iter()
+                    .filter(|property| !property.links.is_empty())
+                    .map(|property| (property.name.clone(), property.links.clone()))
+                    .collect(),
                 parameters: drawing_parameters(&owned),
                 side_entries: owned
                     .iter()

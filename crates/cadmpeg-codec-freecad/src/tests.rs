@@ -404,6 +404,69 @@ fn recovers_techdraw_page_template_and_view_graph() {
 }
 
 #[test]
+fn separates_semantic_annotations_from_drawing_relationships() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4">
+ <Object type="Part::Feature" name="Model" id="1"/>
+ <Object type="TechDraw::DrawViewPart" name="View" id="2"/>
+ <Object type="TechDraw::DrawViewDimension" name="Dimension" id="3"/>
+ <Object type="TechDraw::DrawViewAnnotation" name="Note" id="4"/>
+</Objects>
+<ObjectData Count="4">
+ <Object name="Model"><Properties Count="0"/></Object>
+ <Object name="View"><Properties Count="1"><Property name="Source" type="App::PropertyLink"><Link value="Model"/></Property></Properties></Object>
+ <Object name="Dimension"><Properties Count="3">
+  <Property name="BaseView" type="App::PropertyLink"><Link value="View"/></Property>
+  <Property name="References2D" type="App::PropertyLinkSubList"><LinkList count="1"><Link object="Model" sub="Edge1"/></LinkList></Property>
+  <Property name="FormatSpec" type="App::PropertyString"><String value="12.5 mm"/></Property>
+ </Properties></Object>
+ <Object name="Note"><Properties Count="2">
+  <Property name="Text" type="App::PropertyStringList"><StringList count="1"><String value="INSPECT"/></StringList></Property>
+  <Property name="View" type="App::PropertyLink"><Link value="View"/></Property>
+ </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("semantic annotations");
+    let namespace = result.ir.native.namespace("fcstd").expect("native");
+    let annotations = namespace
+        .arena_as::<crate::native::SemanticAnnotationRecord>("annotations")
+        .expect("annotations");
+    let drawings = namespace
+        .arena_as::<crate::native::DrawingRecord>("drawings")
+        .expect("drawings");
+    assert_eq!(annotations.len(), 2);
+    let dimension = annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with(":Dimension"))
+        .expect("dimension");
+    assert_eq!(dimension.text, ["12.5 mm"]);
+    assert_eq!(
+        dimension.references["References2D"][0].subelements,
+        ["Edge1"]
+    );
+    let note = annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with(":Note"))
+        .expect("note");
+    assert_eq!(note.text, ["INSPECT"]);
+    let drawing_dimension = drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with(":Dimension"))
+        .expect("drawing dimension");
+    assert_eq!(
+        drawing_dimension.relationships["BaseView"][0]
+            .object
+            .as_deref(),
+        Some("fcstd:object:View")
+    );
+    assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
 fn transfers_sketch_pad_and_pocket_design_history() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="4">
@@ -807,7 +870,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 8);
+    assert_eq!(namespace.version, 9);
     let gui_providers = namespace
         .arena_as::<crate::native::GuiViewProviderRecord>("gui_view_providers")
         .expect("GUI providers");

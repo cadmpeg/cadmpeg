@@ -5,7 +5,26 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 8;
+pub const VERSION: u32 = 9;
+
+/// One semantic annotation object kept distinct from drawing presentation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SemanticAnnotationRecord {
+    /// Stable semantic annotation identity.
+    pub id: String,
+    /// Owning application object.
+    pub object: String,
+    /// Persisted annotation runtime type.
+    pub kind: String,
+    /// Ordered user-visible text fragments.
+    pub text: Vec<String>,
+    /// Object and subelement references grouped by source property.
+    pub references: BTreeMap<String, Vec<LinkTarget>>,
+    /// Typed or exactly framed annotation properties grouped by source name.
+    pub parameters: BTreeMap<String, String>,
+    /// Referenced symbol, image, or other side entries.
+    pub side_entries: Vec<String>,
+}
 
 /// One application-domain object projected into the L8 census.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +62,8 @@ pub struct DrawingRecord {
     pub template: Option<String>,
     /// Ordered source object and subelement references for a view or dimension.
     pub sources: Vec<LinkTarget>,
+    /// All drawing relationships grouped by their persisted property name.
+    pub relationships: BTreeMap<String, Vec<LinkTarget>>,
     /// Typed scalar/vector/string drawing fields retained by property name.
     pub parameters: BTreeMap<String, String>,
     /// Referenced template or drawing side entries.

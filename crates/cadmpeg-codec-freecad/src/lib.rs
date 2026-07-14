@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Read ZIP-packaged `FreeCAD` `.FCStd` documents.
 
+mod annotation;
 mod application;
 mod brep;
 mod container;
@@ -102,6 +103,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
     let drawings = match namespace.arena_as::<native::DrawingRecord>("drawings") {
+        Ok(records) => records,
+        Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
+    };
+    let annotations = match namespace.arena_as::<native::SemanticAnnotationRecord>("annotations") {
         Ok(records) => records,
         Err(error) => return vec![finding(Check::NativeLinks, error.to_string(), None)],
     };
@@ -387,13 +392,65 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .side_entries
             .iter()
             .any(|entry| !entry_names.contains(entry.as_str()));
-        if missing_object || missing_entry {
+        let missing_relationship = drawing.relationships.values().flatten().any(|link| {
+            link.document.is_none()
+                && link
+                    .object
+                    .as_ref()
+                    .is_some_and(|object| !object_ids.contains(object.as_str()))
+        });
+        if missing_object || missing_entry || missing_relationship {
             findings.push(finding(
                 Check::NativeLinks,
                 format!("{} has a missing drawing object or side entry", drawing.id),
                 Some(drawing.id.clone()),
             ));
         }
+    }
+    for annotation in &annotations {
+        let object = object_by_id.get(annotation.object.as_str());
+        let missing_reference = annotation.references.values().flatten().any(|reference| {
+            reference.document.is_none()
+                && reference
+                    .object
+                    .as_ref()
+                    .is_some_and(|object| !object_ids.contains(object.as_str()))
+        });
+        let missing_entry = annotation
+            .side_entries
+            .iter()
+            .any(|entry| !entry_names.contains(entry.as_str()));
+        if object.is_none_or(|object| object.type_name != annotation.kind)
+            || missing_reference
+            || missing_entry
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                format!(
+                    "{} has a missing annotation object, target, or asset",
+                    annotation.id
+                ),
+                Some(annotation.id.clone()),
+            ));
+        }
+    }
+    let expected_annotation_objects = objects
+        .iter()
+        .filter(|object| annotation::is_annotation_type(&object.type_name))
+        .map(|object| object.id.as_str())
+        .collect::<HashSet<_>>();
+    let annotation_objects = annotations
+        .iter()
+        .map(|annotation| annotation.object.as_str())
+        .collect::<HashSet<_>>();
+    if annotation_objects.len() != annotations.len()
+        || annotation_objects != expected_annotation_objects
+    {
+        findings.push(finding(
+            Check::Identity,
+            "FCStd semantic annotation graph does not cover every annotation object exactly once",
+            None,
+        ));
     }
     for extension in &extensions {
         if !object_ids.contains(extension.owner.as_str()) {
@@ -821,6 +878,10 @@ impl Codec for FcstdCodec {
             namespace.set_arena(
                 "drawings",
                 &drawing::transfer(&graph.objects, &graph.properties),
+            )?;
+            namespace.set_arena(
+                "annotations",
+                &annotation::transfer(&graph.objects, &graph.properties),
             )?;
             namespace.set_arena(
                 "applications",

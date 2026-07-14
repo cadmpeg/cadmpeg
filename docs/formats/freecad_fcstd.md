@@ -224,3 +224,10 @@ owned properties, ordered dependencies, and referenced side entries. A record is
 an inert payload when it owns a Python-object property. Decoding never imports, instantiates, or
 executes serialized application code. Validation derives the census again from the authoritative
 object/property graph and rejects missing, duplicate, reordered, or cross-owned records.
+
+Native namespace version 9 separates semantic annotation records from their drawing presentation.
+Annotation, dimension, balloon, leader, and symbol objects retain ordered visible text, all model
+and subelement references grouped by source property, exact parameter records, and referenced
+assets. Drawing records independently retain every link-valued relationship, including projection
+and section parents rather than only page membership and model sources. Validation requires exact
+annotation-object coverage and resolves both annotation and drawing relationships.
