@@ -115,7 +115,7 @@ A profile consisting of one full circle also carries a geometric owner signature
 
 Each compact `moDeleteBodyData_c` body-state roster is followed by a `30 80` Boolean field. Value `1` deletes the selected bodies; value `0` retains the selected bodies and deletes the complement.
 
-A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. The little-endian u32 immediately before `ff ff 1f 00 03` is the feature-local object index. The marker's trailing u32 is its separate local identifier. Object indices and local identifiers are independently scoped to the feature object.
+A sketch marker belongs to the Keywords feature object whose bound feature-name record precedes the marker and whose next bound feature-name record follows it. The little-endian u32 immediately before `ff ff 1f 00 03` is the feature-local object index; `ff ff ff ff` denotes no index. The marker's trailing u32 is its separate local identifier. Object indices and local identifiers are independently scoped to the feature object.
 
 Coordinate-bearing marker codes `0`, `1`, `2`, and `3` identify point, line-or-circle, arc, and constrained-point geometry handles. Relation codes `1..27` identify distance, angle, radius, horizontal, vertical, tangent, parallel, perpendicular, coincident, concentric, symmetric, midpoint, intersection, equal, diameter, offset-edge, fixed, the seven quadrant and cardinal arc-angle relations, horizontal-points, vertical-points, and collinear relations in that order. Codes `4..27` retain relation semantics in both coordinate-bearing and reference-bearing layouts. The marker layout disambiguates the reused codes `1..3`.
 

@@ -169,6 +169,17 @@ fn native_version_four_migrates_sketch_marker_object_indices() {
     let mut current = cadmpeg_ir::NativeNamespace::default();
     migrated.store(&mut current).unwrap();
     assert_eq!(current.version, crate::native::SLDPRT_NATIVE_VERSION);
+
+    let mut sentinel = decoded.ir.native.namespace("sldprt").unwrap().clone();
+    sentinel.version = 6;
+    sentinel.arenas.get_mut("sketch_input_entities").unwrap()[0]
+        .fields
+        .insert("object_index".into(), serde_json::json!(u32::MAX));
+    let migrated = crate::native::SldprtNative::load(&sentinel).unwrap();
+    assert_eq!(
+        migrated.feature_input_lanes[0].sketch_entities[0].object_index,
+        None
+    );
 }
 
 #[test]

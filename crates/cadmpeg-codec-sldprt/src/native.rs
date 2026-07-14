@@ -11,7 +11,7 @@ use crate::records::{
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 6;
+pub const SLDPRT_NATIVE_VERSION: u32 = 7;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -414,6 +414,15 @@ impl SldprtNative {
                     entity.object_index = usize::try_from(entity.offset).ok().and_then(|offset| {
                         crate::resolved_features::marker_object_index(&lane.native_payload, offset)
                     });
+                }
+            } else if namespace.version <= 6 {
+                for entity in entities
+                    .iter_mut()
+                    .filter(|record| record.parent == lane.id)
+                {
+                    if entity.object_index == Some(u32::MAX) {
+                        entity.object_index = None;
+                    }
                 }
             }
             lane.classes = classes

@@ -240,9 +240,8 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 
 pub(crate) fn marker_object_index(payload: &[u8], offset: usize) -> Option<u32> {
     let start = offset.checked_sub(4)?;
-    Some(u32::from_le_bytes(
-        payload.get(start..offset)?.try_into().ok()?,
-    ))
+    let index = u32::from_le_bytes(payload.get(start..offset)?.try_into().ok()?);
+    (index != u32::MAX).then_some(index)
 }
 
 pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
@@ -286,6 +285,8 @@ mod marker_tests {
         payload.extend(super::SKETCH_MARKER);
         assert_eq!(marker_object_index(&payload, 4), Some(37));
         assert_eq!(marker_object_index(&payload, 3), None);
+        payload[0..4].fill(0xff);
+        assert_eq!(marker_object_index(&payload, 4), None);
     }
 
     #[test]
