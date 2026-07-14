@@ -3120,6 +3120,22 @@ struct MeshQuotient {
 }
 
 impl MeshQuotient {
+    fn signature(&mut self) -> Vec<(Vec<usize>, Vec<usize>)> {
+        let mut components = Vec::new();
+        for node in 0..self.union.len() {
+            if self.union.find(node) != node {
+                continue;
+            }
+            let mut members = self.members[node].clone();
+            members.sort_unstable();
+            let mut domain = self.domains[node].iter().copied().collect::<Vec<_>>();
+            domain.sort_unstable();
+            components.push((members, domain));
+        }
+        components.sort_unstable();
+        components
+    }
+
     fn root_count(&mut self) -> usize {
         (0..self.union.len())
             .filter(|node| self.union.find(*node) == *node)
@@ -3531,6 +3547,150 @@ impl MeshQuotient {
         options
     }
 
+    fn assignment_options_limited(
+        &self,
+        assignment: &MeshFaceBoundaryAssignment,
+        edge_candidates: &[Vec<[usize; 2]>],
+        limit: usize,
+    ) -> Vec<(Vec<Vec<bool>>, Self)> {
+        fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
+        }
+
+        fn edge_end(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
+            use_.edge
+                .checked_mul(2)?
+                .checked_add(usize::from(!reversed))
+        }
+
+        #[allow(clippy::too_many_arguments)]
+        fn walk(
+            boundaries: &[Vec<MeshBoundaryEdgeCandidate>],
+            boundary_index: usize,
+            at: usize,
+            boundary_directions: &mut Vec<bool>,
+            directions: &mut Vec<Vec<bool>>,
+            mut quotient: MeshQuotient,
+            edge_candidates: &[Vec<[usize; 2]>],
+            output: &mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
+            seen: &mut HashSet<MeshOrientationSignature>,
+            limit: usize,
+        ) {
+            if output.len() >= limit {
+                return;
+            }
+            if boundary_index == boundaries.len() {
+                let canonical_directions = directions
+                    .iter()
+                    .map(|boundary| {
+                        let complement = boundary.iter().map(|value| !value).collect::<Vec<_>>();
+                        if complement < *boundary {
+                            complement
+                        } else {
+                            boundary.clone()
+                        }
+                    })
+                    .collect::<Vec<_>>();
+                let signature = (quotient.signature(), canonical_directions);
+                if seen.insert(signature) {
+                    output.push((directions.clone(), quotient));
+                }
+                return;
+            }
+            let boundary = &boundaries[boundary_index];
+            if boundary.is_empty() {
+                return;
+            }
+            if at == boundary.len() {
+                let Some(last_end) = edge_end(boundary[at - 1], boundary_directions[at - 1]) else {
+                    return;
+                };
+                let Some(first_start) = edge_start(boundary[0], boundary_directions[0]) else {
+                    return;
+                };
+                let Some(root) = quotient.merge(last_end, first_start) else {
+                    return;
+                };
+                if !quotient.propagate_component_edge_domains(root, edge_candidates) {
+                    return;
+                }
+                directions.push(std::mem::take(boundary_directions));
+                walk(
+                    boundaries,
+                    boundary_index + 1,
+                    0,
+                    boundary_directions,
+                    directions,
+                    quotient,
+                    edge_candidates,
+                    output,
+                    seen,
+                    limit,
+                );
+                *boundary_directions = directions.pop().unwrap_or_default();
+                return;
+            }
+            let mut advance = |reversed: bool, mut quotient: MeshQuotient| {
+                if at > 0 {
+                    let Some(previous_end) =
+                        edge_end(boundary[at - 1], boundary_directions[at - 1])
+                    else {
+                        return;
+                    };
+                    let Some(current_start) = edge_start(boundary[at], reversed) else {
+                        return;
+                    };
+                    let Some(root) = quotient.merge(previous_end, current_start) else {
+                        return;
+                    };
+                    if !quotient.propagate_component_edge_domains(root, edge_candidates) {
+                        return;
+                    }
+                }
+                boundary_directions.push(reversed);
+                walk(
+                    boundaries,
+                    boundary_index,
+                    at + 1,
+                    boundary_directions,
+                    directions,
+                    quotient,
+                    edge_candidates,
+                    output,
+                    seen,
+                    limit,
+                );
+                boundary_directions.pop();
+            };
+            match boundary[at].reversed {
+                Some(reversed) => advance(reversed, quotient),
+                None => {
+                    advance(false, quotient.clone());
+                    advance(true, quotient);
+                }
+            }
+        }
+
+        if limit == 0 {
+            return Vec::new();
+        }
+        let mut output = Vec::new();
+        let mut seen = HashSet::new();
+        walk(
+            &assignment.boundaries,
+            0,
+            0,
+            &mut Vec::new(),
+            &mut Vec::new(),
+            self.clone(),
+            edge_candidates,
+            &mut output,
+            &mut seen,
+            limit,
+        );
+        output
+    }
+
     fn point_assignment(
         &mut self,
         point_count: usize,
@@ -3706,6 +3866,8 @@ impl MeshQuotient {
 }
 
 type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
+type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
+type MeshOrientationSignature = (MeshQuotientSignature, Vec<Vec<bool>>);
 
 struct MeshSelectionSearch<'a> {
     assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
@@ -4154,10 +4316,17 @@ impl MeshSelectionSearch<'_> {
         }
         let mut options = Vec::new();
         for assignment_index in 0..self.assignments[face].len() {
+            let remaining = MAX_SELECTION_STATES
+                .saturating_sub(self.states)
+                .saturating_add(1)
+                .saturating_sub(options.len());
+            if remaining == 0 {
+                break;
+            }
             let assignment = &self.assignments[face][assignment_index];
             options.extend(
                 quotient
-                    .assignment_options(assignment, self.edge_candidates)
+                    .assignment_options_limited(assignment, self.edge_candidates, remaining)
                     .into_iter()
                     .map(|(directions, next_quotient)| {
                         (assignment_index, directions, next_quotient)
@@ -5200,6 +5369,15 @@ mod motif_tests {
         assert!(!options
             .iter()
             .any(|(directions, _)| directions == &[vec![false, false, false]]));
+        let unrestricted = [Vec::new(), Vec::new(), Vec::new()];
+        let options = quotient.assignment_options(&assignment, &unrestricted);
+        let limited = quotient.assignment_options_limited(&assignment, &unrestricted, 1);
+        assert_eq!(limited.len(), 1);
+        assert_eq!(limited[0].0, options[0].0);
+        let unique = quotient.assignment_options_limited(&assignment, &unrestricted, 4_096);
+        assert!(unique
+            .iter()
+            .all(|option| options.iter().any(|candidate| candidate.0 == option.0)));
     }
 
     #[test]
