@@ -409,8 +409,11 @@ fn fbb_topology_reads_u16_mesh_and_edge_handles() {
 
 #[test]
 fn fbb_topology_reads_u8_mesh_and_edge_handles() {
-    let mut bytes = vec![0x01, 0x44, 0x01, 0xff, 6, 0, 0, 0, 6];
-    bytes.extend_from_slice(&[1, 0x10, 0x11, 0x12, 0x13, 0x10]);
+    let mut bytes = vec![0x01, 0x49, 0x02, 0xff, 6, 0, 0, 0];
+    for value in [0.0f32, 0.0, 1.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+    bytes.extend_from_slice(&[0x10, 0x11, 0x12, 0x10, 0x12, 0x13]);
     bytes.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
     for (kind, rows) in [
         (1, [[0x10u8, 0x11], [0x11, 0x12]]),
@@ -435,6 +438,10 @@ fn fbb_topology_reads_u8_mesh_and_edge_handles() {
     assert_eq!(topology.edge_rows()[0].handles, vec![0x10, 0x11]);
     assert_eq!(topology.faces()[0].boundaries[0].coedges.len(), 4);
     assert_eq!(topology.vertex_points().len(), 4);
+    assert_eq!(
+        crate::topology::standard_plane_normals(&bytes),
+        [[0.0, 0.0, 1.0]]
+    );
 }
 
 #[test]
@@ -613,6 +620,9 @@ fn main_stream() -> Vec<u8> {
     for value in [0.0f32, 0.0, 1.0] {
         b.extend_from_slice(&le_f32(value));
     }
+    b.extend_from_slice(&[0, 0, 0, 1, 0, 2]);
+    // Non-planar positional packet for the second face.
+    b.extend_from_slice(&[0x01, 0x41, 0x01, 0xff, 0x03, 0x00, 0x00, 0x00]);
     b.extend_from_slice(&[0, 0, 0, 1, 0, 2]);
     // Two stride-8 FBB rows (`30 04 04 ff` + 4 constant bytes).
     for _ in 0..2 {

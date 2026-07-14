@@ -298,7 +298,17 @@ struct TrimRecord {
 /// to the standard plane bounds records.
 #[must_use]
 pub fn standard_plane_normals(bytes: &[u8]) -> Vec<[f64; 3]> {
-    parse_trim_records(bytes)
+    let Some((face_start, face_count, _)) = largest_fbb_run(bytes) else {
+        return Vec::new();
+    };
+    let solutions = [1, 2, 3]
+        .into_iter()
+        .filter_map(|width| parse_trim_chain(bytes, face_start, face_count, width))
+        .collect::<Vec<_>>();
+    let Ok([records]) = <[Vec<TrimRecord>; 1]>::try_from(solutions) else {
+        return Vec::new();
+    };
+    records
         .into_iter()
         .filter(|record| matches!(record.kind, 0x49 | 0x4a | 0x4b | 0x4c | 0x4e | 0x4f))
         .filter_map(|record| record.frame_vector)
@@ -1689,24 +1699,6 @@ fn parse_vertex_table(bytes: &[u8], mut position: usize) -> Option<Vec<[f64; 3]>
         points.push(point);
     }
     Some(points)
-}
-
-fn parse_trim_records(bytes: &[u8]) -> Vec<TrimRecord> {
-    parse_trim_records_with_width(bytes, 2)
-}
-
-fn parse_trim_records_with_width(bytes: &[u8], width: usize) -> Vec<TrimRecord> {
-    let mut records = Vec::new();
-    let mut position = 0;
-    while position + 2 <= bytes.len() {
-        if let Some(record) = parse_trim_record(bytes, position, width) {
-            position = record.end;
-            records.push(record);
-        } else {
-            position += 1;
-        }
-    }
-    records
 }
 
 fn parse_trim_chain(
