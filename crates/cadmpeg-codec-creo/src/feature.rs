@@ -2824,73 +2824,80 @@ pub fn geometry_tables(rows: &[FeatureRow]) -> Vec<FeatureGeometryTable> {
     for row in rows {
         for &(label, kind) in FIELDS {
             let needle = [label, b"\0"].concat();
-            let Some(offset) = row
-                .body
-                .windows(needle.len())
-                .position(|window| window == needle)
-            else {
-                continue;
-            };
-            let mut cursor = offset + needle.len();
-            if row
-                .body
-                .get(cursor)
-                .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
-            {
-                cursor += 1;
+            let mut from = 0;
+            while let Some(relative) = row.body.get(from..).and_then(|tail| {
+                tail.windows(needle.len())
+                    .position(|window| window == needle)
+            }) {
+                let offset = from + relative;
+                from = offset + needle.len();
+                let Some((count, entity_class, entry_ids)) =
+                    geometry_table_at(&row.body, offset + needle.len(), kind)
+                else {
+                    continue;
+                };
+                tables.push(FeatureGeometryTable {
+                    feature_id: row.feature_id,
+                    kind,
+                    count,
+                    entity_class,
+                    entry_ids,
+                    offset: row.body_offset + offset,
+                });
             }
-            if row.body.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-                continue;
-            }
-            let (count, after_count) = psb::compact_int(&row.body, cursor + 1);
-            if after_count == cursor + 1
-                || row.body.get(after_count) != Some(&psb::token::ENTITY_REF)
-            {
-                continue;
-            }
-            let Ok((entity_class, mut after_class)) = psb::reference_id(&row.body, after_count + 1)
-            else {
-                continue;
-            };
-            if row.body.get(after_class) == Some(&0xfb) {
-                after_class += 1;
-            }
-            if row.body.get(after_class) == Some(&0xe2) {
-                after_class += 1;
-            }
-            let entry_ids = if kind == FeatureGeometryTableKind::DatumIds {
-                let mut entries = Vec::new();
-                let mut entry_cursor = after_class;
-                for _ in 0..count {
-                    const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
-                    if row.body.get(entry_cursor..entry_cursor + ENTRY.len()) != Some(ENTRY) {
-                        entries.clear();
-                        break;
-                    }
-                    let (entry, next) = psb::compact_int(&row.body, entry_cursor + ENTRY.len());
-                    if next == entry_cursor + ENTRY.len() {
-                        entries.clear();
-                        break;
-                    }
-                    entries.push(entry);
-                    entry_cursor = next;
-                }
-                (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries)
-            } else {
-                None
-            };
-            tables.push(FeatureGeometryTable {
-                feature_id: row.feature_id,
-                kind,
-                count,
-                entity_class,
-                entry_ids,
-                offset: row.body_offset + offset,
-            });
         }
     }
     tables.sort_by_key(|table| table.offset);
     tables
+}
+
+fn geometry_table_at(
+    body: &[u8],
+    mut cursor: usize,
+    kind: FeatureGeometryTableKind,
+) -> Option<(u32, u32, Option<Vec<u32>>)> {
+    if body
+        .get(cursor)
+        .is_some_and(|byte| matches!(byte, 0xf1 | 0xf2))
+    {
+        cursor += 1;
+    }
+    if body.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return None;
+    }
+    let (count, after_count) = psb::compact_int(body, cursor + 1);
+    if after_count == cursor + 1 || body.get(after_count) != Some(&psb::token::ENTITY_REF) {
+        return None;
+    }
+    let (entity_class, mut after_class) = psb::reference_id(body, after_count + 1).ok()?;
+    if body.get(after_class) == Some(&0xfb) {
+        after_class += 1;
+    }
+    if body.get(after_class) == Some(&0xe2) {
+        after_class += 1;
+    }
+    let entry_ids = if kind == FeatureGeometryTableKind::DatumIds {
+        let mut entries = Vec::new();
+        let mut entry_cursor = after_class;
+        for _ in 0..count {
+            const ENTRY: &[u8] = b"\xe0\x01dtm_id\0";
+            if body.get(entry_cursor..entry_cursor + ENTRY.len()) != Some(ENTRY) {
+                entries.clear();
+                break;
+            }
+            let (entry, next) = psb::compact_int(body, entry_cursor + ENTRY.len());
+            if next == entry_cursor + ENTRY.len() {
+                entries.clear();
+                break;
+            }
+            entries.push(entry);
+            entry_cursor = next;
+        }
+        (entries.len() == usize::try_from(count).unwrap_or(usize::MAX)).then_some(entries)
+    } else {
+        None
+    };
+    Some((count, entity_class, entry_ids))
 }
 
 /// Decode complete named affected-ID arrays from known feature rows.

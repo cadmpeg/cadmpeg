@@ -139,7 +139,7 @@ World-coordinate tokens occupy eight bytes. Their final seven bytes hold the IEE
 
 #### Constants and cache references
 
-`0d` encodes negative one, `0f` and `e6` encode zero, and `e4` encodes one. In row and `f9` scalar lanes, `e8 00` encodes standalone `1.0`; other contexts use a different selector grammar. `18 <index>` indexes a raw section-local `46` cache. Build that cache by scanning the raw section bytes, including `46` values that occur within other token tails. In a row or `f9` body, `18 <float-opener>` encodes a standalone zero and the following byte begins a new token. In a saved-line coordinate row, `18` immediately before the row close or trailing entity reference is a standalone zero.
+`0d` encodes negative one, `0f` and `e6` encode zero, and `e4` encodes one. In row and `f9` scalar lanes, `e8 00` encodes standalone `1.0`; other contexts use a different selector grammar. `18 <index>` indexes a raw section-local `46` cache. Build that cache by scanning the raw section bytes, including `46` values that occur within other token tails. In a row or `f9` body, `18 <float-opener>` encodes a standalone zero and the following byte begins a new token. In a saved-line coordinate row, `18` immediately before the row close or trailing entity reference is a standalone zero. At the byte-bounded end of a positional scalar-slot array, terminal `18` is a standalone zero.
 
 ## 3. Surface namespace: `srf_array`
 
@@ -219,6 +219,10 @@ normal = normalize(cross(slots[0..2], slots[6..8]))
 The guard requires orthogonal, equal-scale nonzero support directions. `outline f9 02 03` stores two XYZ corners. In these positional scalar lanes, `73` and `bb` each begin a seven-byte scalar token. Repeated identical tokens denote equal stored values; tokens with different prefixes denote distinct values. Token equality remains defined when the scalar magnitude is not decoded.
 
 When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. Zero or multiple held coordinates do not establish a plane equation from the outline.
+
+For a generated section plane selected through the parent-datum rule, multiple
+held envelope coordinates are filtered against the orientation plane. The
+unique perpendicular held axis defines the section plane.
 
 For an axis-aligned plane, the held-coordinate outline defines the placed plane
 equation. An axis-aligned `local_sys` support frame without that outline does not

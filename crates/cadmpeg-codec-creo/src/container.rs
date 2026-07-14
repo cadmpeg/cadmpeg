@@ -1090,12 +1090,16 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
-        &datum_planes,
-        &plane_local_systems,
-        &outline_planes,
-        &feature_geometry_tables,
+        &placement::PlacementSources {
+            datums: &datum_planes,
+            surface_rows: &surface_rows,
+            model_planes: &plane_local_systems,
+            outline_planes: &outline_planes,
+            plane_envelopes: &plane_envelopes,
+            geometry_tables: &feature_geometry_tables,
+            affected_ids: &feature_affected_ids,
+        },
         &feature_entity_tables,
-        &feature_affected_ids,
     );
     let feature_operations = feature_operations(&data, &sections);
     let (feature_entities, feature_entity_references) = feature_entity_graph(&data, &sections);

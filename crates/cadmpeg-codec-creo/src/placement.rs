@@ -6,7 +6,9 @@ use crate::feature::{
     AffectedIdKind, BinaryFlag, FeatureAffectedIds, FeatureDefinition, FeatureEntityTable,
     FeatureGeometryTable, FeatureGeometryTableKind,
 };
-use crate::surface::{OutlinePlane, PlaneLocalSystem};
+use crate::surface::{
+    OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem, SurfaceKind, SurfaceRow,
+};
 
 /// A feature's right-handed section-to-model rigid frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,6 +27,16 @@ pub struct FeatureSectionTransform {
     pub normal: [f64; 3],
     /// Byte offset of the source `gsec3d_ptr` record.
     pub offset: usize,
+}
+
+pub(crate) struct PlacementSources<'a> {
+    pub datums: &'a [DatumPlane],
+    pub surface_rows: &'a [SurfaceRow],
+    pub model_planes: &'a [PlaneLocalSystem],
+    pub outline_planes: &'a [OutlinePlane],
+    pub plane_envelopes: &'a [PlaneEnvelopeRecord],
+    pub geometry_tables: &'a [FeatureGeometryTable],
+    pub affected_ids: &'a [FeatureAffectedIds],
 }
 
 fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -72,11 +84,11 @@ fn plane_equation(
 fn generated_datum_plane_equation(
     sketch_id: u32,
     reference_id: u32,
-    datums: &[DatumPlane],
-    geometry_tables: &[FeatureGeometryTable],
-    affected_ids: &[FeatureAffectedIds],
+    reference_normal: [f64; 3],
+    sources: &PlacementSources<'_>,
 ) -> Option<([f64; 3], f64)> {
-    let datum_ids = geometry_tables
+    let datum_ids = sources
+        .geometry_tables
         .iter()
         .filter(|table| table.kind == FeatureGeometryTableKind::DatumIds)
         .filter_map(|table| table.entry_ids.as_ref())
@@ -84,11 +96,20 @@ fn generated_datum_plane_equation(
         .filter(|id| **id == sketch_id)
         .count();
     (datum_ids == 1).then_some(())?;
-    let reference_feature = datums
+    let reference_feature = sources
+        .datums
         .iter()
-        .find(|datum| datum.id == reference_id)?
-        .feature_id;
-    let candidates = affected_ids
+        .find(|datum| datum.id == reference_id)
+        .map(|datum| datum.feature_id)
+        .or_else(|| {
+            sources
+                .surface_rows
+                .iter()
+                .find(|row| row.id == reference_id && row.kind == SurfaceKind::Plane)
+                .map(|row| row.feature_id)
+        })?;
+    let candidates = sources
+        .affected_ids
         .iter()
         .filter(|record| {
             record.kind == AffectedIdKind::Parents && record.ids.contains(&reference_feature)
@@ -102,10 +123,63 @@ fn generated_datum_plane_equation(
             let [other] = other.as_slice() else {
                 return None;
             };
-            datums
+            let equations = sources
+                .datums
                 .iter()
-                .find(|datum| datum.feature_id == **other)
+                .filter(|datum| datum.feature_id == **other)
                 .map(|datum| (datum.normal, datum.offset))
+                .chain(
+                    sources
+                        .surface_rows
+                        .iter()
+                        .filter(|row| row.feature_id == **other && row.kind == SurfaceKind::Plane)
+                        .filter_map(|row| {
+                            plane_equation(
+                                row.id,
+                                sources.datums,
+                                sources.model_planes,
+                                sources.outline_planes,
+                            )
+                        }),
+                )
+                .chain(
+                    sources
+                        .surface_rows
+                        .iter()
+                        .filter(|row| row.feature_id == **other && row.kind == SurfaceKind::Plane)
+                        .flat_map(|row| {
+                            sources
+                                .plane_envelopes
+                                .iter()
+                                .filter(move |record| record.surface_id == row.id)
+                        })
+                        .flat_map(|record| {
+                            let corners = match &record.envelope {
+                                PlaneEnvelope::Standard { corners_3d, .. }
+                                | PlaneEnvelope::Compact { corners_3d, .. } => corners_3d,
+                            };
+                            (0..3).filter_map(move |axis| {
+                                if record.corner_coordinate_equal[axis] != Some(true) {
+                                    return None;
+                                }
+                                let coordinate = corners[0][axis]?;
+                                let mut normal = [0.0; 3];
+                                normal[axis] = 1.0;
+                                Some((normal, coordinate))
+                            })
+                        }),
+                )
+                .filter(|(normal, _)| dot(*normal, reference_normal).abs() <= 1e-12)
+                .fold(Vec::<([f64; 3], f64)>::new(), |mut unique, equation| {
+                    if !unique.contains(&equation) {
+                        unique.push(equation);
+                    }
+                    unique
+                });
+            let [equation] = equations.as_slice() else {
+                return None;
+            };
+            Some(*equation)
         })
         .collect::<Vec<_>>();
     let [equation] = candidates.as_slice() else {
@@ -116,14 +190,10 @@ fn generated_datum_plane_equation(
 
 /// Resolve feature frames whose sketch and orientation references reduce to
 /// two perpendicular model-space datum planes.
-pub fn resolve(
+pub(crate) fn resolve(
     definitions: &[FeatureDefinition],
-    datums: &[DatumPlane],
-    model_planes: &[PlaneLocalSystem],
-    outline_planes: &[OutlinePlane],
-    geometry_tables: &[FeatureGeometryTable],
+    sources: &PlacementSources<'_>,
     _entity_tables: &[FeatureEntityTable],
-    affected_ids: &[FeatureAffectedIds],
 ) -> Vec<FeatureSectionTransform> {
     let mut result = Vec::new();
     for definition in definitions {
@@ -136,22 +206,23 @@ pub fn resolve(
         let Some(reference_id) = section.reference_plane_datum_geometry_id else {
             continue;
         };
-        let Some((mut sketch_normal, mut sketch_offset)) =
-            plane_equation(sketch_id, datums, model_planes, outline_planes).or_else(|| {
-                generated_datum_plane_equation(
-                    sketch_id,
-                    reference_id,
-                    datums,
-                    geometry_tables,
-                    affected_ids,
-                )
-            })
-        else {
+        let Some((mut reference_normal, mut reference_offset)) = plane_equation(
+            reference_id,
+            sources.datums,
+            sources.model_planes,
+            sources.outline_planes,
+        ) else {
             continue;
         };
-        let Some((mut reference_normal, mut reference_offset)) =
-            plane_equation(reference_id, datums, model_planes, outline_planes)
-        else {
+        let Some((mut sketch_normal, mut sketch_offset)) = plane_equation(
+            sketch_id,
+            sources.datums,
+            sources.model_planes,
+            sources.outline_planes,
+        )
+        .or_else(|| {
+            generated_datum_plane_equation(sketch_id, reference_id, reference_normal, sources)
+        }) else {
             continue;
         };
         if dot(sketch_normal, reference_normal).abs() > 1e-12 {
@@ -238,14 +309,18 @@ mod tests {
         assert_eq!(
             resolve(
                 &[definition],
-                &[
-                    datum(2, [1.0, 0.0, 0.0], 2.0),
-                    datum(4, [0.0, 0.0, 1.0], 3.0),
-                ],
-                &[],
-                &[],
-                &[],
-                &[],
+                &PlacementSources {
+                    datums: &[
+                        datum(2, [1.0, 0.0, 0.0], 2.0),
+                        datum(4, [0.0, 0.0, 1.0], 3.0),
+                    ],
+                    surface_rows: &[],
+                    model_planes: &[],
+                    outline_planes: &[],
+                    plane_envelopes: &[],
+                    geometry_tables: &[],
+                    affected_ids: &[],
+                },
                 &[],
             ),
             vec![FeatureSectionTransform {
@@ -297,11 +372,15 @@ mod tests {
 
         let transforms = resolve(
             &[definition],
-            &[datum(2, [1.0, 0.0, 0.0], 2.0)],
-            &[],
-            &[reference],
-            &[],
-            &[],
+            &PlacementSources {
+                datums: &[datum(2, [1.0, 0.0, 0.0], 2.0)],
+                surface_rows: &[],
+                model_planes: &[],
+                outline_planes: &[reference],
+                plane_envelopes: &[],
+                geometry_tables: &[],
+                affected_ids: &[],
+            },
             &[],
         );
         assert_eq!(transforms.len(), 1);
@@ -357,19 +436,106 @@ mod tests {
         };
         let transforms = resolve(
             &[definition],
-            &[
-                datum(2, [1.0, 0.0, 0.0], 0.0),
-                datum(4, [0.0, 1.0, 0.0], 0.0),
-            ],
+            &PlacementSources {
+                datums: &[
+                    datum(2, [1.0, 0.0, 0.0], 0.0),
+                    datum(4, [0.0, 1.0, 0.0], 0.0),
+                ],
+                surface_rows: &[],
+                model_planes: &[],
+                outline_planes: &[],
+                plane_envelopes: &[],
+                geometry_tables: &[geometry_table],
+                affected_ids: &[parents],
+            },
             &[],
-            &[],
-            &[geometry_table],
-            &[],
-            &[parents],
         );
         assert_eq!(transforms.len(), 1);
         assert_eq!(transforms[0].normal, [0.0, -1.0, 0.0]);
         assert_eq!(transforms[0].u_axis, [1.0, 0.0, 0.0]);
         assert_eq!(transforms[0].v_axis, [-0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn resolves_generated_plane_from_contextually_unambiguous_envelope_axis() {
+        let definition = FeatureDefinition {
+            id: 80,
+            owner_feature_id: Some(40),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: Some(FeatureSection3d {
+                sketch_plane_entity_id: Some(42),
+                sketch_plane_flip: None,
+                reference_plane_entity_ids: vec![90],
+                reference_plane_datum_geometry_id: Some(2),
+                orientation: FeatureSectionOrientation::default(),
+                dimension_ids: Vec::new(),
+                offset: 100,
+            }),
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 90,
+        };
+        let geometry_table = FeatureGeometryTable {
+            feature_id: 40,
+            kind: FeatureGeometryTableKind::DatumIds,
+            count: 1,
+            entity_class: 87,
+            entry_ids: Some(vec![42]),
+            offset: 20,
+        };
+        let parents = FeatureAffectedIds {
+            feature_id: 40,
+            kind: AffectedIdKind::Parents,
+            ids: vec![1, 3],
+            offset: 40,
+        };
+        let row = SurfaceRow {
+            id: 7,
+            kind: SurfaceKind::Plane,
+            feature_id: 3,
+            reversed: false,
+            boundary_type: 1,
+            next_surface: 0,
+            offset: 50,
+        };
+        let envelope = PlaneEnvelopeRecord {
+            surface_id: 7,
+            body: Vec::new(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[Some(0.0); 2]; 2],
+                corners_3d: [
+                    [Some(0.0), Some(-1.0), Some(3.0)],
+                    [Some(0.0), Some(1.0), Some(3.0)],
+                ],
+            },
+            corner_coordinate_equal: [Some(true), Some(false), Some(true)],
+            row_offset: 50,
+            offset: 60,
+        };
+
+        let transforms = resolve(
+            &[definition],
+            &PlacementSources {
+                datums: &[datum(2, [1.0, 0.0, 0.0], 0.0)],
+                surface_rows: &[row],
+                model_planes: &[],
+                outline_planes: &[],
+                plane_envelopes: &[envelope],
+                geometry_tables: &[geometry_table],
+                affected_ids: &[parents],
+            },
+            &[],
+        );
+        assert_eq!(transforms.len(), 1);
+        assert_eq!(transforms[0].origin, [0.0, 0.0, 3.0]);
+        assert_eq!(transforms[0].normal, [0.0, 0.0, 1.0]);
     }
 }

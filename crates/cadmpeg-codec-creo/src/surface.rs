@@ -718,7 +718,10 @@ fn scalar_slots_with_tokens_and_end(
     let mut slots = Vec::with_capacity(count);
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
-        if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
+        if body[cursor] == 0x18 && cursor + 1 == body.len() {
+            slots.push((Some(0.0), vec![0x18]));
+            cursor += 1;
+        } else if let Some((value, next)) = scalar::decode_in_lane(body, cursor, cache) {
             slots.push((Some(value), body[cursor..next].to_vec()));
             cursor = next;
         } else if matches!(body.get(cursor), Some(0x73 | 0xbb)) && cursor + 7 <= body.len() {
@@ -1213,6 +1216,13 @@ mod tests {
         );
         assert_eq!(slot_equality(&slots[0], &slots[1]), Some(true));
         assert_eq!(slot_equality(&slots[1], &slots[2]), Some(false));
+    }
+
+    #[test]
+    fn terminal_positional_slot_zero_occupies_one_byte() {
+        let slots = scalar_slots_with_tokens(&[0xe4, 0x18], 2, &scalar::ScalarCache::default());
+
+        assert_eq!(slots, [(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])]);
     }
 
     #[test]
