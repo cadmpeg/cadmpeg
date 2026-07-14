@@ -2528,6 +2528,32 @@ impl MeshQuotient {
         })
     }
 
+    fn assignment_adjacencies_viable(&mut self, assignment: &MeshFaceBoundaryAssignment) -> bool {
+        assignment.boundaries.iter().all(|boundary| {
+            !boundary.is_empty()
+                && (0..boundary.len()).all(|index| {
+                    let left = boundary[index];
+                    let right = boundary[(index + 1) % boundary.len()];
+                    let left_ports = left
+                        .reversed
+                        .map_or([Some(left.edge * 2), Some(left.edge * 2 + 1)], |reversed| {
+                            [Some(left.edge * 2 + usize::from(!reversed)), None]
+                        });
+                    let right_ports = right.reversed.map_or(
+                        [Some(right.edge * 2), Some(right.edge * 2 + 1)],
+                        |reversed| [Some(right.edge * 2 + usize::from(reversed)), None],
+                    );
+                    left_ports.into_iter().flatten().any(|left_port| {
+                        let left_root = self.union.find(left_port);
+                        right_ports.into_iter().flatten().any(|right_port| {
+                            let right_root = self.union.find(right_port);
+                            !self.domains[left_root].is_disjoint(&self.domains[right_root])
+                        })
+                    })
+                })
+        })
+    }
+
     fn assignment_options(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
@@ -2731,7 +2757,6 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 impl MeshSelectionSearch<'_> {
     fn search(&mut self, quotient: &MeshQuotient) {
         const MAX_SELECTION_STATES: usize = 512;
-        const MAX_FORWARD_ASSIGNMENTS: usize = 128;
 
         if self.solution.is_some() || self.states >= MAX_SELECTION_STATES {
             return;
@@ -2754,29 +2779,20 @@ impl MeshSelectionSearch<'_> {
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
             return;
         }
-        if self
-            .selected
-            .iter()
-            .enumerate()
-            .filter(|(_, selected)| selected.is_none())
-            .filter(|(face, _)| self.assignments[*face].len() <= MAX_FORWARD_ASSIGNMENTS)
-            .any(|(face, _)| {
-                !self.assignments[face].iter().any(|assignment| {
-                    !quotient
-                        .assignment_options(assignment, self.edge_candidates)
-                        .is_empty()
-                })
-            })
-        {
-            return;
-        }
         let next = self
             .selected
             .iter()
             .enumerate()
             .filter(|(_, selected)| selected.is_none())
             .filter_map(|(face, _)| {
-                let work = self.face_work[face]?;
+                self.face_work[face]?;
+                let supported = self.assignments[face]
+                    .iter()
+                    .filter(|assignment| measured.assignment_adjacencies_viable(assignment))
+                    .count();
+                if supported == 0 {
+                    return Some((0, 0, face));
+                }
                 let assignment = self.assignments[face].first()?;
                 let constrained = assignment
                     .boundaries
@@ -2789,10 +2805,10 @@ impl MeshSelectionSearch<'_> {
                             || measured.domains[right].len() < self.vertex_points.len()
                     })
                     .count();
-                Some((work, usize::MAX - constrained, face))
+                Some((supported, usize::MAX - constrained, face))
             })
             .min();
-        let Some((_, _, face)) = next else {
+        let Some((supported, _, face)) = next else {
             let mut quotient = quotient.clone();
             let Some(root_points) = quotient.point_assignment(self.vertex_points.len()) else {
                 return;
@@ -2857,8 +2873,15 @@ impl MeshSelectionSearch<'_> {
             });
             return;
         };
+        if supported == 0 {
+            return;
+        }
         for assignment_index in 0..self.assignments[face].len() {
             let assignment = &self.assignments[face][assignment_index];
+            let mut measured = quotient.clone();
+            if !measured.assignment_adjacencies_viable(assignment) {
+                continue;
+            }
             for (directions, next_quotient) in
                 quotient.assignment_options(assignment, self.edge_candidates)
             {
@@ -3710,6 +3733,36 @@ mod motif_tests {
         };
         let root = quotient.merge(1, 2).expect("nonempty port intersection");
         assert!(!quotient.component_edge_domains_viable(root, &[vec![[0, 1]], vec![[0, 2]]],));
+    }
+
+    #[test]
+    fn quotient_adjacency_rejects_disjoint_edge_port_domains() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: [vec![0], vec![1], vec![2], vec![3]]
+                .map(|domain| domain.into_iter().collect())
+                .into(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 2,
+                    reversed: None,
+                },
+            ]],
+        };
+        assert!(!quotient.assignment_adjacencies_viable(&assignment));
+        quotient.domains[2].insert(1);
+        assert!(quotient.assignment_adjacencies_viable(&assignment));
     }
 
     #[test]

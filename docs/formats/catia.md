@@ -211,6 +211,8 @@ Each physical port initially admits every coordinate row present in one of its e
 
 Port-domain intersections preserve physical-edge pair correlation. For every edge with an explicit pair domain, at least one pair must place one member in each of the edge's two current port components. The two ports remain distinct. Check this constraint after each complete boundary-cycle merge and on the complete quotient.
 
+Every consecutive edge pair in a candidate boundary requires a supported port adjacency. The possible traversal-end ports of the first use and traversal-start ports of the second use depend on their resolved or unresolved directions. At least one such port pair must have intersecting coordinate domains in the current quotient. A face assignment with an unsupported adjacency cannot extend that quotient.
+
 Resolved matched edges constrain trim-cycle corner points by unordered endpoint pairs. Intersect the pair sets at shared corners, then propagate a singleton corner across its edge to the opposite endpoint. An unmatched placement whose start and end corners are bound contributes their unordered point pair to that edge's endpoint domain. A placement-derived domain is complete only when every retained placement has both corners bound; incomplete corner coverage does not narrow the edge.
 
 Endpoint constraints prune complete face assignments atomically. A placement domain intersects the edge's resolved endpoint pair and the complete placement domain on its opposite incident face. Repeat assignment removal and domain intersection to a fixpoint. An unbound placement contributes no endpoint restriction; it does not invalidate its face assignment.
