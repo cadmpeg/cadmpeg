@@ -1915,11 +1915,16 @@ impl<'a> BinaryCursor<'a> {
     }
 
     fn section_count(&mut self, name: &str) -> Result<usize, CodecError> {
-        let line = self.line(name)?;
+        let line = loop {
+            let line = self.line(name)?;
+            if !line.trim().is_empty() {
+                break line;
+            }
+        };
         let mut tokens = line.split_ascii_whitespace();
         if tokens.next() != Some(name) || tokens.clone().count() != 1 {
             return Err(CodecError::Malformed(format!(
-                "binary B-rep expected {name} section"
+                "binary B-rep expected {name} section, found {line:?}"
             )));
         }
         tokens

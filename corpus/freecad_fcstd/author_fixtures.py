@@ -7,7 +7,9 @@ domain under CC0-1.0. They use no external model, template, or library content.
 
 from pathlib import Path
 import os
+import re
 import struct
+import zipfile
 
 import FreeCAD as App
 import Mesh
@@ -26,6 +28,71 @@ def save(document, filename):
     for backup in OUTPUT.glob(f"{target.stem}*.FCBak"):
         backup.unlink()
     document.saveAs(str(target))
+    normalize_fcstd(target)
+
+
+def normalize_fcstd(target):
+    normalized = OUTPUT / "cc0_normalized.FCStd"
+    with zipfile.ZipFile(target, "r") as archive, zipfile.ZipFile(
+        normalized, "w", compression=zipfile.ZIP_DEFLATED
+    ) as output:
+        output.comment = b"cadmpeg CC0 FCStd fixture"
+        for source_info in archive.infolist():
+            data = archive.read(source_info.filename)
+            if source_info.filename == "Document.xml":
+                data = re.sub(
+                    rb'(<Property name="(?:CreationDate|LastModifiedDate)"[^>]*>\s*<String value=")[^"]*("/>)',
+                    rb"\g<1>2026-01-01T00:00:00Z\2",
+                    data,
+                )
+                objects_start = data.index(b"<Objects ")
+                objects_end = data.index(b"</Objects>", objects_start)
+                declarations = data[objects_start:objects_end]
+                next_object_id = iter(range(1, 1000000))
+                declarations = re.sub(
+                    rb' id="[0-9]+"',
+                    lambda _: f' id="{next(next_object_id)}"'.encode(),
+                    declarations,
+                )
+                data = data[:objects_start] + declarations + data[objects_end:]
+                next_uuid = iter(range(1, 1000000))
+                data = re.sub(
+                    rb'(<Uuid value=")[^"]+("/>)',
+                    lambda match: match.group(1)
+                    + f"00000000-0000-0000-0000-{next(next_uuid):012d}".encode()
+                    + match.group(2),
+                    data,
+                )
+            elif source_info.filename.endswith(".Map.txt"):
+                persistent_ids = {}
+
+                def stable_persistent_id(match):
+                    source_id = match.group(1)
+                    target_id = persistent_ids.setdefault(
+                        source_id, f"{len(persistent_ids) + 1:x}".encode()
+                    )
+                    return b":H" + target_id
+
+                data = re.sub(rb":H([0-9a-fA-F]+)", stable_persistent_id, data)
+                history_tags = {}
+
+                def stable_history_tag(match):
+                    source_tag = match.group(2)
+                    target_tag = history_tags.setdefault(
+                        source_tag, f"{len(history_tags) + 1:x}".encode()
+                    )
+                    return match.group(1) + b":" + target_tag
+
+                data = re.sub(
+                    rb"(:H[0-9a-fA-F]+):([0-9a-fA-F]+)",
+                    stable_history_tag,
+                    data,
+                )
+            info = zipfile.ZipInfo(source_info.filename, (1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            output.writestr(info, data)
+    normalized.replace(target)
 
 
 def metadata(document, purpose):
@@ -129,6 +196,142 @@ def application_document():
     App.closeDocument(document.Name)
 
 
+def geometry_topology_document():
+    document = App.newDocument("GeometryTopology")
+    metadata(document, "Geometry carrier and connected topology family coverage")
+
+    shapes = {
+        "Solid": Part.makeBox(20, 15, 10),
+        "Void": Part.makeBox(20, 20, 20).cut(
+            Part.makeBox(10, 10, 10, App.Vector(5, 5, 5))
+        ),
+        "Seam": Part.makeCylinder(6, 18),
+        "Degenerate": Part.makeCone(8, 0, 15),
+        "Sheet": Part.Face(
+            Part.makePolygon(
+                [
+                    App.Vector(0, 0, 0),
+                    App.Vector(15, 0, 0),
+                    App.Vector(15, 10, 0),
+                    App.Vector(0, 10, 0),
+                    App.Vector(0, 0, 0),
+                ]
+            )
+        ),
+        "Wire": Part.makePolygon(
+            [App.Vector(0, 0, 0), App.Vector(5, 7, 0), App.Vector(12, 2, 0)]
+        ),
+    }
+    shapes["Compound"] = Part.makeCompound(
+        [Part.makeSphere(4), Part.makeTorus(6, 2, App.Vector(15, 0, 0))]
+    )
+    shapes["MultiShell"] = Part.makeCompound(
+        [
+            Part.makeBox(5, 5, 5).Shells[0],
+            Part.makeBox(5, 5, 5, App.Vector(10, 0, 0)).Shells[0],
+        ]
+    )
+    for name, shape in shapes.items():
+        feature = document.addObject("Part::Feature", name)
+        feature.Shape = shape
+
+    line = Part.makeLine(App.Vector(0, 0, 0), App.Vector(10, 3, 2))
+    circle = Part.makeCircle(5)
+    ellipse = Part.Ellipse(App.Vector(0, 0, 0), 8, 3).toShape()
+    bezier = Part.BezierCurve()
+    bezier.setPoles(
+        [
+            App.Vector(0, 0, 0),
+            App.Vector(3, 8, 0),
+            App.Vector(8, -2, 0),
+            App.Vector(12, 4, 0),
+        ]
+    )
+    spline = Part.BSplineCurve()
+    spline.interpolate(
+        [
+            App.Vector(0, 0, 0),
+            App.Vector(4, 5, 1),
+            App.Vector(9, 1, 2),
+            App.Vector(14, 6, 0),
+        ]
+    )
+    curves = document.addObject("Part::Feature", "CurveCarriers")
+    curves.Shape = Part.makeCompound(
+        [line, circle, ellipse, bezier.toShape(), spline.toShape()]
+    )
+
+    bspline_surface = Part.BSplineSurface()
+    bspline_surface.interpolate(
+        [
+            [App.Vector(0, 0, 0), App.Vector(0, 5, 2), App.Vector(0, 10, 0)],
+            [App.Vector(5, 0, 1), App.Vector(5, 5, 4), App.Vector(5, 10, 1)],
+            [App.Vector(10, 0, 0), App.Vector(10, 5, 2), App.Vector(10, 10, 0)],
+        ]
+    )
+    freeform = document.addObject("Part::Feature", "FreeformSurface")
+    freeform.Shape = bspline_surface.toShape()
+
+    revolved_profile = Part.Face(
+        Part.makePolygon(
+            [
+                App.Vector(4, 0, 0),
+                App.Vector(7, 0, 0),
+                App.Vector(7, 0, 8),
+                App.Vector(4, 0, 8),
+                App.Vector(4, 0, 0),
+            ]
+        )
+    )
+    revolved = document.addObject("Part::Feature", "Revolved")
+    revolved.Shape = revolved_profile.revolve(
+        App.Vector(0, 0, 0), App.Vector(0, 0, 1), 270
+    )
+
+    path = Part.Wire(Part.makeLine(App.Vector(0, 0, 0), App.Vector(0, 0, 20)))
+    profile = Part.Wire(Part.makeCircle(2))
+    swept = document.addObject("Part::Feature", "Swept")
+    swept.Shape = path.makePipeShell([profile], True, False)
+
+    document.recompute()
+    save(document, "geometry_topology.FCStd")
+    App.closeDocument(document.Name)
+
+
+def binary_shape_document():
+    document = App.newDocument("BinaryExactShape")
+    metadata(document, "Binary exact-shape side-entry framing")
+    carrier = document.addObject("Part::Feature", "BinaryCarrier")
+    carrier.Shape = Part.makeCylinder(7, 12).fuse(
+        Part.makeSphere(8, App.Vector(0, 0, 12))
+    )
+    document.recompute()
+    save(document, "binary_exact_shape.FCStd")
+
+    binary_path = OUTPUT / "cc0_binary_shape.bin"
+    carrier.Shape.exportBinary(str(binary_path))
+    source = OUTPUT / "binary_exact_shape.FCStd"
+    rewritten = OUTPUT / "cc0_binary_exact_shape.FCStd"
+    with zipfile.ZipFile(source, "r") as archive, zipfile.ZipFile(
+        rewritten, "w", compression=zipfile.ZIP_DEFLATED
+    ) as output:
+        for info in archive.infolist():
+            data = archive.read(info.filename)
+            name = info.filename
+            if name == "Document.xml":
+                data = data.replace(
+                    b"BinaryCarrier.Shape.brp", b"BinaryCarrier.Shape.bin"
+                )
+            elif name == "BinaryCarrier.Shape.brp":
+                name = "BinaryCarrier.Shape.bin"
+                data = binary_path.read_bytes()
+            output.writestr(name, data)
+    source.unlink()
+    rewritten.rename(source)
+    normalize_fcstd(source)
+    App.closeDocument(document.Name)
+
+
 def techdraw_document():
     document = App.newDocument("DrawingAnnotations")
     metadata(document, "TechDraw page, view, dimension-like note, symbol, and template")
@@ -167,6 +370,8 @@ def techdraw_document():
 
 core_document()
 application_document()
+geometry_topology_document()
+binary_shape_document()
 techdraw_document()
 for temporary_asset in OUTPUT.glob("cc0_*"):
     temporary_asset.unlink()

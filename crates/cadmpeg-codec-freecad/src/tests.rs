@@ -16,12 +16,26 @@ fn assert_valid_document(ir: &cadmpeg_ir::CadIr) {
 
 #[test]
 fn public_cc0_fixtures_decode_deterministically_without_blocking_loss() {
-    let fixtures: [(&str, &[u8]); 3] = [
+    let fixtures: [(&str, &[u8]); 5] = [
+        (
+            "binary_exact_shape.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/binary_exact_shape.FCStd"
+            )),
+        ),
         (
             "application_payloads.FCStd",
             include_bytes!(concat!(
                 env!("CARGO_MANIFEST_DIR"),
                 "/../../corpus/freecad_fcstd/fixtures/application_payloads.FCStd"
+            )),
+        ),
+        (
+            "geometry_topology.FCStd",
+            include_bytes!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd"
             )),
         ),
         (

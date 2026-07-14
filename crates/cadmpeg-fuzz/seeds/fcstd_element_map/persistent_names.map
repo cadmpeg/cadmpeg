@@ -3,15 +3,15 @@ BeginElementMap v1
 Edge
 Face
 Vertex
-;:H12c6,E
-;:G(Face6;K-1;:H12c6:4,F);CUT;:H12c7:1d,V
-;:M;CUT;:H12c7:7,E
-;:H12c6,F
-;:M;CUT;:H12c7:7,F
-;:M;CUT;:H12c6:7,F
-;:G2(Face1;K-1;:H12c7:4,F);CUT;:H12c6:1e,E
-;:H12c6,V
-;:M;CUT;:H12c7:7,V
+;:H1,E
+;:G(Face6;K-1;:H1:1,F);CUT;:H2:2,V
+;:M;CUT;:H2:3,E
+;:H1,F
+;:M;CUT;:H2:3,F
+;:M;CUT;:H1:3,F
+;:G2(Face1;K-1;:H2:1,F);CUT;:H1:4,E
+;:H1,V
+;:M;CUT;:H2:3,V
 
 MapCount 1
 
