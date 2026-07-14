@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::eval::{pcurve_uv, surface_point};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
     ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, Surface,
@@ -20,6 +21,8 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::b5::{B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
+
+const POINT_TOLERANCE: f64 = 1.5e-3;
 
 struct RevolutionPlan {
     directrix: NurbsCurve,
@@ -203,6 +206,7 @@ pub(crate) fn transfer(
             edge_ids.insert(edge_id);
         }
     }
+    let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
 
     let body_id = BodyId("catia:b5:body#0".to_string());
     let region_id = RegionId("catia:b5:region#0".to_string());
@@ -240,7 +244,7 @@ pub(crate) fn transfer(
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: graph.vertex_tolerances.get(&index).copied(),
+            tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
     for (rank, coordinates) in graph.logical_vertex_points.iter().enumerate() {
@@ -272,7 +276,7 @@ pub(crate) fn transfer(
         ir.model.vertices.push(Vertex {
             id: vertex_id,
             point: point_id,
-            tolerance: graph.vertex_tolerances.get(&index).copied(),
+            tolerance: vertex_tolerances.get(&index).copied(),
         });
     }
 
@@ -619,6 +623,80 @@ pub(crate) fn transfer(
         }
     }
     true
+}
+
+fn transfer_vertex_tolerances(
+    graph: &B5Graph,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool)>,
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+) -> BTreeMap<usize, f64> {
+    let mut tolerances = graph.vertex_tolerances.clone();
+    for loop_ in graph.loops.values() {
+        let Some(surface) = surfaces.get(&loop_.surface) else {
+            continue;
+        };
+        for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
+            let (Some((pcurve, _)), Some(&vertices)) =
+                (pcurves.get(&pcurve_id), graph.edge_vertices.get(&edge_id))
+            else {
+                continue;
+            };
+            let PcurveGeometry::Nurbs { knots, .. } = pcurve else {
+                continue;
+            };
+            let (Some(&start), Some(&end)) = (knots.first(), knots.last()) else {
+                continue;
+            };
+            let Some(lifted) = [start, end]
+                .map(|parameter| {
+                    let uv = pcurve_uv(pcurve, parameter)?;
+                    let point = surface_point(&surface.geometry, uv.u, uv.v)?;
+                    Some([point.x, point.y, point.z])
+                })
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            let coordinates = vertices.map(|vertex| {
+                if vertex < graph.vertex_points.len() {
+                    graph.vertex_points[vertex]
+                } else {
+                    graph.logical_vertex_points[vertex - graph.vertex_points.len()]
+                }
+            });
+            let forward = [
+                distance(coordinates[0], lifted[0]),
+                distance(coordinates[1], lifted[1]),
+            ];
+            let reverse = [
+                distance(coordinates[1], lifted[0]),
+                distance(coordinates[0], lifted[1]),
+            ];
+            let residuals = if forward[0].max(forward[1]) <= reverse[0].max(reverse[1]) {
+                [(vertices[0], forward[0]), (vertices[1], forward[1])]
+            } else {
+                [(vertices[1], reverse[0]), (vertices[0], reverse[1])]
+            };
+            for (vertex, residual) in residuals {
+                if residual > POINT_TOLERANCE && residual.is_finite() {
+                    tolerances
+                        .entry(vertex)
+                        .and_modify(|tolerance| *tolerance = tolerance.max(residual + 1e-9))
+                        .or_insert(residual + 1e-9);
+                }
+            }
+        }
+    }
+    tolerances
+}
+
+fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
+    left.into_iter()
+        .zip(right)
+        .map(|(left, right)| (left - right) * (left - right))
+        .sum::<f64>()
+        .sqrt()
 }
 
 fn neutral_pcurve_point(point: [f64; 2], surface: &B5Surface) -> Point2 {
@@ -1461,12 +1539,74 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::{
         contract_surface, cylinder_helix, lifted_curve_geometry, neutral_pcurve_point,
-        revolution_surface,
+        revolution_surface, transfer_vertex_tolerances, SurfacePlan,
     };
-    use crate::b5::{B5Pcurve, B5Profile, B5Surface};
+    use crate::b5::{B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
-    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        CurveGeometry, PcurveGeometry, ProceduralCurveDefinition, SurfaceGeometry,
+    };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn emitted_carriers_determine_logical_vertex_tolerance() {
+        let graph = B5Graph {
+            complete: true,
+            records: Vec::new(),
+            faces: Vec::new(),
+            loops: BTreeMap::from([(
+                1,
+                B5Loop {
+                    object_id: 1,
+                    pcurves: vec![2],
+                    edges: vec![3],
+                    surface: 4,
+                },
+            )]),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            vertex_points: vec![[0.0, 0.0, 0.1], [1.0, 0.0, 0.0]],
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::from([(3, [0, 1])]),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        let pcurves = BTreeMap::from([(
+            2,
+            (
+                PcurveGeometry::Nurbs {
+                    degree: 1,
+                    knots: vec![0.0, 0.0, 1.0, 1.0],
+                    control_points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 0.0)],
+                    weights: None,
+                    periodic: false,
+                },
+                false,
+            ),
+        )]);
+        let surfaces = BTreeMap::from([(
+            4,
+            SurfacePlan {
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                revolution: None,
+            },
+        )]);
+
+        let tolerances = transfer_vertex_tolerances(&graph, &pcurves, &surfaces);
+        assert!((tolerances[&0] - (0.1 + 1e-9)).abs() < 1e-12);
+        assert!(!tolerances.contains_key(&1));
+    }
 
     #[test]
     fn cylinder_pcurve_arc_length_normalizes_to_neutral_angle() {

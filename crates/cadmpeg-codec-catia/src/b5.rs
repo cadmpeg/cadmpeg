@@ -3,8 +3,10 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use cadmpeg_ir::eval::{nurbs_pcurve_uv, nurbs_surface_point};
 use cadmpeg_ir::geometry::{NurbsSurface, SurfaceGeometry};
 use cadmpeg_ir::le::{f32_at, f64_at};
+use cadmpeg_ir::math::Point2;
 
 /// Resolved `b5 03` object-stream topology graph: faces, loops, pcurves, and
 /// surfaces bound through the in-stream `object_id` map ([spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)),
@@ -798,34 +800,19 @@ fn evaluate_pcurve(pcurve: &B5Pcurve, parameter: f64) -> Option<[f64; 2]> {
             usize::try_from(multiplicity).ok()?,
         ));
     }
-    let basis = basis_values(
-        &knots,
-        usize::try_from(pcurve.degree).ok()?,
-        parameter,
-        pcurve.control_points.len(),
-    )?;
-    let weights = pcurve
-        .weights
-        .clone()
-        .unwrap_or_else(|| vec![1.0; pcurve.control_points.len()]);
-    if weights.len() != pcurve.control_points.len() {
-        return None;
-    }
-    let denominator = basis
+    let control_points: Vec<Point2> = pcurve
+        .control_points
         .iter()
-        .zip(&weights)
-        .map(|(basis, weight)| basis * weight)
-        .sum::<f64>();
-    if !denominator.is_finite() || denominator.abs() <= f64::EPSILON {
-        return None;
-    }
-    let mut point = [0.0; 2];
-    for ((control, basis), weight) in pcurve.control_points.iter().zip(basis).zip(weights) {
-        for dimension in 0..2 {
-            point[dimension] += control[dimension] * basis * weight / denominator;
-        }
-    }
-    point.iter().all(|value| value.is_finite()).then_some(point)
+        .map(|point| Point2::new(point[0], point[1]))
+        .collect();
+    let point = nurbs_pcurve_uv(
+        pcurve.degree,
+        &knots,
+        &control_points,
+        pcurve.weights.as_deref(),
+        parameter,
+    )?;
+    Some([point.u, point.v])
 }
 
 struct BoundNativeVertices {
@@ -1564,73 +1551,8 @@ fn lift_pcurve_endpoints(
 }
 
 fn evaluate_nurbs(surface: &NurbsSurface, u: f64, v: f64) -> Option<[f64; 3]> {
-    let u_count = usize::try_from(surface.u_count).ok()?;
-    let v_count = usize::try_from(surface.v_count).ok()?;
-    let u_basis = basis_values(
-        &surface.u_knots,
-        usize::try_from(surface.u_degree).ok()?,
-        u,
-        u_count,
-    )?;
-    let v_basis = basis_values(
-        &surface.v_knots,
-        usize::try_from(surface.v_degree).ok()?,
-        v,
-        v_count,
-    )?;
-    let mut numerator = [0.0; 3];
-    let mut denominator = 0.0;
-    for (u_index, u_value) in u_basis.iter().enumerate() {
-        for (v_index, v_value) in v_basis.iter().enumerate() {
-            let index = u_index.checked_mul(v_count)?.checked_add(v_index)?;
-            let point = surface.control_points.get(index)?;
-            let weight = surface
-                .weights
-                .as_ref()
-                .and_then(|weights| weights.get(index))
-                .copied()
-                .unwrap_or(1.0);
-            let factor = u_value * v_value * weight;
-            numerator[0] += factor * point.x;
-            numerator[1] += factor * point.y;
-            numerator[2] += factor * point.z;
-            denominator += factor;
-        }
-    }
-    (denominator.abs() > f64::EPSILON).then(|| scale(numerator, 1.0 / denominator))
-}
-
-fn basis_values(knots: &[f64], degree: usize, parameter: f64, count: usize) -> Option<Vec<f64>> {
-    if knots.len() != count.checked_add(degree)?.checked_add(1)? {
-        return None;
-    }
-    let mut basis = vec![0.0; count + degree];
-    for index in 0..basis.len() {
-        if (knots[index] <= parameter && parameter < knots[index + 1])
-            || (parameter == *knots.last()? && index + 1 == count)
-        {
-            basis[index] = 1.0;
-        }
-    }
-    for order in 1..=degree {
-        for index in 0..count + degree - order {
-            let left_denominator = knots[index + order] - knots[index];
-            let right_denominator = knots[index + order + 1] - knots[index + 1];
-            let left = if left_denominator.abs() > f64::EPSILON {
-                (parameter - knots[index]) / left_denominator * basis[index]
-            } else {
-                0.0
-            };
-            let right = if right_denominator.abs() > f64::EPSILON {
-                (knots[index + order + 1] - parameter) / right_denominator * basis[index + 1]
-            } else {
-                0.0
-            };
-            basis[index] = left + right;
-        }
-    }
-    basis.truncate(count);
-    Some(basis)
+    let point = nurbs_surface_point(surface, u, v)?;
+    Some([point.x, point.y, point.z])
 }
 
 fn rotate_about_axis(point: [f64; 3], origin: [f64; 3], axis: [f64; 3], angle: f64) -> [f64; 3] {
