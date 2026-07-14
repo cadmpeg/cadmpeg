@@ -734,6 +734,9 @@ pub struct B2UseMetadata {
     pub pos: usize,
     /// Complete payload bytes.
     pub payload: Vec<u8>,
+    /// Compact persistent references preceding a settled terminal sense. `None`
+    /// when the payload does not close under that grammar.
+    pub references: Option<Vec<u32>>,
     /// Decoded terminal sense when the payload ends in `0x84` or `0x88`.
     pub sense: Option<B2UseSense>,
 }
@@ -782,9 +785,19 @@ pub fn b2_use_metadata(data: &[u8]) -> Vec<B2UseMetadata> {
                 Some(0x88) => Some(B2UseSense::Sense88),
                 _ => None,
             };
+            let references = sense.and_then(|_| {
+                let mut at = frame.payload;
+                let end = frame.end.checked_sub(1)?;
+                let mut references = Vec::new();
+                while at < end {
+                    references.push(compact_int(data, &mut at)?);
+                }
+                (at == end).then_some(references)
+            });
             B2UseMetadata {
                 pos: frame.pos,
                 payload,
+                references,
                 sense,
             }
         })

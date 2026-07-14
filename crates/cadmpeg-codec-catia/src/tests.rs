@@ -1101,16 +1101,16 @@ fn a5_edge_block_stream() -> Vec<u8> {
 
 fn a5_topology_edge_run_stream() -> Vec<u8> {
     let mut bytes = a5_edge_block_stream();
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 1, 2, 3, 0x84]);
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 4, 5, 6, 0x88]);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 5, 9, 13, 0x84]);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 17, 21, 25, 0x88]);
     bytes.extend_from_slice(&b2_edge_node_stream());
     bytes
 }
 
 fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
     let mut bytes = a5_edge_block_stream();
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 1, 2, 3, 0x84]);
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 4, 5, 6, 0x88]);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 5, 9, 13, 0x84]);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 17, 21, 25, 0x88]);
     let references = [curve, start, end, 20, 21];
     bytes.extend_from_slice(&[0xb2, 0x03, 0x5e, 0x06, 0x05]);
     bytes.extend(references.map(|value| 4 * value + 1));
@@ -2872,6 +2872,7 @@ fn b2_topology_metadata_parser_preserves_refs_and_sense_code() {
     assert_eq!(edges[0].references, vec![0x1234, 0x5678]);
     assert_eq!(edges[0].payload, [0x0a, 0x34, 0x12, 0x0a, 0x78, 0x56, 0]);
     assert_eq!(uses[0].sense, Some(B2UseSense::Sense88));
+    assert!(uses[0].references.is_none());
     assert_eq!(uses[0].payload, [1, 2, 3, 0x88]);
 }
 
@@ -3070,6 +3071,8 @@ fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
     assert!(runs[0].edge.co_parametric);
     assert_eq!(runs[0].uses[0].sense, Some(B2UseSense::Sense84));
     assert_eq!(runs[0].uses[1].sense, Some(B2UseSense::Sense88));
+    assert_eq!(runs[0].uses[0].references.as_deref(), Some(&[1, 2, 3][..]));
+    assert_eq!(runs[0].uses[1].references.as_deref(), Some(&[4, 5, 6][..]));
     assert_eq!(runs[0].node.start_vertex_ref, 889);
     assert_eq!(runs[0].node.end_vertex_ref, 895);
 }
