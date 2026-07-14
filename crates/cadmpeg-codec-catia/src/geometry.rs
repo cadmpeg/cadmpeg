@@ -68,9 +68,24 @@ pub enum StandardSurfaceRecord {
         pos: usize,
         /// Little-endian u24 carrier tag.
         tag: u32,
+        /// Trimmed-face spatial bounds stored in the roster core.
+        bounds: FreeformFaceBounds,
         /// Face orientation relative to the linked carrier.
         forward: bool,
     },
+}
+
+/// Spatial bounds stored by one standard freeform face roster core.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FreeformFaceBounds {
+    /// Axis-aligned bounding-box centre.
+    pub aabb_center: [f64; 3],
+    /// Non-negative axis-aligned bounding-box half-extents.
+    pub aabb_half_extents: [f64; 3],
+    /// Bounding-sphere centre.
+    pub sphere_center: [f64; 3],
+    /// Non-negative bounding-sphere radius.
+    pub sphere_radius: f64,
 }
 
 impl StandardSurfaceRecord {
@@ -137,7 +152,32 @@ pub fn standard_surface_records(
         {
             continue;
         }
-        records.insert(pos, StandardSurfaceRecord::Freeform { pos, tag, forward });
+        records.insert(
+            pos,
+            StandardSurfaceRecord::Freeform {
+                pos,
+                tag,
+                bounds: FreeformFaceBounds {
+                    aabb_center: [
+                        f64::from(values[0]),
+                        f64::from(values[1]),
+                        f64::from(values[2]),
+                    ],
+                    aabb_half_extents: [
+                        f64::from(values[3]),
+                        f64::from(values[4]),
+                        f64::from(values[5]),
+                    ],
+                    sphere_center: [
+                        f64::from(values[6]),
+                        f64::from(values[7]),
+                        f64::from(values[8]),
+                    ],
+                    sphere_radius: f64::from(values[9]),
+                },
+                forward,
+            },
+        );
     }
 
     let mut solutions = Vec::new();

@@ -178,7 +178,7 @@ pub enum PayloadSubtype {
 }
 
 /// Classification of the four-byte word preceding a surface-alias marker.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum AliasLead {
     /// Low byte `0x01`: ordinary surface-support storage.
     SurfaceSupportStorage,

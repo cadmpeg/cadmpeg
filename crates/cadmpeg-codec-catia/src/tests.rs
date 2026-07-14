@@ -2115,9 +2115,17 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
         StandardSurfaceRecord::Freeform {
             pos: 0,
             tag: 0x1234,
-            forward: true
+            forward: true,
+            ..
         }
     ));
+    let StandardSurfaceRecord::Freeform { bounds, .. } = &records[0] else {
+        unreachable!("freeform roster row")
+    };
+    assert_eq!(bounds.aabb_center, [0.0, 0.0, 0.0]);
+    assert_eq!(bounds.aabb_half_extents, [1.0, 1.0, 1.0]);
+    assert_eq!(bounds.sphere_center, [0.0, 0.0, 0.0]);
+    assert_eq!(bounds.sphere_radius, 2.0);
     assert!(matches!(
         &records[1],
         StandardSurfaceRecord::Analytic(prefix)
@@ -3347,6 +3355,19 @@ fn outer_surface_alias_parser_reads_fixed_core() {
     assert_eq!(rows[0].tag_raw, 0xab12_3456);
     assert_eq!(rows[0].entity_record_ordinal, 7);
     assert_eq!((rows[0].f2, rows[0].f3), (0x1122_3344, 0x5566_7788));
+}
+
+#[test]
+fn native_namespace_retains_surface_alias_core() {
+    let native = crate::native::CatiaNative::decode(&surface_alias_stream());
+    let [row] = native.alias_rows.as_slice() else {
+        panic!("one alias row")
+    };
+    assert_eq!(row.byte_offset, 4);
+    assert_eq!(row.tag, 0x0012_3456);
+    assert_eq!(row.tag_raw, 0xab12_3456);
+    assert_eq!(row.entity_record_ordinal, 7);
+    assert_eq!((row.f2, row.f3), (0x1122_3344, 0x5566_7788));
 }
 
 #[test]

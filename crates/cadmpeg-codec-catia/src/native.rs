@@ -5,19 +5,47 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::catalog;
-use crate::object_graph::{self, HeadToken, ObjectPayload, PayloadSubtype};
+use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubtype};
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 2;
+pub const CATIA_NATIVE_VERSION: u32 = 3;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
+    "alias_rows",
     "catalog_entries",
     "catalogs",
     "object_graph_records",
     "object_graphs",
     "value_blocks",
 ];
+
+/// One exact outer `01 00 04 00` alias-row core.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaAliasRow {
+    /// Globally unique alias-row identity.
+    pub id: String,
+    /// Byte offset of the four-byte alias marker.
+    pub byte_offset: u64,
+    /// Classification of the preceding four-byte word.
+    pub lead: AliasLead,
+    /// Complete preceding four-byte word.
+    pub lead_raw: u32,
+    /// Low 24 bits of the stored tag word.
+    pub tag: u32,
+    /// Complete stored tag word.
+    pub tag_raw: u32,
+    /// Single-byte row flag.
+    pub flag: u8,
+    /// Complete three-byte F1 field.
+    pub f1: [u8; 3],
+    /// One-based object-graph record ordinal carried by F1.
+    pub entity_record_ordinal: u8,
+    /// First trailing fixed-width field.
+    pub f2: u32,
+    /// Second trailing fixed-width field.
+    pub f3: u32,
+}
 
 /// One exact `7C0B` value block adjacent to its source-schema catalog.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -119,6 +147,9 @@ pub struct CatiaObjectRecord {
 pub struct CatiaNative {
     /// Schema version this namespace was written under.
     pub version: u32,
+    /// Exact outer alias-row cores in source order.
+    #[serde(default)]
+    pub alias_rows: Vec<CatiaAliasRow>,
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
@@ -134,6 +165,7 @@ impl Default for CatiaNative {
     fn default() -> Self {
         Self {
             version: CATIA_NATIVE_VERSION,
+            alias_rows: Vec::new(),
             catalogs: Vec::new(),
             object_graphs: Vec::new(),
             value_blocks: Vec::new(),
@@ -149,6 +181,10 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
+        let alias_rows = object_graph::surface_aliases(bytes)
+            .into_iter()
+            .map(CatiaAliasRow::from)
+            .collect();
         let object_graphs = object_graph::parse_all(bytes)
             .into_iter()
             .map(CatiaObjectGraph::from)
@@ -159,6 +195,7 @@ impl CatiaNative {
             .collect();
         Self {
             version: CATIA_NATIVE_VERSION,
+            alias_rows,
             catalogs,
             object_graphs,
             value_blocks,
@@ -190,8 +227,10 @@ impl CatiaNative {
             graph.records.sort_by_key(|record| record.ordinal);
         }
         let value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
+        let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
         Ok(Self {
             version: namespace.version,
+            alias_rows,
             catalogs,
             object_graphs: graphs,
             value_blocks,
@@ -233,6 +272,7 @@ impl CatiaNative {
             .flat_map(|graph| graph.records.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("alias_rows", &self.alias_rows)?;
         namespace.set_arena("catalog_entries", &entries)?;
         namespace.set_arena("object_graphs", &graphs)?;
         namespace.set_arena("object_graph_records", &records)?;
@@ -252,6 +292,24 @@ impl From<value_block::ValueBlock> for CatiaValueBlock {
             byte_len: block.total_len as u64,
             declared_len: block.declared_len as u64,
             payload: block.payload,
+        }
+    }
+}
+
+impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
+    fn from(row: object_graph::SurfaceAlias) -> Self {
+        Self {
+            id: format!("catia:outer:alias-row#{:010}", row.pos),
+            byte_offset: row.pos as u64,
+            lead: row.lead,
+            lead_raw: row.lead_raw,
+            tag: row.tag,
+            tag_raw: row.tag_raw,
+            flag: row.flag,
+            f1: row.f1,
+            entity_record_ordinal: row.entity_record_ordinal,
+            f2: row.f2,
+            f3: row.f3,
         }
     }
 }
