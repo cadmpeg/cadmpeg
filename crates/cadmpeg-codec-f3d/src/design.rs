@@ -2061,12 +2061,14 @@ fn parse_parameter_companion(prefix: &[u8]) -> Option<DesignParameterCompanion> 
 
 /// Decode paired typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
+#[allow(clippy::too_many_arguments)]
 pub fn decode_dimension_locus_pairs(
     scan: &ContainerScan,
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
     scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
 ) -> Result<Vec<DesignDimensionLocusPair>, CodecError> {
@@ -2123,7 +2125,8 @@ pub fn decode_dimension_locus_pairs(
             )
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(companion, owners, scopes, bytes.len())
+        let Some((start, end)) =
+            companion_owned_interval(companion, owners, scopes, headers, bytes.len())
         else {
             continue;
         };
@@ -2244,6 +2247,7 @@ pub fn decode_dimension_null_locus_pairs(
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
     scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
     placements: &[DesignSketchPlacement],
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
@@ -2343,7 +2347,8 @@ pub fn decode_dimension_null_locus_pairs(
             )
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(companion, owners, scopes, bytes.len())
+        let Some((start, end)) =
+            companion_owned_interval(companion, owners, scopes, headers, bytes.len())
         else {
             continue;
         };
@@ -2448,6 +2453,7 @@ pub fn decode_dimension_locus_groups(
     owners: &[DesignParameterOwner],
     companions: &[DesignParameterCompanion],
     scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
@@ -2513,7 +2519,8 @@ pub fn decode_dimension_locus_groups(
             .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
             .collect::<HashSet<_>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(companion, owners, scopes, bytes.len())
+        let Some((start, end)) =
+            companion_owned_interval(companion, owners, scopes, headers, bytes.len())
         else {
             continue;
         };
@@ -2575,9 +2582,25 @@ fn companion_owned_interval(
     companion: &DesignParameterCompanion,
     owners: &[DesignParameterOwner],
     scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
     stream_length: usize,
 ) -> Option<(usize, usize)> {
     let native_scope = native_stream(&companion.id)?;
+    let owning_scope_record_index = owners
+        .iter()
+        .find(|owner| {
+            native_stream(&owner.id) == Some(native_scope)
+                && owner.record_index == companion.owner_record_index
+        })
+        .map(|owner| owner.scope_record_index);
+    let foreign_scope_members = scopes
+        .iter()
+        .filter(|scope| {
+            native_stream(&scope.id) == Some(native_scope)
+                && Some(scope.record_index) != owning_scope_record_index
+        })
+        .flat_map(|scope| scope.reference_members.iter().copied())
+        .collect::<HashSet<_>>();
     let start = usize::try_from(companion.byte_offset)
         .ok()?
         .checked_add(58)?;
@@ -2596,6 +2619,16 @@ fn companion_owned_interval(
                         && scope.byte_offset > companion.byte_offset
                 })
                 .filter_map(|scope| usize::try_from(scope.byte_offset).ok()),
+        )
+        .chain(
+            headers
+                .iter()
+                .filter(|header| {
+                    native_stream(&header.id) == Some(native_scope)
+                        && header.byte_offset > companion.byte_offset
+                        && foreign_scope_members.contains(&header.record_index)
+                })
+                .filter_map(|header| usize::try_from(header.byte_offset).ok()),
         )
         .min()
         .unwrap_or(stream_length);
@@ -6222,13 +6255,24 @@ mod relation_tests {
         scope.id = "f3d:native:parameter-scope#12".into();
         scope.byte_offset = 58;
         assert_eq!(
-            companion_owned_interval(&companion, &[], &[scope.clone()], 100),
+            companion_owned_interval(&companion, &[], &[scope.clone()], &[], 100),
             None
         );
         scope.byte_offset = 80;
         assert_eq!(
-            companion_owned_interval(&companion, &[], &[scope], 100),
+            companion_owned_interval(&companion, &[], &[scope.clone()], &[], 100),
             Some((58, 80))
+        );
+        scope.byte_offset = 90;
+        let foreign_header = DesignRecordHeader {
+            id: "f3d:native:record-header#55".into(),
+            record_index: 55,
+            class_tag: "301".into(),
+            byte_offset: 70,
+        };
+        assert_eq!(
+            companion_owned_interval(&companion, &[], &[scope], &[foreign_header], 100),
+            Some((58, 70))
         );
     }
 
