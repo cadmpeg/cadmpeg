@@ -551,7 +551,7 @@ The offset-only form does not assign one fixed-width object ID to every record. 
 
 A zero-prefixed offset-only store control-array form is an atomic array of four-byte words. Each word is `00, value:u24 LE`; the array is nonempty and its byte length is divisible by four. Values retain their zero-based word order and byte offsets. A nonzero prefix byte or incomplete final word means the control block uses another form and does not produce this array.
 
-A product-terminated control-array form has zero to three leading zero bytes, followed by a nonempty aligned array of `value:u32 LE`, followed immediately by the unique self-framed `04|05 01 ... "NX " ... 00` product record in the control block. The leading-zero count aligns the value array to its own four-byte boundary. Multiple product records, a nonzero alignment prefix, or a partial value invalidates the complete array.
+A product-terminated control-array form has zero to three leading zero bytes, followed by a nonempty aligned array of `value:u32 LE`, followed immediately by the unique self-framed `04|05 01 ... "NX " ... 00` product record in the control block. The leading-zero count aligns the value array to its own four-byte boundary. A value smaller than the same section's total control-plus-column block count addresses the block at that ordinal; other values remain unbound. Multiple product records, a nonzero alignment prefix, or a partial value invalidates the complete array.
 
 Independently of the control-block form, complete `e0, handle:u32 BE` and four-byte high-nibble-`c` tagged-reference tokens are retained in byte order within the bounded control block. Record-ordinal tokens are not defined for offset-only control storage and are excluded.
 

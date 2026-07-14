@@ -2557,6 +2557,9 @@ pub struct DataBlockControlIndexValue {
     pub prefix_byte_len: u8,
     /// Unsigned little-endian value.
     pub value: u32,
+    /// Same-section offset-store block addressed by an in-range value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_data_block: Option<String>,
     /// Absolute file offset of the four-byte value.
     pub source_offset: u64,
 }
@@ -3252,6 +3255,7 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
             };
             let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
             let data_block = format!("nx:om-data-blocks-{section_ordinal}:block#0");
+            let block_count = section.records.len() + 1;
             values
                 .into_iter()
                 .enumerate()
@@ -3263,6 +3267,11 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                     ordinal: ordinal as u32,
                     prefix_byte_len: prefix_byte_len as u8,
                     value,
+                    target_data_block: control_index_data_block(
+                        section_ordinal,
+                        block_count,
+                        value,
+                    ),
                     source_offset: entry_offset
                         + control.offset as u64
                         + prefix_byte_len as u64
@@ -3271,6 +3280,19 @@ pub fn data_block_control_index_values(container: &Container) -> Vec<DataBlockCo
                 .collect()
         })
         .collect()
+}
+
+pub(crate) fn control_index_data_block(
+    section_ordinal: usize,
+    block_count: usize,
+    value: u32,
+) -> Option<String> {
+    let ordinal = usize::try_from(value)
+        .ok()
+        .filter(|ordinal| *ordinal < block_count)?;
+    Some(format!(
+        "nx:om-data-blocks-{section_ordinal}:block#{ordinal}"
+    ))
 }
 
 /// Decode persistent-handle and tagged-28 occurrences in bounded control blocks.

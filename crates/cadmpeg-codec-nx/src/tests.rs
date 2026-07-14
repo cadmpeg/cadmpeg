@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 61);
+    assert_eq!(namespace.version, 62);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -2159,6 +2159,11 @@ fn om_offset_store_index_values_end_at_unique_aligned_product_record() {
     let mut duplicate = bytes;
     duplicate.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0");
     assert!(crate::om::offset_store_index_values(&duplicate).is_none());
+    assert_eq!(
+        crate::native::control_index_data_block(2, 700, 496).as_deref(),
+        Some("nx:om-data-blocks-2:block#496")
+    );
+    assert!(crate::native::control_index_data_block(2, 700, 700).is_none());
 }
 
 #[test]
@@ -4780,7 +4785,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 61);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 62);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
