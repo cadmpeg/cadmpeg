@@ -3470,7 +3470,12 @@ fn validate_compact_edge_selection_edits(
             .map(|selection| {
                 let native_feature = selection.terminal_feature_ref.as_deref()?;
                 let feature = feature_ids_by_native.get(native_feature)?.clone();
-                let local_id = selection.components.last()?.local_id.to_string();
+                let local_id = selection
+                    .local_edge_ids
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
                 Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
             })
             .collect::<Option<Vec<_>>>();

@@ -11,7 +11,7 @@ use crate::records::{
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 11;
+pub const SLDPRT_NATIVE_VERSION: u32 = 12;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -513,8 +513,18 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.edge_selections.sort_by_key(|record| record.ordinal);
-            if namespace.version <= 10 {
+            if namespace.version <= 11 {
                 for record in &mut lane.edge_selections {
+                    if let Some(local_edge_ids) =
+                        usize::try_from(record.offset).ok().and_then(|offset| {
+                            crate::resolved_features::compact_edge_selection_at(
+                                &lane.native_payload,
+                                offset,
+                            )
+                        })
+                    {
+                        record.local_edge_ids = local_edge_ids;
+                    }
                     record.components = usize::try_from(record.offset)
                         .ok()
                         .and_then(|offset| {
@@ -524,16 +534,26 @@ impl SldprtNative {
                             )
                         })
                         .unwrap_or_default();
-                    record.producer_feature_refs =
-                        crate::resolved_features::component_path_features(
-                            &record.components,
-                            &features,
-                        );
+                    record.producer_feature_refs = usize::try_from(record.offset)
+                        .ok()
+                        .map(|offset| {
+                            crate::resolved_features::compact_edge_producer_features_at(
+                                &lane.native_payload,
+                                offset,
+                                &record.components,
+                                &features,
+                            )
+                        })
+                        .unwrap_or_default();
                     record.terminal_feature_ref =
-                        crate::resolved_features::component_path_terminal_feature(
-                            &record.components,
-                            &features,
-                        );
+                        usize::try_from(record.offset).ok().and_then(|offset| {
+                            crate::resolved_features::compact_edge_owner_feature_at(
+                                &lane.native_payload,
+                                offset,
+                                &record.components,
+                                &features,
+                            )
+                        });
                 }
             }
             if let Some(record) = lane.edge_selections.iter().find(|record| {
@@ -553,14 +573,26 @@ impl SldprtNative {
                         })
                         .unwrap_or_default()
                         != record.components
-                    || crate::resolved_features::component_path_features(
-                        &record.components,
-                        &features,
-                    ) != record.producer_feature_refs
-                    || crate::resolved_features::component_path_terminal_feature(
-                        &record.components,
-                        &features,
-                    ) != record.terminal_feature_ref
+                    || usize::try_from(record.offset)
+                        .ok()
+                        .map(|offset| {
+                            crate::resolved_features::compact_edge_producer_features_at(
+                                &lane.native_payload,
+                                offset,
+                                &record.components,
+                                &features,
+                            )
+                        })
+                        .unwrap_or_default()
+                        != record.producer_feature_refs
+                    || usize::try_from(record.offset).ok().and_then(|offset| {
+                        crate::resolved_features::compact_edge_owner_feature_at(
+                            &lane.native_payload,
+                            offset,
+                            &record.components,
+                            &features,
+                        )
+                    }) != record.terminal_feature_ref
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input edge selection {} disagrees with its payload",
@@ -739,14 +771,26 @@ impl SldprtNative {
                         })
                         .unwrap_or_default()
                         != record.components
-                    || crate::resolved_features::component_path_features(
-                        &record.components,
-                        &features,
-                    ) != record.producer_feature_refs
-                    || crate::resolved_features::component_path_terminal_feature(
-                        &record.components,
-                        &features,
-                    ) != record.terminal_feature_ref
+                    || usize::try_from(record.offset)
+                        .ok()
+                        .map(|offset| {
+                            crate::resolved_features::compact_edge_producer_features_at(
+                                &lane.native_payload,
+                                offset,
+                                &record.components,
+                                &features,
+                            )
+                        })
+                        .unwrap_or_default()
+                        != record.producer_feature_refs
+                    || usize::try_from(record.offset).ok().and_then(|offset| {
+                        crate::resolved_features::compact_edge_owner_feature_at(
+                            &lane.native_payload,
+                            offset,
+                            &record.components,
+                            &features,
+                        )
+                    }) != record.terminal_feature_ref
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input edge selection {} has inconsistent ownership",

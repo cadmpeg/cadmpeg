@@ -1123,6 +1123,39 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_edge_selection_excludes_terminal_feature_reference_cell() {
+        let marker = 12;
+        let mut payload = vec![0; 160];
+        payload[..4].copy_from_slice(&4u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload[marker..marker + 16].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        let signature = [0x34, 0x80, 0x37, 0, 121, 0, 0, 0, 0x9b, 0x95, 0x90, 0x5f];
+        let mut cursor = marker + 18;
+        for (index, local_id) in [32u32, 34, 1].into_iter().enumerate() {
+            payload[cursor..cursor + 4].copy_from_slice(&[0x3d, 0x80, 0, 0]);
+            payload[cursor + 4..cursor + 16].copy_from_slice(&signature);
+            payload[cursor + 16..cursor + 20].copy_from_slice(&local_id.to_le_bytes());
+            cursor += 20;
+            if index != 2 {
+                payload[cursor..cursor + 8].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+                cursor += 8;
+            }
+        }
+        payload[cursor..cursor + 36].copy_from_slice(&[
+            1, 0, 0, 0, 0, 0, 0, 0, 0x4a, 0x80, 0, 0, 0x34, 0x80, 0x37, 0, 35, 0, 0, 0, 0x89, 0x6b,
+            0x90, 0x5f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ]);
+        assert_eq!(
+            compact_edge_selection_at(&payload, marker),
+            Some(vec![32, 34, 1])
+        );
+        assert_eq!(
+            compact_edge_component_path_at(&payload, marker).map(|components| components.len()),
+            Some(3)
+        );
+    }
+
+    #[test]
     fn compact_body_path_requires_type_three_vector() {
         let marker = 12;
         let mut payload = vec![0; 100];
@@ -2443,9 +2476,18 @@ fn compact_edge_selections(
         for (offset, local_edge_ids) in selections {
             let components =
                 compact_edge_component_path_at(&lane.native_payload, offset).unwrap_or_default();
-            let producer_feature_refs = component_path_features(&components, &history_features);
-            let terminal_feature_ref =
-                component_path_terminal_feature(&components, &history_features);
+            let terminal_feature_ref = compact_edge_owner_feature_at(
+                &lane.native_payload,
+                offset,
+                &components,
+                &history_features,
+            );
+            let producer_feature_refs = compact_edge_producer_features_at(
+                &lane.native_payload,
+                offset,
+                &components,
+                &history_features,
+            );
             result.push(FeatureInputEdgeSelection {
                 id: format!("sldprt:feature-input:edge-selection#{lane_key}:{offset}"),
                 parent: lane.id.clone(),
@@ -2659,7 +2701,14 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
         return None;
     }
     compact_homogeneous_edge_ids(payload, marker + 18, count)
-        .or_else(|| compact_heterogeneous_edge_path_ids(payload, marker + 18, count))
+        .or_else(|| {
+            compact_edge_component_path(payload, marker, count).map(|(components, _)| {
+                components
+                    .into_iter()
+                    .map(|component| component.local_id)
+                    .collect()
+            })
+        })
         .or_else(|| compact_u16_edge_ids(payload, marker + 18, count))
 }
 
@@ -2678,8 +2727,72 @@ pub(crate) fn compact_edge_component_path_at(
     ))
     .ok()
     .filter(|count| *count != 0)?;
+    compact_edge_component_path(payload, marker, count).map(|(components, _)| components)
+}
+
+fn compact_edge_component_path(
+    payload: &[u8],
+    marker: usize,
+    count: usize,
+) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
     compact_heterogeneous_component_path(payload, marker + 18, count)
-        .map(|(components, _)| components)
+        .map(|(components, _)| (components, None))
+        .or_else(|| {
+            let (components, end) = (count > 1)
+                .then(|| compact_heterogeneous_component_path(payload, marker + 18, count - 1))
+                .flatten()?;
+            let trailer = payload.get(end..end + 36)?;
+            if trailer[..8] != [1, 0, 0, 0, 0, 0, 0, 0]
+                || trailer[8..12] != [0x4a, 0x80, 0, 0]
+                || trailer[12..14] == [0, 0]
+                || trailer[14..16] != [0x37, 0]
+                || trailer[20..24].iter().all(|byte| *byte == 0)
+                || trailer[24..].iter().any(|byte| *byte != 0)
+            {
+                return None;
+            }
+            let source = u32::from_le_bytes(trailer[16..20].try_into().ok()?);
+            (source != 0).then_some((components, Some(source)))
+        })
+}
+
+pub(crate) fn compact_edge_owner_feature_at(
+    payload: &[u8],
+    marker: usize,
+    components: &[FeatureInputComponentPathEntry],
+    features: &[crate::records::Feature],
+) -> Option<String> {
+    let count = usize::try_from(u32::from_le_bytes(
+        payload
+            .get(marker.checked_sub(12)?..marker - 8)?
+            .try_into()
+            .ok()?,
+    ))
+    .ok()?;
+    let (_, owner_source) = compact_edge_component_path(payload, marker, count)?;
+    owner_source
+        .and_then(|source| {
+            features.iter().find(|feature| {
+                feature.source_id.as_deref().and_then(|id| id.parse().ok()) == Some(source)
+            })
+        })
+        .map(|feature| feature.id.clone())
+        .or_else(|| component_path_terminal_feature(components, features))
+}
+
+pub(crate) fn compact_edge_producer_features_at(
+    payload: &[u8],
+    marker: usize,
+    components: &[FeatureInputComponentPathEntry],
+    features: &[crate::records::Feature],
+) -> Vec<String> {
+    let mut producers = component_path_features(components, features);
+    if let Some(owner) = compact_edge_owner_feature_at(payload, marker, components, features) {
+        if !producers.contains(&owner) {
+            producers.push(owner);
+        }
+    }
+    producers
 }
 
 fn compact_homogeneous_edge_ids(
@@ -2715,27 +2828,6 @@ fn compact_homogeneous_edge_ids(
     Some(ids)
 }
 
-fn compact_heterogeneous_edge_path_ids(
-    payload: &[u8],
-    cursor: usize,
-    count: usize,
-) -> Option<Vec<u32>> {
-    compact_heterogeneous_edge_path(payload, cursor, count).map(|(ids, _)| ids)
-}
-
-fn compact_heterogeneous_edge_path(
-    payload: &[u8],
-    cursor: usize,
-    count: usize,
-) -> Option<(Vec<u32>, usize)> {
-    compact_heterogeneous_component_path(payload, cursor, count).map(|(entries, end)| {
-        (
-            entries.into_iter().map(|entry| entry.local_id).collect(),
-            end,
-        )
-    })
-}
-
 fn compact_heterogeneous_component_path(
     payload: &[u8],
     mut cursor: usize,
@@ -2746,6 +2838,7 @@ fn compact_heterogeneous_component_path(
         (instance[0..2] != [0, 0]
             && instance[0..2] != [0xff, 0xff]
             && instance[2..4] == [0, 0]
+            && payload.get(offset + 4..offset + 6)? != [0, 0]
             && payload.get(offset + 4..offset + 20).is_some())
         .then_some(())
     };
@@ -2784,6 +2877,19 @@ fn compact_heterogeneous_component_path(
         cursor += gap;
     }
     Some((entries, cursor))
+}
+
+fn compact_heterogeneous_edge_path(
+    payload: &[u8],
+    cursor: usize,
+    count: usize,
+) -> Option<(Vec<u32>, usize)> {
+    compact_heterogeneous_component_path(payload, cursor, count).map(|(entries, end)| {
+        (
+            entries.into_iter().map(|entry| entry.local_id).collect(),
+            end,
+        )
+    })
 }
 
 fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
@@ -4940,7 +5046,12 @@ pub(crate) fn project_compact_edge_selections(
                 .map(|selection| {
                     let native_feature = selection.terminal_feature_ref.as_ref()?;
                     let feature = feature_ids_by_native.get(native_feature)?.clone();
-                    let local_id = selection.components.last()?.local_id.to_string();
+                    let local_id = selection
+                        .local_edge_ids
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",");
                     Some(cadmpeg_ir::features::GeneratedEdgeRef { feature, local_id })
                 })
                 .collect::<Option<Vec<_>>>();
