@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Generate or verify the cumulative IGES Envelope-A proof report.
 
+use cadmpeg_codec_iges::IgesCodec;
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
+use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 #[derive(Deserialize)]
@@ -87,6 +90,9 @@ struct PublicFixture {
     fixture_classes: Vec<String>,
     assertions: Vec<String>,
     tests: Vec<String>,
+    inspect_sha256: String,
+    ir_sha256: String,
+    report_sha256: String,
 }
 
 #[derive(Deserialize)]
@@ -169,6 +175,12 @@ struct ReportRow {
     missing: Vec<String>,
 }
 
+struct PublicOutputDigests {
+    inspect: String,
+    ir: String,
+    report: String,
+}
+
 fn read_toml<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
     let source =
         fs::read_to_string(path).map_err(|error| format!("{}: {error}", path.display()))?;
@@ -188,6 +200,41 @@ fn decoder_exists(root: &Path, decoder: &str) -> bool {
         .is_some_and(|source| source.contains(&format!("fn {function}(")))
 }
 
+fn public_output_digests(bytes: &[u8], filename: &str) -> Result<PublicOutputDigests, String> {
+    let inspect = IgesCodec
+        .inspect(&mut Cursor::new(bytes))
+        .map_err(|error| format!("public fixture {filename} inspect: {error}"))?;
+    let first = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .map_err(|error| format!("public fixture {filename} decode: {error}"))?;
+    let second = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .map_err(|error| format!("public fixture {filename} repeated decode: {error}"))?;
+    let inspect_json = serde_json::to_vec(&inspect)
+        .map_err(|error| format!("public fixture {filename} inspect serialization: {error}"))?;
+    let first_ir = first.ir.to_canonical_json().map_err(|error| {
+        format!("public fixture {filename} canonical IR serialization: {error}")
+    })?;
+    let second_ir = second.ir.to_canonical_json().map_err(|error| {
+        format!("public fixture {filename} repeated canonical IR serialization: {error}")
+    })?;
+    let first_report = serde_json::to_vec(&first.report)
+        .map_err(|error| format!("public fixture {filename} report serialization: {error}"))?;
+    let second_report = serde_json::to_vec(&second.report).map_err(|error| {
+        format!("public fixture {filename} repeated report serialization: {error}")
+    })?;
+    if first_ir != second_ir || first_report != second_report {
+        return Err(format!(
+            "public fixture {filename} decode is not deterministic"
+        ));
+    }
+    Ok(PublicOutputDigests {
+        inspect: cadmpeg_ir::hash::sha256_hex(&inspect_json),
+        ir: cadmpeg_ir::hash::sha256_hex(first_ir.as_bytes()),
+        report: cadmpeg_ir::hash::sha256_hex(&first_report),
+    })
+}
+
 fn valid_public_fixture(
     root: &Path,
     fixture: &PublicFixture,
@@ -197,6 +244,9 @@ fn valid_public_fixture(
         || fixture.fixture_classes.is_empty()
         || fixture.assertions.is_empty()
         || fixture.tests.is_empty()
+        || fixture.inspect_sha256.len() != 64
+        || fixture.ir_sha256.len() != 64
+        || fixture.report_sha256.len() != 64
     {
         return Err(format!(
             "public fixture evidence {:?} has incomplete proof fields",
@@ -235,6 +285,19 @@ fn valid_public_fixture(
             "public fixture {} digest is {}, declared {}",
             fixture.filename, digest, record.sha256
         ));
+    }
+    let outputs = public_output_digests(&bytes, &fixture.filename)?;
+    for (kind, actual, expected) in [
+        ("inspect", outputs.inspect, &fixture.inspect_sha256),
+        ("canonical IR", outputs.ir, &fixture.ir_sha256),
+        ("report", outputs.report, &fixture.report_sha256),
+    ] {
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(format!(
+                "public fixture {} {kind} digest is {actual}, declared {expected}",
+                fixture.filename
+            ));
+        }
     }
     Ok(())
 }
@@ -639,23 +702,23 @@ fn serialized_report(root: &Path) -> Result<String, String> {
 }
 
 fn run() -> Result<(), String> {
-    let report = serialized_report(&workspace_root())?;
+    const USAGE: &str = "usage: iges-proof-report (--write|--check|--profile-public) <path>";
     let mut arguments = std::env::args().skip(1);
-    let mode = arguments
-        .next()
-        .ok_or_else(|| "usage: iges-proof-report (--write|--check) <path>".to_string())?;
+    let mode = arguments.next().ok_or_else(|| USAGE.to_string())?;
     let path = arguments
         .next()
         .map(PathBuf::from)
-        .ok_or_else(|| "usage: iges-proof-report (--write|--check) <path>".to_string())?;
+        .ok_or_else(|| USAGE.to_string())?;
     if arguments.next().is_some() {
-        return Err("usage: iges-proof-report (--write|--check) <path>".into());
+        return Err(USAGE.into());
     }
     match mode.as_str() {
         "--write" => {
+            let report = serialized_report(&workspace_root())?;
             fs::write(&path, report).map_err(|error| format!("{}: {error}", path.display()))
         }
         "--check" => {
+            let report = serialized_report(&workspace_root())?;
             let current = fs::read_to_string(&path)
                 .map_err(|error| format!("{}: {error}", path.display()))?;
             if current == report {
@@ -667,7 +730,15 @@ fn run() -> Result<(), String> {
                 ))
             }
         }
-        _ => Err("usage: iges-proof-report (--write|--check) <path>".into()),
+        "--profile-public" => {
+            let bytes = fs::read(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+            let outputs = public_output_digests(&bytes, &path.display().to_string())?;
+            println!("inspect_sha256 = {:?}", outputs.inspect);
+            println!("ir_sha256 = {:?}", outputs.ir);
+            println!("report_sha256 = {:?}", outputs.report);
+            Ok(())
+        }
+        _ => Err(USAGE.into()),
     }
 }
 
@@ -680,7 +751,41 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{build_report, serialized_report, workspace_root};
+    use super::{build_report, public_output_digests, serialized_report, workspace_root};
+
+    fn card(data: &[u8], section: u8, sequence: u32) -> Vec<u8> {
+        let mut result = vec![b' '; 80];
+        result[..data.len()].copy_from_slice(data);
+        result[72] = section;
+        result[73..80].copy_from_slice(format!("{sequence:07}").as_bytes());
+        result.push(b'\n');
+        result
+    }
+
+    fn empty_fixed_ascii_document() -> Vec<u8> {
+        let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+        let mut bytes = card(b"original fixture", b'S', 1);
+        let chunks = global.chunks(72).collect::<Vec<_>>();
+        for (index, chunk) in chunks.iter().enumerate() {
+            bytes.extend(card(chunk, b'G', u32::try_from(index + 1).unwrap()));
+        }
+        bytes.extend(card(
+            format!("S0000001G{:07}D0000000P0000000", chunks.len()).as_bytes(),
+            b'T',
+            1,
+        ));
+        bytes
+    }
+
+    #[test]
+    fn public_profile_hashes_deterministic_decode_outputs() {
+        let digests = public_output_digests(&empty_fixed_ascii_document(), "empty.igs")
+            .expect("fixture profiles");
+
+        assert_eq!(digests.inspect.len(), 64);
+        assert_eq!(digests.ir.len(), 64);
+        assert_eq!(digests.report.len(), 64);
+    }
 
     #[test]
     fn current_evidence_proves_original_but_not_public_coverage() {
