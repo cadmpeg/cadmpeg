@@ -5743,6 +5743,20 @@ pub struct Configuration {
     pub source_offset: u64,
 }
 
+/// Exact agreement between the default arrangement and the part attribute
+/// naming the active arrangement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigurationAttributeUse {
+    /// Globally unique relation identity.
+    pub id: String,
+    /// Default arrangement from the native configuration arena.
+    pub configuration: String,
+    /// Typed `NX_Arrangement` part attribute carrying the same name.
+    pub part_attribute: String,
+    /// Exact shared arrangement name.
+    pub name: String,
+}
+
 /// One typed part-level attribute from `/Root/part/attrs`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PartAttribute {
@@ -5906,6 +5920,37 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
         })
         .flatten()
         .collect()
+}
+
+/// Join the two independently framed active-arrangement declarations.
+pub fn configuration_attribute_uses(
+    configurations: &[Configuration],
+    attributes: &[PartAttribute],
+) -> Vec<ConfigurationAttributeUse> {
+    let active = configurations
+        .iter()
+        .filter(|configuration| configuration.active)
+        .collect::<Vec<_>>();
+    let declarations = attributes
+        .iter()
+        .filter(|attribute| {
+            attribute.owner == "part"
+                && attribute.title == "NX_Arrangement"
+                && attribute.value_type == "StringAttributeType"
+        })
+        .collect::<Vec<_>>();
+    let ([configuration], [attribute]) = (active.as_slice(), declarations.as_slice()) else {
+        return Vec::new();
+    };
+    if configuration.name != attribute.value {
+        return Vec::new();
+    }
+    vec![ConfigurationAttributeUse {
+        id: "nx:arrangements:active-attribute-use#0".to_string(),
+        configuration: configuration.id.clone(),
+        part_attribute: attribute.id.clone(),
+        name: configuration.name.clone(),
+    }]
 }
 
 /// Decode the typed part-attribute XML stream atomically.

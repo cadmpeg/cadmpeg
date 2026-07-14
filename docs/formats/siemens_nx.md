@@ -45,6 +45,12 @@ invalidate the stream atomically.
 has a nonempty `Name` and a `Default` value of `YES` or `NO`. At most one child
 is default. Child order is configuration order.
 
+A unique part-owned `NX_Arrangement` string attribute names the active
+configuration when its value equals the unique `Default="YES"` arrangement
+name. The two declarations form one active-configuration identity relation.
+An absent declaration, duplicate declaration, multiple defaults, type mismatch,
+or unequal name does not form the relation.
+
 The canonical `/Root/UG_PART/UG_PART` payload begins with a segment index of
 12-byte little-endian rows:
 

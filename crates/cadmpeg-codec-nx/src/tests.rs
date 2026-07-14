@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 130);
+    assert_eq!(namespace.version, 131);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6068,9 +6068,12 @@ fn prt_with_named_payloads(entries: &[(&str, Vec<u8>)]) -> Vec<u8> {
 fn prt_with_arrangements() -> Vec<u8> {
     let mut arrangements = br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Exploded"/></Arrangements>"#.to_vec();
     arrangements.push(0);
+    let mut attributes = br#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="Model" version="3" type="StringAttributeType"/></UgAttributes>"#.to_vec();
+    attributes.push(0);
     prt_with_named_payloads(&[
         ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
         ("/Root/part/arrangements", arrangements),
+        ("/Root/part/attrs", attributes),
     ])
 }
 
@@ -6449,7 +6452,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 130);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 131);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -6758,6 +6761,33 @@ fn decode_retains_nx_arrangement_configurations() {
     assert_eq!(result.ir.model.configurations[1].ordinal, 1);
     assert_eq!(result.ir.model.configurations[1].name, "Exploded");
     assert!(!result.ir.model.configurations[1].active);
+    let uses = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::ConfigurationAttributeUse>("configuration_attribute_uses")
+        .unwrap();
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].configuration, configurations[0].id);
+    assert_eq!(uses[0].name, "Model");
+    assert_eq!(
+        result.ir.model.configurations[0].properties["active_attribute_use"],
+        uses[0].id
+    );
+    let attributes = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::PartAttribute>("part_attributes")
+        .unwrap();
+    let mut mismatch = attributes.clone();
+    mismatch[0].value = "Other".to_string();
+    assert!(crate::native::configuration_attribute_uses(&configurations, &mismatch).is_empty());
+    let mut duplicate = attributes.clone();
+    duplicate.push(attributes[0].clone());
+    assert!(crate::native::configuration_attribute_uses(&configurations, &duplicate).is_empty());
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }

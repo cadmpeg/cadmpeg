@@ -3339,6 +3339,8 @@ fn attach_native_object_model(
     let object_references = crate::native::object_references(&scan.container);
     let configurations = crate::native::configurations(&scan.container);
     let part_attributes = crate::native::part_attributes(&scan.container);
+    let configuration_attribute_uses =
+        crate::native::configuration_attribute_uses(&configurations, &part_attributes);
     let external_references = crate::native::external_references(&scan.container);
     let external_reference_records = crate::native::external_reference_records(&scan.container);
     let persistent_handles = crate::native::persistent_handles(
@@ -3792,7 +3794,13 @@ fn attach_native_object_model(
                 source_index: Some(ordinal as u32),
                 name: configuration.name.clone(),
                 material: None,
-                properties: BTreeMap::new(),
+                properties: configuration_attribute_uses
+                    .iter()
+                    .find(|relation| relation.configuration == configuration.id)
+                    .map(|relation| {
+                        BTreeMap::from([("active_attribute_use".to_string(), relation.id.clone())])
+                    })
+                    .unwrap_or_default(),
                 bodies: Vec::new(),
                 native_ref: Some(configuration.id.clone()),
             });
@@ -3851,7 +3859,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(130);
+    namespace.version = namespace.version.max(131);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -4286,6 +4294,12 @@ fn attach_native_object_model(
     }
     if !configurations.is_empty() {
         namespace.set_arena("configurations", &configurations)?;
+    }
+    if !configuration_attribute_uses.is_empty() {
+        namespace.set_arena(
+            "configuration_attribute_uses",
+            &configuration_attribute_uses,
+        )?;
     }
     if !part_attributes.is_empty() {
         namespace.set_arena("part_attributes", &part_attributes)?;
