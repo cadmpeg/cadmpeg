@@ -591,7 +591,7 @@ An object-ID-bounded record in a section declaring `UGS::EXP_expression` declare
 
 An offset-only OM data block references a persistent OM object as `04 00, object_index, 02 0b`, using the same object-index form as feature operation headers. Complete fields are retained in block byte order. An object ID resolves to a target record or parameter declaration only when exactly one record with that ID occurs in the same directory entry.
 
-An operation input slot depends on every uniquely resolved parameter declaration referenced by its target data block. Binding order is operation-header slot order followed by reference byte order within each block. The binding establishes parameter consumption but does not assign a dimensional role to the parameter.
+An operation input slot depends on every uniquely resolved parameter declaration referenced by its target data block. Binding order is operation-header slot order followed by reference byte order within each block. When exactly one numeric-expression record names the declaration, the consumption edge also identifies that expression record. The binding establishes parameter consumption but does not assign a dimensional role to the parameter.
 
 The `SIMPLE HOLE` payload template is underscore-delimited. Prefix `Hole_GeneralHole_Simple_Through_` identifies a simple hole extending through all material. Remaining suffix components describe entry and exit treatments.
 

@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 53);
+    assert_eq!(namespace.version, 54);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -691,7 +691,25 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         reference(1, None),
     ];
 
-    let bindings = crate::native::feature_parameter_bindings(&[input], &references);
+    let expression = crate::native::Expression {
+        id: "nx:om-entry-9:expression#3".to_string(),
+        object_id: Some(201),
+        record: None,
+        declaration: Some("nx:om-expression-declarations-0:declaration#3".to_string()),
+        name: "p3".to_string(),
+        parameter_index: Some(3),
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: "12".to_string(),
+        value: Some(12.0),
+        source_entry: "/Root/UG_PART/UG_PART".to_string(),
+        source_offset: 900,
+    };
+    let bindings = crate::native::feature_parameter_bindings(
+        std::slice::from_ref(&input),
+        &references,
+        std::slice::from_ref(&expression),
+    );
     assert_eq!(bindings.len(), 1);
     assert_eq!(bindings[0].input_slot, 0);
     assert_eq!(bindings[0].reference_ordinal, 0);
@@ -700,6 +718,17 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         bindings[0].expression_declaration,
         "nx:om-expression-declarations-0:declaration#3"
     );
+    assert_eq!(
+        bindings[0].expression.as_deref(),
+        Some("nx:om-entry-9:expression#3")
+    );
+
+    let mut duplicate = expression.clone();
+    duplicate.id = "nx:om-entry-9:expression#30".to_string();
+    let ambiguous =
+        crate::native::feature_parameter_bindings(&[input], &references, &[expression, duplicate]);
+    assert_eq!(ambiguous.len(), 1);
+    assert_eq!(ambiguous[0].expression, None);
 }
 
 #[test]
@@ -733,6 +762,10 @@ fn nx_feature_parameter_content_resolves_declarations_in_binding_order() {
         reference_ordinal: ordinal,
         object_id: ordinal,
         expression_declaration: declaration.to_string(),
+        expression: expressions
+            .iter()
+            .find(|expression| expression.declaration.as_deref() == Some(declaration))
+            .map(|expression| expression.id.clone()),
         source_offset: u64::from(ordinal),
     };
     let bindings = [
@@ -4617,7 +4650,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 53);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 54);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

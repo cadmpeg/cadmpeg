@@ -2824,8 +2824,11 @@ fn attach_native_object_model(
     let object_records = crate::native::object_records(&scan.container);
     let data_blocks = crate::native::data_blocks(&scan.container);
     let data_block_references = crate::native::data_block_references(&scan.container);
-    let feature_parameter_bindings =
-        crate::native::feature_parameter_bindings(&feature_input_blocks, &data_block_references);
+    let feature_parameter_bindings = crate::native::feature_parameter_bindings(
+        &feature_input_blocks,
+        &data_block_references,
+        &expressions,
+    );
     let store_headers = crate::native::store_headers(&scan.container);
     let string_values = crate::native::string_values(&scan.container);
     let object_references = crate::native::object_references(&scan.container);
@@ -3118,7 +3121,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(53);
+    namespace.version = namespace.version.max(54);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -3683,13 +3686,12 @@ pub(crate) fn feature_parameter_content(
     bindings: &[&crate::native::FeatureParameterBinding],
     expressions: &[crate::native::Expression],
 ) -> Vec<ParameterId> {
-    let parameters_by_declaration = expressions
+    let parameters_by_expression = expressions
         .iter()
         .filter_map(|expression| {
-            let declaration = expression.declaration.as_deref()?;
             let (section, key) = expression.id.rsplit_once(":expression#")?;
             Some((
-                declaration,
+                expression.id.as_str(),
                 ParameterId(format!("{section}:parameter#{key}")),
             ))
         })
@@ -3698,8 +3700,8 @@ pub(crate) fn feature_parameter_content(
     bindings
         .iter()
         .filter_map(|binding| {
-            parameters_by_declaration
-                .get(binding.expression_declaration.as_str())
+            parameters_by_expression
+                .get(binding.expression.as_deref()?)
                 .filter(|parameter| seen.insert((*parameter).clone()))
                 .cloned()
         })

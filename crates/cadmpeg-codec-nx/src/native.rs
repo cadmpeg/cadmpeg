@@ -295,6 +295,9 @@ pub struct FeatureParameterBinding {
     pub reference_ordinal: u32,
     /// Target parameter declaration in the native expression arena.
     pub expression_declaration: String,
+    /// Exact numeric expression bound to the declaration, when unique.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expression: Option<String>,
     /// Persistent OM object ID of the declaration.
     pub object_id: u32,
     /// Absolute file offset of the object-index token.
@@ -1911,7 +1914,17 @@ fn unique_offset_data_block(
 pub fn feature_parameter_bindings(
     inputs: &[FeatureInputBlock],
     references: &[DataBlockReference],
+    expressions: &[Expression],
 ) -> Vec<FeatureParameterBinding> {
+    let mut expressions_by_declaration = BTreeMap::<&str, Vec<&str>>::new();
+    for expression in expressions {
+        if let Some(declaration) = expression.declaration.as_deref() {
+            expressions_by_declaration
+                .entry(declaration)
+                .or_default()
+                .push(expression.id.as_str());
+        }
+    }
     let mut bindings = Vec::new();
     for input in inputs {
         for reference in references
@@ -1928,6 +1941,10 @@ pub fn feature_parameter_bindings(
                 input_block: input.data_block.clone(),
                 reference_ordinal: reference.ordinal,
                 expression_declaration: expression_declaration.clone(),
+                expression: expressions_by_declaration
+                    .get(expression_declaration.as_str())
+                    .and_then(|matches| matches.as_slice().first().filter(|_| matches.len() == 1))
+                    .map(|expression| (*expression).to_string()),
                 object_id: reference.object_id,
                 source_offset: reference.source_offset,
             });
