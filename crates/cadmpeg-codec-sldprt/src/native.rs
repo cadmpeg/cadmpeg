@@ -11,7 +11,7 @@ use crate::records::{
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 7;
+pub const SLDPRT_NATIVE_VERSION: u32 = 8;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -281,7 +281,7 @@ impl SldprtNative {
         if let Some(record) = surface_selections.iter().find(|record| {
             !name_ids.contains(record.object_name_ref.as_str())
                 || !feature_ids.contains(record.feature_ref.as_str())
-                || record.local_component_ids.is_empty()
+                || (namespace.version >= 8 && record.components.is_empty())
         }) {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input surface selection {} has unresolved ownership",
@@ -522,13 +522,26 @@ impl SldprtNative {
                 .cloned()
                 .collect();
             lane.surface_selections.sort_by_key(|record| record.ordinal);
+            if namespace.version <= 7 {
+                for record in &mut lane.surface_selections {
+                    record.components = usize::try_from(record.offset)
+                        .ok()
+                        .and_then(|offset| {
+                            crate::resolved_features::compact_surface_reference_at(
+                                &lane.native_payload,
+                                offset,
+                            )
+                        })
+                        .unwrap_or_default();
+                }
+            }
             if let Some(record) = lane.surface_selections.iter().find(|record| {
                 usize::try_from(record.offset).ok().and_then(|offset| {
                     crate::resolved_features::compact_surface_reference_at(
                         &lane.native_payload,
                         offset,
                     )
-                }) != Some(record.local_component_ids.clone())
+                }) != Some(record.components.clone())
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input surface selection {} disagrees with its payload",
@@ -659,13 +672,13 @@ impl SldprtNative {
                 record.parent != lane.id
                     || !name_ids.contains(record.object_name_ref.as_str())
                     || !feature_ids.contains(record.feature_ref.as_str())
-                    || record.local_component_ids.is_empty()
+                    || record.components.is_empty()
                     || usize::try_from(record.offset).ok().and_then(|offset| {
                         crate::resolved_features::compact_surface_reference_at(
                             &lane.native_payload,
                             offset,
                         )
-                    }) != Some(record.local_component_ids.clone())
+                    }) != Some(record.components.clone())
             }) {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "feature-input surface selection {} has inconsistent ownership",

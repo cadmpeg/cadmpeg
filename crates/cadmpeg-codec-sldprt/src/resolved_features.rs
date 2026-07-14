@@ -3,12 +3,12 @@
 
 use crate::classification::{native_object_class, NativeClassKind};
 use crate::records::{
-    FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole, FeatureInputEdgeSelection,
-    FeatureInputLane, FeatureInputName, FeatureInputOperand, FeatureInputOperandKind,
-    FeatureInputReference, FeatureInputRelationBinding, FeatureInputRelationFamily,
-    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputScalarRole,
-    FeatureInputSurfaceSelection, SketchInputEntity, SketchInputKind, SketchInputLink,
-    SketchRelationKind,
+    FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole,
+    FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
+    FeatureInputOperand, FeatureInputOperandKind, FeatureInputReference,
+    FeatureInputRelationBinding, FeatureInputRelationFamily, FeatureInputRelationInstance,
+    FeatureInputScalar, FeatureInputScalarRole, FeatureInputSurfaceSelection, SketchInputEntity,
+    SketchInputKind, SketchInputLink, SketchRelationKind,
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PathRef, PatternKind};
@@ -812,10 +812,11 @@ mod marker_tests {
         payload[122..134].fill(1);
         payload[134..138].copy_from_slice(&7u32.to_le_bytes());
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
-        assert_eq!(
-            compact_single_face_reference_path_at(&payload, 100),
-            Some(vec![7])
-        );
+        let path = compact_single_face_reference_path_at(&payload, 100).unwrap();
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0].instance, 0x8032);
+        assert_eq!(path[0].type_signature, [1; 12]);
+        assert_eq!(path[0].local_id, 7);
 
         payload[12] = 1;
         payload[22] = 1;
@@ -1194,12 +1195,31 @@ mod marker_tests {
             }
         }
         payload.extend([0; 24]);
+        let components = compact_surface_selection_at(&payload, 12).unwrap();
         assert_eq!(
-            compact_surface_selection_at(&payload, 12),
-            Some(vec![2, 1, 11])
+            components
+                .iter()
+                .map(|component| (
+                    component.instance,
+                    component.type_signature,
+                    component.local_id
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                (0x8c20, signature, 2),
+                (0x8c21, signature, 1),
+                (0x8c22, signature, 11)
+            ]
         );
         payload[12 + 18 + 24 + 4] ^= 1;
-        assert_eq!(compact_surface_selection_at(&payload, 12), Some(vec![2]));
+        assert_eq!(
+            compact_surface_selection_at(&payload, 12)
+                .unwrap()
+                .iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            vec![2]
+        );
     }
 }
 
@@ -2416,7 +2436,7 @@ fn compact_surface_selections(
                 .collect(),
             _ => continue,
         };
-        let [(offset, local_component_ids)] = candidates.as_slice() else {
+        let [(offset, components)] = candidates.as_slice() else {
             continue;
         };
         result.push(FeatureInputSurfaceSelection {
@@ -2426,13 +2446,16 @@ fn compact_surface_selections(
             offset: *offset as u64,
             object_name_ref: name.id.clone(),
             feature_ref: feature.id.clone(),
-            local_component_ids: local_component_ids.clone(),
+            components: components.clone(),
         });
     }
     result
 }
 
-pub(crate) fn compact_surface_selection_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
+pub(crate) fn compact_surface_selection_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
     if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
         || payload.get(marker - 12..marker - 8)? != 6u32.to_le_bytes()
         || payload.get(marker - 8..marker - 4)? != [0x04, 0x02, 0, 0]
@@ -2442,11 +2465,14 @@ pub(crate) fn compact_surface_selection_at(payload: &[u8], marker: usize) -> Opt
     }
     let mut cursor = marker + 18;
     let signature = payload.get(cursor + 4..cursor + 16)?.to_vec();
-    let mut ids = Vec::new();
-    while ids.len() < 6 && payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice()) {
-        ids.push(u32::from_le_bytes(
-            payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
-        ));
+    let mut components = Vec::new();
+    while components.len() < 6 && payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice())
+    {
+        components.push(FeatureInputComponentPathEntry {
+            instance: u16::from_le_bytes(payload.get(cursor..cursor + 2)?.try_into().ok()?),
+            type_signature: signature.as_slice().try_into().ok()?,
+            local_id: u32::from_le_bytes(payload.get(cursor + 16..cursor + 20)?.try_into().ok()?),
+        });
         cursor += 20;
         if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice())
             && payload.get(cursor + 8..cursor + 20) == Some(signature.as_slice())
@@ -2454,10 +2480,13 @@ pub(crate) fn compact_surface_selection_at(payload: &[u8], marker: usize) -> Opt
             cursor += 4;
         }
     }
-    (!ids.is_empty()).then_some(ids)
+    (!components.is_empty()).then_some(components)
 }
 
-pub(crate) fn compact_surface_reference_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
+pub(crate) fn compact_surface_reference_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
     compact_surface_selection_at(payload, marker)
         .or_else(|| compact_single_face_reference_path_at(payload, marker))
 }
@@ -2579,9 +2608,22 @@ fn compact_heterogeneous_edge_path_ids(
 
 fn compact_heterogeneous_edge_path(
     payload: &[u8],
-    mut cursor: usize,
+    cursor: usize,
     count: usize,
 ) -> Option<(Vec<u32>, usize)> {
+    compact_heterogeneous_component_path(payload, cursor, count).map(|(entries, end)| {
+        (
+            entries.into_iter().map(|entry| entry.local_id).collect(),
+            end,
+        )
+    })
+}
+
+fn compact_heterogeneous_component_path(
+    payload: &[u8],
+    mut cursor: usize,
+    count: usize,
+) -> Option<(Vec<FeatureInputComponentPathEntry>, usize)> {
     let entry_at = |offset: usize| {
         let instance = payload.get(offset..offset + 4)?;
         (instance[0..2] != [0, 0]
@@ -2590,12 +2632,14 @@ fn compact_heterogeneous_edge_path(
             && payload.get(offset + 4..offset + 20).is_some())
         .then_some(())
     };
-    let mut ids = Vec::with_capacity(count);
+    let mut entries = Vec::with_capacity(count);
     for index in 0..count {
         entry_at(cursor)?;
-        ids.push(u32::from_le_bytes(
-            payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
-        ));
+        entries.push(FeatureInputComponentPathEntry {
+            instance: u16::from_le_bytes(payload.get(cursor..cursor + 2)?.try_into().ok()?),
+            type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
+            local_id: u32::from_le_bytes(payload.get(cursor + 16..cursor + 20)?.try_into().ok()?),
+        });
         cursor += 20;
         if index + 1 == count {
             continue;
@@ -2622,7 +2666,7 @@ fn compact_heterogeneous_edge_path(
         };
         cursor += gap;
     }
-    Some((ids, cursor))
+    Some((entries, cursor))
 }
 
 fn compact_u16_edge_ids(payload: &[u8], cursor: usize, count: usize) -> Option<Vec<u32>> {
@@ -4810,7 +4854,7 @@ pub(crate) fn project_compact_surface_selections(
                 | cadmpeg_ir::features::FaceSelection::Native(_)
         ) {
             *faces = cadmpeg_ir::features::FaceSelection::Native(compact_surface_selection_value(
-                &selection.local_component_ids,
+                &selection.components,
             ));
         }
     }
@@ -5167,7 +5211,10 @@ fn compact_single_face_reference_at(payload: &[u8], marker: usize) -> bool {
     compact_single_face_reference_path_at(payload, marker).is_some()
 }
 
-fn compact_single_face_reference_path_at(payload: &[u8], marker: usize) -> Option<Vec<u32>> {
+fn compact_single_face_reference_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
     let count = marker.checked_sub(12).and_then(|offset| {
         Some(u32::from_le_bytes(
             payload.get(offset..offset + 4)?.try_into().ok()?,
@@ -5182,24 +5229,26 @@ fn compact_single_face_reference_path_at(payload: &[u8], marker: usize) -> Optio
     {
         return None;
     }
-    compact_heterogeneous_edge_path(payload, marker + 18, count)
-        .map(|(ids, _)| ids)
+    compact_heterogeneous_component_path(payload, marker + 18, count)
+        .map(|(components, _)| components)
         .or_else(|| {
-            let (ids, end) = (count > 1)
-                .then(|| compact_heterogeneous_edge_path(payload, marker + 18, count - 1))
+            let (components, end) = (count > 1)
+                .then(|| compact_heterogeneous_component_path(payload, marker + 18, count - 1))
                 .flatten()?;
             (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
-                .then_some(ids)
+                .then_some(components)
         })
 }
 
-pub(crate) fn compact_surface_selection_value(ids: &[u32]) -> String {
+pub(crate) fn compact_surface_selection_value(
+    components: &[FeatureInputComponentPathEntry],
+) -> String {
     let mut value = String::from("sldprt:feature-input:surface-component-ids:");
-    for (index, id) in ids.iter().enumerate() {
+    for (index, component) in components.iter().enumerate() {
         if index != 0 {
             value.push(',');
         }
-        write!(&mut value, "{id}").expect("writing to String cannot fail");
+        write!(&mut value, "{}", component.local_id).expect("writing to String cannot fail");
     }
     value
 }

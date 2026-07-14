@@ -278,8 +278,20 @@ pub struct FeatureInputSurfaceSelection {
     pub object_name_ref: String,
     /// Native history feature owning this selection.
     pub feature_ref: String,
-    /// Ordered feature-local component identifiers in the surface-body reference.
-    pub local_component_ids: Vec<u32>,
+    /// Ordered typed entries in the persistent surface-component path.
+    #[serde(default)]
+    pub components: Vec<FeatureInputComponentPathEntry>,
+}
+
+/// One typed node in a persistent feature-input component path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputComponentPathEntry {
+    /// Serialized component instance tag.
+    pub instance: u16,
+    /// Twelve-byte serialized component type identity.
+    pub type_signature: [u8; 12],
+    /// Feature-local identifier carried by this path node.
+    pub local_id: u32,
 }
 
 /// A declared sketch-relation family and its attached scalar record.

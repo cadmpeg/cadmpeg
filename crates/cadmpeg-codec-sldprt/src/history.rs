@@ -3500,10 +3500,9 @@ fn validate_compact_surface_selection_edits(
             } => face,
             _ => continue,
         };
-        let expected =
-            FaceSelection::Native(crate::resolved_features::compact_surface_selection_value(
-                &selection.local_component_ids,
-            ));
+        let expected = FaceSelection::Native(
+            crate::resolved_features::compact_surface_selection_value(&selection.components),
+        );
         if faces != &expected {
             return Err(CodecError::NotImplemented(format!(
                 "SLDPRT feature {} changes a compact surface selection",
