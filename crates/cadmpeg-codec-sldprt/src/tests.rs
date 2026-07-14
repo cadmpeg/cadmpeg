@@ -5446,6 +5446,8 @@ fn sphere_patch_gets_degenerate_meridian_seam() {
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
     assert_eq!(result.ir.model.edges.len(), 4);
+    assert_eq!(result.ir.model.vertices.len(), 3);
+    assert_eq!(result.ir.model.points.len(), 3);
     assert_eq!(result.ir.model.loops[0].coedges.len(), 4);
     assert_eq!(result.ir.model.pcurves.len(), 4);
     let pole = result

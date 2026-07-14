@@ -10,7 +10,7 @@ The schema-33103 sheet discriminator is unresolved. `0x1d/flo2` belongs to the f
 
 - The derived UV convention for non-isoparametric trims on B-spline faces is unresolved.
 - The carriers for offset, swept, blended, intersection, and spline-on-surface geometry are unresolved.
-- The stored topology convention for periodic cylinder and sphere seams is unresolved.
+- The stored topology convention for periodic cylinder seams is unresolved.
 - The relation between bridge/coedge orientation markers and a closed shell's global orientation is unresolved.
 
 ## Container metadata

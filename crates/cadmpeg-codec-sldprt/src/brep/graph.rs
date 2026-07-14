@@ -2596,6 +2596,16 @@ fn synthesize_sphere_seams(
         .collect();
     let edges: HashMap<_, _> = out.edges.iter().map(|edge| (&edge.id, edge)).collect();
     let curves: HashMap<_, _> = out.curves.iter().map(|curve| (&curve.id, curve)).collect();
+    let vertex_points = out
+        .vertices
+        .iter()
+        .filter_map(|vertex| {
+            out.points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .map(|point| (&vertex.id, point.position))
+        })
+        .collect::<HashMap<_, _>>();
     let mut candidates = Vec::new();
     for face in &out.faces {
         let Some(surface) = surfaces.get(&face.surface) else {
@@ -2628,13 +2638,38 @@ fn synthesize_sphere_seams(
             continue;
         };
         if all_circles {
+            let seam_point = cadmpeg_ir::math::Point3::new(
+                center.x + radius * axis.x,
+                center.y + radius * axis.y,
+                center.z + radius * axis.z,
+            );
+            let mut pole_vertices = lp
+                .coedges
+                .iter()
+                .filter_map(|id| coedges.get(id))
+                .filter_map(|coedge| edges.get(&coedge.edge))
+                .flat_map(|edge| [&edge.start, &edge.end])
+                .filter(|vertex| {
+                    vertex_points.get(vertex).is_some_and(|point| {
+                        let dx = point.x - seam_point.x;
+                        let dy = point.y - seam_point.y;
+                        let dz = point.z - seam_point.z;
+                        dx * dx + dy * dy + dz * dz <= 1e-12
+                    })
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            pole_vertices.sort_by(|left, right| left.0.cmp(&right.0));
+            pole_vertices.dedup();
+            let [pole_vertex] = pole_vertices.as_slice() else {
+                continue;
+            };
             candidates.push((
                 face.id.clone(),
                 lp.id.clone(),
                 lp.coedges.clone(),
-                center,
-                radius,
-                axis,
+                seam_point,
+                pole_vertex.clone(),
             ));
         }
     }
@@ -2644,51 +2679,28 @@ fn synthesize_sphere_seams(
         .enumerate()
         .map(|(index, coedge)| (coedge.id.clone(), index))
         .collect::<HashMap<_, _>>();
-    for (face, loop_id, mut ring, center, radius, axis) in candidates {
+    for (face, loop_id, mut ring, seam_point, pole_vertex) in candidates {
         let suffix = face.0.rsplit('#').next().unwrap_or("0");
-        let point_id = PointId(format!("sldprt:brep:point#sphere-seam:{suffix}"));
-        let vertex_id = VertexId(format!("sldprt:brep:vertex#sphere-seam:{suffix}"));
         let curve_id = CurveId(format!("sldprt:brep:curve#sphere-seam:{suffix}"));
         let edge_id = EdgeId(format!("sldprt:brep:edge#sphere-seam:{suffix}"));
         let coedge_id = CoedgeId(format!("sldprt:brep:coedge#sphere-seam:{suffix}"));
         let pcurve_id = PcurveId(format!("sldprt:brep:pcurve#sphere-seam:{suffix}"));
-        for id in [
-            &point_id.0,
-            &vertex_id.0,
-            &curve_id.0,
-            &edge_id.0,
-            &coedge_id.0,
-            &pcurve_id.0,
-        ] {
+        for id in [&curve_id.0, &edge_id.0, &coedge_id.0, &pcurve_id.0] {
             annotations
                 .note(id, source_stream, 0)
                 .tag("derived_sphere_seam");
             annotations.exactness(id, Exactness::Derived);
         }
-        let seam_point = cadmpeg_ir::math::Point3::new(
-            center.x + radius * axis.x,
-            center.y + radius * axis.y,
-            center.z + radius * axis.z,
-        );
-        out.points.push(Point {
-            id: point_id.clone(),
-            position: seam_point,
-        });
         out.curves.push(Curve {
             id: curve_id.clone(),
             source_object: None,
             geometry: CurveGeometry::Degenerate { point: seam_point },
         });
-        out.vertices.push(Vertex {
-            id: vertex_id.clone(),
-            point: point_id,
-            tolerance: None,
-        });
         out.edges.push(Edge {
             id: edge_id.clone(),
             curve: Some(curve_id),
-            start: vertex_id.clone(),
-            end: vertex_id,
+            start: pole_vertex.clone(),
+            end: pole_vertex,
             param_range: None,
             tolerance: None,
         });

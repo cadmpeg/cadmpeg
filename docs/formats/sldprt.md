@@ -382,7 +382,7 @@ An elliptical edge on a cylindrical face has a polar-harmonic pcurve. Its radial
 
 A coaxial circle on a circular cylinder or cone is a constant-axial-coordinate pcurve. A coaxial circle on a torus is a constant-minor-angle pcurve. The azimuth origin is the circle reference direction expressed in the surface frame; the azimuth parameter direction is positive when the circle and surface axes agree and negative when they oppose.
 
-A spherical pole-closing edge collapses to the pole `center + radius·axis`. Its spatial carrier is degenerate at that point. Its pcurve is `v = π/2` over the azimuth interval `[0, 2π]`; every parameter value maps to the same pole vertex.
+A spherical pole-closing edge collapses to the pole `center + radius·axis`. That pole is an existing boundary vertex of the three-circle patch; the seam does not add a point or vertex. Its spatial carrier is degenerate at the pole. Its pcurve is `v = π/2` over the azimuth interval `[0, 2π]`; every parameter value maps to the same pole vertex.
 
 A NURBS surface boundary that shares a complete control row, knot vector, degree, and rational weight vector with its NURBS edge curve is isoparametric. A degree-one clamped surface column with equal endpoint weights is affine; a collinear spatial line has an exact affine pcurve obtained by projecting its origin and unit direction onto that column.
 
