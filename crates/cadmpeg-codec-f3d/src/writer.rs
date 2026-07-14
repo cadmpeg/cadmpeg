@@ -1808,7 +1808,13 @@ fn encode_design_metastream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
 
     let mut out = Vec::new();
     for object in &native.design_objects {
-        native_lp_ascii(&mut out, design_object_kind_name(&object.kind))?;
+        let kind_name = design_object_kind_name(&object.kind);
+        if kind_name.is_empty() || crate::design::is_guid(kind_name) {
+            return Err(CodecError::Malformed(format!(
+                "Design object class is empty or GUID-shaped: {kind_name}"
+            )));
+        }
+        native_lp_ascii(&mut out, kind_name)?;
         let count = u32::try_from(object.entity_ids.len()).map_err(|_| {
             CodecError::Malformed("Design object owns more than u32::MAX entities".into())
         })?;

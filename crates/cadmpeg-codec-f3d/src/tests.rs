@@ -6902,6 +6902,17 @@ fn generated_source_less_writes_design_object_metastream() {
     F3dCodec
         .encode(&source_less, &mut encoded)
         .expect("source-less Design MetaStream encode");
+    for invalid in ["", "11111111-2222-3333-4444-555555555555"] {
+        let mut invalid_kind = source_less.clone();
+        f3d_native_mut(&mut invalid_kind).design_objects[2].kind =
+            DesignObjectKind::Other(invalid.into());
+        let error = F3dCodec
+            .encode(&invalid_kind, &mut Vec::new())
+            .expect_err("invalid Design object class must not be emitted");
+        assert!(error
+            .to_string()
+            .contains("Design object class is empty or GUID-shaped"));
+    }
     f3d_native_mut(&mut source_less).design_objects[0].parent_guid =
         Some("22222222-3333-4444-5555-666666666666".into());
     let error = F3dCodec

@@ -7932,7 +7932,7 @@ fn lp_utf16(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
     utf16le_at(bytes, offset.checked_add(4)?, length)
 }
 
-fn is_guid(value: &str) -> bool {
+pub(crate) fn is_guid(value: &str) -> bool {
     matches!(value.len(), 36..=38)
         && value
             .bytes()
