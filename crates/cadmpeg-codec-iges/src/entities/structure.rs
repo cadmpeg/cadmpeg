@@ -4,7 +4,7 @@
 use super::geometry::{entity_loss, resolve_transform, Projection};
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
-use crate::parameter::{ParameterRecord, TokenValue};
+use crate::parameter::{trailing_pointer_groups, ParameterRecord, TokenValue};
 use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -132,48 +132,8 @@ fn has_association_back_pointer(
     group_sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    (1..record.tokens.len()).any(|association_count_index| {
-        let Some(association_count) = record
-            .integer(association_count_index)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
-            return false;
-        };
-        let association_start = association_count_index + 1;
-        let property_count_index = association_start + association_count;
-        let Some(property_count) = record
-            .integer(property_count_index)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
-            return false;
-        };
-        if property_count_index + 1 + property_count != record.tokens.len() {
-            return false;
-        }
-        let associations = (0..association_count)
-            .map(|index| record.integer(association_start + index))
-            .collect::<Option<Vec<_>>>();
-        let properties_valid = (0..property_count).all(|index| {
-            record
-                .integer(property_count_index + 1 + index)
-                .and_then(|value| u32::try_from(value).ok())
-                .and_then(|sequence| entries.get(&sequence))
-                .is_some_and(|target| matches!(target.entity_type, 322 | 406 | 422))
-        });
-        properties_valid
-            && associations.is_some_and(|associations| {
-                associations
-                    .iter()
-                    .any(|value| *value == i64::from(group_sequence))
-                    && associations.iter().all(|value| {
-                        u32::try_from(*value)
-                            .ok()
-                            .and_then(|sequence| entries.get(&sequence))
-                            .is_some_and(|target| matches!(target.entity_type, 212 | 312 | 402))
-                    })
-            })
-    })
+    trailing_pointer_groups(record, entries)
+        .is_some_and(|groups| groups.associations.contains(&group_sequence))
 }
 
 fn has_property_pointer(
@@ -181,45 +141,8 @@ fn has_property_pointer(
     property_sequence: u32,
     entries: &BTreeMap<u32, &DirectoryEntry>,
 ) -> bool {
-    (1..record.tokens.len()).any(|association_count_index| {
-        let Some(association_count) = record
-            .integer(association_count_index)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
-            return false;
-        };
-        let association_start = association_count_index + 1;
-        let property_count_index = association_start + association_count;
-        let Some(property_count) = record
-            .integer(property_count_index)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
-            return false;
-        };
-        if property_count_index + 1 + property_count != record.tokens.len() {
-            return false;
-        }
-        let associations_valid = (0..association_count).all(|index| {
-            record
-                .integer(association_start + index)
-                .and_then(|value| u32::try_from(value).ok())
-                .and_then(|sequence| entries.get(&sequence))
-                .is_some_and(|target| matches!(target.entity_type, 212 | 312 | 402))
-        });
-        associations_valid
-            && (0..property_count).all(|index| {
-                record
-                    .integer(property_count_index + 1 + index)
-                    .and_then(|value| u32::try_from(value).ok())
-                    .and_then(|sequence| entries.get(&sequence))
-                    .is_some_and(|target| matches!(target.entity_type, 322 | 406 | 422))
-            })
-            && (0..property_count).any(|index| {
-                record.integer(property_count_index + 1 + index)
-                    == Some(i64::from(property_sequence))
-            })
-    })
+    trailing_pointer_groups(record, entries)
+        .is_some_and(|groups| groups.properties.contains(&property_sequence))
 }
 
 fn attribute_value_valid(

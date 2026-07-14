@@ -6,7 +6,7 @@ use crate::directory::DirectoryEntry;
 use crate::entities::geometry::{resolve_transform, Affine};
 use crate::global::Global;
 use crate::graph::ReferenceEdge;
-use crate::parameter::{ParameterRecord, Token, TokenValue};
+use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::CadIr;
 use serde::Serialize;
@@ -412,6 +412,8 @@ pub(crate) struct NativeEntity {
     parameter_line_end: Option<u32>,
     parameter_bytes: Vec<u8>,
     parameters: Vec<NativeToken>,
+    association_links: Vec<String>,
+    property_links: Vec<String>,
     comment: Vec<u8>,
     links: Vec<String>,
     references: Vec<ReferenceEdge>,
@@ -428,29 +430,6 @@ fn token(token: &Token) -> NativeToken {
             TokenValue::String(value) => NativeTokenValue::String(value.clone()),
         },
     }
-}
-
-fn record_has_property_pointer(record: &ParameterRecord, property_sequence: u32) -> bool {
-    (1..record.tokens.len()).any(|association_count_index| {
-        let Some(association_count) = record
-            .integer(association_count_index)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
-            return false;
-        };
-        let property_count_index = association_count_index + 1 + association_count;
-        let Some(property_count) = record
-            .integer(property_count_index)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
-            return false;
-        };
-        property_count_index + 1 + property_count == record.tokens.len()
-            && (0..property_count).any(|index| {
-                record.integer(property_count_index + 1 + index)
-                    == Some(i64::from(property_sequence))
-            })
-    })
 }
 
 fn model_id_directory_sequence(id: &str, prefix: &str) -> Option<u32> {
@@ -654,6 +633,7 @@ pub(crate) fn store(
         .iter()
         .map(|entry| {
             let parameters = by_directory.get(&entry.sequence).copied();
+            let trailing = parameters.and_then(|record| trailing_pointer_groups(record, &entries));
             NativeEntity {
                 id: format!("iges:entity:directory#{}", entry.sequence),
                 directory_sequence: entry.sequence,
@@ -684,6 +664,18 @@ pub(crate) fn store(
                 parameters: parameters
                     .into_iter()
                     .flat_map(|record| record.tokens.iter().map(token))
+                    .collect(),
+                association_links: trailing
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|groups| groups.associations.iter())
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
+                    .collect(),
+                property_links: trailing
+                    .as_ref()
+                    .into_iter()
+                    .flat_map(|groups| groups.properties.iter())
+                    .map(|sequence| format!("iges:entity:directory#{sequence}"))
                     .collect(),
                 comment: parameters
                     .map(|record| record.comment.clone())
@@ -1555,7 +1547,8 @@ pub(crate) fn store(
                     .iter()
                     .filter(|(sequence, owner_record)| {
                         **sequence != entry.sequence
-                            && record_has_property_pointer(owner_record, entry.sequence)
+                            && trailing_pointer_groups(owner_record, &entries)
+                                .is_some_and(|groups| groups.properties.contains(&entry.sequence))
                     })
                     .map(|(sequence, _)| format!("iges:entity:directory#{sequence}"))
                     .collect(),

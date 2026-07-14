@@ -3597,6 +3597,15 @@ fn decode_preserves_group_order_and_back_pointer_policy() {
     assert_eq!(groups[0].fields["members"][0], "iges:entity:directory#1");
     assert_eq!(groups[1].fields["ordered"], false);
     assert_eq!(groups[1].fields["back_pointers_required"], false);
+    let entities = &result.ir.native.namespace("iges").unwrap().arenas["entities"];
+    assert_eq!(
+        entities[0].fields["association_links"][0],
+        "iges:entity:directory#3"
+    );
+    assert!(entities[0].fields["property_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",
@@ -3685,6 +3694,13 @@ fn decode_links_product_names_and_reference_designators_to_owners() {
     assert_eq!(properties[1].fields["property_kind"], "name");
     assert_eq!(properties[1].fields["value"][0], 66);
     assert_eq!(properties[1].fields["owners"][0], "iges:entity:directory#1");
+    let owner = &result.ir.native.namespace("iges").unwrap().arenas["entities"][0];
+    assert!(owner.fields["association_links"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(owner.fields["property_links"][0], "iges:entity:directory#3");
+    assert_eq!(owner.fields["property_links"][1], "iges:entity:directory#5");
     assert!(
         result.report.losses.is_empty(),
         "{:#?}",

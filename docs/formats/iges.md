@@ -92,6 +92,8 @@ Type 422 instances reference a Type 322 Form 0 definition through the negated Di
 
 Type 406 Form 7 attaches one nonempty reference-designator string to component entities through their second trailing pointer group. It is not attached to Type 420 because that entity carries its primary reference designator directly. Type 406 Form 15 attaches one nonempty user-defined name to entities without an intrinsic parameter-data name. A subordinate property has at least one owner pointer; an independent property applies by its Directory level. The `product_properties` arena retains property identity, kind, raw string bytes, and every explicit owner identity.
 
+Every entity may append two counted pointer groups after its entity-specific parameters. The first contains Type 402 associativity, Type 212 general-note, or Type 312 text-display-template pointers. The second contains Type 406 property, Type 322 attribute-table definition, or Type 422 attribute-table instance pointers. A present suffix consumes the complete remaining token sequence and contains at least one pointer; each count and odd Directory pointer is validated before the suffix is typed. The native entity's `association_links` and `property_links` preserve group membership and pointer order independently from Directory references. The complete original token sequence remains in `parameters`.
+
 ## Topology
 
 Manifold solid B-rep entities preserve source vertex, edge, loop, face, shell, and solid identity. Edge uses reference shared edge identity; loop orientation and face same-sense fields determine coedge and face orientation. Void shells remain distinct from the exterior shell.

@@ -34,6 +34,13 @@ pub(crate) struct ParameterRecord {
     pub(crate) comment: Vec<u8>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct TrailingPointerGroups {
+    pub(crate) token_start: usize,
+    pub(crate) associations: Vec<u32>,
+    pub(crate) properties: Vec<u32>,
+}
+
 impl ParameterRecord {
     pub(crate) fn integer(&self, index: usize) -> Option<i64> {
         match self.tokens.get(index).map(|token| &token.value)? {
@@ -56,6 +63,64 @@ impl ParameterRecord {
             TokenValue::Omitted | TokenValue::Integer(_) | TokenValue::Real(_) => None,
         }
     }
+}
+
+pub(crate) fn trailing_pointer_groups(
+    record: &ParameterRecord,
+    directory: &BTreeMap<u32, &DirectoryEntry>,
+) -> Option<TrailingPointerGroups> {
+    (1..record.tokens.len())
+        .filter_map(|association_count_index| {
+            let association_count = record
+                .integer(association_count_index)
+                .and_then(|value| usize::try_from(value).ok())?;
+            let association_start = association_count_index.checked_add(1)?;
+            let property_count_index = association_start.checked_add(association_count)?;
+            let property_count = record
+                .integer(property_count_index)
+                .and_then(|value| usize::try_from(value).ok())?;
+            if association_count == 0 && property_count == 0 {
+                return None;
+            }
+            let end = property_count_index
+                .checked_add(1)?
+                .checked_add(property_count)?;
+            if end != record.tokens.len() {
+                return None;
+            }
+            let associations = (0..association_count)
+                .map(|index| {
+                    record
+                        .integer(association_start + index)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .filter(|sequence| sequence % 2 == 1)
+                        .filter(|sequence| {
+                            directory
+                                .get(sequence)
+                                .is_some_and(|entry| matches!(entry.entity_type, 212 | 312 | 402))
+                        })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let properties = (0..property_count)
+                .map(|index| {
+                    record
+                        .integer(property_count_index + 1 + index)
+                        .and_then(|value| u32::try_from(value).ok())
+                        .filter(|sequence| sequence % 2 == 1)
+                        .filter(|sequence| {
+                            directory
+                                .get(sequence)
+                                .is_some_and(|entry| matches!(entry.entity_type, 322 | 406 | 422))
+                        })
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(TrailingPointerGroups {
+                token_start: association_count_index,
+                associations,
+                properties,
+            })
+        })
+        .min_by_key(|groups| groups.token_start)
 }
 
 fn malformed(sequence: u32, message: impl Into<String>) -> CodecError {
