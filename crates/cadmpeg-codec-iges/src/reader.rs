@@ -68,7 +68,7 @@ pub(crate) fn decode(
     } else {
         entities::geometry::project_geometry(&mut ir, &directory, &parameters, &global)
     };
-    native::store(
+    let product_occurrences_truncated = native::store(
         &mut ir,
         &scan,
         &directory,
@@ -81,6 +81,14 @@ pub(crate) fn decode(
 
     let geometry_transferred = !projection.decoded.is_empty();
     let mut losses = projection.losses;
+    if product_occurrences_truncated {
+        losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: "IGES product occurrence expansion reached its configured output limit".into(),
+            provenance: None,
+        });
+    }
     if !options.container_only {
         losses.extend(
             directory

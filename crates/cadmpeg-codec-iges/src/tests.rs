@@ -3591,6 +3591,24 @@ fn nested_subfigure_file() -> Vec<u8> {
     ])
 }
 
+fn occurrence_limit_file() -> Vec<u8> {
+    let mut entities = vec![OwnedTestEntity {
+        entity_type: 308,
+        form: 0,
+        label: "EMPTYDEF".into(),
+        status: "00000200",
+        parameters: "308,0,8HEMPTYDEF,0;".into(),
+    }];
+    entities.extend((0..101).map(|_| OwnedTestEntity {
+        entity_type: 408,
+        form: 0,
+        label: "INSTANCE".into(),
+        status: "00000000",
+        parameters: "408,1,0,0,0,1;".into(),
+    }));
+    owned_test_file(&entities)
+}
+
 fn invalid_subfigure_depth_file() -> Vec<u8> {
     owned_test_file(&[
         OwnedTestEntity {
@@ -5846,6 +5864,26 @@ fn decode_preserves_nested_subfigure_definitions_and_instances() {
         "{:#?}",
         result.report.losses
     );
+}
+
+#[test]
+fn decode_bounds_product_occurrence_expansion_with_a_named_loss() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(occurrence_limit_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let native = result.ir.native.namespace("iges").unwrap();
+
+    assert_eq!(native.arenas["product_occurrences"].len(), 100);
+    let expansion = &native.arenas["product_occurrence_expansion"][0];
+    assert_eq!(expansion.fields["limit"], 100);
+    assert_eq!(expansion.fields["emitted"], 100);
+    assert_eq!(expansion.fields["truncated"], true);
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.message == "IGES product occurrence expansion reached its configured output limit"
+    }));
 }
 
 #[test]

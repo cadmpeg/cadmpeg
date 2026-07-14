@@ -12,6 +12,11 @@ use cadmpeg_ir::{ByteLedger, ByteSpanClass, CadIr};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+#[cfg(not(test))]
+const MAX_PRODUCT_OCCURRENCES: usize = 100_000;
+#[cfg(test)]
+const MAX_PRODUCT_OCCURRENCES: usize = 100;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct NativeCard {
     id: String,
@@ -750,6 +755,14 @@ struct NativeProductOccurrence {
     world_transform: [[f64; 4]; 3],
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+struct NativeProductOccurrenceExpansion {
+    id: String,
+    limit: usize,
+    emitted: usize,
+    truncated: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize)]
 struct NativeView {
     id: String,
@@ -1125,15 +1138,18 @@ impl OccurrenceExpansion<'_> {
         parent: Affine,
         path: &mut Vec<u32>,
         occurrences: &mut Vec<NativeProductOccurrence>,
-    ) {
+    ) -> bool {
+        if occurrences.len() >= MAX_PRODUCT_OCCURRENCES {
+            return true;
+        }
         if path.len() >= 64 || path.contains(&instance_sequence) {
-            return;
+            return false;
         }
         let (Some(instance), Some(record)) = (
             self.entries.get(&instance_sequence).copied(),
             self.records.get(&instance_sequence).copied(),
         ) else {
-            return;
+            return false;
         };
         let Some((definition_sequence, local)) = placement_affine(
             instance,
@@ -1142,10 +1158,10 @@ impl OccurrenceExpansion<'_> {
             self.records,
             self.length_factor,
         ) else {
-            return;
+            return false;
         };
         let Some(definition) = self.definitions.get(&definition_sequence) else {
-            return;
+            return false;
         };
         let world = parent.compose(local);
         path.push(instance_sequence);
@@ -1169,12 +1185,19 @@ impl OccurrenceExpansion<'_> {
             world_transform: world.rows,
         });
         for member in &definition.members {
+            if occurrences.len() >= MAX_PRODUCT_OCCURRENCES {
+                path.pop();
+                return true;
+            }
             if self
                 .entries
                 .get(member)
                 .is_some_and(|entry| matches!(entry.entity_type, 408 | 420))
             {
-                self.expand(*member, world, path, occurrences);
+                if self.expand(*member, world, path, occurrences) {
+                    path.pop();
+                    return true;
+                }
                 continue;
             }
             let member_local = self
@@ -1203,6 +1226,7 @@ impl OccurrenceExpansion<'_> {
             });
         }
         path.pop();
+        false
     }
 }
 
@@ -1214,7 +1238,7 @@ pub(crate) fn store(
     references: &BTreeMap<u32, Vec<ReferenceEdge>>,
     global: &Global,
     byte_ledger: &ByteLedger,
-) -> Result<(), CodecError> {
+) -> Result<bool, CodecError> {
     let cards = scan
         .lines
         .iter()
@@ -3489,6 +3513,7 @@ pub(crate) fn store(
         }
     }
     let mut product_occurrences = Vec::new();
+    let mut product_occurrences_truncated = false;
     if let Some(length_factor) = global.length_factor_mm() {
         let expansion = OccurrenceExpansion {
             entries: &entries,
@@ -3502,14 +3527,23 @@ pub(crate) fn store(
                 && entry.form == 0
                 && !contained_instances.contains(&entry.sequence)
         }) {
-            expansion.expand(
+            if expansion.expand(
                 root.sequence,
                 Affine::IDENTITY,
                 &mut Vec::new(),
                 &mut product_occurrences,
-            );
+            ) {
+                product_occurrences_truncated = true;
+                break;
+            }
         }
     }
+    let product_occurrence_expansion = [NativeProductOccurrenceExpansion {
+        id: "iges:product:occurrence-expansion#state".into(),
+        limit: MAX_PRODUCT_OCCURRENCES,
+        emitted: product_occurrences.len(),
+        truncated: product_occurrences_truncated,
+    }];
     let namespace = ir.native.namespace_mut("iges");
     namespace.version = 2;
     namespace.set_arena("cards", &cards)?;
@@ -3551,5 +3585,9 @@ pub(crate) fn store(
     namespace.set_arena("drawings", &drawings)?;
     namespace.set_arena("annotations", &annotations)?;
     namespace.set_arena("product_occurrences", &product_occurrences)?;
-    Ok(())
+    namespace.set_arena(
+        "product_occurrence_expansion",
+        &product_occurrence_expansion,
+    )?;
+    Ok(product_occurrences_truncated)
 }
