@@ -4240,7 +4240,7 @@ pub fn direction_bytes(rows: &[FeatureRow]) -> Vec<FeatureDirectionByte> {
 
 fn definitions_in_ranges(
     payload: &[u8],
-    starts: &[(usize, u32, Option<u32>)],
+    starts: &[(usize, u32, Option<u32>, bool)],
 ) -> Vec<FeatureDefinition> {
     let cache = scalar::ScalarCache::from_section(payload);
     let mut result = Vec::new();
@@ -4250,10 +4250,10 @@ fn definitions_in_ranges(
     let mut replay_trim_entity_classes = None;
     let mut replay_trim_vertex_classes = None;
     let mut replay_order_class = None;
-    for (index, &(start, id, owner_override)) in starts.iter().enumerate() {
+    for (index, &(start, id, owner_override, positional)) in starts.iter().enumerate() {
         let end = starts
             .get(index + 1)
-            .map_or(payload.len(), |&(offset, _, _)| offset);
+            .map_or(payload.len(), |&(offset, _, _, _)| offset);
         let mut parameter_frames = Vec::new();
         for &(label, kind) in &[
             (
@@ -4326,18 +4326,23 @@ fn definitions_in_ranges(
         }
         outlines.sort_by_key(|outline| outline.offset);
         let variables = variable_table(payload, start, end, &cache).or_else(|| {
-            owner_override.and_then(|_| {
-                positional_variable_table(payload, start, end, replay_variable_class?, &cache)
-            })
+            positional
+                .then(|| {
+                    positional_variable_table(payload, start, end, replay_variable_class?, &cache)
+                })
+                .flatten()
         });
-        if owner_override.is_none() {
+        if !positional {
             replay_variable_class = variables.as_ref().and_then(|table| table.entity_ref);
         }
-        let segments = segment_table(payload, start, end)
-            .or_else(|| owner_override.and_then(|_| positional_segment_table(payload, start, end)));
+        let segments = segment_table(payload, start, end).or_else(|| {
+            positional
+                .then(|| positional_segment_table(payload, start, end))
+                .flatten()
+        });
         let trim_entities =
             trim_entity_table(payload, start, end, segments.as_ref()).or_else(|| {
-                owner_override.and_then(|_| {
+                if positional {
                     let (table_class, entry_class) = replay_trim_entity_classes?;
                     positional_trim_entity_table(
                         payload,
@@ -4348,9 +4353,11 @@ fn definitions_in_ranges(
                         replay_trim_vertex_classes.map(|(class, _)| class),
                         segments.as_ref(),
                     )
-                })
+                } else {
+                    None
+                }
             });
-        if owner_override.is_none() {
+        if !positional {
             replay_trim_entity_classes = trim_table_classes(payload, b"ent_tab\0", start, end);
         }
         let trim_vertices = trim_vertex_table(
@@ -4362,7 +4369,7 @@ fn definitions_in_ranges(
             variables.as_ref(),
         )
         .or_else(|| {
-            owner_override.and_then(|_| {
+            if positional {
                 let (table_class, entry_class) = replay_trim_vertex_classes?;
                 positional_trim_vertex_table(
                     payload,
@@ -4373,34 +4380,42 @@ fn definitions_in_ranges(
                     segments.as_ref(),
                     variables.as_ref(),
                 )
-            })
+            } else {
+                None
+            }
         });
-        if owner_override.is_none() {
+        if !positional {
             replay_trim_vertex_classes = trim_table_classes(payload, b"vert_tab\0", start, end);
         }
         let order_table = order_table(payload, start, end).or_else(|| {
-            owner_override
-                .and_then(|_| positional_order_table(payload, start, end, replay_order_class?))
+            positional
+                .then(|| positional_order_table(payload, start, end, replay_order_class?))
+                .flatten()
         });
-        if owner_override.is_none() {
+        if !positional {
             replay_order_class = order_table.as_ref().and_then(|table| table.entity_ref);
         }
-        let section_3d = section_3d(payload, start, end)
-            .or_else(|| owner_override.and_then(|_| positional_section_3d(payload, start, end)));
-        let dimensions = dimension_table(payload, start, end, &cache).or_else(|| {
-            owner_override.and_then(|_| {
-                positional_dimension_table(payload, start, end, replay_dimension_class?, &cache)
-            })
+        let section_3d = section_3d(payload, start, end).or_else(|| {
+            positional
+                .then(|| positional_section_3d(payload, start, end))
+                .flatten()
         });
-        if owner_override.is_none() {
+        let dimensions = dimension_table(payload, start, end, &cache).or_else(|| {
+            positional
+                .then(|| {
+                    positional_dimension_table(payload, start, end, replay_dimension_class?, &cache)
+                })
+                .flatten()
+        });
+        if !positional {
             replay_dimension_class = dimensions.as_ref().and_then(|table| table.entity_ref);
         }
         let relations = relation_table(payload, start, end).or_else(|| {
-            owner_override.and_then(|_| {
-                positional_relation_table(payload, start, end, replay_relation_class?)
-            })
+            positional
+                .then(|| positional_relation_table(payload, start, end, replay_relation_class?))
+                .flatten()
         });
-        if owner_override.is_none() {
+        if !positional {
             replay_relation_class = relations.as_ref().and_then(|table| table.entity_ref);
         }
         let saved_section = saved_section(
@@ -4412,7 +4427,7 @@ fn definitions_in_ranges(
             segments.as_ref(),
         )
         .or_else(|| {
-            owner_override.and_then(|_| {
+            if positional {
                 positional_saved_section(
                     payload,
                     start,
@@ -4421,7 +4436,9 @@ fn definitions_in_ranges(
                     order_table.as_ref(),
                     segments.as_ref(),
                 )
-            })
+            } else {
+                None
+            }
         });
         let owner_feature_id = owner_override.or_else(|| {
             let ids = contextual_references(payload, start, end, b"feat_id", b"gsec2d_ptr")
@@ -4482,7 +4499,7 @@ fn contextual_references(
 
 /// Decode `FeatDefs` feature-definition records and their `f9 04 03`
 /// definition-space parameter frames.
-pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+fn definition_starts(payload: &[u8]) -> Vec<(usize, u32, Option<u32>, bool)> {
     const PREFIX: &[u8] = b"feat_defs_";
     let mut starts = Vec::new();
     for offset in 0..payload.len() {
@@ -4500,23 +4517,84 @@ pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
         let Ok(id) = String::from_utf8_lossy(digits).parse::<u32>() else {
             continue;
         };
-        starts.push((offset, id, None));
+        starts.push((offset, id, None, false));
     }
-    starts.sort_unstable_by_key(|&(offset, _, _)| offset);
+    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     let labeled_starts = starts.clone();
-    for (index, &(start, _, _)) in labeled_starts.iter().enumerate() {
+    for (index, &(start, _, _, _)) in labeled_starts.iter().enumerate() {
         let end = labeled_starts
             .get(index + 1)
-            .map_or(payload.len(), |&(offset, _, _)| offset);
+            .map_or(payload.len(), |&(offset, _, _, _)| offset);
         for (offset, owner) in
             contextual_references(payload, start, end, b"feat_id", b"ref_model_info")
         {
-            starts.push((offset, owner, Some(owner)));
+            starts.push((offset, owner, Some(owner), true));
         }
     }
-    starts.sort_unstable_by_key(|&(offset, _, _)| offset);
+    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
+    starts.dedup_by_key(|entry| entry.0);
+    starts
+}
+
+/// Decode `FeatDefs` feature-definition records and their `f9 04 03`
+/// definition-space parameter frames.
+pub fn definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+    let starts = definition_starts(payload);
+    definitions_in_ranges(payload, &starts)
+}
+
+fn s2d_replay_starts(payload: &[u8]) -> Vec<usize> {
+    const PREFIX: &[u8] = b"\xe3S2D";
+    payload
+        .windows(PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, window)| {
+            if window != PREFIX {
+                return None;
+            }
+            let suffix = payload.get(offset + PREFIX.len()..)?;
+            let nul = suffix.iter().take(12).position(|byte| *byte == 0)?;
+            (nul > 0 && suffix[..nul].iter().all(u8::is_ascii_digit)).then_some(offset)
+        })
+        .collect()
+}
+
+/// Decode unlabeled positional `S2D` replay instances without assigning an
+/// owner. Callers must retain only instances with an independently proven
+/// owner.
+pub fn positional_replay_definitions(payload: &[u8]) -> Vec<FeatureDefinition> {
+    let mut starts = definition_starts(payload);
+    let replay_markers = s2d_replay_starts(payload);
+    let claimed_markers = starts
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, _, _, positional))| *positional)
+        .filter_map(|(index, (start, _, _, _))| {
+            let end = starts
+                .get(index + 1)
+                .map_or(payload.len(), |(offset, _, _, _)| *offset);
+            replay_markers
+                .iter()
+                .copied()
+                .find(|marker| marker >= start && *marker < end)
+        })
+        .collect::<BTreeSet<_>>();
+    let pending_offsets = replay_markers
+        .into_iter()
+        .filter(|offset| !claimed_markers.contains(offset))
+        .collect::<BTreeSet<_>>();
+    starts.extend(
+        pending_offsets
+            .iter()
+            .copied()
+            .map(|offset| (offset, 0, None, true)),
+    );
+    starts.sort_unstable_by_key(|&(offset, _, _, _)| offset);
     starts.dedup_by_key(|entry| entry.0);
     definitions_in_ranges(payload, &starts)
+        .into_iter()
+        .filter(|definition| pending_offsets.contains(&definition.offset))
+        .collect()
 }
 
 /// Decode one standalone DEPDB `gsec2d_ptr` section whose owner is established
@@ -4551,7 +4629,7 @@ pub fn depdb_section_definition(
         find_bytes(payload, PREFIX, *start + GSEC.len(), payload.len()).unwrap_or(payload.len());
     definitions_in_ranges(
         &payload[..end],
-        &[(*start, section_id, Some(owner_feature_id))],
+        &[(*start, section_id, Some(owner_feature_id), true)],
     )
     .pop()
 }
@@ -4587,6 +4665,66 @@ pub fn bind_definition_owners(
         if let [owner] = owners.into_iter().collect::<Vec<_>>().as_slice() {
             definition.owner_feature_id = Some(*owner);
         }
+    }
+}
+
+/// Bind unlabeled positional definitions through exact section-entity IDs in
+/// the owning generated-entity table. Empty and non-unique joins remain
+/// unbound.
+pub fn bind_replay_definition_owners(
+    definitions: &mut [FeatureDefinition],
+    entity_tables: &[FeatureEntityTable],
+    claimed_owner_ids: &BTreeSet<u32>,
+) {
+    let candidates = definitions
+        .iter()
+        .map(|definition| {
+            let external_ids = definition
+                .order_table
+                .as_ref()
+                .map(|table| {
+                    table
+                        .rows
+                        .iter()
+                        .map(|row| row.external_id)
+                        .collect::<BTreeSet<_>>()
+                })
+                .unwrap_or_default();
+            if definition.owner_feature_id.is_some() || external_ids.is_empty() {
+                return BTreeSet::new();
+            }
+            entity_tables
+                .iter()
+                .filter_map(|table| {
+                    let owner = table.feature_id?;
+                    if claimed_owner_ids.contains(&owner) {
+                        return None;
+                    }
+                    let source_ids = table
+                        .entries
+                        .iter()
+                        .filter_map(|entry| entry.source_entity_id)
+                        .collect::<BTreeSet<_>>();
+                    (!source_ids.is_empty() && source_ids.is_subset(&external_ids)).then_some(owner)
+                })
+                .collect::<BTreeSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut owner_candidate_counts = BTreeMap::new();
+    for owner in candidates.iter().flat_map(|owners| owners.iter()) {
+        *owner_candidate_counts.entry(*owner).or_insert(0usize) += 1;
+    }
+    for (definition, owners) in definitions.iter_mut().zip(candidates) {
+        let Some(owner) = owners
+            .first()
+            .copied()
+            .filter(|_| owners.len() == 1)
+            .filter(|owner| owner_candidate_counts.get(owner) == Some(&1))
+        else {
+            continue;
+        };
+        definition.id = owner;
+        definition.owner_feature_id = Some(owner);
     }
 }
 
@@ -4821,6 +4959,130 @@ mod tests {
         );
 
         assert_eq!(definitions[0].owner_feature_id, Some(10));
+    }
+
+    fn pending_replay(external_ids: &[u32]) -> FeatureDefinition {
+        FeatureDefinition {
+            id: 0,
+            owner_feature_id: None,
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: None,
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: Some(FeatureOrderTable {
+                declared_count: external_ids.len() as u32,
+                entity_ref: Some(1),
+                rows: external_ids
+                    .iter()
+                    .enumerate()
+                    .map(|(index, external_id)| FeatureOrderRow {
+                        external_id: *external_id,
+                        internal_id: index as u32 + 1,
+                        bitmask: 0,
+                        offset: index,
+                    })
+                    .collect(),
+                offset: 0,
+            }),
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 0,
+        }
+    }
+
+    fn generated_entity_table(owner: u32, source_ids: &[u32]) -> FeatureEntityTable {
+        FeatureEntityTable {
+            feature_id: Some(owner),
+            entry_ids: Vec::new(),
+            entries: source_ids
+                .iter()
+                .enumerate()
+                .map(|(index, source_id)| FeatureEntityTableEntry {
+                    entity_id: index as u32 + 1,
+                    class_id: 200,
+                    source_entity_id: Some(*source_id),
+                    prefixed: true,
+                    offset: index,
+                    end_offset: index + 1,
+                })
+                .collect(),
+            surface_ids: Vec::new(),
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        }
+    }
+
+    #[test]
+    fn binds_replay_owner_from_unique_source_entity_subset() {
+        let mut definitions = [pending_replay(&[10, 11, 12])];
+        bind_replay_definition_owners(
+            &mut definitions,
+            &[generated_entity_table(42, &[10, 12])],
+            &BTreeSet::new(),
+        );
+
+        assert_eq!(definitions[0].id, 42);
+        assert_eq!(definitions[0].owner_feature_id, Some(42));
+    }
+
+    #[test]
+    fn withholds_replay_owner_for_empty_or_ambiguous_source_joins() {
+        let mut empty = [pending_replay(&[10])];
+        bind_replay_definition_owners(
+            &mut empty,
+            &[generated_entity_table(42, &[])],
+            &BTreeSet::new(),
+        );
+        assert_eq!(empty[0].owner_feature_id, None);
+
+        let mut ambiguous = [pending_replay(&[10, 11])];
+        bind_replay_definition_owners(
+            &mut ambiguous,
+            &[
+                generated_entity_table(42, &[10]),
+                generated_entity_table(43, &[11]),
+            ],
+            &BTreeSet::new(),
+        );
+        assert_eq!(ambiguous[0].owner_feature_id, None);
+
+        let mut repeated_owner = [pending_replay(&[10]), pending_replay(&[10, 11])];
+        bind_replay_definition_owners(
+            &mut repeated_owner,
+            &[generated_entity_table(42, &[10])],
+            &BTreeSet::new(),
+        );
+        assert!(repeated_owner
+            .iter()
+            .all(|definition| definition.owner_feature_id.is_none()));
+
+        let mut claimed = [pending_replay(&[10])];
+        bind_replay_definition_owners(
+            &mut claimed,
+            &[generated_entity_table(42, &[10])],
+            &BTreeSet::from([42]),
+        );
+        assert_eq!(claimed[0].owner_feature_id, None);
+    }
+
+    #[test]
+    fn positional_replays_exclude_the_contextually_owned_instance() {
+        let payload = b"feat_defs_917\0template\0\xe0\x01feat_id\0\x2a\
+            \xe0\x00ref_model_info\0\xe3S2D0004\0owned\
+            \xe3S2D0004\0pending";
+
+        let decoded = positional_replay_definitions(payload);
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].id, 0);
+        assert_eq!(decoded[0].owner_feature_id, None);
+        assert!(decoded[0].body.starts_with(b"\xe3S2D0004\0"));
+        assert!(decoded[0].body.ends_with(b"pending"));
     }
 
     #[test]

@@ -971,6 +971,23 @@ fn feature_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefiniti
     definitions
 }
 
+fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<FeatureDefinition> {
+    let mut definitions = Vec::new();
+    for section in sections.iter().filter(|section| section.name == "FeatDefs") {
+        let end = (section.offset + section.length).min(data.len());
+        definitions.extend(
+            feature::positional_replay_definitions(&data[section.offset..end])
+                .into_iter()
+                .map(|mut definition| {
+                    offset_feature_definition(&mut definition, section.offset);
+                    definition
+                }),
+        );
+    }
+    definitions.sort_by_key(|definition| definition.offset);
+    definitions
+}
+
 fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
     let mut records = Vec::new();
     for section in sections
@@ -1105,10 +1122,26 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     feature_affected_ids.sort_by_key(|record| record.offset);
     let feature_replay_affected_ids = feature::replay_affected_ids(&feature_rows);
     let feature_direction_bytes = feature::direction_bytes(&feature_rows);
-    let mut feature_definitions = feature_definitions(&data, &sections);
-    feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     let feature_entity_tables =
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
+    let mut feature_definitions = feature_definitions(&data, &sections);
+    feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
+    let claimed_definition_owners = feature_definitions
+        .iter()
+        .filter_map(|definition| definition.owner_feature_id)
+        .collect();
+    let mut replay_definitions = positional_replay_definitions(&data, &sections);
+    feature::bind_replay_definition_owners(
+        &mut replay_definitions,
+        &feature_entity_tables,
+        &claimed_definition_owners,
+    );
+    feature_definitions.extend(
+        replay_definitions
+            .into_iter()
+            .filter(|definition| definition.owner_feature_id.is_some()),
+    );
+    feature_definitions.sort_by_key(|definition| definition.offset);
     let feature_section_transforms = placement::resolve(
         &feature_definitions,
         &placement::PlacementSources {

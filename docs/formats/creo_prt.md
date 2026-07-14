@@ -528,6 +528,13 @@ An instantiated positional definition begins at
 is its owning modeling feature identifier. This boundary ends the preceding
 labelled template or positional instance.
 
+An unlabeled positional definition begins at `e3 S2D<digits> 00`. The next
+such boundary ends the instance. Its owner is the unique unclaimed feature
+whose nonempty class-200 source-entity identifier set is contained in the
+instance's `order_table.ext_id` set, provided that feature selects exactly one
+unlabeled instance. Definitions without this reciprocal unique join have no
+owner. Replay order does not define feature identity.
+
 `AllFeatur` edge-treatment rows are feature recipes. `strong_parents`, `geoms_affected`, `edgs_affected`, and `contours` contain compact-int identifiers for the current body; they are neither coordinate arrays nor global geometry counts. The first edge-treatment row supplies the labelled schema, and later round and chamfer rows replay that schema positionally.
 
 Named procedural-choice fields belong to their containing feature row. Complete compact integers, compact-integer arrays, entity references, empty alternatives, and fully decoded `f9` scalar arrays are operation parameters qualified by choice and field name. A repeated qualified field name denotes ordered occurrences of the same parameter slot. Incomplete scalar wrappers and undefined field bodies remain opaque.
