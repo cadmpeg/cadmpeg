@@ -5606,7 +5606,10 @@ fn relation_owner_markers<'a>(
         .filter(|marker| {
             matches!(
                 marker.kind,
-                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                SketchInputKind::Point
+                    | SketchInputKind::LineOrCircle
+                    | SketchInputKind::Arc
+                    | SketchInputKind::ConstrainedPoint
             )
         })
         .filter(|marker| {
@@ -7084,11 +7087,14 @@ mod profile_join_tests {
         let mut owner = marker("owner", Some([1.0, 2.0]));
         owner.kind = SketchInputKind::LineOrCircle;
         owner.object_index = Some(7);
+        owner.offset = 1;
         owner.links = vec![SketchInputLink {
             local_id: 4,
             entity_ref: relation.id.clone(),
         }];
         let mut point = marker("point", Some([1.0, 2.0]));
+        point.object_index = Some(8);
+        point.offset = 2;
         point.links = owner.links.clone();
         let markers = HashMap::from([
             (relation.id.as_str(), &relation),
@@ -7096,7 +7102,10 @@ mod profile_join_tests {
             (point.id.as_str(), &point),
         ]);
 
-        assert_eq!(relation_owner_markers(&relation, &markers), vec![&owner]);
+        assert_eq!(
+            relation_owner_markers(&relation, &markers),
+            vec![&owner, &point]
+        );
         let Some(SketchConstraintDefinition::Native { operands, .. }) =
             typed_marker_relation_definition(&relation, &markers, &HashMap::new())
         else {
@@ -7104,11 +7113,18 @@ mod profile_join_tests {
         };
         assert_eq!(
             operands,
-            vec![SketchNativeOperand {
-                native_kind: "sldprt:marker-constraint-owner".into(),
-                object_index: 7,
-                native_ref: Some(owner.id),
-            }]
+            vec![
+                SketchNativeOperand {
+                    native_kind: "sldprt:marker-constraint-owner".into(),
+                    object_index: 7,
+                    native_ref: Some(owner.id),
+                },
+                SketchNativeOperand {
+                    native_kind: "sldprt:marker-constraint-owner".into(),
+                    object_index: 8,
+                    native_ref: Some(point.id),
+                },
+            ]
         );
     }
 
