@@ -3982,7 +3982,7 @@ impl MeshSelectionSearch<'_> {
             .flatten()
             .map(|use_| use_.edge)
             .collect::<HashSet<_>>();
-        let mut candidates = self
+        let next = self
             .selected
             .iter()
             .enumerate()
@@ -3991,7 +3991,7 @@ impl MeshSelectionSearch<'_> {
                 self.face_work[face]?;
                 let assignments = &self.assignments[face];
                 if assignments.is_empty() {
-                    return Some((0, 0, 0, 0, face));
+                    return Some((0, 0, 0, 0, 0, face));
                 }
                 let direction_work = assignments
                     .iter()
@@ -4005,6 +4005,9 @@ impl MeshSelectionSearch<'_> {
                         1usize.checked_shl(unknown as u32).unwrap_or(usize::MAX)
                     })
                     .fold(0usize, usize::saturating_add);
+                let can_merge = assignments
+                    .iter()
+                    .any(|assignment| mesh_assignment_can_merge(assignment, &mut measured));
                 let assignment = &assignments[0];
                 let selected_incidence = assignment
                     .boundaries
@@ -4024,6 +4027,7 @@ impl MeshSelectionSearch<'_> {
                     })
                     .count();
                 Some((
+                    if can_merge { 1 } else { 2 },
                     assignments.len(),
                     direction_work,
                     usize::MAX - selected_incidence,
@@ -4031,34 +4035,8 @@ impl MeshSelectionSearch<'_> {
                     face,
                 ))
             })
-            .collect::<Vec<_>>();
-        candidates.sort_unstable();
-        let mut fallback = None;
-        let next = candidates.into_iter().find(|candidate| {
-            let &(supported, direction_work, _, _, face) = candidate;
-            if supported == 0 {
-                return true;
-            }
-            let assignments = &self.assignments[face];
-            let can_merge = if supported == 1 && direction_work == 1 {
-                mesh_assignment_can_merge(&assignments[0], &mut measured)
-            } else {
-                assignments.iter().any(|assignment| {
-                    mesh_assignment_has_merge_option(
-                        assignment,
-                        quotient,
-                        self.edge_candidates,
-                        root_count,
-                    )
-                })
-            };
-            if !can_merge && fallback.is_none() {
-                fallback = Some(*candidate);
-            }
-            can_merge
-        });
-        let next = next.or(fallback);
-        let Some((supported, _, _, _, face)) = next else {
+            .min();
+        let Some((_, supported, _, _, _, face)) = next else {
             let mut quotient = quotient.clone();
             let Some(root_points) =
                 quotient.point_assignment(self.vertex_points.len(), self.edge_candidates)
@@ -4216,18 +4194,6 @@ fn mesh_assignment_can_merge(
             })
         })
     })
-}
-
-fn mesh_assignment_has_merge_option(
-    assignment: &MeshFaceBoundaryAssignment,
-    quotient: &MeshQuotient,
-    edge_candidates: &[Vec<[usize; 2]>],
-    root_count: usize,
-) -> bool {
-    quotient
-        .assignment_options(assignment, edge_candidates)
-        .into_iter()
-        .any(|(_, mut child)| child.root_count() < root_count)
 }
 
 fn mesh_edge_points_compatible(
@@ -4925,11 +4891,10 @@ mod motif_tests {
 
     use super::{
         bind_edge_port_candidates, deduplicate_mesh_quotient_assignments,
-        mesh_assignment_can_merge, mesh_assignment_has_merge_option, mesh_edge_points_compatible,
-        motif_port_points, parse_trim_chain, propagate_edge_port_points,
-        prune_edge_candidates_by_port_domains, reconstruct_incidence,
-        reconstruct_incidence_candidates, unique_coordinate_bijection, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
+        mesh_assignment_can_merge, mesh_edge_points_compatible, motif_port_points,
+        parse_trim_chain, propagate_edge_port_points, prune_edge_candidates_by_port_domains,
+        reconstruct_incidence, reconstruct_incidence_candidates, unique_coordinate_bijection,
+        Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate,
         MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
         TrimRecord, UnionFind,
     };
@@ -5479,21 +5444,9 @@ mod motif_tests {
         };
 
         assert!(mesh_assignment_can_merge(&assignment, &mut quotient));
-        assert!(mesh_assignment_has_merge_option(
-            &assignment,
-            &quotient,
-            &[Vec::new(), Vec::new()],
-            4,
-        ));
         quotient.merge(1, 2).expect("first boundary corner");
         quotient.merge(3, 0).expect("second boundary corner");
         assert!(!mesh_assignment_can_merge(&assignment, &mut quotient));
-        assert!(!mesh_assignment_has_merge_option(
-            &assignment,
-            &quotient,
-            &[Vec::new(), Vec::new()],
-            2,
-        ));
     }
 
     #[test]
