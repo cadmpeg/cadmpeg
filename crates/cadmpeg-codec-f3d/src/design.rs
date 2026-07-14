@@ -2383,48 +2383,58 @@ pub fn decode_dimension_locus_groups(
         let Some((start, end)) = companion_owned_interval(companion, owners, bytes.len()) else {
             continue;
         };
-        let mut candidates = parse_dimension_locus_group(
+        let candidates = find_dimension_locus_groups(
             bytes,
             start,
+            end,
             companion.record_index,
             &geometry_indices,
             &sketch_entities,
-        )
-        .filter(|group| usize::try_from(group.next_byte_offset).is_ok_and(|at| at <= end))
-        .into_iter()
-        .collect::<Vec<_>>();
-        if candidates.is_empty() {
-            let mut position = start.saturating_add(1);
-            while let Some(at) = next_indexed_record_offset(bytes, position) {
-                if at >= end {
-                    break;
-                }
-                if let Some(group) = parse_dimension_locus_group(
-                    bytes,
-                    at,
-                    companion.record_index,
-                    &geometry_indices,
-                    &sketch_entities,
-                )
-                .filter(|group| usize::try_from(group.next_byte_offset).is_ok_and(|at| at <= end))
-                {
-                    candidates.push(group);
-                }
-                position = at.saturating_add(1);
-            }
-        }
-        let [group] = candidates.as_slice() else {
-            continue;
-        };
-        let mut group = group.clone();
-        group.id = format!(
-            "f3d:{}:design-dimension-locus-group#{}",
-            entry.name, group.byte_offset
         );
-        out.push(group);
+        out.extend(candidates.into_iter().map(|mut group| {
+            group.id = format!(
+                "f3d:{}:design-dimension-locus-group#{}",
+                entry.name, group.byte_offset
+            );
+            group
+        }));
     }
     out.sort_by_key(|group| group.id.clone());
     Ok(out)
+}
+
+fn find_dimension_locus_groups(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    companion_record_index: u32,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+) -> Vec<DesignDimensionLocusGroup> {
+    let parse = |at| {
+        parse_dimension_locus_group(
+            bytes,
+            at,
+            companion_record_index,
+            geometry_indices,
+            sketch_entities,
+        )
+        .filter(|group| usize::try_from(group.next_byte_offset).is_ok_and(|at| at <= end))
+    };
+    let mut candidates = parse(start).into_iter().collect::<Vec<_>>();
+    let mut position = start.saturating_add(1);
+    while let Some(at) = next_indexed_record_offset(bytes, position) {
+        if at >= end {
+            break;
+        }
+        if let Some(group) = parse(at) {
+            candidates.push(group);
+        }
+        position = at.saturating_add(1);
+    }
+    candidates.sort_by_key(|group| group.byte_offset);
+    candidates.dedup_by_key(|group| group.byte_offset);
+    candidates
 }
 
 fn companion_owned_interval(
@@ -5650,14 +5660,15 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_sketch_graph, decode_fillet_radius_groups,
-        find_dimension_locus_pair, identity_matrix, next_indexed_record_offset,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
+        next_indexed_record_offset, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -5987,6 +5998,27 @@ mod relation_tests {
         assert_eq!(group.return_members, [217, 175]);
         assert_eq!(group.next_class_tag, "314");
         assert_eq!(group.next_record_index, 250);
+
+        let body = bytes[11..101].to_vec();
+        bytes.extend_from_slice(&body);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"315");
+        bytes.extend_from_slice(&251u32.to_le_bytes());
+        let groups = find_dimension_locus_groups(
+            &bytes,
+            0,
+            bytes.len(),
+            240,
+            &HashSet::from([175, 217]),
+            &HashSet::from([172]),
+        );
+        assert_eq!(
+            groups
+                .iter()
+                .map(|group| group.record_index)
+                .collect::<Vec<_>>(),
+            [249, 250]
+        );
     }
 
     #[test]

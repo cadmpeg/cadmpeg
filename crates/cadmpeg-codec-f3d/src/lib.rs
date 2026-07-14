@@ -1364,8 +1364,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for group in &native.design_dimension_locus_groups {
         let native_stream = design_stream(&group.id);
         let unique_index = locus_group_indices.insert((native_stream, group.record_index));
-        let unique_companion =
-            locus_group_companions.insert((native_stream, group.companion_record_index));
+        locus_group_companions.insert((native_stream, group.companion_record_index));
         let companion = companions_by_index.get(&(native_stream, group.companion_record_index));
         let companion_contains_frame = companion.is_some_and(|companion| {
             group.byte_offset >= companion.byte_offset.saturating_add(58)
@@ -1419,6 +1418,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
+        let frame_does_not_overlap = native.design_dimension_locus_groups.iter().all(|other| {
+            design_stream(&other.id) != native_stream
+                || other.companion_record_index != group.companion_record_index
+                || other.record_index == group.record_index
+                || group.next_byte_offset <= other.byte_offset
+                || other.next_byte_offset <= group.byte_offset
+        });
         let valid = group.class_tag.len() == 3
             && group.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && group.next_class_tag.len() == 3
@@ -1444,7 +1450,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .saturating_add(1)
             && group.frame_length == group.next_byte_offset.saturating_sub(group.byte_offset)
             && unique_index
-            && unique_companion;
+            && frame_does_not_overlap;
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
