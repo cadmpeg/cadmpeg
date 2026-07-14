@@ -1469,6 +1469,27 @@ pub struct DesignBodyMember {
     pub flags: u16,
 }
 
+/// Triplicated axis-aligned body bounds cached in the Design stream.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignBodyBounds {
+    /// Globally unique deterministic identifier for this native record set.
+    pub id: String,
+    /// Numeric suffix of the owning Design body entity.
+    pub entity_suffix: u64,
+    /// Byte offset of the owning Design entity header.
+    pub entity_byte_offset: u64,
+    /// Three consecutive indexed record identities carrying the cache.
+    pub record_indices: [u32; 3],
+    /// Indexed-header byte offsets parallel to `record_indices`.
+    pub record_byte_offsets: [u64; 3],
+    /// First f64 byte of each repeated sextuple.
+    pub value_byte_offsets: [u64; 3],
+    /// Maximum model-space corner in millimetres.
+    pub maximum: Point3,
+    /// Minimum model-space corner in millimetres.
+    pub minimum: Point3,
+}
+
 /// Design browser-node visibility joined to one solved ASM body.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct BodyVisibility {

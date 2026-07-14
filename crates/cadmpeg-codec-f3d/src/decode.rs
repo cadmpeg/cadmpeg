@@ -163,6 +163,8 @@ pub fn decode(
                 &mut native.sketch_curve_identities,
             )?;
             native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+            native.design_body_bounds =
+                crate::design::decode_body_bounds(&scan, &native.design_entity_headers)?;
             native.design_configurations = crate::design::decode_configurations(&scan)?;
             ir.model.configurations =
                 crate::design::project_configurations(&native.design_configurations);
@@ -366,6 +368,8 @@ pub fn decode(
         &mut native.sketch_curve_identities,
     )?;
     native.design_body_members = crate::design::decode_body_members(reader, &scan)?;
+    native.design_body_bounds =
+        crate::design::decode_body_bounds(&scan, &native.design_entity_headers)?;
     native.design_configurations = crate::design::decode_configurations(&scan)?;
     ir.model.configurations = crate::design::project_configurations(&native.design_configurations);
     (ir.model.features, ir.model.parameters) = crate::design::project_parameter_design(

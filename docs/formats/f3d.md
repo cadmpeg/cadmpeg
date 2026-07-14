@@ -587,7 +587,7 @@ The two offsets and fit tolerance are lengths. `ENUM_VALUE -1` selects the absen
 
 `MetaStream.dat` is a sequence of object records. Each record contains an ASCII type name, a u32 ID count, that many little-endian u64 design-entity IDs, a self GUID, a zero-run delimiter, a secondary GUID, and a trailing u32 record revision. The ID count is a count rather than a flag; a record can carry more than two IDs.
 
-The design `BulkStream` caches each body's axis-aligned bounding box as six f64 values in centimetres, ordered `(xmax, ymax, zmax, xmin, ymin, zmin)`. The cache occurs three times in consecutive sub-entity records following the body's assignment container.
+The design `BulkStream` caches each body's axis-aligned bounding box in the three indexed records whose identities are the body entity suffix plus one, two, and three. Each record contains a `u8 1` marker followed by the same six contiguous f64 values in centimetres, ordered `(xmax, ymax, zmax, xmin, ymin, zmin)`. Every maximum is greater than or equal to its corresponding minimum, and a body has positive extent on at least one axis. The three marker-and-sextuple frames are byte-identical despite the records' different dynamic class tags and prefix lengths. Model-space bounds convert each coordinate to millimetres.
 
 The design BulkStream BREP body map is `u32 count`, followed by `count` pairs of `u64 asm_body_key, u64 entity_suffix`, then `u64 trailing_record_ref`, `u32 pad`, `u32 char_count`, and UTF-16LE `BREP.<uuid>.smbh`. `asm_body_key` is the ASM body `flags` field. `entity_suffix` is the numeric suffix of the design entity ID. Retained body-key edits update the ASM field and every joined Design body-map occurrence atomically.
 

@@ -145,6 +145,60 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|record| ((design_stream(&record.id), record.record_index), record))
         .collect::<std::collections::HashMap<_, _>>();
+    let entity_headers_by_suffix = native
+        .design_entity_headers
+        .iter()
+        .map(|entity| ((design_stream(&entity.id), entity.entity_suffix), entity))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut bounded_bodies = HashSet::new();
+    for bounds in &native.design_body_bounds {
+        let native_stream = design_stream(&bounds.id);
+        let expected_indices = u32::try_from(bounds.entity_suffix).ok().and_then(|index| {
+            Some([
+                index.checked_add(1)?,
+                index.checked_add(2)?,
+                index.checked_add(3)?,
+            ])
+        });
+        let corners = [
+            bounds.maximum.x,
+            bounds.maximum.y,
+            bounds.maximum.z,
+            bounds.minimum.x,
+            bounds.minimum.y,
+            bounds.minimum.z,
+        ];
+        let valid = entity_headers_by_suffix
+            .get(&(native_stream, bounds.entity_suffix))
+            .is_some_and(|entity| {
+                entity.object_kind == Some(records::DesignObjectKind::Body)
+                    && entity.byte_offset == bounds.entity_byte_offset
+            })
+            && expected_indices == Some(bounds.record_indices)
+            && bounds.record_byte_offsets[0] < bounds.record_byte_offsets[1]
+            && bounds.record_byte_offsets[1] < bounds.record_byte_offsets[2]
+            && bounds
+                .value_byte_offsets
+                .iter()
+                .zip(bounds.record_byte_offsets)
+                .all(|(value, record)| *value > record)
+            && corners.iter().all(|value| value.is_finite())
+            && bounds.maximum.x >= bounds.minimum.x
+            && bounds.maximum.y >= bounds.minimum.y
+            && bounds.maximum.z >= bounds.minimum.z
+            && (bounds.maximum.x > bounds.minimum.x
+                || bounds.maximum.y > bounds.minimum.y
+                || bounds.maximum.z > bounds.minimum.z)
+            && bounded_bodies.insert((native_stream, bounds.entity_suffix));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design body bounds have an invalid repeated record frame".into(),
+                entity: Some(bounds.id.clone()),
+            });
+        }
+    }
     let recipes_by_id = native
         .construction_recipes
         .iter()

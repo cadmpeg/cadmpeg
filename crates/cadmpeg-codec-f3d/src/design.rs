@@ -8,17 +8,18 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::records::{
-    ConstructionRecipe, ConstructionRecipeKind, DesignBodyMember, DesignConfiguration,
-    DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, LostEdgeReference,
-    PersistentReference, PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind,
-    SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    ConstructionRecipe, ConstructionRecipeKind, DesignBodyBounds, DesignBodyMember,
+    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
+    DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
+    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -7115,6 +7116,163 @@ pub fn decode_body_members(
     Ok(out)
 }
 
+/// Decode the three consecutive indexed records that cache each Design body's
+/// axis-aligned model-space bounds.
+pub fn decode_body_bounds(
+    scan: &ContainerScan,
+    entities: &[DesignEntityHeader],
+) -> Result<Vec<DesignBodyBounds>, CodecError> {
+    let mut out = Vec::new();
+    for entity in entities
+        .iter()
+        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Body))
+    {
+        let Some(stream) = native_stream(&entity.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(start) = usize::try_from(entity.byte_offset).ok() else {
+            continue;
+        };
+        let end = entities
+            .iter()
+            .filter(|candidate| {
+                native_stream(&candidate.id) == Some(stream)
+                    && candidate.byte_offset > entity.byte_offset
+            })
+            .filter_map(|candidate| usize::try_from(candidate.byte_offset).ok())
+            .min()
+            .unwrap_or(bytes.len());
+        let Ok(record_index) = u32::try_from(entity.entity_suffix) else {
+            continue;
+        };
+        let Some(record_indices) = record_index
+            .checked_add(1)
+            .zip(record_index.checked_add(2))
+            .zip(record_index.checked_add(3))
+            .map(|((first, second), third)| [first, second, third])
+        else {
+            continue;
+        };
+        let mut record_offsets = Vec::with_capacity(3);
+        for wanted in record_indices {
+            let matches = indexed_headers_in(bytes, start, end)
+                .filter(|(_, record_index)| *record_index == wanted)
+                .map(|(offset, _)| offset)
+                .collect::<Vec<_>>();
+            let [offset] = matches.as_slice() else {
+                record_offsets.clear();
+                break;
+            };
+            record_offsets.push(*offset);
+        }
+        let [first, second, third] = record_offsets.as_slice() else {
+            continue;
+        };
+        if !(first < second && second < third) {
+            continue;
+        }
+        let third_end = next_indexed_record_offset(bytes, third.saturating_add(11))
+            .filter(|offset| *offset <= end)
+            .unwrap_or(end);
+        let intervals = [(*first, *second), (*second, *third), (*third, third_end)];
+        let mut repeated = body_bound_candidates(bytes, intervals[0].0, intervals[0].1)
+            .filter_map(|(marker_offset, values)| {
+                let frame = bytes.get(marker_offset..marker_offset + 49)?;
+                let mut value_offsets = [marker_offset + 1, 0, 0];
+                for (ordinal, (record_start, record_end)) in
+                    intervals.iter().copied().enumerate().skip(1)
+                {
+                    let matches = body_bound_candidates(bytes, record_start, record_end)
+                        .filter(|(offset, _)| {
+                            bytes.get(*offset..offset.saturating_add(49)) == Some(frame)
+                        })
+                        .map(|(offset, _)| offset + 1)
+                        .collect::<Vec<_>>();
+                    let [offset] = matches.as_slice() else {
+                        return None;
+                    };
+                    value_offsets[ordinal] = *offset;
+                }
+                Some((values, value_offsets))
+            })
+            .collect::<Vec<_>>();
+        repeated.dedup_by(|left, right| left.0 == right.0 && left.1 == right.1);
+        let [(values, value_offsets)] = repeated.as_slice() else {
+            continue;
+        };
+        out.push(DesignBodyBounds {
+            id: format!(
+                "f3d:{}:design-body-bounds#{}",
+                entry.name, entity.byte_offset
+            ),
+            entity_suffix: entity.entity_suffix,
+            entity_byte_offset: entity.byte_offset,
+            record_indices,
+            record_byte_offsets: [*first as u64, *second as u64, *third as u64],
+            value_byte_offsets: value_offsets.map(|offset| offset as u64),
+            maximum: Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0),
+            minimum: Point3::new(values[3] * 10.0, values[4] * 10.0, values[5] * 10.0),
+        });
+    }
+    out.sort_by_key(|bounds| bounds.id.clone());
+    Ok(out)
+}
+
+fn indexed_headers_in(
+    bytes: &[u8],
+    mut position: usize,
+    end: usize,
+) -> impl Iterator<Item = (usize, u32)> + '_ {
+    std::iter::from_fn(move || {
+        while position + 11 <= end {
+            let at = position;
+            position += 1;
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
+                continue;
+            };
+            if class_tag.len() == 3 && class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
+                let Some(record_index) = u32_at(bytes, after_tag) else {
+                    continue;
+                };
+                return Some((at, record_index));
+            }
+        }
+        None
+    })
+}
+
+fn body_bound_candidates(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+) -> impl Iterator<Item = (usize, [f64; 6])> + '_ {
+    (start..end.saturating_sub(48)).filter_map(move |offset| {
+        if bytes.get(offset) != Some(&1) {
+            return None;
+        }
+        let values = [
+            f64_at(bytes, offset + 1)?,
+            f64_at(bytes, offset + 9)?,
+            f64_at(bytes, offset + 17)?,
+            f64_at(bytes, offset + 25)?,
+            f64_at(bytes, offset + 33)?,
+            f64_at(bytes, offset + 41)?,
+        ];
+        (values.iter().all(|value| value.is_finite())
+            && (0..3).all(|axis| values[axis] >= values[axis + 3])
+            && (0..3).any(|axis| values[axis] > values[axis + 3]))
+        .then_some((offset, values))
+    })
+}
+
 fn object_kind(name: &str) -> Option<DesignObjectKind> {
     match name {
         "Fusion" => Some(DesignObjectKind::Fusion),
@@ -7443,21 +7601,21 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
-        bind_parameter_companion_payloads, bind_sketch_graph, closed_sketch_profiles,
-        companion_owned_interval, decode_fillet_radius_groups, directional_point_dimension,
-        exact_atomic_constraint, exact_counted_dimension_relation, exact_counted_offset,
-        exact_offset_constraint, find_dimension_locus_groups, find_dimension_locus_pair,
-        identity_matrix, indirect_angular_lines, neutral_sketch_entity_id, neutral_sketch_id,
-        next_indexed_record_offset, null_locus_dimension_definition,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations, resolved_extrude_profile_selection, resolved_face_group,
-        two_locus_distance_dimension,
+        bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
+        closed_sketch_profiles, companion_owned_interval, decode_fillet_radius_groups,
+        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
+        exact_counted_offset, exact_offset_constraint, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, indirect_angular_lines,
+        neutral_sketch_entity_id, neutral_sketch_id, next_indexed_record_offset,
+        null_locus_dimension_definition, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, remove_dimension_frame_relations,
+        resolved_extrude_profile_selection, resolved_face_group, two_locus_distance_dimension,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7524,6 +7682,22 @@ mod relation_tests {
         out.extend_from_slice(&evaluated_value.to_le_bytes());
         out.extend_from_slice(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
         out
+    }
+
+    #[test]
+    fn body_bound_candidate_has_one_marker_and_six_ordered_f64_values() {
+        let values: [f64; 6] = [4.0, 6.0, 1.5, -1.0, 0.0, -0.25];
+        let mut bytes = vec![1];
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let candidates = body_bound_candidates(&bytes, 0, bytes.len()).collect::<Vec<_>>();
+        assert_eq!(candidates, [(0, values)]);
+
+        bytes[0] = 0;
+        assert!(body_bound_candidates(&bytes, 0, bytes.len())
+            .next()
+            .is_none());
     }
 
     #[test]

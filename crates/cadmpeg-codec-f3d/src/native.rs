@@ -7,9 +7,9 @@ use serde::{Deserialize, Serialize};
 use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
-    CreationTimestamp, DesignBodyMember, DesignConfiguration, DesignConstructionOperandGroup,
-    DesignConstructionOperandIdentity, DesignDimensionLocusGroup, DesignDimensionLocusPair,
-    DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
+    CreationTimestamp, DesignBodyBounds, DesignBodyMember, DesignConfiguration,
+    DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignEdgeOperand, DesignEntityHeader,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
     DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject, DesignParameter,
     DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
@@ -35,6 +35,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "body_visibilities",
     "construction_recipes",
     "creation_timestamps",
+    "design_body_bounds",
     "design_body_members",
     "design_configurations",
     "design_construction_operand_groups",
@@ -101,6 +102,7 @@ macro_rules! f3d_arenas {
             design_entity_headers: DesignEntityHeader;
             design_record_headers: DesignRecordHeader;
             design_sketch_placements: DesignSketchPlacement;
+            design_body_bounds: DesignBodyBounds;
             design_body_members: DesignBodyMember;
             design_configurations: DesignConfiguration;
             design_material_assignments: DesignMaterialAssignment;
@@ -248,6 +250,9 @@ pub struct F3dNative {
     /// `BodiesRoot` list members from the Design `BulkStream`.
     #[serde(default)]
     pub design_body_members: Vec<DesignBodyMember>,
+    /// Triplicated axis-aligned bounds cached by Design body containers.
+    #[serde(default)]
+    pub design_body_bounds: Vec<DesignBodyBounds>,
     /// Design configuration tables and rules with complete JSON payloads.
     #[serde(default)]
     pub design_configurations: Vec<DesignConfiguration>,
@@ -344,6 +349,7 @@ impl Default for F3dNative {
             design_entity_headers: Vec::new(),
             design_record_headers: Vec::new(),
             design_body_members: Vec::new(),
+            design_body_bounds: Vec::new(),
             design_configurations: Vec::new(),
             design_material_assignments: Vec::new(),
             edge_continuities: Vec::new(),
