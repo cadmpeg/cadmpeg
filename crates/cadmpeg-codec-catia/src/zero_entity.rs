@@ -560,21 +560,22 @@ fn bind_face_runs(
 ) {
     let mut loop_cursor = 0;
     for (face_index, face) in faces.iter_mut().enumerate() {
+        let run = carrier_runs.get(face_index);
+        face.carrier_run = run.map(|_| face_index);
         for terminal in &face.loop_terminals {
             let Some(relative) = loops[loop_cursor..]
                 .iter()
                 .position(|loop_| loop_.terminal_id == *terminal)
             else {
-                return;
+                continue;
             };
             let loop_index = loop_cursor + relative;
             face.loop_indices.push(loop_index);
             loop_cursor = loop_index + 1;
         }
-        let Some(run) = carrier_runs.get(face_index) else {
+        let Some(run) = run else {
             continue;
         };
-        face.carrier_run = Some(face_index);
         let slot_to_support: std::collections::HashMap<u32, usize> = run
             .support_ordinals
             .iter()
@@ -970,6 +971,54 @@ mod occurrence_tests {
             loop_indices: vec![loop_index],
             carrier_run: None,
         }
+    }
+
+    #[test]
+    fn unresolved_face_loop_does_not_discard_later_carrier_bindings() {
+        let mut faces = (0..3)
+            .map(|index| ZeroEntityFace {
+                record_ordinal: index,
+                references: Vec::new(),
+                loop_terminals: vec![10 + index as u32],
+                loop_indices: Vec::new(),
+                carrier_run: None,
+            })
+            .collect::<Vec<_>>();
+        let mut loops = [10u32, 12]
+            .into_iter()
+            .enumerate()
+            .map(|(index, terminal_id)| ZeroEntityLoop {
+                record_ordinal: index,
+                member_ids: Vec::new(),
+                secondary_refs: Vec::new(),
+                terminal_id,
+                gap: 1,
+                loop_class: 0x41,
+                inner: false,
+                reversed: Vec::new(),
+                support_indices: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        let carrier_runs = (0..3)
+            .map(|carrier_ordinal| ZeroCarrierRun {
+                carrier_ordinal,
+                support_ordinals: Vec::new(),
+                geometry: None,
+            })
+            .collect::<Vec<_>>();
+
+        bind_face_runs(&mut faces, &mut loops, &carrier_runs, &[]);
+
+        assert_eq!(faces[0].loop_indices, vec![0]);
+        assert!(faces[1].loop_indices.is_empty());
+        assert_eq!(faces[2].loop_indices, vec![1]);
+        assert_eq!(
+            faces
+                .iter()
+                .map(|face| face.carrier_run)
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(2)]
+        );
     }
 
     #[test]
