@@ -19,10 +19,25 @@ use cadmpeg_ir::CadIr;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Copy)]
-struct CurveOnSurface {
-    surface: u32,
-    pcurve: u32,
+struct BoundarySegment {
     model_curve: u32,
+    pcurve: Option<u32>,
+    sense: Sense,
+}
+
+#[derive(Clone)]
+struct BoundaryDefinition {
+    surface: u32,
+    segments: Vec<BoundarySegment>,
+}
+
+struct BoundaryItem {
+    segment: BoundarySegment,
+    model_curve: CurveId,
+    source_edge: Edge,
+    start: Point3,
+    end: Point3,
+    pcurve: Option<(PcurveGeometry, [f64; 2])>,
 }
 
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
@@ -59,6 +74,35 @@ fn point_position(ir: &CadIr, id: &VertexId) -> Option<Point3> {
         .iter()
         .find(|point| point.id == *point_id)
         .map(|point| point.position)
+}
+
+fn face_vertex(
+    candidate: &mut CadIr,
+    vertices: &mut Vec<(Point3, VertexId)>,
+    stem: &str,
+    boundary: usize,
+    position: Point3,
+) -> VertexId {
+    if let Some((_, id)) = vertices
+        .iter()
+        .find(|(existing, _)| close(*existing, position))
+    {
+        return id.clone();
+    }
+    let index = vertices.len();
+    let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
+    let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
+    candidate.model.points.push(Point {
+        id: point_id.clone(),
+        position,
+    });
+    candidate.model.vertices.push(Vertex {
+        id: vertex_id.clone(),
+        point: point_id,
+        tolerance: None,
+    });
+    vertices.push((position, vertex_id.clone()));
+    vertex_id
 }
 
 fn pcurve_geometry(
@@ -125,7 +169,7 @@ pub(super) fn project(
     let mut handled = BTreeSet::new();
     let mut decoded = BTreeSet::new();
     let mut losses = Vec::new();
-    let mut associations = BTreeMap::new();
+    let mut boundaries = BTreeMap::new();
 
     for entry in directory
         .iter()
@@ -172,19 +216,124 @@ pub(super) fn project(
             ));
             continue;
         }
-        associations.insert(
+        boundaries.insert(
             entry.sequence,
-            CurveOnSurface {
+            BoundaryDefinition {
                 surface,
-                pcurve,
-                model_curve,
+                segments: vec![BoundarySegment {
+                    pcurve: Some(pcurve),
+                    model_curve,
+                    sense: Sense::Forward,
+                }],
             },
         );
     }
 
     for entry in directory
         .iter()
-        .filter(|entry| entry.entity_type == 144 && entry.form == 0)
+        .filter(|entry| entry.entity_type == 141 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(boundary_type) = record.integer(1).filter(|value| matches!(value, 0 | 1)) else {
+            losses.push(entity_loss(
+                entry,
+                "boundary representation type is not 0 or 1",
+            ));
+            continue;
+        };
+        if !matches!(record.integer(2), Some(0..=3)) {
+            losses.push(entity_loss(entry, "boundary preference flag is invalid"));
+            continue;
+        }
+        let Some(surface) = pointer(record, 3) else {
+            losses.push(entity_loss(entry, "boundary support pointer is invalid"));
+            continue;
+        };
+        let Some(segment_count) = record
+            .integer(4)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|count| *count > 0)
+        else {
+            losses.push(entity_loss(entry, "boundary segment count is not positive"));
+            continue;
+        };
+        let mut index = 5;
+        let mut segments = Vec::with_capacity(segment_count);
+        let mut valid = true;
+        for _ in 0..segment_count {
+            let Some(model_curve) = pointer(record, index) else {
+                losses.push(entity_loss(
+                    entry,
+                    "boundary model-curve pointer is invalid",
+                ));
+                valid = false;
+                break;
+            };
+            let sense = match record.integer(index + 1) {
+                Some(1) => Sense::Forward,
+                Some(2) => Sense::Reversed,
+                _ => {
+                    losses.push(entity_loss(entry, "boundary segment sense is not 1 or 2"));
+                    valid = false;
+                    break;
+                }
+            };
+            let Some(pcurve_count) = record
+                .integer(index + 2)
+                .and_then(|value| usize::try_from(value).ok())
+            else {
+                losses.push(entity_loss(entry, "boundary pcurve count is invalid"));
+                valid = false;
+                break;
+            };
+            if (boundary_type == 0 && pcurve_count != 0)
+                || (boundary_type == 1 && pcurve_count != 1)
+            {
+                losses.push(entity_loss(
+                    entry,
+                    "boundary pcurve collection does not contain the required zero or one member",
+                ));
+                valid = false;
+                break;
+            }
+            let pcurve = if pcurve_count == 1 {
+                let Some(pcurve) = pointer(record, index + 3) else {
+                    losses.push(entity_loss(entry, "boundary pcurve pointer is invalid"));
+                    valid = false;
+                    break;
+                };
+                let pcurve_entry = entries.get(&pcurve).copied();
+                if pcurve_entry.is_none_or(|entry| entry.status.use_flag != 5) {
+                    losses.push(entity_loss(
+                        entry,
+                        "boundary pcurve does not have entity-use flag 05",
+                    ));
+                    valid = false;
+                    break;
+                }
+                Some(pcurve)
+            } else {
+                None
+            };
+            segments.push(BoundarySegment {
+                model_curve,
+                pcurve,
+                sense,
+            });
+            index += 3 + pcurve_count;
+        }
+        if valid {
+            boundaries.insert(entry.sequence, BoundaryDefinition { surface, segments });
+        }
+    }
+
+    for entry in directory
+        .iter()
+        .filter(|entry| matches!(entry.entity_type, 143 | 144) && entry.form == 0)
     {
         handled.insert(entry.sequence);
         let Some(factor) = global.length_factor_mm() else {
@@ -195,50 +344,114 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(surface_sequence) = pointer(record, 1) else {
-            losses.push(entity_loss(
-                entry,
-                "trimmed-surface support pointer is invalid",
-            ));
-            continue;
-        };
-        if record.integer(2) != Some(1) {
-            losses.push(entity_loss(
-                entry,
-                "implicit parameter-domain outer boundary is not projected",
-            ));
-            continue;
-        }
-        let Some(inner_count) = record
-            .integer(3)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
-            losses.push(entity_loss(
-                entry,
-                "trimmed-surface inner-boundary count is invalid",
-            ));
-            continue;
-        };
-        let Some(outer) = pointer(record, 4) else {
-            losses.push(entity_loss(
-                entry,
-                "trimmed-surface outer-boundary pointer is invalid",
-            ));
-            continue;
-        };
-        let mut boundary_sequences = vec![outer];
-        let mut valid = true;
-        for index in 0..inner_count {
-            let Some(sequence) = pointer(record, 5 + index) else {
+        let (surface_sequence, boundary_sequences, mut valid) = if entry.entity_type == 144 {
+            let Some(surface) = pointer(record, 1) else {
                 losses.push(entity_loss(
                     entry,
-                    "trimmed-surface inner-boundary pointer is invalid",
+                    "trimmed-surface support pointer is invalid",
                 ));
-                valid = false;
-                break;
+                continue;
             };
-            boundary_sequences.push(sequence);
-        }
+            if record.integer(2) != Some(1) {
+                losses.push(entity_loss(
+                    entry,
+                    "implicit parameter-domain outer boundary is not projected",
+                ));
+                continue;
+            }
+            let Some(inner_count) = record
+                .integer(3)
+                .and_then(|value| usize::try_from(value).ok())
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "trimmed-surface inner-boundary count is invalid",
+                ));
+                continue;
+            };
+            let Some(outer) = pointer(record, 4) else {
+                losses.push(entity_loss(
+                    entry,
+                    "trimmed-surface outer-boundary pointer is invalid",
+                ));
+                continue;
+            };
+            let mut sequences = vec![outer];
+            let mut valid = true;
+            for index in 0..inner_count {
+                let Some(sequence) = pointer(record, 5 + index) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "trimmed-surface inner-boundary pointer is invalid",
+                    ));
+                    valid = false;
+                    break;
+                };
+                sequences.push(sequence);
+            }
+            (surface, sequences, valid)
+        } else {
+            let Some(representation) = record.integer(1).filter(|value| matches!(value, 0 | 1))
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "bounded-surface representation type is not 0 or 1",
+                ));
+                continue;
+            };
+            let Some(surface) = pointer(record, 2) else {
+                losses.push(entity_loss(
+                    entry,
+                    "bounded-surface support pointer is invalid",
+                ));
+                continue;
+            };
+            let Some(count) = record
+                .integer(3)
+                .and_then(|value| usize::try_from(value).ok())
+                .filter(|count| *count > 0)
+            else {
+                losses.push(entity_loss(
+                    entry,
+                    "bounded-surface boundary count is not positive",
+                ));
+                continue;
+            };
+            let mut sequences = Vec::with_capacity(count);
+            let mut valid = true;
+            for index in 0..count {
+                let Some(sequence) = pointer(record, 4 + index) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "bounded-surface boundary pointer is invalid",
+                    ));
+                    valid = false;
+                    break;
+                };
+                if boundaries.get(&sequence).is_some_and(|boundary| {
+                    (representation == 0
+                        && boundary
+                            .segments
+                            .iter()
+                            .all(|segment| segment.pcurve.is_none()))
+                        || (representation == 1
+                            && boundary
+                                .segments
+                                .iter()
+                                .all(|segment| segment.pcurve.is_some()))
+                }) {
+                    sequences.push(sequence);
+                } else {
+                    losses.push(entity_loss(
+                        entry,
+                        "bounded-surface representation disagrees with its boundary",
+                    ));
+                    valid = false;
+                    break;
+                }
+            }
+            (surface, sequences, valid)
+        };
         if !valid {
             continue;
         }
@@ -264,110 +477,158 @@ pub(super) fn project(
         let mut loop_ids = Vec::new();
         let mut consumed = Vec::new();
         for (boundary_index, sequence) in boundary_sequences.iter().copied().enumerate() {
-            let Some(association) = associations.get(&sequence).copied() else {
+            let Some(boundary) = boundaries.get(&sequence).cloned() else {
                 losses.push(entity_loss(
                     entry,
-                    "trimmed-surface boundary association is missing",
+                    "trimmed-surface boundary definition is missing",
                 ));
                 valid = false;
                 break;
             };
-            if association.surface != surface_sequence {
+            if boundary.surface != surface_sequence {
                 losses.push(entity_loss(
                     entry,
-                    "boundary association names a different support surface",
+                    "boundary definition names a different support surface",
                 ));
                 valid = false;
                 break;
             }
-            let model_curve_id = CurveId(format!("iges:model:curve#D{}", association.model_curve));
-            let Some(source_edge) = ir
-                .model
-                .edges
-                .iter()
-                .find(|edge| edge.curve.as_ref() == Some(&model_curve_id))
-            else {
-                losses.push(entity_loss(
-                    entry,
-                    "boundary model curve has no bounded edge",
-                ));
-                valid = false;
+            let mut items = Vec::with_capacity(boundary.segments.len());
+            for segment in &boundary.segments {
+                let model_curve_id = CurveId(format!("iges:model:curve#D{}", segment.model_curve));
+                let Some(source_edge) = ir
+                    .model
+                    .edges
+                    .iter()
+                    .find(|edge| edge.curve.as_ref() == Some(&model_curve_id))
+                    .cloned()
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "boundary model curve has no bounded edge",
+                    ));
+                    valid = false;
+                    break;
+                };
+                let (Some(start), Some(end)) = (
+                    point_position(ir, &source_edge.start),
+                    point_position(ir, &source_edge.end),
+                ) else {
+                    losses.push(entity_loss(
+                        entry,
+                        "boundary model-curve endpoints are missing",
+                    ));
+                    valid = false;
+                    break;
+                };
+                let pcurve = match segment.pcurve {
+                    Some(sequence) => {
+                        let Some(pcurve) = pcurve_geometry(ir, sequence, &support.geometry, factor)
+                        else {
+                            losses.push(entity_loss(
+                                entry,
+                                "boundary parameter curve has no NURBS carrier",
+                            ));
+                            valid = false;
+                            break;
+                        };
+                        Some(pcurve)
+                    }
+                    None => None,
+                };
+                items.push(BoundaryItem {
+                    segment: *segment,
+                    model_curve: model_curve_id,
+                    source_edge,
+                    start,
+                    end,
+                    pcurve,
+                });
+            }
+            if !valid {
                 break;
+            }
+            let traversal = |item: &BoundaryItem| {
+                if item.segment.sense == Sense::Forward {
+                    (item.start, item.end)
+                } else {
+                    (item.end, item.start)
+                }
             };
-            let (Some(start), Some(end)) = (
-                point_position(ir, &source_edge.start),
-                point_position(ir, &source_edge.end),
-            ) else {
+            if items.iter().enumerate().any(|(index, item)| {
+                let (_, end) = traversal(item);
+                let (next_start, _) = traversal(&items[(index + 1) % items.len()]);
+                !close(end, next_start)
+            }) {
                 losses.push(entity_loss(
                     entry,
-                    "boundary model-curve endpoints are missing",
-                ));
-                valid = false;
-                break;
-            };
-            if !close(start, end) {
-                losses.push(entity_loss(
-                    entry,
-                    "single-carrier trimming boundary is not closed",
+                    "ordered boundary segments do not form a closed ring",
                 ));
                 valid = false;
                 break;
             }
-            let Some((geometry, parameter_range)) =
-                pcurve_geometry(ir, association.pcurve, &support.geometry, factor)
-            else {
-                losses.push(entity_loss(
-                    entry,
-                    "boundary parameter curve has no line or NURBS carrier",
-                ));
-                valid = false;
-                break;
-            };
             let loop_id = LoopId(format!("iges:model:loop#{stem}:{boundary_index}"));
-            let coedge_id = CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}:0"));
-            let edge_id = EdgeId(format!("iges:model:edge#{stem}:{boundary_index}:0"));
-            let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary_index}:0"));
-            let point_id = PointId(format!("iges:model:point#{stem}:{boundary_index}:0"));
-            let pcurve_id = PcurveId(format!("iges:model:pcurve#{stem}:{boundary_index}:0"));
-            candidate.model.points.push(Point {
-                id: point_id.clone(),
-                position: start,
-            });
-            candidate.model.vertices.push(Vertex {
-                id: vertex_id.clone(),
-                point: point_id,
-                tolerance: None,
-            });
-            candidate.model.edges.push(Edge {
-                id: edge_id.clone(),
-                curve: Some(model_curve_id),
-                start: vertex_id.clone(),
-                end: vertex_id,
-                param_range: source_edge.param_range,
-                tolerance: None,
-            });
-            candidate.model.pcurves.push(Pcurve {
-                id: pcurve_id.clone(),
-                geometry,
-                wrapper_reversed: None,
-                native_tail_flags: None,
-                parameter_range: Some(parameter_range),
-                fit_tolerance: None,
-            });
-            candidate.model.coedges.push(Coedge {
-                id: coedge_id.clone(),
-                owner_loop: loop_id.clone(),
-                edge: edge_id,
-                next: coedge_id.clone(),
-                previous: coedge_id.clone(),
-                radial_next: coedge_id.clone(),
-                sense: Sense::Forward,
-                pcurve: Some(pcurve_id),
-            });
+            let coedge_ids = (0..items.len())
+                .map(|index| CoedgeId(format!("iges:model:coedge#{stem}:{boundary_index}:{index}")))
+                .collect::<Vec<_>>();
+            let mut local_vertices = Vec::new();
+            for (segment_index, item) in items.into_iter().enumerate() {
+                let edge_id = EdgeId(format!(
+                    "iges:model:edge#{stem}:{boundary_index}:{segment_index}"
+                ));
+                let start_vertex = face_vertex(
+                    &mut candidate,
+                    &mut local_vertices,
+                    &stem,
+                    boundary_index,
+                    item.start,
+                );
+                let end_vertex = face_vertex(
+                    &mut candidate,
+                    &mut local_vertices,
+                    &stem,
+                    boundary_index,
+                    item.end,
+                );
+                candidate.model.edges.push(Edge {
+                    id: edge_id.clone(),
+                    curve: Some(item.model_curve),
+                    start: start_vertex,
+                    end: end_vertex,
+                    param_range: item.source_edge.param_range,
+                    tolerance: None,
+                });
+                let pcurve_id = item.pcurve.map(|(geometry, parameter_range)| {
+                    let id = PcurveId(format!(
+                        "iges:model:pcurve#{stem}:{boundary_index}:{segment_index}"
+                    ));
+                    candidate.model.pcurves.push(Pcurve {
+                        id: id.clone(),
+                        geometry,
+                        wrapper_reversed: None,
+                        native_tail_flags: None,
+                        parameter_range: Some(parameter_range),
+                        fit_tolerance: None,
+                    });
+                    id
+                });
+                let coedge_id = coedge_ids[segment_index].clone();
+                candidate.model.coedges.push(Coedge {
+                    id: coedge_id.clone(),
+                    owner_loop: loop_id.clone(),
+                    edge: edge_id,
+                    next: coedge_ids[(segment_index + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(segment_index + coedge_ids.len() - 1) % coedge_ids.len()]
+                        .clone(),
+                    radial_next: coedge_id,
+                    sense: item.segment.sense,
+                    pcurve: pcurve_id,
+                });
+            }
             candidate.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
-                coedges: vec![coedge_id],
+                coedges: coedge_ids,
             });
             loop_ids.push(loop_id);
             consumed.push(sequence);
@@ -420,14 +681,14 @@ pub(super) fn project(
         decoded.extend(consumed);
     }
 
-    for sequence in associations
+    for sequence in boundaries
         .keys()
         .filter(|sequence| !decoded.contains(sequence))
     {
         if let Some(entry) = entries.get(sequence).copied() {
             losses.push(entity_loss(
                 entry,
-                "curve-on-surface association is not consumed by a projected trimmed surface",
+                "boundary definition is not consumed by a projected trimmed surface",
             ));
         }
     }

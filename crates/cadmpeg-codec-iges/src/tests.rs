@@ -1253,6 +1253,215 @@ fn trimmed_plane_file() -> Vec<u8> {
     bytes
 }
 
+fn bounded_plane_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, entity_type, label, status) in [
+        (1_u32, 108, "PLANE", "00010000"),
+        (3, 110, "EDGE1", "00010000"),
+        (5, 110, "EDGE2", "00010000"),
+        (7, 110, "EDGE3", "00010000"),
+        (9, 110, "EDGE4", "00010000"),
+        (11, 141, "BOUNDARY", "00010000"),
+        (13, 143, "BOUNDED", "00000000"),
+    ] {
+        let entity_type = entity_type.to_string();
+        let parameter_start = sequence.div_ceil(2).to_string();
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [&entity_type, "0", "0", "1", "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    for (sequence, parameter_sequence, parameters) in [
+        (1, 1, "108,0,0,1,0,0,0,0,0,0;"),
+        (3, 2, "110,0,0,0,1,0,0;"),
+        (5, 3, "110,1,1,0,1,0,0;"),
+        (7, 4, "110,1,1,0,0,1,0;"),
+        (9, 5, "110,0,1,0,0,0,0;"),
+        (11, 6, "141,0,1,1,4,3,1,0,5,2,0,7,1,0,9,1,0;"),
+        (13, 7, "143,0,1,1,11;"),
+    ] {
+        bytes.extend(parameter_card(
+            parameters.as_bytes(),
+            sequence,
+            parameter_sequence,
+        ));
+    }
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000014P0000007").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+fn parametrically_bounded_plane_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, entity_type, form, label, status) in [
+        (1_u32, 108, 0, "PLANE", "00010000"),
+        (3, 106, 63, "MODEL", "00010000"),
+        (5, 106, 63, "PCURVE", "00010500"),
+        (7, 141, 0, "BOUNDARY", "00010000"),
+        (9, 143, 0, "BOUNDED", "00000000"),
+    ] {
+        let entity_type = entity_type.to_string();
+        let parameter_start = sequence.div_ceil(2).to_string();
+        let form = form.to_string();
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [&entity_type, "0", "0", "1", &form, "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"108,0,0,1,0,0,0,0,0,0;", 1, 1));
+    let square = b"106,1,5,0,0,0,1,0,1,1,0,1,0,0;";
+    bytes.extend(parameter_card(square, 3, 2));
+    bytes.extend(parameter_card(square, 5, 3));
+    bytes.extend(parameter_card(b"141,1,3,1,1,3,1,1,5;", 7, 4));
+    bytes.extend(parameter_card(b"143,1,1,1,7;", 9, 5));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000010P0000005").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_builds_a_parametrically_bounded_sheet() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(parametrically_bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D9")
+        .unwrap();
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    let coedge = result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == loop_.coedges[0])
+        .unwrap();
+    assert!(coedge.pcurve.is_some());
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn decode_builds_an_ordered_multi_segment_bounded_sheet() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let face = result
+        .ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id.0 == "iges:model:face#D13")
+        .unwrap();
+    let loop_ = result
+        .ir
+        .model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id == face.loops[0])
+        .unwrap();
+    assert_eq!(loop_.coedges.len(), 4);
+    let senses = loop_
+        .coedges
+        .iter()
+        .map(|id| {
+            result
+                .ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *id)
+                .unwrap()
+                .sense
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        senses,
+        vec![
+            cadmpeg_ir::topology::Sense::Forward,
+            cadmpeg_ir::topology::Sense::Reversed,
+            cadmpeg_ir::topology::Sense::Forward,
+            cadmpeg_ir::topology::Sense::Forward,
+        ]
+    );
+    assert!(result
+        .ir
+        .model
+        .coedges
+        .iter()
+        .filter(|coedge| coedge.owner_loop == loop_.id)
+        .all(|coedge| coedge.pcurve.is_none()));
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_builds_a_valid_face_local_trimmed_sheet() {
     let result = IgesCodec
