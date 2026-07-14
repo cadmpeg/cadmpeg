@@ -48,6 +48,12 @@ pub enum AppearanceTarget {
     Body(BodyId),
     /// Per-face appearance override.
     Face(FaceId),
+    /// Standalone surface geometry appearance.
+    Surface(crate::ids::SurfaceId),
+    /// Standalone curve geometry appearance.
+    Curve(crate::ids::CurveId),
+    /// Standalone point geometry appearance.
+    Point(crate::ids::PointId),
 }
 
 /// An explicit appearance assignment.

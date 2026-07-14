@@ -219,6 +219,15 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             AppearanceTarget::Face(face) if !ids.faces.contains(&face.0) => {
                 ref_error(findings, &owner, "face", &face.0);
             }
+            AppearanceTarget::Surface(surface) if !ids.surfaces.contains(&surface.0) => {
+                ref_error(findings, &owner, "surface", &surface.0);
+            }
+            AppearanceTarget::Curve(curve) if !ids.curves.contains(&curve.0) => {
+                ref_error(findings, &owner, "curve", &curve.0);
+            }
+            AppearanceTarget::Point(point) if !ids.points.contains(&point.0) => {
+                ref_error(findings, &owner, "point", &point.0);
+            }
             _ => {}
         }
     }

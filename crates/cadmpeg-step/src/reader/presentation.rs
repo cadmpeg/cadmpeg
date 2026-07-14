@@ -119,12 +119,36 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> PresentationResult 
             .clone();
         let face_id = format!("step:data:face#{target_step}");
         let body_id = format!("step:data:body#{target_step}");
+        let surface_id = format!("step:data:surface#{target_step}");
+        let curve_id = format!("step:data:curve#{target_step}");
+        let point_id = format!("step:data:point#{target_step}");
         let target = if let Some(&index) = face_indices.get(&face_id) {
             ir.model.faces[index].color = Some(color);
             AppearanceTarget::Face(FaceId(face_id))
         } else if let Some(&index) = body_indices.get(&body_id) {
             ir.model.bodies[index].color = Some(color);
             AppearanceTarget::Body(BodyId(body_id))
+        } else if ir
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id.as_str() == surface_id)
+        {
+            AppearanceTarget::Surface(SurfaceId(surface_id))
+        } else if ir
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.id.as_str() == curve_id)
+        {
+            AppearanceTarget::Curve(CurveId(curve_id))
+        } else if ir
+            .model
+            .points
+            .iter()
+            .any(|point| point.id.as_str() == point_id)
+        {
+            AppearanceTarget::Point(PointId(point_id))
         } else {
             warnings.push(format!(
                 "STYLED_ITEM #{style_id} targets unsupported item #{target_step}"

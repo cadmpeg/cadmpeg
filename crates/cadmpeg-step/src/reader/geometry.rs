@@ -90,6 +90,16 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
                 );
             }
         }
+        if matches!(
+            record.simple_name(),
+            Some("STYLED_ITEM" | "OVER_RIDING_STYLED_ITEM")
+        ) {
+            if let Some(id) = record.parameter(2).and_then(Value::reference) {
+                if points.contains_key(&id) {
+                    point_carriers.insert(id);
+                }
+            }
+        }
     }
     ir.model
         .points

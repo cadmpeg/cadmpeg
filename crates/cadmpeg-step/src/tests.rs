@@ -364,6 +364,33 @@ fn decode_transfers_placed_analytic_geometry_in_millimetres() {
                 && nurbs.weights.as_deref() == Some(&[1.0, 0.5, 1.0][..])
     )));
     assert_eq!(result.ir.model.surfaces.len(), 10);
+    assert!(result
+        .ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Curve(_)
+        )));
+    assert!(result
+        .ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Surface(_)
+        )));
+    assert!(result
+        .ir
+        .model
+        .appearance_bindings
+        .iter()
+        .any(|binding| matches!(
+            binding.target,
+            cadmpeg_ir::appearance::AppearanceTarget::Point(_)
+        )));
     assert!(result.ir.model.surfaces.iter().any(|surface| matches!(
         surface.geometry,
         SurfaceGeometry::Plane { origin, normal, .. }
