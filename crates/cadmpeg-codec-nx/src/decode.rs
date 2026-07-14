@@ -5134,6 +5134,14 @@ fn attach_native_object_model(
     if !configurations.is_empty() {
         for (ordinal, configuration) in configurations.iter().enumerate() {
             let id = ConfigurationId(format!("nx:arrangements:configuration#{ordinal}"));
+            let active_attribute_use = configuration_attribute_uses
+                .iter()
+                .find(|relation| relation.configuration == configuration.id);
+            let bodies: Vec<BodyId> = if active_attribute_use.is_some() {
+                ir.model.bodies.iter().map(|body| body.id.clone()).collect()
+            } else {
+                Vec::new()
+            };
             annotations
                 .note(&id.0, annotation_stream, configuration.source_offset)
                 .tag("Arrangement");
@@ -5142,6 +5150,9 @@ fn attach_native_object_model(
             annotations.derived(&id.0, "source_index");
             annotations.derived(&id.0, "name");
             annotations.derived(&id.0, "native_ref");
+            if !bodies.is_empty() {
+                annotations.derived(&id.0, "bodies");
+            }
             ir.model.configurations.push(DesignConfiguration {
                 id,
                 ordinal: ordinal as u32,
@@ -5149,14 +5160,12 @@ fn attach_native_object_model(
                 source_index: Some(ordinal as u32),
                 name: configuration.name.clone(),
                 material: None,
-                properties: configuration_attribute_uses
-                    .iter()
-                    .find(|relation| relation.configuration == configuration.id)
+                properties: active_attribute_use
                     .map(|relation| {
                         BTreeMap::from([("active_attribute_use".to_string(), relation.id.clone())])
                     })
                     .unwrap_or_default(),
-                bodies: Vec::new(),
+                bodies,
                 native_ref: Some(configuration.id.clone()),
             });
         }

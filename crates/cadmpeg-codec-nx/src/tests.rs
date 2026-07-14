@@ -6408,7 +6408,10 @@ fn prt_with_arrangements() -> Vec<u8> {
     let mut attributes = br#"<UgAttributes version="4"><Attribute owner="part" pdmBased="false" utf8title="NX_Arrangement" utf8value="Model" version="3" type="StringAttributeType"/></UgAttributes>"#.to_vec();
     attributes.push(0);
     prt_with_named_payloads(&[
-        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+        (
+            "/Root/UG_PART/UG_PART",
+            zlib_compress(&topology_partition_stream()),
+        ),
         ("/Root/part/arrangements", arrangements),
         ("/Root/part/attrs", attributes),
     ])
@@ -7095,9 +7098,20 @@ fn decode_retains_nx_arrangement_configurations() {
     assert_eq!(result.ir.model.configurations[0].source_index, Some(0));
     assert_eq!(result.ir.model.configurations[0].name, "Model");
     assert!(result.ir.model.configurations[0].active);
+    assert_eq!(
+        result.ir.model.configurations[0].bodies,
+        result
+            .ir
+            .model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>()
+    );
     assert_eq!(result.ir.model.configurations[1].ordinal, 1);
     assert_eq!(result.ir.model.configurations[1].name, "Exploded");
     assert!(!result.ir.model.configurations[1].active);
+    assert!(result.ir.model.configurations[1].bodies.is_empty());
     let uses = result
         .ir
         .native

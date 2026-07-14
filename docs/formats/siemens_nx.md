@@ -48,6 +48,8 @@ is default. Child order is configuration order.
 A unique part-owned `NX_Arrangement` string attribute names the active
 configuration when its value equals the unique `Default="YES"` arrangement
 name. The two declarations form one active-configuration identity relation.
+Every body in the selected current B-rep belongs to that active configuration.
+Other arrangements have no body membership without a distinct body-state relation.
 An absent declaration, duplicate declaration, multiple defaults, type mismatch,
 or unequal name does not form the relation.
 
