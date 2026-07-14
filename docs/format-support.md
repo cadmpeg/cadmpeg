@@ -45,7 +45,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
 | STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
-| IGES 5.3 Fixed ASCII mechanical/document  | unscored       | envelope and cumulative proof gates defined; codec implementation pending                             |
+| IGES 5.3 Fixed ASCII mechanical/document  | unscored       | read implementation tested with original builders; public proof and approval gates pending           |
 
 Each current score applies to the envelope described in its profile.
 
@@ -95,13 +95,13 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 
 ### Read profile
 
-- **Container and versions: None.** Fixed-card framing, version reporting, entity census, external-reference inspection, and named unsupported-representation refusal are not implemented.
-- **Geometry: None.** No IGES carriers transfer to neutral IR.
-- **Topology: None.** No IGES face-local or explicit B-rep topology transfers to neutral IR.
+- **Container and versions: Partial.** Bounded detection, inspection, and decode cover IGES 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Pre-5.3 Fixed ASCII reports its version and is refused for semantic decode.
+- **Geometry: Partial.** Admitted point, vector, analytic curve and surface, conic, composite, copious-data, parametric-spline, rational B-spline, ruled, revolved, tabulated, offset, bounded, trimmed, face-local boundary, CSG primitive, sweep, and Boolean carriers decode into exact neutral geometry or typed native construction records. Units and nested definition, occurrence, entity, and reflected transformations are applied once. Independently obtained public coverage remains pending.
+- **Topology: Partial.** Type 141/142/143/144 face-local boundaries produce validated sheet regions without inferred adjacency. Type 186/502/504/508/510/514 records produce validated shared vertex, edge, coedge, loop, face, shell, region, and body graphs, including seams, voids, open shells, and explicit non-manifold radial rings. Invalid candidates commit no partial topology. Independently obtained public topology fixtures remain pending.
 - **Design intent: Inapplicable.** L4 and L6 semantics are absent from the declared format model.
-- **Product structure: None.** No definition, occurrence, group, placement, or external-reference records transfer.
-- **Presentation and metadata: None.** No Global metadata, appearance, view, drawing, annotation, dimension, or property records transfer.
-- **Recovery and retention: None.** No IGES byte-accounting ledger or native namespace exists.
+- **Product structure: Partial.** Typed native records preserve subfigure and network definitions, occurrences, array occurrences, solid assemblies and instances, groups, connect points, external references without implicit opening, attributes, units, associativities, persistent Directory identity, and separate placements. Public product-structure coverage remains pending.
+- **Presentation and metadata: Partial.** Global metadata, standard and definition colors, line fonts, text fonts and templates, views, visibility, drawings, notes, leaders, dimensions, symbols, witness geometry, sectioned areas, drawing properties, and admitted Type 406 property forms retain typed identity and links. Neutral appearance transfers where the common IR defines it; drawing and PMI semantics remain native.
+- **Recovery and retention: Partial.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, source identities, and exact opaque byte records with source range, length, bytes, and SHA-256. The byte ledger classifies Global values and delimiters, Directory fields and reserved bytes, Parameter tokens, delimiters, comments, back-pointers, card framing, line endings, Terminate counts, and post-Terminate bytes with exact nonoverlapping source coverage. The complete public-fixture ledger audit remains pending.
 
 ### Write and round trip
 
