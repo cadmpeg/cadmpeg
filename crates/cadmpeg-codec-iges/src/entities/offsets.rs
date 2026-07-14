@@ -42,6 +42,20 @@ fn add(point: Point3, vector: Vector3, scale: f64) -> Point3 {
     )
 }
 
+fn coordinate(point: Point3, index: u8) -> f64 {
+    match index {
+        1 => point.x,
+        2 => point.y,
+        3 => point.z,
+        _ => unreachable!(),
+    }
+}
+
+fn greville(knots: &[f64], degree: usize, control: usize) -> Option<f64> {
+    let values = knots.get(control + 1..=control + degree)?;
+    Some(values.iter().sum::<f64>() / degree as f64)
+}
+
 pub(super) struct OffsetProjection {
     pub(super) handled: BTreeSet<u32>,
     pub(super) decoded: BTreeSet<u32>,
@@ -334,11 +348,179 @@ pub(super) fn project(
                 )
             }
             3 => {
-                losses.push(entity_loss(
-                    entry,
-                    "coordinate-function offset has no solved neutral carrier",
-                ));
-                continue;
+                let Some(function_sequence) = record
+                    .integer(3)
+                    .and_then(|value| u32::try_from(value).ok())
+                else {
+                    losses.push(entity_loss(entry, "offset function pointer is invalid"));
+                    continue;
+                };
+                let Some(coordinate_index) = record
+                    .integer(4)
+                    .and_then(|value| u8::try_from(value).ok())
+                    .filter(|value| matches!(value, 1..=3))
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset function coordinate is not 1, 2, or 3",
+                    ));
+                    continue;
+                };
+                let basis = match record.integer(5) {
+                    Some(1) => CurveOffsetLawBasis::ArcLength,
+                    Some(2) => CurveOffsetLawBasis::Parameter,
+                    _ => {
+                        losses.push(entity_loss(entry, "function offset basis is not 1 or 2"));
+                        continue;
+                    }
+                };
+                if (6..=9).any(|index| record.number(index) != Some(0.0)) {
+                    losses.push(entity_loss(
+                        entry,
+                        "function offset has a nonzero unused field",
+                    ));
+                    continue;
+                }
+                let function_id = CurveId(format!("iges:model:curve#D{function_sequence}"));
+                let Some(function) = ir.model.curves.iter().find(|curve| curve.id == function_id)
+                else {
+                    losses.push(entity_loss(entry, "offset function curve is missing"));
+                    continue;
+                };
+                let CurveGeometry::Nurbs(function_nurbs) = &function.geometry else {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset function has no polynomial NURBS carrier",
+                    ));
+                    continue;
+                };
+                if function_nurbs.weights.is_some() || function_nurbs.degree == 0 {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset function is rational or degree zero",
+                    ));
+                    continue;
+                }
+                let CurveGeometry::Line { direction, .. } = &source.geometry else {
+                    losses.push(entity_loss(
+                        entry,
+                        "function offset source has no exact neutral carrier",
+                    ));
+                    continue;
+                };
+                if dot(normal, *direction).abs() > 1.0e-10 {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset normal is not perpendicular to the line",
+                    ));
+                    continue;
+                }
+                let (function_parameter_offset, function_parameter_scale) = match basis {
+                    CurveOffsetLawBasis::ArcLength => (0.0, 1.0 / factor),
+                    CurveOffsetLawBasis::Parameter => {
+                        (-parameter_origin / parameter_factor, 1.0 / parameter_factor)
+                    }
+                };
+                let independent_range = match basis {
+                    CurveOffsetLawBasis::ArcLength => [0.0, end - start],
+                    CurveOffsetLawBasis::Parameter => [start, end],
+                };
+                let function_range = independent_range
+                    .map(|value| function_parameter_offset + function_parameter_scale * value);
+                let degree = function_nurbs.degree as usize;
+                let Some(domain_start) = function_nurbs.knots.get(degree).copied() else {
+                    losses.push(entity_loss(entry, "offset function knot domain is missing"));
+                    continue;
+                };
+                let Some(domain_end) = function_nurbs
+                    .knots
+                    .get(function_nurbs.knots.len().saturating_sub(degree + 1))
+                    .copied()
+                else {
+                    losses.push(entity_loss(entry, "offset function knot domain is missing"));
+                    continue;
+                };
+                if function_range[0] < domain_start || function_range[1] > domain_end {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset function domain does not cover the source interval",
+                    ));
+                    continue;
+                }
+                let inverse_parameter =
+                    |value: f64| (value - function_parameter_offset) / function_parameter_scale;
+                let source_parameter = |independent: f64| match basis {
+                    CurveOffsetLawBasis::ArcLength => start + independent,
+                    CurveOffsetLawBasis::Parameter => independent,
+                };
+                let offset_direction = cross(normal, *direction);
+                let mut controls = Vec::with_capacity(function_nurbs.control_points.len());
+                for (index, function_control) in
+                    function_nurbs.control_points.iter().copied().enumerate()
+                {
+                    let Some(function_parameter) = greville(&function_nurbs.knots, degree, index)
+                    else {
+                        losses.push(entity_loss(
+                            entry,
+                            "offset function Greville parameter is missing",
+                        ));
+                        controls.clear();
+                        break;
+                    };
+                    let independent = inverse_parameter(function_parameter);
+                    let Some(base) = cadmpeg_ir::eval::curve_point(
+                        &source.geometry,
+                        source_parameter(independent),
+                    ) else {
+                        controls.clear();
+                        break;
+                    };
+                    controls.push(add(
+                        base,
+                        offset_direction,
+                        coordinate(function_control, coordinate_index),
+                    ));
+                }
+                if controls.len() != function_nurbs.control_points.len() {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset function controls cannot be composed",
+                    ));
+                    continue;
+                }
+                let knots = function_nurbs
+                    .knots
+                    .iter()
+                    .map(|value| source_parameter(inverse_parameter(*value)))
+                    .collect();
+                let Some(function_start) =
+                    cadmpeg_ir::eval::curve_point(&function.geometry, function_range[0])
+                else {
+                    losses.push(entity_loss(
+                        entry,
+                        "offset function start cannot be evaluated",
+                    ));
+                    continue;
+                };
+                let distance = coordinate(function_start, coordinate_index);
+                let law = CurveOffsetDistanceLaw::Coordinate {
+                    function: function_id,
+                    coordinate: coordinate_index,
+                    basis,
+                    function_parameter_offset,
+                    function_parameter_scale,
+                };
+                (
+                    distance,
+                    Some(law),
+                    CurveGeometry::Nurbs(NurbsCurve {
+                        degree: function_nurbs.degree,
+                        knots,
+                        control_points: controls,
+                        weights: None,
+                        periodic: false,
+                    }),
+                )
             }
             _ => unreachable!(),
         };

@@ -2217,6 +2217,10 @@ pub enum CurveOffsetDistanceLaw {
         coordinate: u8,
         /// Independent-variable interpretation.
         basis: CurveOffsetLawBasis,
+        /// Function parameter at zero source parameter or arc length.
+        function_parameter_offset: f64,
+        /// Function-parameter change per neutral source parameter or length unit.
+        function_parameter_scale: f64,
     },
 }
 

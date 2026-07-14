@@ -288,7 +288,7 @@ fn uniform_offset_circle_file() -> Vec<u8> {
     bytes
 }
 
-fn linear_offset_line_file() -> Vec<u8> {
+fn linear_offset_line_file(basis: i64) -> Vec<u8> {
     let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
     let mut bytes = fixed_ascii_with_global(global);
     bytes.truncate(bytes.len() - 81);
@@ -309,10 +309,61 @@ fn linear_offset_line_file() -> Vec<u8> {
         4,
     ));
     bytes.extend(parameter_card(b"110,0,0,0,10,0,0;", 1, 1));
-    bytes.extend(parameter_card(b"130,1,2,0,0,2,1,0,3,1,0,0,1,0,1;", 3, 2));
+    let control_end = if basis == 1 { 10 } else { 1 };
+    bytes.extend(parameter_card(
+        format!("130,1,2,0,0,{basis},1,0,3,{control_end},0,0,1,0,1;").as_bytes(),
+        3,
+        2,
+    ));
     let global_cards = global.len().div_ceil(72);
     bytes.extend(card(
         format!("S0000001G{global_cards:07}D0000004P0000002").as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+fn function_offset_line_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    for (sequence, parameter_start, entity_type, label, status) in [
+        (1, 1, 110, "LINE", "00010000"),
+        (3, 2, 126, "LAW", "00010000"),
+        (5, 3, 130, "OFFSET", "00000000"),
+    ] {
+        let entity_type = entity_type.to_string();
+        let parameter_start = parameter_start.to_string();
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [&entity_type, "0", "0", "1", "0", "", "", label, "0"],
+            sequence + 1,
+        ));
+    }
+    bytes.extend(parameter_card(b"110,0,0,0,10,0,0;", 1, 1));
+    bytes.extend(parameter_card(
+        b"126,1,1,1,0,1,0,0,0,1,1,1,1,0,1,0,1,3,0,0,1,0,0,1;",
+        3,
+        2,
+    ));
+    bytes.extend(parameter_card(b"130,1,3,3,2,2,0,0,0,0,0,0,1,0,1;", 5, 3));
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!("S0000001G{global_cards:07}D0000006P0000003").as_bytes(),
         b'T',
         1,
     ));
@@ -1420,9 +1471,61 @@ fn decode_solves_a_uniform_planar_curve_offset() {
 
 #[test]
 fn decode_solves_a_parameter_linear_line_offset() {
+    for (basis_code, expected_basis) in [
+        (1, cadmpeg_ir::geometry::CurveOffsetLawBasis::ArcLength),
+        (2, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter),
+    ] {
+        let result = IgesCodec
+            .decode(
+                &mut Cursor::new(linear_offset_line_file(basis_code)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+
+        let offset = result
+            .ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| curve.id.0 == "iges:model:curve#D3")
+            .unwrap();
+        let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &offset.geometry else {
+            panic!("expected an exact degree-one offset carrier");
+        };
+        assert_eq!(nurbs.knots, vec![0.0, 0.0, 10.0, 10.0]);
+        assert_eq!(
+            nurbs.control_points,
+            vec![
+                cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                cadmpeg_ir::math::Point3::new(10.0, 3.0, 0.0),
+            ]
+        );
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
+            distance_law:
+                Some(cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
+                    basis,
+                    distances,
+                    control_range,
+                }),
+            ..
+        } = &result.ir.model.procedural_curves[0].definition
+        else {
+            panic!("expected a retained linear offset law");
+        };
+        assert_eq!(*basis, expected_basis);
+        assert_eq!(*distances, [1.0, 3.0]);
+        assert_eq!(*control_range, [0.0, 10.0]);
+        assert!(result.report.losses.is_empty());
+        let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+        assert!(validation.is_ok(), "{:#?}", validation.findings);
+    }
+}
+
+#[test]
+fn decode_solves_a_polynomial_coordinate_function_offset() {
     let result = IgesCodec
         .decode(
-            &mut Cursor::new(linear_offset_line_file()),
+            &mut Cursor::new(function_offset_line_file()),
             &DecodeOptions::default(),
         )
         .unwrap();
@@ -1432,10 +1535,10 @@ fn decode_solves_a_parameter_linear_line_offset() {
         .model
         .curves
         .iter()
-        .find(|curve| curve.id.0 == "iges:model:curve#D3")
+        .find(|curve| curve.id.0 == "iges:model:curve#D5")
         .unwrap();
     let cadmpeg_ir::geometry::CurveGeometry::Nurbs(nurbs) = &offset.geometry else {
-        panic!("expected an exact degree-one offset carrier");
+        panic!("expected an exact function-offset carrier");
     };
     assert_eq!(nurbs.knots, vec![0.0, 0.0, 10.0, 10.0]);
     assert_eq!(
@@ -1447,20 +1550,28 @@ fn decode_solves_a_parameter_linear_line_offset() {
     );
     let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset {
         distance_law:
-            Some(cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Linear {
+            Some(cadmpeg_ir::geometry::CurveOffsetDistanceLaw::Coordinate {
+                function,
+                coordinate,
                 basis,
-                distances,
-                control_range,
+                function_parameter_offset,
+                function_parameter_scale,
             }),
         ..
     } = &result.ir.model.procedural_curves[0].definition
     else {
-        panic!("expected a retained linear offset law");
+        panic!("expected a retained coordinate-function offset law");
     };
+    assert_eq!(function.0, "iges:model:curve#D3");
+    assert_eq!(*coordinate, 2);
     assert_eq!(*basis, cadmpeg_ir::geometry::CurveOffsetLawBasis::Parameter);
-    assert_eq!(*distances, [1.0, 3.0]);
-    assert_eq!(*control_range, [0.0, 10.0]);
-    assert!(result.report.losses.is_empty());
+    assert_eq!(*function_parameter_offset, 0.0);
+    assert_eq!(*function_parameter_scale, 0.1);
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
     let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
