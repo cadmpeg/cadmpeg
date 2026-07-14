@@ -205,12 +205,25 @@ pub struct SurfaceParameterRecord {
     pub body: Vec<u8>,
     /// Context-independent scalar values decoded from the body in byte order.
     pub scalar_values: Vec<f64>,
+    /// Decoded scalar tokens with byte spans relative to `body`.
+    pub scalar_tokens: Vec<SurfaceParameterScalar>,
     /// Structural form that bounded the body.
     pub boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
     pub offset: usize,
     /// Byte offset of the first parameter-body byte in the original stream.
     pub body_offset: usize,
+}
+
+/// One scalar token located within a positional surface parameter body.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SurfaceParameterScalar {
+    /// Decoded scalar value.
+    pub value: f64,
+    /// Byte offset relative to the start of the parameter body.
+    pub offset: usize,
+    /// Number of source bytes occupied by the token.
+    pub length: usize,
 }
 
 /// Structural classification of a plane-row local-system chunk.
@@ -625,18 +638,26 @@ fn decode_row_scalar(
     }
 }
 
-fn scalar_values(kind: SurfaceKind, body: &[u8], cache: &scalar::ScalarCache) -> Vec<f64> {
-    let mut values = Vec::new();
+fn scalar_tokens(
+    kind: SurfaceKind,
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Vec<SurfaceParameterScalar> {
+    let mut tokens = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
         if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
-            values.push(value);
+            tokens.push(SurfaceParameterScalar {
+                value,
+                offset: cursor,
+                length: next - cursor,
+            });
             cursor = next;
         } else {
             cursor += 1;
         }
     }
-    values
+    tokens
 }
 
 fn named_record_length(body: &[u8], offset: usize) -> Option<usize> {
@@ -715,9 +736,11 @@ pub fn parameter_records(payload: &[u8]) -> Vec<SurfaceParameterRecord> {
             boundary = SurfaceBodyBoundary::NamedRecord;
         }
         let body = payload[*body_start..body_end].to_vec();
+        let scalar_tokens = scalar_tokens(row.kind, &body, &cache);
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
-            scalar_values: scalar_values(row.kind, &body, &cache),
+            scalar_values: scalar_tokens.iter().map(|token| token.value).collect(),
+            scalar_tokens,
             body,
             boundary,
             offset: row.offset,

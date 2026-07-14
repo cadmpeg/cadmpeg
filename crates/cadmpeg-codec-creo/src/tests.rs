@@ -346,6 +346,14 @@ fn surface_parameter_body_uses_torus_negative_world_lane() {
             1.0,
         ]
     );
+    assert_eq!(
+        scan.surface_parameters[0]
+            .scalar_tokens
+            .iter()
+            .map(|token| (token.offset, token.length))
+            .collect::<Vec<_>>(),
+        [(0, 7), (7, 1)]
+    );
 }
 
 #[test]
