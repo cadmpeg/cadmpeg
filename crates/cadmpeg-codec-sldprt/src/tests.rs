@@ -8398,6 +8398,55 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
 }
 
 #[test]
+fn decode_binds_following_dissected_profile_to_compact_extrusion() {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords>
+            <Extrusion Name="Boss" Type="Extrusion" id="9" Dissectable="true" DissectableRoot="true"/>
+            <Sketch Name="Profile&lt;3&gt;" Type="Sketch" id="8"/>
+        </Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("moICE_c", "Boss", 9),
+            ("moProfileFeature_c", "Profile<3>", 8),
+        ]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let profile = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Profile<3>"))
+        .unwrap();
+    let extrusion = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    assert!(matches!(
+        &extrusion.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Native(native),
+            ..
+        } if native == profile.native_ref.as_deref().unwrap()
+    ));
+    assert_eq!(extrusion.dependencies, vec![profile.id.clone()]);
+}
+
+#[test]
 fn semantic_writer_round_trips_sparse_positional_extrusions() {
     use cadmpeg_ir::features::{BooleanOp, Extent, FeatureDefinition, Length, ParameterValue};
 

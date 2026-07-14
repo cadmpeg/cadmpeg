@@ -2176,14 +2176,19 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             .collect::<Vec<_>>();
         objects.sort_by_key(|(name, _)| name.offset);
         for pair in objects.windows(2) {
-            let [(_, profile), (_, extrusion)] = pair else {
+            let [(_, first), (_, second)] = pair else {
                 continue;
             };
-            if native_object_class(profile.input_class.as_deref().unwrap_or_default()).kind
-                != NativeClassKind::ProfileFeature
-                || native_object_class(extrusion.input_class.as_deref().unwrap_or_default()).kind
-                    != NativeClassKind::Extrusion
-            {
+            let first_kind =
+                native_object_class(first.input_class.as_deref().unwrap_or_default()).kind;
+            let second_kind =
+                native_object_class(second.input_class.as_deref().unwrap_or_default()).kind;
+            let (profile, extrusion) = match (first_kind, second_kind) {
+                (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion) => (*first, *second),
+                (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature) => (*second, *first),
+                _ => continue,
+            };
+            if extrusion.properties.contains_key("DissectableChildren") {
                 continue;
             }
             let Some(&index) = neutral_indices.get(&extrusion.id) else {

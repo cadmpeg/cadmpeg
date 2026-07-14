@@ -141,7 +141,7 @@ A `moCompEdge_c` child carries an ordered compact edge-selection vector. The vec
 
 `moExtrusion_c` and `moICE_c` are extrusion feature classes. `moProfileFeature_c` and `mo3DProfileFeature_c` are planar and spatial sketch feature classes. `moCombineBodies_c` is the body-Boolean feature class. `moConstSurfRef_w`, `moEndPointRef_w`, `moGeneralCurveRef_w`, `moLineRef_w`, `moSingleFaceRef_w`, `moSolidRef_w`, `moCompReferenceCurve_c`, and `moCompSurfaceBody_c` identify reference objects rather than feature operations.
 
-An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. The profile feature is an ordered dependency of the extrusion. This adjacency form is independent of the `DissectableChildren` property used by explicitly dissectable extrusion objects.
+An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. A compact extrusion without `DissectableChildren` also consumes a `moProfileFeature_c` object immediately following it. The profile feature is an ordered dependency of the extrusion. These adjacency forms are independent of the `DissectableChildren` property used by explicitly linked extrusion objects.
 
 `moSweep_c` produces a solid sweep. Its Boolean operation remains independently unresolved when no operation carrier is present. `moSweepRefSurface_c` produces a surface sweep.
 
