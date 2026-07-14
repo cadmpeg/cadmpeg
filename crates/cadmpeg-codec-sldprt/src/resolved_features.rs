@@ -5404,7 +5404,10 @@ fn typed_marker_relation_definition(
         SketchInputKind::Native(_) => None,
         _ => return None,
     };
-    if marker.links.is_empty() && !loci_by_marker.contains_key(&marker.id) {
+    if marker.links.is_empty()
+        && !loci_by_marker.contains_key(&marker.id)
+        && relation_owner_markers(marker, markers_by_id).is_empty()
+    {
         return None;
     }
     let native = || {
@@ -5415,6 +5418,28 @@ fn typed_marker_relation_definition(
             .collect::<Vec<_>>();
         entities.sort_by(|left, right| left.0.cmp(&right.0));
         entities.dedup();
+        let owners = relation_owner_markers(marker, markers_by_id);
+        entities.extend(
+            owners
+                .iter()
+                .flat_map(|owner| marker_entities(&owner.id, markers_by_id, loci_by_marker)),
+        );
+        entities.sort_by(|left, right| left.0.cmp(&right.0));
+        entities.dedup();
+        let mut operands = marker
+            .links
+            .iter()
+            .map(|link| SketchNativeOperand {
+                native_kind: "sldprt:marker-local-id".into(),
+                object_index: u32::from(link.local_id),
+                native_ref: Some(link.entity_ref.clone()),
+            })
+            .collect::<Vec<_>>();
+        operands.extend(owners.into_iter().map(|owner| SketchNativeOperand {
+            native_kind: "sldprt:marker-constraint-owner".into(),
+            object_index: owner.object_index.or(owner.local_id).unwrap_or(u32::MAX),
+            native_ref: Some(owner.id.clone()),
+        }));
         SketchConstraintDefinition::Native {
             native_kind: match marker.kind {
                 SketchInputKind::Relation(kind) => {
@@ -5425,15 +5450,7 @@ fn typed_marker_relation_definition(
             },
             entities,
             parameter: None,
-            operands: marker
-                .links
-                .iter()
-                .map(|link| SketchNativeOperand {
-                    native_kind: "sldprt:marker-local-id".into(),
-                    object_index: u32::from(link.local_id),
-                    native_ref: Some(link.entity_ref.clone()),
-                })
-                .collect(),
+            operands,
         }
     };
     let Some(kind) = kind else {
@@ -5576,6 +5593,31 @@ fn typed_marker_relation_definition(
         | crate::records::SketchRelationKind::Diameter => return None,
         _ => native(),
     })
+}
+
+fn relation_owner_markers<'a>(
+    relation: &SketchInputEntity,
+    markers_by_id: &'a HashMap<&str, &SketchInputEntity>,
+) -> Vec<&'a SketchInputEntity> {
+    let mut owners = markers_by_id
+        .values()
+        .copied()
+        .filter(|marker| marker.feature_ref == relation.feature_ref)
+        .filter(|marker| {
+            matches!(
+                marker.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+        })
+        .filter(|marker| {
+            marker
+                .links
+                .iter()
+                .any(|link| link.entity_ref == relation.id)
+        })
+        .collect::<Vec<_>>();
+    owners.sort_unstable_by_key(|marker| marker.offset);
+    owners
 }
 
 fn linked_single_arc_entity(
@@ -6992,7 +7034,8 @@ mod profile_join_tests {
         dimensioned_circle_surface_transforms, dimensioned_circle_transform,
         implicit_circle_marker, marker_entities, principal_plane_marker_point,
         profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        project_relation_point_geometry, relation_parameter_by_display_name, resolved_marker_locus,
+        project_relation_point_geometry, relation_owner_markers,
+        relation_parameter_by_display_name, resolved_marker_locus,
         select_marker_transforms_by_frame, sketch_frame_marker_transform,
         type_display_relation_parameters, typed_marker_relation_definition,
         typed_relation_definition, unique_compatible_marker_transform,
@@ -7032,6 +7075,41 @@ mod profile_join_tests {
             links: Vec::new(),
             link_selector: None,
         }
+    }
+
+    #[test]
+    fn coordinate_curve_links_carry_reverse_constraint_incidence() {
+        let mut relation = marker("relation", None);
+        relation.kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        let mut owner = marker("owner", Some([1.0, 2.0]));
+        owner.kind = SketchInputKind::LineOrCircle;
+        owner.object_index = Some(7);
+        owner.links = vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: relation.id.clone(),
+        }];
+        let mut point = marker("point", Some([1.0, 2.0]));
+        point.links = owner.links.clone();
+        let markers = HashMap::from([
+            (relation.id.as_str(), &relation),
+            (owner.id.as_str(), &owner),
+            (point.id.as_str(), &point),
+        ]);
+
+        assert_eq!(relation_owner_markers(&relation, &markers), vec![&owner]);
+        let Some(SketchConstraintDefinition::Native { operands, .. }) =
+            typed_marker_relation_definition(&relation, &markers, &HashMap::new())
+        else {
+            panic!("native relation");
+        };
+        assert_eq!(
+            operands,
+            vec![SketchNativeOperand {
+                native_kind: "sldprt:marker-constraint-owner".into(),
+                object_index: 7,
+                native_ref: Some(owner.id),
+            }]
+        );
     }
 
     #[test]
