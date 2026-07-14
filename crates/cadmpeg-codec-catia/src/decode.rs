@@ -1065,15 +1065,15 @@ mod chart_tests {
     use super::{
         attach_standard_free_vertices, build_standard_edge_curve, fit_rank_one_e5_plane_axes,
         intersection_line_direction, ordered_range, point_on_known_surface, quintic_jet_pcurve,
-        rational_pcurve_arc, standard_pcurve_geometry,
+        rational_pcurve_arc, resolve_standard_endpoint_pairs, standard_pcurve_geometry,
     };
     use crate::geometry::{StandardCurveGeometry, StandardCurveSupport};
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::pcurve_uv;
-    use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, SurfaceGeometry};
-    use cadmpeg_ir::ids::{PointId, VertexId};
+    use cadmpeg_ir::geometry::{CurveGeometry, PcurveGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::{PointId, SurfaceId, VertexId};
     use cadmpeg_ir::math::{Point3, Vector3};
-    use cadmpeg_ir::topology::Vertex;
+    use cadmpeg_ir::topology::{Point, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::HashMap;
@@ -1138,6 +1138,44 @@ mod chart_tests {
             ir.model.shells[0].free_vertices,
             [VertexId("v".to_string())]
         );
+    }
+
+    #[test]
+    fn unresolved_standard_spline_does_not_invent_all_endpoint_pairs() {
+        let mut ir = CadIr::empty(Units::default());
+        for index in 0..3 {
+            ir.model.points.push(Point {
+                id: PointId(format!("p{index}")),
+                position: Point3::new(index as f64, 0.0, 0.0),
+            });
+        }
+        for index in 0..2 {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("s{index}")),
+                geometry: SurfaceGeometry::Unknown { record: None },
+                source_object: None,
+            });
+        }
+        let bindings = [
+            (SurfaceId("s0".to_string()), true, 0),
+            (SurfaceId("s1".to_string()), true, 0),
+        ];
+        let indices = [
+            (SurfaceId("s0".to_string()), 0),
+            (SurfaceId("s1".to_string()), 1),
+        ]
+        .into_iter()
+        .collect();
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+        let choices =
+            resolve_standard_endpoint_pairs(&ir, &bindings, &indices, &[support], &[vec![0, 1, 2]])
+                .expect("endpoint option pass");
+        assert!(choices[0].is_empty());
     }
 
     #[test]
@@ -2896,7 +2934,6 @@ fn resolve_standard_endpoint_pairs(
             && matches!(
                 support.geometry,
                 geometry::StandardCurveGeometry::Circle { .. }
-                    | geometry::StandardCurveGeometry::Bspline
             )
         {
             let count = candidates[edge].len();
