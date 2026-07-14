@@ -1680,14 +1680,17 @@ fn section_skamp_selected_point_id(
 pub(crate) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
-    let mut radii = definition
-        .variables
-        .iter()
-        .flat_map(|table| &table.rows)
-        .filter_map(|row| {
-            (row.variable_type == 3).then_some((row.key, row.value.filter(|value| *value > 0.0)?))
-        })
-        .collect::<BTreeMap<_, _>>();
+    let mut candidates = BTreeMap::<u32, BTreeSet<u64>>::new();
+    for row in definition.variables.iter().flat_map(|table| &table.rows) {
+        if row.variable_type == 3 {
+            if let Some(value) = row.value.filter(|value| value.is_finite() && *value > 0.0) {
+                candidates
+                    .entry(row.key)
+                    .or_default()
+                    .insert(value.to_bits());
+            }
+        }
+    }
     for relation in definition.relations.iter().flat_map(|table| &table.rows) {
         if relation.relation_type != 14 || relation.sign != 1 {
             continue;
@@ -1710,7 +1713,66 @@ pub(crate) fn resolved_section_radii(
         else {
             continue;
         };
-        radii.entry(radius_id).or_insert(value);
+        candidates
+            .entry(radius_id)
+            .or_default()
+            .insert(value.to_bits());
+    }
+    let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
+    for skamp in definition.relations.iter().flat_map(|table| &table.skamps) {
+        let [first, second] = skamp.items.as_slice() else {
+            continue;
+        };
+        if skamp.kind != 6 || first.sense != 0 || second.sense != 0 {
+            continue;
+        }
+        let Some(first_radius) = unique_section_skamp_segment(definition, first.entity_id)
+            .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+            .and_then(|segment| segment.radius_ref)
+        else {
+            continue;
+        };
+        let Some(second_radius) = unique_section_skamp_segment(definition, second.entity_id)
+            .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
+            .and_then(|segment| segment.radius_ref)
+        else {
+            continue;
+        };
+        adjacency
+            .entry(first_radius)
+            .or_default()
+            .insert(second_radius);
+        adjacency
+            .entry(second_radius)
+            .or_default()
+            .insert(first_radius);
+    }
+    let mut remaining = candidates
+        .keys()
+        .chain(adjacency.keys())
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let mut radii = BTreeMap::new();
+    while let Some(seed) = remaining.first().copied() {
+        let mut component = BTreeSet::from([seed]);
+        let mut pending = std::collections::VecDeque::from([seed]);
+        while let Some(radius_id) = pending.pop_front() {
+            for neighbor in adjacency.get(&radius_id).into_iter().flatten() {
+                if component.insert(*neighbor) {
+                    pending.push_back(*neighbor);
+                }
+            }
+        }
+        let values = component
+            .iter()
+            .flat_map(|radius_id| candidates.get(radius_id).into_iter().flatten())
+            .copied()
+            .collect::<BTreeSet<_>>();
+        if let [bits] = values.iter().copied().collect::<Vec<_>>().as_slice() {
+            let value = f64::from_bits(*bits);
+            radii.extend(component.iter().map(|radius_id| (*radius_id, value)));
+        }
+        remaining.retain(|radius_id| !component.contains(radius_id));
     }
     radii
 }
@@ -8586,6 +8648,48 @@ mod resolved_sketch_tests {
             saved_section: None,
             offset: 0,
         };
+        let mut equal_radius_definition = definition.clone();
+        let equal_radius_segments = &mut equal_radius_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows;
+        equal_radius_segments[1].radius_ref = Some(101);
+        equal_radius_segments[4].radius_ref = Some(102);
+        equal_radius_definition.variables = Some(crate::feature::FeatureVariableTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureVariableRow {
+                variable_type: 3,
+                key: 101,
+                value: Some(3.0),
+                guess: None,
+                uvar_id: None,
+                dimension_driven: false,
+                offset: 90,
+            }],
+            points: Vec::new(),
+            offset: 89,
+        });
+        assert_eq!(
+            resolved_section_radii(&equal_radius_definition),
+            BTreeMap::from([(101, 3.0), (102, 3.0)])
+        );
+        equal_radius_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .rows
+            .push(crate::feature::FeatureVariableRow {
+                variable_type: 3,
+                key: 102,
+                value: Some(4.0),
+                guess: None,
+                uvar_id: None,
+                dimension_driven: false,
+                offset: 91,
+            });
+        assert!(resolved_section_radii(&equal_radius_definition).is_empty());
         let constraints = section_skamp_constraints(&definition, &SketchId("sketch".into()));
 
         assert!(matches!(
