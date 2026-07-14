@@ -68,6 +68,17 @@ impl Affine {
         };
         Vector3::new(coordinate(0), coordinate(1), coordinate(2))
     }
+
+    pub(super) fn body_transform(self) -> cadmpeg_ir::transform::Transform {
+        cadmpeg_ir::transform::Transform {
+            rows: [
+                self.rows[0],
+                self.rows[1],
+                self.rows[2],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        }
+    }
 }
 
 fn dot(left: Vector3, right: Vector3) -> f64 {

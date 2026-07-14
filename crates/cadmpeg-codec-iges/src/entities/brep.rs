@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Explicit IGES B-rep topology projection.
 
-use super::geometry::entity_loss;
+use super::geometry::{entity_loss, resolve_transform};
 use super::trimming::pcurve_geometry;
 use crate::directory::DirectoryEntry;
 use crate::global::Global;
@@ -40,6 +40,28 @@ struct EdgeUse {
 struct FaceDefinition {
     surface: u32,
     loops: Vec<u32>,
+}
+
+#[derive(Clone)]
+struct ShellDefinition {
+    form: i64,
+    faces: Vec<(u32, Sense)>,
+}
+
+struct BodyDefinition<'a> {
+    entry: &'a DirectoryEntry,
+    kind: BodyKind,
+    shells: Vec<(u32, Sense)>,
+    closed: bool,
+    transform: Option<cadmpeg_ir::transform::Transform>,
+}
+
+fn compose_sense(left: Sense, right: Sense) -> Sense {
+    if left == right {
+        Sense::Forward
+    } else {
+        Sense::Reversed
+    }
 }
 
 fn pointer(record: &ParameterRecord, index: usize) -> Option<u32> {
@@ -148,6 +170,13 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 504 && entry.form == 1)
     {
         handled.insert(entry.sequence);
+        if entry.transform != 0 {
+            losses.push(entity_loss(
+                entry,
+                "edge lists cannot carry a transformation",
+            ));
+            continue;
+        }
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -208,6 +237,10 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 508 && entry.form == 1)
     {
         handled.insert(entry.sequence);
+        if entry.transform != 0 {
+            losses.push(entity_loss(entry, "loops cannot carry a transformation"));
+            continue;
+        }
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -309,6 +342,10 @@ pub(super) fn project(
         .filter(|entry| entry.entity_type == 510 && entry.form == 1)
     {
         handled.insert(entry.sequence);
+        if entry.transform != 0 {
+            losses.push(entity_loss(entry, "faces cannot carry a transformation"));
+            continue;
+        }
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -352,11 +389,16 @@ pub(super) fn project(
         );
     }
 
+    let mut shell_definitions = BTreeMap::new();
     for entry in directory
         .iter()
-        .filter(|entry| entry.entity_type == 514 && entry.form == 2)
+        .filter(|entry| entry.entity_type == 514 && matches!(entry.form, 1 | 2))
     {
         handled.insert(entry.sequence);
+        if entry.transform != 0 {
+            losses.push(entity_loss(entry, "shells cannot carry a transformation"));
+            continue;
+        }
         let Some(record) = records.get(&entry.sequence).copied() else {
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
@@ -393,167 +435,353 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "shell face-use tuple is invalid"));
             continue;
         }
+        shell_definitions.insert(
+            entry.sequence,
+            ShellDefinition {
+                form: entry.form,
+                faces: face_uses,
+            },
+        );
+    }
+
+    let mut body_definitions = Vec::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 514 && entry.form == 2)
+    {
+        if shell_definitions.contains_key(&entry.sequence) {
+            body_definitions.push(BodyDefinition {
+                entry,
+                kind: BodyKind::Sheet,
+                shells: vec![(entry.sequence, Sense::Forward)],
+                closed: false,
+                transform: None,
+            });
+        }
+    }
+    let mut referenced_closed_shells = BTreeSet::new();
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 186 && entry.form == 0)
+    {
+        handled.insert(entry.sequence);
+        let Some(record) = records.get(&entry.sequence).copied() else {
+            losses.push(entity_loss(entry, "Parameter Data record is missing"));
+            continue;
+        };
+        let Some(outer) = pointer(record, 1) else {
+            losses.push(entity_loss(entry, "solid outer-shell pointer is invalid"));
+            continue;
+        };
+        let outer_sense = match record.integer(2) {
+            Some(1) => Sense::Forward,
+            Some(0) => Sense::Reversed,
+            _ => {
+                losses.push(entity_loss(
+                    entry,
+                    "solid outer-shell orientation is not logical",
+                ));
+                continue;
+            }
+        };
+        let Some(void_count) = record
+            .integer(3)
+            .and_then(|value| usize::try_from(value).ok())
+        else {
+            losses.push(entity_loss(entry, "solid void-shell count is invalid"));
+            continue;
+        };
+        let mut shell_uses = vec![(outer, outer_sense)];
+        let mut valid = true;
+        for index in 0..void_count {
+            let Some(shell) = pointer(record, 4 + index * 2) else {
+                valid = false;
+                break;
+            };
+            let sense = match record.integer(5 + index * 2) {
+                Some(1) => Sense::Forward,
+                Some(0) => Sense::Reversed,
+                _ => {
+                    valid = false;
+                    break;
+                }
+            };
+            shell_uses.push((shell, sense));
+        }
+        if !valid
+            || shell_uses.iter().any(|(sequence, _)| {
+                shell_definitions
+                    .get(sequence)
+                    .is_none_or(|shell| shell.form != 1)
+            })
+        {
+            losses.push(entity_loss(
+                entry,
+                "solid shell-use tuple is invalid or not closed",
+            ));
+            continue;
+        }
+        referenced_closed_shells.extend(shell_uses.iter().map(|(sequence, _)| *sequence));
+        let transform = match resolve_transform(
+            entry.transform,
+            &entries,
+            &records,
+            factor,
+            &mut BTreeSet::new(),
+        ) {
+            Ok(transform) => (entry.transform != 0).then(|| transform.body_transform()),
+            Err(message) => {
+                losses.push(entity_loss(entry, message));
+                continue;
+            }
+        };
+        body_definitions.push(BodyDefinition {
+            entry,
+            kind: BodyKind::Solid,
+            shells: shell_uses,
+            closed: true,
+            transform,
+        });
+    }
+    for entry in directory
+        .iter()
+        .filter(|entry| entry.entity_type == 514 && entry.form == 1)
+    {
+        if shell_definitions.contains_key(&entry.sequence)
+            && !referenced_closed_shells.contains(&entry.sequence)
+        {
+            body_definitions.push(BodyDefinition {
+                entry,
+                kind: BodyKind::Sheet,
+                shells: vec![(entry.sequence, Sense::Forward)],
+                closed: true,
+                transform: None,
+            });
+        }
+    }
+
+    for definition in body_definitions {
+        let entry = definition.entry;
         let mut candidate = ir.clone();
         let stem = format!("D{}", entry.sequence);
         let body_id = BodyId(format!("iges:model:body#{stem}"));
         let region_id = RegionId(format!("iges:model:region#{stem}"));
-        let shell_id = ShellId(format!("iges:model:shell#{stem}"));
         let mut vertex_ids = BTreeMap::<(u32, usize), VertexId>::new();
         let mut edge_ids = BTreeMap::<(u32, usize), EdgeId>::new();
-        let mut radial = BTreeMap::<(u32, usize), Vec<CoedgeId>>::new();
-        let mut shell_faces = Vec::new();
+        let mut radial = BTreeMap::<(u32, u32, usize), Vec<CoedgeId>>::new();
+        let mut region_shells = Vec::new();
         let mut consumed = BTreeSet::new();
         let mut valid = true;
-        for (face_sequence, face_sense) in face_uses {
-            let face_definition = faces[&face_sequence].clone();
-            let surface_id = SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
-            let Some(support) = ir
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == surface_id)
-            else {
-                valid = false;
-                break;
+        for (shell_sequence, shell_sense) in definition.shells.iter().copied() {
+            let shell_definition = shell_definitions[&shell_sequence].clone();
+            let shell_stem = if shell_sequence == entry.sequence && definition.shells.len() == 1 {
+                stem.clone()
+            } else {
+                format!("{stem}:D{shell_sequence}")
             };
-            let face_id = FaceId(format!("iges:model:face#{stem}:D{face_sequence}"));
-            let mut face_loops = Vec::new();
-            for loop_sequence in face_definition.loops {
-                let uses = loops[&loop_sequence].clone();
-                let loop_id = LoopId(format!("iges:model:loop#{stem}:D{loop_sequence}"));
-                let coedge_ids = (0..uses.len())
-                    .map(|index| {
-                        CoedgeId(format!("iges:model:coedge#{stem}:D{loop_sequence}:{index}"))
-                    })
-                    .collect::<Vec<_>>();
-                for (use_index, edge_use) in uses.into_iter().enumerate() {
-                    let edge_definition = edge_lists[&edge_use.edge_list][edge_use.edge_index];
-                    for (list, index) in [
-                        (edge_definition.start_list, edge_definition.start_index),
-                        (edge_definition.end_list, edge_definition.end_index),
-                    ] {
-                        if let std::collections::btree_map::Entry::Vacant(slot) =
-                            vertex_ids.entry((list, index))
-                        {
-                            let position = vertex_lists[&list][index];
-                            let point_id =
-                                PointId(format!("iges:model:point#{stem}:D{list}:{}", index + 1));
-                            let vertex_id =
-                                VertexId(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1));
-                            candidate.model.points.push(Point {
-                                id: point_id.clone(),
-                                position,
-                            });
-                            candidate.model.vertices.push(Vertex {
-                                id: vertex_id.clone(),
-                                point: point_id,
-                                tolerance: None,
-                            });
-                            slot.insert(vertex_id);
+            let shell_id = ShellId(format!("iges:model:shell#{shell_stem}"));
+            let mut shell_faces = Vec::new();
+            for (face_sequence, native_face_sense) in shell_definition.faces {
+                let face_sense = compose_sense(native_face_sense, shell_sense);
+                let face_definition = faces[&face_sequence].clone();
+                let surface_id =
+                    SurfaceId(format!("iges:model:surface#D{}", face_definition.surface));
+                let Some(support) = ir
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == surface_id)
+                else {
+                    valid = false;
+                    break;
+                };
+                let face_id = FaceId(format!("iges:model:face#{shell_stem}:D{face_sequence}"));
+                let mut face_loops = Vec::new();
+                for loop_sequence in face_definition.loops {
+                    let uses = loops[&loop_sequence].clone();
+                    let loop_id = LoopId(format!("iges:model:loop#{shell_stem}:D{loop_sequence}"));
+                    let coedge_ids = (0..uses.len())
+                        .map(|index| {
+                            CoedgeId(format!(
+                                "iges:model:coedge#{shell_stem}:D{loop_sequence}:{index}"
+                            ))
+                        })
+                        .collect::<Vec<_>>();
+                    for (use_index, edge_use) in uses.into_iter().enumerate() {
+                        let edge_definition = edge_lists[&edge_use.edge_list][edge_use.edge_index];
+                        for (list, index) in [
+                            (edge_definition.start_list, edge_definition.start_index),
+                            (edge_definition.end_list, edge_definition.end_index),
+                        ] {
+                            if let std::collections::btree_map::Entry::Vacant(slot) =
+                                vertex_ids.entry((list, index))
+                            {
+                                let position = vertex_lists[&list][index];
+                                let point_id = PointId(format!(
+                                    "iges:model:point#{stem}:D{list}:{}",
+                                    index + 1
+                                ));
+                                let vertex_id = VertexId(format!(
+                                    "iges:model:vertex#{stem}:D{list}:{}",
+                                    index + 1
+                                ));
+                                candidate.model.points.push(Point {
+                                    id: point_id.clone(),
+                                    position,
+                                });
+                                candidate.model.vertices.push(Vertex {
+                                    id: vertex_id.clone(),
+                                    point: point_id,
+                                    tolerance: None,
+                                });
+                                slot.insert(vertex_id);
+                            }
                         }
-                    }
-                    let edge_key = (edge_use.edge_list, edge_use.edge_index);
-                    let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
-                        id.clone()
-                    } else {
-                        let curve_id =
-                            CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
-                        let Some(source_edge) = ir
-                            .model
-                            .edges
-                            .iter()
-                            .find(|edge| edge.curve.as_ref() == Some(&curve_id))
-                        else {
-                            valid = false;
-                            break;
-                        };
-                        let id = EdgeId(format!(
-                            "iges:model:edge#{stem}:D{}:{}",
-                            edge_key.0,
-                            edge_key.1 + 1
-                        ));
-                        candidate.model.edges.push(Edge {
-                            id: id.clone(),
-                            curve: Some(curve_id),
-                            start: vertex_ids
-                                [&(edge_definition.start_list, edge_definition.start_index)]
-                                .clone(),
-                            end: vertex_ids[&(edge_definition.end_list, edge_definition.end_index)]
-                                .clone(),
-                            param_range: source_edge.param_range,
-                            tolerance: None,
-                        });
-                        edge_ids.insert(edge_key, id.clone());
-                        id
-                    };
-                    let pcurve_id = match edge_use.pcurve {
-                        Some(sequence) => {
-                            let Some((geometry, range)) =
-                                pcurve_geometry(ir, sequence, &support.geometry, factor)
+                        let edge_key = (edge_use.edge_list, edge_use.edge_index);
+                        let edge_id = if let Some(id) = edge_ids.get(&edge_key) {
+                            id.clone()
+                        } else {
+                            let curve_id =
+                                CurveId(format!("iges:model:curve#D{}", edge_definition.curve));
+                            let Some(source_edge) = ir
+                                .model
+                                .edges
+                                .iter()
+                                .find(|edge| edge.curve.as_ref() == Some(&curve_id))
                             else {
                                 valid = false;
                                 break;
                             };
-                            let id = PcurveId(format!(
-                                "iges:model:pcurve#{stem}:D{loop_sequence}:{use_index}"
+                            let id = EdgeId(format!(
+                                "iges:model:edge#{stem}:D{}:{}",
+                                edge_key.0,
+                                edge_key.1 + 1
                             ));
-                            candidate.model.pcurves.push(Pcurve {
+                            candidate.model.edges.push(Edge {
                                 id: id.clone(),
-                                geometry,
-                                wrapper_reversed: None,
-                                native_tail_flags: None,
-                                parameter_range: Some(range),
-                                fit_tolerance: None,
+                                curve: Some(curve_id),
+                                start: vertex_ids
+                                    [&(edge_definition.start_list, edge_definition.start_index)]
+                                    .clone(),
+                                end: vertex_ids
+                                    [&(edge_definition.end_list, edge_definition.end_index)]
+                                    .clone(),
+                                param_range: source_edge.param_range,
+                                tolerance: None,
                             });
-                            Some(id)
-                        }
-                        None => None,
-                    };
-                    let coedge_id = coedge_ids[use_index].clone();
-                    radial.entry(edge_key).or_default().push(coedge_id.clone());
-                    candidate.model.coedges.push(Coedge {
-                        id: coedge_id,
-                        owner_loop: loop_id.clone(),
-                        edge: edge_id,
-                        next: coedge_ids[(use_index + 1) % coedge_ids.len()].clone(),
-                        previous: coedge_ids[(use_index + coedge_ids.len() - 1) % coedge_ids.len()]
+                            edge_ids.insert(edge_key, id.clone());
+                            id
+                        };
+                        let pcurve_id = match edge_use.pcurve {
+                            Some(sequence) => {
+                                let Some((geometry, range)) =
+                                    pcurve_geometry(ir, sequence, &support.geometry, factor)
+                                else {
+                                    valid = false;
+                                    break;
+                                };
+                                let id = PcurveId(format!(
+                                    "iges:model:pcurve#{shell_stem}:D{loop_sequence}:{use_index}"
+                                ));
+                                candidate.model.pcurves.push(Pcurve {
+                                    id: id.clone(),
+                                    geometry,
+                                    wrapper_reversed: None,
+                                    native_tail_flags: None,
+                                    parameter_range: Some(range),
+                                    fit_tolerance: None,
+                                });
+                                Some(id)
+                            }
+                            None => None,
+                        };
+                        let coedge_id = coedge_ids[use_index].clone();
+                        radial
+                            .entry((shell_sequence, edge_key.0, edge_key.1))
+                            .or_default()
+                            .push(coedge_id.clone());
+                        candidate.model.coedges.push(Coedge {
+                            id: coedge_id,
+                            owner_loop: loop_id.clone(),
+                            edge: edge_id,
+                            next: coedge_ids[(use_index + 1) % coedge_ids.len()].clone(),
+                            previous: coedge_ids
+                                [(use_index + coedge_ids.len() - 1) % coedge_ids.len()]
                             .clone(),
-                        radial_next: coedge_ids[use_index].clone(),
-                        sense: edge_use.sense,
-                        pcurve: pcurve_id,
+                            radial_next: coedge_ids[use_index].clone(),
+                            sense: edge_use.sense,
+                            pcurve: pcurve_id,
+                        });
+                    }
+                    if !valid {
+                        break;
+                    }
+                    candidate.model.loops.push(Loop {
+                        id: loop_id.clone(),
+                        face: face_id.clone(),
+                        coedges: coedge_ids,
                     });
+                    face_loops.push(loop_id);
+                    consumed.insert(loop_sequence);
                 }
                 if !valid {
                     break;
                 }
-                candidate.model.loops.push(Loop {
-                    id: loop_id.clone(),
-                    face: face_id.clone(),
-                    coedges: coedge_ids,
+                candidate.model.faces.push(Face {
+                    id: face_id.clone(),
+                    shell: shell_id.clone(),
+                    surface: surface_id,
+                    sense: face_sense,
+                    loops: face_loops,
+                    name: None,
+                    color: None,
+                    tolerance: None,
                 });
-                face_loops.push(loop_id);
-                consumed.insert(loop_sequence);
+                shell_faces.push(face_id);
+                consumed.insert(face_sequence);
             }
             if !valid {
                 break;
             }
-            candidate.model.faces.push(Face {
-                id: face_id.clone(),
-                shell: shell_id.clone(),
-                surface: surface_id,
-                sense: face_sense,
-                loops: face_loops,
-                name: None,
-                color: None,
-                tolerance: None,
+            candidate.model.shells.push(Shell {
+                id: shell_id.clone(),
+                region: region_id.clone(),
+                faces: shell_faces,
+                wire_edges: Vec::new(),
+                free_vertices: Vec::new(),
             });
-            shell_faces.push(face_id);
-            consumed.insert(face_sequence);
+            region_shells.push(shell_id);
+            consumed.insert(shell_sequence);
         }
         if !valid {
             losses.push(entity_loss(
                 entry,
-                "open-shell topology references missing geometry",
+                "shell topology references missing geometry",
+            ));
+            continue;
+        }
+        if definition.closed
+            && radial.values().any(|ring| {
+                if ring.len() != 2 {
+                    return true;
+                }
+                let senses = ring
+                    .iter()
+                    .filter_map(|id| {
+                        candidate
+                            .model
+                            .coedges
+                            .iter()
+                            .find(|coedge| coedge.id == *id)
+                            .map(|coedge| coedge.sense)
+                    })
+                    .collect::<Vec<_>>();
+                senses.len() != 2 || senses[0] == senses[1]
+            })
+        {
+            losses.push(entity_loss(
+                entry,
+                "closed shell does not use every edge exactly twice with opposite senses",
             ));
             continue;
         }
@@ -569,23 +797,16 @@ pub(super) fn project(
                 }
             }
         }
-        candidate.model.shells.push(Shell {
-            id: shell_id.clone(),
-            region: region_id.clone(),
-            faces: shell_faces,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
-        });
         candidate.model.regions.push(Region {
             id: region_id.clone(),
             body: body_id.clone(),
-            shells: vec![shell_id],
+            shells: region_shells,
         });
         candidate.model.bodies.push(Body {
             id: body_id,
-            kind: BodyKind::Sheet,
+            kind: definition.kind,
             regions: vec![region_id],
-            transform: None,
+            transform: definition.transform,
             name: None,
             color: None,
             visible: None,
@@ -594,7 +815,7 @@ pub(super) fn project(
         if !cadmpeg_ir::validate(&candidate, Vec::new()).is_ok() {
             losses.push(entity_loss(
                 entry,
-                "open-shell candidate failed neutral validation",
+                "shell candidate failed neutral validation",
             ));
             continue;
         }

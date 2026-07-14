@@ -1432,6 +1432,207 @@ fn explicit_open_shell_file() -> Vec<u8> {
     bytes
 }
 
+fn explicit_tetrahedron_solid_file() -> Vec<u8> {
+    let global = b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;";
+    let entities = vec![
+        (116, 0, "POINTA", "00010000", "116,0,0,0,0;"),
+        (116, 0, "POINTB", "00010000", "116,1,0,0,0;"),
+        (123, 0, "NEGZ", "00010000", "123,0,0,-1;"),
+        (123, 0, "NEGY", "00010000", "123,0,-1,0;"),
+        (123, 0, "NEGX", "00010000", "123,-1,0,0;"),
+        (
+            123,
+            0,
+            "DIAG",
+            "00010000",
+            "123,0.5773502691896258,0.5773502691896258,0.5773502691896258;",
+        ),
+        (190, 0, "SURF1", "00010000", "190,1,5;"),
+        (190, 0, "SURF2", "00010000", "190,1,7;"),
+        (190, 0, "SURF3", "00010000", "190,1,9;"),
+        (190, 0, "SURF4", "00010000", "190,3,11;"),
+        (110, 0, "AB", "00010000", "110,0,0,0,1,0,0;"),
+        (110, 0, "AC", "00010000", "110,0,0,0,0,1,0;"),
+        (110, 0, "AD", "00010000", "110,0,0,0,0,0,1;"),
+        (110, 0, "BC", "00010000", "110,1,0,0,0,1,0;"),
+        (110, 0, "BD", "00010000", "110,1,0,0,0,0,1;"),
+        (110, 0, "CD", "00010000", "110,0,1,0,0,0,1;"),
+        (
+            502,
+            1,
+            "VERTICES",
+            "00010000",
+            "502,4,0,0,0,1,0,0,0,1,0,0,0,1;",
+        ),
+        (
+            504,
+            1,
+            "EDGES",
+            "00010001",
+            "504,6,21,33,1,33,2,23,33,1,33,3,25,33,1,33,4,27,33,2,33,3,29,33,2,33,4,31,33,3,33,4;",
+        ),
+        (
+            508,
+            1,
+            "LOOP1",
+            "00010000",
+            "508,3,0,35,2,1,0,0,35,4,0,0,0,35,1,0,0;",
+        ),
+        (
+            508,
+            1,
+            "LOOP2",
+            "00010000",
+            "508,3,0,35,1,1,0,0,35,5,1,0,0,35,3,0,0;",
+        ),
+        (
+            508,
+            1,
+            "LOOP3",
+            "00010000",
+            "508,3,0,35,3,1,0,0,35,6,0,0,0,35,2,0,0;",
+        ),
+        (
+            508,
+            1,
+            "LOOP4",
+            "00010000",
+            "508,3,0,35,4,1,0,0,35,6,1,0,0,35,5,0,0;",
+        ),
+        (510, 1, "FACE1", "00010000", "510,13,1,1,37;"),
+        (510, 1, "FACE2", "00010000", "510,15,1,1,39;"),
+        (510, 1, "FACE3", "00010000", "510,17,1,1,41;"),
+        (510, 1, "FACE4", "00010000", "510,19,1,1,43;"),
+        (514, 1, "SHELL", "00010000", "514,4,45,1,47,1,49,1,51,1;"),
+        (186, 0, "SOLID", "00000000", "186,53,1,0;"),
+    ];
+    let mut bytes = fixed_ascii_with_global(global);
+    bytes.truncate(bytes.len() - 81);
+    let mut parameter_sequence = 1_u32;
+    for (index, (entity_type, form, label, status, parameters)) in entities.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        let line_count = parameters.len().div_ceil(64);
+        let entity_type = entity_type.to_string();
+        let form = form.to_string();
+        let parameter_start = parameter_sequence.to_string();
+        let line_count_string = line_count.to_string();
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                &parameter_start,
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                "0",
+                status,
+            ],
+            sequence,
+        ));
+        bytes.extend(directory_card(
+            [
+                &entity_type,
+                "0",
+                "0",
+                &line_count_string,
+                &form,
+                "",
+                "",
+                label,
+                "0",
+            ],
+            sequence + 1,
+        ));
+        parameter_sequence += u32::try_from(line_count).unwrap();
+    }
+    parameter_sequence = 1;
+    for (index, (_, _, _, _, parameters)) in entities.iter().enumerate() {
+        let sequence = u32::try_from(index * 2 + 1).unwrap();
+        bytes.extend(parameter_cards(
+            parameters.as_bytes(),
+            sequence,
+            parameter_sequence,
+        ));
+        parameter_sequence += u32::try_from(parameters.len().div_ceil(64)).unwrap();
+    }
+    let global_cards = global.len().div_ceil(72);
+    bytes.extend(card(
+        format!(
+            "S0000001G{global_cards:07}D{:07}P{:07}",
+            entities.len() * 2,
+            parameter_sequence - 1
+        )
+        .as_bytes(),
+        b'T',
+        1,
+    ));
+    bytes
+}
+
+#[test]
+fn decode_builds_a_connected_manifold_tetrahedron() {
+    let result = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    let body = result
+        .ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| body.id.0 == "iges:model:body#D55")
+        .unwrap();
+    assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid);
+    let region = result
+        .ir
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == body.regions[0])
+        .unwrap();
+    assert_eq!(region.shells.len(), 1);
+    let shell = result
+        .ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == region.shells[0])
+        .unwrap();
+    assert_eq!(shell.faces.len(), 4);
+    let solid_edges = result
+        .ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.id.0.starts_with("iges:model:edge#D55:"))
+        .collect::<Vec<_>>();
+    assert_eq!(solid_edges.len(), 6);
+    for edge in solid_edges {
+        let uses = result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+            .collect::<Vec<_>>();
+        assert_eq!(uses.len(), 2);
+        assert_ne!(uses[0].sense, uses[1].sense);
+        assert_eq!(uses[0].radial_next, uses[1].id);
+        assert_eq!(uses[1].radial_next, uses[0].id);
+    }
+    assert!(
+        result.report.losses.is_empty(),
+        "{:#?}",
+        result.report.losses
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
 #[test]
 fn decode_builds_shared_explicit_open_shell_topology() {
     let result = IgesCodec
