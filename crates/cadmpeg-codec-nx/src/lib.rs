@@ -44,14 +44,16 @@
 //! retained as an unknown record.
 //!
 //! Read [`cadmpeg_ir::report::DecodeReport`] before using the model as a complete
-//! representation. Adjacent equal-schema partition and deltas streams apply
+//! representation. Deltas streams pair with the preceding equal-schema partition
+//! in validated UG_PART segment order and apply
 //! supported non-topology full records and exact-key tombstones using the last
 //! event for each key. Valid partition topology remains authoritative. Unmatched
 //! tombstone relations remain unresolved. Multiple
 //! partitions are not combined through NX feature-history Booleans. Assembly
 //! files may contain only references to external child parts.
 //!
-//! Design history, assembly occurrence placement, materials, appearances,
+//! Ordered feature-operation labels and numeric expressions transfer from the
+//! NX object model. Complete design history, assembly occurrence placement, materials, appearances,
 //! entity-owned attributes, tessellation, and `.prt` writing are not supported.
 //! Part attributes transfer as document attributes. The public submodules
 //! expose the lower-level container, stream, geometry, NURBS, intersection, and
