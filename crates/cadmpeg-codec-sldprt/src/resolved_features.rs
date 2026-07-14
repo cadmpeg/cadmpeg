@@ -311,6 +311,10 @@ mod marker_tests {
         payload[100..116].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
 
+        payload[12] = 1;
+        payload[22] = 1;
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+
         payload[88..92].fill(0);
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
     }
@@ -2503,8 +2507,8 @@ pub(crate) fn enrich_history_extrusion_terminations(
 }
 
 pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset + 2..offset + 18) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        && payload.get(offset + 18..offset + 30) == Some(&[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    compact_extrusion_end_spec_header(payload, offset, 1)
+        && payload.get(offset + 22..offset + 30) == Some(&[0, 0, 0, 0, 0, 0, 0, 0])
         && payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
         && payload
             .get(offset + 34..offset + 90)
@@ -2516,9 +2520,13 @@ pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) ->
 }
 
 pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> {
-    if payload.get(offset + 2..offset + 18)
-        != Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-        || payload.get(offset + 18..offset + 30) != Some(&[4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    if !compact_extrusion_end_spec_header(payload, offset, 4)
+        || payload
+            .get(offset + 22..offset + 26)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_none_or(|flag| flag > 1)
+        || payload.get(offset + 26..offset + 30) != Some(&[0, 0, 0, 0])
         || payload.get(offset + 30..offset + 33) != Some(&[1, 1, 0])
     {
         return None;
@@ -2538,6 +2546,17 @@ pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Opt
     }
     (body_offset..body_offset.saturating_add(160))
         .find(|marker| compact_single_face_reference_at(payload, *marker))
+}
+
+fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -> bool {
+    payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        && payload
+            .get(offset + 12..offset + 16)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|flag| flag <= 1)
+        && payload.get(offset + 16..offset + 18) == Some(&[0, 0])
+        && payload.get(offset + 18..offset + 22) == Some(code.to_le_bytes().as_slice())
 }
 
 fn compact_single_face_reference_at(payload: &[u8], marker: usize) -> bool {
