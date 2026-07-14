@@ -1351,6 +1351,48 @@ pub fn project_dimension_constraints(
         }
         None
     };
+    let exact_group_definition = |scope: &str,
+                                  group: &DesignDimensionLocusGroup,
+                                  parameter: &DesignParameter,
+                                  parameter_id: cadmpeg_ir::features::ParameterId|
+     -> Option<Definition> {
+        let entities = group
+            .loci
+            .iter()
+            .map(|locus| {
+                projected
+                    .get(&(scope, locus.geometry_record_index))
+                    .copied()
+            })
+            .collect::<Option<Vec<_>>>()?;
+        if parameter.source_kind.starts_with("Angular Dimension") {
+            let indices = group
+                .loci
+                .iter()
+                .map(|locus| locus.geometry_record_index)
+                .collect::<Vec<_>>();
+            return exact_definition(
+                scope,
+                &parameter.source_kind,
+                &indices,
+                parameter.evaluated_value,
+                parameter_id,
+            );
+        }
+        if parameter.source_kind.starts_with("Linear Dimension") {
+            if let Some(definition) = directional_point_dimension(
+                &entities,
+                parameter.evaluated_value * 10.0,
+                parameter_id,
+            ) {
+                return Some(definition);
+            }
+            if group.state == 0 && group.unknown_constraint_bits == 0 {
+                return exact_counted_dimension_relation(&entities);
+            }
+        }
+        None
+    };
     let exact_pair_companions = pairs
         .iter()
         .filter_map(|pair| {
@@ -1410,16 +1452,10 @@ pub fn project_dimension_constraints(
                 .map(|locus| locus.geometry_record_index)
                 .collect::<Vec<_>>();
             let sketch = sketches.get(&(scope, group.owner_reference))?.clone();
-            let definition = exact_definition(
-                scope,
-                &parameter.source_kind,
-                &indices,
-                parameter.evaluated_value,
-                parameter_id.clone(),
-            )
-            .unwrap_or_else(|| {
-                native_definition(scope, &parameter.source_kind, &indices, parameter_id)
-            });
+            let definition = exact_group_definition(scope, group, parameter, parameter_id.clone())
+                .unwrap_or_else(|| {
+                    native_definition(scope, &parameter.source_kind, &indices, parameter_id)
+                });
             Some(SketchConstraint {
                 id: neutral_dimension_constraint_id(&group.id, "group", group.record_index),
                 sketch,
@@ -1808,6 +1844,150 @@ fn indirect_angular_lines(
         (candidate.id.clone(), explicit_line.id.clone())
     } else {
         (explicit_line.id.clone(), candidate.id.clone())
+    })
+}
+
+fn directional_point_dimension(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+    evaluated_mm: f64,
+    parameter: cadmpeg_ir::features::ParameterId,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+    };
+
+    let [first, second] = entities else {
+        return None;
+    };
+    let SketchGeometry::Point {
+        position: first_position,
+    } = &first.geometry
+    else {
+        return None;
+    };
+    let SketchGeometry::Point {
+        position: second_position,
+    } = &second.geometry
+    else {
+        return None;
+    };
+    let expected = evaluated_mm.abs();
+    let scale = 1.0 + expected;
+    let first_locus = SketchLocus::Entity(first.id.clone());
+    let second_locus = SketchLocus::Entity(second.id.clone());
+    if (first_position.v - second_position.v).abs() <= scale * 1.0e-9
+        && ((first_position.u - second_position.u).abs() - expected).abs() <= scale * 1.0e-9
+    {
+        Some(Definition::HorizontalDistance {
+            first: first_locus,
+            second: second_locus,
+            parameter,
+        })
+    } else if (first_position.u - second_position.u).abs() <= scale * 1.0e-9
+        && ((first_position.v - second_position.v).abs() - expected).abs() <= scale * 1.0e-9
+    {
+        Some(Definition::VerticalDistance {
+            first: first_locus,
+            second: second_locus,
+            parameter,
+        })
+    } else {
+        None
+    }
+}
+
+fn exact_counted_dimension_relation(
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchGeometry, SketchLocus,
+    };
+
+    if let Some((first, second, axis)) = reflected_symmetry(entities) {
+        return Some(Definition::Symmetric {
+            first: SketchLocus::Entity(first.id.clone()),
+            second: SketchLocus::Entity(second.id.clone()),
+            axis: axis.id.clone(),
+        });
+    }
+    let [first, second] = entities else {
+        return None;
+    };
+    let point_on_line = |point: &cadmpeg_ir::sketches::SketchEntity,
+                         line: &cadmpeg_ir::sketches::SketchEntity| {
+        let SketchGeometry::Point { position } = point.geometry else {
+            return false;
+        };
+        let SketchGeometry::Line { start, end } = line.geometry else {
+            return false;
+        };
+        let direction = Point2::new(end.u - start.u, end.v - start.v);
+        let length_squared = direction.u.mul_add(direction.u, direction.v * direction.v);
+        if length_squared <= 1.0e-18 {
+            return false;
+        }
+        let relative = Point2::new(position.u - start.u, position.v - start.v);
+        let parameter = relative.u.mul_add(direction.u, relative.v * direction.v) / length_squared;
+        let cross = relative.u.mul_add(direction.v, -relative.v * direction.u);
+        (-1.0e-9..=1.0 + 1.0e-9).contains(&parameter)
+            && cross.abs() <= 1.0e-9 * (1.0 + length_squared.sqrt())
+    };
+    if point_on_line(first, second) || point_on_line(second, first) {
+        return Some(Definition::Coincident {
+            entities: vec![first.id.clone(), second.id.clone()],
+        });
+    }
+    let (
+        SketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (&first.geometry, &second.geometry)
+    else {
+        return None;
+    };
+    let first_direction = Point2::new(first_end.u - first_start.u, first_end.v - first_start.v);
+    let second_direction =
+        Point2::new(second_end.u - second_start.u, second_end.v - second_start.v);
+    let first_length = first_direction
+        .u
+        .mul_add(first_direction.u, first_direction.v * first_direction.v)
+        .sqrt();
+    let second_length = second_direction
+        .u
+        .mul_add(second_direction.u, second_direction.v * second_direction.v)
+        .sqrt();
+    if first_length <= 1.0e-9 || second_length <= 1.0e-9 {
+        return None;
+    }
+    let scale = first_length * second_length;
+    let cross = first_direction
+        .u
+        .mul_add(second_direction.v, -first_direction.v * second_direction.u);
+    if cross.abs() <= scale * 1.0e-9 {
+        let signed_offset = parallel_line_offset(&first.geometry, &second.geometry)?;
+        return Some(if signed_offset.abs() <= 1.0e-9 * (1.0 + first_length) {
+            Definition::Collinear {
+                first: first.id.clone(),
+                second: second.id.clone(),
+            }
+        } else {
+            Definition::Parallel {
+                first: first.id.clone(),
+                second: second.id.clone(),
+            }
+        });
+    }
+    let dot = first_direction
+        .u
+        .mul_add(second_direction.u, first_direction.v * second_direction.v);
+    (dot.abs() <= scale * 1.0e-9).then(|| Definition::Perpendicular {
+        first: first.id.clone(),
+        second: second.id.clone(),
     })
 }
 
@@ -6246,17 +6426,17 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_dimension_loci, bind_extrude_selection_geometry,
         bind_face_operand_candidates, bind_sketch_graph, companion_owned_interval,
-        decode_fillet_radius_groups, exact_atomic_constraint, exact_offset_constraint,
-        find_dimension_locus_groups, find_dimension_locus_pair, identity_matrix,
-        indirect_angular_lines, neutral_sketch_id, next_indexed_record_offset,
-        parse_construction_operand_group, parse_construction_operand_identity,
-        parse_design_parameter, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_sketch_placement_candidates, parse_sketch_relation, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        remove_dimension_frame_relations,
+        decode_fillet_radius_groups, directional_point_dimension, exact_atomic_constraint,
+        exact_counted_dimension_relation, exact_offset_constraint, find_dimension_locus_groups,
+        find_dimension_locus_pair, identity_matrix, indirect_angular_lines, neutral_sketch_id,
+        next_indexed_record_offset, parse_construction_operand_group,
+        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
+        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
+        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
+        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, remove_dimension_frame_relations,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConstructionOperandGroup,
@@ -7715,6 +7895,87 @@ mod relation_tests {
         )
         .unwrap();
         assert_eq!(supplementary, lines);
+    }
+
+    #[test]
+    fn counted_linear_graph_selects_one_parameter_backed_direction() {
+        let entity = |id: &str, position| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        };
+        let first = entity("generated:point#first", Point2::new(4.0, 16.0));
+        let second = entity("generated:point#second", Point2::new(4.0, 14.0));
+        let parameter = cadmpeg_ir::features::ParameterId("generated:parameter#distance".into());
+
+        let definition =
+            directional_point_dimension(&[&first, &second], 2.0, parameter.clone()).unwrap();
+        assert!(matches!(
+            definition,
+            SketchConstraintDefinition::VerticalDistance {
+                first: cadmpeg_ir::sketches::SketchLocus::Entity(ref first_id),
+                second: cadmpeg_ir::sketches::SketchLocus::Entity(ref second_id),
+                parameter: ref parameter_id,
+            } if first_id == &first.id && second_id == &second.id && parameter_id == &parameter
+        ));
+        assert!(directional_point_dimension(&[&first, &second], 3.0, parameter).is_none());
+    }
+
+    #[test]
+    fn counted_linear_graph_projects_exact_auxiliary_relations() {
+        let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let horizontal = entity(
+            "generated:line#horizontal",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+        );
+        let vertical = entity(
+            "generated:line#vertical",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, -2.0),
+                end: Point2::new(0.0, 2.0),
+            },
+        );
+        let parallel = entity(
+            "generated:line#parallel",
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 2.0),
+                end: Point2::new(10.0, 2.0),
+            },
+        );
+        let point = entity(
+            "generated:point#on-line",
+            SketchGeometry::Point {
+                position: Point2::new(4.0, 0.0),
+            },
+        );
+
+        assert!(matches!(
+            exact_counted_dimension_relation(&[&horizontal, &vertical]),
+            Some(SketchConstraintDefinition::Perpendicular { .. })
+        ));
+        assert!(matches!(
+            exact_counted_dimension_relation(&[&horizontal, &parallel]),
+            Some(SketchConstraintDefinition::Parallel { .. })
+        ));
+        assert!(matches!(
+            exact_counted_dimension_relation(&[&horizontal, &point]),
+            Some(SketchConstraintDefinition::Coincident { .. })
+        ));
     }
 
     #[test]
