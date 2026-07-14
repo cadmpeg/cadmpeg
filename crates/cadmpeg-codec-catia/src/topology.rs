@@ -3280,9 +3280,12 @@ impl MeshQuotient {
                         let Some(current_start) = edge_start(boundary[at], reversed) else {
                             continue;
                         };
-                        let Some(_) = quotient.merge(previous_end, current_start) else {
+                        let Some(root) = quotient.merge(previous_end, current_start) else {
                             continue;
                         };
+                        if !quotient.component_edge_domains_viable(root, edge_candidates) {
+                            continue;
+                        }
                     }
                     directions.push(reversed);
                     walk(
@@ -4603,6 +4606,46 @@ mod motif_tests {
         assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
         quotient.domains[3].insert(0);
         assert!(quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
+    }
+
+    #[test]
+    fn quotient_options_reject_an_interior_pair_contradiction() {
+        let quotient = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: [vec![0], vec![1, 2], vec![2], vec![3], vec![0, 3], vec![0]]
+                .map(|domain| domain.into_iter().collect())
+                .into(),
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 2,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 2,
+                    start: 2,
+                    end: 3,
+                    reversed: None,
+                },
+            ]],
+        };
+        let candidates = [vec![[0, 1]], vec![[2, 3]], vec![[0, 3]]];
+
+        let options = quotient.assignment_options(&assignment, &candidates);
+
+        assert!(!options
+            .iter()
+            .any(|(directions, _)| directions == &[vec![false, false, false]]));
     }
 
     #[test]
