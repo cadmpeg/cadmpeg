@@ -239,7 +239,7 @@ fn scan_ignores_surface_header_candidates_inside_a_preceding_header() {
 #[test]
 fn scan_decodes_plane_local_system_support_frame() {
     let mut payload = visibgeom_payload(1, 0);
-    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 1, 0]);
     payload.extend_from_slice(&[0x0f; 10]);
     payload.push(0xe3);
     payload.extend_from_slice(&[

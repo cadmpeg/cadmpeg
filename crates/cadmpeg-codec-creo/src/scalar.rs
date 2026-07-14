@@ -67,7 +67,9 @@ pub fn decode_in_lane(data: &[u8], offset: usize, cache: &ScalarCache) -> Option
     match *data.get(offset)? {
         0x18 => {
             let next = *data.get(offset + 1)?;
-            if LANE_OPENERS.contains(&next) {
+            if LANE_OPENERS.contains(&next)
+                || matches!(next, 0xe0..=0xe3 | 0xf1 | 0xf2 | 0xf7 | 0xf8)
+            {
                 return Some((0.0, offset + 1));
             }
             let (index, end) = compact_int(data, offset + 1);
@@ -175,6 +177,12 @@ mod tests {
         let cache = ScalarCache::default();
         assert_eq!(decode_in_lane(&[0x18, 0xe4], 0, &cache), Some((0.0, 1)));
         assert_eq!(decode_in_lane(&[0x18, 0xe4], 1, &cache), Some((1.0, 2)));
+    }
+
+    #[test]
+    fn lane_zero_does_not_consume_the_following_named_record() {
+        let cache = ScalarCache::default();
+        assert_eq!(decode_in_lane(&[0x18, 0xe0], 0, &cache), Some((0.0, 1)));
     }
 
     #[test]

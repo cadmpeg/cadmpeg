@@ -155,6 +155,8 @@ World-coordinate tokens occupy eight bytes. Their final seven bytes hold the IEE
 | Boundary bytes        | `00`, `01`, `06`, `f6`                                                              |
 
 Row bodies end at a valid row-close marker, named-record header, or a following positional row header that matches the row schema. The first row after `srf_array\0` can be a named-record row with the fields `geom_id`, `geom_type`, `feat_id`, `orient`, `boundary_type`, `next_geom_ptr`, `envlp`, `outline`, and `local_sys`.
+Plane envelope and post-envelope local-system bodies use the same grammar for
+each defined boundary byte; `boundary_type` does not select their scalar layout.
 
 ### 3.1 Surface families
 

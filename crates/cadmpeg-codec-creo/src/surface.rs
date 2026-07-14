@@ -841,7 +841,7 @@ pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
     let cache = scalar::ScalarCache::from_section(payload);
     let headers = rows(payload)
         .into_iter()
-        .filter(|row| row.kind == SurfaceKind::Plane && row.boundary_type == 0)
+        .filter(|row| row.kind == SurfaceKind::Plane)
         .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
         .collect::<Vec<_>>();
     let mut systems = Vec::new();
@@ -893,7 +893,7 @@ pub fn plane_envelopes(payload: &[u8]) -> Vec<PlaneEnvelopeRecord> {
     let all_rows = rows(payload);
     let headers = all_rows
         .iter()
-        .filter(|row| row.kind == SurfaceKind::Plane && row.boundary_type == 0)
+        .filter(|row| row.kind == SurfaceKind::Plane)
         .cloned()
         .filter_map(|row| positional_body_start(payload, &row).map(|body_start| (row, body_start)))
         .collect::<Vec<_>>();
