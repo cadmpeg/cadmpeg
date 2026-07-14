@@ -5907,10 +5907,12 @@ fn named_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
-    if kind == "Annotation Feature" {
-        return Some(IrFeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::Annotations,
-        });
+    if let Some(role) = match kind {
+        "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
+        "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
+        _ => None,
+    } {
+        return Some(IrFeatureDefinition::TreeNode { role });
     }
     let schema_class = match kind {
         "Hole" => 911,

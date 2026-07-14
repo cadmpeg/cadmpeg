@@ -475,6 +475,8 @@ A plane through a circular cone's apex is tangent to the cone when the absolute 
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
 `Surface`. The German operation-family name `Rundung` denotes the same round
 family as `Round`. `Annotation Feature` is a non-modeling annotation container.
+`Cross Section` and its German operation-family name `Querschnitt` are
+non-modeling cross-section definitions.
 
 Operation names end in ` id <N>` or ` ID <N>`; the stored case follows the
 name's localization. An ASCII `x` or `y` byte immediately preceding an uppercase operation-family

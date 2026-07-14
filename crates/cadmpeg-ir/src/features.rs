@@ -751,6 +751,8 @@ pub enum FeatureTreeNodeRole {
     AmbientLight,
     /// Comment container.
     Comments,
+    /// Non-modeling cross-section definition or container.
+    CrossSections,
     /// Design-binder container.
     DesignBinder,
     /// Directional scene light.
