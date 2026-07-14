@@ -439,6 +439,17 @@ pub struct DatumCsysReferenceField {
     pub references: [ExtrudeProfileReference; 8],
 }
 
+/// Common typed header preceding tag-specific datum-plane construction data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DatumPlanePayloadHeader {
+    /// Payload control byte.
+    pub control: u8,
+    /// Declared construction count.
+    pub declared_count: u8,
+    /// Tag selecting the following construction branch.
+    pub branch_tag: u8,
+}
+
 /// Fixed scalar header in one bounded extrusion payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ExtrudePayloadHeader {
@@ -1542,6 +1553,23 @@ pub fn datum_csys_references(record: OperationRecord<'_>) -> Option<DatumCsysRef
     Some(DatumCsysReferenceField {
         control: record.payload[0],
         references: references.try_into().ok()?,
+    })
+}
+
+/// Decode the common header of a bounded `DATUM_PLANE` payload.
+pub fn datum_plane_payload_header(record: OperationRecord<'_>) -> Option<DatumPlanePayloadHeader> {
+    const PREFIX: [u8; 5] = [0x00, 0x00, 0x01, 0x00, 0x01];
+    if record.label.value != "DATUM_PLANE"
+        || record.payload.get(1..6) != Some(&PREFIX)
+        || record.payload.get(8..10) != Some(&[0x01, 0x02])
+    {
+        return None;
+    }
+    let declared_count = *record.payload.get(6)?;
+    (declared_count >= 2).then_some(DatumPlanePayloadHeader {
+        control: record.payload[0],
+        declared_count,
+        branch_tag: record.payload[7],
     })
 }
 

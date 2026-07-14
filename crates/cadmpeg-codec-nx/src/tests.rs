@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 80);
+    assert_eq!(namespace.version, 81);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -1311,6 +1311,45 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     malformed[14] = 0x2a;
     assert!(
         crate::om::datum_csys_references(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
+    let payload = [
+        0x22, 0x00, 0x00, 0x01, 0x00, 0x01, 0x03, 0x29, 0x01, 0x02, 0xf1, 0x02, 0xcf,
+    ];
+    let label = crate::om::OperationLabel {
+        header_offset: 10,
+        offset: 20,
+        value: "DATUM_PLANE",
+        object_indices: [None; 4],
+        object_index_offsets: [0; 4],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 10,
+        bytes: &payload,
+        payload_offset: 100,
+        payload: &payload,
+        label,
+    };
+    assert_eq!(
+        crate::om::datum_plane_payload_header(record),
+        Some(crate::om::DatumPlanePayloadHeader {
+            control: 0x22,
+            declared_count: 3,
+            branch_tag: 0x29,
+        })
+    );
+    let mut malformed = payload;
+    malformed[6] = 1;
+    assert!(
+        crate::om::datum_plane_payload_header(crate::om::OperationRecord {
             bytes: &malformed,
             payload: &malformed,
             ..record
@@ -5112,7 +5151,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 80);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 81);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

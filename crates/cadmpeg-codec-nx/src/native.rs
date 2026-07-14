@@ -425,6 +425,23 @@ pub struct FeatureDatumCsysConstruction {
     pub source_offsets: [u64; 8],
 }
 
+/// Common typed header of one datum-plane construction payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDatumPlaneHeader {
+    /// Globally unique header identity.
+    pub id: String,
+    /// Owning `DATUM_PLANE` operation label.
+    pub operation_label: String,
+    /// Payload control byte.
+    pub control: u8,
+    /// Declared construction count.
+    pub declared_count: u8,
+    /// Tag selecting the following construction branch.
+    pub branch_tag: u8,
+    /// Absolute offset of the payload control byte.
+    pub source_offset: u64,
+}
+
 /// Exact reuse of one datum-coordinate-system construction block by an operation input.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumCsysBlockUse {
@@ -1615,6 +1632,47 @@ pub fn feature_datum_csys_constructions(
         }
     }
     constructions
+}
+
+/// Decode common datum-plane payload headers from feature-history records.
+pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPlaneHeader> {
+    let sections = container.om_sections();
+    let mut headers = Vec::new();
+    for link in segment_om_links(container)
+        .into_iter()
+        .filter(|link| link.schema_role == OmSchemaRole::FeatureHistory)
+    {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = link.id.rsplit_once('#').map_or("unknown", |(_, key)| key);
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records().into_iter().enumerate() {
+            let Some(header) = crate::om::datum_plane_payload_header(record) else {
+                continue;
+            };
+            headers.push(FeatureDatumPlaneHeader {
+                id: format!(
+                    "nx:feature-history:datum-plane-header#{section_key}-{operation_ordinal}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal}"
+                ),
+                control: header.control,
+                declared_count: header.declared_count,
+                branch_tag: header.branch_tag,
+                source_offset: entry_offset + record.payload_offset as u64,
+            });
+        }
+    }
+    headers
 }
 
 /// Join resolved datum-coordinate-system blocks to every exact operation input
