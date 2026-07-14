@@ -1190,15 +1190,20 @@ pub fn project_sketch_design(
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
 /// when every member identifies one unambiguous loop. Otherwise retain the
 /// native selection together with the known sketch.
+#[derive(Clone, Copy)]
+pub(crate) struct ExtrudeProfileResolution<'a> {
+    pub entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+    pub histories: &'a [crate::history_records::AsmHistory],
+    pub linear_tolerance: f64,
+}
+
 pub(crate) fn bind_extrude_profile_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     groups: &[DesignExtrudeSelectionGroup],
     members: &[DesignExtrudeSelectionMember],
     sketches: &[cadmpeg_ir::sketches::Sketch],
-    entities: &[cadmpeg_ir::sketches::SketchEntity],
-    histories: &[crate::history_records::AsmHistory],
-    linear_tolerance: f64,
+    resolution: ExtrudeProfileResolution<'_>,
 ) {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 
@@ -1235,9 +1240,9 @@ pub(crate) fn bind_extrude_profile_selections(
                 group,
                 members,
                 sketch,
-                entities,
-                histories,
-                linear_tolerance,
+                resolution.entities,
+                resolution.histories,
+                resolution.linear_tolerance,
             )
         } else {
             ProfileRef::SketchSelection {
@@ -1401,8 +1406,36 @@ fn historical_member_points(
                 .filter(|binding| binding.carrier == Some(local_id))
                 .map(|binding| binding.entity)
                 .collect(),
+            AsmHistoricalEntityKind::Loop => topology
+                .coedge_topology
+                .iter()
+                .filter(|coedge| coedge.owner_loop == local_id)
+                .map(|coedge| coedge.edge)
+                .collect(),
+            AsmHistoricalEntityKind::Pcurve => topology
+                .coedge_pcurves
+                .iter()
+                .filter(|binding| binding.carrier == Some(local_id))
+                .filter_map(|binding| {
+                    topology
+                        .coedge_topology
+                        .iter()
+                        .find(|coedge| coedge.coedge == binding.entity)
+                        .map(|coedge| coedge.edge)
+                })
+                .collect(),
             AsmHistoricalEntityKind::Vertex => {
                 positions.extend(historical_vertex_positions(topology, local_id));
+                Vec::new()
+            }
+            AsmHistoricalEntityKind::Point => {
+                positions.extend(
+                    topology
+                        .point_positions
+                        .iter()
+                        .filter(|point| point.point == local_id)
+                        .map(|point| point.position),
+                );
                 Vec::new()
             }
             _ => return None,

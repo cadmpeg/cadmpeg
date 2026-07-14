@@ -288,9 +288,11 @@ pub fn decode(
                 &native.design_extrude_selection_groups,
                 &native.design_extrude_selection_members,
                 &ir.model.sketches,
-                &ir.model.sketch_entities,
-                &native.asm_histories,
-                ir.tolerances.linear,
+                crate::design::ExtrudeProfileResolution {
+                    entities: &ir.model.sketch_entities,
+                    histories: &native.asm_histories,
+                    linear_tolerance: ir.tolerances.linear,
+                },
             );
             ir.model.sketch_constraints = crate::design::project_sketch_constraints(
                 &native.design_sketch_placements,
@@ -504,9 +506,11 @@ pub fn decode(
         &native.design_extrude_selection_groups,
         &native.design_extrude_selection_members,
         &ir.model.sketches,
-        &ir.model.sketch_entities,
-        &native.asm_histories,
-        ir.tolerances.linear,
+        crate::design::ExtrudeProfileResolution {
+            entities: &ir.model.sketch_entities,
+            histories: &native.asm_histories,
+            linear_tolerance: ir.tolerances.linear,
+        },
     );
     ir.model.sketch_constraints = crate::design::project_sketch_constraints(
         &native.design_sketch_placements,
