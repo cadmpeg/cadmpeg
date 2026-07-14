@@ -59,7 +59,7 @@ mod tests {
 }
 
 /// Native namespace schema emitted by this crate.
-pub const VERSION: u32 = 15;
+pub const VERSION: u32 = 16;
 
 /// Machine-derived semantic projection census for one design object.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -257,6 +257,8 @@ pub struct ProductNodeRecord {
     pub prototype: Option<String>,
     /// External document token when the prototype is not local.
     pub external_document: Option<String>,
+    /// Exact attribute spelling that carried the external document reference.
+    pub external_document_attribute: Option<String>,
     /// Local occurrence placement as a row-major affine matrix.
     pub local_transform: Option<[[f64; 4]; 4]>,
     /// Property supplying the placement.
@@ -429,6 +431,8 @@ pub struct DynamicPropertyMeta {
 pub struct LinkTarget {
     /// Target document identity, when external.
     pub document: Option<String>,
+    /// Exact attribute spelling that carried the document reference.
+    pub document_attribute: Option<String>,
     /// Target object identity, including an explicit empty/null target.
     pub object: Option<String>,
     /// Ordered subelement selectors.

@@ -63,14 +63,37 @@ pub enum ComponentReference {
     },
     /// Prototype belongs to another document, loaded or not.
     External {
-        /// Persisted document token or path.
-        document: String,
+        /// Persisted external-document reference and unresolved state.
+        document: ExternalDocumentReference,
         /// Persisted object identity within that document.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         object: Option<String>,
     },
     /// The source intentionally carries no resolvable prototype.
     Unresolved,
+}
+
+/// First-class external document reference without implicit loading.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ExternalDocumentReference {
+    /// File path when the source explicitly stores a file attribute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// Document identity when the source explicitly stores a document attribute.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document_id: Option<String>,
+    /// Deterministic resolution state; decoding never opens external documents.
+    pub resolution: ExternalResolution,
+}
+
+/// Resolution state of an external product reference.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ExternalResolution {
+    /// Target document was not loaded by this decode.
+    Unresolved,
+    /// Persisted reference was present but empty or structurally unusable.
+    MissingReference,
 }
 
 /// Copy-on-change ownership behavior of a link.
@@ -168,7 +191,7 @@ pub struct JointOperand {
     pub component: Option<ComponentId>,
     /// External document token when resolution is intentionally deferred.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_document: Option<String>,
+    pub external_document: Option<ExternalDocumentReference>,
     /// Exact referenced application object identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<String>,

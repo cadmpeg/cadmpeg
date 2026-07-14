@@ -74,7 +74,8 @@ pub use features::{
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 pub use products::{
     AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
-    JointId, JointKind, JointLimits, JointOperand, Occurrence, OccurrenceId,
+    ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
+    Occurrence, OccurrenceId,
 };
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;

@@ -609,7 +609,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "44");
+    assert_eq!(result.ir.ir_version, "45");
     let feature = |name: &str| {
         &result
             .ir
@@ -3017,6 +3017,86 @@ fn recovers_assembly_joint_operands_frames_and_state() {
 }
 
 #[test]
+fn distinguishes_external_product_paths_document_ids_and_targets() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="2">
+ <Object type="App::Link" name="ByPath" id="1"/>
+ <Object type="App::Link" name="ByDocument" id="2"/>
+</Objects>
+<ObjectData Count="2">
+ <Object name="ByPath"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="parts/widget.FCStd" name="Body"/></Property></Properties></Object>
+ <Object name="ByDocument"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink document="document-7" name="Gear"/></Property></Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("external products");
+    assert_eq!(result.ir.model.occurrences.len(), 2);
+    let by_path = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("ByPath"))
+        })
+        .expect("path occurrence");
+    let cadmpeg_ir::ComponentReference::External { document, object } = &by_path.prototype else {
+        panic!("path prototype is external");
+    };
+    assert_eq!(document.path.as_deref(), Some("parts/widget.FCStd"));
+    assert_eq!(document.document_id, None);
+    assert_eq!(object.as_deref(), Some("Body"));
+    assert_eq!(
+        document.resolution,
+        cadmpeg_ir::ExternalResolution::Unresolved
+    );
+
+    let by_document = result
+        .ir
+        .model
+        .occurrences
+        .iter()
+        .find(|occurrence| {
+            occurrence
+                .native_ref
+                .as_deref()
+                .is_some_and(|id| id.ends_with("ByDocument"))
+        })
+        .expect("document occurrence");
+    let cadmpeg_ir::ComponentReference::External { document, object } = &by_document.prototype
+    else {
+        panic!("document prototype is external");
+    };
+    assert_eq!(document.path, None);
+    assert_eq!(document.document_id.as_deref(), Some("document-7"));
+    assert_eq!(object.as_deref(), Some("Gear"));
+    assert_eq!(
+        document.resolution,
+        cadmpeg_ir::ExternalResolution::Unresolved
+    );
+    assert!(crate::validate_native(&result.ir).is_empty());
+    assert_valid_document(&result.ir);
+    let mut corrupted = result.ir.clone();
+    let cadmpeg_ir::ComponentReference::External { document, .. } =
+        &mut corrupted.model.occurrences[0].prototype
+    else {
+        panic!("external prototype");
+    };
+    document.path = Some("also-a-path.FCStd".into());
+    document.document_id = Some("also-an-id".into());
+    assert!(cadmpeg_ir::validate(&corrupted, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid occurrence reference")));
+}
+
+#[test]
 fn censuses_application_domains_and_keeps_python_payloads_inert() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="5">
@@ -4093,7 +4173,7 @@ Co 1001000 +2 0 *
     assert!((color.r - 200.0 / 255.0).abs() < 1e-6);
     assert!((color.a - 0.75).abs() < 1e-6);
     let namespace = result.ir.native.namespace("fcstd").expect("native");
-    assert_eq!(namespace.version, 15);
+    assert_eq!(namespace.version, 16);
     let census = namespace
         .arena_as::<crate::native::CarrierCensusRecord>("carrier_census")
         .expect("carrier census");

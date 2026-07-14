@@ -85,10 +85,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "44";
+pub const IR_VERSION: &str = "45";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "43";
+pub const PREVIOUS_IR_VERSION: &str = "44";
 
 arena_registry!(declare_model);
 
@@ -225,15 +225,16 @@ impl CadIr {
 
     /// Migrate JSON from the immediately preceding IR version and parse it.
     ///
-    /// Version 9 adds optional hole-construction fields, so every valid
-    /// version 8 document migrates by updating its version discriminator.
-    /// Other legacy versions remain unsupported.
+    /// The immediately preceding version is upgraded, including structural
+    /// normalization required by the current schema. Older versions remain
+    /// unsupported.
     pub fn migrate_json(s: &str) -> Result<Self, serde_json::Error> {
         let mut value: serde_json::Value = serde_json::from_str(s)?;
         let version = value.get("ir_version").and_then(serde_json::Value::as_str);
         match version {
             Some(IR_VERSION) => serde_json::from_value(value),
             Some(PREVIOUS_IR_VERSION) => {
+                migrate_previous_external_documents(&mut value);
                 value
                     .as_object_mut()
                     .expect("a versioned CADIR document is a JSON object")
@@ -250,6 +251,34 @@ impl CadIr {
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
+    }
+}
+
+fn migrate_previous_external_documents(value: &mut serde_json::Value) {
+    let Some(occurrences) = value
+        .get_mut("model")
+        .and_then(|model| model.get_mut("occurrences"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for occurrence in occurrences {
+        let Some(document) = occurrence
+            .get_mut("prototype")
+            .and_then(serde_json::Value::as_object_mut)
+            .filter(|prototype| {
+                prototype.get("scope").and_then(serde_json::Value::as_str) == Some("external")
+            })
+            .and_then(|prototype| prototype.get_mut("document"))
+        else {
+            continue;
+        };
+        if let Some(identity) = document.as_str().map(str::to_owned) {
+            *document = serde_json::json!({
+                "document_id": identity,
+                "resolution": "unresolved"
+            });
+        }
     }
 }
 

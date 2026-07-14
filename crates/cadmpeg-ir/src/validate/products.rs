@@ -55,7 +55,9 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
             ComponentReference::Local { component } => {
                 components.contains_key(component.0.as_str())
             }
-            ComponentReference::External { document, .. } => !document.is_empty(),
+            ComponentReference::External { document, .. } => {
+                document.path.is_some() ^ document.document_id.is_some()
+            }
             ComponentReference::Unresolved => true,
         };
         let valid_parent = occurrence
@@ -95,11 +97,15 @@ pub(super) fn check_products(ir: &CadIr, findings: &mut Vec<Finding>) {
         let operands_valid = joint.operands.len() == expected
             && joint.frames.len() == expected
             && joint.operands.iter().all(|operand| {
+                let external_valid = operand.external_document.as_ref().is_none_or(|document| {
+                    document.path.is_some() ^ document.document_id.is_some()
+                });
                 operand
                     .component
                     .as_ref()
                     .is_none_or(|component| components.contains_key(component.0.as_str()))
                     && (operand.external_document.is_some() || operand.object.is_some())
+                    && external_valid
             });
         let finite = joint
             .frames

@@ -291,7 +291,8 @@ fn parse_properties(
                     .attributes
                     .iter()
                     .filter(|(name, _)| {
-                        matches!(name.as_str(), "file" | "File")
+                        (matches!(name.as_str(), "file" | "File")
+                            && !type_name.contains("PropertyXLink"))
                             || (type_name.contains("PropertyFile")
                                 && matches!(name.as_str(), "name" | "Name"))
                     })
@@ -344,11 +345,14 @@ fn parse_link_targets(
                 &attributes,
                 &["value", "Value", "object", "Object", "name", "Name"],
             );
-            let document = attribute_any(
+            let document_pair = attribute_any_named(
                 &attributes,
                 &["document", "Document", "doc", "Doc", "file", "File"],
-            )
-            .filter(|document| !document.is_empty());
+            );
+            let document = document_pair
+                .as_ref()
+                .map(|(_, value)| value.clone())
+                .filter(|document| !document.is_empty());
             let subelements = node
                 .attributes()
                 .filter(|attribute| attribute.name().to_ascii_lowercase().contains("sub"))
@@ -362,6 +366,7 @@ fn parse_link_targets(
             (object.is_some() || document.is_some() || !subelements.is_empty()).then_some(
                 LinkTarget {
                     document,
+                    document_attribute: document_pair.map(|(name, _)| name),
                     object,
                     subelements,
                 },
@@ -437,14 +442,19 @@ fn link_targets(value: &ValueRecord) -> Vec<LinkTarget> {
             "value", "Value", "object", "Object", "obj", "Obj", "name", "Name",
         ],
     );
-    let document = attribute_any(&value.attributes, &["document", "Document", "doc", "Doc"])
-        .or_else(|| {
-            value
-                .tag
-                .contains("XLink")
-                .then(|| attribute_any(&value.attributes, &["file", "File"]))
-                .flatten()
-        })
+    let document_pair =
+        attribute_any_named(&value.attributes, &["document", "Document", "doc", "Doc"]).or_else(
+            || {
+                value
+                    .tag
+                    .contains("XLink")
+                    .then(|| attribute_any_named(&value.attributes, &["file", "File"]))
+                    .flatten()
+            },
+        );
+    let document = document_pair
+        .as_ref()
+        .map(|(_, value)| value.clone())
         .filter(|document| !document.is_empty());
     let subelements = value
         .attributes
@@ -455,6 +465,7 @@ fn link_targets(value: &ValueRecord) -> Vec<LinkTarget> {
     if object.is_some() || document.is_some() || !subelements.is_empty() {
         vec![LinkTarget {
             document,
+            document_attribute: document_pair.map(|(name, _)| name),
             object,
             subelements,
         }]
@@ -465,6 +476,17 @@ fn link_targets(value: &ValueRecord) -> Vec<LinkTarget> {
 
 fn attribute_any(attributes: &BTreeMap<String, String>, names: &[&str]) -> Option<String> {
     names.iter().find_map(|name| attributes.get(*name).cloned())
+}
+
+fn attribute_any_named(
+    attributes: &BTreeMap<String, String>,
+    names: &[&str],
+) -> Option<(String, String)> {
+    names.iter().find_map(|name| {
+        attributes
+            .get(*name)
+            .map(|value| ((*name).into(), value.clone()))
+    })
 }
 
 fn object_id(name: &str) -> String {

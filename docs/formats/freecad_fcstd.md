@@ -166,6 +166,11 @@ links keep the document token and target object without attempting to open the d
 local targets, duplicate occurrence parents, invalid array counts, non-finite transforms, and
 container cycles are validation errors; external targets remain intentionally unresolved.
 
+The exact source attribute distinguishes an external file path from a document identity. Neutral
+references keep that path or identity separately from the target object and mark resolution as
+`unresolved`; decoding never guesses that an external file was loaded. A structurally present but
+empty reference is a distinct `missing_reference` state.
+
 Link semantics remain distinct from placement. Prototype subelement paths, tree-child claiming,
 base and per-element scale, explicit element objects, and per-element visibility are retained on
 neutral occurrences. Copy-on-change is typed as disabled, enabled, owned, tracking, or an explicit

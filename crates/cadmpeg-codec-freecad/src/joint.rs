@@ -158,7 +158,12 @@ pub(crate) fn transfer_neutral(
                             .as_deref()
                             .and_then(|object| component_by_native.get(object).copied())
                             .cloned(),
-                        external_document: reference.document.clone(),
+                        external_document: reference.document.as_deref().map(|document| {
+                            crate::product::external_document_reference(
+                                document,
+                                reference.document_attribute.as_deref(),
+                            )
+                        }),
                         object: reference.object.clone(),
                         subelements: reference.subelements.clone(),
                     })

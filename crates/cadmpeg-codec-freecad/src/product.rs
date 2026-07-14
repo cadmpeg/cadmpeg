@@ -6,8 +6,8 @@ use std::collections::{BTreeMap, HashMap};
 use crate::native::{ObjectRecord, ProductNodeRecord, PropertyRecord};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::products::{
-    Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy, Occurrence,
-    OccurrenceId,
+    Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
+    ExternalDocumentReference, ExternalResolution, Occurrence, OccurrenceId,
 };
 
 pub(crate) fn transfer(
@@ -51,6 +51,8 @@ pub(crate) fn transfer(
                 .collect(),
             prototype: prototype_link.and_then(|link| link.object.clone()),
             external_document: prototype_link.and_then(|link| link.document.clone()),
+            external_document_attribute: prototype_link
+                .and_then(|link| link.document_attribute.clone()),
             local_transform: placement.and_then(|property| placement_matrix(property)),
             placement_property: placement.map(|property| property.id.clone()),
             element_count: scalar(&owned, "ElementCount").and_then(|value| value.parse().ok()),
@@ -177,7 +179,10 @@ pub(crate) fn transfer_neutral(
                 )),
                 prototype: if let Some(document) = &record.external_document {
                     ComponentReference::External {
-                        document: document.clone(),
+                        document: external_document_reference(
+                            document,
+                            record.external_document_attribute.as_deref(),
+                        ),
                         object: record.prototype.clone(),
                     }
                 } else if let Some(prototype) = &record.prototype {
@@ -296,6 +301,22 @@ fn copy_on_change_policy(value: &str) -> CopyOnChangePolicy {
         "owned" | "2" => CopyOnChangePolicy::Owned,
         "tracking" | "3" => CopyOnChangePolicy::Tracking,
         _ => CopyOnChangePolicy::Native(value.to_owned()),
+    }
+}
+
+pub(crate) fn external_document_reference(
+    value: &str,
+    attribute: Option<&str>,
+) -> ExternalDocumentReference {
+    let is_path = attribute.is_some_and(|name| name.eq_ignore_ascii_case("file"));
+    ExternalDocumentReference {
+        path: is_path.then(|| value.to_owned()),
+        document_id: (!is_path).then(|| value.to_owned()),
+        resolution: if value.is_empty() {
+            ExternalResolution::MissingReference
+        } else {
+            ExternalResolution::Unresolved
+        },
     }
 }
 
