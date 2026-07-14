@@ -1228,10 +1228,19 @@ pub enum Extent {
     },
     /// Extends through all material.
     ThroughAll,
+    /// Extends until the first encountered model face.
+    ToFirst,
+    /// Extends until the last encountered model face.
+    ToLast,
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.
         face: FaceSelection,
+    },
+    /// Extends until one of the faces in a selected target shape.
+    ToShape {
+        /// Native or resolved target shape selection.
+        target: FaceSelection,
     },
     /// Fixed angular extent.
     Angle {

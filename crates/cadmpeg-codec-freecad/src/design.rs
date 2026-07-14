@@ -185,46 +185,12 @@ pub(crate) fn transfer(
             )
         } else if is_extrusion(&object.type_name) {
             let profile = profile_ref(&owned, &sketch_ids);
-            let length_property = property(&owned, "Length");
-            let length = length_property.and_then(scalar_value).unwrap_or(0.0);
-            if let Some(property) = length_property {
-                let expression = expression_binding(&owned, "Length");
-                ir.model.parameters.push(DesignParameter {
-                    id: ParameterId(format!("fcstd:design:parameter#{}:Length", object.name)),
-                    owner: id.clone(),
-                    ordinal: 0,
-                    name: "Length".into(),
-                    expression: expression.as_ref().map_or_else(
-                        || scalar_text(property).unwrap_or_else(|| length.to_string()),
-                        |(_, expression)| expression.clone(),
-                    ),
-                    display: None,
-                    value: Some(ParameterValue::Length(Length(length))),
-                    dependencies: Vec::new(),
-                    properties: expression
-                        .map(|(native_ref, _)| {
-                            [("expression_native_ref".into(), native_ref)].into()
-                        })
-                        .unwrap_or_default(),
-                    pmi: None,
-                    native_ref: Some(property.id.clone()),
-                });
-            }
-            FeatureDefinition::Extrude {
-                profile,
-                direction: None,
-                extent: Extent::Blind {
-                    length: Length(length),
-                },
-                op: if object.type_name.contains("Pocket") {
-                    BooleanOp::Cut
-                } else if object.type_name.contains("PartDesign") {
-                    BooleanOp::Join
-                } else {
-                    BooleanOp::NewBody
-                },
-                draft: None,
-            }
+            extrusion_definition(&object.type_name, &owned, profile, &ir.model.sketches)
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: object.type_name.clone(),
+                    parameters: native_parameters(&owned),
+                    properties: BTreeMap::new(),
+                })
         } else if is_revolution(&object.type_name) {
             FeatureDefinition::Revolve {
                 construction: RevolutionConstruction {
@@ -1539,6 +1505,7 @@ fn near(a: Point2, b: Point2) -> bool {
 
 fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId>) -> ProfileRef {
     property(properties, "Profile")
+        .or_else(|| property(properties, "Base"))
         .and_then(|property| {
             property
                 .links
@@ -1604,6 +1571,134 @@ fn vector_property(properties: &[&PropertyRecord], name: &str) -> Option<Vector3
         component("y", "Y")?,
         component("z", "Z")?,
     ))
+}
+
+fn extrusion_definition(
+    kind: &str,
+    properties: &[&PropertyRecord],
+    profile: ProfileRef,
+    sketches: &[Sketch],
+) -> Option<FeatureDefinition> {
+    if kind == "Part::Extrusion" {
+        let mut direction = unit_vector(vector_property(properties, "Dir")?)?;
+        let forward = scalar_named(properties, "LengthFwd").filter(|value| *value >= 0.0)?;
+        let reverse = scalar_named(properties, "LengthRev").filter(|value| *value >= 0.0)?;
+        let (extent, reverse_direction) = match (forward > 0.0, reverse > 0.0) {
+            (true, false) => (
+                Extent::Blind {
+                    length: Length(forward),
+                },
+                false,
+            ),
+            (false, true) => (
+                Extent::Blind {
+                    length: Length(reverse),
+                },
+                true,
+            ),
+            (true, true) => (
+                Extent::TwoSided {
+                    first: Length(forward),
+                    second: Length(reverse),
+                },
+                false,
+            ),
+            (false, false) => return None,
+        };
+        if reverse_direction {
+            direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+        }
+        let forward_draft = scalar_named(properties, "TaperAngle").unwrap_or(0.0);
+        let reverse_draft = scalar_named(properties, "TaperAngleRev").unwrap_or(0.0);
+        let draft = match (forward > 0.0, reverse > 0.0) {
+            (true, true) if (forward_draft - reverse_draft).abs() > f64::EPSILON => return None,
+            (false, true) => reverse_draft,
+            _ => forward_draft,
+        };
+        return Some(FeatureDefinition::Extrude {
+            profile,
+            direction: Some(direction),
+            extent,
+            op: BooleanOp::NewBody,
+            draft: (draft != 0.0).then_some(cadmpeg_ir::features::Angle(draft.to_radians())),
+        });
+    }
+    let positive = |name| scalar_named(properties, name).filter(|value| *value > 0.0);
+    let termination = |side: u8| {
+        let suffix = if side == 1 { "" } else { "2" };
+        let type_name = format!("Type{suffix}");
+        let length_name = format!("Length{suffix}");
+        let face_name = format!("UpToFace{suffix}");
+        let shape_name = format!("UpToShape{suffix}");
+        match integer_property(properties, &type_name).unwrap_or(0) {
+            0 => Some(Extent::Blind {
+                length: Length(
+                    scalar_named(properties, &length_name).filter(|value| *value > 0.0)?,
+                ),
+            }),
+            1 if kind.contains("Pocket") => Some(Extent::ThroughAll),
+            1 => Some(Extent::ToLast),
+            2 => Some(Extent::ToFirst),
+            3 => Some(Extent::ToFace {
+                face: cadmpeg_ir::features::FaceSelection::Native(
+                    property(properties, &face_name)?.id.clone(),
+                ),
+            }),
+            5 => Some(Extent::ToShape {
+                target: cadmpeg_ir::features::FaceSelection::Native(
+                    property(properties, &shape_name)?.id.clone(),
+                ),
+            }),
+            _ => None,
+        }
+    };
+    let side_type = integer_property(properties, "SideType").unwrap_or_else(|| {
+        if bool_property(properties, "Midplane").unwrap_or(false) {
+            2
+        } else {
+            u64::from(integer_property(properties, "Type") == Some(4))
+        }
+    });
+    let extent = match side_type {
+        0 => termination(1)?,
+        1 => Extent::TwoSided {
+            first: Length(positive("Length")?),
+            second: Length(positive("Length2")?),
+        },
+        2 => match termination(1)? {
+            Extent::Blind { length } => Extent::Symmetric { length },
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let mut direction = if bool_property(properties, "UseCustomVector").unwrap_or(false) {
+        unit_vector(vector_property(properties, "Direction")?)?
+    } else {
+        let ProfileRef::Sketch(sketch_id) = &profile else {
+            return None;
+        };
+        sketches
+            .iter()
+            .find(|sketch| sketch.id == *sketch_id)?
+            .normal
+    };
+    if bool_property(properties, "Reversed").unwrap_or(false) {
+        direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+    }
+    let draft = scalar_named(properties, "TaperAngle")
+        .filter(|angle| *angle != 0.0)
+        .map(|angle| cadmpeg_ir::features::Angle(angle.to_radians()));
+    Some(FeatureDefinition::Extrude {
+        profile,
+        direction: Some(direction),
+        extent,
+        op: if kind.contains("Pocket") {
+            BooleanOp::Cut
+        } else {
+            BooleanOp::Join
+        },
+        draft,
+    })
 }
 
 fn native_edge_selection(properties: &[&PropertyRecord]) -> EdgeSelection {

@@ -336,3 +336,11 @@ PartDesign additive or subtractive pipes retain the profile plus the complete na
 property, including its ordered subelement selectors. Standalone sweeps distinguish surface from
 solid results through their persisted solid flag; PartDesign pipes are solid and explicitly join
 or cut. Cached result shapes remain outputs and do not replace these construction operands.
+
+Part extrusions retain their normalized direction, independent forward and reverse lengths, and
+equal forward/reverse taper when both sides are active. PartDesign pads and pockets distinguish
+blind, through-all, first-intersection, last-intersection, face-selected, and shape-selected
+termination. Midplane blind features retain total symmetric travel; reversed features invert the
+resolved sketch-normal or explicit custom direction. A pad joins and a pocket cuts. Missing
+required lengths or selections, unsupported termination combinations, and unequal two-sided taper
+remain attributable native operations instead of being rewritten as zero-length or blind features.

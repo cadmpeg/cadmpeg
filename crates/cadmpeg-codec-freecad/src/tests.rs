@@ -392,7 +392,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "17");
+    assert_eq!(result.ir.ir_version, "18");
     let feature = |name: &str| {
         &result
             .ir
@@ -1801,6 +1801,134 @@ fn separates_semantic_annotations_from_drawing_relationships() {
         Some("fcstd:object:View")
     );
     assert!(crate::validate_native(&result.ir).is_empty());
+}
+
+#[test]
+fn transfers_non_default_extrusion_termination_branches() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="8">
+  <Object type="Sketcher::SketchObject" name="Sketch" id="1"/>
+  <Object type="PartDesign::Pad" name="ToLast" id="2"/>
+  <Object type="PartDesign::Pad" name="ToFirst" id="3"/>
+  <Object type="PartDesign::Pad" name="ToFace" id="4"/>
+  <Object type="PartDesign::Pad" name="ToShape" id="5"/>
+  <Object type="PartDesign::Pocket" name="ThroughAll" id="6"/>
+  <Object type="PartDesign::Pad" name="Symmetric" id="7"/>
+  <Object type="Part::Extrusion" name="PartExtrusion" id="8"/>
+</Objects>
+<ObjectData Count="8">
+  <Object name="Sketch"><Properties Count="0"/></Object>
+  <Object name="ToLast"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  </Properties></Object>
+  <Object name="ToFirst"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="2"/></Property>
+  </Properties></Object>
+  <Object name="ToFace"><Properties Count="3">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="3"/></Property>
+    <Property name="UpToFace" type="App::PropertyLinkSub"><Link object="PartExtrusion" sub="Face1"/></Property>
+  </Properties></Object>
+  <Object name="ToShape"><Properties Count="3">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="5"/></Property>
+    <Property name="UpToShape" type="App::PropertyLinkSub"><Link object="PartExtrusion" sub="Face2"/></Property>
+  </Properties></Object>
+  <Object name="ThroughAll"><Properties Count="2">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Type" type="App::PropertyEnumeration"><Integer value="1"/></Property>
+  </Properties></Object>
+  <Object name="Symmetric"><Properties Count="5">
+    <Property name="Profile" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Length" type="App::PropertyLength"><Float value="12"/></Property>
+    <Property name="Midplane" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="Reversed" type="App::PropertyBool"><Bool value="true"/></Property>
+    <Property name="TaperAngle" type="App::PropertyAngle"><Float value="5"/></Property>
+  </Properties></Object>
+  <Object name="PartExtrusion"><Properties Count="6">
+    <Property name="Base" type="App::PropertyLink"><Link value="Sketch"/></Property>
+    <Property name="Dir" type="App::PropertyVector"><Vector x="0" y="2" z="0"/></Property>
+    <Property name="LengthFwd" type="App::PropertyLength"><Float value="7"/></Property>
+    <Property name="LengthRev" type="App::PropertyLength"><Float value="3"/></Property>
+    <Property name="TaperAngle" type="App::PropertyAngle"><Float value="2"/></Property>
+    <Property name="TaperAngleRev" type="App::PropertyAngle"><Float value="2"/></Property>
+  </Properties></Object>
+</ObjectData></Document>"#;
+    let result = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .expect("extrusion termination branches");
+    let definition = |name: &str| {
+        &result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("missing {name}"))
+            .definition
+    };
+    use cadmpeg_ir::features::{Angle, BooleanOp, Extent, FeatureDefinition};
+    assert!(matches!(
+        definition("ToLast"),
+        FeatureDefinition::Extrude {
+            extent: Extent::ToLast,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ToFirst"),
+        FeatureDefinition::Extrude {
+            extent: Extent::ToFirst,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ToFace"),
+        FeatureDefinition::Extrude {
+            extent: Extent::ToFace { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ToShape"),
+        FeatureDefinition::Extrude {
+            extent: Extent::ToShape { .. },
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("ThroughAll"),
+        FeatureDefinition::Extrude {
+            extent: Extent::ThroughAll,
+            op: BooleanOp::Cut,
+            ..
+        }
+    ));
+    assert!(matches!(
+        definition("Symmetric"),
+        FeatureDefinition::Extrude {
+            direction: Some(direction),
+            extent: Extent::Symmetric { length },
+            draft: Some(Angle(draft)),
+            ..
+        } if direction.z == -1.0 && length.0 == 12.0 && (*draft - 5_f64.to_radians()).abs() < 1e-12
+    ));
+    assert!(matches!(
+        definition("PartExtrusion"),
+        FeatureDefinition::Extrude {
+            direction: Some(direction),
+            extent: Extent::TwoSided { first, second },
+            draft: Some(Angle(draft)),
+            op: BooleanOp::NewBody,
+            ..
+        } if direction.y == 1.0 && first.0 == 7.0 && second.0 == 3.0
+            && (*draft - 2_f64.to_radians()).abs() < 1e-12
+    ));
 }
 
 #[test]

@@ -2376,7 +2376,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 Extent::TwoSidedAngles { first, second } => {
                     first.0.is_finite() && first.0 > 0.0 && second.0.is_finite() && second.0 > 0.0
                 }
-                Extent::ThroughAll | Extent::ToFace { .. } => true,
+                Extent::ThroughAll
+                | Extent::ToFirst
+                | Extent::ToLast
+                | Extent::ToFace { .. }
+                | Extent::ToShape { .. } => true,
             };
             if !valid_magnitude {
                 findings.push(Finding {
@@ -2394,6 +2398,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     findings,
                     &feature.id.0,
                     "termination face",
+                    faces.iter().map(|id| id.0.as_str()),
+                    &ids.faces,
+                );
+            }
+            if let Extent::ToShape {
+                target: FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. },
+            } = extent
+            {
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "termination shape face",
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
                 );

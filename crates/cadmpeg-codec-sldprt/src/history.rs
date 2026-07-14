@@ -4626,6 +4626,12 @@ pub fn sync_neutral_features(
                     Extent::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
                     }
+                    Extent::ToFirst | Extent::ToLast | Extent::ToShape { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses an unsupported extrusion termination",
+                            feature.id
+                        )));
+                    }
                     Extent::ToFace { face } if face_selection_value(face).is_some() => {
                         let selection = face_selection_value(face).expect("guarded above");
                         properties.insert("EndCondition".into(), "ToFace".into());
