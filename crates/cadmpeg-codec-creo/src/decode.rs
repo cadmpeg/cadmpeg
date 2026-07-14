@@ -15,9 +15,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, DesignParameter, DimensionDisplay, Extent, Feature,
+    Angle, BooleanOp, DesignParameter, DimensionDisplay, EdgeSelection, Extent, Feature,
     FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId, FeatureSourceContent,
-    Length, ParameterId, ParameterValue, ProfileRef, RevolutionAxis, RevolutionConstruction,
+    Length, ParameterId, ParameterValue, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, ProceduralSurface, ProceduralSurfaceDefinition,
@@ -3959,6 +3960,24 @@ fn resolved_revolution_axis(
     Some(*axis)
 }
 
+fn feature_edge_selection(scan: &ContainerScan, feature_id: u32) -> Option<EdgeSelection> {
+    let ids = scan
+        .feature_affected_ids
+        .iter()
+        .find(|record| {
+            record.feature_id == feature_id && record.kind == crate::feature::AffectedIdKind::Edges
+        })?
+        .ids
+        .as_slice();
+    if ids.is_empty() {
+        return None;
+    }
+    Some(EdgeSelection::Native(format!(
+        "creo:allfeatur:edgs_affected#{feature_id}:{}",
+        ids.iter().map(u32::to_string).collect::<Vec<_>>().join(",")
+    )))
+}
+
 fn schema_feature_definition(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -3966,6 +3985,14 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if schema_class == 913 {
+        if let Some(edges) = feature_edge_selection(scan, feature_id) {
+            return IrFeatureDefinition::Fillet {
+                edges,
+                radius: RadiusSpec::Unresolved { form: None },
+            };
+        }
+    }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
         let transforms = scan
             .feature_section_transforms
@@ -6944,10 +6971,10 @@ fn build_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
         message: "Named feature operations and their decoded dependency/input tables transfer as \
-                  native design records. Curve-equation assignments transfer with their source, \
-                  dependencies, and closed arithmetic values. Full neutral operation semantics, \
-                  configurations, remaining expression families, materials, and display data \
-                  remain untransferred."
+                  typed or native design records. Curve-equation assignments transfer with their \
+                  source, dependencies, and closed arithmetic values. Full neutral operation \
+                  semantics, configurations, remaining expression families, materials, and \
+                  display data remain untransferred."
             .to_string(),
         provenance: None,
     });

@@ -754,6 +754,50 @@ fn scan_decodes_allfeatur_affected_id_arrays() {
 }
 
 #[test]
+fn decode_types_round_with_labeled_edge_selection() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = b"\x04\xeb\x04\x00\x10\x01\x00\xe5\xe3\xf6\x83\x91\xe1\
+        \xe0\x21edgs_affected\0\xf8\x02\x2c\x2d"
+        .to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("round feature");
+
+    assert_eq!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            edges: cadmpeg_ir::features::EdgeSelection::Native(
+                "creo:allfeatur:edgs_affected#4:44,45".to_string()
+            ),
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+        }
+    );
+    assert_eq!(
+        feature
+            .source_properties
+            .get("native_parameter.affected_edge_ids")
+            .map(String::as_str),
+        Some("44,45")
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn decode_transfers_strong_parents_as_ordered_dependencies() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);
