@@ -2050,6 +2050,34 @@ fn decode_standard_transfers_vertices_and_cylinder() {
 }
 
 #[test]
+fn decode_standard_retains_unresolved_roster_carrier_and_face() {
+    let mut surf = surf_stream();
+    let bridge = [0xff, 0x11, 0x22, 0x33, 0x00, 0x02, 0x00, 0x33, 0x32];
+    let bridge_start = surf
+        .windows(bridge.len())
+        .position(|bytes| bytes == bridge)
+        .expect("plane parameter bridge");
+    surf.drain(bridge_start..bridge_start + bridge.len() + 40);
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_from_streams(&main_stream(), &surf)),
+            &DecodeOptions::default(),
+        )
+        .expect("decode unresolved roster carrier");
+
+    assert_eq!(decoded.ir.model.surfaces.len(), 2);
+    assert_eq!(decoded.ir.model.faces.len(), 2);
+    assert!(matches!(
+        decoded.ir.model.surfaces[1].geometry,
+        SurfaceGeometry::Unknown { record: Some(_) }
+    ));
+    assert_eq!(
+        decoded.ir.model.faces[1].surface,
+        decoded.ir.model.surfaces[1].id
+    );
+}
+
+#[test]
 fn decode_standard_builds_surface_bound_topology_graph() {
     let decoded = CatiaCodec
         .decode(

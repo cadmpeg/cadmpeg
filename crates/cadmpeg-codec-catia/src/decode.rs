@@ -2242,7 +2242,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             };
             let id = SurfaceId(format!("catia:standard:surf#{i}"));
             face_bindings.push((id.clone(), *forward, *pos));
-            surface_annotations.push((id.clone(), *pos, None));
+            surface_annotations.push((id.clone(), *pos, None, Exactness::Unknown));
             surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Unknown { record: None },
@@ -2267,15 +2267,40 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                 if let Some(forward) = geometry::face_sense(brep, prefix) {
                     face_bindings.push((id.clone(), forward, prefix.pos));
                 }
-                surface_annotations.push((id.clone(), prefix.pos, Some(prefix.kind)));
+                surface_annotations.push((
+                    id.clone(),
+                    prefix.pos,
+                    Some(prefix.kind),
+                    Exactness::ByteExact,
+                ));
                 surfaces.push(Surface {
                     id,
                     geometry: geom,
                     source_object: None,
                 });
             }
-            None if prefix.kind == 0x32 => plane_faces += 1,
-            None => {}
+            None => {
+                if prefix.kind == 0x32 {
+                    plane_faces += 1;
+                }
+                let id = SurfaceId(format!("catia:standard:surf#{i}"));
+                if let Some(forward) = geometry::face_sense(brep, prefix) {
+                    face_bindings.push((id.clone(), forward, prefix.pos));
+                }
+                surface_annotations.push((
+                    id.clone(),
+                    prefix.pos,
+                    Some(prefix.kind),
+                    Exactness::Unknown,
+                ));
+                surfaces.push(Surface {
+                    id,
+                    geometry: SurfaceGeometry::Unknown {
+                        record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
+                    },
+                    source_object: None,
+                });
+            }
         }
     }
 
@@ -2324,7 +2349,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             tolerance: None,
         });
     }
-    for (id, offset, kind) in surface_annotations {
+    for (id, offset, kind, exactness) in surface_annotations {
         annotate(
             &mut annotations,
             &id,
@@ -2334,11 +2359,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
                 || "surfacic_reps_freeform_alias".to_string(),
                 |kind| format!("surfacic_reps_{kind:02x}"),
             ),
-            if kind.is_some() {
-                Exactness::ByteExact
-            } else {
-                Exactness::Unknown
-            },
+            exactness,
         );
     }
     ir.model.surfaces = surfaces;
