@@ -428,7 +428,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 76);
+    assert_eq!(namespace.version, 77);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -5161,7 +5161,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 76);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 77);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -7051,6 +7051,7 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
     ];
     let pairs = crate::native::data_block_control_handle_pairs(&references);
     assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].id, "nx:om-data-block-control:handle-pair#10");
     assert_eq!(pairs[0].first_reference, "reference#0");
     assert_eq!(pairs[0].second_reference, "reference#1");
     assert_eq!(pairs[0].first_handle, 100);

@@ -789,9 +789,13 @@ pub(crate) fn prune_unreferenced_unknown_carriers(ir: &mut CadIr) {
             if !used_curves.contains(&procedural.curve) {
                 continue;
             }
-            if let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
-            {
-                used_surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+            match &procedural.definition {
+                ProceduralCurveDefinition::Intersection { context, .. }
+                | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+                    used_surfaces
+                        .extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+                }
+                _ => {}
             }
         }
         if previous == (used_surfaces.len(), used_curves.len()) {
@@ -1270,9 +1274,12 @@ fn prune_inactive_geometry(ir: &mut CadIr) {
             if !curves.contains(&procedural.curve) {
                 continue;
             }
-            if let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition
-            {
-                surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+            match &procedural.definition {
+                ProceduralCurveDefinition::Intersection { context, .. }
+                | ProceduralCurveDefinition::SurfaceCurve { context, .. } => {
+                    surfaces.extend(context.sides.iter().filter_map(|side| side.surface.clone()));
+                }
+                _ => {}
             }
         }
         if surfaces.len() == old_surface_count && curves.len() == old_curve_count {
@@ -3222,7 +3229,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(76);
+    namespace.version = namespace.version.max(77);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }

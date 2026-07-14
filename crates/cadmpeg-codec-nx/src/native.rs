@@ -4179,7 +4179,10 @@ pub fn data_block_control_handle_pairs(
             let run = &block_references[start..=at];
             if let [first, second] = run {
                 pairs.push(DataBlockControlHandlePair {
-                    id: format!("{}:handle-pair#{}", first.id, first.ordinal),
+                    id: format!(
+                        "nx:om-data-block-control:handle-pair#{}",
+                        first.source_offset
+                    ),
                     data_block: data_block.to_string(),
                     first_reference: first.id.clone(),
                     second_reference: second.id.clone(),
