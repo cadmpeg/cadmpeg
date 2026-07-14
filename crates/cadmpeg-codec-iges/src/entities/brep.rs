@@ -228,11 +228,7 @@ pub(super) fn project(
             ));
             continue;
         }
-        let Some(count) = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
+        let Some(count) = record.count(1).filter(|count| *count > 0) else {
             losses.push(entity_loss(entry, "vertex-list count is not positive"));
             continue;
         };
@@ -280,11 +276,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(count) = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
+        let Some(count) = record.count(1).filter(|count| *count > 0) else {
             losses.push(entity_loss(entry, "edge-list count is not positive"));
             continue;
         };
@@ -344,11 +336,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(count) = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
+        let Some(count) = record.count(1).filter(|count| *count > 0) else {
             losses.push(entity_loss(entry, "loop edge-use count is not positive"));
             continue;
         };
@@ -367,10 +355,7 @@ pub(super) fn project(
                 uses.clear();
                 break;
             };
-            let Some(pcurve_count) = record
-                .integer(index + 4)
-                .and_then(|value| usize::try_from(value).ok())
-            else {
+            let Some(pcurve_count) = record.count(index + 4) else {
                 uses.clear();
                 break;
             };
@@ -471,11 +456,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "face surface pointer is invalid"));
             continue;
         };
-        let Some(count) = record
-            .integer(2)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
+        let Some(count) = record.count(2).filter(|count| *count > 0) else {
             losses.push(entity_loss(entry, "face loop count is not positive"));
             continue;
         };
@@ -525,11 +506,7 @@ pub(super) fn project(
             losses.push(entity_loss(entry, "Parameter Data record is missing"));
             continue;
         };
-        let Some(count) = record
-            .integer(1)
-            .and_then(|value| usize::try_from(value).ok())
-            .filter(|count| *count > 0)
-        else {
+        let Some(count) = record.count(1).filter(|count| *count > 0) else {
             losses.push(entity_loss(entry, "shell face count is not positive"));
             continue;
         };
@@ -606,10 +583,7 @@ pub(super) fn project(
                 continue;
             }
         };
-        let Some(void_count) = record
-            .integer(3)
-            .and_then(|value| usize::try_from(value).ok())
-        else {
+        let Some(void_count) = record.count(3) else {
             losses.push(entity_loss(entry, "solid void-shell count is invalid"));
             continue;
         };

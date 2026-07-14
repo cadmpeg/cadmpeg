@@ -4740,6 +4740,26 @@ fn decode_bounds_declared_attribute_counts_by_record_tokens() {
 }
 
 #[test]
+fn decode_bounds_declared_brep_counts_by_record_tokens() {
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 502,
+        form: 1,
+        label: "BADCOUNT".into(),
+        status: "00010000",
+        parameters: "502,9223372036854775807;".into(),
+    }]);
+    let result = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("vertex-list count")));
+}
+
+#[test]
 fn decode_types_attribute_table_tuple_and_row_major_instances() {
     let result = IgesCodec
         .decode(
