@@ -989,6 +989,11 @@ pub(crate) fn resolved_section_points(
             let delta = match relation.sign {
                 1 => magnitude,
                 0xf6 => -magnitude,
+                0 => match segment.directions[0] {
+                    Some(1) => magnitude,
+                    None => -magnitude,
+                    _ => return None,
+                },
                 _ => return None,
             };
             Some((first, second, coordinate, delta))

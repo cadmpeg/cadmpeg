@@ -1343,6 +1343,26 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     u: None,
                     v: None,
                 },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 6,
+                    u: Some(20.0),
+                    v: Some(30.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 7,
+                    u: None,
+                    v: None,
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 8,
+                    u: None,
+                    v: None,
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 9,
+                    u: Some(20.0),
+                    v: Some(40.0),
+                },
             ],
             offset: 0,
         }),
@@ -1360,6 +1380,30 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     radius_ref: None,
                     radius2_ref: None,
                     external_id: 1,
+                    offset: 0,
+                },
+                crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids: [6, 7],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: Some(1),
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 4,
+                    offset: 0,
+                },
+                crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [Some(1), None, None],
+                    point_ids: [8, 9],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: Some(1),
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 5,
                     offset: 0,
                 },
                 crate::feature::FeatureSegment {
@@ -1438,6 +1482,36 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     offset: 0,
                 },
                 crate::feature::FeatureRelation {
+                    relation_id: 3,
+                    used: 1,
+                    operands: Vec::new(),
+                    operand_vectors: Some([
+                        [Some(6), Some(7), None, Some(1)],
+                        [Some(1), Some(1), Some(0), Some(1)],
+                        [Some(15), Some(16), Some(15), Some(1)],
+                    ]),
+                    sign: 0,
+                    dimension_id: 0,
+                    relation_type: 0,
+                    body: Vec::new(),
+                    offset: 0,
+                },
+                crate::feature::FeatureRelation {
+                    relation_id: 4,
+                    used: 1,
+                    operands: Vec::new(),
+                    operand_vectors: Some([
+                        [Some(8), Some(9), None, Some(1)],
+                        [Some(1), Some(1), Some(0), Some(1)],
+                        [Some(15), Some(16), Some(15), Some(1)],
+                    ]),
+                    sign: 0,
+                    dimension_id: 0,
+                    relation_type: 0,
+                    body: Vec::new(),
+                    offset: 0,
+                },
+                crate::feature::FeatureRelation {
                     relation_id: 2,
                     used: 0,
                     operands: Vec::new(),
@@ -1472,6 +1546,14 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
     assert_eq!(
         crate::decode::resolved_section_radii(&definition).get(&6),
         Some(&4.0)
+    );
+    assert_eq!(
+        crate::decode::resolved_section_points(&definition).get(&7),
+        Some(&[8.0, 30.0])
+    );
+    assert_eq!(
+        crate::decode::resolved_section_points(&definition).get(&8),
+        Some(&[8.0, 40.0])
     );
 }
 
