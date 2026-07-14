@@ -10,7 +10,7 @@ use crate::object_graph::{self, AliasLead, HeadToken, ObjectPayload, PayloadSubt
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 7;
+pub const CATIA_NATIVE_VERSION: u32 = 8;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -113,6 +113,8 @@ pub struct CatiaValueBlock {
     /// Source-schema catalog that begins immediately after this block.
     pub catalog: String,
     /// Value payload in serialized order.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
     pub payload: Vec<u8>,
 }
 
@@ -411,6 +413,47 @@ impl CatiaNative {
         namespace.set_arena("object_graph_records", &records)?;
         namespace.set_arena("preview_images", &self.preview_images)?;
         namespace.set_arena("value_blocks", &self.value_blocks)?;
+        debug_assert!(CATIA_ARENA_NAMES
+            .iter()
+            .all(|name| namespace.arenas.contains_key(*name)));
+        Ok(())
+    }
+
+    /// Store this namespace while moving child arenas out of their typed owners.
+    ///
+    /// Decode paths use this form so large object graphs are not cloned while
+    /// converting them into generic native records.
+    pub fn store_owned(
+        self,
+        namespace: &mut cadmpeg_ir::NativeNamespace,
+    ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+        let Self {
+            version,
+            alias_rows,
+            mut catalogs,
+            finjpl_segments,
+            mut object_graphs,
+            preview_images,
+            value_blocks,
+        } = self;
+        let entries = catalogs
+            .iter_mut()
+            .flat_map(|catalog| std::mem::take(&mut catalog.entries))
+            .collect::<Vec<_>>();
+        let records = object_graphs
+            .iter_mut()
+            .flat_map(|graph| std::mem::take(&mut graph.records))
+            .collect::<Vec<_>>();
+
+        namespace.version = version;
+        namespace.set_arena_owned("catalogs", catalogs)?;
+        namespace.set_arena_owned("catalog_entries", entries)?;
+        namespace.set_arena_owned("object_graphs", object_graphs)?;
+        namespace.set_arena_owned("object_graph_records", records)?;
+        namespace.set_arena_owned("finjpl_segments", finjpl_segments)?;
+        namespace.set_arena_owned("alias_rows", alias_rows)?;
+        namespace.set_arena_owned("preview_images", preview_images)?;
+        namespace.set_arena_owned("value_blocks", value_blocks)?;
         debug_assert!(CATIA_ARENA_NAMES
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));

@@ -92,7 +92,7 @@ fn finish_decode(
     mut ir: CadIr,
     report: DecodeReport,
 ) -> Result<DecodeResult, CodecError> {
-    CatiaNative::decode(&scan.data).store(ir.native.namespace_mut("catia"))?;
+    CatiaNative::decode(&scan.data).store_owned(ir.native.namespace_mut("catia"))?;
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -1946,7 +1946,7 @@ fn union_indices(parents: &mut [usize], left: usize, right: usize) {
 }
 
 fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
-    let b5_graph = crate::b5::parse(&scan.data);
+    let mut b5_graph = crate::b5::parse(&scan.data);
     let mut fallback_surfaces = b5_graph
         .is_none()
         .then(|| freeform_surface_carriers(&scan.data));
@@ -1958,7 +1958,8 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
     ir.source = Some(source_meta(scan));
     let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
     preserve_raw_payload(&mut ir, &mut annotations, scan, &payload_id.0).ok()?;
-    let topology_transferred = b5_graph.as_ref().is_some_and(|graph| {
+    let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
+    let topology_transferred = b5_graph.take().is_some_and(|graph| {
         crate::b5_transfer::transfer(&mut ir, &mut annotations, graph, &payload_id)
     });
     if !topology_transferred {
@@ -1990,8 +1991,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
-            losses: if topology_transferred && b5_graph.as_ref().is_some_and(|graph| graph.complete)
-            {
+            losses: if topology_transferred && b5_complete {
                 vec![LossNote {
                     category: LossCategory::Topology,
                     severity: Severity::Warning,

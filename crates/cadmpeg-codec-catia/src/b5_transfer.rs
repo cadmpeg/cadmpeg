@@ -42,54 +42,62 @@ struct SurfacePlan {
 pub(crate) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-    graph: &B5Graph,
+    mut graph: B5Graph,
     payload: &UnknownId,
 ) -> bool {
     if !graph.complete {
-        let mut subset = graph.clone();
-        subset.loops.retain(|_, loop_| {
+        graph.loops.retain(|_, loop_| {
             loop_
                 .pcurves
                 .iter()
                 .zip(&loop_.edges)
                 .all(|(pcurve, edge)| {
-                    (subset
+                    (graph
                         .pcurves
                         .get(pcurve)
                         .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                        || subset
+                        || graph
                             .opaque_pcurves
                             .get(pcurve)
                             .is_some_and(|pcurve| pcurve.surface == loop_.surface)
-                        || subset.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
-                        && subset.edge_vertices.contains_key(edge)
+                        || graph.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
+                        && graph.edge_vertices.contains_key(edge)
                 })
-                && solve_loop_chain(loop_, &subset.edge_vertices).is_some()
+                && solve_loop_chain(loop_, &graph.edge_vertices).is_some()
         });
-        subset.faces.retain(|face| {
-            subset.surfaces.contains_key(&face.surface)
+        graph.faces.retain(|face| {
+            graph.surfaces.contains_key(&face.surface)
                 && !face.loops.is_empty()
                 && face.loops.iter().all(|loop_id| {
-                    subset
+                    graph
                         .loops
                         .get(loop_id)
                         .is_some_and(|loop_| loop_.surface == face.surface)
                 })
         });
-        let referenced_loops: HashSet<u32> = subset
+        let referenced_loops: HashSet<u32> = graph
             .faces
             .iter()
             .flat_map(|face| face.loops.iter().copied())
             .collect();
-        subset
+        graph
             .loops
             .retain(|loop_id, _| referenced_loops.contains(loop_id));
-        if subset.faces.is_empty() || subset.loops.is_empty() {
+        if graph.faces.is_empty() || graph.loops.is_empty() {
             return false;
         }
-        subset.complete = true;
-        return transfer(ir, annotations, &subset, payload);
+        graph.complete = true;
     }
+    graph.records.clear();
+    transfer_complete(ir, annotations, &graph, payload)
+}
+
+fn transfer_complete(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    graph: &B5Graph,
+    payload: &UnknownId,
+) -> bool {
     if graph.faces.is_empty() {
         return false;
     }

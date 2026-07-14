@@ -127,6 +127,8 @@ pub enum PayloadField {
         /// Length declared by the frame.
         declared_len: usize,
         /// Available blob bytes.
+        #[serde(with = "cadmpeg_ir::bytes")]
+        #[schemars(with = "String")]
         bytes: Vec<u8>,
         /// Byte offset within the payload.
         offset: usize,

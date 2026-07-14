@@ -77,6 +77,28 @@ impl NativeNamespace {
         Ok(())
     }
 
+    /// Replace an arena while consuming codec-owned typed records as they are
+    /// converted. This avoids retaining a second typed copy for large arenas.
+    pub fn set_arena_owned<T: Serialize>(
+        &mut self,
+        name: impl Into<String>,
+        records: Vec<T>,
+    ) -> Result<(), NativeConvertError> {
+        let mut converted = Vec::with_capacity(records.len());
+        for record in records {
+            let Value::Object(mut fields) = serde_json::to_value(record)? else {
+                return Err(NativeConvertError::NonObject);
+            };
+            let Some(Value::String(id)) = fields.remove("id") else {
+                return Err(NativeConvertError::MissingId);
+            };
+            converted.push(NativeRecord { id, fields });
+        }
+        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        self.arenas.insert(name.into(), converted);
+        Ok(())
+    }
+
     /// Deserialize an arena into codec-owned typed records.
     pub fn arena_as<T: DeserializeOwned>(&self, name: &str) -> Result<Vec<T>, NativeConvertError> {
         self.arenas
