@@ -3240,6 +3240,8 @@ fn attach_native_object_model(
         &feature_block_payload_names,
         &feature_block_payload_scalars,
     );
+    let feature_block_payload_point_groups =
+        crate::native::feature_block_payload_point_groups(&feature_block_payload_points);
     let feature_sketch_records = crate::native::feature_sketch_records(
         &feature_operation_labels,
         &feature_operation_records,
@@ -3390,6 +3392,7 @@ fn attach_native_object_model(
         && feature_block_payload_names.is_empty()
         && feature_block_payload_named_records.is_empty()
         && feature_block_payload_points.is_empty()
+        && feature_block_payload_point_groups.is_empty()
         && feature_sketch_records.is_empty()
         && feature_sketch_construction_inputs.is_empty()
         && feature_sketch_construction_payloads.is_empty()
@@ -3817,6 +3820,7 @@ fn attach_native_object_model(
             block_constructions: &feature_block_constructions,
             block_dimensions: &feature_block_dimensions,
             block_payload_points: &feature_block_payload_points,
+            block_payload_point_groups: &feature_block_payload_point_groups,
             extrude_32_constructions: &feature_extrude_32_constructions,
             extrude_payload_headers: &feature_extrude_payload_headers,
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
@@ -3843,7 +3847,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(127);
+    namespace.version = namespace.version.max(128);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -4124,6 +4128,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_block_payload_points",
             &feature_block_payload_points,
+        )?;
+    }
+    if !feature_block_payload_point_groups.is_empty() {
+        namespace.set_arena(
+            "feature_block_payload_point_groups",
+            &feature_block_payload_point_groups,
         )?;
     }
     if !feature_block_dimensions.is_empty() {
@@ -4626,6 +4636,7 @@ struct FeatureOperationSources<'a> {
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
     block_dimensions: &'a [crate::native::FeatureBlockDimensions],
     block_payload_points: &'a [crate::native::FeatureBlockPayloadPoint],
+    block_payload_point_groups: &'a [crate::native::FeatureBlockPayloadPointGroup],
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
@@ -4668,6 +4679,7 @@ fn attach_feature_operations(
         block_constructions,
         block_dimensions,
         block_payload_points,
+        block_payload_point_groups,
         extrude_32_constructions,
         extrude_payload_headers,
         operation_body_scalar_triples,
@@ -4832,6 +4844,14 @@ fn attach_feature_operations(
             .entry(point.operation_label.as_str())
             .or_default()
             .push(point);
+    }
+    let mut block_payload_point_groups_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureBlockPayloadPointGroup>>::new();
+    for group in block_payload_point_groups {
+        block_payload_point_groups_by_operation
+            .entry(group.operation_label.as_str())
+            .or_default()
+            .push(group);
     }
     let extrude_32_constructions_by_operation = extrude_32_constructions
         .iter()
@@ -5027,6 +5047,17 @@ fn attach_feature_operations(
             .enumerate()
         {
             source_properties.insert(format!("block_payload_point.{ordinal}"), point.id.clone());
+        }
+        for (ordinal, group) in block_payload_point_groups_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("block_payload_point_group.{ordinal}"),
+                group.id.clone(),
+            );
         }
         if let Some(construction) = extrude_32_constructions_by_operation.get(label.id.as_str()) {
             source_properties.insert(

@@ -519,7 +519,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 127);
+    assert_eq!(namespace.version, 128);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -3081,8 +3081,8 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
 #[test]
 fn nx_block_payload_points_require_exactly_two_named_scalars() {
     use crate::native::{
-        feature_block_payload_points, FeatureBlockPayloadName, FeatureBlockPayloadNamedRecord,
-        FeatureBlockPayloadScalar,
+        feature_block_payload_point_groups, feature_block_payload_points, FeatureBlockPayloadName,
+        FeatureBlockPayloadNamedRecord, FeatureBlockPayloadScalar,
     };
 
     let operation_label = "operation".to_string();
@@ -3127,6 +3127,18 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
     assert_eq!(points.len(), 1);
     assert_eq!(points[0].name, "Point7");
     assert_eq!(points[0].coordinates, [1.25, -2.5]);
+
+    let mut duplicate = points[0].clone();
+    duplicate.id = "point-2".to_string();
+    let groups = feature_block_payload_point_groups(&[points[0].clone(), duplicate]);
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].points.len(), 2);
+    assert_eq!(groups[0].coordinates, [1.25, -2.5]);
+
+    let mut conflicting = points[0].clone();
+    conflicting.id = "conflicting".to_string();
+    conflicting.coordinates[1] = f64::from_bits((-2.5_f64).to_bits() + 1);
+    assert!(feature_block_payload_point_groups(&[points[0].clone(), conflicting]).is_empty());
 
     let mut incomplete = record.clone();
     incomplete.scalar_fields.pop();
@@ -6438,7 +6450,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 127);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 128);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

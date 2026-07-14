@@ -1524,6 +1524,21 @@ pub struct FeatureBlockPayloadPoint {
     pub coordinates: [f64; 2],
 }
 
+/// Exact same-name point identity within one reconstructed `BLOCK` payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureBlockPayloadPointGroup {
+    /// Globally unique point-group identity.
+    pub id: String,
+    /// Owning `BLOCK` operation label.
+    pub operation_label: String,
+    /// Exact `Point<positive decimal>` source name.
+    pub name: String,
+    /// Identical point records in payload order.
+    pub points: Vec<String>,
+    /// Bit-identical ordered coordinate values.
+    pub coordinates: [f64; 2],
+}
+
 /// Ordered three-parameter dimension run of one `BLOCK` feature.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FeatureBlockDimensions {
@@ -4399,6 +4414,46 @@ pub fn feature_block_payload_points(
             })
         })
         .collect()
+}
+
+/// Group every bit-identical same-name `BLOCK` construction-point witness.
+pub fn feature_block_payload_point_groups(
+    points: &[FeatureBlockPayloadPoint],
+) -> Vec<FeatureBlockPayloadPointGroup> {
+    let mut grouped = BTreeSet::new();
+    let mut groups = Vec::new();
+    for point in points {
+        let key = (point.operation_label.as_str(), point.name.as_str());
+        if !grouped.insert(key) {
+            continue;
+        }
+        let witnesses = points
+            .iter()
+            .filter(|candidate| {
+                candidate.operation_label == point.operation_label && candidate.name == point.name
+            })
+            .collect::<Vec<_>>();
+        if witnesses.iter().any(|candidate| {
+            candidate
+                .coordinates
+                .iter()
+                .zip(point.coordinates)
+                .any(|(first, second)| first.to_bits() != second.to_bits())
+        }) {
+            continue;
+        }
+        groups.push(FeatureBlockPayloadPointGroup {
+            id: format!("{}-group", point.id),
+            operation_label: point.operation_label.clone(),
+            name: point.name.clone(),
+            points: witnesses
+                .into_iter()
+                .map(|point| point.id.clone())
+                .collect(),
+            coordinates: point.coordinates,
+        });
+    }
+    groups
 }
 
 fn joined_payload_source_offset(
